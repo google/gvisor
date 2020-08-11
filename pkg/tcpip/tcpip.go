@@ -1719,3 +1719,17 @@ func DeleteDanglingEndpoint(e Endpoint) {
 // AsyncLoading is the global barrier for asynchronous endpoint loading
 // activities.
 var AsyncLoading sync.WaitGroup
+
+// Supported reasons to create an ICMP error packet
+// This does not need to include all ICMP types, just those we need to make.
+// Use for both IP versions 4 and 6.
+const (
+	ICMPReasonRedirect int = iota + 1
+	ICMPReasonTimeExceeded
+	ICMPReasonParamProblem
+	ICMPReasonDstUnreachable
+	ICMPReasonPortUnreachable
+	ICMPReasonProtoUnreachable
+	ICMPReasonPacketTooBig
+	ICMPReasonTableSize
+)

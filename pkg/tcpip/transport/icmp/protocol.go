@@ -103,9 +103,10 @@ func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error)
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
-// that don't match any existing endpoint.
-func (*protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, *stack.PacketBuffer) bool {
-	return true
+// that don't match any existing endpoint. Not sure this can happen as there
+// are no ports in icmp. Never send an icmp error in response to an icmp error.
+func (*protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, *stack.PacketBuffer) (bool, bool) {
+	return true, true // seemed well formed and we handled it.
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.

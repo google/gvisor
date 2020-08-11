@@ -317,7 +317,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		name           string
 		expectedCount  int
 		fragmentOffset uint16
-		code           uint8
+		code           header.ICMPv4Code
 		expectedTyp    stack.ControlType
 		expectedExtra  uint32
 		trunc          int
@@ -563,7 +563,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 		expectedCount  int
 		fragmentOffset *uint16
 		typ            header.ICMPv6Type
-		code           uint8
+		code           header.ICMPv6Code
 		expectedTyp    stack.ControlType
 		expectedExtra  uint32
 		trunc          int

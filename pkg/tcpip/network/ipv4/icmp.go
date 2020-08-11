@@ -188,3 +188,89 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {
 		received.Invalid.Increment()
 	}
 }
+
+// ReturnError sends an ICMP error report back to the remote device that sent
+// the problematic packet. It will incorporate as much of that packet as
+// possible as well as any error metadata as is available. This may be called
+// from transport protocols or from within the Network stack.
+func (p *protocol) ReturnError(r *stack.Route, reason int, aux int, pkt *stack.PacketBuffer) bool {
+	return IPv4ReturnError(r,
+		header.ICMPv4ReasonType(reason),
+		header.ICMPv4ReasonCode(reason), aux, pkt)
+}
+
+// IPv4ReturnError can only be called from within code that is knowledgeable about
+// IPv4 ICMP For Protocol agnostic code, call protocol.ReturnError above.
+func IPv4ReturnError(r *stack.Route, eType header.ICMPv4Type, eCode header.ICMPv4Code, aux int, pkt *stack.PacketBuffer) bool {
+	// Only send ICMP error if the address is not a multicast/broadcast v4
+	// address or the source is not the unspecified address.
+	//
+	// See: point e) in https://tools.ietf.org/html/rfc4443#section-2.4
+	if r.LocalAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(r.LocalAddress) || r.RemoteAddress == header.IPv4Any {
+		return true
+	}
+
+	if !r.Stack().AllowICMPMessage() {
+		r.Stack().Stats().ICMP.V4PacketsSent.RateLimited.Increment()
+		return true
+	}
+
+	// As per RFC 1812 Section 4.3.2.3
+	//
+	//   ICMP datagram SHOULD contain as much of the original
+	//   datagram as possible without the length of the ICMP
+	//   datagram exceeding 576 bytes
+	//
+	// NOTE: The above RFC referenced is different from the original
+	// recommendation in RFC 1122 where it mentioned that at least 8
+	// bytes of the payload must be included. Today linux and other
+	// systems implement the RFC1812 definition and not the original
+	// RFC 1122 requirement.
+	mtu := int(r.MTU())
+	if mtu > header.IPv4MinimumProcessableDatagramSize {
+		mtu = header.IPv4MinimumProcessableDatagramSize
+	}
+	headerLen := int(r.MaxHeaderLength()) + header.ICMPv4MinimumSize
+	available := int(mtu) - headerLen
+
+	// If the headers have not yet been parsed they will have length 0 but their
+	// data will be in the Data part. Probably this can only be the case of a
+	// transport header on receiving an unknown transport protocol.
+	payloadLen := len(pkt.NetworkHeader) + len(pkt.TransportHeader) + pkt.Data.Size()
+	if payloadLen > available {
+		payloadLen = available
+	}
+
+	// The buffers used by pkt may be used elsewhere in the system.
+	// For example, a raw or packet socket may use what UDP
+	// considers an unreachable destination. Thus we deep copy pkt
+	// to prevent multiple ownership and SR errors.
+	newHeader := append(buffer.View(nil), pkt.NetworkHeader...)
+	newHeader = append(newHeader, pkt.TransportHeader...)
+	payload := newHeader.ToVectorisedView()
+	payload.AppendView(pkt.Data.ToView())
+	payload.CapLength(payloadLen)
+
+	hdr := buffer.NewPrependable(headerLen)
+	newpkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+	newpkt.SetType(eType)
+
+	// We know that ParamProblem messages need special help. As we support
+	// more types of messages we may need to add more support here.
+	if eType == header.ICMPv4ParamProblem {
+		newpkt.SetPointer(byte(aux))
+	} else {
+		newpkt.SetCode(eCode)
+	}
+	newpkt.SetChecksum(header.ICMPv4Checksum(newpkt, payload))
+	r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+		Protocol: header.ICMPv4ProtocolNumber,
+		TTL:      r.DefaultTTL(),
+		TOS:      stack.DefaultTOS,
+	}, &stack.PacketBuffer{
+		Header:          hdr,
+		TransportHeader: buffer.View(newpkt),
+		Data:            payload,
+	})
+	return true
+}

@@ -244,21 +244,24 @@ func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id st
 // a reset is sent in response to any incoming segment except another reset. In
 // particular, SYNs addressed to a non-existent connection are rejected by this
 // means."
-func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+// Returns:
+//   boolean: packet was well formed, add to statistics if false.
+//   boolean: Handled by protocol, take no further action.
+func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) (bool, bool) {
 	s := newSegment(r, id, pkt)
 	defer s.decRef()
 
 	if !s.parse() || !s.csumValid {
-		return false
+		return false, true
 	}
 
 	// There's nothing to do if this is already a reset packet.
 	if s.flagIsSet(header.TCPFlagRst) {
-		return true
+		return true, true
 	}
 
 	replyWithReset(s, stack.DefaultTOS, s.route.DefaultTTL())
-	return true
+	return true, true
 }
 
 // replyWithReset replies to the given segment with a reset segment.

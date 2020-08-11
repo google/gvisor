@@ -33,6 +33,7 @@ const (
 	checksum           = 10
 	srcAddr            = 12
 	dstAddr            = 16
+	options            = 20
 )
 
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
@@ -81,7 +82,8 @@ type IPv4 []byte
 
 const (
 	// IPv4MinimumSize is the minimum size of a valid IPv4 packet.
-	IPv4MinimumSize = 20
+	// i.e. a packet with no options.
+	IPv4MinimumSize = options
 
 	// IPv4MaximumHeaderSize is the maximum size of an IPv4 header. Given
 	// that there are only 4 bits to represents the header length in 32-bit

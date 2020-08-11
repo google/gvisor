@@ -571,3 +571,66 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 	}
 	return tcpip.LinkAddress([]byte(nil)), false
 }
+
+// ReturnError sends an ICMP error report back to the remote device that sent
+// the problematic packet. It will incorporate as much of that packet as
+// possible as well as any error metadata as is available. This may be called
+// from transport protocols or from within the Network stack.
+func (p *protocol) ReturnError(r *stack.Route, reason int, aux int, pkt *stack.PacketBuffer) bool {
+	return IPv6ReturnError(r,
+		header.ICMPv6ReasonType(reason),
+		header.ICMPv6ReasonCode(reason), aux, pkt)
+}
+
+// IPv6ReturnError can only be called from within code that is knowledgeable about
+// IPv6 ICMP For Protocol agnostic code, call protocol.ReturnError above.
+func IPv6ReturnError(r *stack.Route, eType header.ICMPv6Type, eCode header.ICMPv6Code, aux int, pkt *stack.PacketBuffer) bool {
+	// Only send ICMP error if the address is not a multicast/broadcast v6
+	// address or the source is not the unspecified address.
+	//
+	// See: point e) in https://tools.ietf.org/html/rfc4443#section-2.4
+	if header.IsV6MulticastAddress(r.LocalAddress) || r.RemoteAddress == header.IPv6Any {
+		return true
+	}
+
+	if !r.Stack().AllowICMPMessage() {
+		r.Stack().Stats().ICMP.V6PacketsSent.RateLimited.Increment()
+		return true
+	}
+
+	// As per RFC 4443 section 2.4
+	//
+	//    (c) Every ICMPv6 error message (type < 128) MUST include
+	//    as much of the IPv6 offending (invoking) packet (the
+	//    packet that caused the error) as possible without making
+	//    the error message packet exceed the minimum IPv6 MTU
+	//    [IPv6].
+	mtu := int(r.MTU())
+	if mtu > header.IPv6MinimumMTU {
+		mtu = header.IPv6MinimumMTU
+	}
+	headerLen := int(r.MaxHeaderLength()) + header.ICMPv6DstUnreachableMinimumSize
+	available := int(mtu) - headerLen
+	payloadLen := len(pkt.NetworkHeader) + len(pkt.TransportHeader) + pkt.Data.Size()
+	if payloadLen > available {
+		payloadLen = available
+	}
+	payload := buffer.NewVectorisedView(len(pkt.NetworkHeader)+len(pkt.TransportHeader), []buffer.View{pkt.NetworkHeader, pkt.TransportHeader})
+	payload.Append(pkt.Data)
+	payload.CapLength(payloadLen)
+
+	hdr := buffer.NewPrependable(headerLen)
+	newpkt := header.ICMPv6(hdr.Prepend(header.ICMPv6DstUnreachableMinimumSize))
+	newpkt.SetType(eType)
+	newpkt.SetCode(eCode)
+	if eType == header.ICMPv6ParamProblem {
+		newpkt.SetPointer(uint32(aux))
+	}
+	newpkt.SetChecksum(header.ICMPv6Checksum(newpkt, r.LocalAddress, r.RemoteAddress, payload))
+	r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, &stack.PacketBuffer{
+		Header:          hdr,
+		TransportHeader: buffer.View(newpkt),
+		Data:            payload,
+	})
+	return true
+}

@@ -699,7 +699,7 @@ func ICMPv4Type(want header.ICMPv4Type) TransportChecker {
 }
 
 // ICMPv4Code creates a checker that checks the ICMPv4 Code field.
-func ICMPv4Code(want byte) TransportChecker {
+func ICMPv4Code(want header.ICMPv4Code) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
@@ -757,7 +757,7 @@ func ICMPv6Type(want header.ICMPv6Type) TransportChecker {
 }
 
 // ICMPv6Code creates a checker that checks the ICMPv6 Code field.
-func ICMPv6Code(want byte) TransportChecker {
+func ICMPv6Code(want header.ICMPv6Code) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 

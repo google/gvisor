@@ -636,7 +636,7 @@ func TestNDPValidation(t *testing.T) {
 		name           string
 		atomicFragment bool
 		hopLimit       uint8
-		code           uint8
+		code           header.ICMPv6Code
 		valid          bool
 	}{
 		{
@@ -729,7 +729,7 @@ func TestRouterAdvertValidation(t *testing.T) {
 		name            string
 		src             tcpip.Address
 		hopLimit        uint8
-		code            uint8
+		code            header.ICMPv6Code
 		ndpPayload      []byte
 		expectedSuccess bool
 	}{

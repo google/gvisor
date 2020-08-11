@@ -80,121 +80,24 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
-// that don't match any existing endpoint.
-func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	hdr := header.UDP(pkt.TransportHeader)
-	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
-		// Malformed packet.
-		r.Stack().Stats().UDP.MalformedPacketsReceived.Increment()
-		return true
+// that don't match any existing endpoint. We return False as we don't actually
+// do anything but leave it to the default handler. If we could have a null
+// method that may be even better, but it's not critical path so it may not
+// matter.
+//   Returns:
+//     A boolean telling us whether the packet was malformed
+//     A boolean  telling the caller (nic.go) whether it handled the error,
+//     or whether to try use the default error handling code, which will
+//     result in an ICMP response.
+func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) (bool, bool) {
+	_, ok := pkt.Data.PullUp(header.UDPMinimumSize)
+	if !ok {
+		// Packet is too small
+		r.Stats().UDP.MalformedPacketsReceived.Increment()
+		return false, false
 	}
-	// TODO(b/129426613): only send an ICMP message if UDP checksum is valid.
-
-	// Only send ICMP error if the address is not a multicast/broadcast
-	// v4/v6 address or the source is not the unspecified address.
-	//
-	// See: point e) in https://tools.ietf.org/html/rfc4443#section-2.4
-	if id.LocalAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(id.LocalAddress) || header.IsV6MulticastAddress(id.LocalAddress) || id.RemoteAddress == header.IPv6Any || id.RemoteAddress == header.IPv4Any {
-		return true
-	}
-
-	// As per RFC: 1122 Section 3.2.2.1 A host SHOULD generate Destination
-	//   Unreachable messages with code:
-	//
-	//     2 (Protocol Unreachable), when the designated transport protocol
-	//     is not supported; or
-	//
-	//     3 (Port Unreachable), when the designated transport protocol
-	//     (e.g., UDP) is unable to demultiplex the datagram but has no
-	//     protocol mechanism to inform the sender.
-	switch len(id.LocalAddress) {
-	case header.IPv4AddressSize:
-		if !r.Stack().AllowICMPMessage() {
-			r.Stack().Stats().ICMP.V4PacketsSent.RateLimited.Increment()
-			return true
-		}
-		// As per RFC 1812 Section 4.3.2.3
-		//
-		//   ICMP datagram SHOULD contain as much of the original
-		//   datagram as possible without the length of the ICMP
-		//   datagram exceeding 576 bytes
-		//
-		// NOTE: The above RFC referenced is different from the original
-		// recommendation in RFC 1122 where it mentioned that at least 8
-		// bytes of the payload must be included. Today linux and other
-		// systems implement the] RFC1812 definition and not the original
-		// RFC 1122 requirement.
-		mtu := int(r.MTU())
-		if mtu > header.IPv4MinimumProcessableDatagramSize {
-			mtu = header.IPv4MinimumProcessableDatagramSize
-		}
-		headerLen := int(r.MaxHeaderLength()) + header.ICMPv4MinimumSize
-		available := int(mtu) - headerLen
-		payloadLen := len(pkt.NetworkHeader) + len(pkt.TransportHeader) + pkt.Data.Size()
-		if payloadLen > available {
-			payloadLen = available
-		}
-
-		// The buffers used by pkt may be used elsewhere in the system.
-		// For example, a raw or packet socket may use what UDP
-		// considers an unreachable destination. Thus we deep copy pkt
-		// to prevent multiple ownership and SR errors.
-		newHeader := append(buffer.View(nil), pkt.NetworkHeader...)
-		newHeader = append(newHeader, pkt.TransportHeader...)
-		payload := newHeader.ToVectorisedView()
-		payload.AppendView(pkt.Data.ToView())
-		payload.CapLength(payloadLen)
-
-		hdr := buffer.NewPrependable(headerLen)
-		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
-		pkt.SetType(header.ICMPv4DstUnreachable)
-		pkt.SetCode(header.ICMPv4PortUnreachable)
-		pkt.SetChecksum(header.ICMPv4Checksum(pkt, payload))
-		r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, &stack.PacketBuffer{
-			Header:          hdr,
-			TransportHeader: buffer.View(pkt),
-			Data:            payload,
-		})
-
-	case header.IPv6AddressSize:
-		if !r.Stack().AllowICMPMessage() {
-			r.Stack().Stats().ICMP.V6PacketsSent.RateLimited.Increment()
-			return true
-		}
-
-		// As per RFC 4443 section 2.4
-		//
-		//    (c) Every ICMPv6 error message (type < 128) MUST include
-		//    as much of the IPv6 offending (invoking) packet (the
-		//    packet that caused the error) as possible without making
-		//    the error message packet exceed the minimum IPv6 MTU
-		//    [IPv6].
-		mtu := int(r.MTU())
-		if mtu > header.IPv6MinimumMTU {
-			mtu = header.IPv6MinimumMTU
-		}
-		headerLen := int(r.MaxHeaderLength()) + header.ICMPv6DstUnreachableMinimumSize
-		available := int(mtu) - headerLen
-		payloadLen := len(pkt.NetworkHeader) + len(pkt.TransportHeader) + pkt.Data.Size()
-		if payloadLen > available {
-			payloadLen = available
-		}
-		payload := buffer.NewVectorisedView(len(pkt.NetworkHeader)+len(pkt.TransportHeader), []buffer.View{pkt.NetworkHeader, pkt.TransportHeader})
-		payload.Append(pkt.Data)
-		payload.CapLength(payloadLen)
-
-		hdr := buffer.NewPrependable(headerLen)
-		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6DstUnreachableMinimumSize))
-		pkt.SetType(header.ICMPv6DstUnreachable)
-		pkt.SetCode(header.ICMPv6PortUnreachable)
-		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, payload))
-		r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, &stack.PacketBuffer{
-			Header:          hdr,
-			TransportHeader: buffer.View(pkt),
-			Data:            payload,
-		})
-	}
-	return true
+	r.Stats().UDP.UnknownPortErrors.Increment()
+	return true, false
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
@@ -217,7 +120,8 @@ func (*protocol) Wait() {}
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	h, ok := pkt.Data.PullUp(header.UDPMinimumSize)
 	if !ok {
-		// Packet is too small
+		// Packet is too small. Where to report it?
+		// ?.Stats().UDP.MalformedPacketsReceived.Increment()
 		return false
 	}
 	pkt.TransportHeader = h

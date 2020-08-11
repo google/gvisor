@@ -69,6 +69,10 @@ const (
 	// in an ICMPv6 message.
 	icmpv6ChecksumOffset = 2
 
+	// icmpv6ChecksumOffset is the offset of the pointer
+	// in an ICMPv6 Paramter problem message.
+	icmpv6PointerOffset = 4
+
 	// icmpv6MTUOffset is the offset of the MTU field in an ICMPv6
 	// PacketTooBig message.
 	icmpv6MTUOffset = 4
@@ -92,7 +96,6 @@ const (
 // ICMPv6Type is the ICMP type field described in RFC 4443 and friends.
 type ICMPv6Type byte
 
-// Typical values of ICMPv6Type defined in RFC 4443.
 const (
 	ICMPv6DstUnreachable ICMPv6Type = 1
 	ICMPv6PacketTooBig   ICMPv6Type = 2
@@ -110,17 +113,69 @@ const (
 	ICMPv6RedirectMsg     ICMPv6Type = 137
 )
 
-// Values for ICMP destination unreachable code as defined in RFC 4443 section
+// ICMPv6Code is the ICMP code field described in RFC 4443 and friends.
+type ICMPv6Code byte
+
+// Values for ICMP destination unreachable codes as defined in RFC 4443 section
 // 3.1.
+//   Type 1   (Unreachable)
+//   Code           0 - No route to destination
+//                  1 - Communication with destination
+//                        administratively prohibited
+//                  2 - Beyond scope of source address
+//                  3 - Address unreachable
+//                  4 - Port unreachable
+//                  5 - Source address failed ingress/egress policy
+//                  6 - Reject route to destination
+//                  7 - Error in Source Routing Header [RFC6550][RFC6554]
+//                  8 - Headers too long [RFC-ietf-6man-icmp-limits-08]
 const (
-	ICMPv6NetworkUnreachable = 0
-	ICMPv6Prohibited         = 1
-	ICMPv6BeyondScope        = 2
-	ICMPv6AddressUnreachable = 3
-	ICMPv6PortUnreachable    = 4
-	ICMPv6Policy             = 5
-	ICMPv6RejectRoute        = 6
+	ICMPv6NetworkUnreachable ICMPv6Code = 0
+	ICMPv6Prohibited         ICMPv6Code = 1
+	ICMPv6BeyondScope        ICMPv6Code = 2
+	ICMPv6AddressUnreachable ICMPv6Code = 3
+	ICMPv6PortUnreachable    ICMPv6Code = 4
+	ICMPv6Policy             ICMPv6Code = 5
+	ICMPv6RejectRoute        ICMPv6Code = 6
+	ICMPv6SrcRouteError      ICMPv6Code = 7
+	ICMPv6HeaderTooLong      ICMPv6Code = 8
 )
+
+//    Type 4  (parameter problem)
+//    Code          0 - Erroneous header field encountered
+//                  1 - Unrecognized Next Header type encountered
+//                  2 - Unrecognized IPv6 option encountered
+const (
+	ICMPv6ErroneousHeader ICMPv6Code = 0
+	ICMPv6UnknownHeader   ICMPv6Code = 1
+	ICMPv6UnknownOption   ICMPv6Code = 2
+)
+
+// Map protocol agnostic error values to IPv6 equivalents
+type icmpv6Reason struct {
+	typeValue ICMPv6Type
+	codeValue ICMPv6Code
+}
+
+var icmp6ErrorTable = [...]icmpv6Reason{
+	tcpip.ICMPReasonRedirect:         {ICMPv6RedirectMsg, 0},
+	tcpip.ICMPReasonTimeExceeded:     {ICMPv6TimeExceeded, 0},
+	tcpip.ICMPReasonParamProblem:     {ICMPv6ParamProblem, ICMPv6ErroneousHeader},
+	tcpip.ICMPReasonDstUnreachable:   {ICMPv6DstUnreachable, 0},
+	tcpip.ICMPReasonPortUnreachable:  {ICMPv6DstUnreachable, ICMPv6PortUnreachable},
+	tcpip.ICMPReasonProtoUnreachable: {ICMPv6ParamProblem, ICMPv6UnknownHeader},
+	tcpip.ICMPReasonPacketTooBig:     {ICMPv6PacketTooBig, 0},
+}
+
+// ICMPv6ReasonType translates from a stack private error code into the
+// equivalent ICMPv6 specific Type.
+func ICMPv6ReasonType(reason int) ICMPv6Type {
+	return ICMPv6Type(icmp6ErrorTable[reason].typeValue)
+}
+
+// ICMPv6ReasonCode translates from a stack private error code into the
+// equivalent ICMPv6 specific Code.
+func ICMPv6ReasonCode(reason int) ICMPv6Code { return icmp6ErrorTable[reason].codeValue }
 
 // Type is the ICMP type field.
 func (b ICMPv6) Type() ICMPv6Type { return ICMPv6Type(b[0]) }
@@ -129,10 +184,15 @@ func (b ICMPv6) Type() ICMPv6Type { return ICMPv6Type(b[0]) }
 func (b ICMPv6) SetType(t ICMPv6Type) { b[0] = byte(t) }
 
 // Code is the ICMP code field. Its meaning depends on the value of Type.
-func (b ICMPv6) Code() byte { return b[1] }
+func (b ICMPv6) Code() ICMPv6Code { return ICMPv6Code(b[1]) }
 
 // SetCode sets the ICMP code field.
-func (b ICMPv6) SetCode(c byte) { b[1] = c }
+func (b ICMPv6) SetCode(c ICMPv6Code) { b[1] = byte(c) }
+
+// SetPointer sets the pointer field in a Parameter error packet.
+func (b ICMPv6) SetPointer(val uint32) {
+	binary.BigEndian.PutUint32(b[icmpv6PointerOffset:], val)
+}
 
 // Checksum is the ICMP checksum field.
 func (b ICMPv6) Checksum() uint16 {

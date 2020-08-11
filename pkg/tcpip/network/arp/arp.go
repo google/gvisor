@@ -219,6 +219,13 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	return 0, false, true
 }
 
+// ReturnError implements the ability to send an error response to the sender
+// e.g. an ICMP packet. In Arp, there is no such response so do nothing and
+// return "done!"
+func (p *protocol) ReturnError(r *stack.Route, reason int, aux int, pkt *stack.PacketBuffer) bool {
+	return true
+}
+
 // NewProtocol returns an ARP network protocol.
 func NewProtocol() stack.NetworkProtocol {
 	return &protocol{}

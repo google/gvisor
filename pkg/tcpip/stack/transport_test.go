@@ -291,8 +291,8 @@ func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err *tcp
 	return 0, 0, nil
 }
 
-func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, *stack.PacketBuffer) bool {
-	return true
+func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, *stack.PacketBuffer) (bool, bool) {
+	return true, true
 }
 
 func (f *fakeTransportProtocol) SetOption(option interface{}) *tcpip.Error {
