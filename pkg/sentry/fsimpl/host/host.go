@@ -552,7 +552,7 @@ func (f *fileDescription) Allocate(ctx context.Context, mode, offset, length uin
 		return syserror.ESPIPE
 	}
 
-	// TODO(gvisor.dev/issue/2923): Implement Allocate for non-pipe hostfds.
+	// TODO(gvisor.dev/issue/3589): Implement Allocate for non-pipe hostfds.
 	return syserror.EOPNOTSUPP
 }
 
