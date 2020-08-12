@@ -146,10 +146,13 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 		return nil, fmt.Errorf("could not enumerate gtest benchmarks: %v\nstderr\n%s", err, exitErr.Stderr)
 	}
 
-	out = []byte(strings.Trim(string(out), "\n"))
+	benches := strings.Trim(string(out), "\n")
+	if len(benches) == 0 {
+		return t, nil
+	}
 
 	// Parse benchmark output.
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(benches, "\n") {
 		// Strip comments.
 		line = strings.Split(line, "#")[0]
 
@@ -163,6 +166,5 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 			benchmark: true,
 		})
 	}
-
 	return t, nil
 }
