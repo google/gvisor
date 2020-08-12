@@ -41,6 +41,7 @@ go_library(
         "mm.go",
         "netdevice.go",
         "netfilter.go",
+        "netfilter_ipv6.go",
         "netlink.go",
         "netlink_route.go",
         "poll.go",
