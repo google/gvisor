@@ -1,0 +1,16 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: '/usr/bin/make'
+  args:
+  - 'DOCKER_NETWORK=cloudbuild'
+  - 'BAZEL_CONFIG=${_BAZEL_CONFIG}'
+  - 'OPTIONS=${_OPTIONS}'
+  - '${_TARGET}'
+substitutions:
+  _OPTIONS: ''
+  _BAZEL_CONFIG: ''
+  _TARGET: 'default'
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logStreamingOption: STREAM_ON
+timeout: 3600s

@@ -21,7 +21,7 @@ BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
 			xargs -n 1 basename 2>/dev/null)
 
 # Bazel container configuration (see below).
-USER ?= gvisor
+USER ?= $(shell whoami)
 HASH ?= $(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
 BUILDER_BASE := gvisor.dev/images/default
 BUILDER_IMAGE := gvisor.dev/images/builder
@@ -53,7 +53,15 @@ ifeq (true,$(shell [[ -t 0 ]] && echo true))
 FULL_DOCKER_EXEC_OPTIONS += --tty
 endif
 
+# Add our group, if non-root.
+ifneq (0,$(GID))
+GROUPADD_DOCKER += groupadd --gid $(GID) --non-unique $(USER) &&
+endif
+
 # Add docker passthrough options.
+ifneq ($(DOCKER_NETWORK),)
+FULL_DOCKER_RUN_OPTIONS += --network=$(DOCKER_NETWORK)
+endif
 ifneq ($(DOCKER_PRIVILEGED),)
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
 FULL_DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
@@ -64,6 +72,18 @@ USERADD_OPTIONS += --groups $(DOCKER_GROUP)
 GROUPADD_DOCKER += groupadd --gid $(DOCKER_GROUP) --non-unique docker-$(HASH) &&
 FULL_DOCKER_RUN_OPTIONS += --group-add $(DOCKER_GROUP)
 endif
+endif
+
+# Add our user with appropriate options, if non-root.
+#
+# NOTE: we pass -l to useradd below because otherwise you can hit a bug
+# best described here:
+# 	ttps://github.com/moby/moby/issues/5419#issuecomment-193876183
+#
+# TL;DR: trying to add to /var/log/lastlog (sparse file) runs the machine out
+# out of disk space.
+ifneq (0,$(UID))
+USERADD_DOCKER += useradd -l --uid $(UID) --non-unique --no-create-home --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) &&
 endif
 
 # Add KVM passthrough options.
@@ -82,19 +102,12 @@ ifneq (,$(BAZEL_CONFIG))
 OPTIONS += --config=$(BAZEL_CONFIG)
 endif
 
-# NOTE: we pass -l to useradd below because otherwise you can hit a bug
-# best described here:
-#  https://github.com/moby/moby/issues/5419#issuecomment-193876183
-# TLDR; trying to add to /var/log/lastlog (sparse file) runs the machine out
-# out of disk space.
 bazel-image: load-default
 	@if docker ps --all | grep $(BUILDER_NAME); then docker rm -f $(BUILDER_NAME); fi
 	docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) \
 		$(BUILDER_BASE) \
-		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
-		       $(GROUPADD_DOCKER) \
-		       useradd -l --uid $(UID) --non-unique --no-create-home \
-		               --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) && \
+		sh -c "$(GROUPADD_DOCKER) \
+		       $(USERADD_DOCKER) \
 		       if [[ -e /dev/kvm ]]; then chmod a+rw /dev/kvm; fi"
 	docker commit $(BUILDER_NAME) $(BUILDER_IMAGE)
 	@docker rm -f $(BUILDER_NAME)
