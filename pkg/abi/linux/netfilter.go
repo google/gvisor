@@ -412,7 +412,7 @@ func (ke *KernelIPTGetEntries) SizeBytes() int {
 func (ke *KernelIPTGetEntries) MarshalBytes(dst []byte) {
 	ke.IPTGetEntries.MarshalBytes(dst)
 	marshalledUntil := ke.IPTGetEntries.SizeBytes()
-	for i := 0; i < len(ke.Entrytable); i++ {
+	for i := range ke.Entrytable {
 		ke.Entrytable[i].MarshalBytes(dst[marshalledUntil:])
 		marshalledUntil += ke.Entrytable[i].SizeBytes()
 	}
@@ -422,7 +422,7 @@ func (ke *KernelIPTGetEntries) MarshalBytes(dst []byte) {
 func (ke *KernelIPTGetEntries) UnmarshalBytes(src []byte) {
 	ke.IPTGetEntries.UnmarshalBytes(src)
 	unmarshalledUntil := ke.IPTGetEntries.SizeBytes()
-	for i := 0; i < len(ke.Entrytable); i++ {
+	for i := range ke.Entrytable {
 		ke.Entrytable[i].UnmarshalBytes(src[unmarshalledUntil:])
 		unmarshalledUntil += ke.Entrytable[i].SizeBytes()
 	}

@@ -36,6 +36,9 @@ func TestSizes(t *testing.T) {
 		{XTEntryTarget{}, SizeOfXTEntryTarget},
 		{XTErrorTarget{}, SizeOfXTErrorTarget},
 		{XTStandardTarget{}, SizeOfXTStandardTarget},
+		{IP6TReplace{}, SizeOfIP6TReplace},
+		{IP6TEntry{}, SizeOfIP6TEntry},
+		{IP6TIP{}, SizeOfIP6TIP},
 	}
 
 	for _, tc := range testCases {
