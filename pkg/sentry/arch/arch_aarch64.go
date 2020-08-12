@@ -101,6 +101,8 @@ func NewFloatingPointData() *FloatingPointData {
 
 // State contains the common architecture bits for aarch64 (the build tag of this
 // file ensures it's only built on aarch64).
+//
+// +stateify savable
 type State struct {
 	// The system registers.
 	Regs Registers
