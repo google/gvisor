@@ -73,6 +73,8 @@ const (
 )
 
 // context64 represents an ARM64 context.
+//
+// +stateify savable
 type context64 struct {
 	State
 	sigFPState []aarch64FPState // fpstate to be restored on sigreturn.

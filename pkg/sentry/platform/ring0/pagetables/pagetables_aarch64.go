@@ -72,13 +72,14 @@ const (
 )
 
 const (
-	mtNormal = 0x4 << 2
+	mtDevicenGnRE = 0x1 << 2
+	mtNormal      = 0x4 << 2
 )
 
 const (
 	executeDisable = xn
 	optionMask     = 0xfff | 0xfff<<48
-	protDefault    = accessed | shared | mtNormal
+	protDefault    = accessed | shared
 )
 
 // MapOpts are x86 options.
@@ -184,8 +185,10 @@ func (p *PTE) Set(addr uintptr, opts MapOpts) {
 
 	if opts.User {
 		v |= user
+		v |= mtNormal
 	} else {
 		v = v &^ user
+		v |= mtDevicenGnRE // Strong order for the addresses with ring0.KernelStartAddress.
 	}
 	atomic.StoreUintptr((*uintptr)(p), v)
 }
@@ -200,7 +203,7 @@ func (p *PTE) setPageTable(pt *PageTables, ptes *PTEs) {
 		// This should never happen.
 		panic("unaligned physical address!")
 	}
-	v := addr | typeTable | protDefault
+	v := addr | typeTable | protDefault | mtNormal
 	atomic.StoreUintptr((*uintptr)(p), v)
 }
 
