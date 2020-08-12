@@ -1,0 +1,29 @@
+name: "Code Scanning"
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  default:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 2
+    - run: git checkout HEAD^2
+      if: ${{ github.event_name == 'pull_request' }}
+    - uses: actions/cache@v1
+      with:
+        path: ~/.cache/bazel
+        key: ${{ runner.os }}-bazel-${{ hashFiles('WORKSPACE') }}
+        restore-keys: |
+          ${{ runner.os }}-bazel-
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+      with:
+        config-file: ./.github/codeql.yml
+    - run: make build TARGETS="//..."
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v1
