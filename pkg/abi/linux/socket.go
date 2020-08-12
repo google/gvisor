@@ -259,6 +259,11 @@ type InetMulticastRequestWithNIC struct {
 	InterfaceIndex int32
 }
 
+// Inet6Addr is struct in6_addr, from uapi/linux/in6.h.
+//
+// +marshal
+type Inet6Addr [16]byte
+
 // SockAddrInet6 is struct sockaddr_in6, from uapi/linux/in6.h.
 type SockAddrInet6 struct {
 	Family   uint16
