@@ -289,7 +289,7 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 	if flags&linux.O_DIRECT != 0 && !fd.opts.AllowDirectIO {
 		return syserror.EINVAL
 	}
-	// TODO(jamieliu): FileDescriptionImpl.SetOAsync()?
+	// TODO(gvisor.dev/issue/1035): FileDescriptionImpl.SetOAsync()?
 	const settableFlags = linux.O_APPEND | linux.O_ASYNC | linux.O_DIRECT | linux.O_NOATIME | linux.O_NONBLOCK
 	fd.flagsMu.Lock()
 	if fd.asyncHandler != nil {
@@ -301,7 +301,7 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 			fd.asyncHandler.Unregister(fd)
 		}
 	}
-	fd.statusFlags = (oldFlags &^ settableFlags) | (flags & settableFlags)
+	atomic.StoreUint32(&fd.statusFlags, (oldFlags&^settableFlags)|(flags&settableFlags))
 	fd.flagsMu.Unlock()
 	return nil
 }
