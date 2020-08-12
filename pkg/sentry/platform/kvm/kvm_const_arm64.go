@@ -72,6 +72,7 @@ const (
 	_TCR_T0SZ_VA48 = 64 - 48 // VA=48
 	_TCR_T1SZ_VA48 = 64 - 48 // VA=48
 
+	_TCR_A1     = 1 << 22
 	_TCR_ASID16 = 1 << 36
 	_TCR_TBI0   = 1 << 37
 
