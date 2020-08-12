@@ -226,3 +226,99 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	}
 	return fd.VFSFileDescription(), nil
 }
+
+// statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx. The
+// opts.Sync attribute is ignored since the synchronization is handled by the
+// FUSE server.
+func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
+	var stat linux.Statx
+	stat.Blksize = attr.BlkSize
+	stat.DevMajor, stat.DevMinor = linux.UNNAMED_MAJOR, devMinor
+
+	rdevMajor, rdevMinor := linux.DecodeDeviceID(attr.Rdev)
+	stat.RdevMajor, stat.RdevMinor = uint32(rdevMajor), rdevMinor
+
+	if mask&linux.STATX_MODE != 0 {
+		stat.Mode = uint16(attr.Mode)
+	}
+	if mask&linux.STATX_NLINK != 0 {
+		stat.Nlink = attr.Nlink
+	}
+	if mask&linux.STATX_UID != 0 {
+		stat.UID = attr.UID
+	}
+	if mask&linux.STATX_GID != 0 {
+		stat.GID = attr.GID
+	}
+	if mask&linux.STATX_ATIME != 0 {
+		stat.Atime = linux.StatxTimestamp{
+			Sec:  int64(attr.Atime),
+			Nsec: attr.AtimeNsec,
+		}
+	}
+	if mask&linux.STATX_MTIME != 0 {
+		stat.Mtime = linux.StatxTimestamp{
+			Sec:  int64(attr.Mtime),
+			Nsec: attr.MtimeNsec,
+		}
+	}
+	if mask&linux.STATX_CTIME != 0 {
+		stat.Ctime = linux.StatxTimestamp{
+			Sec:  int64(attr.Ctime),
+			Nsec: attr.CtimeNsec,
+		}
+	}
+	if mask&linux.STATX_INO != 0 {
+		stat.Ino = attr.Ino
+	}
+	if mask&linux.STATX_SIZE != 0 {
+		stat.Size = attr.Size
+	}
+	if mask&linux.STATX_BLOCKS != 0 {
+		stat.Blocks = attr.Blocks
+	}
+	return stat
+}
+
+// Stat implements kernfs.Inode.Stat.
+func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	fusefs := fs.Impl().(*filesystem)
+	conn := fusefs.conn
+	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
+	if task == nil {
+		log.Warningf("couldn't get kernel task from context")
+		return linux.Statx{}, syserror.EINVAL
+	}
+
+	var in linux.FUSEGetAttrIn
+	// We don't set any attribute in the request, because in VFS2 fstat(2) will
+	// finally be translated into vfs.FilesystemImpl.StatAt() (see
+	// pkg/sentry/syscalls/linux/vfs2/stat.go), resulting in the same flow
+	// as stat(2). Thus GetAttrFlags and Fh variable will never be used in VFS2.
+	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.Ino(), linux.FUSE_GETATTR, &in)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+
+	res, err := conn.Call(task, req)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+	if err := res.Error(); err != nil {
+		return linux.Statx{}, err
+	}
+
+	var out linux.FUSEGetAttrOut
+	if err := res.UnmarshalPayload(&out); err != nil {
+		return linux.Statx{}, err
+	}
+
+	// Set all metadata into kernfs.InodeAttrs.
+	if err := i.SetStat(ctx, fs, creds, vfs.SetStatOptions{
+		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, fusefs.devMinor),
+	}); err != nil {
+		return linux.Statx{}, err
+	}
+
+	return statFromFUSEAttr(out.Attr, opts.Mask, fusefs.devMinor), nil
+}
