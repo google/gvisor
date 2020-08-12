@@ -61,7 +61,6 @@ func (c *vCPU) initArchState() error {
 	reg.addr = uint64(reflect.ValueOf(&data).Pointer())
 	regGet.addr = uint64(reflect.ValueOf(&dataGet).Pointer())
 
-	vcpuInit.target = _KVM_ARM_TARGET_GENERIC_V8
 	vcpuInit.features[0] |= (1 << _KVM_ARM_VCPU_PSCI_0_2)
 	if _, _, errno := syscall.RawSyscall(
 		syscall.SYS_IOCTL,
@@ -272,8 +271,16 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return c.fault(int32(syscall.SIGSEGV), info)
 	case ring0.Vector(bounce): // ring0.VirtualizationException
 		return usermem.NoAccess, platform.ErrContextInterrupt
+	case ring0.El0Sync_undef,
+		ring0.El1Sync_undef:
+		*info = arch.SignalInfo{
+			Signo: int32(syscall.SIGILL),
+			Code:  1, // ILL_ILLOPC (illegal opcode).
+		}
+		info.SetAddr(switchOpts.Registers.Pc) // Include address.
+		return usermem.AccessType{}, platform.ErrContextSignal
 	default:
-		return usermem.NoAccess, platform.ErrContextSignal
+		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))
 	}
 
 }
