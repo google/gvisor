@@ -172,13 +172,14 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-fsgofer-host-uds")
 	}
 
-	undeclaredOutputsDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
-	if ok {
-		tdir := filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
-		if err := os.MkdirAll(tdir, 0755); err != nil {
+	testLogDir := ""
+	if undeclaredOutputsDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+		// Create log directory dedicated for this test.
+		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
+		if err := os.MkdirAll(testLogDir, 0755); err != nil {
 			return fmt.Errorf("could not create test dir: %v", err)
 		}
-		debugLogDir, err := ioutil.TempDir(tdir, "runsc")
+		debugLogDir, err := ioutil.TempDir(testLogDir, "runsc")
 		if err != nil {
 			return fmt.Errorf("could not create temp dir: %v", err)
 		}
@@ -227,10 +228,10 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		dArgs := append([]string{}, args...)
 		dArgs = append(dArgs, "-alsologtostderr=true", "debug", "--stacks", id)
 		go func(dArgs []string) {
-			cmd := exec.Command(*runscPath, dArgs...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Run()
+			debug := exec.Command(*runscPath, dArgs...)
+			debug.Stdout = os.Stdout
+			debug.Stderr = os.Stderr
+			debug.Run()
 			done <- true
 		}(dArgs)
 
@@ -245,17 +246,17 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		dArgs = append(args, "debug",
 			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
 			id)
-		cmd := exec.Command(*runscPath, dArgs...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
+		signal := exec.Command(*runscPath, dArgs...)
+		signal.Stdout = os.Stdout
+		signal.Stderr = os.Stderr
+		signal.Run()
 	}()
 
 	err = cmd.Run()
-	if err == nil {
+	if err == nil && len(testLogDir) > 0 {
 		// If the test passed, then we erase the log directory. This speeds up
 		// uploading logs in continuous integration & saves on disk space.
-		os.RemoveAll(undeclaredOutputsDir)
+		os.RemoveAll(testLogDir)
 	}
 
 	return err
