@@ -246,3 +246,58 @@ type FUSEInitOut struct {
 
 	_ [8]uint32
 }
+
+// FUSEGetAttrIn is the request sent by the kernel to the daemon,
+// to get the attribute of a inode.
+//
+// +marshal
+type FUSEGetAttrIn struct {
+	// GetAttrFlags specifies whether getattr request is sent with a nodeid or
+	// with a file handle.
+	GetAttrFlags uint32
+
+	_ uint32
+
+	// Fh is the file handler when GetAttrFlags has FUSE_GETATTR_FH bit. If
+	// used, the operation is analogous to fstat(2).
+	Fh uint64
+}
+
+// FUSEAttr is the struct used in the reponse FUSEGetAttrOut.
+//
+// +marshal
+type FUSEAttr struct {
+	Ino       uint64
+	Size      uint64
+	Blocks    uint64
+	Atime     uint64
+	Mtime     uint64
+	Ctime     uint64
+	AtimeNsec uint32
+	MtimeNsec uint32
+	CtimeNsec uint32
+	Mode      uint32
+	Nlink     uint32
+	UID       uint32
+	GID       uint32
+	Rdev      uint32
+	BlkSize   uint32
+	_         uint32
+}
+
+// FUSEGetAttrOut is the reply sent by the daemon to the kernel
+// for FUSEGetAttrIn.
+//
+// +marshal
+type FUSEGetAttrOut struct {
+	// AttrValid and AttrValidNsec describe the attribute cache duration
+	AttrValid uint64
+
+	// AttrValidNsec is the nanosecond part of the attribute cache duration
+	AttrValidNsec uint32
+
+	_ uint32
+
+	// Attr contains the metadata returned from the FUSE server
+	Attr FUSEAttr
+}
