@@ -144,6 +144,12 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr user
 
 func getAIOCallback(t *kernel.Task, fd, eventFD *vfs.FileDescription, cbAddr usermem.Addr, cb *linux.IOCallback, ioseq usermem.IOSequence, aioCtx *mm.AIOContext) kernel.AIOCallback {
 	return func(ctx context.Context) {
+		// Release references after completing the callback.
+		defer fd.DecRef(ctx)
+		if eventFD != nil {
+			defer eventFD.DecRef(ctx)
+		}
+
 		if aioCtx.Dead() {
 			aioCtx.CancelPendingRequest()
 			return
@@ -169,8 +175,6 @@ func getAIOCallback(t *kernel.Task, fd, eventFD *vfs.FileDescription, cbAddr use
 			ev.Result = -int64(kernel.ExtractErrno(err, 0))
 		}
 
-		fd.DecRef(ctx)
-
 		// Queue the result for delivery.
 		aioCtx.FinishRequest(ev)
 
@@ -179,7 +183,6 @@ func getAIOCallback(t *kernel.Task, fd, eventFD *vfs.FileDescription, cbAddr use
 		// wake up.
 		if eventFD != nil {
 			eventFD.Impl().(*eventfd.EventFileDescription).Signal(1)
-			eventFD.DecRef(ctx)
 		}
 	}
 }
