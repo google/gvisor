@@ -315,3 +315,12 @@ func IsV4MulticastAddress(addr tcpip.Address) bool {
 	}
 	return (addr[0] & 0xf0) == 0xe0
 }
+
+// IsV4LoopbackAddress determines if the provided address is an IPv4 loopback
+// address (belongs to 127.0.0.1/8 subnet).
+func IsV4LoopbackAddress(addr tcpip.Address) bool {
+	if len(addr) != IPv4AddressSize {
+		return false
+	}
+	return addr[0] == 0x7f
+}

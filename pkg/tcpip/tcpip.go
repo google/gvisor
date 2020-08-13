@@ -958,6 +958,26 @@ type SocketDetachFilterOption int
 // and port of a redirected packet.
 type OriginalDestinationOption FullAddress
 
+// TCPTimeWaitReuseOption is used stack.(*Stack).TransportProtocolOption to
+// specify if the stack can reuse the port bound by an endpoint in TIME-WAIT for
+// new connections when it is safe from protocol viewpoint.
+type TCPTimeWaitReuseOption uint8
+
+const (
+	// TCPTimeWaitReuseDisabled indicates reuse of port bound by endponts in TIME-WAIT cannot
+	// be reused for new connections.
+	TCPTimeWaitReuseDisabled TCPTimeWaitReuseOption = iota
+
+	// TCPTimeWaitReuseGlobal indicates reuse of port bound by endponts in TIME-WAIT can
+	// be reused for new connections irrespective of the src/dest addresses.
+	TCPTimeWaitReuseGlobal
+
+	// TCPTimeWaitReuseLoopbackOnly indicates reuse of port bound by endpoint in TIME-WAIT can
+	// only be reused if the connection was a connection over loopback. i.e src/dest adddresses
+	// are loopback addresses.
+	TCPTimeWaitReuseLoopbackOnly
+)
+
 // IPPacketInfo is the message structure for IP_PKTINFO.
 //
 // +stateify savable
