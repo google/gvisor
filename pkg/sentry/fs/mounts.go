@@ -415,6 +415,9 @@ func (mns *MountNamespace) FindMount(d *Dirent) *Mount {
 	return mns.findMountLocked(d)
 }
 
+// Preconditions:
+// * renameMu is held for reading.
+// * d.mu is held.
 func (mns *MountNamespace) findMountLocked(d *Dirent) *Mount {
 	for {
 		if mnt := mns.mounts[d]; mnt != nil {
@@ -430,6 +433,8 @@ func (mns *MountNamespace) findMountLocked(d *Dirent) *Mount {
 // AllMountsUnder returns a slice of all mounts under the parent, including
 // itself.
 func (mns *MountNamespace) AllMountsUnder(parent *Mount) []*Mount {
+	renameMu.RLock()
+	defer renameMu.RUnlock()
 	mns.mu.Lock()
 	defer mns.mu.Unlock()
 

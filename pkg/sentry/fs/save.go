@@ -36,6 +36,8 @@ func SaveInodeMappings() {
 		}
 	}
 
+	renameMu.RLock()
+	defer renameMu.RUnlock()
 	for dirent := range allDirents.dirents {
 		if dirent.Inode != nil {
 			// We cannot trust the root provided in the mount due

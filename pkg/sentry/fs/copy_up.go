@@ -108,7 +108,8 @@ func copyUp(ctx context.Context, d *Dirent) error {
 // but the upper filesystem will never be in an inconsistent state.
 //
 // Preconditions:
-// - d.Inode.overlay is non-nil.
+// * d.Inode.overlay is non-nil.
+// * renameMu is locked.
 func copyUpLockedForRename(ctx context.Context, d *Dirent) error {
 	for {
 		// Did we race with another copy up or does there
@@ -136,6 +137,8 @@ func copyUpLockedForRename(ctx context.Context, d *Dirent) error {
 // findNextCopyUp finds the next component of d from root that does not
 // yet exist in the upper filesystem. The parent of this component is
 // also returned, which is the root of the overlay in the worst case.
+//
+// Preconditions: renameMu is held for reading.
 func findNextCopyUp(ctx context.Context, d *Dirent) *Dirent {
 	next := d
 	for parent := next.parent; ; /* checked in-loop */ /* updated in-loop */ {
