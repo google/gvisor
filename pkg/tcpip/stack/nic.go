@@ -1299,7 +1299,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		}
 	}
 
-	src, dst := netProto.ParseAddresses(pkt.NetworkHeader)
+	src, dst := netProto.ParseAddresses(pkt.NetworkHeader().View())
 
 	if n.stack.handleLocal && !n.isLoopback() && n.getRef(protocol, src) != nil {
 		// The source address is one of our own, so we never should have gotten a
@@ -1401,24 +1401,19 @@ func (n *NIC) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tc
 
 func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
-	// TODO(b/151227689): Avoid copying the packet when forwarding. We can do this
-	// by having lower layers explicity write each header instead of just
-	// pkt.Header.
 
-	// pkt may have set its NetworkHeader and TransportHeader. If we're
-	// forwarding, we'll have to copy them into pkt.Header.
-	pkt.Header = buffer.NewPrependable(int(n.linkEP.MaxHeaderLength()) + len(pkt.NetworkHeader) + len(pkt.TransportHeader))
-	if n := copy(pkt.Header.Prepend(len(pkt.TransportHeader)), pkt.TransportHeader); n != len(pkt.TransportHeader) {
-		panic(fmt.Sprintf("copied %d bytes, expected %d", n, len(pkt.TransportHeader)))
-	}
-	if n := copy(pkt.Header.Prepend(len(pkt.NetworkHeader)), pkt.NetworkHeader); n != len(pkt.NetworkHeader) {
-		panic(fmt.Sprintf("copied %d bytes, expected %d", n, len(pkt.NetworkHeader)))
-	}
+	// pkt may have set its header and may not have enough headroom for link-layer
+	// header for the other link to prepend. Here we create a new packet to
+	// forward.
+	fwdPkt := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: int(n.linkEP.MaxHeaderLength()),
+		Data:               buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+	})
 
-	// WritePacket takes ownership of pkt, calculate numBytes first.
-	numBytes := pkt.Header.UsedLength() + pkt.Data.Size()
+	// WritePacket takes ownership of fwdPkt, calculate numBytes first.
+	numBytes := fwdPkt.Size()
 
-	if err := n.linkEP.WritePacket(r, nil /* gso */, protocol, pkt); err != nil {
+	if err := n.linkEP.WritePacket(r, nil /* gso */, protocol, fwdPkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return
 	}
@@ -1443,34 +1438,31 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// validly formed.
 	n.stack.demux.deliverRawPacket(r, protocol, pkt)
 
-	// TransportHeader is nil only when pkt is an ICMP packet or was reassembled
+	// TransportHeader is empty only when pkt is an ICMP packet or was reassembled
 	// from fragments.
-	if pkt.TransportHeader == nil {
+	if pkt.TransportHeader().View().IsEmpty() {
 		// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
 		// fields set yet, parse it here. See icmp/protocol.go:protocol.Parse for a
 		// full explanation.
 		if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
 			// ICMP packets may be longer, but until icmp.Parse is implemented, here
 			// we parse it using the minimum size.
-			transHeader, ok := pkt.Data.PullUp(transProto.MinimumPacketSize())
-			if !ok {
+			if _, ok := pkt.TransportHeader().Consume(transProto.MinimumPacketSize()); !ok {
 				n.stack.stats.MalformedRcvdPackets.Increment()
 				return
 			}
-			pkt.TransportHeader = transHeader
-			pkt.Data.TrimFront(len(pkt.TransportHeader))
 		} else {
 			// This is either a bad packet or was re-assembled from fragments.
 			transProto.Parse(pkt)
 		}
 	}
 
-	if len(pkt.TransportHeader) < transProto.MinimumPacketSize() {
+	if pkt.TransportHeader().View().Size() < transProto.MinimumPacketSize() {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
-	srcPort, dstPort, err := transProto.ParsePorts(pkt.TransportHeader)
+	srcPort, dstPort, err := transProto.ParsePorts(pkt.TransportHeader().View())
 	if err != nil {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return

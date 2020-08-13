@@ -94,7 +94,7 @@ func (*UDPMatcher) Name() string {
 
 // Match implements Matcher.Match.
 func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
-	netHeader := header.IPv4(pkt.NetworkHeader)
+	netHeader := header.IPv4(pkt.NetworkHeader().View())
 
 	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
 	// into the stack.Check codepath as matchers are added.
@@ -110,7 +110,7 @@ func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceN
 		return false, false
 	}
 
-	udpHeader := header.UDP(pkt.TransportHeader)
+	udpHeader := header.UDP(pkt.TransportHeader().View())
 	if len(udpHeader) < header.UDPMinimumSize {
 		// There's no valid UDP header here, so we drop the packet immediately.
 		return false, true

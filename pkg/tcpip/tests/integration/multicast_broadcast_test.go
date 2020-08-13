@@ -80,9 +80,9 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			DstAddr:     dst,
 		})
 
-		e.InjectInbound(header.IPv4ProtocolNumber, &stack.PacketBuffer{
+		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: hdr.View().ToVectorisedView(),
-		})
+		}))
 	}
 
 	rxIPv6ICMP := func(e *channel.Endpoint, dst tcpip.Address) {
@@ -102,9 +102,9 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			DstAddr:       dst,
 		})
 
-		e.InjectInbound(header.IPv6ProtocolNumber, &stack.PacketBuffer{
+		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: hdr.View().ToVectorisedView(),
-		})
+		}))
 	}
 
 	tests := []struct {
@@ -204,7 +204,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, expectedDst)
 			}
 
-			src, dst := proto.ParseAddresses(pkt.Pkt.NetworkHeader)
+			src, dst := proto.ParseAddresses(pkt.Pkt.NetworkHeader().View())
 			if src != expectedSrc {
 				t.Errorf("got pkt source = %s, want = %s", src, expectedSrc)
 			}
@@ -252,9 +252,9 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 			DstAddr:     dst,
 		})
 
-		e.InjectInbound(header.IPv4ProtocolNumber, &stack.PacketBuffer{
+		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: hdr.View().ToVectorisedView(),
-		})
+		}))
 	}
 
 	rxIPv6UDP := func(e *channel.Endpoint, dst tcpip.Address) {
@@ -280,9 +280,9 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 			DstAddr:       dst,
 		})
 
-		e.InjectInbound(header.IPv6ProtocolNumber, &stack.PacketBuffer{
+		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: hdr.View().ToVectorisedView(),
-		})
+		}))
 	}
 
 	tests := []struct {

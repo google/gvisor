@@ -87,7 +87,7 @@ func TestNestedLinkEndpoint(t *testing.T) {
 		t.Error("After attach, nestedEP.IsAttached() = false, want = true")
 	}
 
-	nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, &stack.PacketBuffer{})
+	nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if disp.count != 1 {
 		t.Errorf("After first packet with dispatcher attached, got disp.count = %d, want = 1", disp.count)
 	}
@@ -101,7 +101,7 @@ func TestNestedLinkEndpoint(t *testing.T) {
 	}
 
 	disp.count = 0
-	nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, &stack.PacketBuffer{})
+	nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if disp.count != 0 {
 		t.Errorf("After second packet with dispatcher detached, got disp.count = %d, want = 0", disp.count)
 	}

@@ -433,9 +433,9 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 	// Push new packet into receive list and increment the buffer size.
 	var packet packet
 	// TODO(gvisor.dev/issue/173): Return network protocol.
-	if len(pkt.LinkHeader) > 0 {
+	if !pkt.LinkHeader().View().IsEmpty() {
 		// Get info directly from the ethernet header.
-		hdr := header.Ethernet(pkt.LinkHeader)
+		hdr := header.Ethernet(pkt.LinkHeader().View())
 		packet.senderAddr = tcpip.FullAddress{
 			NIC:  nicID,
 			Addr: tcpip.Address(hdr.SourceAddress()),
@@ -458,9 +458,14 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 		case tcpip.PacketHost:
 			packet.data = pkt.Data
 		case tcpip.PacketOutgoing:
-			// Strip Link Header from the Header.
-			pkt.Header = buffer.NewPrependableFromView(pkt.Header.View()[len(pkt.LinkHeader):])
-			combinedVV := pkt.Header.View().ToVectorisedView()
+			// Strip Link Header.
+			var combinedVV buffer.VectorisedView
+			if v := pkt.NetworkHeader().View(); !v.IsEmpty() {
+				combinedVV.AppendView(v)
+			}
+			if v := pkt.TransportHeader().View(); !v.IsEmpty() {
+				combinedVV.AppendView(v)
+			}
 			combinedVV.Append(pkt.Data)
 			packet.data = combinedVV
 		default:
@@ -471,9 +476,8 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 		// Raw packets need their ethernet headers prepended before
 		// queueing.
 		var linkHeader buffer.View
-		var combinedVV buffer.VectorisedView
 		if pkt.PktType != tcpip.PacketOutgoing {
-			if len(pkt.LinkHeader) == 0 {
+			if pkt.LinkHeader().View().IsEmpty() {
 				// We weren't provided with an actual ethernet header,
 				// so fake one.
 				ethFields := header.EthernetFields{
@@ -485,19 +489,14 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 				fakeHeader.Encode(&ethFields)
 				linkHeader = buffer.View(fakeHeader)
 			} else {
-				linkHeader = append(buffer.View(nil), pkt.LinkHeader...)
+				linkHeader = append(buffer.View(nil), pkt.LinkHeader().View()...)
 			}
-			combinedVV = linkHeader.ToVectorisedView()
+			combinedVV := linkHeader.ToVectorisedView()
+			combinedVV.Append(pkt.Data)
+			packet.data = combinedVV
+		} else {
+			packet.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 		}
-		if pkt.PktType == tcpip.PacketOutgoing {
-			// For outgoing packets the Link, Network and Transport
-			// headers are in the pkt.Header fields normally unless
-			// a Raw socket is in use in which case pkt.Header could
-			// be nil.
-			combinedVV.AppendView(pkt.Header.View())
-		}
-		combinedVV.Append(pkt.Data)
-		packet.data = combinedVV
 	}
 	packet.timestampNS = ep.stack.Clock().NowNanoseconds()
 

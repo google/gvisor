@@ -106,9 +106,9 @@ func TestDirectRequest(t *testing.T) {
 
 	inject := func(addr tcpip.Address) {
 		copy(h.ProtocolAddressTarget(), addr)
-		c.linkEP.InjectInbound(arp.ProtocolNumber, &stack.PacketBuffer{
+		c.linkEP.InjectInbound(arp.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: v.ToVectorisedView(),
-		})
+		}))
 	}
 
 	for i, address := range []tcpip.Address{stackAddr1, stackAddr2} {
@@ -118,9 +118,9 @@ func TestDirectRequest(t *testing.T) {
 			if pi.Proto != arp.ProtocolNumber {
 				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
 			}
-			rep := header.ARP(pi.Pkt.Header.View())
+			rep := header.ARP(pi.Pkt.NetworkHeader().View())
 			if !rep.IsValid() {
-				t.Fatalf("invalid ARP response pi.Pkt.Header.UsedLength()=%d", pi.Pkt.Header.UsedLength())
+				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
 			}
 			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr1; got != want {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)

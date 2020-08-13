@@ -215,12 +215,11 @@ func (d *Device) Write(data []byte) (int64, error) {
 		remote = tcpip.LinkAddress(zeroMAC[:])
 	}
 
-	pkt := &stack.PacketBuffer{
-		Data: buffer.View(data).ToVectorisedView(),
-	}
-	if ethHdr != nil {
-		pkt.LinkHeader = buffer.View(ethHdr)
-	}
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: len(ethHdr),
+		Data:               buffer.View(data).ToVectorisedView(),
+	})
+	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
 	endpoint.InjectLinkAddr(protocol, remote, pkt)
 	return dataLen, nil
 }
@@ -265,21 +264,22 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	// If the packet does not already have link layer header, and the route
 	// does not exist, we can't compute it. This is possibly a raw packet, tun
 	// device doesn't support this at the moment.
-	if info.Pkt.LinkHeader == nil && info.Route.RemoteLinkAddress == "" {
+	if info.Pkt.LinkHeader().View().IsEmpty() && info.Route.RemoteLinkAddress == "" {
 		return nil, false
 	}
 
 	// Ethernet header (TAP only).
 	if d.hasFlags(linux.IFF_TAP) {
 		// Add ethernet header if not provided.
-		if info.Pkt.LinkHeader == nil {
+		if info.Pkt.LinkHeader().View().IsEmpty() {
 			d.endpoint.AddHeader(info.Route.LocalLinkAddress, info.Route.RemoteLinkAddress, info.Proto, info.Pkt)
 		}
-		vv.AppendView(info.Pkt.LinkHeader)
+		vv.AppendView(info.Pkt.LinkHeader().View())
 	}
 
 	// Append upper headers.
-	vv.AppendView(buffer.View(info.Pkt.Header.View()[len(info.Pkt.LinkHeader):]))
+	vv.AppendView(info.Pkt.NetworkHeader().View())
+	vv.AppendView(info.Pkt.TransportHeader().View())
 	// Append data payload.
 	vv.Append(info.Pkt.Data)
 
@@ -361,8 +361,7 @@ func (e *tunEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.
 	if !e.isTap {
 		return
 	}
-	eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
-	pkt.LinkHeader = buffer.View(eth)
+	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 	hdr := &header.EthernetFields{
 		SrcAddr: local,
 		DstAddr: remote,

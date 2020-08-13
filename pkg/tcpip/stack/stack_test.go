@@ -102,7 +102,7 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuff
 	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
 
 	// Handle control packets.
-	if pkt.NetworkHeader[protocolNumberOffset] == uint8(fakeControlProtocol) {
+	if pkt.NetworkHeader().View()[protocolNumberOffset] == uint8(fakeControlProtocol) {
 		nb, ok := pkt.Data.PullUp(fakeNetHeaderLen)
 		if !ok {
 			return
@@ -118,7 +118,7 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuff
 	}
 
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader[protocolNumberOffset]), pkt)
+	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
 }
 
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -143,10 +143,10 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
-	pkt.NetworkHeader = pkt.Header.Prepend(fakeNetHeaderLen)
-	pkt.NetworkHeader[dstAddrOffset] = r.RemoteAddress[0]
-	pkt.NetworkHeader[srcAddrOffset] = f.id.LocalAddress[0]
-	pkt.NetworkHeader[protocolNumberOffset] = byte(params.Protocol)
+	hdr := pkt.NetworkHeader().Push(fakeNetHeaderLen)
+	hdr[dstAddrOffset] = r.RemoteAddress[0]
+	hdr[srcAddrOffset] = f.id.LocalAddress[0]
+	hdr[protocolNumberOffset] = byte(params.Protocol)
 
 	if r.Loop&stack.PacketLoop != 0 {
 		f.HandlePacket(r, pkt)
@@ -249,12 +249,10 @@ func (*fakeNetworkProtocol) Wait() {}
 
 // Parse implements TransportProtocol.Parse.
 func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
-	hdr, ok := pkt.Data.PullUp(fakeNetHeaderLen)
+	hdr, ok := pkt.NetworkHeader().Consume(fakeNetHeaderLen)
 	if !ok {
 		return 0, false, false
 	}
-	pkt.NetworkHeader = hdr
-	pkt.Data.TrimFront(fakeNetHeaderLen)
 	return tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]), true, true
 }
 
@@ -315,9 +313,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet with wrong address is not delivered.
 	buf[dstAddrOffset] = 3
-	ep.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeNet.packetCount[1] != 0 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 0)
 	}
@@ -327,9 +325,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet is delivered to first endpoint.
 	buf[dstAddrOffset] = 1
-	ep.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -339,9 +337,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet is delivered to second endpoint.
 	buf[dstAddrOffset] = 2
-	ep.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -350,9 +348,9 @@ func TestNetworkReceive(t *testing.T) {
 	}
 
 	// Make sure packet is not delivered if protocol number is wrong.
-	ep.InjectInbound(fakeNetNumber-1, &stack.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber-1, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -362,9 +360,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet that is too small is dropped.
 	buf.CapLength(2)
-	ep.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -383,11 +381,10 @@ func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) *tcpip.Erro
 }
 
 func send(r stack.Route, payload buffer.View) *tcpip.Error {
-	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()))
-	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, &stack.PacketBuffer{
-		Header: hdr,
-		Data:   payload.ToVectorisedView(),
-	})
+	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(r.MaxHeaderLength()),
+		Data:               payload.ToVectorisedView(),
+	}))
 }
 
 func testSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.Endpoint, payload buffer.View) {
@@ -442,9 +439,9 @@ func testFailingRecv(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte b
 
 func testRecvInternal(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf buffer.View, want int) {
 	t.Helper()
-	ep.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if got := fakeNet.PacketCount(localAddrByte); got != want {
 		t.Errorf("receive packet count: got = %d, want %d", got, want)
 	}
@@ -2285,9 +2282,9 @@ func TestNICStats(t *testing.T) {
 
 	// Send a packet to address 1.
 	buf := buffer.NewView(30)
-	ep1.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	ep1.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if got, want := s.NICInfo()[1].Stats.Rx.Packets.Value(), uint64(1); got != want {
 		t.Errorf("got Rx.Packets.Value() = %d, want = %d", got, want)
 	}
@@ -2367,9 +2364,9 @@ func TestNICForwarding(t *testing.T) {
 			// Send a packet to dstAddr.
 			buf := buffer.NewView(30)
 			buf[dstAddrOffset] = dstAddr[0]
-			ep1.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+			ep1.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: buf.ToVectorisedView(),
-			})
+			}))
 
 			pkt, ok := ep2.Read()
 			if !ok {
@@ -2377,8 +2374,8 @@ func TestNICForwarding(t *testing.T) {
 			}
 
 			// Test that the link's MaxHeaderLength is honoured.
-			if capacity, want := pkt.Pkt.Header.AvailableLength(), int(test.headerLen); capacity != want {
-				t.Errorf("got Header.AvailableLength() = %d, want = %d", capacity, want)
+			if capacity, want := pkt.Pkt.AvailableHeaderBytes(), int(test.headerLen); capacity != want {
+				t.Errorf("got LinkHeader.AvailableLength() = %d, want = %d", capacity, want)
 			}
 
 			// Test that forwarding increments Tx stats correctly.

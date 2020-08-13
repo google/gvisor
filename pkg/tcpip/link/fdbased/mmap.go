@@ -18,6 +18,7 @@ package fdbased
 
 import (
 	"encoding/binary"
+	"fmt"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -170,10 +171,9 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 	var (
 		p             tcpip.NetworkProtocolNumber
 		remote, local tcpip.LinkAddress
-		eth           header.Ethernet
 	)
 	if d.e.hdrSize > 0 {
-		eth = header.Ethernet(pkt)
+		eth := header.Ethernet(pkt)
 		p = eth.Type()
 		remote = eth.SourceAddress()
 		local = eth.DestinationAddress()
@@ -190,10 +190,14 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 		}
 	}
 
-	pkt = pkt[d.e.hdrSize:]
-	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, &stack.PacketBuffer{
-		Data:       buffer.View(pkt).ToVectorisedView(),
-		LinkHeader: buffer.View(eth),
+	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buffer.View(pkt).ToVectorisedView(),
 	})
+	if d.e.hdrSize > 0 {
+		if _, ok := pbuf.LinkHeader().Consume(d.e.hdrSize); !ok {
+			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
+		}
+	}
+	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pbuf)
 	return true, nil
 }

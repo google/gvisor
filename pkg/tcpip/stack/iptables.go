@@ -394,7 +394,7 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	rule := table.Rules[ruleIdx]
 
 	// Check whether the packet matches the IP header filter.
-	if !rule.Filter.match(header.IPv4(pkt.NetworkHeader), hook, nicName) {
+	if !rule.Filter.match(header.IPv4(pkt.NetworkHeader().View()), hook, nicName) {
 		// Continue on to the next rule.
 		return RuleJump, ruleIdx + 1
 	}

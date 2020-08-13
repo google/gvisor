@@ -134,7 +134,7 @@ func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.Netw
 		logPacket(prefix, protocol, pkt, gso)
 	}
 	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
-		totalLength := pkt.Header.UsedLength() + pkt.Data.Size()
+		totalLength := pkt.Size()
 		length := totalLength
 		if max := int(e.maxPCAPLen); length > max {
 			length = max
@@ -155,12 +155,11 @@ func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.Netw
 				length -= n
 			}
 		}
-		write(pkt.Header.View())
-		for _, view := range pkt.Data.Views() {
+		for _, v := range pkt.Views() {
 			if length == 0 {
 				break
 			}
-			write(view)
+			write(v)
 		}
 	}
 }
@@ -185,9 +184,9 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	e.dumpPacket("send", nil, 0, &stack.PacketBuffer{
+	e.dumpPacket("send", nil, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: vv,
-	})
+	}))
 	return e.Endpoint.WriteRawPacket(vv)
 }
 
@@ -201,12 +200,8 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 	var fragmentOffset uint16
 	var moreFragments bool
 
-	// Create a clone of pkt, including any headers if present. Avoid allocating
-	// backing memory for the clone.
-	views := [8]buffer.View{}
-	vv := buffer.NewVectorisedView(0, views[:0])
-	vv.AppendView(pkt.Header.View())
-	vv.Append(pkt.Data)
+	// Examine the packet using a new VV. Backing storage must not be written.
+	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 
 	switch protocol {
 	case header.IPv4ProtocolNumber:

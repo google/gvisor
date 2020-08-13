@@ -84,16 +84,16 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 		return 0, nil, tcpip.ErrNoRoute
 	}
 
-	hdr := buffer.NewPrependable(int(f.route.MaxHeaderLength()) + fakeTransHeaderLen)
-	hdr.Prepend(fakeTransHeaderLen)
 	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, &stack.PacketBuffer{
-		Header: hdr,
-		Data:   buffer.View(v).ToVectorisedView(),
-	}); err != nil {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(f.route.MaxHeaderLength()) + fakeTransHeaderLen,
+		Data:               buffer.View(v).ToVectorisedView(),
+	})
+	_ = pkt.TransportHeader().Push(fakeTransHeaderLen)
+	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
 		return 0, nil, err
 	}
 
@@ -328,13 +328,8 @@ func (*fakeTransportProtocol) Wait() {}
 
 // Parse implements TransportProtocol.Parse.
 func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
-	hdr, ok := pkt.Data.PullUp(fakeTransHeaderLen)
-	if !ok {
-		return false
-	}
-	pkt.TransportHeader = hdr
-	pkt.Data.TrimFront(fakeTransHeaderLen)
-	return true
+	_, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen)
+	return ok
 }
 
 func fakeTransFactory() stack.TransportProtocol {
@@ -382,9 +377,9 @@ func TestTransportReceive(t *testing.T) {
 	// Make sure packet with wrong protocol is not delivered.
 	buf[0] = 1
 	buf[2] = 0
-	linkEP.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
 	}
@@ -393,9 +388,9 @@ func TestTransportReceive(t *testing.T) {
 	buf[0] = 1
 	buf[1] = 3
 	buf[2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
 	}
@@ -404,9 +399,9 @@ func TestTransportReceive(t *testing.T) {
 	buf[0] = 1
 	buf[1] = 2
 	buf[2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.packetCount != 1 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 1)
 	}
@@ -459,9 +454,9 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 0
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = 0
-	linkEP.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
 	}
@@ -470,9 +465,9 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 3
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
 	}
@@ -481,9 +476,9 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 2
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.controlCount != 1 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 1)
 	}
@@ -636,9 +631,9 @@ func TestTransportForwarding(t *testing.T) {
 	req[0] = 1
 	req[1] = 3
 	req[2] = byte(fakeTransNumber)
-	ep2.InjectInbound(fakeNetNumber, &stack.PacketBuffer{
+	ep2.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: req.ToVectorisedView(),
-	})
+	}))
 
 	aep, _, err := ep.Accept()
 	if err != nil || aep == nil {
@@ -655,10 +650,11 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatal("Response packet not forwarded")
 	}
 
-	if dst := p.Pkt.NetworkHeader[0]; dst != 3 {
+	nh := stack.PayloadSince(p.Pkt.NetworkHeader())
+	if dst := nh[0]; dst != 3 {
 		t.Errorf("Response packet has incorrect destination addresss: got = %d, want = 3", dst)
 	}
-	if src := p.Pkt.NetworkHeader[1]; src != 1 {
+	if src := nh[1]; src != 1 {
 		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
 }

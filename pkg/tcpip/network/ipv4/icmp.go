@@ -89,12 +89,14 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {
 			return
 		}
 
+		// Make a copy of data before pkt gets sent to raw socket.
+		// DeliverTransportPacket will take ownership of pkt.
+		replyData := pkt.Data.Clone(nil)
+		replyData.TrimFront(header.ICMPv4MinimumSize)
+
 		// It's possible that a raw socket expects to receive this.
 		h.SetChecksum(wantChecksum)
-		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, &stack.PacketBuffer{
-			Data:          pkt.Data.Clone(nil),
-			NetworkHeader: append(buffer.View(nil), pkt.NetworkHeader...),
-		})
+		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, pkt)
 
 		remoteLinkAddr := r.RemoteLinkAddress
 
@@ -116,24 +118,26 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {
 		// Use the remote link address from the incoming packet.
 		r.ResolveWith(remoteLinkAddr)
 
-		vv := pkt.Data.Clone(nil)
-		vv.TrimFront(header.ICMPv4MinimumSize)
-		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4MinimumSize)
-		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
-		copy(pkt, h)
-		pkt.SetType(header.ICMPv4EchoReply)
-		pkt.SetChecksum(0)
-		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
+		// Prepare a reply packet.
+		icmpHdr := make(header.ICMPv4, header.ICMPv4MinimumSize)
+		copy(icmpHdr, h)
+		icmpHdr.SetType(header.ICMPv4EchoReply)
+		icmpHdr.SetChecksum(0)
+		icmpHdr.SetChecksum(^header.Checksum(icmpHdr, header.ChecksumVV(replyData, 0)))
+		dataVV := buffer.View(icmpHdr).ToVectorisedView()
+		dataVV.Append(replyData)
+		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: int(r.MaxHeaderLength()),
+			Data:               dataVV,
+		})
+
+		// Send out the reply packet.
 		sent := stats.ICMP.V4PacketsSent
 		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
 			Protocol: header.ICMPv4ProtocolNumber,
 			TTL:      r.DefaultTTL(),
 			TOS:      stack.DefaultTOS,
-		}, &stack.PacketBuffer{
-			Header:          hdr,
-			Data:            vv,
-			TransportHeader: buffer.View(pkt),
-		}); err != nil {
+		}, replyPkt); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
