@@ -14,11 +14,16 @@
 
 package linux
 
+import "gvisor.dev/gvisor/tools/go_marshal/marshal"
+
 // +marshal
 type FUSEOpcode uint32
 
 // +marshal
 type FUSEOpID uint64
+
+// FUSE_ROOT_ID is the id of root inode.
+const FUSE_ROOT_ID = 1
 
 // Opcodes for FUSE operations. Analogous to the opcodes in include/linux/fuse.h.
 const (
@@ -300,4 +305,55 @@ type FUSEGetAttrOut struct {
 
 	// Attr contains the metadata returned from the FUSE server
 	Attr FUSEAttr
+}
+
+// FUSEEntryOut is the reply sent by the daemon to the kernel
+// for FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and
+// FUSE_LOOKUP.
+//
+// +marshal
+type FUSEEntryOut struct {
+	// NodeID is the ID for current inode.
+	NodeID uint64
+
+	// Generation is the generation number of inode.
+	// Used to identify an inode that have different ID at different time.
+	Generation uint64
+
+	// EntryValid indicates timeout for an entry.
+	EntryValid uint64
+
+	// AttrValid indicates timeout for an entry's attributes.
+	AttrValid uint64
+
+	// EntryValidNsec indicates timeout for an entry in nanosecond.
+	EntryValidNSec uint32
+
+	// AttrValidNsec indicates timeout for an entry's attributes in nanosecond.
+	AttrValidNSec uint32
+
+	// Attr contains the attributes of an entry.
+	Attr FUSEAttr
+}
+
+// FUSELookupIn is the request sent by the kernel to the daemon
+// to look up a file name.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSELookupIn struct {
+	marshal.StubMarshallable
+
+	// Name is a file name to be looked up.
+	Name string
+}
+
+// MarshalUnsafe serializes r.name to the dst buffer.
+func (r *FUSELookupIn) MarshalUnsafe(buf []byte) {
+	copy(buf, []byte(r.Name))
+}
+
+// SizeBytes is the size of the memory representation of FUSELookupIn.
+// 1 extra byte for null-terminated string.
+func (r *FUSELookupIn) SizeBytes() int {
+	return len(r.Name) + 1
 }
