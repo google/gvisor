@@ -18,6 +18,7 @@ import (
 	"math"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
 
@@ -76,9 +77,9 @@ func (t *tx) cleanup() {
 	syscall.Munmap(t.data)
 }
 
-// transmit sends a packet made up of up to two buffers. Returns a boolean that
-// specifies whether the packet was successfully transmitted.
-func (t *tx) transmit(a, b []byte) bool {
+// transmit sends a packet made of bufs. Returns a boolean that specifies
+// whether the packet was successfully transmitted.
+func (t *tx) transmit(bufs ...buffer.View) bool {
 	// Pull completions from the tx queue and add their buffers back to the
 	// pool so that we can reuse them.
 	for {
@@ -93,7 +94,10 @@ func (t *tx) transmit(a, b []byte) bool {
 	}
 
 	bSize := t.bufs.entrySize
-	total := uint32(len(a) + len(b))
+	total := uint32(0)
+	for _, data := range bufs {
+		total += uint32(len(data))
+	}
 	bufCount := (total + bSize - 1) / bSize
 
 	// Allocate enough buffers to hold all the data.
@@ -115,7 +119,7 @@ func (t *tx) transmit(a, b []byte) bool {
 	// Copy data into allocated buffers.
 	nBuf := buf
 	var dBuf []byte
-	for _, data := range [][]byte{a, b} {
+	for _, data := range bufs {
 		for len(data) > 0 {
 			if len(dBuf) == 0 {
 				dBuf = t.data[nBuf.Offset:][:nBuf.Size]

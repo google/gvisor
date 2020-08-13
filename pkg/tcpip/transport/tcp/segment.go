@@ -68,7 +68,7 @@ func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketB
 		route:  r.Clone(),
 	}
 	s.data = pkt.Data.Clone(s.views[:])
-	s.hdr = header.TCP(pkt.TransportHeader)
+	s.hdr = header.TCP(pkt.TransportHeader().View())
 	s.rcvdTime = time.Now()
 	return s
 }

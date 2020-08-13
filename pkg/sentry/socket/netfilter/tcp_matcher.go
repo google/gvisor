@@ -97,7 +97,7 @@ func (*TCPMatcher) Name() string {
 
 // Match implements Matcher.Match.
 func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
-	netHeader := header.IPv4(pkt.NetworkHeader)
+	netHeader := header.IPv4(pkt.NetworkHeader().View())
 
 	if netHeader.TransportProtocol() != header.TCPProtocolNumber {
 		return false, false
@@ -111,7 +111,7 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceN
 		return false, false
 	}
 
-	tcpHeader := header.TCP(pkt.TransportHeader)
+	tcpHeader := header.TCP(pkt.TransportHeader().View())
 	if len(tcpHeader) < header.TCPMinimumSize {
 		// There's no valid TCP header here, so we drop the packet immediately.
 		return false, true

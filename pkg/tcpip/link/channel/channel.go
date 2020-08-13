@@ -274,7 +274,9 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	p := PacketInfo{
-		Pkt:   &stack.PacketBuffer{Data: vv},
+		Pkt: stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: vv,
+		}),
 		Proto: 0,
 		GSO:   nil,
 	}
