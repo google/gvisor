@@ -844,6 +844,13 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 	}
 	if rp.Done() {
+		// Reject attempts to open mount root directory with O_CREAT.
+		if mayCreate && rp.MustBeDir() {
+			return nil, syserror.EISDIR
+		}
+		if mustCreate {
+			return nil, syserror.EEXIST
+		}
 		return start.openLocked(ctx, rp, &opts)
 	}
 
@@ -855,6 +862,10 @@ afterTrailingSymlink:
 	// Check for search permission in the parent directory.
 	if err := parent.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, err
+	}
+	// Reject attempts to open directories with O_CREAT.
+	if mayCreate && rp.MustBeDir() {
+		return nil, syserror.EISDIR
 	}
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
