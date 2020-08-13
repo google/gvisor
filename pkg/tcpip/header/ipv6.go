@@ -98,6 +98,9 @@ const (
 	// section 5.
 	IPv6MinimumMTU = 1280
 
+	// IPv6Loopback is the IPv6 Loopback address.
+	IPv6Loopback tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+
 	// IPv6Any is the non-routable IPv6 "any" meta address. It is also
 	// known as the unspecified address.
 	IPv6Any tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"

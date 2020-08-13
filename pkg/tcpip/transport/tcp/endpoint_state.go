@@ -309,6 +309,16 @@ func (e *endpoint) loadLastError(s string) {
 	e.lastError = tcpip.StringToError(s)
 }
 
+// saveRecentTSTime is invoked by stateify.
+func (e *endpoint) saveRecentTSTime() unixTime {
+	return unixTime{e.recentTSTime.Unix(), e.recentTSTime.UnixNano()}
+}
+
+// loadRecentTSTime is invoked by stateify.
+func (e *endpoint) loadRecentTSTime(unix unixTime) {
+	e.recentTSTime = time.Unix(unix.second, unix.nano)
+}
+
 // saveHardError is invoked by stateify.
 func (e *EndpointInfo) saveHardError() string {
 	if e.HardError == nil {
