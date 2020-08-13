@@ -28,7 +28,10 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/syscalls/linux/socket_netlink_route_util.h"
+#include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -74,6 +77,64 @@ void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
   got_if_infos_ = true;
 }
 
+// Returns true if a route exists in the test's network namespace for the given
+// address. Use netlink to query the route table for a destination for addr.
+PosixErrorOr<bool> HasRoute(const char* addr) {
+  FileDescriptor fd;
+  ASSIGN_OR_RETURN_ERRNO(fd, NetlinkBoundSocket(NETLINK_ROUTE));
+  uint32_t port;
+  ASSIGN_OR_RETURN_ERRNO(port, NetlinkPortID(fd.get()));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in_addr sin_addr;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_INET;
+  req.rtm.rtm_dst_len = 32;
+  req.rtm.rtm_src_len = 0;
+  req.rtm.rtm_tos = 0;
+  req.rtm.rtm_table = RT_TABLE_UNSPEC;
+  req.rtm.rtm_protocol = RTPROT_UNSPEC;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNSPEC;
+  req.rtm.rtm_flags = RTM_F_LOOKUP_TABLE;
+
+  req.nla.nla_len = 8;
+  req.nla.nla_type = RTA_DST;
+  inet_aton(addr, &req.sin_addr);
+
+  bool found = false;
+  RETURN_IF_ERRNO(NetlinkRequestResponseSingle(
+      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+        int len = RTM_PAYLOAD(hdr);
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == RTA_DST) {
+            found = true;
+            break;
+          }
+        }
+      }));
+  return found;
+}
+
+PosixErrorOr<bool> HasBroadcastRoute() { return HasRoute(kBroadcastAddress); }
+
+PosixErrorOr<bool> HasMulticastRoute() { return HasRoute(kMulticastAddress); }
+
 // Verifies that a newly instantiated UDP socket does not have the
 // broadcast socket option enabled.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, UDPBroadcastDefault) {
@@ -110,6 +171,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, SetUDPBroadcast) {
 // the destination port number.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        UDPBroadcastReceivedOnExpectedPort) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasBroadcastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto rcvr1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto rcvr2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -272,6 +338,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 //                     (UDPBroadcastSendRecvOnSocketBoundToAny).
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        UDPBroadcastSendRecvOnSocketBoundToBroadcast) {
+  // Without a route on the host, sending messages to the broadcast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasBroadcastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   // Enable SO_BROADCAST.
@@ -313,6 +384,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 //                     (UDPBroadcastSendRecvOnSocketBoundToBroadcast).
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        UDPBroadcastSendRecvOnSocketBoundToAny) {
+  // Without a route on the host, sending messages to the broadcast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasBroadcastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   // Enable SO_BROADCAST.
@@ -351,6 +427,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // Verifies that a UDP broadcast fails to send on a socket with SO_BROADCAST
 // disabled.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendBroadcast) {
+  // Without a route on the host, sending messages to the broadcast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasBroadcastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   // Broadcast a test message without having enabled SO_BROADCAST on the sending
@@ -401,6 +482,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // multicast on gVisor.
   SKIP_IF(IsRunningOnGvisor());
 
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   auto bind_addr = V4Any();
@@ -435,6 +521,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // Check that multicast packets will be delivered to the sending socket without
 // setting an interface.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastSelf) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   auto bind_addr = V4Any();
@@ -478,6 +569,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastSelf) {
 // set interface and IP_MULTICAST_LOOP disabled.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastSelfLoopOff) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   auto bind_addr = V4Any();
@@ -528,6 +624,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastNoGroup) {
   // multicast on gVisor.
   SKIP_IF(IsRunningOnGvisor());
 
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -566,6 +667,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastNoGroup) {
 // Check that multicast packets will be delivered to another socket without
 // setting an interface.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticast) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -613,6 +719,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticast) {
 // set interface and IP_MULTICAST_LOOP disabled on the sending socket.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastSenderNoLoop) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -664,6 +775,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // setting an interface and IP_MULTICAST_LOOP disabled on the receiving socket.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastReceiverNoLoop) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -716,6 +832,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // and both will receive data on it when bound to the ANY address.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastToTwoBoundToAny) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   std::unique_ptr<FileDescriptor> receivers[2] = {
       ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
@@ -782,6 +903,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // and both will receive data on it when bound to the multicast address.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastToTwoBoundToMulticastAddress) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   std::unique_ptr<FileDescriptor> receivers[2] = {
       ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
@@ -851,6 +977,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // multicast address, both will receive data.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastToTwoBoundToAnyAndMulticastAddress) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   std::unique_ptr<FileDescriptor> receivers[2] = {
       ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
@@ -924,6 +1055,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // is not a multicast address.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        IpMulticastLoopbackFromAddr) {
+  // Without a route on the host, sending messages to the multicast address will
+  // always fail.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HasMulticastRoute()) &&
+          !IsRunningOnGvisor());
+
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 

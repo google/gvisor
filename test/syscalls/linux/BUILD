@@ -2393,7 +2393,10 @@ cc_library(
     ],
     deps = [
         ":ip_socket_test_util",
+        ":socket_netlink_route_util",
+        ":socket_netlink_util",
         ":socket_test_util",
+        "//test/util:posix_error",
         gtest,
         "//test/util:test_util",
     ],
