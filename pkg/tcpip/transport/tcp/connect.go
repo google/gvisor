@@ -1702,7 +1702,7 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 			}
 		case notification:
 			n := e.fetchNotifications()
-			if n&notifyAbort != 0 {
+			if n&notifyClose != 0 || n&notifyAbort != 0 {
 				return nil
 			}
 			if n&notifyDrain != 0 {

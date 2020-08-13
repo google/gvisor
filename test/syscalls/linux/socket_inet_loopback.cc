@@ -865,7 +865,7 @@ TEST_P(SocketInetLoopbackTest, TCPResetAfterClose) {
 // results in the stack.Seed() being different which can cause
 // sequence number of final connect to be one that is considered
 // old and can cause the test to be flaky.
-TEST_P(SocketInetLoopbackTest, TCPPassiveCloseNoTimeWaitTest_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPTimeWaitTest_NoRandomSave) {
   auto const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
@@ -920,26 +920,13 @@ TEST_P(SocketInetLoopbackTest, TCPPassiveCloseNoTimeWaitTest_NoRandomSave) {
                   &conn_addrlen),
       SyscallSucceeds());
 
-  // shutdown the accept FD to trigger TIME_WAIT on the accepted socket which
+  // close the accept FD to trigger TIME_WAIT on the accepted socket which
   // should cause the conn_fd to follow CLOSE_WAIT->LAST_ACK->CLOSED instead of
   // TIME_WAIT.
-  ASSERT_THAT(shutdown(accepted.get(), SHUT_RDWR), SyscallSucceeds());
-  {
-    const int kTimeout = 10000;
-    struct pollfd pfd = {
-        .fd = conn_fd.get(),
-        .events = POLLIN,
-    };
-    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
-    ASSERT_EQ(pfd.revents, POLLIN);
-  }
-
-  conn_fd.reset();
-  // This sleep is required to give conn_fd time to transition to TIME-WAIT.
+  accepted.reset();
   absl::SleepFor(absl::Seconds(1));
-
-  // At this point conn_fd should be the one that moved to CLOSE_WAIT and
-  // eventually to CLOSED.
+  conn_fd.reset();
+  absl::SleepFor(absl::Seconds(1));
 
   // Now bind and connect a new socket and verify that we can immediately
   // rebind the address bound by the conn_fd as it never entered TIME_WAIT.
@@ -953,97 +940,6 @@ TEST_P(SocketInetLoopbackTest, TCPPassiveCloseNoTimeWaitTest_NoRandomSave) {
                                   reinterpret_cast<sockaddr*>(&conn_addr),
                                   conn_addrlen),
               SyscallSucceeds());
-}
-
-TEST_P(SocketInetLoopbackTest, TCPActiveCloseTimeWaitTest_NoRandomSave) {
-  auto const& param = GetParam();
-  TestAddress const& listener = param.listener;
-  TestAddress const& connector = param.connector;
-
-  // Create the listening socket.
-  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
-  sockaddr_storage listen_addr = listener.addr;
-  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
-                   listener.addr_len),
-              SyscallSucceeds());
-  ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
-
-  // Get the port bound by the listening socket.
-  socklen_t addrlen = listener.addr_len;
-  ASSERT_THAT(getsockname(listen_fd.get(),
-                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
-              SyscallSucceeds());
-
-  uint16_t const port =
-      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
-
-  // Connect to the listening socket.
-  FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-
-  // We disable saves after this point as a S/R causes the netstack seed
-  // to be regenerated which changes what ports/ISN is picked for a given
-  // tuple (src ip,src port, dst ip, dst port). This can cause the final
-  // SYN to use a sequence number that looks like one from the current
-  // connection in TIME_WAIT and will not be accepted causing the test
-  // to timeout.
-  //
-  // TODO(gvisor.dev/issue/940): S/R portSeed/portHint
-  DisableSave ds;
-
-  sockaddr_storage conn_addr = connector.addr;
-  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
-  ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(),
-                                  reinterpret_cast<sockaddr*>(&conn_addr),
-                                  connector.addr_len),
-              SyscallSucceeds());
-
-  // Accept the connection.
-  auto accepted =
-      ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
-
-  // Get the address/port bound by the connecting socket.
-  sockaddr_storage conn_bound_addr;
-  socklen_t conn_addrlen = connector.addr_len;
-  ASSERT_THAT(
-      getsockname(conn_fd.get(), reinterpret_cast<sockaddr*>(&conn_bound_addr),
-                  &conn_addrlen),
-      SyscallSucceeds());
-
-  // shutdown the conn FD to trigger TIME_WAIT on the connect socket.
-  ASSERT_THAT(shutdown(conn_fd.get(), SHUT_RDWR), SyscallSucceeds());
-  {
-    const int kTimeout = 10000;
-    struct pollfd pfd = {
-        .fd = accepted.get(),
-        .events = POLLIN,
-    };
-    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
-    ASSERT_EQ(pfd.revents, POLLIN);
-  }
-  ScopedThread t([&]() {
-    constexpr int kTimeout = 10000;
-    constexpr int16_t want_events = POLLHUP;
-    struct pollfd pfd = {
-        .fd = conn_fd.get(),
-        .events = want_events,
-    };
-    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
-  });
-
-  accepted.reset();
-  t.Join();
-  conn_fd.reset();
-
-  // Now bind and connect a new socket and verify that we can't immediately
-  // rebind the address bound by the conn_fd as it is in TIME_WAIT.
-  conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-
-  ASSERT_THAT(bind(conn_fd.get(), reinterpret_cast<sockaddr*>(&conn_bound_addr),
-                   conn_addrlen),
-              SyscallFailsWithErrno(EADDRINUSE));
 }
 
 TEST_P(SocketInetLoopbackTest, AcceptedInheritsTCPUserTimeout) {

@@ -190,9 +190,8 @@ type protocol struct {
 	congestionControl          string
 	availableCongestionControl []string
 	moderateReceiveBuffer      bool
-	lingerTimeout              time.Duration
-	timeWaitTimeout            time.Duration
-	timeWaitReuse              tcpip.TCPTimeWaitReuseOption
+	tcpLingerTimeout           time.Duration
+	tcpTimeWaitTimeout         time.Duration
 	minRTO                     time.Duration
 	maxRTO                     time.Duration
 	maxRetries                 uint32
@@ -358,7 +357,7 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 			v = 0
 		}
 		p.mu.Lock()
-		p.lingerTimeout = time.Duration(v)
+		p.tcpLingerTimeout = time.Duration(v)
 		p.mu.Unlock()
 		return nil
 
@@ -367,16 +366,7 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 			v = 0
 		}
 		p.mu.Lock()
-		p.timeWaitTimeout = time.Duration(v)
-		p.mu.Unlock()
-		return nil
-
-	case tcpip.TCPTimeWaitReuseOption:
-		if v < tcpip.TCPTimeWaitReuseDisabled || v > tcpip.TCPTimeWaitReuseLoopbackOnly {
-			return tcpip.ErrInvalidOptionValue
-		}
-		p.mu.Lock()
-		p.timeWaitReuse = v
+		p.tcpTimeWaitTimeout = time.Duration(v)
 		p.mu.Unlock()
 		return nil
 
@@ -477,19 +467,13 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 
 	case *tcpip.TCPLingerTimeoutOption:
 		p.mu.RLock()
-		*v = tcpip.TCPLingerTimeoutOption(p.lingerTimeout)
+		*v = tcpip.TCPLingerTimeoutOption(p.tcpLingerTimeout)
 		p.mu.RUnlock()
 		return nil
 
 	case *tcpip.TCPTimeWaitTimeoutOption:
 		p.mu.RLock()
-		*v = tcpip.TCPTimeWaitTimeoutOption(p.timeWaitTimeout)
-		p.mu.RUnlock()
-		return nil
-
-	case *tcpip.TCPTimeWaitReuseOption:
-		p.mu.RLock()
-		*v = tcpip.TCPTimeWaitReuseOption(p.timeWaitReuse)
+		*v = tcpip.TCPTimeWaitTimeoutOption(p.tcpTimeWaitTimeout)
 		p.mu.RUnlock()
 		return nil
 
@@ -579,9 +563,8 @@ func NewProtocol() stack.TransportProtocol {
 		},
 		congestionControl:          ccReno,
 		availableCongestionControl: []string{ccReno, ccCubic},
-		lingerTimeout:              DefaultTCPLingerTimeout,
-		timeWaitTimeout:            DefaultTCPTimeWaitTimeout,
-		timeWaitReuse:              tcpip.TCPTimeWaitReuseLoopbackOnly,
+		tcpLingerTimeout:           DefaultTCPLingerTimeout,
+		tcpTimeWaitTimeout:         DefaultTCPTimeWaitTimeout,
 		synRcvdCount:               synRcvdCounter{threshold: SynRcvdCountThreshold},
 		synRetries:                 DefaultSynRetries,
 		minRTO:                     MinRTO,

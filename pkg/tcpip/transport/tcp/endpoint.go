@@ -449,10 +449,9 @@ type endpoint struct {
 	// recentTS is the timestamp that should be sent in the TSEcr field of
 	// the timestamp for future segments sent by the endpoint. This field is
 	// updated if required when a new segment is received by this endpoint.
+	//
+	// recentTS must be read/written atomically.
 	recentTS uint32
-
-	// recentTSTime is the unix time when we updated recentTS last.
-	recentTSTime time.Time `state:".(unixTime)"`
 
 	// tsOffset is a randomized offset added to the value of the
 	// TSVal field in the timestamp option.
@@ -796,15 +795,15 @@ func (e *endpoint) EndpointState() EndpointState {
 	return EndpointState(atomic.LoadUint32((*uint32)(&e.state)))
 }
 
-// setRecentTimestamp sets the recentTS field to the provided value.
+// setRecentTimestamp atomically sets the recentTS field to the
+// provided value.
 func (e *endpoint) setRecentTimestamp(recentTS uint32) {
-	e.recentTS = recentTS
-	e.recentTSTime = time.Now()
+	atomic.StoreUint32(&e.recentTS, recentTS)
 }
 
-// recentTimestamp returns the value of the recentTS field.
+// recentTimestamp atomically reads and returns the value of the recentTS field.
 func (e *endpoint) recentTimestamp() uint32 {
-	return e.recentTS
+	return atomic.LoadUint32(&e.recentTS)
 }
 
 // keepalive is a synchronization wrapper used to appease stateify. See the
@@ -903,7 +902,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	case StateInitial, StateBound, StateConnecting, StateSynSent, StateSynRecv:
 		// Ready for nothing.
 
-	case StateClose, StateError, StateTimeWait:
+	case StateClose, StateError:
 		// Ready for anything.
 		result = mask
 
@@ -2149,66 +2148,12 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 		h.Write(portBuf)
 		portOffset := h.Sum32()
 
-		var twReuse tcpip.TCPTimeWaitReuseOption
-		if err := e.stack.TransportProtocolOption(ProtocolNumber, &twReuse); err != nil {
-			panic(fmt.Sprintf("e.stack.TransportProtocolOption(%d, %#v) = %s", ProtocolNumber, &twReuse, err))
-		}
-
-		reuse := twReuse == tcpip.TCPTimeWaitReuseGlobal
-		if twReuse == tcpip.TCPTimeWaitReuseLoopbackOnly {
-			switch netProto {
-			case header.IPv4ProtocolNumber:
-				reuse = header.IsV4LoopbackAddress(e.ID.LocalAddress) && header.IsV4LoopbackAddress(e.ID.RemoteAddress)
-			case header.IPv6ProtocolNumber:
-				reuse = e.ID.LocalAddress == header.IPv6Loopback && e.ID.RemoteAddress == header.IPv6Loopback
-			}
-		}
-
 		if _, err := e.stack.PickEphemeralPortStable(portOffset, func(p uint16) (bool, *tcpip.Error) {
 			if sameAddr && p == e.ID.RemotePort {
 				return false, nil
 			}
 			if _, err := e.stack.ReservePort(netProtos, ProtocolNumber, e.ID.LocalAddress, p, e.portFlags, e.bindToDevice, addr); err != nil {
-				if err != tcpip.ErrPortInUse || !reuse {
-					return false, nil
-				}
-				transEPID := e.ID
-				transEPID.LocalPort = p
-				// Check if an endpoint is registered with demuxer in TIME-WAIT and if
-				// we can reuse it. If we can't find a transport endpoint then we just
-				// skip using this port as it's possible that either an endpoint has
-				// bound the port but not registered with demuxer yet (no listen/connect
-				// done yet) or the reservation was freed between the check above and
-				// the FindTransportEndpoint below. But rather than retry the same port
-				// we just skip it and move on.
-				transEP := e.stack.FindTransportEndpoint(netProto, ProtocolNumber, transEPID, &r)
-				if transEP == nil {
-					// ReservePort failed but there is no registered endpoint with
-					// demuxer. Which indicates there is at least some endpoint that has
-					// bound the port.
-					return false, nil
-				}
-
-				tcpEP := transEP.(*endpoint)
-				tcpEP.LockUser()
-				// If the endpoint is not in TIME-WAIT or if it is in TIME-WAIT but
-				// less than 1 second has elapsed since its recentTS was updated then
-				// we cannot reuse the port.
-				if tcpEP.EndpointState() != StateTimeWait || time.Since(tcpEP.recentTSTime) < 1*time.Second {
-					tcpEP.UnlockUser()
-					return false, nil
-				}
-				// Since the endpoint is in TIME-WAIT it should be safe to acquire its
-				// Lock while holding the lock for this endpoint as endpoints in
-				// TIME-WAIT do not acquire locks on other endpoints.
-				tcpEP.workerCleanup = false
-				tcpEP.cleanupLocked()
-				tcpEP.notifyProtocolGoroutine(notifyAbort)
-				tcpEP.UnlockUser()
-				// Now try and Reserve again if it fails then we skip.
-				if _, err := e.stack.ReservePort(netProtos, ProtocolNumber, e.ID.LocalAddress, p, e.portFlags, e.bindToDevice, addr); err != nil {
-					return false, nil
-				}
+				return false, nil
 			}
 
 			id := e.ID

@@ -720,30 +720,6 @@ TEST_P(TcpSocketTest, TcpSCMPriority) {
   ASSERT_EQ(cmsg, nullptr);
 }
 
-TEST_P(TcpSocketTest, TimeWaitPollHUP) {
-  shutdown(s_, SHUT_RDWR);
-  ScopedThread t([&]() {
-    constexpr int kTimeout = 10000;
-    constexpr int16_t want_events = POLLHUP;
-    struct pollfd pfd = {
-        .fd = s_,
-        .events = want_events,
-    };
-    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
-  });
-  shutdown(t_, SHUT_RDWR);
-  t.Join();
-  // At this point s_ should be in TIME-WAIT and polling for POLLHUP should
-  // return with 1 FD.
-  constexpr int kTimeout = 10000;
-  constexpr int16_t want_events = POLLHUP;
-  struct pollfd pfd = {
-      .fd = s_,
-      .events = want_events,
-  };
-  ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
-}
-
 INSTANTIATE_TEST_SUITE_P(AllInetTests, TcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
