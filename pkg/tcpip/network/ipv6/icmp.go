@@ -83,7 +83,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		return
 	}
 	h := header.ICMPv6(v)
-	iph := header.IPv6(pkt.NetworkHeader)
+	iph := header.IPv6(pkt.NetworkHeader().View())
 
 	// Validate ICMPv6 checksum before processing the packet.
 	//
@@ -276,8 +276,10 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		optsSerializer := header.NDPOptionsSerializer{
 			header.NDPTargetLinkLayerAddressOption(r.LocalLinkAddress),
 		}
-		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborAdvertMinimumSize + int(optsSerializer.Length()))
-		packet := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6NeighborAdvertMinimumSize + int(optsSerializer.Length()),
+		})
+		packet := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6NeighborAdvertSize))
 		packet.SetType(header.ICMPv6NeighborAdvert)
 		na := header.NDPNeighborAdvert(packet.NDPPayload())
 		na.SetSolicitedFlag(solicited)
@@ -293,9 +295,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		//
 		// The IP Hop Limit field has a value of 255, i.e., the packet
 		// could not possibly have been forwarded by a router.
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, &stack.PacketBuffer{
-			Header: hdr,
-		}); err != nil {
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, pkt); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -384,7 +384,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 
 	case header.ICMPv6EchoRequest:
 		received.EchoRequest.Increment()
-		icmpHdr, ok := pkt.Data.PullUp(header.ICMPv6EchoMinimumSize)
+		icmpHdr, ok := pkt.TransportHeader().Consume(header.ICMPv6EchoMinimumSize)
 		if !ok {
 			received.Invalid.Increment()
 			return
@@ -409,16 +409,15 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// Use the link address from the source of the original packet.
 		r.ResolveWith(remoteLinkAddr)
 
-		pkt.Data.TrimFront(header.ICMPv6EchoMinimumSize)
-		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize)
-		packet := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
+		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize,
+			Data:               pkt.Data,
+		})
+		packet := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
 		copy(packet, icmpHdr)
 		packet.SetType(header.ICMPv6EchoReply)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, pkt.Data))
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, &stack.PacketBuffer{
-			Header: hdr,
-			Data:   pkt.Data,
-		}); err != nil {
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, replyPkt); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -539,17 +538,19 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAdd
 		r.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(snaddr)
 	}
 
-	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
-	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
-	pkt.SetType(header.ICMPv6NeighborSolicit)
-	copy(pkt[icmpV6OptOffset-len(addr):], addr)
-	pkt[icmpV6OptOffset] = ndpOptSrcLinkAddr
-	pkt[icmpV6LengthOffset] = 1
-	copy(pkt[icmpV6LengthOffset+1:], linkEP.LinkAddress())
-	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize,
+	})
+	icmpHdr := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6NeighborAdvertSize))
+	icmpHdr.SetType(header.ICMPv6NeighborSolicit)
+	copy(icmpHdr[icmpV6OptOffset-len(addr):], addr)
+	icmpHdr[icmpV6OptOffset] = ndpOptSrcLinkAddr
+	icmpHdr[icmpV6LengthOffset] = 1
+	copy(icmpHdr[icmpV6LengthOffset+1:], linkEP.LinkAddress())
+	icmpHdr.SetChecksum(header.ICMPv6Checksum(icmpHdr, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-	length := uint16(hdr.UsedLength())
-	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	length := uint16(pkt.Size())
+	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength: length,
 		NextHeader:    uint8(header.ICMPv6ProtocolNumber),
@@ -559,9 +560,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAdd
 	})
 
 	// TODO(stijlist): count this in ICMP stats.
-	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, &stack.PacketBuffer{
-		Header: hdr,
-	})
+	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.

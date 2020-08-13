@@ -136,9 +136,9 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
+			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			})
+			}))
 
 			linkAddr, c, err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, nil)
 			if linkAddr != test.expectedLinkAddr {
@@ -380,9 +380,9 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectLinkAddr(ProtocolNumber, test.nsSrcLinkAddr, &stack.PacketBuffer{
+			e.InjectLinkAddr(ProtocolNumber, test.nsSrcLinkAddr, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			})
+			}))
 
 			if test.nsInvalid {
 				if got := invalid.Value(); got != 1 {
@@ -410,7 +410,7 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 				t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, test.naDstLinkAddr)
 			}
 
-			checker.IPv6(t, p.Pkt.Header.View(),
+			checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 				checker.SrcAddr(test.naSrc),
 				checker.DstAddr(test.naDst),
 				checker.TTL(header.NDPHopLimit),
@@ -497,9 +497,9 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
+			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			})
+			}))
 
 			linkAddr, c, err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, nil)
 			if linkAddr != test.expectedLinkAddr {
@@ -560,7 +560,11 @@ func TestNDPValidation(t *testing.T) {
 			nextHdr = uint8(header.IPv6FragmentExtHdrIdentifier)
 		}
 
-		ip := header.IPv6(buffer.NewView(header.IPv6MinimumSize + len(extensions)))
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: header.IPv6MinimumSize + len(extensions),
+			Data:               payload.ToVectorisedView(),
+		})
+		ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + len(extensions)))
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength: uint16(len(payload) + len(extensions)),
 			NextHeader:    nextHdr,
@@ -571,10 +575,7 @@ func TestNDPValidation(t *testing.T) {
 		if n := copy(ip[header.IPv6MinimumSize:], extensions); n != len(extensions) {
 			t.Fatalf("expected to write %d bytes of extensions, but wrote %d", len(extensions), n)
 		}
-		ep.HandlePacket(r, &stack.PacketBuffer{
-			NetworkHeader: buffer.View(ip),
-			Data:          payload.ToVectorisedView(),
-		})
+		ep.HandlePacket(r, pkt)
 	}
 
 	var tllData [header.NDPLinkLayerAddressSize]byte
@@ -885,9 +886,9 @@ func TestRouterAdvertValidation(t *testing.T) {
 				t.Fatalf("got rxRA = %d, want = 0", got)
 			}
 
-			e.InjectInbound(header.IPv6ProtocolNumber, &stack.PacketBuffer{
+			e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			})
+			}))
 
 			if got := rxRA.Value(); got != 1 {
 				t.Fatalf("got rxRA = %d, want = 1", got)

@@ -103,7 +103,7 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	d.allocateViews(BufConfig)
 
 	n, err := rawfile.BlockingReadv(d.fd, d.iovecs)
-	if err != nil {
+	if n == 0 || err != nil {
 		return false, err
 	}
 	if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
@@ -111,17 +111,22 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 		// isn't used and it isn't in a view.
 		n -= virtioNetHdrSize
 	}
-	if n <= d.e.hdrSize {
-		return false, nil
-	}
+
+	used := d.capViews(n, BufConfig)
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buffer.NewVectorisedView(n, append([]buffer.View(nil), d.views[:used]...)),
+	})
 
 	var (
 		p             tcpip.NetworkProtocolNumber
 		remote, local tcpip.LinkAddress
-		eth           header.Ethernet
 	)
 	if d.e.hdrSize > 0 {
-		eth = header.Ethernet(d.views[0][:header.EthernetMinimumSize])
+		hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
+		if !ok {
+			return false, nil
+		}
+		eth := header.Ethernet(hdr)
 		p = eth.Type()
 		remote = eth.SourceAddress()
 		local = eth.DestinationAddress()
@@ -137,13 +142,6 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 			return true, nil
 		}
 	}
-
-	used := d.capViews(n, BufConfig)
-	pkt := &stack.PacketBuffer{
-		Data:       buffer.NewVectorisedView(n, append([]buffer.View(nil), d.views[:used]...)),
-		LinkHeader: buffer.View(eth),
-	}
-	pkt.Data.TrimFront(d.e.hdrSize)
 
 	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pkt)
 
@@ -268,17 +266,22 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 		if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 			n -= virtioNetHdrSize
 		}
-		if n <= d.e.hdrSize {
-			return false, nil
-		}
+
+		used := d.capViews(k, int(n), BufConfig)
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: buffer.NewVectorisedView(int(n), append([]buffer.View(nil), d.views[k][:used]...)),
+		})
 
 		var (
 			p             tcpip.NetworkProtocolNumber
 			remote, local tcpip.LinkAddress
-			eth           header.Ethernet
 		)
 		if d.e.hdrSize > 0 {
-			eth = header.Ethernet(d.views[k][0][:header.EthernetMinimumSize])
+			hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
+			if !ok {
+				return false, nil
+			}
+			eth := header.Ethernet(hdr)
 			p = eth.Type()
 			remote = eth.SourceAddress()
 			local = eth.DestinationAddress()
@@ -295,12 +298,6 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 			}
 		}
 
-		used := d.capViews(k, int(n), BufConfig)
-		pkt := &stack.PacketBuffer{
-			Data:       buffer.NewVectorisedView(int(n), append([]buffer.View(nil), d.views[k][:used]...)),
-			LinkHeader: buffer.View(eth),
-		}
-		pkt.Data.TrimFront(d.e.hdrSize)
 		d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pkt)
 
 		// Prepare e.views for another packet: release used views.

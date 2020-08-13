@@ -311,7 +311,9 @@ func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 		t.FailNow()
 	}
 
-	nic.DeliverNetworkPacket("", "", 0, &PacketBuffer{Data: buffer.View([]byte{1, 2, 3, 4}).ToVectorisedView()})
+	nic.DeliverNetworkPacket("", "", 0, NewPacketBuffer(PacketBufferOptions{
+		Data: buffer.View([]byte{1, 2, 3, 4}).ToVectorisedView(),
+	}))
 
 	if got := nic.stats.DisabledRx.Packets.Value(); got != 1 {
 		t.Errorf("got DisabledRx.Packets = %d, want = 1", got)

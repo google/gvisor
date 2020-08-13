@@ -257,8 +257,8 @@ func (c *Context) GetPacket() []byte {
 		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
 	}
 
-	hdr := p.Pkt.Header.View()
-	b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
+	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	b := vv.ToView()
 
 	if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
 		c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
@@ -284,8 +284,8 @@ func (c *Context) GetPacketNonBlocking() []byte {
 		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
 	}
 
-	hdr := p.Pkt.Header.View()
-	b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
+	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	b := vv.ToView()
 
 	checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
 	return b
@@ -318,9 +318,10 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 	copy(icmp[header.ICMPv4PayloadOffset:], p2)
 
 	// Inject packet.
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
 	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // BuildSegment builds a TCP segment based on the given Headers and payload.
@@ -374,26 +375,29 @@ func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcp
 // SendSegment sends a TCP segment that has already been built and written to a
 // buffer.VectorisedView.
 func (c *Context) SendSegment(s buffer.VectorisedView) {
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: s,
 	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // SendPacket builds and sends a TCP segment(with the provided payload & TCP
 // headers) in an IPv4 packet via the link layer endpoint.
 func (c *Context) SendPacket(payload []byte, h *Headers) {
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: c.BuildSegment(payload, h),
 	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // SendPacketWithAddrs builds and sends a TCP segment(with the provided payload
 // & TCPheaders) in an IPv4 packet via the link layer endpoint using the
 // provided source and destination IPv4 addresses.
 func (c *Context) SendPacketWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) {
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: c.BuildSegmentWithAddrs(payload, h, src, dst),
 	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // SendAck sends an ACK packet.
@@ -514,9 +518,8 @@ func (c *Context) GetV6Packet() []byte {
 	if p.Proto != ipv6.ProtocolNumber {
 		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
 	}
-	b := make([]byte, p.Pkt.Header.UsedLength()+p.Pkt.Data.Size())
-	copy(b, p.Pkt.Header.View())
-	copy(b[p.Pkt.Header.UsedLength():], p.Pkt.Data.ToView())
+	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	b := vv.ToView()
 
 	checker.IPv6(c.t, b, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
 	return b
@@ -566,9 +569,10 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
 	})
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 }
 
 // CreateConnected creates a connected TCP endpoint.

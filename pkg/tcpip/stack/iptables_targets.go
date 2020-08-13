@@ -99,7 +99,7 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso
 	}
 
 	// Drop the packet if network and transport header are not set.
-	if pkt.NetworkHeader == nil || pkt.TransportHeader == nil {
+	if pkt.NetworkHeader().View().IsEmpty() || pkt.TransportHeader().View().IsEmpty() {
 		return RuleDrop, 0
 	}
 
@@ -118,17 +118,16 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso
 
 	// TODO(gvisor.dev/issue/170): Check Flags in RedirectTarget if
 	// we need to change dest address (for OUTPUT chain) or ports.
-	netHeader := header.IPv4(pkt.NetworkHeader)
+	netHeader := header.IPv4(pkt.NetworkHeader().View())
 	switch protocol := netHeader.TransportProtocol(); protocol {
 	case header.UDPProtocolNumber:
-		udpHeader := header.UDP(pkt.TransportHeader)
+		udpHeader := header.UDP(pkt.TransportHeader().View())
 		udpHeader.SetDestinationPort(rt.MinPort)
 
 		// Calculate UDP checksum and set it.
 		if hook == Output {
 			udpHeader.SetChecksum(0)
-			hdr := &pkt.Header
-			length := uint16(pkt.Data.Size()+hdr.UsedLength()) - uint16(netHeader.HeaderLength())
+			length := uint16(pkt.Size()) - uint16(netHeader.HeaderLength())
 
 			// Only calculate the checksum if offloading isn't supported.
 			if r.Capabilities()&CapabilityTXChecksumOffload == 0 {

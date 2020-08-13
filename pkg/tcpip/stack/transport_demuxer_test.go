@@ -128,11 +128,10 @@ func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
-		Data:            buf.ToVectorisedView(),
-		NetworkHeader:   buffer.View(ip),
-		TransportHeader: buffer.View(u),
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
 	})
+	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
@@ -166,11 +165,10 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
-		Data:            buf.ToVectorisedView(),
-		NetworkHeader:   buffer.View(ip),
-		TransportHeader: buffer.View(u),
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
 	})
+	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, pkt)
 }
 
 func TestTransportDemuxerRegister(t *testing.T) {

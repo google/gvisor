@@ -57,6 +57,7 @@ go_library(
         "conntrack.go",
         "dhcpv6configurationfromndpra_string.go",
         "forwarder.go",
+        "headertype_string.go",
         "icmp_rate_limit.go",
         "iptables.go",
         "iptables_state.go",
@@ -143,6 +144,7 @@ go_test(
         "neighbor_cache_test.go",
         "neighbor_entry_test.go",
         "nic_test.go",
+        "packet_buffer_test.go",
     ],
     library = ":stack",
     deps = [

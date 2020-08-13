@@ -65,6 +65,16 @@ func (v View) ToVectorisedView() VectorisedView {
 	return NewVectorisedView(len(v), []View{v})
 }
 
+// IsEmpty returns whether v is of length zero.
+func (v View) IsEmpty() bool {
+	return len(v) == 0
+}
+
+// Size returns the length of v.
+func (v View) Size() int {
+	return len(v)
+}
+
 // VectorisedView is a vectorised version of View using non contiguous memory.
 // It supports all the convenience methods supported by View.
 //

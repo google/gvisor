@@ -173,7 +173,7 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuf
 	}
 
 	// WritePacket takes ownership of pkt, calculate numBytes first.
-	numBytes := pkt.Header.UsedLength() + pkt.Data.Size()
+	numBytes := pkt.Size()
 
 	err := r.ref.ep.WritePacket(r, gso, params, pkt)
 	if err != nil {
@@ -203,8 +203,7 @@ func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHead
 
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < n && pb != nil; i, pb = i+1, pb.Next() {
-		writtenBytes += pb.Header.UsedLength()
-		writtenBytes += pb.Data.Size()
+		writtenBytes += pb.Size()
 	}
 
 	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(writtenBytes))

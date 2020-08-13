@@ -104,21 +104,21 @@ func TestWaitWrite(t *testing.T) {
 	wep := New(ep)
 
 	// Write and check that it goes through.
-	wep.WritePacket(nil, nil /* gso */, 0, &stack.PacketBuffer{})
+	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 1; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on dispatches, then try to write. It must go through.
 	wep.WaitDispatch()
-	wep.WritePacket(nil, nil /* gso */, 0, &stack.PacketBuffer{})
+	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on writes, then try to write. It must not go through.
 	wep.WaitWrite()
-	wep.WritePacket(nil, nil /* gso */, 0, &stack.PacketBuffer{})
+	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
@@ -135,21 +135,21 @@ func TestWaitDispatch(t *testing.T) {
 	}
 
 	// Dispatch and check that it goes through.
-	ep.dispatcher.DeliverNetworkPacket("", "", 0, &stack.PacketBuffer{})
+	ep.dispatcher.DeliverNetworkPacket("", "", 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 1; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on writes, then try to dispatch. It must go through.
 	wep.WaitWrite()
-	ep.dispatcher.DeliverNetworkPacket("", "", 0, &stack.PacketBuffer{})
+	ep.dispatcher.DeliverNetworkPacket("", "", 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on dispatches, then try to dispatch. It must not go through.
 	wep.WaitDispatch()
-	ep.dispatcher.DeliverNetworkPacket("", "", 0, &stack.PacketBuffer{})
+	ep.dispatcher.DeliverNetworkPacket("", "", 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}

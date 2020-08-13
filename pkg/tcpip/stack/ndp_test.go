@@ -541,7 +541,7 @@ func TestDADResolve(t *testing.T) {
 				// As per RFC 4861 section 4.3, a possible option is the Source Link
 				// Layer option, but this option MUST NOT be included when the source
 				// address of the packet is the unspecified address.
-				checker.IPv6(t, p.Pkt.Header.View(),
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(header.IPv6Any),
 					checker.DstAddr(snmc),
 					checker.TTL(header.NDPHopLimit),
@@ -550,8 +550,8 @@ func TestDADResolve(t *testing.T) {
 						checker.NDPNSOptions(nil),
 					))
 
-				if l, want := p.Pkt.Header.AvailableLength(), int(test.linkHeaderLen); l != want {
-					t.Errorf("got p.Pkt.Header.AvailableLength() = %d; want = %d", l, want)
+				if l, want := p.Pkt.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
+					t.Errorf("got p.Pkt.AvailableHeaderBytes() = %d; want = %d", l, want)
 				}
 			}
 		})
@@ -667,9 +667,10 @@ func TestDADFail(t *testing.T) {
 			// Receive a packet to simulate multiple nodes owning or
 			// attempting to own the same address.
 			hdr := test.makeBuf(addr1)
-			e.InjectInbound(header.IPv6ProtocolNumber, &stack.PacketBuffer{
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			})
+			e.InjectInbound(header.IPv6ProtocolNumber, pkt)
 
 			stat := test.getStat(s.Stats().ICMP.V6PacketsReceived)
 			if got := stat.Value(); got != 1 {
@@ -1024,7 +1025,9 @@ func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherCo
 		DstAddr:       header.IPv6AllNodesMulticastAddress,
 	})
 
-	return &stack.PacketBuffer{Data: hdr.View().ToVectorisedView()}
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: hdr.View().ToVectorisedView(),
+	})
 }
 
 // raBufWithOpts returns a valid NDP Router Advertisement with options.
@@ -5134,16 +5137,15 @@ func TestRouterSolicitation(t *testing.T) {
 						t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
 					}
 
-					checker.IPv6(t,
-						p.Pkt.Header.View(),
+					checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 						checker.SrcAddr(test.expectedSrcAddr),
 						checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
 						checker.TTL(header.NDPHopLimit),
 						checker.NDPRS(checker.NDPRSOptions(test.expectedNDPOpts)),
 					)
 
-					if l, want := p.Pkt.Header.AvailableLength(), int(test.linkHeaderLen); l != want {
-						t.Errorf("got p.Pkt.Header.AvailableLength() = %d; want = %d", l, want)
+					if l, want := p.Pkt.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
+						t.Errorf("got p.Pkt.AvailableHeaderBytes() = %d; want = %d", l, want)
 					}
 				}
 				waitForNothing := func(timeout time.Duration) {
@@ -5288,7 +5290,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 				if p.Proto != header.IPv6ProtocolNumber {
 					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
 				}
-				checker.IPv6(t, p.Pkt.Header.View(),
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(header.IPv6Any),
 					checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
 					checker.TTL(header.NDPHopLimit),

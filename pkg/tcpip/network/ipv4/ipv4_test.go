@@ -17,6 +17,7 @@ package ipv4_test
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"math/rand"
 	"testing"
 
@@ -91,15 +92,11 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 }
 
-// makeHdrAndPayload generates a randomize packet. hdrLength indicates how much
+// makeRandPkt generates a randomize packet. hdrLength indicates how much
 // data should already be in the header before WritePacket. extraLength
 // indicates how much extra space should be in the header. The payload is made
 // from many Views of the sizes listed in viewSizes.
-func makeHdrAndPayload(hdrLength int, extraLength int, viewSizes []int) (buffer.Prependable, buffer.VectorisedView) {
-	hdr := buffer.NewPrependable(hdrLength + extraLength)
-	hdr.Prepend(hdrLength)
-	rand.Read(hdr.View())
-
+func makeRandPkt(hdrLength int, extraLength int, viewSizes []int) *stack.PacketBuffer {
 	var views []buffer.View
 	totalLength := 0
 	for _, s := range viewSizes {
@@ -108,8 +105,16 @@ func makeHdrAndPayload(hdrLength int, extraLength int, viewSizes []int) (buffer.
 		views = append(views, newView)
 		totalLength += s
 	}
-	payload := buffer.NewVectorisedView(totalLength, views)
-	return hdr, payload
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: hdrLength + extraLength,
+		Data:               buffer.NewVectorisedView(totalLength, views),
+	})
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	if _, err := rand.Read(pkt.TransportHeader().Push(hdrLength)); err != nil {
+		panic(fmt.Sprintf("rand.Read: %s", err))
+	}
+	return pkt
 }
 
 // comparePayloads compared the contents of all the packets against the contents
@@ -117,9 +122,9 @@ func makeHdrAndPayload(hdrLength int, extraLength int, viewSizes []int) (buffer.
 func compareFragments(t *testing.T, packets []*stack.PacketBuffer, sourcePacketInfo *stack.PacketBuffer, mtu uint32) {
 	t.Helper()
 	// Make a complete array of the sourcePacketInfo packet.
-	source := header.IPv4(packets[0].Header.View()[:header.IPv4MinimumSize])
-	source = append(source, sourcePacketInfo.Header.View()...)
-	source = append(source, sourcePacketInfo.Data.ToView()...)
+	source := header.IPv4(packets[0].NetworkHeader().View()[:header.IPv4MinimumSize])
+	vv := buffer.NewVectorisedView(sourcePacketInfo.Size(), sourcePacketInfo.Views())
+	source = append(source, vv.ToView()...)
 
 	// Make a copy of the IP header, which will be modified in some fields to make
 	// an expected header.
@@ -132,8 +137,7 @@ func compareFragments(t *testing.T, packets []*stack.PacketBuffer, sourcePacketI
 	var reassembledPayload []byte
 	for i, packet := range packets {
 		// Confirm that the packet is valid.
-		allBytes := packet.Header.View().ToVectorisedView()
-		allBytes.Append(packet.Data)
+		allBytes := buffer.NewVectorisedView(packet.Size(), packet.Views())
 		ip := header.IPv4(allBytes.ToView())
 		if !ip.IsValid(len(ip)) {
 			t.Errorf("IP packet is invalid:\n%s", hex.Dump(ip))
@@ -144,10 +148,17 @@ func compareFragments(t *testing.T, packets []*stack.PacketBuffer, sourcePacketI
 		if got, want := len(ip), int(mtu); got > want {
 			t.Errorf("fragment is too large, got %d want %d", got, want)
 		}
-		if got, want := packet.Header.UsedLength(), sourcePacketInfo.Header.UsedLength()+header.IPv4MinimumSize; i == 0 && want < int(mtu) && got != want {
-			t.Errorf("first fragment hdr parts should have unmodified length if possible: got %d, want %d", got, want)
+		if i == 0 {
+			got := packet.NetworkHeader().View().Size() + packet.TransportHeader().View().Size()
+			// sourcePacketInfo does not have NetworkHeader added, simulate one.
+			want := header.IPv4MinimumSize + sourcePacketInfo.TransportHeader().View().Size()
+			// Check that it kept the transport header in packet.TransportHeader if
+			// it fits in the first fragment.
+			if want < int(mtu) && got != want {
+				t.Errorf("first fragment hdr parts should have unmodified length if possible: got %d, want %d", got, want)
+			}
 		}
-		if got, want := packet.Header.AvailableLength(), sourcePacketInfo.Header.AvailableLength()-header.IPv4MinimumSize; got != want {
+		if got, want := packet.AvailableHeaderBytes(), sourcePacketInfo.AvailableHeaderBytes()-header.IPv4MinimumSize; got != want {
 			t.Errorf("fragment #%d should have the same available space for prepending as source: got %d, want %d", i, got, want)
 		}
 		if got, want := packet.NetworkProtocolNumber, sourcePacketInfo.NetworkProtocolNumber; got != want {
@@ -284,22 +295,14 @@ func TestFragmentation(t *testing.T) {
 
 	for _, ft := range fragTests {
 		t.Run(ft.description, func(t *testing.T) {
-			hdr, payload := makeHdrAndPayload(ft.hdrLength, ft.extraLength, ft.payloadViewsSizes)
-			source := &stack.PacketBuffer{
-				Header: hdr,
-				// Save the source payload because WritePacket will modify it.
-				Data:                  payload.Clone(nil),
-				NetworkProtocolNumber: header.IPv4ProtocolNumber,
-			}
+			pkt := makeRandPkt(ft.hdrLength, ft.extraLength, ft.payloadViewsSizes)
+			source := pkt.Clone()
 			c := buildContext(t, nil, ft.mtu)
 			err := c.Route.WritePacket(ft.gso, stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      42,
 				TOS:      stack.DefaultTOS,
-			}, &stack.PacketBuffer{
-				Header: hdr,
-				Data:   payload,
-			})
+			}, pkt)
 			if err != nil {
 				t.Errorf("err got %v, want %v", err, nil)
 			}
@@ -344,16 +347,13 @@ func TestFragmentationErrors(t *testing.T) {
 
 	for _, ft := range fragTests {
 		t.Run(ft.description, func(t *testing.T) {
-			hdr, payload := makeHdrAndPayload(ft.hdrLength, header.IPv4MinimumSize, ft.payloadViewsSizes)
+			pkt := makeRandPkt(ft.hdrLength, header.IPv4MinimumSize, ft.payloadViewsSizes)
 			c := buildContext(t, ft.packetCollectorErrors, ft.mtu)
 			err := c.Route.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      42,
 				TOS:      stack.DefaultTOS,
-			}, &stack.PacketBuffer{
-				Header: hdr,
-				Data:   payload,
-			})
+			}, pkt)
 			for i := 0; i < len(ft.packetCollectorErrors)-1; i++ {
 				if got, want := ft.packetCollectorErrors[i], (*tcpip.Error)(nil); got != want {
 					t.Errorf("ft.packetCollectorErrors[%d] got %v, want %v", i, got, want)
@@ -472,9 +472,9 @@ func TestInvalidFragments(t *testing.T) {
 			s.CreateNIC(nicID, sniffer.New(ep))
 
 			for _, pkt := range tc.packets {
-				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, &stack.PacketBuffer{
+				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: buffer.NewVectorisedView(len(pkt), []buffer.View{pkt}),
-				})
+				}))
 			}
 
 			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), tc.wantMalformedIPPackets; got != want {
@@ -859,9 +859,9 @@ func TestReceiveFragments(t *testing.T) {
 				vv := hdr.View().ToVectorisedView()
 				vv.AppendView(frag.payload)
 
-				e.InjectInbound(header.IPv4ProtocolNumber, &stack.PacketBuffer{
+				e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: vv,
-				})
+				}))
 			}
 
 			if got, want := s.Stats().UDP.PacketsReceived.Value(), uint64(len(test.expectedPayloads)); got != want {
