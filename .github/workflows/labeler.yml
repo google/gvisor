@@ -1,4 +1,5 @@
 name: "Labeler"
+runs-on: self-hosted
 on:
 - pull_request
 
