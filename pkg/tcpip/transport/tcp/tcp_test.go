@@ -7297,3 +7297,53 @@ func TestResetDuringClose(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestStackTimeWaitReuse(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	s := c.Stack()
+	var twReuse tcpip.TCPTimeWaitReuseOption
+	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &twReuse); err != nil {
+		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &twReuse, err)
+	}
+	if got, want := twReuse, tcpip.TCPTimeWaitReuseLoopbackOnly; got != want {
+		t.Fatalf("got tcpip.TCPTimeWaitReuseOption: %v, want: %v", got, want)
+	}
+}
+
+func TestSetStackTimeWaitReuse(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	s := c.Stack()
+	testCases := []struct {
+		v   int
+		err *tcpip.Error
+	}{
+		{int(tcpip.TCPTimeWaitReuseDisabled), nil},
+		{int(tcpip.TCPTimeWaitReuseGlobal), nil},
+		{int(tcpip.TCPTimeWaitReuseLoopbackOnly), nil},
+		{int(tcpip.TCPTimeWaitReuseLoopbackOnly) + 1, tcpip.ErrInvalidOptionValue},
+		{int(tcpip.TCPTimeWaitReuseDisabled) - 1, tcpip.ErrInvalidOptionValue},
+	}
+
+	for _, tc := range testCases {
+		err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitReuseOption(tc.v))
+		if got, want := err, tc.err; got != want {
+			t.Fatalf("s.TransportProtocolOption(%v, %v) = %v, want %v", tcp.ProtocolNumber, tc.v, err, tc.err)
+		}
+		if tc.err != nil {
+			continue
+		}
+
+		var twReuse tcpip.TCPTimeWaitReuseOption
+		if err := s.TransportProtocolOption(tcp.ProtocolNumber, &twReuse); err != nil {
+			t.Fatalf("s.TransportProtocolOption(%v, %v) = %v, want nil", tcp.ProtocolNumber, &twReuse, err)
+		}
+
+		if got, want := twReuse, tcpip.TCPTimeWaitReuseOption(tc.v); got != want {
+			t.Fatalf("got tcpip.TCPTimeWaitReuseOption: %v, want: %v", got, want)
+		}
+	}
+}
