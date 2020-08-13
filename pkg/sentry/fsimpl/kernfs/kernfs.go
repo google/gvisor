@@ -246,15 +246,15 @@ func (d *Dentry) OnZeroWatches(context.Context) {}
 // Precondition: d must represent a directory inode.
 func (d *Dentry) InsertChild(name string, child *Dentry) {
 	d.dirMu.Lock()
-	d.insertChildLocked(name, child)
+	d.InsertChildLocked(name, child)
 	d.dirMu.Unlock()
 }
 
-// insertChildLocked is equivalent to InsertChild, with additional
+// InsertChildLocked is equivalent to InsertChild, with additional
 // preconditions.
 //
 // Precondition: d.dirMu must be locked.
-func (d *Dentry) insertChildLocked(name string, child *Dentry) {
+func (d *Dentry) InsertChildLocked(name string, child *Dentry) {
 	if !d.isDir() {
 		panic(fmt.Sprintf("InsertChild called on non-directory Dentry: %+v.", d))
 	}
