@@ -69,6 +69,7 @@ syscall_test(
     # involve much concurrency, TSAN's usefulness here is limited anyway.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:socket_stress_test",
+    vfs2 = False,
 )
 
 syscall_test(
