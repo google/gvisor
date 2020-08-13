@@ -95,6 +95,38 @@ TEST_F(OpenTest, OTruncAndReadOnlyFile) {
       Open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666));
 }
 
+TEST_F(OpenTest, OCreateDirectory) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto dirpath = GetAbsoluteTestTmpdir();
+
+  // Normal case: existing directory.
+  ASSERT_THAT(open(dirpath.c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+  // Trailing separator on existing directory.
+  ASSERT_THAT(open(dirpath.append("/").c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+  // Trailing separator on non-existing directory.
+  ASSERT_THAT(open(JoinPath(dirpath, "non-existent").append("/").c_str(),
+                   O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+  // "." special case.
+  ASSERT_THAT(open(JoinPath(dirpath, ".").c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, MustCreateExisting) {
+  auto dirPath = GetAbsoluteTestTmpdir();
+
+  // Existing directory.
+  ASSERT_THAT(open(dirPath.c_str(), O_RDWR | O_CREAT | O_EXCL, 0666),
+              SyscallFailsWithErrno(EEXIST));
+
+  // Existing file.
+  auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dirPath));
+  ASSERT_THAT(open(newFile.path().c_str(), O_RDWR | O_CREAT | O_EXCL, 0666),
+              SyscallFailsWithErrno(EEXIST));
+}
+
 TEST_F(OpenTest, ReadOnly) {
   char buf;
   const FileDescriptor ro_file =
