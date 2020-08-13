@@ -24,10 +24,7 @@ import (
 )
 
 // init initializes architecture-specific state.
-func (k *Kernel) init(opts KernelOpts, maxCPUs int) {
-	// Save the root page tables.
-	k.PageTables = opts.PageTables
-
+func (k *Kernel) init(maxCPUs int) {
 	entrySize := reflect.TypeOf(kernelEntry{}).Size()
 	var (
 		entries []kernelEntry
