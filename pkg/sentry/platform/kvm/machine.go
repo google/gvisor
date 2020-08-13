@@ -41,6 +41,9 @@ type machine struct {
 	// slots are currently being updated, and the caller should retry.
 	nextSlot uint32
 
+	// upperSharedPageTables tracks the read-only shared upper of all the pagetables.
+	upperSharedPageTables *pagetables.PageTables
+
 	// kernel is the set of global structures.
 	kernel ring0.Kernel
 
@@ -199,9 +202,7 @@ func newMachine(vm int) (*machine, error) {
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
 	m.vCPUsByTID = make(map[uint64]*vCPU)
 	m.vCPUsByID = make([]*vCPU, m.maxVCPUs)
-	m.kernel.Init(ring0.KernelOpts{
-		PageTables: pagetables.New(newAllocator()),
-	}, m.maxVCPUs)
+	m.kernel.Init(m.maxVCPUs)
 
 	// Pull the maximum slots.
 	maxSlots, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
@@ -212,6 +213,13 @@ func newMachine(vm int) (*machine, error) {
 	}
 	log.Debugf("The maximum number of slots is %d.", m.maxSlots)
 	m.usedSlots = make([]uintptr, m.maxSlots)
+
+	// Create the upper shared pagetables and kernel(sentry) pagetables.
+	m.upperSharedPageTables = pagetables.New(newAllocator())
+	m.mapUpperHalf(m.upperSharedPageTables)
+	m.upperSharedPageTables.Allocator.(*allocator).base.Drain()
+	m.upperSharedPageTables.MarkReadOnlyShared()
+	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
 
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
@@ -226,7 +234,6 @@ func newMachine(vm int) (*machine, error) {
 
 		return true // Keep iterating.
 	})
-	m.mapUpperHalf(m.kernel.PageTables)
 
 	var physicalRegionsReadOnly []physicalRegion
 	var physicalRegionsAvailable []physicalRegion

@@ -432,30 +432,27 @@ func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 	return physicalRegions
 }
 
-var execRegions = func() (regions []region) {
+func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
+	// Map all the executible regions so that all the entry functions
+	// are mapped in the upper half.
 	applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
 			return
 		}
+
 		if vr.accessType.Execute {
-			regions = append(regions, vr.region)
+			r := vr.region
+			physical, length, ok := translateToPhysical(r.virtual)
+			if !ok || length < r.length {
+				panic("impossible translation")
+			}
+			pageTable.Map(
+				usermem.Addr(ring0.KernelStartAddress|r.virtual),
+				r.length,
+				pagetables.MapOpts{AccessType: usermem.Execute},
+				physical)
 		}
 	})
-	return
-}()
-
-func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
-	for _, r := range execRegions {
-		physical, length, ok := translateToPhysical(r.virtual)
-		if !ok || length < r.length {
-			panic("impossilbe translation")
-		}
-		pageTable.Map(
-			usermem.Addr(ring0.KernelStartAddress|r.virtual),
-			r.length,
-			pagetables.MapOpts{AccessType: usermem.Execute},
-			physical)
-	}
 	for start, end := range m.kernel.EntryRegions() {
 		regionLen := end - start
 		physical, length, ok := translateToPhysical(start)

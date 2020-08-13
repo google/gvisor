@@ -16,11 +16,9 @@ package ring0
 
 // Init initializes a new kernel.
 //
-// N.B. that constraints on KernelOpts must be satisfied.
-//
 //go:nosplit
-func (k *Kernel) Init(opts KernelOpts, maxCPUs int) {
-	k.init(opts, maxCPUs)
+func (k *Kernel) Init(maxCPUs int) {
+	k.init(maxCPUs)
 }
 
 // Halt halts execution.
