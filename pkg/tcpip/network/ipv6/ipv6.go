@@ -99,9 +99,9 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
-func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) header.IPv6 {
-	length := uint16(hdr.UsedLength() + payloadSize)
-	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams) {
+	length := uint16(pkt.Size())
+	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength: length,
 		NextHeader:    uint8(params.Protocol),
@@ -110,26 +110,20 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 		SrcAddr:       r.LocalAddress,
 		DstAddr:       r.RemoteAddress,
 	})
-	return ip
+	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
-	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
-	pkt.NetworkHeader = buffer.View(ip)
-	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
+	e.addIPHeader(r, pkt, params)
 
 	if r.Loop&stack.PacketLoop != 0 {
-		// The inbound path expects the network header to still be in
-		// the PacketBuffer's Data field.
-		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
-		views[0] = pkt.Header.View()
-		views = append(views, pkt.Data.Views()...)
 		loopedR := r.MakeLoopedRoute()
 
-		e.HandlePacket(&loopedR, &stack.PacketBuffer{
-			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-		})
+		e.HandlePacket(&loopedR, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			// The inbound path expects an unparsed packet.
+			Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+		}))
 
 		loopedR.Release()
 	}
@@ -151,9 +145,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	}
 
 	for pb := pkts.Front(); pb != nil; pb = pb.Next() {
-		ip := e.addIPHeader(r, &pb.Header, pb.Data.Size(), params)
-		pb.NetworkHeader = buffer.View(ip)
-		pb.NetworkProtocolNumber = header.IPv6ProtocolNumber
+		e.addIPHeader(r, pb, params)
 	}
 
 	n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
@@ -171,8 +163,8 @@ func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuff
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
-	h := header.IPv6(pkt.NetworkHeader)
-	if !h.IsValid(pkt.Data.Size() + len(pkt.NetworkHeader) + len(pkt.TransportHeader)) {
+	h := header.IPv6(pkt.NetworkHeader().View())
+	if !h.IsValid(pkt.Data.Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
@@ -181,8 +173,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
 	// - The transport header, if present.
 	// - Any other payload data.
-	vv := pkt.NetworkHeader[header.IPv6MinimumSize:].ToVectorisedView()
-	vv.AppendView(pkt.TransportHeader)
+	vv := pkt.NetworkHeader().View()[header.IPv6MinimumSize:].ToVectorisedView()
+	vv.AppendView(pkt.TransportHeader().View())
 	vv.Append(pkt.Data)
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), vv)
 	hasFragmentHeader := false
@@ -410,7 +402,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			//
 			// For reassembled fragments, pkt.TransportHeader is unset, so this is a
 			// no-op and pkt.Data begins with the transport header.
-			extHdr.Buf.TrimFront(len(pkt.TransportHeader))
+			extHdr.Buf.TrimFront(pkt.TransportHeader().View().Size())
 			pkt.Data = extHdr.Buf
 
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
@@ -581,17 +573,14 @@ traverseExtensions:
 		}
 	}
 
-	// Put the IPv6 header with extensions in pkt.NetworkHeader.
-	hdr, ok = pkt.Data.PullUp(header.IPv6MinimumSize + extensionsSize)
+	// Put the IPv6 header with extensions in pkt.NetworkHeader().
+	hdr, ok = pkt.NetworkHeader().Consume(header.IPv6MinimumSize + extensionsSize)
 	if !ok {
 		panic(fmt.Sprintf("pkt.Data should have at least %d bytes, but only has %d.", header.IPv6MinimumSize+extensionsSize, pkt.Data.Size()))
 	}
 	ipHdr = header.IPv6(hdr)
-
-	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
-	pkt.NetworkHeader = hdr
-	pkt.Data.TrimFront(len(hdr))
 	pkt.Data.CapLength(int(ipHdr.PayloadLength()))
+	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
 
 	return nextHdr, foundNext, true
 }

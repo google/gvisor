@@ -21,7 +21,6 @@
 package ipv4
 
 import (
-	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -127,14 +126,12 @@ func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 }
 
 // writePacketFragments calls e.linkEP.WritePacket with each packet fragment to
-// write. It assumes that the IP header is entirely in pkt.Header but does not
-// assume that only the IP header is in pkt.Header. It assumes that the input
-// packet's stated length matches the length of the header+payload. mtu
-// includes the IP header and options. This does not support the DontFragment
-// IP flag.
+// write. It assumes that the IP header is already present in pkt.NetworkHeader.
+// pkt.TransportHeader may be set. mtu includes the IP header and options. This
+// does not support the DontFragment IP flag.
 func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int, pkt *stack.PacketBuffer) *tcpip.Error {
 	// This packet is too big, it needs to be fragmented.
-	ip := header.IPv4(pkt.Header.View())
+	ip := header.IPv4(pkt.NetworkHeader().View())
 	flags := ip.Flags()
 
 	// Update mtu to take into account the header, which will exist in all
@@ -148,88 +145,84 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 
 	outerMTU := innerMTU + int(ip.HeaderLength())
 	offset := ip.FragmentOffset()
-	originalAvailableLength := pkt.Header.AvailableLength()
+
+	// Keep the length reserved for link-layer, we need to create fragments with
+	// the same reserved length.
+	reservedForLink := pkt.AvailableHeaderBytes()
+
+	// Destroy the packet, pull all payloads out for fragmentation.
+	transHeader, data := pkt.TransportHeader().View(), pkt.Data
+
+	// Where possible, the first fragment that is sent has the same
+	// number of bytes reserved for header as the input packet. The link-layer
+	// endpoint may depend on this for looking at, eg, L4 headers.
+	transFitsFirst := len(transHeader) <= innerMTU
+
 	for i := 0; i < n; i++ {
-		// Where possible, the first fragment that is sent has the same
-		// pkt.Header.UsedLength() as the input packet. The link-layer
-		// endpoint may depend on this for looking at, eg, L4 headers.
-		h := ip
-		if i > 0 {
-			pkt.Header = buffer.NewPrependable(int(ip.HeaderLength()) + originalAvailableLength)
-			h = header.IPv4(pkt.Header.Prepend(int(ip.HeaderLength())))
-			copy(h, ip[:ip.HeaderLength()])
+		reserve := reservedForLink + int(ip.HeaderLength())
+		if i == 0 && transFitsFirst {
+			// Reserve for transport header if it's going to be put in the first
+			// fragment.
+			reserve += len(transHeader)
 		}
+		fragPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: reserve,
+		})
+		fragPkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+
+		// Copy data for the fragment.
+		avail := innerMTU
+
+		if n := len(transHeader); n > 0 {
+			if n > avail {
+				n = avail
+			}
+			if i == 0 && transFitsFirst {
+				copy(fragPkt.TransportHeader().Push(n), transHeader)
+			} else {
+				fragPkt.Data.AppendView(transHeader[:n:n])
+			}
+			transHeader = transHeader[n:]
+			avail -= n
+		}
+
+		if avail > 0 {
+			n := data.Size()
+			if n > avail {
+				n = avail
+			}
+			data.ReadToVV(&fragPkt.Data, n)
+			avail -= n
+		}
+
+		copied := uint16(innerMTU - avail)
+
+		// Set lengths in header and calculate checksum.
+		h := header.IPv4(fragPkt.NetworkHeader().Push(len(ip)))
+		copy(h, ip)
 		if i != n-1 {
 			h.SetTotalLength(uint16(outerMTU))
 			h.SetFlagsFragmentOffset(flags|header.IPv4FlagMoreFragments, offset)
 		} else {
-			h.SetTotalLength(uint16(h.HeaderLength()) + uint16(pkt.Data.Size()))
+			h.SetTotalLength(uint16(h.HeaderLength()) + copied)
 			h.SetFlagsFragmentOffset(flags, offset)
 		}
 		h.SetChecksum(0)
 		h.SetChecksum(^h.CalculateChecksum())
-		offset += uint16(innerMTU)
-		if i > 0 {
-			newPayload := pkt.Data.Clone(nil)
-			newPayload.CapLength(innerMTU)
-			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, &stack.PacketBuffer{
-				Header:                pkt.Header,
-				Data:                  newPayload,
-				NetworkHeader:         buffer.View(h),
-				NetworkProtocolNumber: header.IPv4ProtocolNumber,
-			}); err != nil {
-				return err
-			}
-			r.Stats().IP.PacketsSent.Increment()
-			pkt.Data.TrimFront(newPayload.Size())
-			continue
+		offset += copied
+
+		// Send out the fragment.
+		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, fragPkt); err != nil {
+			return err
 		}
-		// Special handling for the first fragment because it comes
-		// from the header.
-		if outerMTU >= pkt.Header.UsedLength() {
-			// This fragment can fit all of pkt.Header and possibly
-			// some of pkt.Data, too.
-			newPayload := pkt.Data.Clone(nil)
-			newPayloadLength := outerMTU - pkt.Header.UsedLength()
-			newPayload.CapLength(newPayloadLength)
-			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, &stack.PacketBuffer{
-				Header:                pkt.Header,
-				Data:                  newPayload,
-				NetworkHeader:         buffer.View(h),
-				NetworkProtocolNumber: header.IPv4ProtocolNumber,
-			}); err != nil {
-				return err
-			}
-			r.Stats().IP.PacketsSent.Increment()
-			pkt.Data.TrimFront(newPayloadLength)
-		} else {
-			// The fragment is too small to fit all of pkt.Header.
-			startOfHdr := pkt.Header
-			startOfHdr.TrimBack(pkt.Header.UsedLength() - outerMTU)
-			emptyVV := buffer.NewVectorisedView(0, []buffer.View{})
-			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, &stack.PacketBuffer{
-				Header:                startOfHdr,
-				Data:                  emptyVV,
-				NetworkHeader:         buffer.View(h),
-				NetworkProtocolNumber: header.IPv4ProtocolNumber,
-			}); err != nil {
-				return err
-			}
-			r.Stats().IP.PacketsSent.Increment()
-			// Add the unused bytes of pkt.Header into the pkt.Data
-			// that remains to be sent.
-			restOfHdr := pkt.Header.View()[outerMTU:]
-			tmp := buffer.NewVectorisedView(len(restOfHdr), []buffer.View{buffer.NewViewFromBytes(restOfHdr)})
-			tmp.Append(pkt.Data)
-			pkt.Data = tmp
-		}
+		r.Stats().IP.PacketsSent.Increment()
 	}
 	return nil
 }
 
-func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) header.IPv4 {
-	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
-	length := uint16(hdr.UsedLength() + payloadSize)
+func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams) {
+	ip := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+	length := uint16(pkt.Size())
 	// RFC 6864 section 4.3 mandates uniqueness of ID values for non-atomic
 	// datagrams. Since the DF bit is never being set here, all datagrams
 	// are non-atomic and need an ID.
@@ -245,14 +238,12 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 		DstAddr:     r.RemoteAddress,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
-	return ip
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
-	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
-	pkt.NetworkHeader = buffer.View(ip)
-	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	e.addIPHeader(r, pkt, params)
 
 	// iptables filtering. All packets that reach here are locally
 	// generated.
@@ -269,7 +260,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	// only NATted packets, but removing this check short circuits broadcasts
 	// before they are sent out to other hosts.
 	if pkt.NatDone {
-		netHeader := header.IPv4(pkt.NetworkHeader)
+		netHeader := header.IPv4(pkt.NetworkHeader().View())
 		ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
 		if err == nil {
 			route := r.ReverseRoute(netHeader.SourceAddress(), netHeader.DestinationAddress())
@@ -286,7 +277,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	if r.Loop&stack.PacketOut == 0 {
 		return nil
 	}
-	if pkt.Header.UsedLength()+pkt.Data.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
+	if pkt.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
 		return e.writePacketFragments(r, gso, int(e.linkEP.MTU()), pkt)
 	}
 	if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
@@ -306,9 +297,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	}
 
 	for pkt := pkts.Front(); pkt != nil; {
-		ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
-		pkt.NetworkHeader = buffer.View(ip)
-		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		e.addIPHeader(r, pkt, params)
 		pkt = pkt.Next()
 	}
 
@@ -333,7 +322,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 			continue
 		}
 		if _, ok := natPkts[pkt]; ok {
-			netHeader := header.IPv4(pkt.NetworkHeader)
+			netHeader := header.IPv4(pkt.NetworkHeader().View())
 			if ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress()); err == nil {
 				src := netHeader.SourceAddress()
 				dst := netHeader.DestinationAddress()
@@ -402,17 +391,14 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 
 	r.Stats().IP.PacketsSent.Increment()
 
-	ip = ip[:ip.HeaderLength()]
-	pkt.Header = buffer.NewPrependableFromView(buffer.View(ip))
-	pkt.Data.TrimFront(int(ip.HeaderLength()))
 	return e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
 }
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
-	h := header.IPv4(pkt.NetworkHeader)
-	if !h.IsValid(pkt.Data.Size() + len(pkt.NetworkHeader) + len(pkt.TransportHeader)) {
+	h := header.IPv4(pkt.NetworkHeader().View())
+	if !h.IsValid(pkt.Data.Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
@@ -426,7 +412,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	}
 
 	if h.More() || h.FragmentOffset() != 0 {
-		if pkt.Data.Size()+len(pkt.TransportHeader) == 0 {
+		if pkt.Data.Size()+pkt.TransportHeader().View().Size() == 0 {
 			// Drop the packet as it's marked as a fragment but has
 			// no payload.
 			r.Stats().IP.MalformedPacketsReceived.Increment()
@@ -470,7 +456,6 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	}
 	p := h.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {
-		pkt.NetworkHeader.CapLength(int(h.HeaderLength()))
 		e.handleICMP(r, pkt)
 		return
 	}
@@ -560,14 +545,19 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	}
 	ipHdr := header.IPv4(hdr)
 
-	// If there are options, pull those into hdr as well.
-	if headerLen := int(ipHdr.HeaderLength()); headerLen > header.IPv4MinimumSize && headerLen <= pkt.Data.Size() {
-		hdr, ok = pkt.Data.PullUp(headerLen)
-		if !ok {
-			panic(fmt.Sprintf("There are only %d bytes in pkt.Data, but there should be at least %d", pkt.Data.Size(), headerLen))
-		}
-		ipHdr = header.IPv4(hdr)
+	// Header may have options, determine the true header length.
+	headerLen := int(ipHdr.HeaderLength())
+	if headerLen < header.IPv4MinimumSize {
+		// TODO(gvisor.dev/issue/2404): Per RFC 791, IHL needs to be at least 5 in
+		// order for the packet to be valid. Figure out if we want to reject this
+		// case.
+		headerLen = header.IPv4MinimumSize
 	}
+	hdr, ok = pkt.NetworkHeader().Consume(headerLen)
+	if !ok {
+		return 0, false, false
+	}
+	ipHdr = header.IPv4(hdr)
 
 	// If this is a fragment, don't bother parsing the transport header.
 	parseTransportHeader := true
@@ -576,8 +566,6 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	}
 
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-	pkt.NetworkHeader = hdr
-	pkt.Data.TrimFront(len(hdr))
 	pkt.Data.CapLength(int(ipHdr.TotalLength()) - len(hdr))
 	return ipHdr.TransportProtocol(), parseTransportHeader, true
 }

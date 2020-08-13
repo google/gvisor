@@ -390,8 +390,7 @@ const (
 func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
-		eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
-		pkt.LinkHeader = buffer.View(eth)
+		eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 		ethHdr := &header.EthernetFields{
 			DstAddr: remote,
 			Type:    protocol,
@@ -420,7 +419,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		vnetHdr := virtioNetHdr{}
 		if gso != nil {
-			vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
+			vnetHdr.hdrLen = uint16(pkt.HeaderSize())
 			if gso.NeedsCsum {
 				vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
 				vnetHdr.csumStart = header.EthernetMinimumSize + gso.L3HdrLen
@@ -443,11 +442,9 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 		builder.Add(vnetHdrBuf)
 	}
 
-	builder.Add(pkt.Header.View())
-	for _, v := range pkt.Data.Views() {
+	for _, v := range pkt.Views() {
 		builder.Add(v)
 	}
-
 	return rawfile.NonBlockingWriteIovec(fd, builder.Build())
 }
 
@@ -463,7 +460,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 		if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 			vnetHdr := virtioNetHdr{}
 			if pkt.GSOOptions != nil {
-				vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
+				vnetHdr.hdrLen = uint16(pkt.HeaderSize())
 				if pkt.GSOOptions.NeedsCsum {
 					vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
 					vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
@@ -486,8 +483,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 
 		var builder iovec.Builder
 		builder.Add(vnetHdrBuf)
-		builder.Add(pkt.Header.View())
-		for _, v := range pkt.Data.Views() {
+		for _, v := range pkt.Views() {
 			builder.Add(v)
 		}
 		iovecs := builder.Build()

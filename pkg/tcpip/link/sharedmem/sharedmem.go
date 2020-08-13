@@ -186,8 +186,7 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	// Add ethernet header if needed.
-	eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
-	pkt.LinkHeader = buffer.View(eth)
+	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 	ethHdr := &header.EthernetFields{
 		DstAddr: remote,
 		Type:    protocol,
@@ -207,10 +206,10 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
 
-	v := pkt.Data.ToView()
+	views := pkt.Views()
 	// Transmit the packet.
 	e.mu.Lock()
-	ok := e.tx.transmit(pkt.Header.View(), v)
+	ok := e.tx.transmit(views...)
 	e.mu.Unlock()
 
 	if !ok {
@@ -227,10 +226,10 @@ func (e *endpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.PacketB
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	v := vv.ToView()
+	views := vv.Views()
 	// Transmit the packet.
 	e.mu.Lock()
-	ok := e.tx.transmit(v, buffer.View{})
+	ok := e.tx.transmit(views...)
 	e.mu.Unlock()
 
 	if !ok {
@@ -276,16 +275,18 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			rxb[i].Size = e.bufferSize
 		}
 
-		if n < header.EthernetMinimumSize {
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: buffer.View(b).ToVectorisedView(),
+		})
+
+		hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+		if !ok {
 			continue
 		}
+		eth := header.Ethernet(hdr)
 
 		// Send packet up the stack.
-		eth := header.Ethernet(b[:header.EthernetMinimumSize])
-		d.DeliverNetworkPacket(eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), &stack.PacketBuffer{
-			Data:       buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView(),
-			LinkHeader: buffer.View(eth),
-		})
+		d.DeliverNetworkPacket(eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), pkt)
 	}
 
 	// Clean state.

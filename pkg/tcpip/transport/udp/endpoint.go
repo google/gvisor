@@ -986,13 +986,16 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 // sendUDP sends a UDP segment via the provided network endpoint and under the
 // provided identity.
 func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8, owner tcpip.PacketOwner, noChecksum bool) *tcpip.Error {
-	// Allocate a buffer for the UDP header.
-	hdr := buffer.NewPrependable(header.UDPMinimumSize + int(r.MaxHeaderLength()))
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
+		Data:               data,
+	})
+	pkt.Owner = owner
 
-	// Initialize the header.
-	udp := header.UDP(hdr.Prepend(header.UDPMinimumSize))
+	// Initialize the UDP header.
+	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
 
-	length := uint16(hdr.UsedLength() + data.Size())
+	length := uint16(pkt.Size())
 	udp.Encode(&header.UDPFields{
 		SrcPort: localPort,
 		DstPort: remotePort,
@@ -1019,12 +1022,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 		Protocol: ProtocolNumber,
 		TTL:      ttl,
 		TOS:      tos,
-	}, &stack.PacketBuffer{
-		Header:          hdr,
-		Data:            data,
-		TransportHeader: buffer.View(udp),
-		Owner:           owner,
-	}); err != nil {
+	}, pkt); err != nil {
 		r.Stats().UDP.PacketSendErrors.Increment()
 		return err
 	}
@@ -1372,7 +1370,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
-	hdr := header.UDP(pkt.TransportHeader)
+	hdr := header.UDP(pkt.TransportHeader().View())
 	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
@@ -1443,9 +1441,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	// Save any useful information from the network header to the packet.
 	switch r.NetProto {
 	case header.IPv4ProtocolNumber:
-		packet.tos, _ = header.IPv4(pkt.NetworkHeader).TOS()
+		packet.tos, _ = header.IPv4(pkt.NetworkHeader().View()).TOS()
 	case header.IPv6ProtocolNumber:
-		packet.tos, _ = header.IPv6(pkt.NetworkHeader).TOS()
+		packet.tos, _ = header.IPv6(pkt.NetworkHeader().View()).TOS()
 	}
 
 	// TODO(gvisor.dev/issue/3556): r.LocalAddress may be a multicast or broadcast

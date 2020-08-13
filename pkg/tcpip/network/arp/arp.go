@@ -99,7 +99,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 }
 
 func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
-	h := header.ARP(pkt.NetworkHeader)
+	h := header.ARP(pkt.NetworkHeader().View())
 	if !h.IsValid() {
 		return
 	}
@@ -110,17 +110,17 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		if e.linkAddrCache.CheckLocalAddress(e.nicID, header.IPv4ProtocolNumber, localAddr) == 0 {
 			return // we have no useful answer, ignore the request
 		}
-		hdr := buffer.NewPrependable(int(e.linkEP.MaxHeaderLength()) + header.ARPSize)
-		packet := header.ARP(hdr.Prepend(header.ARPSize))
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: int(e.linkEP.MaxHeaderLength()) + header.ARPSize,
+		})
+		packet := header.ARP(pkt.NetworkHeader().Push(header.ARPSize))
 		packet.SetIPv4OverEthernet()
 		packet.SetOp(header.ARPReply)
 		copy(packet.HardwareAddressSender(), r.LocalLinkAddress[:])
 		copy(packet.ProtocolAddressSender(), h.ProtocolAddressTarget())
 		copy(packet.HardwareAddressTarget(), h.HardwareAddressSender())
 		copy(packet.ProtocolAddressTarget(), h.ProtocolAddressSender())
-		e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, &stack.PacketBuffer{
-			Header: hdr,
-		})
+		_ = e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
 		fallthrough // also fill the cache from requests
 	case header.ARPReply:
 		addr := tcpip.Address(h.ProtocolAddressSender())
@@ -168,17 +168,17 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAdd
 		r.RemoteLinkAddress = header.EthernetBroadcastAddress
 	}
 
-	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.ARPSize)
-	h := header.ARP(hdr.Prepend(header.ARPSize))
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(linkEP.MaxHeaderLength()) + header.ARPSize,
+	})
+	h := header.ARP(pkt.NetworkHeader().Push(header.ARPSize))
 	h.SetIPv4OverEthernet()
 	h.SetOp(header.ARPRequest)
 	copy(h.HardwareAddressSender(), linkEP.LinkAddress())
 	copy(h.ProtocolAddressSender(), localAddr)
 	copy(h.ProtocolAddressTarget(), addr)
 
-	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, &stack.PacketBuffer{
-		Header: hdr,
-	})
+	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.ResolveStaticAddress.
@@ -210,12 +210,10 @@ func (*protocol) Wait() {}
 
 // Parse implements stack.NetworkProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool) {
-	hdr, ok := pkt.Data.PullUp(header.ARPSize)
+	_, ok = pkt.NetworkHeader().Consume(header.ARPSize)
 	if !ok {
 		return 0, false, false
 	}
-	pkt.NetworkHeader = hdr
-	pkt.Data.TrimFront(header.ARPSize)
 	return 0, false, true
 }
 
