@@ -91,12 +91,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "Single syscall allowed",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "Single syscall disallowed",
-					data: seccompData{nr: 2, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -125,22 +125,22 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "Multiple rulesets allowed (1a)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x1}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x1}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "Multiple rulesets allowed (1b)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "Multiple rulesets allowed (2)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "Multiple rulesets allowed (2)",
-					data: seccompData{nr: 0, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 0, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_KILL_THREAD,
 				},
 			},
@@ -160,42 +160,42 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "Multiple syscalls allowed (1)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "Multiple syscalls allowed (3)",
-					data: seccompData{nr: 3, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 3, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "Multiple syscalls allowed (5)",
-					data: seccompData{nr: 5, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 5, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "Multiple syscalls disallowed (0)",
-					data: seccompData{nr: 0, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 0, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "Multiple syscalls disallowed (2)",
-					data: seccompData{nr: 2, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "Multiple syscalls disallowed (4)",
-					data: seccompData{nr: 4, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 4, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "Multiple syscalls disallowed (6)",
-					data: seccompData{nr: 6, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 6, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "Multiple syscalls disallowed (100)",
-					data: seccompData{nr: 100, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 100, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -231,7 +231,7 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "Syscall disallowed, action trap",
-					data: seccompData{nr: 2, arch: linux.AUDIT_ARCH_X86_64},
+					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -254,12 +254,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "Syscall argument allowed",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf, 0xf}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xf}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "Syscall argument disallowed",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf, 0xe}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xe}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -284,12 +284,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "Syscall argument allowed, two rules",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "Syscall argument allowed, two rules",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xe}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xe}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 			},
@@ -315,7 +315,7 @@ func TestBasic(t *testing.T) {
 					desc: "64bit syscall argument allowed",
 					data: seccompData{
 						nr:   1,
-						arch: linux.AUDIT_ARCH_X86_64,
+						arch: LINUX_AUDIT_ARCH,
 						args: [6]uint64{0, math.MaxUint64 - 1, math.MaxUint32},
 					},
 					want: linux.SECCOMP_RET_ALLOW,
@@ -324,7 +324,7 @@ func TestBasic(t *testing.T) {
 					desc: "64bit syscall argument disallowed",
 					data: seccompData{
 						nr:   1,
-						arch: linux.AUDIT_ARCH_X86_64,
+						arch: LINUX_AUDIT_ARCH,
 						args: [6]uint64{0, math.MaxUint64, math.MaxUint32},
 					},
 					want: linux.SECCOMP_RET_TRAP,
@@ -333,7 +333,7 @@ func TestBasic(t *testing.T) {
 					desc: "64bit syscall argument disallowed",
 					data: seccompData{
 						nr:   1,
-						arch: linux.AUDIT_ARCH_X86_64,
+						arch: LINUX_AUDIT_ARCH,
 						args: [6]uint64{0, math.MaxUint64, math.MaxUint32 - 1},
 					},
 					want: linux.SECCOMP_RET_TRAP,
@@ -358,32 +358,32 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "GreaterThan: Syscall argument allowed",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xffffffff}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xffffffff}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "GreaterThan: Syscall argument disallowed (equal)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf, 0xffffffff}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "Syscall argument disallowed (smaller)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x0, 0xffffffff}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "GreaterThan2: Syscall argument allowed",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xfbcd000d}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xfbcd000d}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "GreaterThan2: Syscall argument disallowed (equal)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xabcd000d}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xabcd000d}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "GreaterThan2: Syscall argument disallowed (smaller)",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xa000ffff}},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xa000ffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -405,12 +405,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "IP: Syscall instruction pointer allowed",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{}, instructionPointer: 0x7aabbccdd},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{}, instructionPointer: 0x7aabbccdd},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "IP: Syscall instruction pointer disallowed",
-					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{}, instructionPointer: 0x711223344},
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{}, instructionPointer: 0x711223344},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -466,7 +466,7 @@ func TestRandom(t *testing.T) {
 		t.Fatalf("bpf.Compile() got error: %v", err)
 	}
 	for i := uint32(0); i < 200; i++ {
-		data := seccompData{nr: i, arch: linux.AUDIT_ARCH_X86_64}
+		data := seccompData{nr: i, arch: LINUX_AUDIT_ARCH}
 		got, err := bpf.Exec(p, data.asInput())
 		if err != nil {
 			t.Errorf("bpf.Exec() got error: %v, for syscall %d", err, i)
