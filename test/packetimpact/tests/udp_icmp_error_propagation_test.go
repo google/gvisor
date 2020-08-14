@@ -62,9 +62,13 @@ func (e icmpError) String() string {
 func (e icmpError) ToICMPv4() *testbench.ICMPv4 {
 	switch e {
 	case portUnreachable:
-		return &testbench.ICMPv4{Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable), Code: testbench.Uint8(header.ICMPv4PortUnreachable)}
+		return &testbench.ICMPv4{
+			Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
+			Code: testbench.ICMPv4Code(header.ICMPv4PortUnreachable)}
 	case timeToLiveExceeded:
-		return &testbench.ICMPv4{Type: testbench.ICMPv4Type(header.ICMPv4TimeExceeded), Code: testbench.Uint8(header.ICMPv4TTLExceeded)}
+		return &testbench.ICMPv4{
+			Type: testbench.ICMPv4Type(header.ICMPv4TimeExceeded),
+			Code: testbench.ICMPv4Code(header.ICMPv4TTLExceeded)}
 	}
 	return nil
 }

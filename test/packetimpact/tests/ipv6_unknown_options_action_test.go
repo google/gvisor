@@ -172,7 +172,7 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 				&testbench.IPv6{},
 				&testbench.ICMPv6{
 					Type:    testbench.ICMPv6Type(header.ICMPv6ParamProblem),
-					Code:    testbench.Byte(2),
+					Code:    testbench.ICMPv6Code(header.ICMPv6UnknownOption),
 					Payload: icmpv6Payload,
 				},
 			}, time.Second)
