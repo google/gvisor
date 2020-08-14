@@ -16,9 +16,11 @@ package iptables
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
+	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -51,9 +53,24 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 		t.Fatalf("no test found with name %q. Has it been registered?", test.Name())
 	}
 
-	ctx := context.Background()
+	// Wait for the local and container goroutines to finish.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	ctx, cancel := context.WithTimeout(context.Background(), TestTimeout)
+	defer cancel()
+
 	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
+	defer func() {
+		if logs, err := d.Logs(context.Background()); err != nil {
+			t.Logf("Failed to retrieve container logs.")
+		} else {
+			t.Logf("=== Container logs: ===\n%s", logs)
+		}
+		// Use a new context, as cleanup should run even when we
+		// timeout.
+		d.CleanUp(context.Background())
+	}()
 
 	// TODO(gvisor.dev/issue/170): Skipping IPv6 gVisor tests.
 	if ipv6 && dockerutil.Runtime() != "runc" {
@@ -86,15 +103,44 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	}
 
 	// Run our side of the test.
-	if err := test.LocalAction(ip, ipv6); err != nil {
-		t.Fatalf("LocalAction failed: %v", err)
-	}
+	errCh := make(chan error, 2)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := test.LocalAction(ctx, ip, ipv6); err != nil && !errors.Is(err, context.Canceled) {
+			errCh <- fmt.Errorf("LocalAction failed: %v", err)
+		} else {
+			errCh <- nil
+		}
+		if test.LocalSufficient() {
+			errCh <- nil
+		}
+	}()
 
-	// Wait for the final statement. This structure has the side effect
-	// that all container logs will appear within the individual test
-	// context.
-	if _, err := d.WaitForOutput(ctx, TerminalStatement, TestTimeout); err != nil {
-		t.Fatalf("test failed: %v", err)
+	// Run the container side.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Wait for the final statement. This structure has the side
+		// effect that all container logs will appear within the
+		// individual test context.
+		if _, err := d.WaitForOutput(ctx, TerminalStatement, TestTimeout); err != nil && !errors.Is(err, context.Canceled) {
+			errCh <- fmt.Errorf("ContainerAction failed: %v", err)
+		} else {
+			errCh <- nil
+		}
+		if test.ContainerSufficient() {
+			errCh <- nil
+		}
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
 

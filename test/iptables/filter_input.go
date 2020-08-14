@@ -15,6 +15,7 @@
 package iptables
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -53,7 +54,7 @@ func init() {
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
-type FilterInputDropUDP struct{}
+type FilterInputDropUDP struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDropUDP) Name() string {
@@ -61,15 +62,17 @@ func (FilterInputDropUDP) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDropUDP) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-p", "udp", "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for UDP packets on dropPort.
-	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenUDP(timedCtx, dropPort); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
 	}
 
@@ -79,12 +82,12 @@ func (FilterInputDropUDP) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDropUDP) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, dropPort, sendloopDuration)
+func (FilterInputDropUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, dropPort)
 }
 
 // FilterInputDropOnlyUDP tests that "-p udp -j DROP" only affects UDP traffic.
-type FilterInputDropOnlyUDP struct{}
+type FilterInputDropOnlyUDP struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDropOnlyUDP) Name() string {
@@ -92,13 +95,13 @@ func (FilterInputDropOnlyUDP) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDropOnlyUDP) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropOnlyUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-p", "udp", "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for a TCP connection, which should be allowed.
-	if err := listenTCP(acceptPort, sendloopDuration); err != nil {
+	if err := listenTCP(ctx, acceptPort); err != nil {
 		return fmt.Errorf("failed to establish a connection %v", err)
 	}
 
@@ -106,14 +109,14 @@ func (FilterInputDropOnlyUDP) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDropOnlyUDP) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropOnlyUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Try to establish a TCP connection with the container, which should
 	// succeed.
-	return connectTCP(ip, acceptPort, sendloopDuration)
+	return connectTCP(ctx, ip, acceptPort)
 }
 
 // FilterInputDropUDPPort tests that we can drop UDP traffic by port.
-type FilterInputDropUDPPort struct{}
+type FilterInputDropUDPPort struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDropUDPPort) Name() string {
@@ -121,15 +124,17 @@ func (FilterInputDropUDPPort) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDropUDPPort) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropUDPPort) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for UDP packets on dropPort.
-	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenUDP(timedCtx, dropPort); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
 	}
 
@@ -139,13 +144,13 @@ func (FilterInputDropUDPPort) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDropUDPPort) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, dropPort, sendloopDuration)
+func (FilterInputDropUDPPort) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, dropPort)
 }
 
 // FilterInputDropDifferentUDPPort tests that dropping traffic for a single UDP port
 // doesn't drop packets on other ports.
-type FilterInputDropDifferentUDPPort struct{}
+type FilterInputDropDifferentUDPPort struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDropDifferentUDPPort) Name() string {
@@ -153,13 +158,13 @@ func (FilterInputDropDifferentUDPPort) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDropDifferentUDPPort) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropDifferentUDPPort) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for UDP packets on another port.
-	if err := listenUDP(acceptPort, sendloopDuration); err != nil {
+	if err := listenUDP(ctx, acceptPort); err != nil {
 		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", acceptPort, err)
 	}
 
@@ -167,12 +172,12 @@ func (FilterInputDropDifferentUDPPort) ContainerAction(ip net.IP, ipv6 bool) err
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDropDifferentUDPPort) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputDropDifferentUDPPort) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputDropTCPDestPort tests that connections are not accepted on specified source ports.
-type FilterInputDropTCPDestPort struct{}
+type FilterInputDropTCPDestPort struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDropTCPDestPort) Name() string {
@@ -180,33 +185,36 @@ func (FilterInputDropTCPDestPort) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDropTCPDestPort) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropTCPDestPort) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-p", "tcp", "-m", "tcp", "--dport", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for TCP packets on drop port.
-	if err := listenTCP(dropPort, sendloopDuration); err == nil {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenTCP(timedCtx, dropPort); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", dropPort)
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("error reading: %v", err)
 	}
 
 	return nil
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDropTCPDestPort) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropTCPDestPort) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Ensure we cannot connect to the container.
-	for start := time.Now(); time.Since(start) < sendloopDuration; {
-		if err := connectTCP(ip, dropPort, sendloopDuration-time.Since(start)); err == nil {
-			return fmt.Errorf("expected not to connect, but was able to connect on port %d", dropPort)
-		}
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := connectTCP(timedCtx, ip, dropPort); err == nil {
+		return fmt.Errorf("expected not to connect, but was able to connect on port %d", dropPort)
 	}
-
 	return nil
 }
 
 // FilterInputDropTCPSrcPort tests that connections are not accepted on specified source ports.
-type FilterInputDropTCPSrcPort struct{}
+type FilterInputDropTCPSrcPort struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDropTCPSrcPort) Name() string {
@@ -214,34 +222,37 @@ func (FilterInputDropTCPSrcPort) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDropTCPSrcPort) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropTCPSrcPort) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Drop anything from an ephemeral port.
 	if err := filterTable(ipv6, "-A", "INPUT", "-p", "tcp", "-m", "tcp", "--sport", "1024:65535", "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for TCP packets on accept port.
-	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenTCP(timedCtx, acceptPort); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but was", dropPort)
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("error reading: %v", err)
 	}
 
 	return nil
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDropTCPSrcPort) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropTCPSrcPort) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Ensure we cannot connect to the container.
-	for start := time.Now(); time.Since(start) < sendloopDuration; {
-		if err := connectTCP(ip, acceptPort, sendloopDuration-time.Since(start)); err == nil {
-			return fmt.Errorf("expected not to connect, but was able to connect on port %d", acceptPort)
-		}
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := connectTCP(timedCtx, ip, dropPort); err == nil {
+		return fmt.Errorf("expected not to connect, but was able to connect on port %d", acceptPort)
 	}
-
 	return nil
 }
 
 // FilterInputDropAll tests that we can drop all traffic to the INPUT chain.
-type FilterInputDropAll struct{}
+type FilterInputDropAll struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDropAll) Name() string {
@@ -249,15 +260,17 @@ func (FilterInputDropAll) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDropAll) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDropAll) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for all packets on dropPort.
-	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenUDP(timedCtx, dropPort); err == nil {
 		return fmt.Errorf("packets should have been dropped, but got a packet")
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
 	}
 
@@ -267,15 +280,15 @@ func (FilterInputDropAll) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDropAll) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, dropPort, sendloopDuration)
+func (FilterInputDropAll) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, dropPort)
 }
 
 // FilterInputMultiUDPRules verifies that multiple UDP rules are applied
 // correctly. This has the added benefit of testing whether we're serializing
 // rules correctly -- if we do it incorrectly, the iptables tool will
 // misunderstand and save the wrong tables.
-type FilterInputMultiUDPRules struct{}
+type FilterInputMultiUDPRules struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputMultiUDPRules) Name() string {
@@ -283,7 +296,7 @@ func (FilterInputMultiUDPRules) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputMultiUDPRules) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputMultiUDPRules) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	rules := [][]string{
 		{"-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"},
 		{"-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", acceptPort), "-j", "ACCEPT"},
@@ -293,14 +306,14 @@ func (FilterInputMultiUDPRules) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputMultiUDPRules) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputMultiUDPRules) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// No-op.
 	return nil
 }
 
 // FilterInputRequireProtocolUDP checks that "-m udp" requires "-p udp" to be
 // specified.
-type FilterInputRequireProtocolUDP struct{}
+type FilterInputRequireProtocolUDP struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputRequireProtocolUDP) Name() string {
@@ -308,20 +321,20 @@ func (FilterInputRequireProtocolUDP) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputRequireProtocolUDP) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputRequireProtocolUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err == nil {
 		return errors.New("expected iptables to fail with out \"-p udp\", but succeeded")
 	}
 	return nil
 }
 
-func (FilterInputRequireProtocolUDP) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputRequireProtocolUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// No-op.
 	return nil
 }
 
 // FilterInputCreateUserChain tests chain creation.
-type FilterInputCreateUserChain struct{}
+type FilterInputCreateUserChain struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputCreateUserChain) Name() string {
@@ -329,7 +342,7 @@ func (FilterInputCreateUserChain) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputCreateUserChain) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputCreateUserChain) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	rules := [][]string{
 		// Create a chain.
 		{"-N", chainName},
@@ -340,13 +353,13 @@ func (FilterInputCreateUserChain) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputCreateUserChain) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputCreateUserChain) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// No-op.
 	return nil
 }
 
 // FilterInputDefaultPolicyAccept tests the default ACCEPT policy.
-type FilterInputDefaultPolicyAccept struct{}
+type FilterInputDefaultPolicyAccept struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDefaultPolicyAccept) Name() string {
@@ -354,21 +367,21 @@ func (FilterInputDefaultPolicyAccept) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDefaultPolicyAccept) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDefaultPolicyAccept) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Set the default policy to accept, then receive a packet.
 	if err := filterTable(ipv6, "-P", "INPUT", "ACCEPT"); err != nil {
 		return err
 	}
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDefaultPolicyAccept) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputDefaultPolicyAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputDefaultPolicyDrop tests the default DROP policy.
-type FilterInputDefaultPolicyDrop struct{}
+type FilterInputDefaultPolicyDrop struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDefaultPolicyDrop) Name() string {
@@ -376,15 +389,17 @@ func (FilterInputDefaultPolicyDrop) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDefaultPolicyDrop) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDefaultPolicyDrop) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-P", "INPUT", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for UDP packets on dropPort.
-	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenUDP(timedCtx, dropPort); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
 	}
 
@@ -394,13 +409,13 @@ func (FilterInputDefaultPolicyDrop) ContainerAction(ip net.IP, ipv6 bool) error 
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDefaultPolicyDrop) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputDefaultPolicyDrop) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputReturnUnderflow tests that -j RETURN in a built-in chain causes
 // the underflow rule (i.e. default policy) to be executed.
-type FilterInputReturnUnderflow struct{}
+type FilterInputReturnUnderflow struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputReturnUnderflow) Name() string {
@@ -408,7 +423,7 @@ func (FilterInputReturnUnderflow) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputReturnUnderflow) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputReturnUnderflow) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Add a RETURN rule followed by an unconditional accept, and set the
 	// default policy to DROP.
 	rules := [][]string{
@@ -422,16 +437,16 @@ func (FilterInputReturnUnderflow) ContainerAction(ip net.IP, ipv6 bool) error {
 
 	// We should receive packets, as the RETURN rule will trigger the default
 	// ACCEPT policy.
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputReturnUnderflow) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputReturnUnderflow) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputSerializeJump verifies that we can serialize jumps.
-type FilterInputSerializeJump struct{}
+type FilterInputSerializeJump struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputSerializeJump) Name() string {
@@ -439,7 +454,7 @@ func (FilterInputSerializeJump) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputSerializeJump) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputSerializeJump) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Write a JUMP rule, the serialize it with `-L`.
 	rules := [][]string{
 		{"-N", chainName},
@@ -450,13 +465,13 @@ func (FilterInputSerializeJump) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputSerializeJump) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputSerializeJump) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// No-op.
 	return nil
 }
 
 // FilterInputJumpBasic jumps to a chain and executes a rule there.
-type FilterInputJumpBasic struct{}
+type FilterInputJumpBasic struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputJumpBasic) Name() string {
@@ -464,7 +479,7 @@ func (FilterInputJumpBasic) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputJumpBasic) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputJumpBasic) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	rules := [][]string{
 		{"-P", "INPUT", "DROP"},
 		{"-N", chainName},
@@ -476,16 +491,16 @@ func (FilterInputJumpBasic) ContainerAction(ip net.IP, ipv6 bool) error {
 	}
 
 	// Listen for UDP packets on acceptPort.
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputJumpBasic) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputJumpBasic) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputJumpReturn jumps, returns, and executes a rule.
-type FilterInputJumpReturn struct{}
+type FilterInputJumpReturn struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputJumpReturn) Name() string {
@@ -493,7 +508,7 @@ func (FilterInputJumpReturn) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputJumpReturn) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputJumpReturn) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	rules := [][]string{
 		{"-N", chainName},
 		{"-P", "INPUT", "ACCEPT"},
@@ -506,16 +521,16 @@ func (FilterInputJumpReturn) ContainerAction(ip net.IP, ipv6 bool) error {
 	}
 
 	// Listen for UDP packets on acceptPort.
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputJumpReturn) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputJumpReturn) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputJumpReturnDrop jumps to a chain, returns, and DROPs packets.
-type FilterInputJumpReturnDrop struct{}
+type FilterInputJumpReturnDrop struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputJumpReturnDrop) Name() string {
@@ -523,7 +538,7 @@ func (FilterInputJumpReturnDrop) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputJumpReturnDrop) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputJumpReturnDrop) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	rules := [][]string{
 		{"-N", chainName},
 		{"-A", "INPUT", "-j", chainName},
@@ -535,9 +550,11 @@ func (FilterInputJumpReturnDrop) ContainerAction(ip net.IP, ipv6 bool) error {
 	}
 
 	// Listen for UDP packets on dropPort.
-	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenUDP(timedCtx, dropPort); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
 	}
 
@@ -547,12 +564,12 @@ func (FilterInputJumpReturnDrop) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputJumpReturnDrop) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, dropPort, sendloopDuration)
+func (FilterInputJumpReturnDrop) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, dropPort)
 }
 
 // FilterInputJumpBuiltin verifies that jumping to a top-levl chain is illegal.
-type FilterInputJumpBuiltin struct{}
+type FilterInputJumpBuiltin struct{ baseCase }
 
 // Name implements TestCase.Name.
 func (FilterInputJumpBuiltin) Name() string {
@@ -560,7 +577,7 @@ func (FilterInputJumpBuiltin) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputJumpBuiltin) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputJumpBuiltin) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-j", "OUTPUT"); err == nil {
 		return fmt.Errorf("iptables should be unable to jump to a built-in chain")
 	}
@@ -568,13 +585,13 @@ func (FilterInputJumpBuiltin) ContainerAction(ip net.IP, ipv6 bool) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputJumpBuiltin) LocalAction(ip net.IP, ipv6 bool) error {
+func (FilterInputJumpBuiltin) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// No-op.
 	return nil
 }
 
 // FilterInputJumpTwice jumps twice, then returns twice and executes a rule.
-type FilterInputJumpTwice struct{}
+type FilterInputJumpTwice struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputJumpTwice) Name() string {
@@ -582,7 +599,7 @@ func (FilterInputJumpTwice) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputJumpTwice) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputJumpTwice) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	const chainName2 = chainName + "2"
 	rules := [][]string{
 		{"-P", "INPUT", "DROP"},
@@ -598,17 +615,17 @@ func (FilterInputJumpTwice) ContainerAction(ip net.IP, ipv6 bool) error {
 
 	// UDP packets should jump and return twice, eventually hitting the
 	// ACCEPT rule.
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputJumpTwice) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputJumpTwice) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputDestination verifies that we can filter packets via `-d
 // <ipaddr>`.
-type FilterInputDestination struct{}
+type FilterInputDestination struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputDestination) Name() string {
@@ -616,7 +633,7 @@ func (FilterInputDestination) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputDestination) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputDestination) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	addrs, err := localAddrs(ipv6)
 	if err != nil {
 		return err
@@ -632,17 +649,17 @@ func (FilterInputDestination) ContainerAction(ip net.IP, ipv6 bool) error {
 		return err
 	}
 
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputDestination) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputDestination) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputInvertDestination verifies that we can filter packets via `! -d
 // <ipaddr>`.
-type FilterInputInvertDestination struct{}
+type FilterInputInvertDestination struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputInvertDestination) Name() string {
@@ -650,7 +667,7 @@ func (FilterInputInvertDestination) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputInvertDestination) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputInvertDestination) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Make INPUT's default action DROP, then ACCEPT all packets not bound
 	// for 127.0.0.1.
 	rules := [][]string{
@@ -661,17 +678,17 @@ func (FilterInputInvertDestination) ContainerAction(ip net.IP, ipv6 bool) error 
 		return err
 	}
 
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputInvertDestination) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputInvertDestination) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputSource verifies that we can filter packets via `-s
 // <ipaddr>`.
-type FilterInputSource struct{}
+type FilterInputSource struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputSource) Name() string {
@@ -679,7 +696,7 @@ func (FilterInputSource) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputSource) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputSource) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Make INPUT's default action DROP, then ACCEPT all packets from this
 	// machine.
 	rules := [][]string{
@@ -690,17 +707,17 @@ func (FilterInputSource) ContainerAction(ip net.IP, ipv6 bool) error {
 		return err
 	}
 
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputSource) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputSource) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
 
 // FilterInputInvertSource verifies that we can filter packets via `! -s
 // <ipaddr>`.
-type FilterInputInvertSource struct{}
+type FilterInputInvertSource struct{ containerCase }
 
 // Name implements TestCase.Name.
 func (FilterInputInvertSource) Name() string {
@@ -708,7 +725,7 @@ func (FilterInputInvertSource) Name() string {
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterInputInvertSource) ContainerAction(ip net.IP, ipv6 bool) error {
+func (FilterInputInvertSource) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Make INPUT's default action DROP, then ACCEPT all packets not bound
 	// for 127.0.0.1.
 	rules := [][]string{
@@ -719,10 +736,10 @@ func (FilterInputInvertSource) ContainerAction(ip net.IP, ipv6 bool) error {
 		return err
 	}
 
-	return listenUDP(acceptPort, sendloopDuration)
+	return listenUDP(ctx, acceptPort)
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterInputInvertSource) LocalAction(ip net.IP, ipv6 bool) error {
-	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
+func (FilterInputInvertSource) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return sendUDPLoop(ctx, ip, acceptPort)
 }
