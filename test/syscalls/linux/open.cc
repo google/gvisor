@@ -147,6 +147,26 @@ TEST_F(OpenTest, WriteOnly) {
   EXPECT_THAT(write(wo_file.get(), &buf, 1), SyscallSucceedsWithValue(1));
 }
 
+TEST_F(OpenTest, CreateWithAppend) {
+  std::string data = "text";
+  std::string new_file = NewTempAbsPath();
+  const FileDescriptor file = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(new_file, O_WRONLY | O_APPEND | O_CREAT, 0666));
+  EXPECT_THAT(write(file.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_THAT(lseek(file.get(), 0, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(write(file.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+
+  // Check that the size of the file is correct and that the offset has been
+  // incremented to that size.
+  struct stat s0;
+  EXPECT_THAT(fstat(file.get(), &s0), SyscallSucceeds());
+  EXPECT_EQ(s0.st_size, 2 * data.size());
+  EXPECT_THAT(lseek(file.get(), 0, SEEK_CUR),
+              SyscallSucceedsWithValue(2 * data.size()));
+}
+
 TEST_F(OpenTest, ReadWrite) {
   char buf;
   const FileDescriptor rw_file =
