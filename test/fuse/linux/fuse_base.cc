@@ -38,7 +38,11 @@ void FuseTest::SetUp() {
   SetUpFuseServer();
 }
 
-void FuseTest::TearDown() { UnmountFuse(); }
+void FuseTest::TearDown() {
+  EXPECT_EQ(GetServerNumUnconsumedRequests(), 0);
+  EXPECT_EQ(GetServerNumUnsentResponses(), 0);
+  UnmountFuse();
+}
 
 // Sends 3 parts of data to the FUSE server:
 //   1. The `kSetResponse` command
@@ -63,10 +67,10 @@ void FuseTest::SetServerResponse(uint32_t opcode,
 // Waits for the FUSE server to finish its blocking job and check if it
 // completes without errors.
 void FuseTest::WaitServerComplete() {
-  char success;
+  uint32_t success;
   EXPECT_THAT(RetryEINTR(read)(sock_[0], &success, sizeof(success)),
               SyscallSucceedsWithValue(sizeof(success)));
-  EXPECT_EQ(success, static_cast<char>(1));
+  ASSERT_EQ(success, 1);
 }
 
 // Sends the `kGetRequest` command to the FUSE server, then reads the next
@@ -81,6 +85,35 @@ void FuseTest::GetServerActualRequest(std::vector<struct iovec>& iovecs) {
               SyscallSucceeds());
 
   WaitServerComplete();
+}
+
+// Sends a FuseTestCmd command to the FUSE server, reads from the socket, and
+// returns the corresponding data.
+uint32_t FuseTest::GetServerData(uint32_t cmd) {
+  uint32_t data;
+  EXPECT_THAT(RetryEINTR(write)(sock_[0], &cmd, sizeof(cmd)),
+              SyscallSucceedsWithValue(sizeof(cmd)));
+
+  EXPECT_THAT(RetryEINTR(read)(sock_[0], &data, sizeof(data)),
+              SyscallSucceedsWithValue(sizeof(data)));
+
+  WaitServerComplete();
+  return data;
+}
+
+uint32_t FuseTest::GetServerNumUnconsumedRequests() {
+  return GetServerData(
+      static_cast<uint32_t>(FuseTestCmd::kGetNumUnconsumedRequests));
+}
+
+uint32_t FuseTest::GetServerNumUnsentResponses() {
+  return GetServerData(
+      static_cast<uint32_t>(FuseTestCmd::kGetNumUnsentResponses));
+}
+
+uint32_t FuseTest::GetServerTotalReceivedBytes() {
+  return GetServerData(
+      static_cast<uint32_t>(FuseTestCmd::kGetTotalReceivedBytes));
 }
 
 void FuseTest::MountFuse() {
@@ -141,9 +174,8 @@ void FuseTest::ServerReceiveResponse() {
 
 // Writes 1 byte of success indicator through socket.
 void FuseTest::ServerCompleteWith(bool success) {
-  char data = static_cast<char>(success);
-  EXPECT_THAT(RetryEINTR(write)(sock_[1], &data, sizeof(data)),
-              SyscallSucceedsWithValue(sizeof(data)));
+  uint32_t data = success ? 1 : 0;
+  ServerSendData(data);
 }
 
 // ServerFuseLoop is the implementation of the fake FUSE server. Monitors 2
@@ -205,6 +237,11 @@ void FuseTest::SetUpFuseServer() {
   _exit(0);
 }
 
+void FuseTest::ServerSendData(uint32_t data) {
+  EXPECT_THAT(RetryEINTR(write)(sock_[1], &data, sizeof(data)),
+              SyscallSucceedsWithValue(sizeof(data)));
+}
+
 // Reads FuseTestCmd sent from testing thread and routes to correct handler.
 // Since each command should be a blocking operation, a `ServerCompleteWith()`
 // is required after the switch keyword.
@@ -219,6 +256,15 @@ void FuseTest::ServerHandleCommand() {
       break;
     case FuseTestCmd::kGetRequest:
       ServerSendReceivedRequest();
+      break;
+    case FuseTestCmd::kGetTotalReceivedBytes:
+      ServerSendData(static_cast<uint32_t>(requests_.UsedBytes()));
+      break;
+    case FuseTestCmd::kGetNumUnconsumedRequests:
+      ServerSendData(static_cast<uint32_t>(requests_.RemainingBlocks()));
+      break;
+    case FuseTestCmd::kGetNumUnsentResponses:
+      ServerSendData(static_cast<uint32_t>(responses_.RemainingBlocks()));
       break;
     default:
       FAIL() << "Unknown FuseTestCmd " << cmd;
