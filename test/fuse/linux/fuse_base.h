@@ -36,6 +36,9 @@ constexpr char kMountOpts[] = "rootmode=755,user_id=0,group_id=0";
 enum class FuseTestCmd {
   kSetResponse = 0,
   kGetRequest,
+  kGetNumUnconsumedRequests,
+  kGetNumUnsentResponses,
+  kGetTotalReceivedBytes,
 };
 
 // Holds the information of a memory block in a serial buffer.
@@ -124,6 +127,21 @@ class FuseTest : public ::testing::Test {
   // data from server.
   void GetServerActualRequest(std::vector<struct iovec>& iovecs);
 
+  // Called by the testing thread to query the number of unconsumed requests in
+  // the requests_ serial buffer of the FUSE server. TearDown() ensures all
+  // FUSE requests received by the FUSE server were consumed by the testing
+  // thread.
+  uint32_t GetServerNumUnconsumedRequests();
+
+  // Called by the testing thread to query the number of unsent responses in
+  // the responses_ serial buffer of the FUSE server. TearDown() ensures all
+  // preset FUSE responses were sent out by the FUSE server.
+  uint32_t GetServerNumUnsentResponses();
+
+  // Called by the testing thread to ask the FUSE server for its total received
+  // bytes from /dev/fuse.
+  uint32_t GetServerTotalReceivedBytes();
+
  protected:
   TempPath mount_point_;
 
@@ -136,6 +154,9 @@ class FuseTest : public ::testing::Test {
 
   // Creates a socketpair for communication and forks FUSE server.
   void SetUpFuseServer();
+
+  // Sends a FuseTestCmd and gets a uint32_t data from the FUSE server.
+  inline uint32_t GetServerData(uint32_t cmd);
 
   // Waits for FUSE server to complete its processing. Complains if the FUSE
   // server responds any failure during tests.
@@ -165,6 +186,9 @@ class FuseTest : public ::testing::Test {
   // Handles `kGetRequest` command. Sends the next received request pointed by
   // the cursor.
   void ServerSendReceivedRequest();
+
+  // Sends a uint32_t data via socket.
+  inline void ServerSendData(uint32_t data);
 
   // Handles FUSE request sent to /dev/fuse by its saved responses.
   void ServerProcessFuseRequest();
