@@ -72,7 +72,9 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected %s to be TCP", tcpLayers[tcpLayer])
 	}
-	var icmpv4 testbench.ICMPv4 = testbench.ICMPv4{Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable), Code: testbench.Uint8(header.ICMPv4HostUnreachable)}
+	var icmpv4 testbench.ICMPv4 = testbench.ICMPv4{
+		Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
+		Code: testbench.ICMPv4Code(header.ICMPv4HostUnreachable)}
 	layers = append(layers, &icmpv4, ip, tcp)
 	rawConn.SendFrameStateless(t, layers)
 
@@ -126,7 +128,7 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 	}
 	var icmpv6 testbench.ICMPv6 = testbench.ICMPv6{
 		Type: testbench.ICMPv6Type(header.ICMPv6DstUnreachable),
-		Code: testbench.Uint8(header.ICMPv6NetworkUnreachable),
+		Code: testbench.ICMPv6Code(header.ICMPv6NetworkUnreachable),
 		// Per RFC 4443 3.1, the payload contains 4 zeroed bytes.
 		Payload: []byte{0, 0, 0, 0},
 	}

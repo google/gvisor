@@ -67,7 +67,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 	rIP := tcpip.Address(net.ParseIP(testbench.RemoteIPv6).To16())
 	icmpv6 := testbench.ICMPv6{
 		Type:    testbench.ICMPv6Type(header.ICMPv6EchoRequest),
-		Code:    testbench.Byte(0),
+		Code:    testbench.ICMPv6Code(header.ICMPv6UnusedCode),
 		Payload: icmpv6EchoPayload,
 	}
 	icmpv6Bytes, err := icmpv6.ToBytes()
@@ -89,7 +89,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 		},
 		&testbench.ICMPv6{
 			Type:     testbench.ICMPv6Type(header.ICMPv6EchoRequest),
-			Code:     testbench.Byte(0),
+			Code:     testbench.ICMPv6Code(header.ICMPv6UnusedCode),
 			Payload:  icmpv6EchoPayload,
 			Checksum: &cksum,
 		})
@@ -116,7 +116,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 		},
 		&testbench.ICMPv6{
 			Type: testbench.ICMPv6Type(header.ICMPv6EchoReply),
-			Code: testbench.Byte(0),
+			Code: testbench.ICMPv6Code(header.ICMPv6UnusedCode),
 		},
 	}, time.Second)
 	if err != nil {

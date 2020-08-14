@@ -775,7 +775,7 @@ func (l *IPv6FragmentExtHdr) String() string {
 type ICMPv6 struct {
 	LayerBase
 	Type     *header.ICMPv6Type
-	Code     *byte
+	Code     *header.ICMPv6Code
 	Checksum *uint16
 	Payload  []byte
 }
@@ -823,6 +823,12 @@ func ICMPv6Type(v header.ICMPv6Type) *header.ICMPv6Type {
 	return &v
 }
 
+// ICMPv6Code is a helper routine that allocates a new ICMPv6Type value to store
+// v and returns a pointer to it.
+func ICMPv6Code(v header.ICMPv6Code) *header.ICMPv6Code {
+	return &v
+}
+
 // Byte is a helper routine that allocates a new byte value to store
 // v and returns a pointer to it.
 func Byte(v byte) *byte {
@@ -834,7 +840,7 @@ func parseICMPv6(b []byte) (Layer, layerParser) {
 	h := header.ICMPv6(b)
 	icmpv6 := ICMPv6{
 		Type:     ICMPv6Type(h.Type()),
-		Code:     Byte(h.Code()),
+		Code:     ICMPv6Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
 		Payload:  h.NDPPayload(),
 	}
@@ -861,11 +867,17 @@ func ICMPv4Type(t header.ICMPv4Type) *header.ICMPv4Type {
 	return &t
 }
 
+// ICMPv4Code is a helper routine that allocates a new header.ICMPv4Code value
+// to store t and returns a pointer to it.
+func ICMPv4Code(t header.ICMPv4Code) *header.ICMPv4Code {
+	return &t
+}
+
 // ICMPv4 can construct and match an ICMPv4 encapsulation.
 type ICMPv4 struct {
 	LayerBase
 	Type     *header.ICMPv4Type
-	Code     *uint8
+	Code     *header.ICMPv4Code
 	Checksum *uint16
 }
 
@@ -881,7 +893,7 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 		h.SetType(*l.Type)
 	}
 	if l.Code != nil {
-		h.SetCode(byte(*l.Code))
+		h.SetCode(*l.Code)
 	}
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
@@ -901,7 +913,7 @@ func parseICMPv4(b []byte) (Layer, layerParser) {
 	h := header.ICMPv4(b)
 	icmpv4 := ICMPv4{
 		Type:     ICMPv4Type(h.Type()),
-		Code:     Uint8(h.Code()),
+		Code:     ICMPv4Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
 	}
 	return &icmpv4, parsePayload
