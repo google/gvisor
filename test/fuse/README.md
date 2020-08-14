@@ -86,6 +86,20 @@ complete a command and when the server awaits the next instruction.
  |    =[Test actual request]           |
  |                                     |
  |    >TearDown()                      |
+ |      ...                            |
+ |      >GetServerNumUnsentResponses() |
+ |        [write data to socket]       |
+ |        [wait server complete]       |
+ |                                     |        [socket event arrive]
+ |                                     |        >ServerHandleCommand()
+ |                                     |          >ServerSendData()
+ |                                     |            [write data to socket]
+ |                                     |          <ServerSendData()
+ |                                     |          =ServerCompleteWith()
+ |        [read data from socket]      |
+ |        [test if all succeeded]      |
+ |      <GetServerNumUnsentResponses() |
+ |                                     |        <ServerHandleCommand()
  |      =UnmountFuse()                 |
  |    <TearDown()                      |
  |  <TEST_F()                          |
@@ -164,11 +178,10 @@ To add a new `FuseTestCmd`, one must comply with following format:
    many bytes you want to send along with the command and what you will expect
    to receive. Finally it should block and wait for a success indicator from
    the FUSE server.
-3. Add a `ServerReceiveXXX()` or `ServerSendXXX()` private function in
-   `FuseTest`. It is mandatory to set it private since only the FUSE server
-   (forked from `FuseTest` base class) can call it. This is the handler of a
-   specific `FuseTestCmd` and the format of the data should be consistent with
-   what client expects in the previous step.
-4. Add a case in the switch condition of `ServerHandleCommand()` to route the
-   command to the server handler described in the previous step.
+3. Add a handler logic in the switch condition of `ServerHandleCommand()`. Use
+   `ServerSendData()` or declare a new private function such as
+   `ServerReceiveXXX()` or `ServerSendXXX()`. It is mandatory to set it private
+   since only the FUSE server (forked from `FuseTest` base class) can call it.
+   This is the server part of the specific `FuseTestCmd` and the format of the
+   data should be consistent with what the client expects in the previous step.
 
