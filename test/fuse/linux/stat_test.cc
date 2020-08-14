@@ -24,6 +24,7 @@
 
 #include "gtest/gtest.h"
 #include "test/fuse/linux/fuse_base.h"
+#include "test/util/fuse_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -43,16 +44,10 @@ class StatTest : public FuseTest {
 
 TEST_F(StatTest, StatNormal) {
   // Set up fixture.
-  std::vector<struct iovec> iov_in(2);
-  std::vector<struct iovec> iov_out(2);
   mode_t expected_mode = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
   struct timespec atime = {.tv_sec = 1595436289, .tv_nsec = 134150844};
   struct timespec mtime = {.tv_sec = 1595436290, .tv_nsec = 134150845};
   struct timespec ctime = {.tv_sec = 1595436291, .tv_nsec = 134150846};
-  struct fuse_out_header out_header = {
-      .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_attr_out),
-      .error = 0,
-  };
   struct fuse_attr attr = {
       .ino = 1,
       .size = 512,
@@ -70,14 +65,13 @@ TEST_F(StatTest, StatNormal) {
       .rdev = 12,
       .blksize = 4096,
   };
+  struct fuse_out_header out_header = {
+      .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_attr_out),
+  };
   struct fuse_attr_out out_payload = {
       .attr = attr,
   };
-  iov_out[0].iov_len = sizeof(out_header);
-  iov_out[0].iov_base = &out_header;
-  iov_out[1].iov_len = sizeof(out_payload);
-  iov_out[1].iov_base = &out_payload;
-
+  auto iov_out = FuseGenerateIovecs(out_header, out_payload);
   SetServerResponse(FUSE_GETATTR, iov_out);
 
   // Do integration test.
@@ -104,10 +98,7 @@ TEST_F(StatTest, StatNormal) {
   // Check FUSE request.
   struct fuse_in_header in_header;
   struct fuse_getattr_in in_payload;
-  iov_in[0].iov_len = sizeof(in_header);
-  iov_in[0].iov_base = &in_header;
-  iov_in[1].iov_len = sizeof(in_payload);
-  iov_in[1].iov_base = &in_payload;
+  auto iov_in = FuseGenerateIovecs(in_header, in_payload);
 
   GetServerActualRequest(iov_in);
   EXPECT_EQ(in_header.opcode, FUSE_GETATTR);
@@ -117,14 +108,11 @@ TEST_F(StatTest, StatNormal) {
 
 TEST_F(StatTest, StatNotFound) {
   // Set up fixture.
-  std::vector<struct iovec> iov_in(2);
-  std::vector<struct iovec> iov_out(1);
   struct fuse_out_header out_header = {
       .len = sizeof(struct fuse_out_header),
       .error = -ENOENT,
   };
-  iov_out[0].iov_len = sizeof(out_header);
-  iov_out[0].iov_base = &out_header;
+  auto iov_out = FuseGenerateIovecs(out_header);
   SetServerResponse(FUSE_GETATTR, iov_out);
 
   // Do integration test.
@@ -135,10 +123,7 @@ TEST_F(StatTest, StatNotFound) {
   // Check FUSE request.
   struct fuse_in_header in_header;
   struct fuse_getattr_in in_payload;
-  iov_in[0].iov_len = sizeof(in_header);
-  iov_in[0].iov_base = &in_header;
-  iov_in[1].iov_len = sizeof(in_payload);
-  iov_in[1].iov_base = &in_payload;
+  auto iov_in = FuseGenerateIovecs(in_header, in_payload);
 
   GetServerActualRequest(iov_in);
   EXPECT_EQ(in_header.opcode, FUSE_GETATTR);
