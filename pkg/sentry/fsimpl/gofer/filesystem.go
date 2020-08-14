@@ -1082,10 +1082,8 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	creds := rp.Credentials()
 	name := rp.Component()
-	// Filter file creation flags and O_LARGEFILE out; the create RPC already
-	// has the semantics of O_CREAT|O_EXCL, while some servers will choke on
-	// O_LARGEFILE.
-	createFlags := p9.OpenFlags(opts.Flags &^ (vfs.FileCreationFlags | linux.O_LARGEFILE))
+	// We only want the access mode for creating the file.
+	createFlags := p9.OpenFlags(opts.Flags) & p9.OpenFlagsModeMask
 	fdobj, openFile, createQID, _, err := dirfile.create(ctx, name, createFlags, (p9.FileMode)(opts.Mode), (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
 	if err != nil {
 		dirfile.close(ctx)
