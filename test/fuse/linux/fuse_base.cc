@@ -26,6 +26,7 @@
 
 #include "absl/strings/str_format.h"
 #include "gtest/gtest.h"
+#include "test/util/fuse_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -137,7 +138,6 @@ PosixError FuseTest::ServerConsumeFuseInit() {
   RETURN_ERROR_IF_SYSCALL_FAIL(
       RetryEINTR(read)(dev_fd_, buf.data(), buf.size()));
 
-  struct iovec iov_out[2];
   struct fuse_out_header out_header = {
       .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_init_out),
       .error = 0,
@@ -148,12 +148,10 @@ PosixError FuseTest::ServerConsumeFuseInit() {
   struct fuse_init_out out_payload = {
       .major = 7,
   };
-  iov_out[0].iov_len = sizeof(out_header);
-  iov_out[0].iov_base = &out_header;
-  iov_out[1].iov_len = sizeof(out_payload);
-  iov_out[1].iov_base = &out_payload;
+  auto iov_out = FuseGenerateIovecs(out_header, out_payload);
 
-  RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(writev)(dev_fd_, iov_out, 2));
+  RETURN_ERROR_IF_SYSCALL_FAIL(
+      RetryEINTR(writev)(dev_fd_, iov_out.data(), iov_out.size()));
   return NoError();
 }
 
