@@ -26,7 +26,7 @@ import (
 	"sync"
 )
 
-// This is how a TODO looks like.
+// regexTodo matches a TODO or FIXME comment.
 var regexTodo = regexp.MustCompile(`(\/\/|#)\s*(TODO|FIXME)\(([a-zA-Z0-9.\/]+)\):\s*(.+)`)
 
 // Bugger interface is called for every TODO found in the code. If it can handle

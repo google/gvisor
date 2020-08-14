@@ -85,17 +85,12 @@ func (b *Bugger) load(token string) error {
 
 // Activate implements reviver.Bugger.
 func (b *Bugger) Activate(todo *reviver.Todo) (bool, error) {
-	const prefix = "gvisor.dev/issue/"
-
-	// First check if I can handle the TODO.
-	idStr := strings.TrimPrefix(todo.Issue, prefix)
-	if len(todo.Issue) == len(idStr) {
-		return false, nil
-	}
-
-	id, err := strconv.Atoi(idStr)
+	id, err := parseIssueNo(todo.Issue)
 	if err != nil {
 		return true, err
+	}
+	if id <= 0 {
+		return false, nil
 	}
 
 	// Check against active issues cache.
@@ -115,7 +110,7 @@ func (b *Bugger) Activate(todo *reviver.Todo) (bool, error) {
 			l.File, l.Line, b.owner, b.repo, l.File, l.Line, l.Comment)
 	}
 	fmt.Fprintf(&comment,
-		"\n\nSearch [TODO](https://github.com/%s/%s/search?q=%%22%s%d%%22)", b.owner, b.repo, prefix, id)
+		"\n\nSearch [TODO](https://github.com/%s/%s/search?q=%%22%s%%22)", b.owner, b.repo, todo.Issue)
 
 	if b.dryRun {
 		fmt.Printf("[dry-run: skipping change to issue %d]\n%s\n=======================\n", id, comment.String())
@@ -138,6 +133,23 @@ func (b *Bugger) Activate(todo *reviver.Todo) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// parseIssueNo parses the issue number out of the issue url.
+func parseIssueNo(url string) (int, error) {
+	const prefix = "gvisor.dev/issue/"
+
+	// First check if I can handle the TODO.
+	idStr := strings.TrimPrefix(url, prefix)
+	if len(url) == len(idStr) {
+		return 0, nil
+	}
+
+	id, err := strconv.ParseInt(strings.TrimRight(idStr, "/"), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return int(id), nil
 }
 
 func processAllPages(fn func(github.ListOptions) (*github.Response, error)) error {
