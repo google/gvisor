@@ -30,7 +30,7 @@ $ make load-packetimpact
 Run a test, e.g. `fin_wait2_timeout`, against Linux:
 
 ```bash
-$ bazel test //test/packetimpact/tests:fin_wait2_timeout_linux_test
+$ bazel test //test/packetimpact/tests:fin_wait2_timeout_native_test
 ```
 
 Run the same test, but against gVisor:
