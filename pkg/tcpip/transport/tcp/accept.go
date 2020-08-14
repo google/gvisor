@@ -212,7 +212,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	n.route = s.route.Clone()
 	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.route.NetProto}
 	n.rcvBufSize = int(l.rcvWnd)
-	n.amss = mssForRoute(&n.route)
+	n.amss = calculateAdvertisedMSS(n.userMSS, n.route)
 	n.setEndpointState(StateConnecting)
 
 	n.maybeEnableTimestamp(rcvdSynOpts)
@@ -380,6 +380,7 @@ func (e *endpoint) propagateInheritableOptionsLocked(n *endpoint) {
 	n.portFlags = e.portFlags
 	n.boundBindToDevice = e.boundBindToDevice
 	n.boundPortFlags = e.boundPortFlags
+	n.userMSS = e.userMSS
 }
 
 // reserveTupleLocked reserves an accepted endpoint's tuple.
@@ -481,9 +482,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		return
 	}
 
-	// TODO(b/143300739): Use the userMSS of the listening socket
-	// for accepted sockets.
-
 	switch {
 	case s.flags == header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
@@ -514,16 +512,19 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 
 			// Send SYN without window scaling because we currently
-			// dont't encode this information in the cookie.
+			// don't encode this information in the cookie.
 			//
 			// Enable Timestamp option if the original syn did have
 			// the timestamp option specified.
+			//
+			// Use the user supplied MSS on the listening socket for
+			// new connections, if available.
 			synOpts := header.TCPSynOptions{
 				WS:    -1,
 				TS:    opts.TS,
 				TSVal: tcpTimeStamp(time.Now(), timeStampOffset()),
 				TSEcr: opts.TSVal,
-				MSS:   mssForRoute(&s.route),
+				MSS:   calculateAdvertisedMSS(e.userMSS, s.route),
 			}
 			e.sendSynTCP(&s.route, tcpFields{
 				id:     s.id,
