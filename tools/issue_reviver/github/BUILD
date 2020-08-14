@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -14,4 +14,11 @@ go_library(
         "@com_github_google_go_github_v28//github:go_default_library",
         "@org_golang_x_oauth2//:go_default_library",
     ],
+)
+
+go_test(
+    name = "github_test",
+    size = "small",
+    srcs = ["github_test.go"],
+    library = ":github",
 )
