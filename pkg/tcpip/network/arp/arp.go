@@ -66,14 +66,6 @@ func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return e.linkEP.Capabilities()
 }
 
-func (e *endpoint) ID() *stack.NetworkEndpointID {
-	return &stack.NetworkEndpointID{ProtocolAddress}
-}
-
-func (e *endpoint) PrefixLen() int {
-	return 0
-}
-
 func (e *endpoint) MaxHeaderLength() uint16 {
 	return e.linkEP.MaxHeaderLength() + header.ARPSize
 }
@@ -142,16 +134,13 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
 }
 
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint, st *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
-	if addrWithPrefix.Address != ProtocolAddress {
-		return nil, tcpip.ErrBadLocalAddress
-	}
+func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
 	return &endpoint{
 		protocol:      p,
 		nicID:         nicID,
 		linkEP:        sender,
 		linkAddrCache: linkAddrCache,
-	}, nil
+	}
 }
 
 // LinkAddressProtocol implements stack.LinkAddressResolver.LinkAddressProtocol.

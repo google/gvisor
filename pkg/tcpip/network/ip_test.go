@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -41,6 +42,7 @@ const (
 	ipv6SubnetAddr     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 	ipv6SubnetMask     = "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00"
 	ipv6Gateway        = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
+	nicID              = 1
 )
 
 // testObject implements two interfaces: LinkEndpoint and TransportDispatcher.
@@ -195,15 +197,15 @@ func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
 	})
-	s.CreateNIC(1, loopback.New())
-	s.AddAddress(1, ipv4.ProtocolNumber, local)
+	s.CreateNIC(nicID, loopback.New())
+	s.AddAddress(nicID, ipv4.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv4EmptySubnet,
 		Gateway:     ipv4Gateway,
 		NIC:         1,
 	}})
 
-	return s.FindRoute(1, local, remote, ipv4.ProtocolNumber, false /* multicastLoop */)
+	return s.FindRoute(nicID, local, remote, ipv4.ProtocolNumber, false /* multicastLoop */)
 }
 
 func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
@@ -211,31 +213,45 @@ func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
 	})
-	s.CreateNIC(1, loopback.New())
-	s.AddAddress(1, ipv6.ProtocolNumber, local)
+	s.CreateNIC(nicID, loopback.New())
+	s.AddAddress(nicID, ipv6.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv6EmptySubnet,
 		Gateway:     ipv6Gateway,
 		NIC:         1,
 	}})
 
-	return s.FindRoute(1, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
+	return s.FindRoute(nicID, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
 }
 
-func buildDummyStack() *stack.Stack {
-	return stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+func buildDummyStack(t *testing.T) *stack.Stack {
+	t.Helper()
+
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
 	})
+	e := channel.New(0, 1280, "")
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+
+	if err := s.AddAddress(nicID, header.IPv4ProtocolNumber, localIpv4Addr); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, localIpv4Addr, err)
+	}
+
+	if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, localIpv6Addr); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, localIpv6Addr, err)
+	}
+
+	return s
 }
 
 func TestIPv4Send(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, nil, &o, buildDummyStack())
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
+	ep := proto.NewEndpoint(nicID, nil, nil, &o, buildDummyStack(t))
+	defer ep.Close()
 
 	// Allocate and initialize the payload view.
 	payload := buffer.NewView(100)
@@ -271,10 +287,8 @@ func TestIPv4Send(t *testing.T) {
 func TestIPv4Receive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil, buildDummyStack())
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
+	ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+	defer ep.Close()
 
 	totalLen := header.IPv4MinimumSize + 30
 	view := buffer.NewView(totalLen)
@@ -343,10 +357,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv4.NewProtocol()
-			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil, buildDummyStack())
-			if err != nil {
-				t.Fatalf("NewEndpoint failed: %v", err)
-			}
+			ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
 			defer ep.Close()
 
 			const dataOffset = header.IPv4MinimumSize*2 + header.ICMPv4MinimumSize
@@ -407,10 +418,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 func TestIPv4FragmentationReceive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil, buildDummyStack())
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
+	ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+	defer ep.Close()
 
 	totalLen := header.IPv4MinimumSize + 24
 
@@ -486,10 +495,8 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 func TestIPv6Send(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, nil, &o, buildDummyStack())
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
+	ep := proto.NewEndpoint(nicID, nil, &o, channel.New(0, 1280, ""), buildDummyStack(t))
+	defer ep.Close()
 
 	// Allocate and initialize the payload view.
 	payload := buffer.NewView(100)
@@ -525,10 +532,8 @@ func TestIPv6Send(t *testing.T) {
 func TestIPv6Receive(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil, buildDummyStack())
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
+	ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+	defer ep.Close()
 
 	totalLen := header.IPv6MinimumSize + 30
 	view := buffer.NewView(totalLen)
@@ -606,11 +611,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv6.NewProtocol()
-			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil, buildDummyStack())
-			if err != nil {
-				t.Fatalf("NewEndpoint failed: %v", err)
-			}
-
+			ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
 			defer ep.Close()
 
 			dataOffset := header.IPv6MinimumSize*2 + header.ICMPv6MinimumSize
