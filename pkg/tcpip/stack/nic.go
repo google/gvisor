@@ -45,8 +45,9 @@ type NIC struct {
 	linkEP  LinkEndpoint
 	context NICContext
 
-	stats NICStats
-	neigh *neighborCache
+	stats            NICStats
+	neigh            *neighborCache
+	networkEndpoints map[tcpip.NetworkProtocolNumber]NetworkEndpoint
 
 	mu struct {
 		sync.RWMutex
@@ -114,12 +115,13 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	// of IPv6 is supported on this endpoint's LinkEndpoint.
 
 	nic := &NIC{
-		stack:   stack,
-		id:      id,
-		name:    name,
-		linkEP:  ep,
-		context: ctx,
-		stats:   makeNICStats(),
+		stack:            stack,
+		id:               id,
+		name:             name,
+		linkEP:           ep,
+		context:          ctx,
+		stats:            makeNICStats(),
+		networkEndpoints: make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
 	}
 	nic.mu.primary = make(map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint)
 	nic.mu.endpoints = make(map[NetworkEndpointID]*referencedNetworkEndpoint)
@@ -140,7 +142,9 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		nic.mu.packetEPs[netProto] = []PacketEndpoint{}
 	}
 	for _, netProto := range stack.networkProtocols {
-		nic.mu.packetEPs[netProto.Number()] = []PacketEndpoint{}
+		netNum := netProto.Number()
+		nic.mu.packetEPs[netNum] = nil
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, stack, nic, ep, stack)
 	}
 
 	// Check for Neighbor Unreachability Detection support.
@@ -205,7 +209,7 @@ func (n *NIC) disableLocked() *tcpip.Error {
 		// Stop DAD for all the unicast IPv6 endpoints that are in the
 		// permanentTentative state.
 		for _, r := range n.mu.endpoints {
-			if addr := r.ep.ID().LocalAddress; r.getKind() == permanentTentative && header.IsV6UnicastAddress(addr) {
+			if addr := r.address(); r.getKind() == permanentTentative && header.IsV6UnicastAddress(addr) {
 				n.mu.ndp.stopDuplicateAddressDetection(addr)
 			}
 		}
@@ -300,7 +304,7 @@ func (n *NIC) enable() *tcpip.Error {
 	// Addresses may have aleady completed DAD but in the time since the NIC was
 	// last enabled, other devices may have acquired the same addresses.
 	for _, r := range n.mu.endpoints {
-		addr := r.ep.ID().LocalAddress
+		addr := r.address()
 		if k := r.getKind(); (k != permanent && k != permanentTentative) || !header.IsV6UnicastAddress(addr) {
 			continue
 		}
@@ -360,6 +364,11 @@ func (n *NIC) remove() *tcpip.Error {
 				err = tempErr
 			}
 		}
+	}
+
+	// Release any resources the network endpoint may hold.
+	for _, ep := range n.networkEndpoints {
+		ep.Close()
 	}
 
 	// Detach from link endpoint, so no packet comes in.
@@ -510,7 +519,7 @@ func (n *NIC) primaryIPv6EndpointRLocked(remoteAddr tcpip.Address) *referencedNe
 			continue
 		}
 
-		addr := r.ep.ID().LocalAddress
+		addr := r.address()
 		scope, err := header.ScopeForIPv6Address(addr)
 		if err != nil {
 			// Should never happen as we got r from the primary IPv6 endpoint list and
@@ -539,10 +548,10 @@ func (n *NIC) primaryIPv6EndpointRLocked(remoteAddr tcpip.Address) *referencedNe
 		sb := cs[j]
 
 		// Prefer same address as per RFC 6724 section 5 rule 1.
-		if sa.ref.ep.ID().LocalAddress == remoteAddr {
+		if sa.ref.address() == remoteAddr {
 			return true
 		}
-		if sb.ref.ep.ID().LocalAddress == remoteAddr {
+		if sb.ref.address() == remoteAddr {
 			return false
 		}
 
@@ -819,15 +828,9 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 		}
 	}
 
-	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
+	ep, ok := n.networkEndpoints[protocolAddress.Protocol]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol
-	}
-
-	// Create the new network endpoint.
-	ep, err := netProto.NewEndpoint(n.id, protocolAddress.AddressWithPrefix, n.stack, n, n.linkEP, n.stack)
-	if err != nil {
-		return nil, err
 	}
 
 	isIPv6Unicast := protocolAddress.Protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
@@ -842,6 +845,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 
 	ref := &referencedNetworkEndpoint{
 		refs:       1,
+		addr:       protocolAddress.AddressWithPrefix,
 		ep:         ep,
 		nic:        n,
 		protocol:   protocolAddress.Protocol,
@@ -898,7 +902,7 @@ func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 	defer n.mu.RUnlock()
 
 	addrs := make([]tcpip.ProtocolAddress, 0, len(n.mu.endpoints))
-	for nid, ref := range n.mu.endpoints {
+	for _, ref := range n.mu.endpoints {
 		// Don't include tentative, expired or temporary endpoints to
 		// avoid confusion and prevent the caller from using those.
 		switch ref.getKind() {
@@ -907,11 +911,8 @@ func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 		}
 
 		addrs = append(addrs, tcpip.ProtocolAddress{
-			Protocol: ref.protocol,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   nid.LocalAddress,
-				PrefixLen: ref.ep.PrefixLen(),
-			},
+			Protocol:          ref.protocol,
+			AddressWithPrefix: ref.addrWithPrefix(),
 		})
 	}
 	return addrs
@@ -934,11 +935,8 @@ func (n *NIC) PrimaryAddresses() []tcpip.ProtocolAddress {
 			}
 
 			addrs = append(addrs, tcpip.ProtocolAddress{
-				Protocol: proto,
-				AddressWithPrefix: tcpip.AddressWithPrefix{
-					Address:   ref.ep.ID().LocalAddress,
-					PrefixLen: ref.ep.PrefixLen(),
-				},
+				Protocol:          proto,
+				AddressWithPrefix: ref.addrWithPrefix(),
 			})
 		}
 	}
@@ -969,10 +967,7 @@ func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWit
 		}
 
 		if !ref.deprecated {
-			return tcpip.AddressWithPrefix{
-				Address:   ref.ep.ID().LocalAddress,
-				PrefixLen: ref.ep.PrefixLen(),
-			}
+			return ref.addrWithPrefix()
 		}
 
 		if deprecatedEndpoint == nil {
@@ -981,10 +976,7 @@ func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWit
 	}
 
 	if deprecatedEndpoint != nil {
-		return tcpip.AddressWithPrefix{
-			Address:   deprecatedEndpoint.ep.ID().LocalAddress,
-			PrefixLen: deprecatedEndpoint.ep.PrefixLen(),
-		}
+		return deprecatedEndpoint.addrWithPrefix()
 	}
 
 	return tcpip.AddressWithPrefix{}
@@ -1048,7 +1040,7 @@ func (n *NIC) insertPrimaryEndpointLocked(r *referencedNetworkEndpoint, peb Prim
 }
 
 func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
-	id := *r.ep.ID()
+	id := NetworkEndpointID{LocalAddress: r.address()}
 
 	// Nothing to do if the reference has already been replaced with a different
 	// one. This happens in the case where 1) this endpoint's ref count hit zero
@@ -1072,8 +1064,6 @@ func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
 			break
 		}
 	}
-
-	r.ep.Close()
 }
 
 func (n *NIC) removeEndpoint(r *referencedNetworkEndpoint) {
@@ -1718,6 +1708,7 @@ const (
 
 type referencedNetworkEndpoint struct {
 	ep       NetworkEndpoint
+	addr     tcpip.AddressWithPrefix
 	nic      *NIC
 	protocol tcpip.NetworkProtocolNumber
 
@@ -1743,11 +1734,12 @@ type referencedNetworkEndpoint struct {
 	deprecated bool
 }
 
+func (r *referencedNetworkEndpoint) address() tcpip.Address {
+	return r.addr.Address
+}
+
 func (r *referencedNetworkEndpoint) addrWithPrefix() tcpip.AddressWithPrefix {
-	return tcpip.AddressWithPrefix{
-		Address:   r.ep.ID().LocalAddress,
-		PrefixLen: r.ep.PrefixLen(),
-	}
+	return r.addr
 }
 
 func (r *referencedNetworkEndpoint) getKind() networkEndpointKind {

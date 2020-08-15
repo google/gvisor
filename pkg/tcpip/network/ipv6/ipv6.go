@@ -46,12 +46,11 @@ const (
 
 type endpoint struct {
 	nicID         tcpip.NICID
-	id            stack.NetworkEndpointID
-	prefixLen     int
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	dispatcher    stack.TransportDispatcher
 	protocol      *protocol
+	stack         *stack.Stack
 }
 
 // DefaultTTL is the default hop limit for this endpoint.
@@ -68,16 +67,6 @@ func (e *endpoint) MTU() uint32 {
 // NICID returns the ID of the NIC this endpoint belongs to.
 func (e *endpoint) NICID() tcpip.NICID {
 	return e.nicID
-}
-
-// ID returns the ipv6 endpoint ID.
-func (e *endpoint) ID() *stack.NetworkEndpointID {
-	return &e.id
-}
-
-// PrefixLen returns the ipv6 endpoint subnet prefix length in bits.
-func (e *endpoint) PrefixLen() int {
-	return e.prefixLen
 }
 
 // Capabilities implements stack.NetworkEndpoint.Capabilities.
@@ -464,16 +453,15 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 }
 
 // NewEndpoint creates a new ipv6 endpoint.
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
 	return &endpoint{
 		nicID:         nicID,
-		id:            stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
-		prefixLen:     addrWithPrefix.PrefixLen,
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		dispatcher:    dispatcher,
 		protocol:      p,
-	}, nil
+		stack:         st,
+	}
 }
 
 // SetOption implements NetworkProtocol.SetOption.

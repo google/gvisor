@@ -1321,7 +1321,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok && nic.enabled() {
 			if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
-				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback()), nil
+				return makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback()), nil
 			}
 		}
 	} else {
@@ -1334,10 +1334,10 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					if len(remoteAddr) == 0 {
 						// If no remote address was provided, then the route
 						// provided will refer to the link local address.
-						remoteAddr = ref.ep.ID().LocalAddress
+						remoteAddr = ref.address()
 					}
 
-					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback())
+					r := makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback())
 					r.directedBroadcast = route.Destination.IsBroadcast(remoteAddr)
 
 					if len(route.Gateway) > 0 {
