@@ -70,8 +70,6 @@ const (
 // protocol. They're all one byte fields to simplify parsing.
 type fakeNetworkEndpoint struct {
 	nicID      tcpip.NICID
-	id         stack.NetworkEndpointID
-	prefixLen  int
 	proto      *fakeNetworkProtocol
 	dispatcher stack.TransportDispatcher
 	ep         stack.LinkEndpoint
@@ -85,21 +83,13 @@ func (f *fakeNetworkEndpoint) NICID() tcpip.NICID {
 	return f.nicID
 }
 
-func (f *fakeNetworkEndpoint) PrefixLen() int {
-	return f.prefixLen
-}
-
 func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
 
-func (f *fakeNetworkEndpoint) ID() *stack.NetworkEndpointID {
-	return &f.id
-}
-
 func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	// Increment the received packet count in the protocol descriptor.
-	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
+	f.proto.packetCount[int(r.LocalAddress[0])%len(f.proto.packetCount)]++
 
 	// Handle control packets.
 	if pkt.NetworkHeader().View()[protocolNumberOffset] == uint8(fakeControlProtocol) {
@@ -145,7 +135,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 	// endpoint.
 	hdr := pkt.NetworkHeader().Push(fakeNetHeaderLen)
 	hdr[dstAddrOffset] = r.RemoteAddress[0]
-	hdr[srcAddrOffset] = f.id.LocalAddress[0]
+	hdr[srcAddrOffset] = r.LocalAddress[0]
 	hdr[protocolNumberOffset] = byte(params.Protocol)
 
 	if r.Loop&stack.PacketLoop != 0 {
@@ -208,15 +198,13 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
-func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
+func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
 	return &fakeNetworkEndpoint{
 		nicID:      nicID,
-		id:         stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
-		prefixLen:  addrWithPrefix.PrefixLen,
 		proto:      f,
 		dispatcher: dispatcher,
 		ep:         ep,
-	}, nil
+	}
 }
 
 func (f *fakeNetworkProtocol) SetOption(option interface{}) *tcpip.Error {
