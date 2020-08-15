@@ -37,8 +37,9 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack
 	// false.
 	//
 	// Drop packet if it doesn't have the basic IPv4 header or if the
-	// original source address doesn't match the endpoint's address.
-	if hdr.SourceAddress() != e.id.LocalAddress {
+	// original source address doesn't match an address we own.
+	src := hdr.SourceAddress()
+	if e.stack.CheckLocalAddress(e.NICID(), ProtocolNumber, src) == 0 {
 		return
 	}
 
@@ -53,7 +54,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack
 	// Skip the ip header, then deliver control message.
 	pkt.Data.TrimFront(hlen)
 	p := hdr.TransportProtocol()
-	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
+	e.dispatcher.DeliverTransportControlPacket(src, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
 
 func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {

@@ -728,7 +728,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 func (ndp *ndpState) sendDADPacket(addr tcpip.Address, ref *referencedNetworkEndpoint) *tcpip.Error {
 	snmc := header.SolicitedNodeAddr(addr)
 
-	r := makeRoute(header.IPv6ProtocolNumber, ref.ep.ID().LocalAddress, snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+	r := makeRoute(header.IPv6ProtocolNumber, ref.address(), snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 	defer r.Release()
 
 	// Route should resolve immediately since snmc is a multicast address so a
@@ -1353,7 +1353,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		return false
 	}
 
-	stableAddr := prefixState.stableAddr.ref.ep.ID().LocalAddress
+	stableAddr := prefixState.stableAddr.ref.address()
 	now := time.Now()
 
 	// As per RFC 4941 section 3.3 step 4, the valid lifetime of a temporary
@@ -1690,7 +1690,7 @@ func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPr
 
 	prefix := addr.Subnet()
 	state, ok := ndp.slaacPrefixes[prefix]
-	if !ok || state.stableAddr.ref == nil || addr.Address != state.stableAddr.ref.ep.ID().LocalAddress {
+	if !ok || state.stableAddr.ref == nil || addr.Address != state.stableAddr.ref.address() {
 		return
 	}
 
@@ -1867,7 +1867,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 		}
 		ndp.nic.mu.Unlock()
 
-		localAddr := ref.ep.ID().LocalAddress
+		localAddr := ref.address()
 		r := makeRoute(header.IPv6ProtocolNumber, localAddr, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 		defer r.Release()
 
