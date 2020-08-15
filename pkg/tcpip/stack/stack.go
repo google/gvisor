@@ -1230,35 +1230,6 @@ func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tc
 	return nic.AddAddress(protocolAddress, peb)
 }
 
-// AddAddressRange adds a range of addresses to the specified NIC. The range is
-// given by a subnet address, and all addresses contained in the subnet are
-// used except for the subnet address itself and the subnet's broadcast
-// address.
-func (s *Stack) AddAddressRange(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) *tcpip.Error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if nic, ok := s.nics[id]; ok {
-		nic.AddAddressRange(protocol, subnet)
-		return nil
-	}
-
-	return tcpip.ErrUnknownNICID
-}
-
-// RemoveAddressRange removes the range of addresses from the specified NIC.
-func (s *Stack) RemoveAddressRange(id tcpip.NICID, subnet tcpip.Subnet) *tcpip.Error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if nic, ok := s.nics[id]; ok {
-		nic.RemoveAddressRange(subnet)
-		return nil
-	}
-
-	return tcpip.ErrUnknownNICID
-}
-
 // RemoveAddress removes an existing network-layer address from the specified
 // NIC.
 func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
