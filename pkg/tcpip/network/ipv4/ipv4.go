@@ -52,8 +52,6 @@ const (
 
 type endpoint struct {
 	nicID      tcpip.NICID
-	id         stack.NetworkEndpointID
-	prefixLen  int
 	linkEP     stack.LinkEndpoint
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
@@ -61,18 +59,14 @@ type endpoint struct {
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
-	e := &endpoint{
+func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+	return &endpoint{
 		nicID:      nicID,
-		id:         stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
-		prefixLen:  addrWithPrefix.PrefixLen,
 		linkEP:     linkEP,
 		dispatcher: dispatcher,
 		protocol:   p,
 		stack:      st,
 	}
-
-	return e, nil
 }
 
 // DefaultTTL is the default time-to-live value for this endpoint.
@@ -94,16 +88,6 @@ func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
 // NICID returns the ID of the NIC this endpoint belongs to.
 func (e *endpoint) NICID() tcpip.NICID {
 	return e.nicID
-}
-
-// ID returns the ipv4 endpoint ID.
-func (e *endpoint) ID() *stack.NetworkEndpointID {
-	return &e.id
-}
-
-// PrefixLen returns the ipv4 endpoint subnet prefix length in bits.
-func (e *endpoint) PrefixLen() int {
-	return e.prefixLen
 }
 
 // MaxHeaderLength returns the maximum length needed by ipv4 headers (and

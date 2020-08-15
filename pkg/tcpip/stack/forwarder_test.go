@@ -46,8 +46,6 @@ const (
 // protocol. They're all one byte fields to simplify parsing.
 type fwdTestNetworkEndpoint struct {
 	nicID      tcpip.NICID
-	id         NetworkEndpointID
-	prefixLen  int
 	proto      *fwdTestNetworkProtocol
 	dispatcher TransportDispatcher
 	ep         LinkEndpoint
@@ -61,16 +59,8 @@ func (f *fwdTestNetworkEndpoint) NICID() tcpip.NICID {
 	return f.nicID
 }
 
-func (f *fwdTestNetworkEndpoint) PrefixLen() int {
-	return f.prefixLen
-}
-
 func (*fwdTestNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
-}
-
-func (f *fwdTestNetworkEndpoint) ID() *NetworkEndpointID {
-	return &f.id
 }
 
 func (f *fwdTestNetworkEndpoint) HandlePacket(r *Route, pkt *PacketBuffer) {
@@ -99,7 +89,7 @@ func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkH
 	// endpoint.
 	b := pkt.NetworkHeader().Push(fwdTestNetHeaderLen)
 	b[dstAddrOffset] = r.RemoteAddress[0]
-	b[srcAddrOffset] = f.id.LocalAddress[0]
+	b[srcAddrOffset] = r.LocalAddress[0]
 	b[protocolNumberOffset] = byte(params.Protocol)
 
 	return f.ep.WritePacket(r, gso, fwdTestNetNumber, pkt)
@@ -151,15 +141,13 @@ func (*fwdTestNetworkProtocol) Parse(pkt *PacketBuffer) (tcpip.TransportProtocol
 	return tcpip.TransportProtocolNumber(netHeader[protocolNumberOffset]), true, true
 }
 
-func (f *fwdTestNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, ep LinkEndpoint, _ *Stack) (NetworkEndpoint, *tcpip.Error) {
+func (f *fwdTestNetworkProtocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, ep LinkEndpoint, _ *Stack) NetworkEndpoint {
 	return &fwdTestNetworkEndpoint{
 		nicID:      nicID,
-		id:         NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
-		prefixLen:  addrWithPrefix.PrefixLen,
 		proto:      f,
 		dispatcher: dispatcher,
 		ep:         ep,
-	}, nil
+	}
 }
 
 func (f *fwdTestNetworkProtocol) SetOption(option interface{}) *tcpip.Error {
