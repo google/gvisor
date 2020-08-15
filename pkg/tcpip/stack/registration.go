@@ -262,12 +262,6 @@ type NetworkEndpoint interface {
 	// header to the given destination address. It takes ownership of pkt.
 	WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) *tcpip.Error
 
-	// ID returns the network protocol endpoint ID.
-	ID() *NetworkEndpointID
-
-	// PrefixLen returns the network endpoint's subnet prefix length in bits.
-	PrefixLen() int
-
 	// NICID returns the id of the NIC this endpoint belongs to.
 	NICID() tcpip.NICID
 
@@ -304,7 +298,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) (NetworkEndpoint, *tcpip.Error)
+	NewEndpoint(nicID tcpip.NICID, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) NetworkEndpoint
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
