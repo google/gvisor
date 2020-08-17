@@ -83,6 +83,23 @@ void FuseTest::GetServerActualRequest(std::vector<struct iovec>& iovecs) {
   WaitServerComplete();
 }
 
+// Sends the `kSetInodeLookup` command, expected mode, and the path of the
+// inode to create under the mount point.
+void FuseTest::SetServerInodeLookup(const std::string& path, mode_t mode) {
+  uint32_t cmd = static_cast<uint32_t>(FuseTestCmd::kSetInodeLookup);
+  EXPECT_THAT(RetryEINTR(write)(sock_[0], &cmd, sizeof(cmd)),
+              SyscallSucceedsWithValue(sizeof(cmd)));
+
+  EXPECT_THAT(RetryEINTR(write)(sock_[0], &mode, sizeof(mode)),
+              SyscallSucceedsWithValue(sizeof(mode)));
+
+  // Pad 1 byte for null-terminate c-string.
+  EXPECT_THAT(RetryEINTR(write)(sock_[0], path.c_str(), path.size() + 1),
+              SyscallSucceedsWithValue(path.size() + 1));
+
+  WaitServerComplete();
+}
+
 void FuseTest::MountFuse() {
   EXPECT_THAT(dev_fd_ = open("/dev/fuse", O_RDWR), SyscallSucceeds());
 
@@ -217,6 +234,9 @@ void FuseTest::ServerHandleCommand() {
     case FuseTestCmd::kSetResponse:
       ServerReceiveResponse();
       break;
+    case FuseTestCmd::kSetInodeLookup:
+      ServerReceiveInodeLookup();
+      break;
     case FuseTestCmd::kGetRequest:
       ServerSendReceivedRequest();
       break;
@@ -226,6 +246,64 @@ void FuseTest::ServerHandleCommand() {
   }
 
   ServerCompleteWith(!HasFailure());
+}
+
+// Reads the expected file mode and the path of one file. Crafts a basic
+// `fuse_entry_out` memory block and inserts into a map for future use.
+// The FUSE server will always return this response if a FUSE_LOOKUP
+// request with this specific path comes in.
+void FuseTest::ServerReceiveInodeLookup() {
+  mode_t mode;
+  std::vector<char> buf(FUSE_MIN_READ_BUFFER);
+
+  EXPECT_THAT(RetryEINTR(read)(sock_[1], &mode, sizeof(mode)),
+              SyscallSucceedsWithValue(sizeof(mode)));
+
+  EXPECT_THAT(RetryEINTR(read)(sock_[1], buf.data(), buf.size()),
+              SyscallSucceeds());
+
+  std::string path(buf.data());
+
+  uint32_t out_len =
+      sizeof(struct fuse_out_header) + sizeof(struct fuse_entry_out);
+  struct fuse_out_header out_header = {
+      .len = out_len,
+      .error = 0,
+  };
+  struct fuse_entry_out out_payload = {
+      .nodeid = nodeid_,
+      .generation = 0,
+      .entry_valid = 0,
+      .attr_valid = 0,
+      .entry_valid_nsec = 0,
+      .attr_valid_nsec = 0,
+      .attr =
+          (struct fuse_attr){
+              .ino = nodeid_,
+              .size = 512,
+              .blocks = 4,
+              .atime = 0,
+              .mtime = 0,
+              .ctime = 0,
+              .atimensec = 0,
+              .mtimensec = 0,
+              .ctimensec = 0,
+              .mode = mode,
+              .nlink = 2,
+              .uid = 1234,
+              .gid = 4321,
+              .rdev = 12,
+              .blksize = 4096,
+          },
+  };
+  // Since this is only used in test, nodeid_ is simply increased by 1 to
+  // comply with the unqiueness of different path.
+  ++nodeid_;
+
+  memcpy(buf.data(), &out_header, sizeof(out_header));
+  memcpy(buf.data() + sizeof(out_header), &out_payload, sizeof(out_payload));
+  lookups_.AddMemBlock(FUSE_LOOKUP, buf.data(), out_len);
+  lookup_map_[path] = lookups_.Next();
 }
 
 // Sends the received request pointed by current cursor and advances cursor.
@@ -253,6 +331,19 @@ void FuseTest::ServerProcessFuseRequest() {
   EXPECT_THAT(len = RetryEINTR(read)(dev_fd_, buf.data(), buf.size()),
               SyscallSucceeds());
   fuse_in_header* in_header = reinterpret_cast<fuse_in_header*>(buf.data());
+
+  // Check if this is a preset FUSE_LOOKUP path.
+  if (in_header->opcode == FUSE_LOOKUP) {
+    std::string path(buf.data() + sizeof(struct fuse_in_header));
+    auto it = lookup_map_.find(path);
+    if (it != lookup_map_.end()) {
+      // Matches a preset path. Reply with fake data and skip saving the
+      // request.
+      ServerRespondFuseSuccess(lookups_, it->second, in_header->unique);
+      return;
+    }
+  }
+
   requests_.AddMemBlock(in_header->opcode, buf.data(), len);
 
   // Check if there is a corresponding response.
