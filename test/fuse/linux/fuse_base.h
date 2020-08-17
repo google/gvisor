@@ -17,9 +17,11 @@
 
 #include <linux/fuse.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/uio.h>
 
 #include <iostream>
+#include <unordered_map>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -35,6 +37,7 @@ constexpr char kMountOpts[] = "rootmode=755,user_id=0,group_id=0";
 // server. See test/fuse/README.md for further detail.
 enum class FuseTestCmd {
   kSetResponse = 0,
+  kSetInodeLookup,
   kGetRequest,
   kGetNumUnconsumedRequests,
   kGetNumUnsentResponses,
@@ -114,6 +117,9 @@ class FuseMemBuffer {
 // to manipulate with it. Refer to test/fuse/README.md for detailed explanation.
 class FuseTest : public ::testing::Test {
  public:
+  // nodeid_ is the ID of a fake inode. We starts from 2 since 1 is occupied by
+  // the mount point.
+  FuseTest() : nodeid_(2) {}
   void SetUp() override;
   void TearDown() override;
 
@@ -121,6 +127,16 @@ class FuseTest : public ::testing::Test {
   // opcode via socket. This can be used multiple times to define a sequence of
   // expected FUSE reactions.
   void SetServerResponse(uint32_t opcode, std::vector<struct iovec>& iovecs);
+
+  // Called by the testing thread to install a fake path under the mount point.
+  // e.g. a file under /mnt/dir/file and moint point is /mnt, then it will look
+  // up "dir/file" in this case.
+  //
+  // It sets a fixed response to the FUSE_LOOKUP requests issued with this
+  // path, pretending there is an inode and avoid ENOENT when testing. If mode
+  // is not given, it creates a regular file with mode 0600.
+  void SetServerInodeLookup(const std::string& path,
+                            mode_t mode = S_IFREG | S_IRUSR | S_IWUSR);
 
   // Called by the testing thread to ask the FUSE server for its next received
   // FUSE request. Be sure to use the corresponding struct of iovec to receive
@@ -182,6 +198,11 @@ class FuseTest : public ::testing::Test {
   // memory queue.
   void ServerReceiveResponse();
 
+  // The FUSE server side's corresponding code of `SetServerInodeLookup()`.
+  // Handles `kSetInodeLookup` command. Receives an expected file mode and
+  // file path under the mount point.
+  void ServerReceiveInodeLookup();
+
   // The FUSE server side's corresponding code of `GetServerActualRequest()`.
   // Handles `kGetRequest` command. Sends the next received request pointed by
   // the cursor.
@@ -203,8 +224,12 @@ class FuseTest : public ::testing::Test {
   int dev_fd_;
   int sock_[2];
 
+  uint64_t nodeid_;
+  std::unordered_map<std::string, FuseMemBlock> lookup_map_;
+
   FuseMemBuffer requests_;
   FuseMemBuffer responses_;
+  FuseMemBuffer lookups_;
 };
 
 }  // namespace testing
