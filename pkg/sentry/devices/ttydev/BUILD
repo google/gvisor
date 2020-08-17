@@ -11,6 +11,6 @@ go_library(
         "//pkg/context",
         "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/vfs",
-        "//pkg/usermem",
+        "//pkg/syserror",
     ],
 )
