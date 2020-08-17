@@ -183,10 +183,14 @@ func (s *SocketVFS2) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 			if t.IsNetworkNamespaced() {
 				return syserr.ErrInvalidEndpointState
 			}
-			if err := t.AbstractSockets().Bind(t, p[1:], bep, s); err != nil {
+			asn := t.AbstractSockets()
+			name := p[1:]
+			if err := asn.Bind(t, name, bep, s); err != nil {
 				// syserr.ErrPortInUse corresponds to EADDRINUSE.
 				return syserr.ErrPortInUse
 			}
+			s.abstractName = name
+			s.abstractNamespace = asn
 		} else {
 			path := fspath.Parse(p)
 			root := t.FSContext().RootDirectoryVFS2()
