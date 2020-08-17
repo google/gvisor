@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ttydev implements devices for /dev/tty and (eventually)
-// /dev/console.
-//
-// TODO(b/159623826): Support /dev/console.
+// Package ttydev implements an unopenable vfs.Device for /dev/tty.
 package ttydev
 
 import (
@@ -23,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -37,44 +34,7 @@ type ttyDevice struct{}
 
 // Open implements vfs.Device.Open.
 func (ttyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd := &ttyFD{}
-	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
-		UseDentryMetadata: true,
-	}); err != nil {
-		return nil, err
-	}
-	return &fd.vfsfd, nil
-}
-
-// ttyFD implements vfs.FileDescriptionImpl for /dev/tty.
-type ttyFD struct {
-	vfsfd vfs.FileDescription
-	vfs.FileDescriptionDefaultImpl
-	vfs.DentryMetadataFileDescriptionImpl
-	vfs.NoLockFD
-}
-
-// Release implements vfs.FileDescriptionImpl.Release.
-func (fd *ttyFD) Release(context.Context) {}
-
-// PRead implements vfs.FileDescriptionImpl.PRead.
-func (fd *ttyFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	return 0, nil
-}
-
-// Read implements vfs.FileDescriptionImpl.Read.
-func (fd *ttyFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	return 0, nil
-}
-
-// PWrite implements vfs.FileDescriptionImpl.PWrite.
-func (fd *ttyFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return src.NumBytes(), nil
-}
-
-// Write implements vfs.FileDescriptionImpl.Write.
-func (fd *ttyFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return src.NumBytes(), nil
+	return nil, syserror.EIO
 }
 
 // Register registers all devices implemented by this package in vfsObj.
