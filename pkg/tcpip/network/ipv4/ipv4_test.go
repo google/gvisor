@@ -628,6 +628,28 @@ func TestReceiveFragments(t *testing.T) {
 			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
 		},
 		{
+			name: "Two fragments out of order",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
+		},
+		{
 			name: "Two fragments with last fragment size not a multiple of fragment block size",
 			fragments: []fragmentData{
 				{
