@@ -19,10 +19,8 @@ go_template(
 )
 
 go_library(
-    name = "refs",
-    srcs = [
-        "refs.go",
-    ],
+    name = "refs_vfs2",
+    srcs = ["refs.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/context"],
 )

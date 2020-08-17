@@ -15,29 +15,21 @@
 package kernel
 
 import (
+	"fmt"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refs_vfs2"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // +stateify savable
 type abstractEndpoint struct {
-	ep   transport.BoundEndpoint
-	wr   *refs.WeakRef
-	name string
-	ns   *AbstractSocketNamespace
-}
-
-// WeakRefGone implements refs.WeakRefUser.WeakRefGone.
-func (e *abstractEndpoint) WeakRefGone(context.Context) {
-	e.ns.mu.Lock()
-	if e.ns.endpoints[e.name].ep == e.ep {
-		delete(e.ns.endpoints, e.name)
-	}
-	e.ns.mu.Unlock()
+	ep     transport.BoundEndpoint
+	socket refs_vfs2.RefCounter
+	name   string
+	ns     *AbstractSocketNamespace
 }
 
 // AbstractSocketNamespace is used to implement the Linux abstract socket functionality.
@@ -46,7 +38,11 @@ func (e *abstractEndpoint) WeakRefGone(context.Context) {
 type AbstractSocketNamespace struct {
 	mu sync.Mutex `state:"nosave"`
 
-	// Keeps mapping from name to endpoint.
+	// Keeps a mapping from name to endpoint. AbstractSocketNamespace does not hold
+	// any references on any sockets that it contains; when retrieving a socket,
+	// TryIncRef() must be called in case the socket is concurrently being
+	// destroyed. It is the responsibility of the socket to remove itself from the
+	// abstract socket namespace when it is destroyed.
 	endpoints map[string]abstractEndpoint
 }
 
@@ -58,15 +54,15 @@ func NewAbstractSocketNamespace() *AbstractSocketNamespace {
 }
 
 // A boundEndpoint wraps a transport.BoundEndpoint to maintain a reference on
-// its backing object.
+// its backing socket.
 type boundEndpoint struct {
 	transport.BoundEndpoint
-	rc refs.RefCounter
+	socket refs_vfs2.RefCounter
 }
 
 // Release implements transport.BoundEndpoint.Release.
 func (e *boundEndpoint) Release(ctx context.Context) {
-	e.rc.DecRef(ctx)
+	e.socket.DecRef(ctx)
 	e.BoundEndpoint.Release(ctx)
 }
 
@@ -81,32 +77,59 @@ func (a *AbstractSocketNamespace) BoundEndpoint(name string) transport.BoundEndp
 		return nil
 	}
 
-	rc := ep.wr.Get()
-	if rc == nil {
-		delete(a.endpoints, name)
+	if !ep.socket.TryIncRef() {
+		// The socket has reached zero references and is being destroyed.
 		return nil
 	}
 
-	return &boundEndpoint{ep.ep, rc}
+	return &boundEndpoint{ep.ep, ep.socket}
 }
 
 // Bind binds the given socket.
 //
-// When the last reference managed by rc is dropped, ep may be removed from the
+// When the last reference managed by socket is dropped, ep may be removed from the
 // namespace.
-func (a *AbstractSocketNamespace) Bind(ctx context.Context, name string, ep transport.BoundEndpoint, rc refs.RefCounter) error {
+func (a *AbstractSocketNamespace) Bind(ctx context.Context, name string, ep transport.BoundEndpoint, socket refs_vfs2.RefCounter) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Check if there is already a socket (which has not yet been destroyed) bound at name.
 	if ep, ok := a.endpoints[name]; ok {
-		if rc := ep.wr.Get(); rc != nil {
-			rc.DecRef(ctx)
+		if ep.socket.TryIncRef() {
+			ep.socket.DecRef(ctx)
 			return syscall.EADDRINUSE
 		}
 	}
 
 	ae := abstractEndpoint{ep: ep, name: name, ns: a}
-	ae.wr = refs.NewWeakRef(rc, &ae)
+	ae.socket = socket
 	a.endpoints[name] = ae
 	return nil
+}
+
+// Remove removes the specified socket at name from the abstract socket
+// namespace, if it has not yet been replaced.
+func (a *AbstractSocketNamespace) Remove(name string, socket refs_vfs2.RefCounter) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	ep, ok := a.endpoints[name]
+	if !ok {
+		// We never delete a map entry apart from a socket's destructor (although the
+		// map entry may be overwritten). Therefore, a socket should exist, even if it
+		// may not be the one we expect.
+		panic(fmt.Sprintf("expected socket to exist at '%s' in abstract socket namespace", name))
+	}
+
+	// A Bind() operation may race with callers of Remove(), e.g. in the
+	// following case:
+	//   socket1 reaches zero references and begins destruction
+	//   a.Bind("foo", ep, socket2) replaces socket1 with socket2
+	//   socket1's destructor calls a.Remove("foo", socket1)
+	//
+	// Therefore, we need to check that the socket at name is what we expect
+	// before modifying the map.
+	if ep.socket == socket {
+		delete(a.endpoints, name)
+	}
 }
