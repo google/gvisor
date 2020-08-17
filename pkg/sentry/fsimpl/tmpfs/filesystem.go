@@ -389,9 +389,8 @@ afterTrailingSymlink:
 		start = &parentDir.dentry
 		goto afterTrailingSymlink
 	}
-	// Open existing file.
-	if mustCreate {
-		return nil, syserror.EEXIST
+	if rp.MustBeDir() && !child.inode.isDir() {
+		return nil, syserror.ENOTDIR
 	}
 	return child.open(ctx, rp, &opts, false)
 }

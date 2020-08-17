@@ -27,6 +27,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -406,6 +407,13 @@ TEST_F(OpenTest, FileNotDirectory) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   ASSERT_THAT(open(file.path().c_str(), O_RDONLY | O_DIRECTORY),
               SyscallFailsWithErrno(ENOTDIR));
+}
+
+TEST_F(OpenTest, SymlinkDirectory) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string link = NewTempAbsPath();
+  ASSERT_THAT(symlink(dir.path().c_str(), link.c_str()), SyscallSucceeds());
+  ASSERT_NO_ERRNO(Open(link, O_RDONLY | O_DIRECTORY));
 }
 
 TEST_F(OpenTest, Null) {
