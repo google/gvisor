@@ -828,6 +828,44 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
 		},
 		{
+			name: "Two fragments out of order",
+			fragments: []fragmentData{
+				{
+					srcAddr: addr1,
+					dstAddr: addr2,
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+len(ipv6Payload1Addr1ToAddr2)-64,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 8, More = false, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+
+							ipv6Payload1Addr1ToAddr2[64:],
+						},
+					),
+				},
+				{
+					srcAddr: addr1,
+					dstAddr: addr2,
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+64,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 0, More = true, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+
+							ipv6Payload1Addr1ToAddr2[:64],
+						},
+					),
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
+		},
+		{
 			name: "Two fragments with last fragment size not a multiple of fragment block size",
 			fragments: []fragmentData{
 				{
