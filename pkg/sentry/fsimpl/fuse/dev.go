@@ -307,6 +307,14 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 
 // Readiness implements vfs.FileDescriptionImpl.Readiness.
 func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	return fd.readinessLocked(mask)
+}
+
+// readinessLocked implements checking the readiness of the fuse device while
+// locked with DeviceFD.mu.
+func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
 	ready |= waiter.EventOut // FD is always writable
 	if !fd.queue.Empty() {
