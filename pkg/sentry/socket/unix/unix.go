@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -80,7 +79,7 @@ func NewWithDirent(ctx context.Context, d *fs.Dirent, ep transport.Endpoint, sty
 			stype: stype,
 		},
 	}
-	s.EnableLeakCheck("unix.SocketOperations")
+	s.EnableLeakCheck()
 
 	return fs.NewFile(ctx, d, flags, &s)
 }
@@ -89,17 +88,26 @@ func NewWithDirent(ctx context.Context, d *fs.Dirent, ep transport.Endpoint, sty
 //
 // +stateify savable
 type socketOpsCommon struct {
-	refs.AtomicRefCount
+	socketOpsCommonRefs
 	socket.SendReceiveTimeout
 
 	ep    transport.Endpoint
 	stype linux.SockType
+
+	// abstractName and abstractNamespace indicate the name and namespace of the
+	// socket if it is bound to an abstract socket namespace. Once the socket is
+	// bound, they cannot be modified.
+	abstractName      string
+	abstractNamespace *kernel.AbstractSocketNamespace
 }
 
 // DecRef implements RefCounter.DecRef.
 func (s *socketOpsCommon) DecRef(ctx context.Context) {
-	s.DecRefWithDestructor(ctx, func(context.Context) {
+	s.socketOpsCommonRefs.DecRef(func() {
 		s.ep.Close(ctx)
+		if s.abstractNamespace != nil {
+			s.abstractNamespace.Remove(s.abstractName, s)
+		}
 	})
 }
 
@@ -284,10 +292,14 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 			if t.IsNetworkNamespaced() {
 				return syserr.ErrInvalidEndpointState
 			}
-			if err := t.AbstractSockets().Bind(t, p[1:], bep, s); err != nil {
+			asn := t.AbstractSockets()
+			name := p[1:]
+			if err := asn.Bind(t, name, bep, s); err != nil {
 				// syserr.ErrPortInUse corresponds to EADDRINUSE.
 				return syserr.ErrPortInUse
 			}
+			s.abstractName = name
+			s.abstractNamespace = asn
 		} else {
 			// The parent and name.
 			var d *fs.Dirent

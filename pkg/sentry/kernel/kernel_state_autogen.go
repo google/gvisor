@@ -16,7 +16,7 @@ func (x *abstractEndpoint) StateTypeName() string {
 func (x *abstractEndpoint) StateFields() []string {
 	return []string{
 		"ep",
-		"wr",
+		"socket",
 		"name",
 		"ns",
 	}
@@ -27,7 +27,7 @@ func (x *abstractEndpoint) beforeSave() {}
 func (x *abstractEndpoint) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.ep)
-	m.Save(1, &x.wr)
+	m.Save(1, &x.socket)
 	m.Save(2, &x.name)
 	m.Save(3, &x.ns)
 }
@@ -36,7 +36,7 @@ func (x *abstractEndpoint) afterLoad() {}
 
 func (x *abstractEndpoint) StateLoad(m state.Source) {
 	m.Load(0, &x.ep)
-	m.Load(1, &x.wr)
+	m.Load(1, &x.socket)
 	m.Load(2, &x.name)
 	m.Load(3, &x.ns)
 }
