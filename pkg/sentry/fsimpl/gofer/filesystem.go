@@ -886,9 +886,6 @@ afterTrailingSymlink:
 	if mustCreate {
 		return nil, syserror.EEXIST
 	}
-	if !child.isDir() && rp.MustBeDir() {
-		return nil, syserror.ENOTDIR
-	}
 	// Open existing child or follow symlink.
 	if child.isSymlink() && rp.ShouldFollowSymlink() {
 		target, err := child.readlink(ctx, rp.Mount())
@@ -900,6 +897,9 @@ afterTrailingSymlink:
 		}
 		start = parent
 		goto afterTrailingSymlink
+	}
+	if rp.MustBeDir() && !child.isDir() {
+		return nil, syserror.ENOTDIR
 	}
 	return child.openLocked(ctx, rp, &opts)
 }
