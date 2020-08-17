@@ -163,6 +163,7 @@ go_library(
         "//pkg/log",
         "//pkg/metric",
         "//pkg/refs",
+        "//pkg/refs_vfs2",
         "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",
