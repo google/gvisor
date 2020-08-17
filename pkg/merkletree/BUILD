@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "merkletree",
     srcs = ["merkletree.go"],
+    visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/usermem"],
 )
 
