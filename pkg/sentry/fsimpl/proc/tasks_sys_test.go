@@ -20,8 +20,10 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func newIPv6TestStack() *inet.TestStack {
@@ -74,5 +76,74 @@ func TestIfinet6(t *testing.T) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Got n.contents() = %v, want = %v", got, want)
+	}
+}
+
+// TestIPForwarding tests the implementation of
+// /proc/sys/net/ipv4/ip_forwarding
+func TestConfigureIPForwarding(t *testing.T) {
+	ctx := context.Background()
+	s := inet.NewTestStack()
+
+	var cases = []struct {
+		comment string
+		initial bool
+		str     string
+		final   bool
+	}{
+		{
+			comment: `Forwarding is disabled; write 1 and enable forwarding`,
+			initial: false,
+			str:     "1",
+			final:   true,
+		},
+		{
+			comment: `Forwarding is disabled; write 0 and disable forwarding`,
+			initial: false,
+			str:     "0",
+			final:   false,
+		},
+		{
+			comment: `Forwarding is enabled; write 1 and enable forwarding`,
+			initial: true,
+			str:     "1",
+			final:   true,
+		},
+		{
+			comment: `Forwarding is enabled; write 0 and disable forwarding`,
+			initial: true,
+			str:     "0",
+			final:   false,
+		},
+		{
+			comment: `Forwarding is disabled; write 2404 and enable forwarding`,
+			initial: false,
+			str:     "2404",
+			final:   true,
+		},
+		{
+			comment: `Forwarding is enabled; write 2404 and enable forwarding`,
+			initial: true,
+			str:     "2404",
+			final:   true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.comment, func(t *testing.T) {
+			s.IPForwarding = c.initial
+
+			file := &ipForwarding{stack: s, enabled: &c.initial}
+
+			// Write the values.
+			src := usermem.BytesIOSequence([]byte(c.str))
+			if n, err := file.Write(ctx, src, 0); n != int64(len(c.str)) || err != nil {
+				t.Errorf("file.Write(ctx, nil, %v, 0) = (%d, %v); wanted (%d, nil)", c.str, n, err, len(c.str))
+			}
+
+			// Read the values from the stack and check them.
+			if s.IPForwarding != c.final {
+				t.Errorf("s.IPForwarding = %v; wanted %v", s.IPForwarding, c.final)
+			}
+		})
 	}
 }

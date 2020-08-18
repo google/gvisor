@@ -15,6 +15,7 @@ go_library(
     ],
     deps = [
         "//pkg/context",
+        "//pkg/tcpip",
         "//pkg/tcpip/stack",
     ],
 )

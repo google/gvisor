@@ -42,6 +42,9 @@ import (
 )
 
 const (
+	// fakeNetNumber is used as a protocol number in tests.
+	//
+	// This constant should match fakeNetNumber in stack.go.
 	fakeNetNumber        tcpip.NetworkProtocolNumber = math.MaxUint32
 	fakeNetHeaderLen                                 = 12
 	fakeDefaultPrefixLen                             = 8
@@ -2125,7 +2128,7 @@ func TestNICForwarding(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 			})
-			s.SetForwarding(true)
+			s.SetForwarding(fakeNetNumber, true)
 
 			ep1 := channel.New(10, defaultMTU, "")
 			if err := s.CreateNIC(nicID1, ep1); err != nil {

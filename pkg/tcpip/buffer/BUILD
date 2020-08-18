@@ -14,6 +14,9 @@ go_library(
 go_test(
     name = "buffer_test",
     size = "small",
-    srcs = ["view_test.go"],
+    srcs = [
+        "prependable_test.go",
+        "view_test.go",
+    ],
     library = ":buffer",
 )

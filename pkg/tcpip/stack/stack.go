@@ -22,6 +22,7 @@ package stack
 import (
 	"bytes"
 	"encoding/binary"
+	"math"
 	mathrand "math/rand"
 	"sync/atomic"
 	"time"
@@ -49,6 +50,41 @@ const (
 	// DefaultTOS is the default type of service value for network endpoints.
 	DefaultTOS = 0
 )
+
+const (
+	// fakeNetNumber is used as a protocol number in tests.
+	//
+	// This constant should match fakeNetNumber in stack_test.go.
+	fakeNetNumber tcpip.NetworkProtocolNumber = math.MaxUint32
+)
+
+type forwardingFlag uint32
+
+// Packet forwarding flags. Forwarding settings for different network protocols
+// are stored as bit flags in an uint32 number.
+const (
+	forwardingIPv4 forwardingFlag = 1 << iota
+	forwardingIPv6
+
+	// forwardingFake is used to test package forwarding with a fake protocol.
+	forwardingFake
+)
+
+func getForwardingFlag(protocol tcpip.NetworkProtocolNumber) forwardingFlag {
+	var flag forwardingFlag
+	switch protocol {
+	case header.IPv4ProtocolNumber:
+		flag = forwardingIPv4
+	case header.IPv6ProtocolNumber:
+		flag = forwardingIPv6
+	case fakeNetNumber:
+		// This network protocol number is used to test packet forwarding.
+		flag = forwardingFake
+	default:
+		// We only support forwarding for IPv4 and IPv6.
+	}
+	return flag
+}
 
 type transportProtocolState struct {
 	proto          TransportProtocol
@@ -415,9 +451,16 @@ type Stack struct {
 
 	linkAddrCache *linkAddrCache
 
-	mu               sync.RWMutex
-	nics             map[tcpip.NICID]*NIC
-	forwarding       bool
+	mu   sync.RWMutex
+	nics map[tcpip.NICID]*NIC
+
+	// forwarding contains the enable bits for packet forwarding for different
+	// network protocols.
+	forwarding struct {
+		sync.RWMutex
+		flag forwardingFlag
+	}
+
 	cleanupEndpoints map[TransportEndpoint]struct{}
 
 	// route is the route table passed in by the user via SetRouteTable(),
@@ -851,46 +894,51 @@ func (s *Stack) Stats() tcpip.Stats {
 	return s.stats
 }
 
-// SetForwarding enables or disables the packet forwarding between NICs.
-//
-// When forwarding becomes enabled, any host-only state on all NICs will be
-// cleaned up and if IPv6 is enabled, NDP Router Solicitations will be started.
-// When forwarding becomes disabled and if IPv6 is enabled, NDP Router
-// Solicitations will be stopped.
-func (s *Stack) SetForwarding(enable bool) {
-	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// SetForwarding enables or disables packet forwarding between NICs.
+func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) {
+	s.forwarding.Lock()
+	defer s.forwarding.Unlock()
 
-	// If forwarding status didn't change, do nothing further.
-	if s.forwarding == enable {
+	// If this stack does not support the protocol, do nothing.
+	if _, ok := s.networkProtocols[protocol]; !ok {
 		return
 	}
 
-	s.forwarding = enable
+	flag := getForwardingFlag(protocol)
 
-	// If this stack does not support IPv6, do nothing further.
-	if _, ok := s.networkProtocols[header.IPv6ProtocolNumber]; !ok {
+	// If the forwarding value for this protocol hasn't changed then do
+	// nothing.
+	if s.forwarding.flag&getForwardingFlag(protocol) != 0 == enable {
 		return
 	}
 
+	var newValue forwardingFlag
 	if enable {
-		for _, nic := range s.nics {
-			nic.becomeIPv6Router()
-		}
+		newValue = s.forwarding.flag | flag
 	} else {
-		for _, nic := range s.nics {
-			nic.becomeIPv6Host()
+		newValue = s.forwarding.flag & ^flag
+	}
+	s.forwarding.flag = newValue
+
+	// Enable or disable NDP for IPv6.
+	if protocol == header.IPv6ProtocolNumber {
+		if enable {
+			for _, nic := range s.nics {
+				nic.becomeIPv6Router()
+			}
+		} else {
+			for _, nic := range s.nics {
+				nic.becomeIPv6Host()
+			}
 		}
 	}
 }
 
-// Forwarding returns if the packet forwarding between NICs is enabled.
-func (s *Stack) Forwarding() bool {
-	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.forwarding
+// Forwarding returns if packet forwarding between NICs is enabled.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	s.forwarding.RLock()
+	defer s.forwarding.RUnlock()
+	return s.forwarding.flag&getForwardingFlag(protocol) != 0
 }
 
 // SetRouteTable assigns the route table to be used by this stack. It

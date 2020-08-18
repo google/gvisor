@@ -327,7 +327,7 @@ func (n *NIC) enable() *tcpip.Error {
 	// does. That is, routers do not learn from RAs (e.g. on-link prefixes
 	// and default routers). Therefore, soliciting RAs from other routers on
 	// a link is unnecessary for routers.
-	if !n.stack.forwarding {
+	if !n.stack.Forwarding(header.IPv6ProtocolNumber) {
 		n.mu.ndp.startSolicitingRouters()
 	}
 
@@ -1256,7 +1256,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 	// packet and forward it to the NIC.
 	//
 	// TODO: Should we be forwarding the packet even if promiscuous?
-	if n.stack.Forwarding() {
+	if n.stack.Forwarding(protocol) {
 		r, err := n.stack.FindRoute(0, "", dst, protocol, false /* multicastLoop */)
 		if err != nil {
 			n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
@@ -1283,6 +1283,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		// n doesn't have a destination endpoint.
 		// Send the packet out of n.
 		// TODO(b/128629022): move this logic to route.WritePacket.
+		// TODO(gvisor.dev/issue/1085): According to the RFC, we must decrease the TTL field for ipv4/ipv6.
 		if ch, err := r.Resolve(nil); err != nil {
 			if err == tcpip.ErrWouldBlock {
 				n.stack.forwarder.enqueue(ch, n, &r, protocol, pkt)
