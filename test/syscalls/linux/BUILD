@@ -1862,6 +1862,7 @@ cc_binary(
     srcs = ["readahead.cc"],
     linkstatic = 1,
     deps = [
+        ":socket_test_util",
         "//test/util:file_descriptor",
         gtest,
         "//test/util:temp_path",

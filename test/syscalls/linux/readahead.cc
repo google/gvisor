@@ -16,6 +16,7 @@
 #include <fcntl.h>
 
 #include "gtest/gtest.h"
+#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -29,7 +30,15 @@ TEST(ReadaheadTest, InvalidFD) {
   EXPECT_THAT(readahead(-1, 1, 1), SyscallFailsWithErrno(EBADF));
 }
 
+TEST(ReadaheadTest, UnsupportedFile) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_THAT(readahead(sock.get(), 1, 1), SyscallFailsWithErrno(EINVAL));
+}
+
 TEST(ReadaheadTest, InvalidOffset) {
+  // This test is not valid for some Linux Kernels.
+  SKIP_IF(!IsRunningOnGvisor());
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
@@ -79,6 +88,8 @@ TEST(ReadaheadTest, WriteOnly) {
 }
 
 TEST(ReadaheadTest, InvalidSize) {
+  // This test is not valid on some Linux kernels.
+  SKIP_IF(!IsRunningOnGvisor());
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
