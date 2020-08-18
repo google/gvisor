@@ -17,3 +17,8 @@ syscall_test(
     fuse = "True",
     test = "//test/fuse/linux:symlink_test",
 )
+
+syscall_test(
+    fuse = "True",
+    test = "//test/fuse/linux:readlink_test",
+)

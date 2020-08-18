@@ -212,6 +212,9 @@ type inode struct {
 
 	// the owning filesystem. fs is immutable.
 	fs *filesystem
+
+	// link is result of following a symbolic link.
+	link string
 }
 
 func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
@@ -317,6 +320,33 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 		i.dentry.InsertChild(name, child)
 	}
 	return child.VFSDentry(), nil
+}
+
+// Readlink implements kernfs.Inode.Readlink.
+func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
+	if i.Mode().FileType()&linux.S_IFLNK == 0 {
+		return "", syserror.EINVAL
+	}
+	if i.link == "" {
+		kernelTask := kernel.TaskFromContext(ctx)
+		if kernelTask == nil {
+			log.Warningf("fusefs.Inode.Readlink: couldn't get kernel task from context")
+			return "", syserror.EINVAL
+		}
+		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
+		if err != nil {
+			return "", err
+		}
+		res, err := i.fs.conn.Call(kernelTask, req)
+		if err != nil {
+			return "", err
+		}
+		i.link = string(res.data[res.hdr.SizeBytes():])
+		if !mnt.Options().ReadOnly {
+			i.attributeTime = 0
+		}
+	}
+	return i.link, nil
 }
 
 // statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx. The
