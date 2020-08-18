@@ -438,7 +438,7 @@ type inodeDynamicLookup interface {
 type inodeSymlink interface {
 	// Readlink returns the target of a symbolic link. If an inode is not a
 	// symlink, the implementation should return EINVAL.
-	Readlink(ctx context.Context) (string, error)
+	Readlink(ctx context.Context, mnt *vfs.Mount) (string, error)
 
 	// Getlink returns the target of a symbolic link, as used by path
 	// resolution:
