@@ -548,7 +548,7 @@ func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	if !d.Impl().(*Dentry).isSymlink() {
 		return "", syserror.EINVAL
 	}
-	return inode.Readlink(ctx)
+	return inode.Readlink(ctx, rp.Mount())
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
