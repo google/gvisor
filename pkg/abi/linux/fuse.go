@@ -483,3 +483,14 @@ func (r *FUSESymLinkIn) MarshalUnsafe(buf []byte) {
 func (r *FUSESymLinkIn) SizeBytes() int {
 	return len(r.Name) + len(r.Target) + 2
 }
+
+// FUSEEmptyIn is used by operations without request body.
+type FUSEEmptyIn struct{ marshal.StubMarshallable }
+
+// MarshalUnsafe do nothing for marshal.
+func (r *FUSEEmptyIn) MarshalUnsafe(buf []byte) {}
+
+// SizeBytes is 0 for empty request.
+func (r *FUSEEmptyIn) SizeBytes() int {
+	return 0
+}

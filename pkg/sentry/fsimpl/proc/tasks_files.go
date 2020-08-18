@@ -50,7 +50,7 @@ func (fs *filesystem) newSelfSymlink(creds *auth.Credentials, ino uint64, pidns 
 	return d
 }
 
-func (s *selfSymlink) Readlink(ctx context.Context) (string, error) {
+func (s *selfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// Who is reading this link?
@@ -63,8 +63,8 @@ func (s *selfSymlink) Readlink(ctx context.Context) (string, error) {
 	return strconv.FormatUint(uint64(tgid), 10), nil
 }
 
-func (s *selfSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
-	target, err := s.Readlink(ctx)
+func (s *selfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error) {
+	target, err := s.Readlink(ctx, mnt)
 	return vfs.VirtualDentry{}, target, err
 }
 
@@ -92,7 +92,7 @@ func (fs *filesystem) newThreadSelfSymlink(creds *auth.Credentials, ino uint64, 
 	return d
 }
 
-func (s *threadSelfSymlink) Readlink(ctx context.Context) (string, error) {
+func (s *threadSelfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// Who is reading this link?
@@ -106,8 +106,8 @@ func (s *threadSelfSymlink) Readlink(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%d/task/%d", tgid, tid), nil
 }
 
-func (s *threadSelfSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
-	target, err := s.Readlink(ctx)
+func (s *threadSelfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error) {
+	target, err := s.Readlink(ctx, mnt)
 	return vfs.VirtualDentry{}, target, err
 }
 
