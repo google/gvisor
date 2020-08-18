@@ -347,6 +347,19 @@ func (inode) Valid(ctx context.Context) bool {
 	return true
 }
 
+// NewNode implements kernfs.Inode.NewNode.
+func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error) {
+	in := linux.FUSEMknodIn{
+		MknodMeta: linux.FUSEMknodMeta{
+			Mode:  uint32(opts.Mode),
+			Rdev:  (opts.DevMinor & 0xff) | (opts.DevMajor << 8) | (opts.DevMinor & ^uint32((0xff)) << 12),
+			Umask: uint32(kernel.TaskFromContext(ctx).FSContext().Umask()),
+		},
+		Name: name,
+	}
+	return i.newEntry(ctx, name, opts.Mode.FileType(), linux.FUSE_MKNOD, &in)
+}
+
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
 // Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and inode.Lookup.
 func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*vfs.Dentry, error) {

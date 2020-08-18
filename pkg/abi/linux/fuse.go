@@ -413,3 +413,46 @@ type FUSEReleaseIn struct {
 	// LockOwner is the id of the lock owner if there is one.
 	LockOwner uint64
 }
+
+// FUSEMknodMeta contains all the static fields of FUSEMknodIn,
+// which is used for FUSE_MKNOD.
+//
+// +marshal
+type FUSEMknodMeta struct {
+	// Mode of the inode to create.
+	Mode uint32
+
+	// Rdev encodes device major and minor information.
+	Rdev uint32
+
+	// Umask is the current file mode creation mask.
+	Umask uint32
+
+	_ uint32
+}
+
+// FUSEMknodIn contains all the arguments sent by the kernel
+// to the daemon, to create a new file node.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSEMknodIn struct {
+	marshal.StubMarshallable
+
+	// MknodMeta contains mode, rdev and umash field for FUSE_MKNODS.
+	MknodMeta FUSEMknodMeta
+
+	// Name is the name of the node to create.
+	Name string
+}
+
+// MarshalUnsafe serializes r.MknodMeta and r.Name to the dst buffer.
+func (r *FUSEMknodIn) MarshalUnsafe(buf []byte) {
+	r.MknodMeta.MarshalUnsafe(buf[:r.MknodMeta.SizeBytes()])
+	copy(buf[r.MknodMeta.SizeBytes():], r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSEMknodIn.
+// 1 extra byte for null-terminated string.
+func (r *FUSEMknodIn) SizeBytes() int {
+	return r.MknodMeta.SizeBytes() + len(r.Name) + 1
+}
