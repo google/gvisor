@@ -262,8 +262,17 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		return nil, syserror.EOVERFLOW
 	}
 
-	// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
-	fd := fileDescription{OpenFlag: linux.FOPEN_KEEP_CACHE}
+	var fd *fileDescription
+	var fdImpl vfs.FileDescriptionImpl
+	if isDir {
+		directoryFD := &directoryFD{}
+		fd = &(directoryFD.fileDescription)
+		fdImpl = directoryFD
+	} else {
+		// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
+		fd = &fileDescription{OpenFlag: linux.FOPEN_KEEP_CACHE}
+		fdImpl = fd
+	}
 	// Only send open request when FUSE server support open or is opening a directory.
 	if !i.fs.conn.noOpen || isDir {
 		kernelTask := kernel.TaskFromContext(ctx)
@@ -330,7 +339,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		i.attributeTime = 0
 	}
 
-	if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
+	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -372,6 +381,18 @@ func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentr
 		Target: target,
 	}
 	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
+}
+
+// NewDir implements kernfs.Inode.NewDir.
+func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
+	in := linux.FUSEMkdirIn{
+		MkdirMeta: linux.FUSEMkdirMeta{
+			Mode:  uint32(opts.Mode),
+			Umask: uint32(kernel.TaskFromContext(ctx).FSContext().Umask()),
+		},
+		Name: name,
+	}
+	return i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
 }
 
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.

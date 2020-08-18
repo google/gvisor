@@ -494,3 +494,41 @@ func (r *FUSEEmptyIn) MarshalUnsafe(buf []byte) {}
 func (r *FUSEEmptyIn) SizeBytes() int {
 	return 0
 }
+
+// FUSEMkdirMeta contains all the static fields of FUSEMkdirIn,
+// which is used for FUSE_MKDIR.
+//
+// +marshal
+type FUSEMkdirMeta struct {
+	// Mode of the directory of create.
+	Mode uint32
+
+	// Umask is the user file creation mask.
+	Umask uint32
+}
+
+// FUSEMkdirIn contains all the arguments sent by the kernel
+// to the daemon, to create a new directory.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSEMkdirIn struct {
+	marshal.StubMarshallable
+
+	// MkdirMeta contains Mode and Umask of the directory to create.
+	MkdirMeta FUSEMkdirMeta
+
+	// Name of the directory to create.
+	Name string
+}
+
+// MarshalUnsafe serializes r.MkdirMeta and r.Name to the dst buffer.
+func (r *FUSEMkdirIn) MarshalUnsafe(buf []byte) {
+	r.MkdirMeta.MarshalUnsafe(buf[:r.MkdirMeta.SizeBytes()])
+	copy(buf[r.MkdirMeta.SizeBytes():], r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSEMkdirIn.
+// 1 extra byte for null-terminated Name string.
+func (r *FUSEMkdirIn) SizeBytes() int {
+	return r.MkdirMeta.SizeBytes() + len(r.Name) + 1
+}
