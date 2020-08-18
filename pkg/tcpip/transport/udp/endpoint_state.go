@@ -37,6 +37,24 @@ func (u *udpPacket) loadData(data buffer.VectorisedView) {
 	u.data = data
 }
 
+// saveLastError is invoked by stateify.
+func (e *endpoint) saveLastError() string {
+	if e.lastError == nil {
+		return ""
+	}
+
+	return e.lastError.String()
+}
+
+// loadLastError is invoked by stateify.
+func (e *endpoint) loadLastError(s string) {
+	if s == "" {
+		return
+	}
+
+	e.lastError = tcpip.StringToError(s)
+}
+
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
 	// Stop incoming packets from being handled (and mutate endpoint state).
@@ -69,10 +87,13 @@ func (e *endpoint) afterLoad() {
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	e.stack = s
 
 	for _, m := range e.multicastMemberships {
-		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
+		if err := e.stack.JoinGroup(e.NetProto, m.nicID, m.multicastAddr); err != nil {
 			panic(err)
 		}
 	}
@@ -93,13 +114,13 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	var err *tcpip.Error
 	if e.state == StateConnected {
-		e.route, err = e.stack.FindRoute(e.regNICID, e.id.LocalAddress, e.id.RemoteAddress, netProto, e.multicastLoop)
+		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.ID.LocalAddress, e.ID.RemoteAddress, netProto, e.multicastLoop)
 		if err != nil {
 			panic(err)
 		}
-	} else if len(e.id.LocalAddress) != 0 && !isBroadcastOrMulticast(e.id.LocalAddress) { // stateBound
+	} else if len(e.ID.LocalAddress) != 0 && !isBroadcastOrMulticast(e.ID.LocalAddress) { // stateBound
 		// A local unicast address is specified, verify that it's valid.
-		if e.stack.CheckLocalAddress(e.regNICID, netProto, e.id.LocalAddress) == 0 {
+		if e.stack.CheckLocalAddress(e.RegisterNICID, netProto, e.ID.LocalAddress) == 0 {
 			panic(tcpip.ErrBadLocalAddress)
 		}
 	}
@@ -107,9 +128,9 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	// Our saved state had a port, but we don't actually have a
 	// reservation. We need to remove the port from our state, but still
 	// pass it to the reservation machinery.
-	id := e.id
-	e.id.LocalPort = 0
-	e.id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, id)
+	id := e.ID
+	e.ID.LocalPort = 0
+	e.ID, e.boundBindToDevice, err = e.registerWithStack(e.RegisterNICID, e.effectiveNetProtos, id)
 	if err != nil {
 		panic(err)
 	}

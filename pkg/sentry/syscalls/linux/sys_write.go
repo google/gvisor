@@ -23,10 +23,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// LINT.IfChange
 
 const (
 	// EventMaskWrite contains events that can be triggered on writes.
@@ -46,7 +48,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
@@ -83,10 +85,10 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
-	// Check that the offset is legitimate.
-	if offset < 0 {
+	// Check that the offset is legitimate and does not overflow.
+	if offset < 0 || offset+int64(size) < 0 {
 		return 0, nil, syserror.EINVAL
 	}
 
@@ -129,7 +131,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
@@ -160,7 +162,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < 0 {
@@ -191,7 +193,6 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Pwritev2 implements linux syscall pwritev2(2).
-// TODO(b/120161091): Implement O_SYNC and D_SYNC functionality.
 func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// While the syscall is
 	// pwritev2(int fd, struct iovec* iov, int iov_cnt, off_t offset, int flags)
@@ -214,7 +215,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < -1 {
@@ -359,3 +360,5 @@ func pwritev(t *kernel.Task, f *fs.File, src usermem.IOSequence, offset int64) (
 
 	return total, err
 }
+
+// LINT.ThenChange(vfs2/read_write.go)

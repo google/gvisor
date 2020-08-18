@@ -20,6 +20,7 @@
 #include <string>
 
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -38,7 +39,7 @@ mode_t FilePermission(const std::string& path) {
 }
 
 // Test that name collisions are checked on the new link path, not the source
-// path.
+// path. Regression test for b/31782115.
 TEST(SymlinkTest, CanCreateSymlinkWithCachedSourceDirent) {
   const std::string srcname = NewTempAbsPath();
   const std::string newname = NewTempAbsPath();
@@ -270,6 +271,30 @@ TEST(SymlinkTest, ChmodSymlink) {
   EXPECT_EQ(FilePermission(newpath), 0777);
   EXPECT_THAT(chmod(newpath.c_str(), 0666), SyscallSucceeds());
   EXPECT_EQ(FilePermission(newpath), 0777);
+}
+
+// Test that following a symlink updates the atime on the symlink.
+TEST(SymlinkTest, FollowUpdatesATime) {
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string link = NewTempAbsPath();
+  EXPECT_THAT(symlink(file.path().c_str(), link.c_str()), SyscallSucceeds());
+
+  // Lstat the symlink.
+  struct stat st_before_follow;
+  ASSERT_THAT(lstat(link.c_str(), &st_before_follow), SyscallSucceeds());
+
+  // Let the clock advance.
+  absl::SleepFor(absl::Seconds(1));
+
+  // Open the file via the symlink.
+  int fd;
+  ASSERT_THAT(fd = open(link.c_str(), O_RDWR, 0666), SyscallSucceeds());
+  FileDescriptor fd_closer(fd);
+
+  // Lstat the symlink again, and check that atime is updated.
+  struct stat st_after_follow;
+  ASSERT_THAT(lstat(link.c_str(), &st_after_follow), SyscallSucceeds());
+  EXPECT_LT(st_before_follow.st_atime, st_after_follow.st_atime);
 }
 
 class ParamSymlinkTest : public ::testing::TestWithParam<std::string> {};

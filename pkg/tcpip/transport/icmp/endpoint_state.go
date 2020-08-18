@@ -76,19 +76,19 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	var err *tcpip.Error
 	if e.state == stateConnected {
-		e.route, err = e.stack.FindRoute(e.regNICID, e.bindAddr, e.id.RemoteAddress, e.netProto, false /* multicastLoop */)
+		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.BindAddr, e.ID.RemoteAddress, e.NetProto, false /* multicastLoop */)
 		if err != nil {
 			panic(err)
 		}
 
-		e.id.LocalAddress = e.route.LocalAddress
-	} else if len(e.id.LocalAddress) != 0 { // stateBound
-		if e.stack.CheckLocalAddress(e.regNICID, e.netProto, e.id.LocalAddress) == 0 {
+		e.ID.LocalAddress = e.route.LocalAddress
+	} else if len(e.ID.LocalAddress) != 0 { // stateBound
+		if e.stack.CheckLocalAddress(e.RegisterNICID, e.NetProto, e.ID.LocalAddress) == 0 {
 			panic(tcpip.ErrBadLocalAddress)
 		}
 	}
 
-	e.id, err = e.registerWithStack(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.id)
+	e.ID, err = e.registerWithStack(e.RegisterNICID, []tcpip.NetworkProtocolNumber{e.NetProto}, e.ID)
 	if err != nil {
 		panic(err)
 	}

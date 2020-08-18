@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/unistd.h>
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/sendfile.h>
@@ -57,6 +58,62 @@ TEST(SpliceTest, TwoRegularFiles) {
   EXPECT_THAT(splice(in_fd.get(), &in_offset, out_fd.get(), nullptr, 1, 0),
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(splice(in_fd.get(), nullptr, out_fd.get(), nullptr, 1, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+int memfd_create(const std::string& name, unsigned int flags) {
+  return syscall(__NR_memfd_create, name.c_str(), flags);
+}
+
+TEST(SpliceTest, NegativeOffset) {
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill the pipe.
+  std::vector<char> buf(kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Open the output file as write only.
+  int fd;
+  EXPECT_THAT(fd = memfd_create("negative", 0), SyscallSucceeds());
+  const FileDescriptor out_fd(fd);
+
+  loff_t out_offset = 0xffffffffffffffffull;
+  constexpr int kSize = 2;
+  EXPECT_THAT(splice(rfd.get(), nullptr, out_fd.get(), &out_offset, kSize, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// Write offset + size overflows int64.
+//
+// This is a regression test for b/148041624.
+TEST(SpliceTest, WriteOverflow) {
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill the pipe.
+  std::vector<char> buf(kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Open the output file.
+  int fd;
+  EXPECT_THAT(fd = memfd_create("overflow", 0), SyscallSucceeds());
+  const FileDescriptor out_fd(fd);
+
+  // out_offset + kSize overflows INT64_MAX.
+  loff_t out_offset = 0x7ffffffffffffffeull;
+  constexpr int kSize = 3;
+  EXPECT_THAT(splice(rfd.get(), nullptr, out_fd.get(), &out_offset, kSize, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -371,6 +428,55 @@ TEST(SpliceTest, TwoPipes) {
   ASSERT_THAT(read(rfd2.get(), rbuf.data(), rbuf.size()),
               SyscallSucceedsWithValue(kPageSize));
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), kPageSize), 0);
+}
+
+TEST(SpliceTest, TwoPipesCircular) {
+  // This test deadlocks the sentry on VFS1 because VFS1 splice ordering is
+  // based on fs.File.UniqueID, which does not prevent circular ordering between
+  // e.g. inode-level locks taken by fs.FileOperations.
+  SKIP_IF(IsRunningWithVFS1());
+
+  // Create two pipes.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor first_rfd(fds[0]);
+  const FileDescriptor first_wfd(fds[1]);
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor second_rfd(fds[0]);
+  const FileDescriptor second_wfd(fds[1]);
+
+  // On Linux, each pipe is normally limited to
+  // include/linux/pipe_fs_i.h:PIPE_DEF_BUFFERS buffers worth of data.
+  constexpr size_t PIPE_DEF_BUFFERS = 16;
+
+  // Write some data to each pipe. Below we splice 1 byte at a time between
+  // pipes, which very quickly causes each byte to be stored in a separate
+  // buffer, so we must ensure that the total amount of data in the system is <=
+  // PIPE_DEF_BUFFERS bytes.
+  std::vector<char> buf(PIPE_DEF_BUFFERS / 2);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(first_wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(buf.size()));
+  ASSERT_THAT(write(second_wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(buf.size()));
+
+  // Have another thread splice from the second pipe to the first, while we
+  // splice from the first to the second. The test passes if this does not
+  // deadlock.
+  const int kIterations = 1000;
+  DisableSave ds;
+  ScopedThread t([&]() {
+    for (int i = 0; i < kIterations; i++) {
+      ASSERT_THAT(
+          splice(second_rfd.get(), nullptr, first_wfd.get(), nullptr, 1, 0),
+          SyscallSucceedsWithValue(1));
+    }
+  });
+  for (int i = 0; i < kIterations; i++) {
+    ASSERT_THAT(
+        splice(first_rfd.get(), nullptr, second_wfd.get(), nullptr, 1, 0),
+        SyscallSucceedsWithValue(1));
+  }
 }
 
 TEST(SpliceTest, Blocking) {

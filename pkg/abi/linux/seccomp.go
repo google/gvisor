@@ -63,3 +63,10 @@ func (a BPFAction) String() string {
 func (a BPFAction) Data() uint16 {
 	return uint16(a & SECCOMP_RET_DATA)
 }
+
+// SockFprog is sock_fprog taken from <linux/filter.h>.
+type SockFprog struct {
+	Len    uint16
+	pad    [6]byte
+	Filter *BPFInstruction
+}

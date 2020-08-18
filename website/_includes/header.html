@@ -1,0 +1,30 @@
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% if page.title %}
+    <title>{{ page.title }} - gVisor</title>
+    {% else %}
+    <title>gVisor</title>
+    {% endif %}
+    <link rel="canonical" href="{{ page.url | replace:'index.html','' | prepend: site_root }}">
+
+    <!-- Dependencies. -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha256-916EbMg70RQy9LHiGkXzG8hSg9EdNy97GazNG/aiY1w=" crossorigin="anonymous" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.1/css/all.min.css" integrity="sha256-fdcFNFiBMrNfWL6OcAGQz6jDgNTRxnrLEd4vJYFWScE=" crossorigin="anonymous" />
+
+    <!-- Our own style sheet. -->
+    <link rel="stylesheet" type="text/css" href="/css/main.css">
+    <link rel="icon" type="image/png" href="/assets/favicons/favicon-32x32.png" sizes="32x32">
+    <link rel="icon" type="image/png" href="/assets/favicons/favicon-16x16.png" sizes="16x16">
+
+    {% if page.title %}
+    <meta name="og:title" content="{{ page.title }}">
+    {% else %}
+    <meta name="og:title" content="gVisor">
+    {% endif %}
+    {% if page.description %}
+    <meta name="og:description" content="{{ page.description }}">
+    {% endif %}
+    <meta name="og:image" content="{{ site.site_url }}/assets/logos/logo_solo_on_white_bordered.svg">
+  </head>

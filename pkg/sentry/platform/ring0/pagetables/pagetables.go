@@ -21,7 +21,7 @@
 package pagetables
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // PageTables is a set of page tables.
@@ -46,15 +46,6 @@ func New(a Allocator) *PageTables {
 	p := new(PageTables)
 	p.Init(a)
 	return p
-}
-
-// Init initializes a set of PageTables.
-//
-//go:nosplit
-func (p *PageTables) Init(allocator Allocator) {
-	p.Allocator = allocator
-	p.root = p.Allocator.NewPTEs()
-	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
 }
 
 // mapVisitor is used for map.
@@ -94,6 +85,8 @@ func (*mapVisitor) requiresSplit() bool { return true }
 // True is returned iff there was a previous mapping in the range.
 //
 // Precondition: addr & length must be page-aligned, their sum must not overflow.
+//
+// +checkescape:hard,stack
 //
 //go:nosplit
 func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
@@ -137,6 +130,8 @@ func (v *unmapVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 //
 // Precondition: addr & length must be page-aligned.
 //
+// +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
 	w := unmapWalker{
@@ -170,6 +165,8 @@ func (v *emptyVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 // IsEmpty checks if the given range is empty.
 //
 // Precondition: addr & length must be page-aligned.
+//
+// +checkescape:hard,stack
 //
 //go:nosplit
 func (p *PageTables) IsEmpty(addr usermem.Addr, length uintptr) bool {
@@ -205,6 +202,8 @@ func (*lookupVisitor) requiresAlloc() bool { return false }
 func (*lookupVisitor) requiresSplit() bool { return false }
 
 // Lookup returns the physical address for the given virtual address.
+//
+// +checkescape:hard,stack
 //
 //go:nosplit
 func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, opts MapOpts) {

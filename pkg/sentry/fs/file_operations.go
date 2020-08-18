@@ -17,10 +17,10 @@ package fs
 import (
 	"io"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -67,7 +67,7 @@ type SpliceOpts struct {
 // - File.Flags():	This value may change during the operation.
 type FileOperations interface {
 	// Release release resources held by FileOperations.
-	Release()
+	Release(ctx context.Context)
 
 	// Waitable defines how this File can be waited on for read and
 	// write readiness.
@@ -160,6 +160,7 @@ type FileOperations interface {
 	// refer.
 	//
 	// Preconditions: The AddressSpace (if any) that io refers to is activated.
+	// Must only be called from a task goroutine.
 	Ioctl(ctx context.Context, file *File, io usermem.IO, args arch.SyscallArguments) (uintptr, error)
 }
 

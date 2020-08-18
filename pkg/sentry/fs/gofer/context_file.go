@@ -15,9 +15,9 @@
 package gofer
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // contextFile is a wrapper around p9.File that notifies the context that
@@ -55,6 +55,34 @@ func (c *contextFile) getAttr(ctx context.Context, req p9.AttrMask) (p9.QID, p9.
 func (c *contextFile) setAttr(ctx context.Context, valid p9.SetAttrMask, attr p9.SetAttr) error {
 	ctx.UninterruptibleSleepStart(false)
 	err := c.file.SetAttr(valid, attr)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
+func (c *contextFile) getXattr(ctx context.Context, name string, size uint64) (string, error) {
+	ctx.UninterruptibleSleepStart(false)
+	val, err := c.file.GetXattr(name, size)
+	ctx.UninterruptibleSleepFinish(false)
+	return val, err
+}
+
+func (c *contextFile) setXattr(ctx context.Context, name, value string, flags uint32) error {
+	ctx.UninterruptibleSleepStart(false)
+	err := c.file.SetXattr(name, value, flags)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
+func (c *contextFile) listXattr(ctx context.Context, size uint64) (map[string]struct{}, error) {
+	ctx.UninterruptibleSleepStart(false)
+	xattrs, err := c.file.ListXattr(size)
+	ctx.UninterruptibleSleepFinish(false)
+	return xattrs, err
+}
+
+func (c *contextFile) removeXattr(ctx context.Context, name string) error {
+	ctx.UninterruptibleSleepStart(false)
+	err := c.file.RemoveXattr(name)
 	ctx.UninterruptibleSleepFinish(false)
 	return err
 }

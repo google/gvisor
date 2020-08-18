@@ -1,17 +1,16 @@
+load("//tools:defs.bzl", "go_library", "go_test")
+
 # Package linux contains the constants and types needed to interface with a
 # Linux kernel. It should be used instead of syscall or golang.org/x/sys/unix
 # when the host OS may not be Linux.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-
 package(licenses = ["notice"])
-
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "linux",
     srcs = [
         "aio.go",
+        "arch_amd64.go",
         "audit.go",
         "bpf.go",
         "capability.go",
@@ -19,15 +18,22 @@ go_library(
         "dev.go",
         "elf.go",
         "epoll.go",
+        "epoll_amd64.go",
+        "epoll_arm64.go",
         "errors.go",
         "eventfd.go",
         "exec.go",
+        "fadvise.go",
         "fcntl.go",
         "file.go",
+        "file_amd64.go",
+        "file_arm64.go",
         "fs.go",
+        "fuse.go",
         "futex.go",
         "inotify.go",
         "ioctl.go",
+        "ioctl_tun.go",
         "ip.go",
         "ipc.go",
         "limits.go",
@@ -35,11 +41,15 @@ go_library(
         "mm.go",
         "netdevice.go",
         "netfilter.go",
+        "netfilter_ipv6.go",
         "netlink.go",
         "netlink_route.go",
         "poll.go",
         "prctl.go",
         "ptrace.go",
+        "ptrace_amd64.go",
+        "ptrace_arm64.go",
+        "rseq.go",
         "rusage.go",
         "sched.go",
         "seccomp.go",
@@ -56,13 +66,17 @@ go_library(
         "uio.go",
         "utsname.go",
         "wait.go",
+        "xattr.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/abi/linux",
+    marshal = True,
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi",
         "//pkg/binary",
         "//pkg/bits",
+        "//pkg/usermem",
+        "//tools/go_marshal/marshal",
+        "//tools/go_marshal/primitive",
     ],
 )
 
@@ -70,7 +84,7 @@ go_test(
     name = "linux_test",
     size = "small",
     srcs = ["netfilter_test.go"],
-    embed = [":linux"],
+    library = ":linux",
     deps = [
         "//pkg/binary",
     ],

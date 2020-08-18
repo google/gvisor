@@ -1,0 +1,72 @@
+<footer class="footer">
+  {% include footer-links.html %}
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.1/js/all.min.js" integrity="sha256-Z1Nvg/+y2+vRFhFgFij7Lv0r77yG3hOvWz2wI0SfTa0=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha256-U5ZEeKfGNOja007MMD3YBI0A3OSZOQbeG6z2f2Y0hu8=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js" integrity="sha256-hYXbQJK4qdJiAeDVjjQ9G0D6A0xLnDQ4eJI9dkm7Fpk=" crossorigin="anonymous"></script>
+
+{% if site.analytics %}
+<script>
+var doNotTrack = false;
+if (!doNotTrack) {
+  window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+  ga('create', '{{ site.analytics }}', 'auto');
+  ga('send', 'pageview');
+}
+</script>
+<script async src='https://www.google-analytics.com/analytics.js'></script>
+{% endif %}
+
+<script>
+  var shiftWindow = function() {
+    if (location.hash.length !== 0) {
+      window.scrollBy(0, -50);
+    }
+  };
+  window.addEventListener("hashchange", shiftWindow);
+
+  var highlightCurrentSidebarNav = function() {
+    var href = location.pathname;
+    var item = $('#sidebar-nav [href$="' + href + '"]');
+    if (item) {
+      var li = item.parent();
+      li.addClass("active");
+
+      if (li.parent() && li.parent().is("ul")) {
+        do {
+          var ul = li.parent();
+          if (ul.hasClass("collapse")) {
+            ul.collapse("show");
+          }
+          li = ul.parent();
+        } while (li && li.is("li"));
+      }
+    }
+  };
+
+  $(document).ready(function() {
+    // Scroll to anchor of location hash, adjusted for fixed navbar.
+    window.setTimeout(function() {
+      shiftWindow();
+    }, 1);
+
+    // Flip the caret when submenu toggles are clicked.
+    $(".sidebar-submenu").on("show.bs.collapse", function() {
+      var toggle = $('[href$="#' + $(this).attr('id') + '"]');
+      if (toggle) {
+        toggle.addClass("dropup");
+      }
+    });
+    $(".sidebar-submenu").on("hide.bs.collapse", function() {
+      var toggle = $('[href$="#' + $(this).attr('id') + '"]');
+      if (toggle) {
+        toggle.removeClass("dropup");
+      }
+    });
+
+    // Highlight the current page on the sidebar nav.
+    highlightCurrentSidebarNav();
+  });
+</script>

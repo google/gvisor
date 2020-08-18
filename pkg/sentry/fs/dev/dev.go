@@ -18,11 +18,12 @@ package dev
 import (
 	"math"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Memory device numbers are from Linux's drivers/char/mem.c
@@ -66,8 +67,8 @@ func newMemDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSo
 	})
 }
 
-func newDirectory(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	iops := ramfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0555))
+func newDirectory(ctx context.Context, contents map[string]*fs.Inode, msrc *fs.MountSource) *fs.Inode {
+	iops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
@@ -111,7 +112,7 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		// A devpts is typically mounted at /dev/pts to provide
 		// pseudoterminal support. Place an empty directory there for
 		// the devpts to be mounted over.
-		"pts": newDirectory(ctx, msrc),
+		"pts": newDirectory(ctx, nil, msrc),
 		// Similarly, applications expect a ptmx device at /dev/ptmx
 		// connected to the terminals provided by /dev/pts/. Rather
 		// than creating a device directly (which requires a hairy
@@ -124,6 +125,12 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		"ptmx": newSymlink(ctx, "pts/ptmx", msrc),
 
 		"tty": newCharacterDevice(ctx, newTTYDevice(ctx, fs.RootOwner, 0666), msrc, ttyDevMajor, ttyDevMinor),
+	}
+
+	if isNetTunSupported(inet.StackFromContext(ctx)) {
+		contents["net"] = newDirectory(ctx, map[string]*fs.Inode{
+			"tun": newCharacterDevice(ctx, newNetTunDevice(ctx, fs.RootOwner, 0666), msrc, netTunDevMajor, netTunDevMinor),
+		}, msrc)
 	}
 
 	iops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))

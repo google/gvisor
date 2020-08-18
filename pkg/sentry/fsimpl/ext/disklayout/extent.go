@@ -29,8 +29,12 @@ package disklayout
 //       byte (i * sb.BlockSize()) to ((i+1) * sb.BlockSize()).
 
 const (
-	// ExtentStructsSize is the size of all the three extent on-disk structs.
-	ExtentStructsSize = 12
+	// ExtentHeaderSize is the size of the header of an extent tree node.
+	ExtentHeaderSize = 12
+
+	// ExtentEntrySize is the size of an entry in an extent tree node.
+	// This size is the same for both leaf and internal nodes.
+	ExtentEntrySize = 12
 
 	// ExtentMagic is the magic number which must be present in the header.
 	ExtentMagic = 0xf30a
@@ -57,7 +61,7 @@ type ExtentNode struct {
 	Entries []ExtentEntryPair
 }
 
-// ExtentEntry reprsents an extent tree node entry. The entry can either be
+// ExtentEntry represents an extent tree node entry. The entry can either be
 // an ExtentIdx or Extent itself. This exists to simplify navigation logic.
 type ExtentEntry interface {
 	// FileBlock returns the first file block number covered by this entry.

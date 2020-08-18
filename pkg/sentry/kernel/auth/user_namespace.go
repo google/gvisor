@@ -16,8 +16,8 @@ package auth
 
 import (
 	"math"
-	"sync"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

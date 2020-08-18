@@ -21,10 +21,22 @@
 #include <unistd.h>
 
 #include "absl/strings/string_view.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
+
+// O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
+// because "it isn't needed", even though Linux can return it via F_GETFL.
+#if defined(__x86_64__)
+constexpr int kOLargeFile = 00100000;
+#elif defined(__aarch64__)
+constexpr int kOLargeFile = 00400000;
+#else
+#error "Unknown architecture"
+#endif
+
 // Returns a status or the current working directory.
 PosixErrorOr<std::string> GetCWD();
 
@@ -32,8 +44,13 @@ PosixErrorOr<std::string> GetCWD();
 // can't be determined.
 PosixErrorOr<bool> Exists(absl::string_view path);
 
-// Returns a stat structure for the given path or an error.
+// Returns a stat structure for the given path or an error. If the path
+// represents a symlink, it will be traversed.
 PosixErrorOr<struct stat> Stat(absl::string_view path);
+
+// Returns a stat structure for the given path or an error. If the path
+// represents a symlink, it will not be traversed.
+PosixErrorOr<struct stat> Lstat(absl::string_view path);
 
 // Returns a stat struct for the given fd.
 PosixErrorOr<struct stat> Fstat(int fd);
@@ -43,6 +60,14 @@ PosixError Delete(absl::string_view path);
 
 // Changes the mode of a file or returns an error.
 PosixError Chmod(absl::string_view path, int mode);
+
+// Create a special or ordinary file.
+PosixError MknodAt(const FileDescriptor& dfd, absl::string_view path, int mode,
+                   dev_t dev);
+
+// Unlink the file.
+PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
+                    int flags);
 
 // Truncates a file to the given length or returns an error.
 PosixError Truncate(absl::string_view path, int length);

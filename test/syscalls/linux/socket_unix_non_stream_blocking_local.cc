@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "test/syscalls/linux/socket_non_stream_blocking.h"
-
 #include <vector>
 
+#include "test/syscalls/linux/socket_non_stream_blocking.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
+namespace {
 
 std::vector<SocketPairKind> GetSocketPairs() {
   return VecCat<SocketPairKind>(
@@ -37,5 +37,6 @@ INSTANTIATE_TEST_SUITE_P(
     BlockingNonStreamUnixSockets, BlockingNonStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor

@@ -17,13 +17,17 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// copyInSigSet copies in a sigset_t, checks its size, and ensures that KILL and
+// CopyInSigSet copies in a sigset_t, checks its size, and ensures that KILL and
 // STOP are clear.
-func copyInSigSet(t *kernel.Task, sigSetAddr usermem.Addr, size uint) (linux.SignalSet, error) {
+//
+// TODO(gvisor.dev/issue/1624): This is only exported because
+// syscalls/vfs2/signal.go depends on it. Once vfs1 is deleted and the vfs2
+// syscalls are moved into this package, then they can be unexported.
+func CopyInSigSet(t *kernel.Task, sigSetAddr usermem.Addr, size uint) (linux.SignalSet, error) {
 	if size != linux.SignalSetSize {
 		return 0, syserror.EINVAL
 	}

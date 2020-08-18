@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func TestDirtySet(t *testing.T) {

@@ -15,8 +15,9 @@
 package kernel
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Futex returns t's futex manager.
@@ -51,4 +52,128 @@ func (t *Task) LoadUint32(addr usermem.Addr) (uint32, error) {
 // GetSharedKey implements futex.Target.GetSharedKey.
 func (t *Task) GetSharedKey(addr usermem.Addr) (futex.Key, error) {
 	return t.MemoryManager().GetSharedFutexKey(t, addr)
+}
+
+// GetRobustList sets the robust futex list for the task.
+func (t *Task) GetRobustList() usermem.Addr {
+	t.mu.Lock()
+	addr := t.robustList
+	t.mu.Unlock()
+	return addr
+}
+
+// SetRobustList sets the robust futex list for the task.
+func (t *Task) SetRobustList(addr usermem.Addr) {
+	t.mu.Lock()
+	t.robustList = addr
+	t.mu.Unlock()
+}
+
+// exitRobustList walks the robust futex list, marking locks dead and notifying
+// wakers. It corresponds to Linux's exit_robust_list(). Following Linux,
+// errors are silently ignored.
+func (t *Task) exitRobustList() {
+	t.mu.Lock()
+	addr := t.robustList
+	t.robustList = 0
+	t.mu.Unlock()
+
+	if addr == 0 {
+		return
+	}
+
+	var rl linux.RobustListHead
+	if _, err := rl.CopyIn(t, usermem.Addr(addr)); err != nil {
+		return
+	}
+
+	next := rl.List
+	done := 0
+	var pendingLockAddr usermem.Addr
+	if rl.ListOpPending != 0 {
+		pendingLockAddr = usermem.Addr(rl.ListOpPending + rl.FutexOffset)
+	}
+
+	// Wake up normal elements.
+	for usermem.Addr(next) != addr {
+		// We traverse to the next element of the list before we
+		// actually wake anything. This prevents the race where waking
+		// this futex causes a modification of the list.
+		thisLockAddr := usermem.Addr(next + rl.FutexOffset)
+
+		// Try to decode the next element in the list before waking the
+		// current futex. But don't check the error until after we've
+		// woken the current futex. Linux does it in this order too
+		_, nextErr := t.CopyIn(usermem.Addr(next), &next)
+
+		// Wakeup the current futex if it's not pending.
+		if thisLockAddr != pendingLockAddr {
+			t.wakeRobustListOne(thisLockAddr)
+		}
+
+		// If there was an error copying the next futex, we must bail.
+		if nextErr != nil {
+			break
+		}
+
+		// This is a user structure, so it could be a massive list, or
+		// even contain a loop if they are trying to mess with us. We
+		// cap traversal to prevent that.
+		done++
+		if done >= linux.ROBUST_LIST_LIMIT {
+			break
+		}
+	}
+
+	// Is there a pending entry to wake?
+	if pendingLockAddr != 0 {
+		t.wakeRobustListOne(pendingLockAddr)
+	}
+}
+
+// wakeRobustListOne wakes a single futex from the robust list.
+func (t *Task) wakeRobustListOne(addr usermem.Addr) {
+	// Bit 0 in address signals PI futex.
+	pi := addr&1 == 1
+	addr = addr &^ 1
+
+	// Load the futex.
+	f, err := t.LoadUint32(addr)
+	if err != nil {
+		// Can't read this single value? Ignore the problem.
+		// We can wake the other futexes in the list.
+		return
+	}
+
+	tid := uint32(t.ThreadID())
+	for {
+		// Is this held by someone else?
+		if f&linux.FUTEX_TID_MASK != tid {
+			return
+		}
+
+		// This thread is dying and it's holding this futex. We need to
+		// set the owner died bit and wake up any waiters.
+		newF := (f & linux.FUTEX_WAITERS) | linux.FUTEX_OWNER_DIED
+		if curF, err := t.CompareAndSwapUint32(addr, f, newF); err != nil {
+			return
+		} else if curF != f {
+			// Futex changed out from under us. Try again...
+			f = curF
+			continue
+		}
+
+		// Wake waiters if there are any.
+		if f&linux.FUTEX_WAITERS != 0 {
+			private := f&linux.FUTEX_PRIVATE_FLAG != 0
+			if pi {
+				t.Futex().UnlockPI(t, addr, tid, private)
+				return
+			}
+			t.Futex().Wake(t, addr, private, linux.FUTEX_BITSET_MATCH_ANY, 1)
+		}
+
+		// Done.
+		return
+	}
 }

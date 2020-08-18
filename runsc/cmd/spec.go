@@ -16,118 +16,122 @@ package cmd
 
 import (
 	"context"
-	"io/ioutil"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 
-	"flag"
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
-var specTemplate = []byte(`{
-	"ociVersion": "1.0.0",
-	"process": {
-		"terminal": true,
-		"user": {
-			"uid": 0,
-			"gid": 0
+func writeSpec(w io.Writer, cwd string, netns string, args []string) error {
+	spec := &specs.Spec{
+		Version: "1.0.0",
+		Process: &specs.Process{
+			Terminal: true,
+			User: specs.User{
+				UID: 0,
+				GID: 0,
+			},
+			Args: args,
+			Env: []string{
+				"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"TERM=xterm",
+			},
+			Cwd: cwd,
+			Capabilities: &specs.LinuxCapabilities{
+				Bounding: []string{
+					"CAP_AUDIT_WRITE",
+					"CAP_KILL",
+					"CAP_NET_BIND_SERVICE",
+				},
+				Effective: []string{
+					"CAP_AUDIT_WRITE",
+					"CAP_KILL",
+					"CAP_NET_BIND_SERVICE",
+				},
+				Inheritable: []string{
+					"CAP_AUDIT_WRITE",
+					"CAP_KILL",
+					"CAP_NET_BIND_SERVICE",
+				},
+				Permitted: []string{
+					"CAP_AUDIT_WRITE",
+					"CAP_KILL",
+					"CAP_NET_BIND_SERVICE",
+				},
+				// TODO(gvisor.dev/issue/3166): support ambient capabilities
+			},
+			Rlimits: []specs.POSIXRlimit{
+				{
+					Type: "RLIMIT_NOFILE",
+					Hard: 1024,
+					Soft: 1024,
+				},
+			},
 		},
-		"args": [
-			"sh"
-		],
-		"env": [
-			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-			"TERM=xterm"
-		],
-		"cwd": "/",
-		"capabilities": {
-			"bounding": [
-				"CAP_AUDIT_WRITE",
-				"CAP_KILL",
-				"CAP_NET_BIND_SERVICE"
-			],
-			"effective": [
-				"CAP_AUDIT_WRITE",
-				"CAP_KILL",
-				"CAP_NET_BIND_SERVICE"
-			],
-			"inheritable": [
-				"CAP_AUDIT_WRITE",
-				"CAP_KILL",
-				"CAP_NET_BIND_SERVICE"
-			],
-			"permitted": [
-				"CAP_AUDIT_WRITE",
-				"CAP_KILL",
-				"CAP_NET_BIND_SERVICE"
-			],
-			"ambient": [
-				"CAP_AUDIT_WRITE",
-				"CAP_KILL",
-				"CAP_NET_BIND_SERVICE"
-			]
+		Root: &specs.Root{
+			Path:     "rootfs",
+			Readonly: true,
 		},
-		"rlimits": [
+		Hostname: "runsc",
+		Mounts: []specs.Mount{
 			{
-				"type": "RLIMIT_NOFILE",
-				"hard": 1024,
-				"soft": 1024
-			}
-		]
-	},
-	"root": {
-		"path": "rootfs",
-		"readonly": true
-	},
-	"hostname": "runsc",
-	"mounts": [
-		{
-			"destination": "/proc",
-			"type": "proc",
-			"source": "proc"
-		},
-		{
-			"destination": "/dev",
-			"type": "tmpfs",
-			"source": "tmpfs",
-			"options": []
-		},
-		{
-			"destination": "/sys",
-			"type": "sysfs",
-			"source": "sysfs",
-			"options": [
-				"nosuid",
-				"noexec",
-				"nodev",
-				"ro"
-			]
-		}
-	],
-	"linux": {
-		"namespaces": [
-			{
-				"type": "pid"
+				Destination: "/proc",
+				Type:        "proc",
+				Source:      "proc",
 			},
 			{
-				"type": "network"
+				Destination: "/dev",
+				Type:        "tmpfs",
+				Source:      "tmpfs",
 			},
 			{
-				"type": "ipc"
+				Destination: "/sys",
+				Type:        "sysfs",
+				Source:      "sysfs",
+				Options: []string{
+					"nosuid",
+					"noexec",
+					"nodev",
+					"ro",
+				},
 			},
-			{
-				"type": "uts"
+		},
+		Linux: &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{
+					Type: "pid",
+				},
+				{
+					Type: "network",
+					Path: netns,
+				},
+				{
+					Type: "ipc",
+				},
+				{
+					Type: "uts",
+				},
+				{
+					Type: "mount",
+				},
 			},
-			{
-				"type": "mount"
-			}
-		]
+		},
 	}
-}`)
+
+	e := json.NewEncoder(w)
+	e.SetIndent("", "    ")
+	return e.Encode(spec)
+}
 
 // Spec implements subcommands.Command for the "spec" command.
 type Spec struct {
 	bundle string
+	cwd    string
+	netns  string
 }
 
 // Name implements subcommands.Command.Name.
@@ -142,21 +146,26 @@ func (*Spec) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Spec) Usage() string {
-	return `spec [options] - create a new OCI bundle specification file.
+	return `spec [options] [-- args...] - create a new OCI bundle specification file.
 
-The spec command creates a new specification file (config.json) for a new OCI bundle.
+The spec command creates a new specification file (config.json) for a new OCI
+bundle.
 
-The specification file is a starter file that runs the "sh" command in the container. You
-should edit the file to suit your needs. You can find out more about the format of the
-specification file by visiting the OCI runtime spec repository:
+The specification file is a starter file that runs the command specified by
+'args' in the container. If 'args' is not specified the default is to run the
+'sh' program.
+
+While a number of flags are provided to change values in the specification, you
+can examine the file and edit it to suit your needs after this command runs.
+You can find out more about the format of the specification file by visiting
+the OCI runtime spec repository:
 https://github.com/opencontainers/runtime-spec/
 
 EXAMPLE:
     $ mkdir -p bundle/rootfs
     $ cd bundle
-    $ runsc spec
+    $ runsc spec -- /hello
     $ docker export $(docker create hello-world) | tar -xf - -C rootfs
-    $ sed -i 's;"sh";"/hello";' config.json
     $ sudo runsc run hello
 
 `
@@ -165,16 +174,31 @@ EXAMPLE:
 // SetFlags implements subcommands.Command.SetFlags.
 func (s *Spec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&s.bundle, "bundle", ".", "path to the root of the OCI bundle")
+	f.StringVar(&s.cwd, "cwd", "/", "working directory that will be set for the executable, "+
+		"this value MUST be an absolute path")
+	f.StringVar(&s.netns, "netns", "", "network namespace path")
 }
 
 // Execute implements subcommands.Command.Execute.
 func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	// Grab the arguments.
+	containerArgs := f.Args()
+	if len(containerArgs) == 0 {
+		containerArgs = []string{"sh"}
+	}
+
 	confPath := filepath.Join(s.bundle, "config.json")
 	if _, err := os.Stat(confPath); !os.IsNotExist(err) {
 		Fatalf("file %q already exists", confPath)
 	}
 
-	if err := ioutil.WriteFile(confPath, specTemplate, 0664); err != nil {
+	configFile, err := os.OpenFile(confPath, os.O_WRONLY|os.O_CREATE, 0664)
+	if err != nil {
+		Fatalf("opening file %q: %v", confPath, err)
+	}
+
+	err = writeSpec(configFile, s.cwd, s.netns, containerArgs)
+	if err != nil {
 		Fatalf("writing to %q: %v", confPath, err)
 	}
 

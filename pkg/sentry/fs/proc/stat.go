@@ -19,10 +19,12 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
+
+// LINT.IfChange
 
 // statData backs /proc/stat.
 //
@@ -140,3 +142,5 @@ func (s *statData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]
 		},
 	}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task_files.go)

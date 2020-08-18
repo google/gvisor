@@ -17,9 +17,9 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
+
 #include <cstdio>
 
-#include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"

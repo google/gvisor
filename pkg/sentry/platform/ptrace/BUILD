@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,6 +9,7 @@ go_library(
         "ptrace.go",
         "ptrace_amd64.go",
         "ptrace_arm64.go",
+        "ptrace_arm64_unsafe.go",
         "ptrace_unsafe.go",
         "stub_amd64.s",
         "stub_arm64.s",
@@ -20,18 +21,21 @@ go_library(
         "subprocess_linux_unsafe.go",
         "subprocess_unsafe.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ptrace",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/procid",
+        "//pkg/safecopy",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/hostcpu",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
-        "//pkg/sentry/platform/safecopy",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
+        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

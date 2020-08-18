@@ -1,6 +1,6 @@
-package(licenses = ["notice"])
+load("//tools:defs.bzl", "go_library")
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+package(licenses = ["notice"])
 
 go_library(
     name = "usage",
@@ -11,12 +11,12 @@ go_library(
         "memory_unsafe.go",
         "usage.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/usage",
     visibility = [
-        "//pkg/sentry:internal",
+        "//:sandbox",
     ],
     deps = [
         "//pkg/bits",
         "//pkg/memutil",
+        "//pkg/sync",
     ],
 )

@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 )
 
 func newMockDirInode(ctx context.Context, cache *DirentCache) *Inode {
@@ -51,7 +51,7 @@ func TestWalkPositive(t *testing.T) {
 		t.Fatalf("child name = %q has a ref count of %d, want %d", d.name, got, 1)
 	}
 
-	d.DecRef()
+	d.DecRef(ctx)
 
 	if got := root.ReadRefs(); got != 1 {
 		t.Fatalf("root has a ref count of %d, want %d", got, 1)
@@ -61,7 +61,7 @@ func TestWalkPositive(t *testing.T) {
 		t.Fatalf("child name = %q has a ref count of %d, want %d", d.name, got, 0)
 	}
 
-	root.flush()
+	root.flush(ctx)
 
 	if got := len(root.children); got != 0 {
 		t.Fatalf("root has %d children, want %d", got, 0)
@@ -114,7 +114,7 @@ func TestWalkNegative(t *testing.T) {
 		t.Fatalf("child has a ref count of %d, want %d", got, 2)
 	}
 
-	child.DecRef()
+	child.DecRef(ctx)
 
 	if got := child.(*Dirent).ReadRefs(); got != 1 {
 		t.Fatalf("child has a ref count of %d, want %d", got, 1)
@@ -124,7 +124,7 @@ func TestWalkNegative(t *testing.T) {
 		t.Fatalf("root has %d children, want %d", got, 1)
 	}
 
-	root.DecRef()
+	root.DecRef(ctx)
 
 	if got := root.ReadRefs(); got != 0 {
 		t.Fatalf("root has a ref count of %d, want %d", got, 0)
@@ -351,9 +351,9 @@ func TestRemoveExtraRefs(t *testing.T) {
 				t.Fatalf("dirent has a ref count of %d, want %d", got, 1)
 			}
 
-			d.DecRef()
+			d.DecRef(ctx)
 
-			test.root.flush()
+			test.root.flush(ctx)
 
 			if got := len(test.root.children); got != 0 {
 				t.Errorf("root has %d children, want %d", got, 0)
@@ -403,8 +403,8 @@ func TestRenameExtraRefs(t *testing.T) {
 				t.Fatalf("Rename got error %v, want nil", err)
 			}
 
-			oldParent.flush()
-			newParent.flush()
+			oldParent.flush(ctx)
+			newParent.flush(ctx)
 
 			// Expect to have only active references.
 			if got := renamed.ReadRefs(); got != 1 {

@@ -1,8 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
-
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "tmpfs",
@@ -13,12 +11,12 @@ go_library(
         "inode_file.go",
         "tmpfs.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/metric",
-        "//pkg/sentry/context",
+        "//pkg/safemem",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
@@ -28,11 +26,11 @@ go_library(
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -41,12 +39,12 @@ go_test(
     name = "tmpfs_test",
     size = "small",
     srcs = ["file_test.go"],
-    embed = [":tmpfs"],
+    library = ":tmpfs",
     deps = [
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/contexttest",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

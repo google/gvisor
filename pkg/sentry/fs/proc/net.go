@@ -18,11 +18,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"reflect"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
@@ -32,46 +33,55 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// newNet creates a new proc net entry.
-func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSource) *fs.Inode {
+// LINT.IfChange
+
+// newNetDir creates a new proc net entry.
+func newNetDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	k := t.Kernel()
+
 	var contents map[string]*fs.Inode
-	if s := p.k.NetworkStack(); s != nil {
+	if s := t.NetworkNamespace().Stack(); s != nil {
+		// TODO(gvisor.dev/issue/1833): Make sure file contents reflect the task
+		// network namespace.
 		contents = map[string]*fs.Inode{
-			"dev": seqfile.NewSeqFileInode(ctx, &netDev{s: s}, msrc),
+			"dev":  seqfile.NewSeqFileInode(t, &netDev{s: s}, msrc),
+			"snmp": seqfile.NewSeqFileInode(t, &netSnmp{s: s}, msrc),
 
 			// The following files are simple stubs until they are
 			// implemented in netstack, if the file contains a
 			// header the stub is just the header otherwise it is
 			// an empty file.
-			"arp": newStaticProcInode(ctx, msrc, []byte("IP address       HW type     Flags       HW address            Mask     Device")),
+			"arp": newStaticProcInode(t, msrc, []byte("IP address       HW type     Flags       HW address            Mask     Device\n")),
 
-			"netlink":   newStaticProcInode(ctx, msrc, []byte("sk       Eth Pid    Groups   Rmem     Wmem     Dump     Locks     Drops     Inode")),
-			"netstat":   newStaticProcInode(ctx, msrc, []byte("TcpExt: SyncookiesSent SyncookiesRecv SyncookiesFailed EmbryonicRsts PruneCalled RcvPruned OfoPruned OutOfWindowIcmps LockDroppedIcmps ArpFilter TW TWRecycled TWKilled PAWSPassive PAWSActive PAWSEstab DelayedACKs DelayedACKLocked DelayedACKLost ListenOverflows ListenDrops TCPPrequeued TCPDirectCopyFromBacklog TCPDirectCopyFromPrequeue TCPPrequeueDropped TCPHPHits TCPHPHitsToUser TCPPureAcks TCPHPAcks TCPRenoRecovery TCPSackRecovery TCPSACKReneging TCPFACKReorder TCPSACKReorder TCPRenoReorder TCPTSReorder TCPFullUndo TCPPartialUndo TCPDSACKUndo TCPLossUndo TCPLostRetransmit TCPRenoFailures TCPSackFailures TCPLossFailures TCPFastRetrans TCPForwardRetrans TCPSlowStartRetrans TCPTimeouts TCPLossProbes TCPLossProbeRecovery TCPRenoRecoveryFail TCPSackRecoveryFail TCPSchedulerFailed TCPRcvCollapsed TCPDSACKOldSent TCPDSACKOfoSent TCPDSACKRecv TCPDSACKOfoRecv TCPAbortOnData TCPAbortOnClose TCPAbortOnMemory TCPAbortOnTimeout TCPAbortOnLinger TCPAbortFailed TCPMemoryPressures TCPSACKDiscard TCPDSACKIgnoredOld TCPDSACKIgnoredNoUndo TCPSpuriousRTOs TCPMD5NotFound TCPMD5Unexpected TCPMD5Failure TCPSackShifted TCPSackMerged TCPSackShiftFallback TCPBacklogDrop TCPMinTTLDrop TCPDeferAcceptDrop IPReversePathFilter TCPTimeWaitOverflow TCPReqQFullDoCookies TCPReqQFullDrop TCPRetransFail TCPRcvCoalesce TCPOFOQueue TCPOFODrop TCPOFOMerge TCPChallengeACK TCPSYNChallenge TCPFastOpenActive TCPFastOpenActiveFail TCPFastOpenPassive TCPFastOpenPassiveFail TCPFastOpenListenOverflow TCPFastOpenCookieReqd TCPSpuriousRtxHostQueues BusyPollRxPackets TCPAutoCorking TCPFromZeroWindowAdv TCPToZeroWindowAdv TCPWantZeroWindowAdv TCPSynRetrans TCPOrigDataSent TCPHystartTrainDetect TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess")),
-			"packet":    newStaticProcInode(ctx, msrc, []byte("sk       RefCnt Type Proto  Iface R Rmem   User   Inode")),
-			"protocols": newStaticProcInode(ctx, msrc, []byte("protocol  size sockets  memory press maxhdr  slab module     cl co di ac io in de sh ss gs se re sp bi br ha uh gp em")),
+			"netlink":   newStaticProcInode(t, msrc, []byte("sk       Eth Pid    Groups   Rmem     Wmem     Dump     Locks     Drops     Inode\n")),
+			"netstat":   newStaticProcInode(t, msrc, []byte("TcpExt: SyncookiesSent SyncookiesRecv SyncookiesFailed EmbryonicRsts PruneCalled RcvPruned OfoPruned OutOfWindowIcmps LockDroppedIcmps ArpFilter TW TWRecycled TWKilled PAWSPassive PAWSActive PAWSEstab DelayedACKs DelayedACKLocked DelayedACKLost ListenOverflows ListenDrops TCPPrequeued TCPDirectCopyFromBacklog TCPDirectCopyFromPrequeue TCPPrequeueDropped TCPHPHits TCPHPHitsToUser TCPPureAcks TCPHPAcks TCPRenoRecovery TCPSackRecovery TCPSACKReneging TCPFACKReorder TCPSACKReorder TCPRenoReorder TCPTSReorder TCPFullUndo TCPPartialUndo TCPDSACKUndo TCPLossUndo TCPLostRetransmit TCPRenoFailures TCPSackFailures TCPLossFailures TCPFastRetrans TCPForwardRetrans TCPSlowStartRetrans TCPTimeouts TCPLossProbes TCPLossProbeRecovery TCPRenoRecoveryFail TCPSackRecoveryFail TCPSchedulerFailed TCPRcvCollapsed TCPDSACKOldSent TCPDSACKOfoSent TCPDSACKRecv TCPDSACKOfoRecv TCPAbortOnData TCPAbortOnClose TCPAbortOnMemory TCPAbortOnTimeout TCPAbortOnLinger TCPAbortFailed TCPMemoryPressures TCPSACKDiscard TCPDSACKIgnoredOld TCPDSACKIgnoredNoUndo TCPSpuriousRTOs TCPMD5NotFound TCPMD5Unexpected TCPMD5Failure TCPSackShifted TCPSackMerged TCPSackShiftFallback TCPBacklogDrop TCPMinTTLDrop TCPDeferAcceptDrop IPReversePathFilter TCPTimeWaitOverflow TCPReqQFullDoCookies TCPReqQFullDrop TCPRetransFail TCPRcvCoalesce TCPOFOQueue TCPOFODrop TCPOFOMerge TCPChallengeACK TCPSYNChallenge TCPFastOpenActive TCPFastOpenActiveFail TCPFastOpenPassive TCPFastOpenPassiveFail TCPFastOpenListenOverflow TCPFastOpenCookieReqd TCPSpuriousRtxHostQueues BusyPollRxPackets TCPAutoCorking TCPFromZeroWindowAdv TCPToZeroWindowAdv TCPWantZeroWindowAdv TCPSynRetrans TCPOrigDataSent TCPHystartTrainDetect TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess\n")),
+			"packet":    newStaticProcInode(t, msrc, []byte("sk       RefCnt Type Proto  Iface R Rmem   User   Inode\n")),
+			"protocols": newStaticProcInode(t, msrc, []byte("protocol  size sockets  memory press maxhdr  slab module     cl co di ac io in de sh ss gs se re sp bi br ha uh gp em\n")),
 			// Linux sets psched values to: nsec per usec, psched
 			// tick in ns, 1000000, high res timer ticks per sec
 			// (ClockGetres returns 1ns resolution).
-			"psched": newStaticProcInode(ctx, msrc, []byte(fmt.Sprintf("%08x %08x %08x %08x\n", uint64(time.Microsecond/time.Nanosecond), 64, 1000000, uint64(time.Second/time.Nanosecond)))),
-			"ptype":  newStaticProcInode(ctx, msrc, []byte("Type Device      Function")),
-			"route":  newStaticProcInode(ctx, msrc, []byte("Iface   Destination     Gateway         Flags   RefCnt  Use     Metric  Mask            MTU     Window  IRTT")),
-			"tcp":    seqfile.NewSeqFileInode(ctx, &netTCP{k: k}, msrc),
-			"udp":    seqfile.NewSeqFileInode(ctx, &netUDP{k: k}, msrc),
-			"unix":   seqfile.NewSeqFileInode(ctx, &netUnix{k: k}, msrc),
+			"psched": newStaticProcInode(t, msrc, []byte(fmt.Sprintf("%08x %08x %08x %08x\n", uint64(time.Microsecond/time.Nanosecond), 64, 1000000, uint64(time.Second/time.Nanosecond)))),
+			"ptype":  newStaticProcInode(t, msrc, []byte("Type Device      Function\n")),
+			"route":  seqfile.NewSeqFileInode(t, &netRoute{s: s}, msrc),
+			"tcp":    seqfile.NewSeqFileInode(t, &netTCP{k: k}, msrc),
+			"udp":    seqfile.NewSeqFileInode(t, &netUDP{k: k}, msrc),
+			"unix":   seqfile.NewSeqFileInode(t, &netUnix{k: k}, msrc),
 		}
 
 		if s.SupportsIPv6() {
-			contents["if_inet6"] = seqfile.NewSeqFileInode(ctx, &ifinet6{s: s}, msrc)
-			contents["ipv6_route"] = newStaticProcInode(ctx, msrc, []byte(""))
-			contents["tcp6"] = seqfile.NewSeqFileInode(ctx, &netTCP6{k: k}, msrc)
-			contents["udp6"] = newStaticProcInode(ctx, msrc, []byte("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"))
+			contents["if_inet6"] = seqfile.NewSeqFileInode(t, &ifinet6{s: s}, msrc)
+			contents["ipv6_route"] = newStaticProcInode(t, msrc, []byte(""))
+			contents["tcp6"] = seqfile.NewSeqFileInode(t, &netTCP6{k: k}, msrc)
+			contents["udp6"] = newStaticProcInode(t, msrc, []byte("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"))
 		}
 	}
-	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
+	d := ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
+	return newProcInode(t, d, msrc, fs.SpecialDirectory, t)
 }
 
 // ifinet6 implements seqfile.SeqSource for /proc/net/if_inet6.
@@ -195,6 +205,193 @@ func (n *netDev) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	return data, 0
 }
 
+// netSnmp implements seqfile.SeqSource for /proc/net/snmp.
+//
+// +stateify savable
+type netSnmp struct {
+	s inet.Stack
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (n *netSnmp) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+type snmpLine struct {
+	prefix string
+	header string
+}
+
+var snmp = []snmpLine{
+	{
+		prefix: "Ip",
+		header: "Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates",
+	},
+	{
+		prefix: "Icmp",
+		header: "InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps",
+	},
+	{
+		prefix: "IcmpMsg",
+	},
+	{
+		prefix: "Tcp",
+		header: "RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors",
+	},
+	{
+		prefix: "Udp",
+		header: "InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti",
+	},
+	{
+		prefix: "UdpLite",
+		header: "InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti",
+	},
+}
+
+func toSlice(a interface{}) []uint64 {
+	v := reflect.Indirect(reflect.ValueOf(a))
+	return v.Slice(0, v.Len()).Interface().([]uint64)
+}
+
+func sprintSlice(s []uint64) string {
+	if len(s) == 0 {
+		return ""
+	}
+	r := fmt.Sprint(s)
+	return r[1 : len(r)-1] // Remove "[]" introduced by fmt of slice.
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData. See Linux's
+// net/core/net-procfs.c:dev_seq_show.
+func (n *netSnmp) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	if h != nil {
+		return nil, 0
+	}
+
+	contents := make([]string, 0, len(snmp)*2)
+	types := []interface{}{
+		&inet.StatSNMPIP{},
+		&inet.StatSNMPICMP{},
+		nil, // TODO(gvisor.dev/issue/628): Support IcmpMsg stats.
+		&inet.StatSNMPTCP{},
+		&inet.StatSNMPUDP{},
+		&inet.StatSNMPUDPLite{},
+	}
+	for i, stat := range types {
+		line := snmp[i]
+		if stat == nil {
+			contents = append(
+				contents,
+				fmt.Sprintf("%s:\n", line.prefix),
+				fmt.Sprintf("%s:\n", line.prefix),
+			)
+			continue
+		}
+		if err := n.s.Statistics(stat, line.prefix); err != nil {
+			if err == syserror.EOPNOTSUPP {
+				log.Infof("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
+			} else {
+				log.Warningf("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
+			}
+		}
+		var values string
+		if line.prefix == "Tcp" {
+			tcp := stat.(*inet.StatSNMPTCP)
+			// "Tcp" needs special processing because MaxConn is signed. RFC 2012.
+			values = fmt.Sprintf("%s %d %s", sprintSlice(tcp[:3]), int64(tcp[3]), sprintSlice(tcp[4:]))
+		} else {
+			values = sprintSlice(toSlice(stat))
+		}
+		contents = append(
+			contents,
+			fmt.Sprintf("%s: %s\n", line.prefix, line.header),
+			fmt.Sprintf("%s: %s\n", line.prefix, values),
+		)
+	}
+
+	data := make([]seqfile.SeqData, 0, len(snmp)*2)
+	for _, l := range contents {
+		data = append(data, seqfile.SeqData{Buf: []byte(l), Handle: (*netSnmp)(nil)})
+	}
+
+	return data, 0
+}
+
+// netRoute implements seqfile.SeqSource for /proc/net/route.
+//
+// +stateify savable
+type netRoute struct {
+	s inet.Stack
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (n *netRoute) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+// See Linux's net/ipv4/fib_trie.c:fib_route_seq_show.
+func (n *netRoute) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	if h != nil {
+		return nil, 0
+	}
+
+	interfaces := n.s.Interfaces()
+	contents := []string{"Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT"}
+	for _, rt := range n.s.RouteTable() {
+		// /proc/net/route only includes ipv4 routes.
+		if rt.Family != linux.AF_INET {
+			continue
+		}
+
+		// /proc/net/route does not include broadcast or multicast routes.
+		if rt.Type == linux.RTN_BROADCAST || rt.Type == linux.RTN_MULTICAST {
+			continue
+		}
+
+		iface, ok := interfaces[rt.OutputInterface]
+		if !ok || iface.Name == "lo" {
+			continue
+		}
+
+		var (
+			gw     uint32
+			prefix uint32
+			flags  = linux.RTF_UP
+		)
+		if len(rt.GatewayAddr) == header.IPv4AddressSize {
+			flags |= linux.RTF_GATEWAY
+			gw = usermem.ByteOrder.Uint32(rt.GatewayAddr)
+		}
+		if len(rt.DstAddr) == header.IPv4AddressSize {
+			prefix = usermem.ByteOrder.Uint32(rt.DstAddr)
+		}
+		l := fmt.Sprintf(
+			"%s\t%08X\t%08X\t%04X\t%d\t%d\t%d\t%08X\t%d\t%d\t%d",
+			iface.Name,
+			prefix,
+			gw,
+			flags,
+			0, // RefCnt.
+			0, // Use.
+			0, // Metric.
+			(uint32(1)<<rt.DstLen)-1,
+			0, // MTU.
+			0, // Window.
+			0, // RTT.
+		)
+		contents = append(contents, l)
+	}
+
+	var data []seqfile.SeqData
+	for _, l := range contents {
+		l = fmt.Sprintf("%-127s\n", l)
+		data = append(data, seqfile.SeqData{Buf: []byte(l), Handle: (*netRoute)(nil)})
+	}
+
+	return data, 0
+}
+
 // netUnix implements seqfile.SeqSource for /proc/net/unix.
 //
 // +stateify savable
@@ -222,7 +419,7 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 		}
 		sfile := s.(*fs.File)
 		if family, _, _ := sfile.FileOperations.(socket.Socket).Type(); family != linux.AF_UNIX {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not a unix socket.
 			continue
 		}
@@ -282,7 +479,7 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 		}
 		fmt.Fprintf(&buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	data := []seqfile.SeqData{
@@ -377,7 +574,7 @@ func commonReadSeqFileDataTCP(ctx context.Context, n seqfile.SeqHandle, k *kerne
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
 		}
 		if family, stype, _ := sops.Type(); !(family == fa && stype == linux.SOCK_STREAM) {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not tcp4 sockets.
 			continue
 		}
@@ -467,7 +664,7 @@ func commonReadSeqFileDataTCP(ctx context.Context, n seqfile.SeqHandle, k *kerne
 
 		fmt.Fprintf(&buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	data := []seqfile.SeqData{
@@ -555,7 +752,7 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
 		}
 		if family, stype, _ := sops.Type(); family != linux.AF_INET || stype != linux.SOCK_DGRAM {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not udp4 socket.
 			continue
 		}
@@ -625,7 +822,7 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 
 		fmt.Fprintf(&buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	data := []seqfile.SeqData{
@@ -640,3 +837,5 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	}
 	return data, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task_net.go)

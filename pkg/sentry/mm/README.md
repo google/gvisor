@@ -274,7 +274,7 @@ In the sentry:
     methods
     [`platform.AddressSpace.MapFile` and `platform.AddressSpace.Unmap`][platform].
 
-[memmap]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/memmap/memmap.go
-[mm]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/mm/mm.go
-[pgalloc]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/pgalloc/pgalloc.go
-[platform]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/platform/platform.go
+[memmap]: https://github.com/google/gvisor/blob/master/pkg/sentry/memmap/memmap.go
+[mm]: https://github.com/google/gvisor/blob/master/pkg/sentry/mm/mm.go
+[pgalloc]: https://github.com/google/gvisor/blob/master/pkg/sentry/pgalloc/pgalloc.go
+[platform]: https://github.com/google/gvisor/blob/master/pkg/sentry/platform/platform.go

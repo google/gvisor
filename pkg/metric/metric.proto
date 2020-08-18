@@ -36,10 +36,18 @@ message MetricMetadata {
   // the monitoring system.
   bool sync = 4;
 
-  enum Type { UINT64 = 0; }
+  enum Type { TYPE_UINT64 = 0; }
 
   // type is the type of the metric value.
   Type type = 5;
+
+  enum Units {
+    UNITS_NONE = 0;
+    UNITS_NANOSECONDS = 1;
+  }
+
+  // units is the units of the metric value.
+  Units units = 6;
 }
 
 // MetricRegistration contains the metadata for all metrics that will be in

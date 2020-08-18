@@ -1,8 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
-
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "ramfs",
@@ -12,17 +10,17 @@ go_library(
         "symlink.go",
         "tree.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/ramfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/socket/unix/transport",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -31,9 +29,9 @@ go_test(
     name = "ramfs_test",
     size = "small",
     srcs = ["tree_test.go"],
-    embed = [":ramfs"],
+    library = ":ramfs",
     deps = [
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
     ],
 )

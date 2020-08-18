@@ -18,6 +18,7 @@ package context
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -142,13 +143,22 @@ func New(t *testing.T, mtu uint32) *Context {
 		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
 	})
 
+	const sendBufferSize = 1 << 20 // 1 MiB
+	const recvBufferSize = 1 << 20 // 1 MiB
 	// Allow minimum send/receive buffer sizes to be 1 during tests.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultSendBufferSize, 10 * tcp.DefaultSendBufferSize}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{Min: 1, Default: sendBufferSize, Max: 10 * sendBufferSize}); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %s", err)
 	}
 
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, tcp.DefaultReceiveBufferSize, 10 * tcp.DefaultReceiveBufferSize}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{Min: 1, Default: recvBufferSize, Max: 10 * recvBufferSize}); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	}
+
+	// Increase minimum RTO in tests to avoid test flakes due to early
+	// retransmit in case the test executors are overloaded and cause timers
+	// to fire earlier than expected.
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPMinRTOOption(3*time.Second)); err != nil {
+		t.Fatalf("failed to set stack-wide minRTO: %s", err)
 	}
 
 	// Some of the congestion control tests send up to 640 packets, we so
@@ -158,15 +168,17 @@ func New(t *testing.T, mtu uint32) *Context {
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNamedNIC(1, "nic1", wep); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
+	opts := stack.NICOptions{Name: "nic1"}
+	if err := s.CreateNICWithOptions(1, wep, opts); err != nil {
+		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
 	}
 	wep2 := stack.LinkEndpoint(channel.New(1000, mtu, ""))
 	if testing.Verbose() {
 		wep2 = sniffer.New(channel.New(1000, mtu, ""))
 	}
-	if err := s.CreateNamedNIC(2, "nic2", wep2); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
+	opts2 := stack.NICOptions{Name: "nic2"}
+	if err := s.CreateNICWithOptions(2, wep2, opts2); err != nil {
+		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts2, err)
 	}
 
 	if err := s.AddAddress(1, ipv4.ProtocolNumber, StackAddr); err != nil {
@@ -192,7 +204,7 @@ func New(t *testing.T, mtu uint32) *Context {
 		t:           t,
 		s:           s,
 		linkEP:      ep,
-		WindowScale: uint8(tcp.FindWndScale(tcp.DefaultReceiveBufferSize)),
+		WindowScale: uint8(tcp.FindWndScale(recvBufferSize)),
 	}
 }
 
@@ -201,6 +213,7 @@ func (c *Context) Cleanup() {
 	if c.EP != nil {
 		c.EP.Close()
 	}
+	c.Stack().Close()
 }
 
 // Stack returns a reference to the stack in the Context.
@@ -213,11 +226,10 @@ func (c *Context) Stack() *stack.Stack {
 func (c *Context) CheckNoPacketTimeout(errMsg string, wait time.Duration) {
 	c.t.Helper()
 
-	select {
-	case <-c.linkEP.C:
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	if _, ok := c.linkEP.ReadContext(ctx); ok {
 		c.t.Fatal(errMsg)
-
-	case <-time.After(wait):
 	}
 }
 
@@ -231,27 +243,29 @@ func (c *Context) CheckNoPacket(errMsg string) {
 // addresses. It will fail with an error if no packet is received for
 // 2 seconds.
 func (c *Context) GetPacket() []byte {
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != ipv4.ProtocolNumber {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
-		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
+	c.t.Helper()
 
-		if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
-			c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
-		}
-
-		checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
-		return b
-
-	case <-time.After(2 * time.Second):
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	p, ok := c.linkEP.ReadContext(ctx)
+	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
+		return nil
 	}
 
-	return nil
+	if p.Proto != ipv4.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	}
+
+	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	b := vv.ToView()
+
+	if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
+		c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
+	}
+
+	checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	return b
 }
 
 // GetPacketNonBlocking reads a packet from the link layer endpoint
@@ -259,24 +273,26 @@ func (c *Context) GetPacket() []byte {
 // and destination address. If no packet is available it will return
 // nil immediately.
 func (c *Context) GetPacketNonBlocking() []byte {
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != ipv4.ProtocolNumber {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
-		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
+	c.t.Helper()
 
-		checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
-		return b
-	default:
+	p, ok := c.linkEP.Read()
+	if !ok {
 		return nil
 	}
+
+	if p.Proto != ipv4.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	}
+
+	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	b := vv.ToView()
+
+	checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	return b
 }
 
 // SendICMPPacket builds and sends an ICMPv4 packet via the link layer endpoint.
-func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byte, maxTotalSize int) {
+func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, p1, p2 []byte, maxTotalSize int) {
 	// Allocate a buffer data and headers.
 	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4PayloadOffset + len(p2))
 	if len(buf) > maxTotalSize {
@@ -302,11 +318,20 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 	copy(icmp[header.ICMPv4PayloadOffset:], p2)
 
 	// Inject packet.
-	c.linkEP.Inject(ipv4.ProtocolNumber, buf.ToVectorisedView())
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // BuildSegment builds a TCP segment based on the given Headers and payload.
 func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView {
+	return c.BuildSegmentWithAddrs(payload, h, TestAddr, StackAddr)
+}
+
+// BuildSegmentWithAddrs builds a TCP segment based on the given Headers,
+// payload and source and destination IPv4 addresses.
+func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) buffer.VectorisedView {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.TCPMinimumSize + header.IPv4MinimumSize + len(h.TCPOpts) + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -319,8 +344,8 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 		TotalLength: uint16(len(buf)),
 		TTL:         65,
 		Protocol:    uint8(tcp.ProtocolNumber),
-		SrcAddr:     TestAddr,
-		DstAddr:     StackAddr,
+		SrcAddr:     src,
+		DstAddr:     dst,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
 
@@ -337,7 +362,7 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 	})
 
 	// Calculate the TCP pseudo-header checksum.
-	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, TestAddr, StackAddr, uint16(len(t)))
+	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, src, dst, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
@@ -350,13 +375,29 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 // SendSegment sends a TCP segment that has already been built and written to a
 // buffer.VectorisedView.
 func (c *Context) SendSegment(s buffer.VectorisedView) {
-	c.linkEP.Inject(ipv4.ProtocolNumber, s)
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: s,
+	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // SendPacket builds and sends a TCP segment(with the provided payload & TCP
 // headers) in an IPv4 packet via the link layer endpoint.
 func (c *Context) SendPacket(payload []byte, h *Headers) {
-	c.linkEP.Inject(ipv4.ProtocolNumber, c.BuildSegment(payload, h))
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: c.BuildSegment(payload, h),
+	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
+}
+
+// SendPacketWithAddrs builds and sends a TCP segment(with the provided payload
+// & TCPheaders) in an IPv4 packet via the link layer endpoint using the
+// provided source and destination IPv4 addresses.
+func (c *Context) SendPacketWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: c.BuildSegmentWithAddrs(payload, h, src, dst),
+	})
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // SendAck sends an ACK packet.
@@ -389,6 +430,8 @@ func (c *Context) SendAckWithSACK(seq seqnum.Value, bytesReceived int, sackBlock
 // verifies that the packet packet payload of packet matches the slice
 // of data indicated by offset & size.
 func (c *Context) ReceiveAndCheckPacket(data []byte, offset, size int) {
+	c.t.Helper()
+
 	c.ReceiveAndCheckPacketWithOptions(data, offset, size, 0)
 }
 
@@ -397,6 +440,8 @@ func (c *Context) ReceiveAndCheckPacket(data []byte, offset, size int) {
 // data indicated by offset & size and skips optlen bytes in addition to the IP
 // TCP headers when comparing the data.
 func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, optlen int) {
+	c.t.Helper()
+
 	b := c.GetPacket()
 	checker.IPv4(c.t, b,
 		checker.PayloadLen(size+header.TCPMinimumSize+optlen),
@@ -419,6 +464,8 @@ func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, op
 // data indicated by offset & size. It returns true if a packet was received and
 // processed.
 func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int) bool {
+	c.t.Helper()
+
 	b := c.GetPacketNonBlocking()
 	if b == nil {
 		return false
@@ -450,11 +497,7 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 		c.t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	var v tcpip.V6OnlyOption
-	if v6only {
-		v = 1
-	}
-	if err := c.EP.SetSockOpt(v); err != nil {
+	if err := c.EP.SetSockOptBool(tcpip.V6OnlyOption, v6only); err != nil {
 		c.t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 }
@@ -462,28 +505,36 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 // GetV6Packet reads a single packet from the link layer endpoint of the context
 // and asserts that it is an IPv6 Packet with the expected src/dest addresses.
 func (c *Context) GetV6Packet() []byte {
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != ipv6.ProtocolNumber {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
-		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
+	c.t.Helper()
 
-		checker.IPv6(c.t, b, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
-		return b
-
-	case <-time.After(2 * time.Second):
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	p, ok := c.linkEP.ReadContext(ctx)
+	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
+		return nil
 	}
 
-	return nil
+	if p.Proto != ipv6.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
+	}
+	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	b := vv.ToView()
+
+	checker.IPv6(c.t, b, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
+	return b
 }
 
 // SendV6Packet builds and sends an IPv6 Packet via the link layer endpoint of
 // the context.
 func (c *Context) SendV6Packet(payload []byte, h *Headers) {
+	c.SendV6PacketWithAddrs(payload, h, TestV6Addr, StackV6Addr)
+}
+
+// SendV6PacketWithAddrs builds and sends an IPv6 Packet via the link layer
+// endpoint of the context using the provided source and destination IPv6
+// addresses.
+func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.TCPMinimumSize + header.IPv6MinimumSize + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -494,8 +545,8 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 		PayloadLength: uint16(header.TCPMinimumSize + len(payload)),
 		NextHeader:    uint8(tcp.ProtocolNumber),
 		HopLimit:      65,
-		SrcAddr:       TestV6Addr,
-		DstAddr:       StackV6Addr,
+		SrcAddr:       src,
+		DstAddr:       dst,
 	})
 
 	// Initialize the TCP header.
@@ -511,14 +562,17 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 	})
 
 	// Calculate the TCP pseudo-header checksum.
-	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, TestV6Addr, StackV6Addr, uint16(len(t)))
+	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, src, dst, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
 	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEP.Inject(ipv6.ProtocolNumber, buf.ToVectorisedView())
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	})
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 }
 
 // CreateConnected creates a connected TCP endpoint.
@@ -535,6 +589,8 @@ func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf
 //
 // PreCondition: c.EP must already be created.
 func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) {
+	c.t.Helper()
+
 	// Start connection attempt.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&waitEntry, waiter.EventOut)
@@ -1051,11 +1107,21 @@ func (c *Context) SACKEnabled() bool {
 
 // SetGSOEnabled enables or disables generic segmentation offload.
 func (c *Context) SetGSOEnabled(enable bool) {
-	c.linkEP.GSO = enable
+	if enable {
+		c.linkEP.LinkEPCapabilities |= stack.CapabilityHardwareGSO
+	} else {
+		c.linkEP.LinkEPCapabilities &^= stack.CapabilityHardwareGSO
+	}
 }
 
 // MSSWithoutOptions returns the value for the MSS used by the stack when no
 // options are in use.
 func (c *Context) MSSWithoutOptions() uint16 {
 	return uint16(c.linkEP.MTU() - header.IPv4MinimumSize - header.TCPMinimumSize)
+}
+
+// MSSWithoutOptionsV6 returns the value for the MSS used by the stack when no
+// options are in use for IPv6 packets.
+func (c *Context) MSSWithoutOptionsV6() uint16 {
+	return uint16(c.linkEP.MTU() - header.IPv6MinimumSize - header.TCPMinimumSize)
 }

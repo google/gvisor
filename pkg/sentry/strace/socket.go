@@ -22,11 +22,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SocketFamily are the possible socket(2) families.
@@ -208,16 +207,25 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 		i += linux.SizeOfControlMessageHeader
 		width := t.Arch().Width()
 		length := int(h.Length) - linux.SizeOfControlMessageHeader
+		if length < 0 {
+			strs = append(strs, fmt.Sprintf(
+				"{level=%s, type=%s, length=%d, content too short}",
+				level,
+				typ,
+				h.Length,
+			))
+			break
+		}
 
 		if skipData {
 			strs = append(strs, fmt.Sprintf("{level=%s, type=%s, length=%d}", level, typ, h.Length))
-			i += control.AlignUp(length, width)
+			i += binary.AlignUp(length, width)
 			continue
 		}
 
 		switch h.Type {
 		case linux.SCM_RIGHTS:
-			rightsSize := control.AlignDown(length, linux.SizeOfControlMessageRight)
+			rightsSize := binary.AlignDown(length, linux.SizeOfControlMessageRight)
 
 			numRights := rightsSize / linux.SizeOfControlMessageRight
 			fds := make(linux.ControlMessageRights, numRights)
@@ -286,7 +294,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 		default:
 			panic("unreachable")
 		}
-		i += control.AlignUp(length, width)
+		i += binary.AlignUp(length, width)
 	}
 
 	return fmt.Sprintf("%#x %s", addr, strings.Join(strs, ", "))
@@ -332,7 +340,7 @@ func sockAddr(t *kernel.Task, addr usermem.Addr, length uint32) string {
 
 	switch family {
 	case linux.AF_INET, linux.AF_INET6, linux.AF_UNIX:
-		fa, _, err := netstack.AddressAndFamily(int(family), b, true /* strict */)
+		fa, _, err := netstack.AddressAndFamily(b)
 		if err != nil {
 			return fmt.Sprintf("%#x {Family: %s, error extracting address: %v}", addr, familyStr, err)
 		}
@@ -409,4 +417,229 @@ func sockFlags(flags int32) string {
 		return "0"
 	}
 	return SocketFlagSet.Parse(uint64(flags))
+}
+
+func getSockOptVal(t *kernel.Task, level, optname uint64, optVal usermem.Addr, optLen usermem.Addr, maximumBlobSize uint, rval uintptr) string {
+	if int(rval) < 0 {
+		return hexNum(uint64(optVal))
+	}
+	if optVal == 0 {
+		return "null"
+	}
+	l, err := copySockLen(t, optLen)
+	if err != nil {
+		return fmt.Sprintf("%#x {error reading length: %v}", optLen, err)
+	}
+	return sockOptVal(t, level, optname, optVal, uint64(l), maximumBlobSize)
+}
+
+func sockOptVal(t *kernel.Task, level, optname uint64, optVal usermem.Addr, optLen uint64, maximumBlobSize uint) string {
+	switch optLen {
+	case 1:
+		var v uint8
+		_, err := t.CopyIn(optVal, &v)
+		if err != nil {
+			return fmt.Sprintf("%#x {error reading optval: %v}", optVal, err)
+		}
+		return fmt.Sprintf("%#x {value=%v}", optVal, v)
+	case 2:
+		var v uint16
+		_, err := t.CopyIn(optVal, &v)
+		if err != nil {
+			return fmt.Sprintf("%#x {error reading optval: %v}", optVal, err)
+		}
+		return fmt.Sprintf("%#x {value=%v}", optVal, v)
+	case 4:
+		var v uint32
+		_, err := t.CopyIn(optVal, &v)
+		if err != nil {
+			return fmt.Sprintf("%#x {error reading optval: %v}", optVal, err)
+		}
+		return fmt.Sprintf("%#x {value=%v}", optVal, v)
+	default:
+		return dump(t, optVal, uint(optLen), maximumBlobSize)
+	}
+}
+
+var sockOptLevels = abi.ValueSet{
+	linux.SOL_IP:      "SOL_IP",
+	linux.SOL_SOCKET:  "SOL_SOCKET",
+	linux.SOL_TCP:     "SOL_TCP",
+	linux.SOL_UDP:     "SOL_UDP",
+	linux.SOL_IPV6:    "SOL_IPV6",
+	linux.SOL_ICMPV6:  "SOL_ICMPV6",
+	linux.SOL_RAW:     "SOL_RAW",
+	linux.SOL_PACKET:  "SOL_PACKET",
+	linux.SOL_NETLINK: "SOL_NETLINK",
+}
+
+var sockOptNames = map[uint64]abi.ValueSet{
+	linux.SOL_IP: {
+		linux.IP_TTL:                    "IP_TTL",
+		linux.IP_MULTICAST_TTL:          "IP_MULTICAST_TTL",
+		linux.IP_MULTICAST_IF:           "IP_MULTICAST_IF",
+		linux.IP_MULTICAST_LOOP:         "IP_MULTICAST_LOOP",
+		linux.IP_TOS:                    "IP_TOS",
+		linux.IP_RECVTOS:                "IP_RECVTOS",
+		linux.IPT_SO_GET_INFO:           "IPT_SO_GET_INFO",
+		linux.IPT_SO_GET_ENTRIES:        "IPT_SO_GET_ENTRIES",
+		linux.IP_ADD_MEMBERSHIP:         "IP_ADD_MEMBERSHIP",
+		linux.IP_DROP_MEMBERSHIP:        "IP_DROP_MEMBERSHIP",
+		linux.MCAST_JOIN_GROUP:          "MCAST_JOIN_GROUP",
+		linux.IP_ADD_SOURCE_MEMBERSHIP:  "IP_ADD_SOURCE_MEMBERSHIP",
+		linux.IP_BIND_ADDRESS_NO_PORT:   "IP_BIND_ADDRESS_NO_PORT",
+		linux.IP_BLOCK_SOURCE:           "IP_BLOCK_SOURCE",
+		linux.IP_CHECKSUM:               "IP_CHECKSUM",
+		linux.IP_DROP_SOURCE_MEMBERSHIP: "IP_DROP_SOURCE_MEMBERSHIP",
+		linux.IP_FREEBIND:               "IP_FREEBIND",
+		linux.IP_HDRINCL:                "IP_HDRINCL",
+		linux.IP_IPSEC_POLICY:           "IP_IPSEC_POLICY",
+		linux.IP_MINTTL:                 "IP_MINTTL",
+		linux.IP_MSFILTER:               "IP_MSFILTER",
+		linux.IP_MTU_DISCOVER:           "IP_MTU_DISCOVER",
+		linux.IP_MULTICAST_ALL:          "IP_MULTICAST_ALL",
+		linux.IP_NODEFRAG:               "IP_NODEFRAG",
+		linux.IP_OPTIONS:                "IP_OPTIONS",
+		linux.IP_PASSSEC:                "IP_PASSSEC",
+		linux.IP_PKTINFO:                "IP_PKTINFO",
+		linux.IP_RECVERR:                "IP_RECVERR",
+		linux.IP_RECVFRAGSIZE:           "IP_RECVFRAGSIZE",
+		linux.IP_RECVOPTS:               "IP_RECVOPTS",
+		linux.IP_RECVORIGDSTADDR:        "IP_RECVORIGDSTADDR",
+		linux.IP_RECVTTL:                "IP_RECVTTL",
+		linux.IP_RETOPTS:                "IP_RETOPTS",
+		linux.IP_TRANSPARENT:            "IP_TRANSPARENT",
+		linux.IP_UNBLOCK_SOURCE:         "IP_UNBLOCK_SOURCE",
+		linux.IP_UNICAST_IF:             "IP_UNICAST_IF",
+		linux.IP_XFRM_POLICY:            "IP_XFRM_POLICY",
+		linux.MCAST_BLOCK_SOURCE:        "MCAST_BLOCK_SOURCE",
+		linux.MCAST_JOIN_SOURCE_GROUP:   "MCAST_JOIN_SOURCE_GROUP",
+		linux.MCAST_LEAVE_GROUP:         "MCAST_LEAVE_GROUP",
+		linux.MCAST_LEAVE_SOURCE_GROUP:  "MCAST_LEAVE_SOURCE_GROUP",
+		linux.MCAST_MSFILTER:            "MCAST_MSFILTER",
+		linux.MCAST_UNBLOCK_SOURCE:      "MCAST_UNBLOCK_SOURCE",
+		linux.IP_ROUTER_ALERT:           "IP_ROUTER_ALERT",
+		linux.IP_PKTOPTIONS:             "IP_PKTOPTIONS",
+		linux.IP_MTU:                    "IP_MTU",
+		linux.SO_ORIGINAL_DST:           "SO_ORIGINAL_DST",
+	},
+	linux.SOL_SOCKET: {
+		linux.SO_ERROR:        "SO_ERROR",
+		linux.SO_PEERCRED:     "SO_PEERCRED",
+		linux.SO_PASSCRED:     "SO_PASSCRED",
+		linux.SO_SNDBUF:       "SO_SNDBUF",
+		linux.SO_RCVBUF:       "SO_RCVBUF",
+		linux.SO_REUSEADDR:    "SO_REUSEADDR",
+		linux.SO_REUSEPORT:    "SO_REUSEPORT",
+		linux.SO_BINDTODEVICE: "SO_BINDTODEVICE",
+		linux.SO_BROADCAST:    "SO_BROADCAST",
+		linux.SO_KEEPALIVE:    "SO_KEEPALIVE",
+		linux.SO_LINGER:       "SO_LINGER",
+		linux.SO_SNDTIMEO:     "SO_SNDTIMEO",
+		linux.SO_RCVTIMEO:     "SO_RCVTIMEO",
+		linux.SO_OOBINLINE:    "SO_OOBINLINE",
+		linux.SO_TIMESTAMP:    "SO_TIMESTAMP",
+	},
+	linux.SOL_TCP: {
+		linux.TCP_NODELAY:              "TCP_NODELAY",
+		linux.TCP_CORK:                 "TCP_CORK",
+		linux.TCP_QUICKACK:             "TCP_QUICKACK",
+		linux.TCP_MAXSEG:               "TCP_MAXSEG",
+		linux.TCP_KEEPIDLE:             "TCP_KEEPIDLE",
+		linux.TCP_KEEPINTVL:            "TCP_KEEPINTVL",
+		linux.TCP_USER_TIMEOUT:         "TCP_USER_TIMEOUT",
+		linux.TCP_INFO:                 "TCP_INFO",
+		linux.TCP_CC_INFO:              "TCP_CC_INFO",
+		linux.TCP_NOTSENT_LOWAT:        "TCP_NOTSENT_LOWAT",
+		linux.TCP_ZEROCOPY_RECEIVE:     "TCP_ZEROCOPY_RECEIVE",
+		linux.TCP_CONGESTION:           "TCP_CONGESTION",
+		linux.TCP_LINGER2:              "TCP_LINGER2",
+		linux.TCP_DEFER_ACCEPT:         "TCP_DEFER_ACCEPT",
+		linux.TCP_REPAIR_OPTIONS:       "TCP_REPAIR_OPTIONS",
+		linux.TCP_INQ:                  "TCP_INQ",
+		linux.TCP_FASTOPEN:             "TCP_FASTOPEN",
+		linux.TCP_FASTOPEN_CONNECT:     "TCP_FASTOPEN_CONNECT",
+		linux.TCP_FASTOPEN_KEY:         "TCP_FASTOPEN_KEY",
+		linux.TCP_FASTOPEN_NO_COOKIE:   "TCP_FASTOPEN_NO_COOKIE",
+		linux.TCP_KEEPCNT:              "TCP_KEEPCNT",
+		linux.TCP_QUEUE_SEQ:            "TCP_QUEUE_SEQ",
+		linux.TCP_REPAIR:               "TCP_REPAIR",
+		linux.TCP_REPAIR_QUEUE:         "TCP_REPAIR_QUEUE",
+		linux.TCP_REPAIR_WINDOW:        "TCP_REPAIR_WINDOW",
+		linux.TCP_SAVED_SYN:            "TCP_SAVED_SYN",
+		linux.TCP_SAVE_SYN:             "TCP_SAVE_SYN",
+		linux.TCP_SYNCNT:               "TCP_SYNCNT",
+		linux.TCP_THIN_DUPACK:          "TCP_THIN_DUPACK",
+		linux.TCP_THIN_LINEAR_TIMEOUTS: "TCP_THIN_LINEAR_TIMEOUTS",
+		linux.TCP_TIMESTAMP:            "TCP_TIMESTAMP",
+		linux.TCP_ULP:                  "TCP_ULP",
+		linux.TCP_WINDOW_CLAMP:         "TCP_WINDOW_CLAMP",
+	},
+	linux.SOL_IPV6: {
+		linux.IPV6_V6ONLY:              "IPV6_V6ONLY",
+		linux.IPV6_PATHMTU:             "IPV6_PATHMTU",
+		linux.IPV6_TCLASS:              "IPV6_TCLASS",
+		linux.IPV6_ADD_MEMBERSHIP:      "IPV6_ADD_MEMBERSHIP",
+		linux.IPV6_DROP_MEMBERSHIP:     "IPV6_DROP_MEMBERSHIP",
+		linux.IPV6_IPSEC_POLICY:        "IPV6_IPSEC_POLICY",
+		linux.IPV6_JOIN_ANYCAST:        "IPV6_JOIN_ANYCAST",
+		linux.IPV6_LEAVE_ANYCAST:       "IPV6_LEAVE_ANYCAST",
+		linux.IPV6_PKTINFO:             "IPV6_PKTINFO",
+		linux.IPV6_ROUTER_ALERT:        "IPV6_ROUTER_ALERT",
+		linux.IPV6_XFRM_POLICY:         "IPV6_XFRM_POLICY",
+		linux.MCAST_BLOCK_SOURCE:       "MCAST_BLOCK_SOURCE",
+		linux.MCAST_JOIN_GROUP:         "MCAST_JOIN_GROUP",
+		linux.MCAST_JOIN_SOURCE_GROUP:  "MCAST_JOIN_SOURCE_GROUP",
+		linux.MCAST_LEAVE_GROUP:        "MCAST_LEAVE_GROUP",
+		linux.MCAST_LEAVE_SOURCE_GROUP: "MCAST_LEAVE_SOURCE_GROUP",
+		linux.MCAST_UNBLOCK_SOURCE:     "MCAST_UNBLOCK_SOURCE",
+		linux.IPV6_2292DSTOPTS:         "IPV6_2292DSTOPTS",
+		linux.IPV6_2292HOPLIMIT:        "IPV6_2292HOPLIMIT",
+		linux.IPV6_2292HOPOPTS:         "IPV6_2292HOPOPTS",
+		linux.IPV6_2292PKTINFO:         "IPV6_2292PKTINFO",
+		linux.IPV6_2292PKTOPTIONS:      "IPV6_2292PKTOPTIONS",
+		linux.IPV6_2292RTHDR:           "IPV6_2292RTHDR",
+		linux.IPV6_ADDR_PREFERENCES:    "IPV6_ADDR_PREFERENCES",
+		linux.IPV6_AUTOFLOWLABEL:       "IPV6_AUTOFLOWLABEL",
+		linux.IPV6_DONTFRAG:            "IPV6_DONTFRAG",
+		linux.IPV6_DSTOPTS:             "IPV6_DSTOPTS",
+		linux.IPV6_FLOWINFO:            "IPV6_FLOWINFO",
+		linux.IPV6_FLOWINFO_SEND:       "IPV6_FLOWINFO_SEND",
+		linux.IPV6_FLOWLABEL_MGR:       "IPV6_FLOWLABEL_MGR",
+		linux.IPV6_FREEBIND:            "IPV6_FREEBIND",
+		linux.IPV6_HOPOPTS:             "IPV6_HOPOPTS",
+		linux.IPV6_MINHOPCOUNT:         "IPV6_MINHOPCOUNT",
+		linux.IPV6_MTU:                 "IPV6_MTU",
+		linux.IPV6_MTU_DISCOVER:        "IPV6_MTU_DISCOVER",
+		linux.IPV6_MULTICAST_ALL:       "IPV6_MULTICAST_ALL",
+		linux.IPV6_MULTICAST_HOPS:      "IPV6_MULTICAST_HOPS",
+		linux.IPV6_MULTICAST_IF:        "IPV6_MULTICAST_IF",
+		linux.IPV6_MULTICAST_LOOP:      "IPV6_MULTICAST_LOOP",
+		linux.IPV6_RECVDSTOPTS:         "IPV6_RECVDSTOPTS",
+		linux.IPV6_RECVERR:             "IPV6_RECVERR",
+		linux.IPV6_RECVFRAGSIZE:        "IPV6_RECVFRAGSIZE",
+		linux.IPV6_RECVHOPLIMIT:        "IPV6_RECVHOPLIMIT",
+		linux.IPV6_RECVHOPOPTS:         "IPV6_RECVHOPOPTS",
+		linux.IPV6_RECVORIGDSTADDR:     "IPV6_RECVORIGDSTADDR",
+		linux.IPV6_RECVPATHMTU:         "IPV6_RECVPATHMTU",
+		linux.IPV6_RECVPKTINFO:         "IPV6_RECVPKTINFO",
+		linux.IPV6_RECVRTHDR:           "IPV6_RECVRTHDR",
+		linux.IPV6_RECVTCLASS:          "IPV6_RECVTCLASS",
+		linux.IPV6_RTHDR:               "IPV6_RTHDR",
+		linux.IPV6_RTHDRDSTOPTS:        "IPV6_RTHDRDSTOPTS",
+		linux.IPV6_TRANSPARENT:         "IPV6_TRANSPARENT",
+		linux.IPV6_UNICAST_HOPS:        "IPV6_UNICAST_HOPS",
+		linux.IPV6_UNICAST_IF:          "IPV6_UNICAST_IF",
+		linux.MCAST_MSFILTER:           "MCAST_MSFILTER",
+		linux.IPV6_ADDRFORM:            "IPV6_ADDRFORM",
+	},
+	linux.SOL_NETLINK: {
+		linux.NETLINK_BROADCAST_ERROR:  "NETLINK_BROADCAST_ERROR",
+		linux.NETLINK_CAP_ACK:          "NETLINK_CAP_ACK",
+		linux.NETLINK_DUMP_STRICT_CHK:  "NETLINK_DUMP_STRICT_CHK",
+		linux.NETLINK_EXT_ACK:          "NETLINK_EXT_ACK",
+		linux.NETLINK_LIST_MEMBERSHIPS: "NETLINK_LIST_MEMBERSHIPS",
+		linux.NETLINK_NO_ENOBUFS:       "NETLINK_NO_ENOBUFS",
+		linux.NETLINK_PKTINFO:          "NETLINK_PKTINFO",
+	},
 }

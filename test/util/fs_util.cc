@@ -105,6 +105,15 @@ PosixErrorOr<struct stat> Stat(absl::string_view path) {
   return stat_buf;
 }
 
+PosixErrorOr<struct stat> Lstat(absl::string_view path) {
+  struct stat stat_buf;
+  int res = lstat(std::string(path).c_str(), &stat_buf);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("lstat ", path));
+  }
+  return stat_buf;
+}
+
 PosixErrorOr<struct stat> Fstat(int fd) {
   struct stat stat_buf;
   int res = fstat(fd, &stat_buf);
@@ -116,18 +125,18 @@ PosixErrorOr<struct stat> Fstat(int fd) {
 
 PosixErrorOr<bool> Exists(absl::string_view path) {
   struct stat stat_buf;
-  int res = stat(std::string(path).c_str(), &stat_buf);
+  int res = lstat(std::string(path).c_str(), &stat_buf);
   if (res < 0) {
     if (errno == ENOENT) {
       return false;
     }
-    return PosixError(errno, absl::StrCat("stat ", path));
+    return PosixError(errno, absl::StrCat("lstat ", path));
   }
   return true;
 }
 
 PosixErrorOr<bool> IsDirectory(absl::string_view path) {
-  ASSIGN_OR_RETURN_ERRNO(struct stat stat_buf, Stat(path));
+  ASSIGN_OR_RETURN_ERRNO(struct stat stat_buf, Lstat(path));
   if (S_ISDIR(stat_buf.st_mode)) {
     return true;
   }
@@ -158,6 +167,26 @@ PosixError Chmod(absl::string_view path, int mode) {
   int res = chmod(std::string(path).c_str(), mode);
   if (res < 0) {
     return PosixError(errno, absl::StrCat("chmod ", path));
+  }
+
+  return NoError();
+}
+
+PosixError MknodAt(const FileDescriptor& dfd, absl::string_view path, int mode,
+                   dev_t dev) {
+  int res = mknodat(dfd.get(), std::string(path).c_str(), mode, dev);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("mknod ", path));
+  }
+
+  return NoError();
+}
+
+PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
+                    int flags) {
+  int res = unlinkat(dfd.get(), std::string(path).c_str(), flags);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("unlink ", path));
   }
 
   return NoError();
@@ -423,7 +452,7 @@ PosixErrorOr<std::string> MakeAbsolute(absl::string_view filename,
 
 std::string CleanPath(const absl::string_view unclean_path) {
   std::string path = std::string(unclean_path);
-  const char *src = path.c_str();
+  const char* src = path.c_str();
   std::string::iterator dst = path.begin();
 
   // Check for absolute path and determine initial backtrack limit.

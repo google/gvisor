@@ -187,10 +187,12 @@ const (
 
 // Device types, from uapi/linux/if_arp.h.
 const (
+	ARPHRD_NONE     = 65534
+	ARPHRD_ETHER    = 1
 	ARPHRD_LOOPBACK = 772
 )
 
-// RouteMessage struct rtmsg, from uapi/linux/rtnetlink.h.
+// RouteMessage is struct rtmsg, from uapi/linux/rtnetlink.h.
 type RouteMessage struct {
 	Family uint8
 	DstLen uint8
@@ -204,6 +206,9 @@ type RouteMessage struct {
 
 	Flags uint32
 }
+
+// SizeOfRouteMessage is the size of RouteMessage.
+const SizeOfRouteMessage = 12
 
 // Route types, from uapi/linux/rtnetlink.h.
 const (
@@ -325,3 +330,19 @@ const (
 	RTA_SPORT         = 28
 	RTA_DPORT         = 29
 )
+
+// Route flags, from include/uapi/linux/route.h.
+const (
+	RTF_GATEWAY = 0x2
+	RTF_UP      = 0x1
+)
+
+// RtAttr is the header of optional addition route information, as a netlink
+// attribute. From include/uapi/linux/rtnetlink.h.
+type RtAttr struct {
+	Len  uint16
+	Type uint16
+}
+
+// SizeOfRtAttr is the size of RtAttr.
+const SizeOfRtAttr = 4

@@ -1,9 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
     name = "dirent_list",
@@ -14,6 +12,17 @@ go_template_instance(
     types = {
         "Element": "*dirent",
         "Linker": "*dirent",
+    },
+)
+
+go_template_instance(
+    name = "fstree",
+    out = "fstree.go",
+    package = "ext",
+    prefix = "generic",
+    template = "//pkg/sentry/vfs/genericfstree:generic_fstree",
+    types = {
+        "Dentry": "dentry",
     },
 )
 
@@ -28,29 +37,33 @@ go_library(
         "extent_file.go",
         "file_description.go",
         "filesystem.go",
+        "fstree.go",
         "inode.go",
         "regular_file.go",
         "symlink.go",
         "utils.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/ext",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/fd",
+        "//pkg/fspath",
         "//pkg/log",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
+        "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsimpl/ext/disklayout",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/safemem",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/syscalls/linux",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -70,19 +83,20 @@ go_test(
         "//pkg/sentry/fsimpl/ext:assets/tiny.ext3",
         "//pkg/sentry/fsimpl/ext:assets/tiny.ext4",
     ],
-    embed = [":ext"],
+    library = ":ext",
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/fspath",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/ext/disklayout",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
-        "//runsc/testutil",
-        "@com_github_google_go-cmp//cmp:go_default_library",
-        "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
+        "//pkg/test/testutil",
+        "//pkg/usermem",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
     ],
 )

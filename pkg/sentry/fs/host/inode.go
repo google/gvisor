@@ -15,19 +15,17 @@
 package host
 
 import (
-	"sync"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/secio"
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -69,9 +67,6 @@ type inodeOperations struct {
 //
 // +stateify savable
 type inodeFileState struct {
-	// Common file system state.
-	mops *superOperations `state:"wait"`
-
 	// descriptor is the backing host FD.
 	descriptor *descriptor `state:"wait"`
 
@@ -160,7 +155,7 @@ func (i *inodeFileState) unstableAttr(ctx context.Context) (fs.UnstableAttr, err
 	if err := syscall.Fstat(i.FD(), &s); err != nil {
 		return fs.UnstableAttr{}, err
 	}
-	return unstableAttr(i.mops, &s), nil
+	return unstableAttr(&s), nil
 }
 
 // Allocate implements fsutil.CachedFileObject.Allocate.
@@ -172,7 +167,7 @@ func (i *inodeFileState) Allocate(_ context.Context, offset, length int64) error
 var _ fs.InodeOperations = (*inodeOperations)(nil)
 
 // newInode returns a new fs.Inode backed by the host FD.
-func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool, donated bool) (*fs.Inode, error) {
+func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool) (*fs.Inode, error) {
 	// Retrieve metadata.
 	var s syscall.Stat_t
 	err := syscall.Fstat(fd, &s)
@@ -181,24 +176,17 @@ func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool, 
 	}
 
 	fileState := &inodeFileState{
-		mops:  msrc.MountSourceOperations.(*superOperations),
 		sattr: stableAttr(&s),
 	}
 
 	// Initialize the wrapped host file descriptor.
-	fileState.descriptor, err = newDescriptor(
-		fd,
-		donated,
-		saveable,
-		wouldBlock(&s),
-		&fileState.queue,
-	)
+	fileState.descriptor, err = newDescriptor(fd, saveable, wouldBlock(&s), &fileState.queue)
 	if err != nil {
 		return nil, err
 	}
 
 	// Build the fs.InodeOperations.
-	uattr := unstableAttr(msrc.MountSourceOperations.(*superOperations), &s)
+	uattr := unstableAttr(&s)
 	iops := &inodeOperations{
 		fileState: fileState,
 		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, fsutil.CachingInodeOperationsOptions{
@@ -232,54 +220,23 @@ func (i *inodeOperations) Release(context.Context) {
 
 // Lookup implements fs.InodeOperations.Lookup.
 func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
-	// Get a new FD relative to i at name.
-	fd, err := open(i, name)
-	if err != nil {
-		if err == syserror.ENOENT {
-			return nil, syserror.ENOENT
-		}
-		return nil, err
-	}
-
-	inode, err := newInode(ctx, dir.MountSource, fd, false /* saveable */, false /* donated */)
-	if err != nil {
-		return nil, err
-	}
-
-	// Return the fs.Dirent.
-	return fs.NewDirent(ctx, inode, name), nil
+	return nil, syserror.ENOENT
 }
 
 // Create implements fs.InodeOperations.Create.
 func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.FileFlags, perm fs.FilePermissions) (*fs.File, error) {
-	// Create a file relative to i at name.
-	//
-	// N.B. We always open this file O_RDWR regardless of flags because a
-	// future GetFile might want more access. Open allows this regardless
-	// of perm.
-	fd, err := openAt(i, name, syscall.O_RDWR|syscall.O_CREAT|syscall.O_EXCL, perm.LinuxMode())
-	if err != nil {
-		return nil, err
-	}
+	return nil, syserror.EPERM
 
-	inode, err := newInode(ctx, dir.MountSource, fd, false /* saveable */, false /* donated */)
-	if err != nil {
-		return nil, err
-	}
-
-	d := fs.NewDirent(ctx, inode, name)
-	defer d.DecRef()
-	return inode.GetFile(ctx, d, flags)
 }
 
 // CreateDirectory implements fs.InodeOperations.CreateDirectory.
 func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions) error {
-	return syscall.Mkdirat(i.fileState.FD(), name, uint32(perm.LinuxMode()))
+	return syserror.EPERM
 }
 
 // CreateLink implements fs.InodeOperations.CreateLink.
 func (i *inodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname string, newname string) error {
-	return createLink(i.fileState.FD(), oldname, newname)
+	return syserror.EPERM
 }
 
 // CreateHardLink implements fs.InodeOperations.CreateHardLink.
@@ -294,25 +251,17 @@ func (*inodeOperations) CreateFifo(context.Context, *fs.Inode, string, fs.FilePe
 
 // Remove implements fs.InodeOperations.Remove.
 func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string) error {
-	return unlinkAt(i.fileState.FD(), name, false /* dir */)
+	return syserror.EPERM
 }
 
 // RemoveDirectory implements fs.InodeOperations.RemoveDirectory.
 func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, name string) error {
-	return unlinkAt(i.fileState.FD(), name, true /* dir */)
+	return syserror.EPERM
 }
 
 // Rename implements fs.InodeOperations.Rename.
 func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
-	op, ok := oldParent.InodeOperations.(*inodeOperations)
-	if !ok {
-		return syscall.EXDEV
-	}
-	np, ok := newParent.InodeOperations.(*inodeOperations)
-	if !ok {
-		return syscall.EXDEV
-	}
-	return syscall.Renameat(op.fileState.FD(), oldName, np.fileState.FD(), newName)
+	return syserror.EPERM
 }
 
 // Bind implements fs.InodeOperations.Bind.
@@ -419,6 +368,9 @@ func (i *inodeOperations) Allocate(ctx context.Context, inode *fs.Inode, offset,
 
 // WriteOut implements fs.InodeOperations.WriteOut.
 func (i *inodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
+	if inode.MountSource.Flags.ReadOnly {
+		return nil
+	}
 	// Have we been using host kernel metadata caches?
 	if !inode.MountSource.Flags.ForcePageCache || !canMap(inode) {
 		// Then the metadata is already up to date on the host.
@@ -448,82 +400,17 @@ func (i *inodeOperations) StatFS(context.Context) (fs.Info, error) {
 }
 
 // AddLink implements fs.InodeOperations.AddLink.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) AddLink() {}
 
 // DropLink implements fs.InodeOperations.DropLink.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) DropLink() {}
 
 // NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) NotifyStatusChange(ctx context.Context) {}
 
 // readdirAll returns all of the directory entries in i.
 func (i *inodeOperations) readdirAll(d *dirInfo) (map[string]fs.DentAttr, error) {
-	i.readdirMu.Lock()
-	defer i.readdirMu.Unlock()
-
-	fd := i.fileState.FD()
-
-	// syscall.ReadDirent will use getdents, which will seek the file past
-	// the last directory entry. To read the directory entries a second
-	// time, we need to seek back to the beginning.
-	if _, err := syscall.Seek(fd, 0, 0); err != nil {
-		if err == syscall.ESPIPE {
-			// All directories should be seekable. If this file
-			// isn't seekable, it is not a directory and we should
-			// return that more sane error.
-			err = syscall.ENOTDIR
-		}
-		return nil, err
-	}
-
-	names := make([]string, 0, 100)
-	for {
-		// Refill the buffer if necessary
-		if d.bufp >= d.nbuf {
-			d.bufp = 0
-			// ReadDirent will just do a sys_getdents64 to the kernel.
-			n, err := syscall.ReadDirent(fd, d.buf)
-			if err != nil {
-				return nil, err
-			}
-			if n == 0 {
-				break // EOF
-			}
-			d.nbuf = n
-		}
-
-		var nb int
-		// Parse the dirent buffer we just get and return the directory names along
-		// with the number of bytes consumed in the buffer.
-		nb, _, names = syscall.ParseDirent(d.buf[d.bufp:d.nbuf], -1, names)
-		d.bufp += nb
-	}
-
-	entries := make(map[string]fs.DentAttr)
-	for _, filename := range names {
-		// Lookup the type and host device and inode.
-		stat, lerr := fstatat(fd, filename, linux.AT_SYMLINK_NOFOLLOW)
-		if lerr == syscall.ENOENT {
-			// File disappeared between readdir and lstat.
-			// Just treat it as if it didn't exist.
-			continue
-		}
-
-		// There was a serious problem, we should probably report it.
-		if lerr != nil {
-			return nil, lerr
-		}
-
-		entries[filename] = fs.DentAttr{
-			Type: nodeType(&stat),
-			InodeID: hostFileDevice.Map(device.MultiDeviceKey{
-				Device: stat.Dev,
-				Inode:  stat.Ino,
-			}),
-		}
-	}
-	return entries, nil
+	// We only support non-directory file descriptors that have been
+	// imported, so just claim that this isn't a directory, even if it is.
+	return nil, syscall.ENOTDIR
 }

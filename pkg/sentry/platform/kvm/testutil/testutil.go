@@ -41,9 +41,6 @@ func TwiddleRegsFault()
 // TwiddleRegsSyscall twiddles registers then executes a syscall.
 func TwiddleRegsSyscall()
 
-// TwiddleSegments reads segments into known registers.
-func TwiddleSegments()
-
 // FloatingPointWorks is a floating point test.
 //
 // It returns true or false.

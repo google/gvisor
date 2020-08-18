@@ -19,6 +19,8 @@ import (
 	"unsafe"
 )
 
+// LINT.IfChange
+
 // fdReadVec receives from fd to bufs.
 //
 // If the total length of bufs is > maxlen, fdReadVec will do a partial read
@@ -99,3 +101,5 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int6
 
 	return int64(n), length, err
 }
+
+// LINT.ThenChange(../../fsimpl/host/socket_unsafe.go)

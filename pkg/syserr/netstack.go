@@ -22,7 +22,7 @@ import (
 // Mapping for tcpip.Error types.
 var (
 	ErrUnknownProtocol       = New(tcpip.ErrUnknownProtocol.String(), linux.EINVAL)
-	ErrUnknownNICID          = New(tcpip.ErrUnknownNICID.String(), linux.EINVAL)
+	ErrUnknownNICID          = New(tcpip.ErrUnknownNICID.String(), linux.ENODEV)
 	ErrUnknownDevice         = New(tcpip.ErrUnknownDevice.String(), linux.ENODEV)
 	ErrUnknownProtocolOption = New(tcpip.ErrUnknownProtocolOption.String(), linux.ENOPROTOOPT)
 	ErrDuplicateNICID        = New(tcpip.ErrDuplicateNICID.String(), linux.EEXIST)

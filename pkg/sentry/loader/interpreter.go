@@ -18,10 +18,10 @@ import (
 	"bytes"
 	"io"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -37,9 +37,9 @@ const (
 )
 
 // parseInterpreterScript returns the interpreter path and argv.
-func parseInterpreterScript(ctx context.Context, filename string, f *fs.File, argv []string) (newpath string, newargv []string, err error) {
+func parseInterpreterScript(ctx context.Context, filename string, f fsbridge.File, argv []string) (newpath string, newargv []string, err error) {
 	line := make([]byte, interpMaxLineLength)
-	n, err := readFull(ctx, f, usermem.BytesIOSequence(line), 0)
+	n, err := f.ReadFull(ctx, usermem.BytesIOSequence(line), 0)
 	// Short read is OK.
 	if err != nil && err != io.ErrUnexpectedEOF {
 		if err == io.EOF {

@@ -16,7 +16,9 @@ package fs
 
 import (
 	"fmt"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Watches is the collection of inotify watches on an inode.
@@ -135,11 +137,11 @@ func (w *Watches) Notify(name string, events, cookie uint32) {
 }
 
 // Unpin unpins dirent from all watches in this set.
-func (w *Watches) Unpin(d *Dirent) {
+func (w *Watches) Unpin(ctx context.Context, d *Dirent) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	for _, watch := range w.ws {
-		watch.Unpin(d)
+		watch.Unpin(ctx, d)
 	}
 }
 

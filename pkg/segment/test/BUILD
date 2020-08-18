@@ -1,12 +1,10 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
     default_visibility = ["//visibility:private"],
     licenses = ["notice"],
 )
-
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
     name = "int_range",
@@ -31,15 +29,32 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "gap_set",
+    out = "gap_set.go",
+    consts = {
+        "trackGaps": "1",
+    },
+    package = "segment",
+    prefix = "gap",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "int",
+        "Range": "Range",
+        "Value": "int",
+        "Functions": "gapSetFunctions",
+    },
+)
+
 go_library(
     name = "segment",
     testonly = 1,
     srcs = [
+        "gap_set.go",
         "int_range.go",
         "int_set.go",
         "set_functions.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/segment/segment",
     deps = [
         "//pkg/state",
     ],
@@ -49,5 +64,5 @@ go_test(
     name = "segment_test",
     size = "small",
     srcs = ["segment_test.go"],
-    embed = [":segment"],
+    library = ":segment",
 )

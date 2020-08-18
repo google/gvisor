@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/ethtool.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
@@ -49,6 +50,7 @@ TEST(NetdeviceTest, Loopback) {
 
   // Check that the loopback is zero hardware address.
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFHWADDR, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_hwaddr.sa_family, ARPHRD_LOOPBACK);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[0], 0);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[1], 0);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[2], 0);
@@ -68,7 +70,8 @@ TEST(NetdeviceTest, Netmask) {
 
   // Use a netlink socket to get the netmask, which we'll then compare to the
   // netmask obtained via ioctl.
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   struct request {
@@ -90,7 +93,7 @@ TEST(NetdeviceTest, Netmask) {
   int prefixlen = -1;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
-      [&](const struct nlmsghdr *hdr) {
+      [&](const struct nlmsghdr* hdr) {
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWADDR), Eq(NLMSG_DONE)));
 
         EXPECT_TRUE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
@@ -106,8 +109,8 @@ TEST(NetdeviceTest, Netmask) {
         // RTM_NEWADDR contains at least the header and ifaddrmsg.
         EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct ifaddrmsg));
 
-        struct ifaddrmsg *ifaddrmsg =
-            reinterpret_cast<struct ifaddrmsg *>(NLMSG_DATA(hdr));
+        struct ifaddrmsg* ifaddrmsg =
+            reinterpret_cast<struct ifaddrmsg*>(NLMSG_DATA(hdr));
         if (ifaddrmsg->ifa_index == static_cast<uint32_t>(ifr.ifr_ifindex) &&
             ifaddrmsg->ifa_family == AF_INET) {
           prefixlen = ifaddrmsg->ifa_prefixlen;
@@ -126,8 +129,8 @@ TEST(NetdeviceTest, Netmask) {
   snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFNETMASK, &ifr), SyscallSucceeds());
   EXPECT_EQ(ifr.ifr_netmask.sa_family, AF_INET);
-  struct sockaddr_in *sin =
-      reinterpret_cast<struct sockaddr_in *>(&ifr.ifr_netmask);
+  struct sockaddr_in* sin =
+      reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_netmask);
   EXPECT_EQ(sin->sin_addr.s_addr, mask);
 }
 
@@ -175,6 +178,27 @@ TEST(NetdeviceTest, InterfaceMTU) {
   // Check that SIOCGIFMTU returns a nonzero MTU.
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFMTU, &ifr), SyscallSucceeds());
   EXPECT_GT(ifr.ifr_mtu, 0);
+}
+
+TEST(NetdeviceTest, EthtoolGetTSInfo) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct ethtool_ts_info tsi = {};
+  tsi.cmd = ETHTOOL_GET_TS_INFO;  // Get NIC's Timestamping capabilities.
+
+  // Prepare the request.
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+  ifr.ifr_data = (void*)&tsi;
+
+  // Check that SIOCGIFMTU returns a nonzero MTU.
+  if (IsRunningOnGvisor()) {
+    ASSERT_THAT(ioctl(sock.get(), SIOCETHTOOL, &ifr),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+    return;
+  }
+  ASSERT_THAT(ioctl(sock.get(), SIOCETHTOOL, &ifr), SyscallSucceeds());
 }
 
 }  // namespace

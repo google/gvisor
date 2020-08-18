@@ -1,10 +1,45 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
 
-load("//tools/go_generics:defs.bzl", "go_template_instance")
+go_template_instance(
+    name = "pending_list",
+    out = "pending_list.go",
+    package = "state",
+    prefix = "pending",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*objectEncodeState",
+        "ElementMapper": "pendingMapper",
+        "Linker": "*pendingEntry",
+    },
+)
+
+go_template_instance(
+    name = "deferred_list",
+    out = "deferred_list.go",
+    package = "state",
+    prefix = "deferred",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*objectEncodeState",
+        "ElementMapper": "deferredMapper",
+        "Linker": "*deferredEntry",
+    },
+)
+
+go_template_instance(
+    name = "complete_list",
+    out = "complete_list.go",
+    package = "state",
+    prefix = "complete",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*objectDecodeState",
+        "Linker": "*objectDecodeState",
+    },
+)
 
 go_template_instance(
     name = "addr_range",
@@ -32,7 +67,7 @@ go_template_instance(
     types = {
         "Key": "uintptr",
         "Range": "addrRange",
-        "Value": "reflect.Value",
+        "Value": "*objectEncodeState",
         "Functions": "addrSetFunctions",
     },
 )
@@ -42,38 +77,24 @@ go_library(
     srcs = [
         "addr_range.go",
         "addr_set.go",
+        "complete_list.go",
         "decode.go",
+        "decode_unsafe.go",
+        "deferred_list.go",
         "encode.go",
         "encode_unsafe.go",
-        "map.go",
-        "printer.go",
+        "pending_list.go",
         "state.go",
+        "state_norace.go",
+        "state_race.go",
         "stats.go",
+        "types.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/state",
+    marshal = False,
+    stateify = False,
     visibility = ["//:sandbox"],
     deps = [
-        ":object_go_proto",
-        "@com_github_golang_protobuf//proto:go_default_library",
+        "//pkg/log",
+        "//pkg/state/wire",
     ],
-)
-
-proto_library(
-    name = "object_proto",
-    srcs = ["object.proto"],
-    visibility = ["//:sandbox"],
-)
-
-go_proto_library(
-    name = "object_go_proto",
-    importpath = "gvisor.dev/gvisor/pkg/state/object_go_proto",
-    proto = ":object_proto",
-    visibility = ["//:sandbox"],
-)
-
-go_test(
-    name = "state_test",
-    timeout = "long",
-    srcs = ["state_test.go"],
-    embed = [":state"],
 )

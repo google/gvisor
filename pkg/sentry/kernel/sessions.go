@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -70,7 +71,7 @@ func (s *Session) incRef() {
 //
 // Precondition: callers must hold TaskSet.mu for writing.
 func (s *Session) decRef() {
-	s.refs.DecRefWithDestructor(func() {
+	s.refs.DecRefWithDestructor(nil, func(context.Context) {
 		// Remove translations from the leader.
 		for ns := s.leader.pidns; ns != nil; ns = ns.parent {
 			id := ns.sids[s]
@@ -162,7 +163,7 @@ func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 	}
 
 	alive := true
-	pg.refs.DecRefWithDestructor(func() {
+	pg.refs.DecRefWithDestructor(nil, func(context.Context) {
 		alive = false // don't bother with handleOrphan.
 
 		// Remove translations from the originator.
@@ -246,7 +247,7 @@ func (pg *ProcessGroup) SendSignal(info *arch.SignalInfo) error {
 
 	var lastErr error
 	for tg := range tasks.Root.tgids {
-		if tg.ProcessGroup() == pg {
+		if tg.processGroup == pg {
 			tg.signalHandlers.mu.Lock()
 			infoCopy := *info
 			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {

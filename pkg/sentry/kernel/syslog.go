@@ -17,7 +17,8 @@ package kernel
 import (
 	"fmt"
 	"math/rand"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // syslog represents a sentry-global kernel log.
@@ -95,6 +96,15 @@ func (s *syslog) Log() []byte {
 	for i := 0; i < 10; i++ {
 		time += rand.Float64() / 2
 		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, selectMessage()))...)
+	}
+
+	if VFS2Enabled {
+		time += rand.Float64() / 2
+		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up VFS2..."))...)
+		if FUSEEnabled {
+			time += rand.Float64() / 2
+			s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up FUSE..."))...)
+		}
 	}
 
 	time += rand.Float64() / 2

@@ -53,7 +53,7 @@ TEST(LseekTest, NegativeOffset) {
 // A 32-bit off_t is not large enough to represent an offset larger than
 // maximum file size on standard file systems, so it isn't possible to cause
 // overflow.
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 TEST(LseekTest, Overflow) {
   // HA! Classic Linux. We really should have an EOVERFLOW
   // here, since we're seeking to something that cannot be

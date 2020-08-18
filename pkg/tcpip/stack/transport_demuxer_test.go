@@ -25,96 +25,65 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
-	stackV6Addr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	testV6Addr  = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	testSrcAddrV6 = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+	testDstAddrV6 = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
 
-	stackAddr = "\x0a\x00\x00\x01"
-	stackPort = 1234
-	testPort  = 4096
+	testSrcAddrV4 = "\x0a\x00\x00\x01"
+	testDstAddrV4 = "\x0a\x00\x00\x02"
+
+	testDstPort = 1234
+	testSrcPort = 4096
 )
 
 type testContext struct {
-	t       *testing.T
-	linkEPs map[string]*channel.Endpoint
+	linkEps map[tcpip.NICID]*channel.Endpoint
 	s       *stack.Stack
-
-	ep tcpip.Endpoint
-	wq waiter.Queue
+	wq      waiter.Queue
 }
 
-func (c *testContext) cleanup() {
-	if c.ep != nil {
-		c.ep.Close()
-	}
-}
-
-func (c *testContext) createV6Endpoint(v6only bool) {
-	var err *tcpip.Error
-	c.ep, err = c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &c.wq)
-	if err != nil {
-		c.t.Fatalf("NewEndpoint failed: %v", err)
-	}
-
-	var v tcpip.V6OnlyOption
-	if v6only {
-		v = 1
-	}
-	if err := c.ep.SetSockOpt(v); err != nil {
-		c.t.Fatalf("SetSockOpt failed: %v", err)
-	}
-}
-
-// newDualTestContextMultiNic creates the testing context and also linkEpNames
-// named NICs.
-func newDualTestContextMultiNic(t *testing.T, mtu uint32, linkEpNames []string) *testContext {
+// newDualTestContextMultiNIC creates the testing context and also linkEpIDs NICs.
+func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICID) *testContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
-	linkEPs := make(map[string]*channel.Endpoint)
-	for i, linkEpName := range linkEpNames {
-		channelEP := channel.New(256, mtu, "")
-		nicid := tcpip.NICID(i + 1)
-		if err := s.CreateNamedNIC(nicid, linkEpName, channelEP); err != nil {
-			t.Fatalf("CreateNIC failed: %v", err)
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+	})
+	linkEps := make(map[tcpip.NICID]*channel.Endpoint)
+	for _, linkEpID := range linkEpIDs {
+		channelEp := channel.New(256, mtu, "")
+		if err := s.CreateNIC(linkEpID, channelEp); err != nil {
+			t.Fatalf("CreateNIC failed: %s", err)
 		}
-		linkEPs[linkEpName] = channelEP
+		linkEps[linkEpID] = channelEp
 
-		if err := s.AddAddress(nicid, ipv4.ProtocolNumber, stackAddr); err != nil {
-			t.Fatalf("AddAddress IPv4 failed: %v", err)
+		if err := s.AddAddress(linkEpID, ipv4.ProtocolNumber, testDstAddrV4); err != nil {
+			t.Fatalf("AddAddress IPv4 failed: %s", err)
 		}
 
-		if err := s.AddAddress(nicid, ipv6.ProtocolNumber, stackV6Addr); err != nil {
-			t.Fatalf("AddAddress IPv6 failed: %v", err)
+		if err := s.AddAddress(linkEpID, ipv6.ProtocolNumber, testDstAddrV6); err != nil {
+			t.Fatalf("AddAddress IPv6 failed: %s", err)
 		}
 	}
 
 	s.SetRouteTable([]tcpip.Route{
-		{
-			Destination: header.IPv4EmptySubnet,
-			NIC:         1,
-		},
-		{
-			Destination: header.IPv6EmptySubnet,
-			NIC:         1,
-		},
+		{Destination: header.IPv4EmptySubnet, NIC: 1},
+		{Destination: header.IPv6EmptySubnet, NIC: 1},
 	})
 
 	return &testContext{
-		t:       t,
 		s:       s,
-		linkEPs: linkEPs,
+		linkEps: linkEps,
 	}
 }
 
 type headers struct {
-	srcPort uint16
-	dstPort uint16
+	srcPort, dstPort uint16
 }
 
 func newPayload() []byte {
@@ -125,7 +94,47 @@ func newPayload() []byte {
 	return b
 }
 
-func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpName string) {
+func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
+	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
+	payloadStart := len(buf) - len(payload)
+	copy(buf[payloadStart:], payload)
+
+	// Initialize the IP header.
+	ip := header.IPv4(buf)
+	ip.Encode(&header.IPv4Fields{
+		IHL:         header.IPv4MinimumSize,
+		TOS:         0x80,
+		TotalLength: uint16(len(buf)),
+		TTL:         65,
+		Protocol:    uint8(udp.ProtocolNumber),
+		SrcAddr:     testSrcAddrV4,
+		DstAddr:     testDstAddrV4,
+	})
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	// Initialize the UDP header.
+	u := header.UDP(buf[header.IPv4MinimumSize:])
+	u.Encode(&header.UDPFields{
+		SrcPort: h.srcPort,
+		DstPort: h.dstPort,
+		Length:  uint16(header.UDPMinimumSize + len(payload)),
+	})
+
+	// Calculate the UDP pseudo-header checksum.
+	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, testSrcAddrV4, testDstAddrV4, uint16(len(u)))
+
+	// Calculate the UDP checksum and set it.
+	xsum = header.Checksum(payload, xsum)
+	u.SetChecksum(^u.CalculateChecksum(xsum))
+
+	// Inject packet.
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	})
+	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, pkt)
+}
+
+func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv6MinimumSize + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -136,8 +145,8 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpName string
 		PayloadLength: uint16(header.UDPMinimumSize + len(payload)),
 		NextHeader:    uint8(udp.ProtocolNumber),
 		HopLimit:      65,
-		SrcAddr:       testV6Addr,
-		DstAddr:       stackV6Addr,
+		SrcAddr:       testSrcAddrV6,
+		DstAddr:       testDstAddrV6,
 	})
 
 	// Initialize the UDP header.
@@ -149,14 +158,17 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpName string
 	})
 
 	// Calculate the UDP pseudo-header checksum.
-	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, testV6Addr, stackV6Addr, uint16(len(u)))
+	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, testSrcAddrV6, testDstAddrV6, uint16(len(u)))
 
 	// Calculate the UDP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEPs[linkEpName].Inject(ipv6.ProtocolNumber, buf.ToVectorisedView())
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	})
+	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, pkt)
 }
 
 func TestTransportDemuxerRegister(t *testing.T) {
@@ -171,95 +183,105 @@ func TestTransportDemuxerRegister(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
-			if got, want := s.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{test.proto}, udp.ProtocolNumber, stack.TransportEndpointID{}, nil, false, 0), test.want; got != want {
-				t.Fatalf("s.RegisterTransportEndpoint(...) = %v, want %v", got, want)
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+			})
+			var wq waiter.Queue
+			ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tEP, ok := ep.(stack.TransportEndpoint)
+			if !ok {
+				t.Fatalf("%T does not implement stack.TransportEndpoint", ep)
+			}
+			if got, want := s.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{test.proto}, udp.ProtocolNumber, stack.TransportEndpointID{}, tEP, ports.Flags{}, 0), test.want; got != want {
+				t.Fatalf("s.RegisterTransportEndpoint(...) = %s, want %s", got, want)
 			}
 		})
 	}
 }
 
-// TestReuseBindToDevice injects varied packets on input devices and checks that
+// TestBindToDeviceDistribution injects varied packets on input devices and checks that
 // the distribution of packets received matches expectations.
-func TestDistribution(t *testing.T) {
+func TestBindToDeviceDistribution(t *testing.T) {
 	type endpointSockopts struct {
-		reuse        int
-		bindToDevice string
+		reuse        bool
+		bindToDevice tcpip.NICID
 	}
 	for _, test := range []struct {
 		name string
 		// endpoints will received the inject packets.
 		endpoints []endpointSockopts
-		// wantedDistribution is the wanted ratio of packets received on each
+		// wantDistributions is the want ratio of packets received on each
 		// endpoint for each NIC on which packets are injected.
-		wantedDistributions map[string][]float64
+		wantDistributions map[tcpip.NICID][]float64
 	}{
 		{
 			"BindPortReuse",
 			// 5 endpoints that all have reuse set.
 			[]endpointSockopts{
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
 			},
-			map[string][]float64{
+			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed evenly.
-				"dev0": []float64{0.2, 0.2, 0.2, 0.2, 0.2},
+				1: {0.2, 0.2, 0.2, 0.2, 0.2},
 			},
 		},
 		{
 			"BindToDevice",
 			// 3 endpoints with various bindings.
 			[]endpointSockopts{
-				endpointSockopts{0, "dev0"},
-				endpointSockopts{0, "dev1"},
-				endpointSockopts{0, "dev2"},
+				{reuse: false, bindToDevice: 1},
+				{reuse: false, bindToDevice: 2},
+				{reuse: false, bindToDevice: 3},
 			},
-			map[string][]float64{
+			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 go only to the endpoint bound to dev0.
-				"dev0": []float64{1, 0, 0},
+				1: {1, 0, 0},
 				// Injected packets on dev1 go only to the endpoint bound to dev1.
-				"dev1": []float64{0, 1, 0},
+				2: {0, 1, 0},
 				// Injected packets on dev2 go only to the endpoint bound to dev2.
-				"dev2": []float64{0, 0, 1},
+				3: {0, 0, 1},
 			},
 		},
 		{
 			"ReuseAndBindToDevice",
 			// 6 endpoints with various bindings.
 			[]endpointSockopts{
-				endpointSockopts{1, "dev0"},
-				endpointSockopts{1, "dev0"},
-				endpointSockopts{1, "dev1"},
-				endpointSockopts{1, "dev1"},
-				endpointSockopts{1, "dev1"},
-				endpointSockopts{1, ""},
+				{reuse: true, bindToDevice: 1},
+				{reuse: true, bindToDevice: 1},
+				{reuse: true, bindToDevice: 2},
+				{reuse: true, bindToDevice: 2},
+				{reuse: true, bindToDevice: 2},
+				{reuse: true, bindToDevice: 0},
 			},
-			map[string][]float64{
+			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed among endpoints bound to
 				// dev0.
-				"dev0": []float64{0.5, 0.5, 0, 0, 0, 0},
+				1: {0.5, 0.5, 0, 0, 0, 0},
 				// Injected packets on dev1 get distributed among endpoints bound to
 				// dev1 or unbound.
-				"dev1": []float64{0, 0, 1. / 3, 1. / 3, 1. / 3, 0},
+				2: {0, 0, 1. / 3, 1. / 3, 1. / 3, 0},
 				// Injected packets on dev999 go only to the unbound.
-				"dev999": []float64{0, 0, 0, 0, 0, 1},
+				1000: {0, 0, 0, 0, 0, 1},
 			},
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			for device, wantedDistribution := range test.wantedDistributions {
-				t.Run(device, func(t *testing.T) {
-					var devices []string
-					for d := range test.wantedDistributions {
+		for protoName, netProtoNum := range map[string]tcpip.NetworkProtocolNumber{
+			"IPv4": ipv4.ProtocolNumber,
+			"IPv6": ipv6.ProtocolNumber,
+		} {
+			for device, wantDistribution := range test.wantDistributions {
+				t.Run(test.name+protoName+string(device), func(t *testing.T) {
+					var devices []tcpip.NICID
+					for d := range test.wantDistributions {
 						devices = append(devices, d)
 					}
-					c := newDualTestContextMultiNic(t, defaultMTU, devices)
-					defer c.cleanup()
-
-					c.createV6Endpoint(false)
+					c := newDualTestContextMultiNIC(t, defaultMTU, devices)
 
 					eps := make(map[tcpip.Endpoint]int)
 
@@ -273,9 +295,9 @@ func TestDistribution(t *testing.T) {
 						defer close(ch)
 
 						var err *tcpip.Error
-						ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
+						ep, err := c.s.NewEndpoint(udp.ProtocolNumber, netProtoNum, &wq)
 						if err != nil {
-							c.t.Fatalf("NewEndpoint failed: %v", err)
+							t.Fatalf("NewEndpoint failed: %s", err)
 						}
 						eps[ep] = i
 
@@ -286,22 +308,31 @@ func TestDistribution(t *testing.T) {
 						}(ep)
 
 						defer ep.Close()
-						reusePortOption := tcpip.ReusePortOption(endpoint.reuse)
-						if err := ep.SetSockOpt(reusePortOption); err != nil {
-							c.t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %v", reusePortOption, i, err)
+						if err := ep.SetSockOptBool(tcpip.ReusePortOption, endpoint.reuse); err != nil {
+							t.Fatalf("SetSockOptBool(ReusePortOption, %t) on endpoint %d failed: %s", endpoint.reuse, i, err)
 						}
 						bindToDeviceOption := tcpip.BindToDeviceOption(endpoint.bindToDevice)
 						if err := ep.SetSockOpt(bindToDeviceOption); err != nil {
-							c.t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %v", bindToDeviceOption, i, err)
+							t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %s", bindToDeviceOption, i, err)
 						}
-						if err := ep.Bind(tcpip.FullAddress{Addr: stackV6Addr, Port: stackPort}); err != nil {
-							t.Fatalf("ep.Bind(...) on endpoint %d failed: %v", i, err)
+
+						var dstAddr tcpip.Address
+						switch netProtoNum {
+						case ipv4.ProtocolNumber:
+							dstAddr = testDstAddrV4
+						case ipv6.ProtocolNumber:
+							dstAddr = testDstAddrV6
+						default:
+							t.Fatalf("unexpected protocol number: %d", netProtoNum)
+						}
+						if err := ep.Bind(tcpip.FullAddress{Addr: dstAddr, Port: testDstPort}); err != nil {
+							t.Fatalf("ep.Bind(...) on endpoint %d failed: %s", i, err)
 						}
 					}
 
 					npackets := 100000
 					nports := 10000
-					if got, want := len(test.endpoints), len(wantedDistribution); got != want {
+					if got, want := len(test.endpoints), len(wantDistribution); got != want {
 						t.Fatalf("got len(test.endpoints) = %d, want %d", got, want)
 					}
 					ports := make(map[uint16]tcpip.Endpoint)
@@ -310,17 +341,22 @@ func TestDistribution(t *testing.T) {
 						// Send a packet.
 						port := uint16(i % nports)
 						payload := newPayload()
-						c.sendV6Packet(payload,
-							&headers{
-								srcPort: testPort + port,
-								dstPort: stackPort},
-							device)
+						hdrs := &headers{
+							srcPort: testSrcPort + port,
+							dstPort: testDstPort,
+						}
+						switch netProtoNum {
+						case ipv4.ProtocolNumber:
+							c.sendV4Packet(payload, hdrs, device)
+						case ipv6.ProtocolNumber:
+							c.sendV6Packet(payload, hdrs, device)
+						default:
+							t.Fatalf("unexpected protocol number: %d", netProtoNum)
+						}
 
-						var addr tcpip.FullAddress
 						ep := <-pollChannel
-						_, _, err := ep.Read(&addr)
-						if err != nil {
-							c.t.Fatalf("Read on endpoint %d failed: %v", eps[ep], err)
+						if _, _, err := ep.Read(nil); err != nil {
+							t.Fatalf("Read on endpoint %d failed: %s", eps[ep], err)
 						}
 						stats[ep]++
 						if i < nports {
@@ -336,17 +372,17 @@ func TestDistribution(t *testing.T) {
 
 					// Check that a packet distribution is as expected.
 					for ep, i := range eps {
-						wantedRatio := wantedDistribution[i]
-						wantedRecv := wantedRatio * float64(npackets)
+						wantRatio := wantDistribution[i]
+						wantRecv := wantRatio * float64(npackets)
 						actualRecv := stats[ep]
 						actualRatio := float64(stats[ep]) / float64(npackets)
 						// The deviation is less than 10%.
-						if math.Abs(actualRatio-wantedRatio) > 0.05 {
-							t.Errorf("wanted about %.0f%% (%.0f of %d) packets to arrive on endpoint %d, got %.0f%% (%d of %d)", wantedRatio*100, wantedRecv, npackets, i, actualRatio*100, actualRecv, npackets)
+						if math.Abs(actualRatio-wantRatio) > 0.05 {
+							t.Errorf("want about %.0f%% (%.0f of %d) packets to arrive on endpoint %d, got %.0f%% (%d of %d)", wantRatio*100, wantRecv, npackets, i, actualRatio*100, actualRecv, npackets)
 						}
 					}
 				})
 			}
-		})
+		}
 	}
 }

@@ -17,18 +17,12 @@
 package kvm
 
 import (
+	"syscall"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
-
-// bluepillArchContext returns the arch-specific context.
-//
-//go:nosplit
-func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
-	return &((*arch.UContext64)(context).MContext)
-}
 
 // dieArchSetup initializes the state for dieTrampoline.
 //
@@ -38,6 +32,12 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 //
 //go:nosplit
 func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
+	// Reload all registers to have an accurate stack trace when we return
+	// to host mode. This means that the stack should be unwound correctly.
+	if errno := c.getUserRegisters(&c.dieState.guestRegs); errno != 0 {
+		throw(c.dieState.message)
+	}
+
 	// If the vCPU is in user mode, we set the stack to the stored stack
 	// value in the vCPU itself. We don't want to unwind the user stack.
 	if guestRegs.RFLAGS&ring0.UserFlagsSet == ring0.UserFlagsSet {
@@ -53,4 +53,35 @@ func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 	}
 	context.Rbx = uint64(uintptr(unsafe.Pointer(c)))
 	context.Rip = uint64(dieTrampolineAddr)
+}
+
+// getHypercallID returns hypercall ID.
+//
+//go:nosplit
+func getHypercallID(addr uintptr) int {
+	return _KVM_HYPERCALL_MAX
+}
+
+// bluepillStopGuest is reponsible for injecting interrupt.
+//
+//go:nosplit
+func bluepillStopGuest(c *vCPU) {
+	// Interrupt: we must have requested an interrupt
+	// window; set the interrupt line.
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_INTERRUPT,
+		uintptr(unsafe.Pointer(&bounce))); errno != 0 {
+		throw("interrupt injection failed")
+	}
+	// Clear previous injection request.
+	c.runData.requestInterruptWindow = 0
+}
+
+// bluepillReadyStopGuest checks whether the current vCPU is ready for interrupt injection.
+//
+//go:nosplit
+func bluepillReadyStopGuest(c *vCPU) bool {
+	return c.runData.readyForInterruptInjection != 0
 }

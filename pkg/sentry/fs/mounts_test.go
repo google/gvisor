@@ -17,7 +17,7 @@ package fs_test
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
@@ -51,7 +51,7 @@ func TestFindLink(t *testing.T) {
 	}
 
 	root := mm.Root()
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 	foo, err := root.Walk(ctx, root, "foo")
 	if err != nil {
 		t.Fatalf("Error walking to foo: %v", err)

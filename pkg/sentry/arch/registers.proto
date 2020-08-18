@@ -48,8 +48,45 @@ message AMD64Registers {
   uint64 gs_base = 27;
 }
 
+message ARM64Registers {
+  uint64 r0 = 1;
+  uint64 r1 = 2;
+  uint64 r2 = 3;
+  uint64 r3 = 4;
+  uint64 r4 = 5;
+  uint64 r5 = 6;
+  uint64 r6 = 7;
+  uint64 r7 = 8;
+  uint64 r8 = 9;
+  uint64 r9 = 10;
+  uint64 r10 = 11;
+  uint64 r11 = 12;
+  uint64 r12 = 13;
+  uint64 r13 = 14;
+  uint64 r14 = 15;
+  uint64 r15 = 16;
+  uint64 r16 = 17;
+  uint64 r17 = 18;
+  uint64 r18 = 19;
+  uint64 r19 = 20;
+  uint64 r20 = 21;
+  uint64 r21 = 22;
+  uint64 r22 = 23;
+  uint64 r23 = 24;
+  uint64 r24 = 25;
+  uint64 r25 = 26;
+  uint64 r26 = 27;
+  uint64 r27 = 28;
+  uint64 r28 = 29;
+  uint64 r29 = 30;
+  uint64 r30 = 31;
+  uint64 sp = 32;
+  uint64 pc = 33;
+  uint64 pstate = 34;
+}
 message Registers {
   oneof arch {
     AMD64Registers amd64 = 1;
+    ARM64Registers arm64 = 2;
   }
 }

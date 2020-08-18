@@ -16,11 +16,11 @@
 #include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/time.h>
+
 #include <climits>
 #include <csignal>
 #include <cstdio>
 
-#include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/base_poll_test.h"
@@ -146,7 +146,7 @@ TEST_F(SelectTest, IgnoreBitsAboveNfds) {
 
 // This test illustrates Linux's behavior of 'select' calls passing after
 // setrlimit RLIMIT_NOFILE is called. In particular, versions of sshd rely on
-// this behavior.
+// this behavior. See b/122318458.
 TEST_F(SelectTest, SetrlimitCallNOFILE) {
   fd_set read_set;
   FD_ZERO(&read_set);

@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 // createConnectedWithSACKPermittedOption creates and connects c.ep with the
@@ -46,7 +47,7 @@ func createConnectedWithSACKAndTS(c *context.Context) *context.RawEndpoint {
 func setStackSACKPermitted(t *testing.T, c *context.Context, enable bool) {
 	t.Helper()
 	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(enable)); err != nil {
-		t.Fatalf("c.s.SetTransportProtocolOption(tcp.ProtocolNumber, SACKEnabled(%v) = %v", enable, err)
+		t.Fatalf("c.s.SetTransportProtocolOption(tcp.ProtocolNumber, SACKEnabled(%t) = %s", enable, err)
 	}
 }
 
@@ -149,21 +150,22 @@ func TestSackPermittedAccept(t *testing.T) {
 		{true, false, -1, 0xffff}, // When cookie is used window scaling is disabled.
 		{false, true, 5, 0x8000},  // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
 	}
-	savedSynCountThreshold := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = savedSynCountThreshold
-	}()
+
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("test: %#v", tc), func(t *testing.T) {
-			if tc.cookieEnabled {
-				tcp.SynRcvdCountThreshold = 0
-			} else {
-				tcp.SynRcvdCountThreshold = savedSynCountThreshold
-			}
 			for _, sackEnabled := range []bool{false, true} {
 				t.Run(fmt.Sprintf("test stack.sackEnabled: %v", sackEnabled), func(t *testing.T) {
 					c := context.New(t, defaultMTU)
 					defer c.Cleanup()
+
+					if tc.cookieEnabled {
+						// Set the SynRcvd threshold to
+						// zero to force a syn cookie
+						// based accept to happen.
+						if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+							t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+						}
+					}
 					setStackSACKPermitted(t, c, sackEnabled)
 
 					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, SACKPermitted: tc.sackPermitted})
@@ -222,21 +224,23 @@ func TestSackDisabledAccept(t *testing.T) {
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
 		{false, 5, 0x8000}, // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
 	}
-	savedSynCountThreshold := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = savedSynCountThreshold
-	}()
+
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("test: %#v", tc), func(t *testing.T) {
-			if tc.cookieEnabled {
-				tcp.SynRcvdCountThreshold = 0
-			} else {
-				tcp.SynRcvdCountThreshold = savedSynCountThreshold
-			}
 			for _, sackEnabled := range []bool{false, true} {
 				t.Run(fmt.Sprintf("test: sackEnabled: %v", sackEnabled), func(t *testing.T) {
 					c := context.New(t, defaultMTU)
 					defer c.Cleanup()
+
+					if tc.cookieEnabled {
+						// Set the SynRcvd threshold to
+						// zero to force a syn cookie
+						// based accept to happen.
+						if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+							t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+						}
+					}
+
 					setStackSACKPermitted(t, c, sackEnabled)
 
 					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
@@ -387,7 +391,7 @@ func TestSACKRecovery(t *testing.T) {
 	setStackSACKPermitted(t, c, true)
 	createConnectedWithSACKAndTS(c)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 	for i := range data {
 		data[i] = byte(i)
@@ -396,7 +400,7 @@ func TestSACKRecovery(t *testing.T) {
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 
 	// Do slow start for a few iterations.
@@ -436,21 +440,28 @@ func TestSACKRecovery(t *testing.T) {
 	// Receive the retransmitted packet.
 	c.ReceiveAndCheckPacketWithOptions(data, rtxOffset, maxPayload, tsOptionSize)
 
-	tcpStats := c.Stack().Stats().TCP
-	stats := []struct {
-		stat *tcpip.StatCounter
-		name string
-		want uint64
-	}{
-		{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
-		{tcpStats.Retransmits, "stats.TCP.Retransmits", 1},
-		{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
-		{tcpStats.FastRecovery, "stats.TCP.FastRecovery", 0},
-	}
-	for _, s := range stats {
-		if got, want := s.stat.Value(), s.want; got != want {
-			t.Errorf("got %s.Value() = %v, want = %v", s.name, got, want)
+	metricPollFn := func() error {
+		tcpStats := c.Stack().Stats().TCP
+		stats := []struct {
+			stat *tcpip.StatCounter
+			name string
+			want uint64
+		}{
+			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
+			{tcpStats.Retransmits, "stats.TCP.Retransmits", 1},
+			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
+			{tcpStats.FastRecovery, "stats.TCP.FastRecovery", 0},
 		}
+		for _, s := range stats {
+			if got, want := s.stat.Value(), s.want; got != want {
+				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			}
+		}
+		return nil
+	}
+
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 
 	// Now send 7 mode duplicate ACKs. In SACK TCP dupAcks do not cause
@@ -514,14 +525,28 @@ func TestSACKRecovery(t *testing.T) {
 		bytesRead += maxPayload
 	}
 
-	// In SACK recovery only the first segment is fast retransmitted when
-	// entering recovery.
-	if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
-	}
+	metricPollFn = func() error {
+		// In SACK recovery only the first segment is fast retransmitted when
+		// entering recovery.
+		if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.FastRetransmit.Value = %d, want = %d", got, want)
+		}
 
-	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(4); got != want {
-		t.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
+		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.FastRetransmit.Value(), uint64(1); got != want {
+			return fmt.Errorf("got EP stats SendErrors.FastRetransmit = %d, want = %d", got, want)
+		}
+
+		if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(4); got != want {
+			return fmt.Errorf("got stats.TCP.Retransmits.Value = %d, want = %d", got, want)
+		}
+
+		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Retransmits.Value(), uint64(4); got != want {
+			return fmt.Errorf("got EP stats Stats.SendErrors.Retransmits = %d, want = %d", got, want)
+		}
+		return nil
+	}
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 
 	c.CheckNoPacketTimeout("More packets received than expected during recovery after partial ack for this cwnd.", 50*time.Millisecond)

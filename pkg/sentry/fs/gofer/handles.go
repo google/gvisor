@@ -17,14 +17,14 @@ package gofer
 import (
 	"io"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/secio"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
 )
 
 // handles are the open handles of a gofer file. They are reference counted to
@@ -39,24 +39,32 @@ type handles struct {
 
 	// Host is an *fd.FD handle. May be nil.
 	Host *fd.FD
+
+	// isHostBorrowed tells whether 'Host' is owned or borrowed. If owned, it's
+	// closed on destruction, otherwise it's released.
+	isHostBorrowed bool
 }
 
 // DecRef drops a reference on handles.
 func (h *handles) DecRef() {
-	h.DecRefWithDestructor(func() {
+	ctx := context.Background()
+	h.DecRefWithDestructor(ctx, func(context.Context) {
 		if h.Host != nil {
-			if err := h.Host.Close(); err != nil {
-				log.Warningf("error closing host file: %v", err)
+			if h.isHostBorrowed {
+				h.Host.Release()
+			} else {
+				if err := h.Host.Close(); err != nil {
+					log.Warningf("error closing host file: %v", err)
+				}
 			}
 		}
-		// FIXME(b/38173783): Context is not plumbed here.
-		if err := h.File.close(context.Background()); err != nil {
+		if err := h.File.close(ctx); err != nil {
 			log.Warningf("error closing p9 file: %v", err)
 		}
 	})
 }
 
-func newHandles(ctx context.Context, file contextFile, flags fs.FileFlags) (*handles, error) {
+func newHandles(ctx context.Context, client *p9.Client, file contextFile, flags fs.FileFlags) (*handles, error) {
 	_, newFile, err := file.walk(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -72,6 +80,9 @@ func newHandles(ctx context.Context, file contextFile, flags fs.FileFlags) (*han
 		p9flags = p9.WriteOnly
 	default:
 		panic("impossible fs.FileFlags")
+	}
+	if flags.Truncate && p9.VersionSupportsOpenTruncateFlag(client.Version()) {
+		p9flags |= p9.OpenTruncate
 	}
 
 	hostFile, _, _, err := newFile.open(ctx, p9flags)

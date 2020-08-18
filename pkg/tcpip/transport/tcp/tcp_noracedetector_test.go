@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 func TestFastRecovery(t *testing.T) {
@@ -40,7 +41,7 @@ func TestFastRecovery(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 	for i := range data {
 		data[i] = byte(i)
@@ -49,7 +50,7 @@ func TestFastRecovery(t *testing.T) {
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 
 	// Do slow start for a few iterations.
@@ -86,16 +87,23 @@ func TestFastRecovery(t *testing.T) {
 	// Receive the retransmitted packet.
 	c.ReceiveAndCheckPacket(data, rtxOffset, maxPayload)
 
-	if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
+	// Wait before checking metrics.
+	metricPollFn := func() error {
+		if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.FastRetransmit.Value = %d, want = %d", got, want)
+		}
+		if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.Retransmit.Value = %d, want = %d", got, want)
+		}
+
+		if got, want := c.Stack().Stats().TCP.FastRecovery.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.FastRecovery.Value = %d, want = %d", got, want)
+		}
+		return nil
 	}
 
-	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.Retransmit.Value = %v, want = %v", got, want)
-	}
-
-	if got, want := c.Stack().Stats().TCP.FastRecovery.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.FastRecovery.Value = %v, want = %v", got, want)
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 
 	// Now send 7 mode duplicate acks. Each of these should cause a window
@@ -117,12 +125,18 @@ func TestFastRecovery(t *testing.T) {
 	// Receive the retransmit due to partial ack.
 	c.ReceiveAndCheckPacket(data, rtxOffset, maxPayload)
 
-	if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(2); got != want {
-		t.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
+	// Wait before checking metrics.
+	metricPollFn = func() error {
+		if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(2); got != want {
+			return fmt.Errorf("got stats.TCP.FastRetransmit.Value = %d, want = %d", got, want)
+		}
+		if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(2); got != want {
+			return fmt.Errorf("got stats.TCP.Retransmit.Value = %d, want = %d", got, want)
+		}
+		return nil
 	}
-
-	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(2); got != want {
-		t.Errorf("got stats.TCP.Retransmit.Value = %v, want = %v", got, want)
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 
 	// Receive the 10 extra packets that should have been released due to
@@ -192,7 +206,7 @@ func TestExponentialIncreaseDuringSlowStart(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 	for i := range data {
 		data[i] = byte(i)
@@ -201,7 +215,7 @@ func TestExponentialIncreaseDuringSlowStart(t *testing.T) {
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 
 	expected := tcp.InitialCwnd
@@ -234,7 +248,7 @@ func TestCongestionAvoidance(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 	for i := range data {
 		data[i] = byte(i)
@@ -243,7 +257,7 @@ func TestCongestionAvoidance(t *testing.T) {
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 
 	// Do slow start for a few iterations.
@@ -338,7 +352,7 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 
 	for i := range data {
@@ -348,7 +362,7 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 
 	// Do slow start for a few iterations.
@@ -447,7 +461,7 @@ func TestRetransmit(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 	for i := range data {
 		data[i] = byte(i)
@@ -457,11 +471,11 @@ func TestRetransmit(t *testing.T) {
 	// MTU size though.
 	half := data[:len(data)/2]
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 	half = data[len(data)/2:]
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 
 	// Do slow start for a few iterations.
@@ -492,16 +506,33 @@ func TestRetransmit(t *testing.T) {
 	rtxOffset := bytesRead - maxPayload*expected
 	c.ReceiveAndCheckPacket(data, rtxOffset, maxPayload)
 
-	if got, want := c.Stack().Stats().TCP.Timeouts.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.Timeouts.Value = %v, want = %v", got, want)
+	metricPollFn := func() error {
+		if got, want := c.Stack().Stats().TCP.Timeouts.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.Timeouts.Value = %d, want = %d", got, want)
+		}
+
+		if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.Retransmits.Value = %d, want = %d", got, want)
+		}
+
+		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Timeouts.Value(), uint64(1); got != want {
+			return fmt.Errorf("got EP SendErrors.Timeouts.Value = %d, want = %d", got, want)
+		}
+
+		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Retransmits.Value(), uint64(1); got != want {
+			return fmt.Errorf("got EP stats SendErrors.Retransmits.Value = %d, want = %d", got, want)
+		}
+
+		if got, want := c.Stack().Stats().TCP.SlowStartRetransmits.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.SlowStartRetransmits.Value = %d, want = %d", got, want)
+		}
+
+		return nil
 	}
 
-	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
-	}
-
-	if got, want := c.Stack().Stats().TCP.SlowStartRetransmits.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.SlowStartRetransmits.Value = %v, want = %v", got, want)
+	// Poll when checking metrics.
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 
 	// Acknowledge half of the pending data.

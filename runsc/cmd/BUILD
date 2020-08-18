@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -31,10 +31,10 @@ go_library(
         "spec.go",
         "start.go",
         "state.go",
+        "statefile.go",
         "syscalls.go",
         "wait.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/cmd",
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -44,17 +44,21 @@ go_library(
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/platform",
+        "//pkg/state/pretty",
+        "//pkg/state/statefile",
+        "//pkg/sync",
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
-        "//runsc/boot/platforms",
         "//runsc/console",
         "//runsc/container",
+        "//runsc/flag",
         "//runsc/fsgofer",
         "//runsc/fsgofer/filter",
         "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
-        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -72,20 +76,20 @@ go_test(
     data = [
         "//runsc",
     ],
-    embed = [":cmd"],
+    library = ":cmd",
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
+        "//pkg/test/testutil",
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/container",
         "//runsc/specutils",
-        "//runsc/testutil",
-        "@com_github_google_go-cmp//cmp:go_default_library",
-        "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
-        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
     ],
 )

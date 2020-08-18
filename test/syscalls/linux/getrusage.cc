@@ -67,7 +67,7 @@ TEST(GetrusageTest, Grandchild) {
     pid = fork();
     if (pid == 0) {
       int flags = MAP_ANONYMOUS | MAP_POPULATE | MAP_PRIVATE;
-      void *addr =
+      void* addr =
           mmap(nullptr, kGrandchildSizeKb * 1024, PROT_WRITE, flags, -1, 0);
       TEST_PCHECK(addr != MAP_FAILED);
     } else {

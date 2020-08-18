@@ -16,62 +16,85 @@ package boot
 
 import (
 	"fmt"
+	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/strace"
 )
 
-// reportLimit is the max number of events that should be reported per tracker.
-const reportLimit = 100
+const (
+	// reportLimit is the max number of events that should be reported per
+	// tracker.
+	reportLimit = 100
+	syscallLink = "https://gvisor.dev/c/linux/amd64"
+)
 
-// argsTracker reports only once for each different combination of arguments.
-// It's used for generic syscalls like ioctl to report once per 'cmd'.
-type argsTracker struct {
-	// argsIdx is the syscall arguments to use as unique ID.
-	argsIdx  []int
-	reported map[string]struct{}
-	count    int
-}
-
-func newArgsTracker(argIdx ...int) *argsTracker {
-	return &argsTracker{argsIdx: argIdx, reported: make(map[string]struct{})}
-}
-
-// cmd returns the command based on the syscall argument index.
-func (a *argsTracker) key(regs *rpb.AMD64Registers) string {
-	var rv string
-	for _, idx := range a.argsIdx {
-		rv += fmt.Sprintf("%d|", argVal(idx, regs))
+// newRegs create a empty Registers instance.
+func newRegs() *rpb.Registers {
+	return &rpb.Registers{
+		Arch: &rpb.Registers_Amd64{
+			Amd64: &rpb.AMD64Registers{},
+		},
 	}
-	return rv
 }
 
-func argVal(argIdx int, regs *rpb.AMD64Registers) uint32 {
+func argVal(argIdx int, regs *rpb.Registers) uint64 {
+	amd64Regs := regs.GetArch().(*rpb.Registers_Amd64).Amd64
+
 	switch argIdx {
 	case 0:
-		return uint32(regs.Rdi)
+		return amd64Regs.Rdi
 	case 1:
-		return uint32(regs.Rsi)
+		return amd64Regs.Rsi
 	case 2:
-		return uint32(regs.Rdx)
+		return amd64Regs.Rdx
 	case 3:
-		return uint32(regs.R10)
+		return amd64Regs.R10
 	case 4:
-		return uint32(regs.R8)
+		return amd64Regs.R8
 	case 5:
-		return uint32(regs.R9)
+		return amd64Regs.R9
 	}
 	panic(fmt.Sprintf("invalid syscall argument index %d", argIdx))
 }
 
-func (a *argsTracker) shouldReport(regs *rpb.AMD64Registers) bool {
-	if a.count >= reportLimit {
-		return false
+func setArgVal(argIdx int, argVal uint64, regs *rpb.Registers) {
+	amd64Regs := regs.GetArch().(*rpb.Registers_Amd64).Amd64
+
+	switch argIdx {
+	case 0:
+		amd64Regs.Rdi = argVal
+	case 1:
+		amd64Regs.Rsi = argVal
+	case 2:
+		amd64Regs.Rdx = argVal
+	case 3:
+		amd64Regs.R10 = argVal
+	case 4:
+		amd64Regs.R8 = argVal
+	case 5:
+		amd64Regs.R9 = argVal
+	default:
+		panic(fmt.Sprintf("invalid syscall argument index %d", argIdx))
 	}
-	_, ok := a.reported[a.key(regs)]
-	return !ok
 }
 
-func (a *argsTracker) onReported(regs *rpb.AMD64Registers) {
-	a.count++
-	a.reported[a.key(regs)] = struct{}{}
+func getSyscallNameMap() (strace.SyscallMap, bool) {
+	return strace.Lookup(abi.Linux, arch.AMD64)
+}
+
+func syscallNum(regs *rpb.Registers) uint64 {
+	amd64Regs := regs.GetArch().(*rpb.Registers_Amd64).Amd64
+	return amd64Regs.OrigRax
+}
+
+func newArchArgsTracker(sysnr uint64) syscallTracker {
+	switch sysnr {
+	case syscall.SYS_ARCH_PRCTL:
+		// args: cmd, ...
+		return newArgsTracker(0)
+	}
+	return nil
 }

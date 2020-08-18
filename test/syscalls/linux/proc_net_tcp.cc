@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_join.h"

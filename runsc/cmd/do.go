@@ -27,12 +27,12 @@ import (
 	"strings"
 	"syscall"
 
-	"flag"
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -166,15 +166,33 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		return Errorf("Error write spec: %v", err)
 	}
 
-	runArgs := container.Args{
+	containerArgs := container.Args{
 		ID:        cid,
 		Spec:      spec,
 		BundleDir: tmpDir,
 		Attached:  true,
 	}
-	ws, err := container.Run(conf, runArgs)
+	ct, err := container.New(conf, containerArgs)
 	if err != nil {
-		return Errorf("running container: %v", err)
+		return Errorf("creating container: %v", err)
+	}
+	defer ct.Destroy()
+
+	if err := ct.Start(conf); err != nil {
+		return Errorf("starting container: %v", err)
+	}
+
+	// Forward signals to init in the container. Thus if we get SIGINT from
+	// ^C, the container gracefully exit, and we can clean up.
+	//
+	// N.B. There is a still a window before this where a signal may kill
+	// this process, skipping cleanup.
+	stopForwarding := ct.ForwardSignals(0 /* pid */, false /* fgProcess */)
+	defer stopForwarding()
+
+	ws, err := ct.Wait()
+	if err != nil {
+		return Errorf("waiting for container: %v", err)
 	}
 
 	*waitStatus = ws
@@ -237,20 +255,27 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	for _, cmd := range cmds {
 		log.Debugf("Run %q", cmd)
 		args := strings.Split(cmd, " ")
-		c := exec.Command(args[0], args[1:]...)
-		if err := c.Run(); err != nil {
+		cmd := exec.Command(args[0], args[1:]...)
+		if err := cmd.Run(); err != nil {
+			c.cleanupNet(cid, dev, "", "", "")
 			return nil, fmt.Errorf("failed to run %q: %v", cmd, err)
 		}
 	}
 
-	if err := makeFile("/etc/resolv.conf", "nameserver 8.8.8.8\n", spec); err != nil {
+	resolvPath, err := makeFile("/etc/resolv.conf", "nameserver 8.8.8.8\n", spec)
+	if err != nil {
+		c.cleanupNet(cid, dev, "", "", "")
 		return nil, err
 	}
-	if err := makeFile("/etc/hostname", cid+"\n", spec); err != nil {
+	hostnamePath, err := makeFile("/etc/hostname", cid+"\n", spec)
+	if err != nil {
+		c.cleanupNet(cid, dev, resolvPath, "", "")
 		return nil, err
 	}
 	hosts := fmt.Sprintf("127.0.0.1\tlocalhost\n%s\t%s\n", c.ip, cid)
-	if err := makeFile("/etc/hosts", hosts, spec); err != nil {
+	hostsPath, err := makeFile("/etc/hosts", hosts, spec)
+	if err != nil {
+		c.cleanupNet(cid, dev, resolvPath, hostnamePath, "")
 		return nil, err
 	}
 
@@ -263,19 +288,22 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	}
 	spec.Linux.Namespaces = append(spec.Linux.Namespaces, netns)
 
-	return func() { c.cleanNet(cid, dev) }, nil
+	return func() { c.cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath) }, nil
 }
 
-func (c *Do) cleanNet(cid, dev string) {
-	veth, peer := deviceNames(cid)
+// cleanupNet tries to cleanup the network setup in setupNet.
+//
+// It may be called when setupNet is only partially complete, in which case it
+// will cleanup as much as possible, logging warnings for the rest.
+//
+// Unfortunately none of this can be automatically cleaned up on process exit,
+// we must do so explicitly.
+func (c *Do) cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath string) {
+	_, peer := deviceNames(cid)
 
 	cmds := []string{
 		fmt.Sprintf("ip link delete %s", peer),
 		fmt.Sprintf("ip netns delete %s", cid),
-
-		fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s/24 -o %s -j MASQUERADE", c.ip, dev),
-		fmt.Sprintf("iptables -D FORWARD -i %s -o %s -j ACCEPT", dev, veth),
-		fmt.Sprintf("iptables -D FORWARD -o %s -i %s -j ACCEPT", dev, veth),
 	}
 
 	for _, cmd := range cmds {
@@ -286,6 +314,10 @@ func (c *Do) cleanNet(cid, dev string) {
 			log.Warningf("Failed to run %q: %v", cmd, err)
 		}
 	}
+
+	tryRemove(resolvPath)
+	tryRemove(hostnamePath)
+	tryRemove(hostsPath)
 }
 
 func deviceNames(cid string) (string, string) {
@@ -306,13 +338,16 @@ func defaultDevice() (string, error) {
 	return parts[4], nil
 }
 
-func makeFile(dest, content string, spec *specs.Spec) error {
+func makeFile(dest, content string, spec *specs.Spec) (string, error) {
 	tmpFile, err := ioutil.TempFile("", filepath.Base(dest))
 	if err != nil {
-		return err
+		return "", err
 	}
 	if _, err := tmpFile.WriteString(content); err != nil {
-		return err
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			log.Warningf("Failed to remove %q: %v", tmpFile, err)
+		}
+		return "", err
 	}
 	spec.Mounts = append(spec.Mounts, specs.Mount{
 		Source:      tmpFile.Name(),
@@ -320,7 +355,17 @@ func makeFile(dest, content string, spec *specs.Spec) error {
 		Type:        "bind",
 		Options:     []string{"ro"},
 	})
-	return nil
+	return tmpFile.Name(), nil
+}
+
+func tryRemove(path string) {
+	if path == "" {
+		return
+	}
+
+	if err := os.Remove(path); err != nil {
+		log.Warningf("Failed to remove %q: %v", path, err)
+	}
 }
 
 func calculatePeerIP(ip string) (string, error) {

@@ -15,7 +15,7 @@
 package time
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 )
 
 // contextID is the time package's type for context.Context.Value keys.

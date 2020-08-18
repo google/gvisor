@@ -44,13 +44,8 @@ func (lockSetFunctions) Merge(r1 LockRange, val1 Lock, r2 LockRange, val2 Lock) 
 			return Lock{}, false
 		}
 	}
-	if val1.HasWriter != val2.HasWriter {
+	if val1.Writer != val2.Writer {
 		return Lock{}, false
-	}
-	if val1.HasWriter {
-		if val1.Writer != val2.Writer {
-			return Lock{}, false
-		}
 	}
 	return val1, true
 }
@@ -62,7 +57,6 @@ func (lockSetFunctions) Split(r LockRange, val Lock, split uint64) (Lock, Lock) 
 	for k, v := range val.Readers {
 		val0.Readers[k] = v
 	}
-	val0.HasWriter = val.HasWriter
 	val0.Writer = val.Writer
 
 	return val, val0

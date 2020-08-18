@@ -15,6 +15,11 @@
 // Package buffer provides the implementation of a buffer view.
 package buffer
 
+import (
+	"bytes"
+	"io"
+)
+
 // View is a slice of a buffer, with convenience methods.
 type View []byte
 
@@ -45,9 +50,29 @@ func (v *View) CapLength(length int) {
 	*v = (*v)[:length:length]
 }
 
+// Reader returns a bytes.Reader for v.
+func (v *View) Reader() bytes.Reader {
+	var r bytes.Reader
+	r.Reset(*v)
+	return r
+}
+
 // ToVectorisedView returns a VectorisedView containing the receiver.
 func (v View) ToVectorisedView() VectorisedView {
+	if len(v) == 0 {
+		return VectorisedView{}
+	}
 	return NewVectorisedView(len(v), []View{v})
+}
+
+// IsEmpty returns whether v is of length zero.
+func (v View) IsEmpty() bool {
+	return len(v) == 0
+}
+
+// Size returns the length of v.
+func (v View) Size() int {
+	return len(v)
 }
 
 // VectorisedView is a vectorised version of View using non contiguous memory.
@@ -65,7 +90,8 @@ func NewVectorisedView(size int, views []View) VectorisedView {
 	return VectorisedView{views: views, size: size}
 }
 
-// TrimFront removes the first "count" bytes of the vectorised view.
+// TrimFront removes the first "count" bytes of the vectorised view. It panics
+// if count > vv.Size().
 func (vv *VectorisedView) TrimFront(count int) {
 	for count > 0 && len(vv.views) > 0 {
 		if count < len(vv.views[0]) {
@@ -74,8 +100,49 @@ func (vv *VectorisedView) TrimFront(count int) {
 			return
 		}
 		count -= len(vv.views[0])
-		vv.RemoveFirst()
+		vv.removeFirst()
 	}
+}
+
+// Read implements io.Reader.
+func (vv *VectorisedView) Read(v View) (copied int, err error) {
+	count := len(v)
+	for count > 0 && len(vv.views) > 0 {
+		if count < len(vv.views[0]) {
+			vv.size -= count
+			copy(v[copied:], vv.views[0][:count])
+			vv.views[0].TrimFront(count)
+			copied += count
+			return copied, nil
+		}
+		count -= len(vv.views[0])
+		copy(v[copied:], vv.views[0])
+		copied += len(vv.views[0])
+		vv.removeFirst()
+	}
+	if copied == 0 {
+		return 0, io.EOF
+	}
+	return copied, nil
+}
+
+// ReadToVV reads up to n bytes from vv to dstVV and removes them from vv. It
+// returns the number of bytes copied.
+func (vv *VectorisedView) ReadToVV(dstVV *VectorisedView, count int) (copied int) {
+	for count > 0 && len(vv.views) > 0 {
+		if count < len(vv.views[0]) {
+			vv.size -= count
+			dstVV.AppendView(vv.views[0][:count])
+			vv.views[0].TrimFront(count)
+			copied += count
+			return
+		}
+		count -= len(vv.views[0])
+		dstVV.AppendView(vv.views[0])
+		copied += len(vv.views[0])
+		vv.removeFirst()
+	}
+	return copied
 }
 
 // CapLength irreversibly reduces the length of the vectorised view.
@@ -105,29 +172,45 @@ func (vv *VectorisedView) CapLength(length int) {
 // Clone returns a clone of this VectorisedView.
 // If the buffer argument is large enough to contain all the Views of this VectorisedView,
 // the method will avoid allocations and use the buffer to store the Views of the clone.
-func (vv VectorisedView) Clone(buffer []View) VectorisedView {
+func (vv *VectorisedView) Clone(buffer []View) VectorisedView {
 	return VectorisedView{views: append(buffer[:0], vv.views...), size: vv.size}
 }
 
-// First returns the first view of the vectorised view.
-func (vv VectorisedView) First() View {
+// PullUp returns the first "count" bytes of the vectorised view. If those
+// bytes aren't already contiguous inside the vectorised view, PullUp will
+// reallocate as needed to make them contiguous. PullUp fails and returns false
+// when count > vv.Size().
+func (vv *VectorisedView) PullUp(count int) (View, bool) {
 	if len(vv.views) == 0 {
-		return nil
+		return nil, count == 0
 	}
-	return vv.views[0]
-}
+	if count <= len(vv.views[0]) {
+		return vv.views[0][:count], true
+	}
+	if count > vv.size {
+		return nil, false
+	}
 
-// RemoveFirst removes the first view of the vectorised view.
-func (vv *VectorisedView) RemoveFirst() {
-	if len(vv.views) == 0 {
-		return
+	newFirst := NewView(count)
+	i := 0
+	for offset := 0; offset < count; i++ {
+		copy(newFirst[offset:], vv.views[i])
+		if count-offset < len(vv.views[i]) {
+			vv.views[i].TrimFront(count - offset)
+			break
+		}
+		offset += len(vv.views[i])
+		vv.views[i] = nil
 	}
-	vv.size -= len(vv.views[0])
-	vv.views = vv.views[1:]
+	// We're guaranteed that i > 0, since count is too large for the first
+	// view.
+	vv.views[i-1] = newFirst
+	vv.views = vv.views[i-1:]
+	return newFirst, true
 }
 
 // Size returns the size in bytes of the entire content stored in the vectorised view.
-func (vv VectorisedView) Size() int {
+func (vv *VectorisedView) Size() int {
 	return vv.size
 }
 
@@ -135,7 +218,7 @@ func (vv VectorisedView) Size() int {
 //
 // If the vectorised view contains a single view, that view will be returned
 // directly.
-func (vv VectorisedView) ToView() View {
+func (vv *VectorisedView) ToView() View {
 	if len(vv.views) == 1 {
 		return vv.views[0]
 	}
@@ -147,7 +230,7 @@ func (vv VectorisedView) ToView() View {
 }
 
 // Views returns the slice containing the all views.
-func (vv VectorisedView) Views() []View {
+func (vv *VectorisedView) Views() []View {
 	return vv.views
 }
 
@@ -155,4 +238,29 @@ func (vv VectorisedView) Views() []View {
 func (vv *VectorisedView) Append(vv2 VectorisedView) {
 	vv.views = append(vv.views, vv2.views...)
 	vv.size += vv2.size
+}
+
+// AppendView appends the given view into this vectorised view.
+func (vv *VectorisedView) AppendView(v View) {
+	if len(v) == 0 {
+		return
+	}
+	vv.views = append(vv.views, v)
+	vv.size += len(v)
+}
+
+// Readers returns a bytes.Reader for each of vv's views.
+func (vv *VectorisedView) Readers() []bytes.Reader {
+	readers := make([]bytes.Reader, 0, len(vv.views))
+	for _, v := range vv.views {
+		readers = append(readers, v.Reader())
+	}
+	return readers
+}
+
+// removeFirst panics when len(vv.views) < 1.
+func (vv *VectorisedView) removeFirst() {
+	vv.size -= len(vv.views[0])
+	vv.views[0] = nil
+	vv.views = vv.views[1:]
 }

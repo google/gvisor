@@ -1,9 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "fs",
@@ -45,18 +43,17 @@ go_library(
         "splice.go",
         "sync.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
         "//pkg/secio",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
@@ -67,11 +64,11 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/state",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
-        "//third_party/gvsync",
     ],
 )
 
@@ -110,13 +107,14 @@ go_test(
     ],
     deps = [
         ":fs",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/contexttest",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -129,9 +127,9 @@ go_test(
         "mount_test.go",
         "path_test.go",
     ],
-    embed = [":fs"],
+    library = ":fs",
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
     ],
 )

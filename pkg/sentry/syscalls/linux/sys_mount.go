@@ -19,8 +19,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Mount implements Linux syscall mount(2).
@@ -115,7 +115,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}); err != nil {
 		// Something went wrong. Drop our ref on rootInode before
 		// returning the error.
-		rootInode.DecRef()
+		rootInode.DecRef(t)
 		return 0, nil, err
 	}
 

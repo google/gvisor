@@ -1,9 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
     name = "waiter_list",
@@ -23,15 +21,15 @@ go_library(
         "semaphore.go",
         "waiter_list.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/semaphore",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
+        "//pkg/sync",
         "//pkg/syserror",
     ],
 )
@@ -40,11 +38,11 @@ go_test(
     name = "semaphore_test",
     size = "small",
     srcs = ["semaphore_test.go"],
-    embed = [":semaphore"],
+    library = ":semaphore",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
         "//pkg/syserror",
     ],

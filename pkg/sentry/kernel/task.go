@@ -15,13 +15,14 @@
 package kernel
 
 import (
-	"sync"
+	gocontext "context"
+	"runtime/trace"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -34,9 +35,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
-	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // Task represents a thread of execution in the untrusted app.  It
@@ -65,6 +68,21 @@ type Task struct {
 	// runState is exclusive to the task goroutine.
 	runState taskRunState
 
+	// taskWorkCount represents the current size of the task work queue. It is
+	// used to avoid acquiring taskWorkMu when the queue is empty.
+	//
+	// Must accessed with atomic memory operations.
+	taskWorkCount int32
+
+	// taskWorkMu protects taskWork.
+	taskWorkMu sync.Mutex `state:"nosave"`
+
+	// taskWork is a queue of work to be executed before resuming user execution.
+	// It is similar to the task_work mechanism in Linux.
+	//
+	// taskWork is exclusive to the task goroutine.
+	taskWork []TaskWorker
+
 	// haveSyscallReturn is true if tc.Arch().Return() represents a value
 	// returned by a syscall (or set by ptrace after a syscall).
 	//
@@ -83,7 +101,7 @@ type Task struct {
 	//
 	// gosched is protected by goschedSeq. gosched is owned by the task
 	// goroutine.
-	goschedSeq gvsync.SeqCount `state:"nosave"`
+	goschedSeq sync.SeqCount `state:"nosave"`
 	gosched    TaskGoroutineSchedInfo
 
 	// yieldCount is the number of times the task goroutine has called
@@ -390,7 +408,14 @@ type Task struct {
 
 	// logPrefix is a string containing the task's thread ID in the root PID
 	// namespace, and is prepended to log messages emitted by Task.Infof etc.
-	logPrefix atomic.Value `state:".(string)"`
+	logPrefix atomic.Value `state:"nosave"`
+
+	// traceContext and traceTask are both used for tracing, and are
+	// updated along with the logPrefix in updateInfoLocked.
+	//
+	// These are exclusive to the task goroutine.
+	traceContext gocontext.Context `state:"nosave"`
+	traceTask    *trace.Task       `state:"nosave"`
 
 	// creds is the task's credentials.
 	//
@@ -414,6 +439,11 @@ type Task struct {
 	//
 	// abstractSockets is protected by mu.
 	abstractSockets *AbstractSocketNamespace
+
+	// mountNamespaceVFS2 is the task's mount namespace.
+	//
+	// It is protected by mu. It is owned by the task goroutine.
+	mountNamespaceVFS2 *vfs.MountNamespace
 
 	// parentDeathSignal is sent to this task's thread group when its parent exits.
 	//
@@ -469,29 +499,51 @@ type Task struct {
 	// bit.
 	//
 	// numaPolicy and numaNodeMask are protected by mu.
-	numaPolicy   int32
+	numaPolicy   linux.NumaPolicy
 	numaNodeMask uint64
 
-	// If netns is true, the task is in a non-root network namespace. Network
-	// namespaces aren't currently implemented in full; being in a network
-	// namespace simply prevents the task from observing any network devices
-	// (including loopback) or using abstract socket addresses (see unix(7)).
+	// netns is the task's network namespace. netns is never nil.
 	//
-	// netns is protected by mu. netns is owned by the task goroutine.
-	netns bool
+	// netns is protected by mu.
+	netns *inet.Namespace
 
-	// If rseqPreempted is true, before the next call to p.Switch(), interrupt
-	// RSEQ critical regions as defined by tg.rseq and write the task
-	// goroutine's CPU number to rseqCPUAddr. rseqCPU is the last CPU number
-	// written to rseqCPUAddr.
+	// If rseqPreempted is true, before the next call to p.Switch(),
+	// interrupt rseq critical regions as defined by rseqAddr and
+	// tg.oldRSeqCritical and write the task goroutine's CPU number to
+	// rseqAddr/oldRSeqCPUAddr.
 	//
-	// If rseqCPUAddr is 0, rseqCPU is -1.
+	// We support two ABIs for restartable sequences:
 	//
-	// rseqCPUAddr, rseqCPU, and rseqPreempted are exclusive to the task
-	// goroutine.
+	//  1. The upstream interface added in v4.18,
+	//  2. An "old" interface never merged upstream. In the implementation,
+	//     this is referred to as "old rseq".
+	//
+	// rseqPreempted is exclusive to the task goroutine.
 	rseqPreempted bool `state:"nosave"`
-	rseqCPUAddr   usermem.Addr
-	rseqCPU       int32
+
+	// rseqCPU is the last CPU number written to rseqAddr/oldRSeqCPUAddr.
+	//
+	// If rseq is unused, rseqCPU is -1 for convenient use in
+	// platform.Context.Switch.
+	//
+	// rseqCPU is exclusive to the task goroutine.
+	rseqCPU int32
+
+	// oldRSeqCPUAddr is a pointer to the userspace old rseq CPU variable.
+	//
+	// oldRSeqCPUAddr is exclusive to the task goroutine.
+	oldRSeqCPUAddr usermem.Addr
+
+	// rseqAddr is a pointer to the userspace linux.RSeq structure.
+	//
+	// rseqAddr is exclusive to the task goroutine.
+	rseqAddr usermem.Addr
+
+	// rseqSignature is the signature that the rseq abort IP must be signed
+	// with.
+	//
+	// rseqSignature is exclusive to the task goroutine.
+	rseqSignature uint32
 
 	// copyScratchBuffer is a buffer available to CopyIn/CopyOut
 	// implementations that require an intermediate buffer to copy data
@@ -513,6 +565,10 @@ type Task struct {
 	// futexWaiter is exclusive to the task goroutine.
 	futexWaiter *futex.Waiter `state:"nosave"`
 
+	// robustList is a pointer to the head of the tasks's robust futex
+	// list.
+	robustList usermem.Addr
+
 	// startTime is the real time at which the task started. It is set when
 	// a Task is created or invokes execve(2).
 	//
@@ -528,14 +584,6 @@ func (t *Task) loadPtraceTracer(tracer *Task) {
 	t.ptraceTracer.Store(tracer)
 }
 
-func (t *Task) saveLogPrefix() string {
-	return t.logPrefix.Load().(string)
-}
-
-func (t *Task) loadLogPrefix(prefix string) {
-	t.logPrefix.Store(prefix)
-}
-
 func (t *Task) saveSyscallFilters() []bpf.Program {
 	if f := t.syscallFilters.Load(); f != nil {
 		return f.([]bpf.Program)
@@ -549,6 +597,7 @@ func (t *Task) loadSyscallFilters(filters []bpf.Program) {
 
 // afterLoad is invoked by stateify.
 func (t *Task) afterLoad() {
+	t.updateInfoLocked()
 	t.interruptChan = make(chan struct{}, 1)
 	t.gosched.State = TaskGoroutineNonexistent
 	if t.stop != nil {
@@ -611,6 +660,11 @@ func (t *Task) Value(key interface{}) interface{} {
 		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
 		return t.fsContext.RootDirectory()
+	case vfs.CtxRoot:
+		return t.fsContext.RootDirectoryVFS2()
+	case vfs.CtxMountNamespace:
+		t.mountNamespaceVFS2.IncRef()
+		return t.mountNamespaceVFS2
 	case fs.CtxDirentCacheLimiter:
 		return t.k.DirentCacheLimiter
 	case inet.CtxStack:
@@ -674,11 +728,19 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) IsChrooted() bool {
+	if VFS2Enabled {
+		realRoot := t.mountNamespaceVFS2.Root()
+		defer realRoot.DecRef(t)
+		root := t.fsContext.RootDirectoryVFS2()
+		defer root.DecRef(t)
+		return root != realRoot
+	}
+
 	realRoot := t.tg.mounts.Root()
-	defer realRoot.DecRef()
+	defer realRoot.DecRef(t)
 	root := t.fsContext.RootDirectory()
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(t)
 	}
 	return root != realRoot
 }
@@ -709,11 +771,19 @@ func (t *Task) FDTable() *FDTable {
 	return t.fdTable
 }
 
-// GetFile is a convenience wrapper t.FDTable().GetFile.
+// GetFile is a convenience wrapper for t.FDTable().Get.
 //
-// Precondition: same as FDTable.
+// Precondition: same as FDTable.Get.
 func (t *Task) GetFile(fd int32) *fs.File {
 	f, _ := t.fdTable.Get(fd)
+	return f
+}
+
+// GetFileVFS2 is a convenience wrapper for t.FDTable().GetVFS2.
+//
+// Precondition: same as FDTable.Get.
+func (t *Task) GetFileVFS2(fd int32) *vfs.FileDescription {
+	f, _ := t.fdTable.GetVFS2(fd)
 	return f
 }
 
@@ -724,6 +794,15 @@ func (t *Task) GetFile(fd int32) *fs.File {
 // Precondition: same as FDTable.
 func (t *Task) NewFDs(fd int32, files []*fs.File, flags FDFlags) ([]int32, error) {
 	return t.fdTable.NewFDs(t, fd, files, flags)
+}
+
+// NewFDsVFS2 is a convenience wrapper for t.FDTable().NewFDsVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDsVFS2(fd int32, files []*vfs.FileDescription, flags FDFlags) ([]int32, error) {
+	return t.fdTable.NewFDsVFS2(t, fd, files, flags)
 }
 
 // NewFDFrom is a convenience wrapper for t.FDTable().NewFDs with a single file.
@@ -739,6 +818,15 @@ func (t *Task) NewFDFrom(fd int32, file *fs.File, flags FDFlags) (int32, error) 
 	return fds[0], nil
 }
 
+// NewFDFromVFS2 is a convenience wrapper for t.FDTable().NewFDVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.Get.
+func (t *Task) NewFDFromVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
+	return t.fdTable.NewFDVFS2(t, fd, file, flags)
+}
+
 // NewFDAt is a convenience wrapper for t.FDTable().NewFDAt.
 //
 // This automatically passes the task as the context.
@@ -746,6 +834,15 @@ func (t *Task) NewFDFrom(fd int32, file *fs.File, flags FDFlags) (int32, error) 
 // Precondition: same as FDTable.
 func (t *Task) NewFDAt(fd int32, file *fs.File, flags FDFlags) error {
 	return t.fdTable.NewFDAt(t, fd, file, flags)
+}
+
+// NewFDAtVFS2 is a convenience wrapper for t.FDTable().NewFDAtVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDAtVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) error {
+	return t.fdTable.NewFDAtVFS2(t, fd, file, flags)
 }
 
 // WithMuLocked executes f with t.mu locked.
@@ -761,6 +858,15 @@ func (t *Task) MountNamespace() *fs.MountNamespace {
 	return t.tg.mounts
 }
 
+// MountNamespaceVFS2 returns t's MountNamespace. A reference is taken on the
+// returned mount namespace.
+func (t *Task) MountNamespaceVFS2() *vfs.MountNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.mountNamespaceVFS2.IncRef()
+	return t.mountNamespaceVFS2
+}
+
 // AbstractSockets returns t's AbstractSocketNamespace.
 func (t *Task) AbstractSockets() *AbstractSocketNamespace {
 	return t.abstractSockets
@@ -769,4 +875,31 @@ func (t *Task) AbstractSockets() *AbstractSocketNamespace {
 // ContainerID returns t's container ID.
 func (t *Task) ContainerID() string {
 	return t.containerID
+}
+
+// OOMScoreAdj gets the task's thread group's OOM score adjustment.
+func (t *Task) OOMScoreAdj() int32 {
+	return atomic.LoadInt32(&t.tg.oomScoreAdj)
+}
+
+// SetOOMScoreAdj sets the task's thread group's OOM score adjustment. The
+// value should be between -1000 and 1000 inclusive.
+func (t *Task) SetOOMScoreAdj(adj int32) error {
+	if adj > 1000 || adj < -1000 {
+		return syserror.EINVAL
+	}
+	atomic.StoreInt32(&t.tg.oomScoreAdj, adj)
+	return nil
+}
+
+// UID returns t's uid.
+// TODO(gvisor.dev/issue/170): This method is not namespaced yet.
+func (t *Task) UID() uint32 {
+	return uint32(t.Credentials().EffectiveKUID)
+}
+
+// GID returns t's gid.
+// TODO(gvisor.dev/issue/170): This method is not namespaced yet.
+func (t *Task) GID() uint32 {
+	return uint32(t.Credentials().EffectiveKGID)
 }

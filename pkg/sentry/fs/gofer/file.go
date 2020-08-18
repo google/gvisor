@@ -19,16 +19,16 @@ import (
 	"syscall"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -37,9 +37,9 @@ var (
 	opens9P      = metric.MustCreateNewUint64Metric("/gofer/opens_9p", false /* sync */, "Number of times a 9P file was opened from a gofer.")
 	opensHost    = metric.MustCreateNewUint64Metric("/gofer/opens_host", false /* sync */, "Number of times a host file was opened from a gofer.")
 	reads9P      = metric.MustCreateNewUint64Metric("/gofer/reads_9p", false /* sync */, "Number of 9P file reads from a gofer.")
-	readWait9P   = metric.MustCreateNewUint64Metric("/gofer/read_wait_9p", false /* sync */, "Time waiting on 9P file reads from a gofer, in nanoseconds.")
+	readWait9P   = metric.MustCreateNewUint64NanosecondsMetric("/gofer/read_wait_9p", false /* sync */, "Time waiting on 9P file reads from a gofer, in nanoseconds.")
 	readsHost    = metric.MustCreateNewUint64Metric("/gofer/reads_host", false /* sync */, "Number of host file reads from a gofer.")
-	readWaitHost = metric.MustCreateNewUint64Metric("/gofer/read_wait_host", false /* sync */, "Time waiting on host file reads from a gofer, in nanoseconds.")
+	readWaitHost = metric.MustCreateNewUint64NanosecondsMetric("/gofer/read_wait_host", false /* sync */, "Time waiting on host file reads from a gofer, in nanoseconds.")
 )
 
 // fileOperations implements fs.FileOperations for a remote file system.
@@ -114,7 +114,7 @@ func NewFile(ctx context.Context, dirent *fs.Dirent, name string, flags fs.FileF
 }
 
 // Release implements fs.FileOpeations.Release.
-func (f *fileOperations) Release() {
+func (f *fileOperations) Release(context.Context) {
 	f.handles.DecRef()
 }
 
@@ -122,7 +122,7 @@ func (f *fileOperations) Release() {
 func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 
 	dirCtx := &fs.DirCtx{
@@ -214,28 +214,64 @@ func (f *fileOperations) readdirAll(ctx context.Context) (map[string]fs.DentAttr
 	return entries, nil
 }
 
+// maybeSync will call FSync on the file if either the cache policy or file
+// flags require it.
+func (f *fileOperations) maybeSync(ctx context.Context, file *fs.File, offset, n int64) error {
+	if n == 0 {
+		// Nothing to sync.
+		return nil
+	}
+
+	if f.inodeOperations.session().cachePolicy.writeThrough(file.Dirent.Inode) {
+		// Call WriteOut directly, as some "writethrough" filesystems
+		// do not support sync.
+		return f.inodeOperations.cachingInodeOps.WriteOut(ctx, file.Dirent.Inode)
+	}
+
+	flags := file.Flags()
+	var syncType fs.SyncType
+	switch {
+	case flags.Direct || flags.Sync:
+		syncType = fs.SyncAll
+	case flags.DSync:
+		syncType = fs.SyncData
+	default:
+		// No need to sync.
+		return nil
+	}
+
+	return f.Fsync(ctx, file, offset, offset+n, syncType)
+}
+
 // Write implements fs.FileOperations.Write.
 func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
 	if fs.IsDir(file.Dirent.Inode.StableAttr) {
 		// Not all remote file systems enforce this so this client does.
 		return 0, syserror.EISDIR
 	}
-	cp := f.inodeOperations.session().cachePolicy
-	if cp.useCachingInodeOps(file.Dirent.Inode) {
-		n, err := f.inodeOperations.cachingInodeOps.Write(ctx, src, offset)
-		if err != nil {
-			return n, err
-		}
-		if cp.writeThrough(file.Dirent.Inode) {
-			// Write out the file.
-			err = f.inodeOperations.cachingInodeOps.WriteOut(ctx, file.Dirent.Inode)
-		}
-		return n, err
+
+	var (
+		n   int64
+		err error
+	)
+	// The write is handled in different ways depending on the cache policy
+	// and availability of a host-mappable FD.
+	if f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {
+		n, err = f.inodeOperations.cachingInodeOps.Write(ctx, src, offset)
+	} else if f.inodeOperations.fileState.hostMappable != nil {
+		n, err = f.inodeOperations.fileState.hostMappable.Write(ctx, src, offset)
+	} else {
+		n, err = src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
 	}
-	if f.inodeOperations.fileState.hostMappable != nil {
-		return f.inodeOperations.fileState.hostMappable.Write(ctx, src, offset)
+
+	// We may need to sync the written bytes.
+	if syncErr := f.maybeSync(ctx, file, offset, n); syncErr != nil {
+		// Sync failed. Report 0 bytes written, since none of them are
+		// guaranteed to have been synced.
+		return 0, syncErr
 	}
-	return src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
+
+	return n, err
 }
 
 // incrementReadCounters increments the read counters for the read starting at the given time. We
@@ -273,7 +309,7 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 }
 
 // Fsync implements fs.FileOperations.Fsync.
-func (f *fileOperations) Fsync(ctx context.Context, file *fs.File, start int64, end int64, syncType fs.SyncType) error {
+func (f *fileOperations) Fsync(ctx context.Context, file *fs.File, start, end int64, syncType fs.SyncType) error {
 	switch syncType {
 	case fs.SyncAll, fs.SyncData:
 		if err := file.Dirent.Inode.WriteOut(ctx); err != nil {

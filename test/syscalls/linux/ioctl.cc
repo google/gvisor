@@ -25,7 +25,6 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
@@ -216,7 +215,8 @@ TEST_F(IoctlTest, FIOASYNCSelfTarget2) {
   auto mask_cleanup =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_UNBLOCK, SIGIO));
 
-  pid_t pid = getpid();
+  pid_t pid = -1;
+  EXPECT_THAT(pid = getpid(), SyscallSucceeds());
   EXPECT_THAT(ioctl(pair->second_fd(), FIOSETOWN, &pid), SyscallSucceeds());
 
   int set = 1;

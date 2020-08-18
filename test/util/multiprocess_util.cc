@@ -14,6 +14,7 @@
 
 #include "test/util/multiprocess_util.h"
 
+#include <asm/unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -30,11 +31,12 @@
 namespace gvisor {
 namespace testing {
 
-PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
-                                  const ExecveArray& argv,
-                                  const ExecveArray& envv,
-                                  const std::function<void()>& fn, pid_t* child,
-                                  int* execve_errno) {
+namespace {
+
+// exec_fn wraps a variant of the exec family, e.g. execve or execveat.
+PosixErrorOr<Cleanup> ForkAndExecHelper(const std::function<void()>& exec_fn,
+                                        const std::function<void()>& fn,
+                                        pid_t* child, int* execve_errno) {
   int pfds[2];
   int ret = pipe2(pfds, O_CLOEXEC);
   if (ret < 0) {
@@ -76,7 +78,9 @@ PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
       fn();
     }
 
-    execve(filename.c_str(), argv.get(), envv.get());
+    // Call variant of exec function.
+    exec_fn();
+
     int error = errno;
     if (WriteFd(pfds[1], &error, sizeof(error)) != sizeof(error)) {
       // We can't do much if the write fails, but we can at least exit with a
@@ -114,6 +118,36 @@ PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
   }
 
   return std::move(cleanup);
+}
+
+}  // namespace
+
+PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
+                                  const ExecveArray& argv,
+                                  const ExecveArray& envv,
+                                  const std::function<void()>& fn, pid_t* child,
+                                  int* execve_errno) {
+  char* const* argv_data = argv.get();
+  char* const* envv_data = envv.get();
+  const std::function<void()> exec_fn = [=] {
+    execve(filename.c_str(), argv_data, envv_data);
+  };
+  return ForkAndExecHelper(exec_fn, fn, child, execve_errno);
+}
+
+PosixErrorOr<Cleanup> ForkAndExecveat(const int32_t dirfd,
+                                      const std::string& pathname,
+                                      const ExecveArray& argv,
+                                      const ExecveArray& envv, const int flags,
+                                      const std::function<void()>& fn,
+                                      pid_t* child, int* execve_errno) {
+  char* const* argv_data = argv.get();
+  char* const* envv_data = envv.get();
+  const std::function<void()> exec_fn = [=] {
+    syscall(__NR_execveat, dirfd, pathname.c_str(), argv_data, envv_data,
+            flags);
+  };
+  return ForkAndExecHelper(exec_fn, fn, child, execve_errno);
 }
 
 PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn) {

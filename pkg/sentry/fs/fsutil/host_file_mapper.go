@@ -16,14 +16,13 @@ package fsutil
 
 import (
 	"fmt"
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // HostFileMapper caches mappings of an arbitrary host file descriptor. It is
@@ -65,13 +64,18 @@ type mapping struct {
 	writable bool
 }
 
-// NewHostFileMapper returns a HostFileMapper with no references or cached
-// mappings.
+// Init must be called on zero-value HostFileMappers before first use.
+func (f *HostFileMapper) Init() {
+	f.refs = make(map[uint64]int32)
+	f.mappings = make(map[uint64]mapping)
+}
+
+// NewHostFileMapper returns an initialized HostFileMapper allocated on the
+// heap with no references or cached mappings.
 func NewHostFileMapper() *HostFileMapper {
-	return &HostFileMapper{
-		refs:     make(map[uint64]int32),
-		mappings: make(map[uint64]mapping),
-	}
+	f := &HostFileMapper{}
+	f.Init()
+	return f
 }
 
 // IncRefOn increments the reference count on all offsets in mr.
@@ -121,7 +125,7 @@ func (f *HostFileMapper) DecRefOn(mr memmap.MappableRange) {
 // offsets in fr or until the next call to UnmapAll.
 //
 // Preconditions: The caller must hold a reference on all offsets in fr.
-func (f *HostFileMapper) MapInternal(fr platform.FileRange, fd int, write bool) (safemem.BlockSeq, error) {
+func (f *HostFileMapper) MapInternal(fr memmap.FileRange, fd int, write bool) (safemem.BlockSeq, error) {
 	chunks := ((fr.End + chunkMask) >> chunkShift) - (fr.Start >> chunkShift)
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
@@ -141,7 +145,7 @@ func (f *HostFileMapper) MapInternal(fr platform.FileRange, fd int, write bool) 
 }
 
 // Preconditions: f.mapsMu must be locked.
-func (f *HostFileMapper) forEachMappingBlockLocked(fr platform.FileRange, fd int, write bool, fn func(safemem.Block)) error {
+func (f *HostFileMapper) forEachMappingBlockLocked(fr memmap.FileRange, fd int, write bool, fn func(safemem.Block)) error {
 	prot := syscall.PROT_READ
 	if write {
 		prot |= syscall.PROT_WRITE
@@ -208,4 +212,30 @@ func (f *HostFileMapper) unmapAndRemoveLocked(chunkStart uint64, m mapping) {
 		log.Warningf("HostFileMapper: failed to unmap mapping %#x for chunk %#x: %v", m.addr, chunkStart, errno)
 	}
 	delete(f.mappings, chunkStart)
+}
+
+// RegenerateMappings must be called when the file description mapped by f
+// changes, to replace existing mappings of the previous file description.
+func (f *HostFileMapper) RegenerateMappings(fd int) error {
+	f.mapsMu.Lock()
+	defer f.mapsMu.Unlock()
+
+	for chunkStart, m := range f.mappings {
+		prot := syscall.PROT_READ
+		if m.writable {
+			prot |= syscall.PROT_WRITE
+		}
+		_, _, errno := syscall.Syscall6(
+			syscall.SYS_MMAP,
+			m.addr,
+			chunkSize,
+			uintptr(prot),
+			syscall.MAP_SHARED|syscall.MAP_FIXED,
+			uintptr(fd),
+			uintptr(chunkStart))
+		if errno != 0 {
+			return errno
+		}
+	}
+	return nil
 }

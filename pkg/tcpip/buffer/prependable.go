@@ -41,6 +41,11 @@ func NewPrependableFromView(v View) Prependable {
 	return Prependable{buf: v, usedIdx: 0}
 }
 
+// NewEmptyPrependableFromView creates a new prependable buffer from a View.
+func NewEmptyPrependableFromView(v View) Prependable {
+	return Prependable{buf: v, usedIdx: len(v)}
+}
+
 // View returns a View of the backing buffer that contains all prepended
 // data so far.
 func (p Prependable) View() View {
@@ -71,4 +76,10 @@ func (p *Prependable) Prepend(size int) []byte {
 
 	p.usedIdx -= size
 	return p.View()[:size:size]
+}
+
+// DeepCopy copies p and the bytes backing it.
+func (p Prependable) DeepCopy() Prependable {
+	p.buf = append(View(nil), p.buf...)
+	return p
 }

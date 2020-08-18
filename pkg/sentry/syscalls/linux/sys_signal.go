@@ -23,8 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/signalfd"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // "For a process to have permission to send a signal it must
@@ -245,6 +245,11 @@ func RtSigaction(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	sig := linux.Signal(args[0].Int())
 	newactarg := args[1].Pointer()
 	oldactarg := args[2].Pointer()
+	sigsetsize := args[3].SizeT()
+
+	if sigsetsize != linux.SignalSetSize {
+		return 0, nil, syserror.EINVAL
+	}
 
 	var newactptr *arch.SignalAct
 	if newactarg != 0 {
@@ -290,7 +295,7 @@ func RtSigprocmask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	}
 	oldmask := t.SignalMask()
 	if setaddr != 0 {
-		mask, err := copyInSigSet(t, setaddr, sigsetsize)
+		mask, err := CopyInSigSet(t, setaddr, sigsetsize)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -350,7 +355,7 @@ func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 func RtSigpending(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	pending := t.PendingSignals()
-	_, err := t.CopyOut(addr, pending)
+	_, err := pending.CopyOut(t, addr)
 	return 0, nil, err
 }
 
@@ -361,7 +366,7 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	timespec := args[2].Pointer()
 	sigsetsize := args[3].SizeT()
 
-	mask, err := copyInSigSet(t, sigset, sigsetsize)
+	mask, err := CopyInSigSet(t, sigset, sigsetsize)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -387,7 +392,7 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	if siginfo != 0 {
 		si.FixSignalCodeForUser()
-		if _, err := t.CopyOut(siginfo, si); err != nil {
+		if _, err := si.CopyOut(t, siginfo); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -406,7 +411,7 @@ func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	// same way), and that the code is in the allowed set. This same logic
 	// appears below in RtSigtgqueueinfo and should be kept in sync.
 	var info arch.SignalInfo
-	if _, err := t.CopyIn(infoAddr, &info); err != nil {
+	if _, err := info.CopyIn(t, infoAddr); err != nil {
 		return 0, nil, err
 	}
 	info.Signo = int32(sig)
@@ -450,7 +455,7 @@ func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 
 	// Copy in the info. See RtSigqueueinfo above.
 	var info arch.SignalInfo
-	if _, err := t.CopyIn(infoAddr, &info); err != nil {
+	if _, err := info.CopyIn(t, infoAddr); err != nil {
 		return 0, nil, err
 	}
 	info.Signo = int32(sig)
@@ -480,7 +485,7 @@ func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 
 	// Copy in the signal mask.
 	var mask linux.SignalSet
-	if _, err := t.CopyIn(sigset, &mask); err != nil {
+	if _, err := mask.CopyIn(t, sigset); err != nil {
 		return 0, nil, err
 	}
 	mask &^= kernel.UnblockableSignals
@@ -513,7 +518,7 @@ func RestartSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 // sharedSignalfd is shared between the two calls.
 func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize uint, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	// Copy in the signal mask.
-	mask, err := copyInSigSet(t, sigset, sigsetsize)
+	mask, err := CopyInSigSet(t, sigset, sigsetsize)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -531,7 +536,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize ui
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 
 		// Is this a signalfd?
 		if s, ok := file.FileOperations.(*signalfd.SignalOperations); ok {
@@ -548,7 +553,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize ui
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Set appropriate flags.
 	file.SetFlags(fs.SettableFileFlags{

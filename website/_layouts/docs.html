@@ -1,0 +1,54 @@
+---
+layout: base
+categories:
+  - Project
+  - User Guide
+  - Architecture Guide
+  - Compatibility
+---
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-3">
+      <nav class="sidebar" id="sidebar-nav">
+        {% for category in layout.categories %}
+          <h3>{{ category }}</h3>
+          <ul class="sidebar-nav">
+          {% assign subcats = site.pages | where: 'layout', 'docs' | where: 'category', category | group_by: 'subcategory' | sort: 'name', 'first' %}
+          {% for subcategory in subcats %}
+            {% assign sorted_pages = subcategory.items | sort: 'weight', 'last' %}
+            {% if subcategory.name != "" %}
+              {% assign ac = "aria-controls" %}
+              {% assign cid = category | remove: " " | downcase %}
+              {% assign sid = subcategory.name | remove: " " | downcase %}
+              <li>
+                <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" aria-expanded="false" {{ ac }}="{{ cid }}-{{ sid }}">{{ subcategory.name }}<span class="caret"></span></a>
+                <ul class="collapse sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
+            {% endif %}
+            {% for p in sorted_pages %}
+              <li><a href="{{ p.url }}">{{ p.title }}</a></li>
+            {% endfor %}
+            {% if subcategory.name != "" %}
+              </li>
+            </ul>
+            {% endif %}
+          {% endfor %}
+          </ul>
+        {% endfor %}
+      </nav>
+    </div>
+
+    <div class="col-md-9">
+      <h1>{{ page.title }}</h1>
+      {% if page.editpath %}
+        <p>
+        <a href="https://github.com/google/gvisor/edit/master/{{page.editpath}}" target="_blank" rel="noopener"><i class="fa fa-edit fa-fw"></i> Edit this page</a>
+        <a href="https://github.com/google/gvisor/issues/new?title={{page.title | url_encode}}" target="_blank" rel="noopener"><i class="fab fa-github fa-fw"></i> Create issue</a>
+        </p>
+      {% endif %}
+      <div class="docs-content">
+      {{ content }}
+      </div>
+    </div>
+  </div>
+</div>

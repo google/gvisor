@@ -17,19 +17,18 @@ package fsutil
 import (
 	"fmt"
 	"io"
-	"sync"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Lock order (compare the lock order model in mm/mm.go):
@@ -111,7 +110,7 @@ type CachingInodeOperations struct {
 	// refs tracks active references to data in the cache.
 	//
 	// refs is protected by dataMu.
-	refs frameRefSet
+	refs FrameRefSet
 }
 
 // CachingInodeOperationsOptions configures a CachingInodeOperations.
@@ -934,7 +933,7 @@ func maxFillRange(required, optional memmap.MappableRange) memmap.MappableRange 
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error {
-	// Whether we have a host fd (and consequently what platform.File is
+	// Whether we have a host fd (and consequently what memmap.File is
 	// mapped) can change across save/restore, so invalidate all translations
 	// unconditionally.
 	c.mapsMu.Lock()
@@ -956,6 +955,23 @@ func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error 
 	c.cache.DropAll(mf)
 	c.dirty.RemoveAll()
 
+	return nil
+}
+
+// NotifyChangeFD must be called after the file description represented by
+// CachedFileObject.FD() changes.
+func (c *CachingInodeOperations) NotifyChangeFD() error {
+	// Update existing sentry mappings to refer to the new file description.
+	if err := c.hostFileMapper.RegenerateMappings(c.backingFile.FD()); err != nil {
+		return err
+	}
+
+	// Shoot down existing application mappings of the old file description;
+	// they will be remapped with the new file description on demand.
+	c.mapsMu.Lock()
+	defer c.mapsMu.Unlock()
+
+	c.mappings.InvalidateAll(memmap.InvalidateOpts{})
 	return nil
 }
 
@@ -982,10 +998,10 @@ func (c *CachingInodeOperations) Evict(ctx context.Context, er pgalloc.Evictable
 	}
 }
 
-// IncRef implements platform.File.IncRef. This is used when we directly map an
-// underlying host fd and CachingInodeOperations is used as the platform.File
+// IncRef implements memmap.File.IncRef. This is used when we directly map an
+// underlying host fd and CachingInodeOperations is used as the memmap.File
 // during translation.
-func (c *CachingInodeOperations) IncRef(fr platform.FileRange) {
+func (c *CachingInodeOperations) IncRef(fr memmap.FileRange) {
 	// Hot path. Avoid defers.
 	c.dataMu.Lock()
 	seg, gap := c.refs.Find(fr.Start)
@@ -1007,10 +1023,10 @@ func (c *CachingInodeOperations) IncRef(fr platform.FileRange) {
 	}
 }
 
-// DecRef implements platform.File.DecRef. This is used when we directly map an
-// underlying host fd and CachingInodeOperations is used as the platform.File
+// DecRef implements memmap.File.DecRef. This is used when we directly map an
+// underlying host fd and CachingInodeOperations is used as the memmap.File
 // during translation.
-func (c *CachingInodeOperations) DecRef(fr platform.FileRange) {
+func (c *CachingInodeOperations) DecRef(fr memmap.FileRange) {
 	// Hot path. Avoid defers.
 	c.dataMu.Lock()
 	seg := c.refs.FindSegment(fr.Start)
@@ -1027,18 +1043,17 @@ func (c *CachingInodeOperations) DecRef(fr platform.FileRange) {
 	}
 	c.refs.MergeAdjacent(fr)
 	c.dataMu.Unlock()
-
 }
 
-// MapInternal implements platform.File.MapInternal. This is used when we
+// MapInternal implements memmap.File.MapInternal. This is used when we
 // directly map an underlying host fd and CachingInodeOperations is used as the
-// platform.File during translation.
-func (c *CachingInodeOperations) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+// memmap.File during translation.
+func (c *CachingInodeOperations) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
 	return c.hostFileMapper.MapInternal(fr, c.backingFile.FD(), at.Write)
 }
 
-// FD implements platform.File.FD. This is used when we directly map an
-// underlying host fd and CachingInodeOperations is used as the platform.File
+// FD implements memmap.File.FD. This is used when we directly map an
+// underlying host fd and CachingInodeOperations is used as the memmap.File
 // during translation.
 func (c *CachingInodeOperations) FD() int {
 	return c.backingFile.FD()

@@ -1,6 +1,6 @@
-package(licenses = ["notice"])
+load("//tools:defs.bzl", "go_library")
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+package(licenses = ["notice"])
 
 go_library(
     name = "abi",
@@ -9,6 +9,5 @@ go_library(
         "abi_linux.go",
         "flag.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/abi",
     visibility = ["//:sandbox"],
 )

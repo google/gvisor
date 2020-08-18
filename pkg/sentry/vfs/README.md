@@ -39,8 +39,8 @@ Mount references are held by:
 -   Mount: Each referenced Mount holds a reference on its parent, which is the
     mount containing its mount point.
 
--   VirtualFilesystem: A reference is held on all Mounts that are attached
-    (reachable by Mount traversal).
+-   VirtualFilesystem: A reference is held on each Mount that has been connected
+    to a mount point, but not yet umounted.
 
 MountNamespace and FileDescription references are held by users of VFS. The
 expectation is that each `kernel.Task` holds a reference on its corresponding
@@ -168,8 +168,6 @@ This construction, which is essentially a type-safe analogue to Linux's
     -   ashmem, which is far too incomplete to use.
 
     -   binder, which is similarly far too incomplete to use.
-
-    -   whitelistfs, which we are already actively attempting to remove.
 
 -   Save/restore. For instance, it is unclear if the current implementation of
     the `state` package supports the inheritance pattern described above.

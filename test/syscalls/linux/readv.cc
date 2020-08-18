@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/syscalls/linux/readv_common.h"
 #include "test/util/file_descriptor.h"
@@ -255,7 +254,9 @@ TEST_F(ReadvTest, IovecOutsideTaskAddressRangeInNonemptyArray) {
 // This test depends on the maximum extent of a single readv() syscall, so
 // we can't tolerate interruption from saving.
 TEST(ReadvTestNoFixture, TruncatedAtMax_NoRandomSave) {
-  // Ensure that we won't be interrupted by ITIMER_PROF.
+  // Ensure that we won't be interrupted by ITIMER_PROF. This is particularly
+  // important in environments where automated profiling tools may start
+  // ITIMER_PROF automatically.
   struct itimerval itv = {};
   auto const cleanup_itimer =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedItimer(ITIMER_PROF, itv));

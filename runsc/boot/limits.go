@@ -16,12 +16,12 @@ package boot
 
 import (
 	"fmt"
-	"sync"
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Mapping from linux resource names to limits.LimitType.

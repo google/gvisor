@@ -25,6 +25,12 @@ import (
 type ICMPv6 []byte
 
 const (
+	// ICMPv6HeaderSize is the size of the ICMPv6 header. That is, the
+	// sum of the size of the ICMPv6 Type, Code and Checksum fields, as
+	// per RFC 4443 section 2.1. After the ICMPv6 header, the ICMPv6
+	// message body begins.
+	ICMPv6HeaderSize = 4
+
 	// ICMPv6MinimumSize is the minimum size of a valid ICMP packet.
 	ICMPv6MinimumSize = 8
 
@@ -37,10 +43,16 @@ const (
 
 	// ICMPv6NeighborSolicitMinimumSize is the minimum size of a
 	// neighbor solicitation packet.
-	ICMPv6NeighborSolicitMinimumSize = ICMPv6MinimumSize + 16
+	ICMPv6NeighborSolicitMinimumSize = ICMPv6HeaderSize + NDPNSMinimumSize
 
-	// ICMPv6NeighborAdvertSize is size of a neighbor advertisement.
-	ICMPv6NeighborAdvertSize = 32
+	// ICMPv6NeighborAdvertMinimumSize is the minimum size of a
+	// neighbor advertisement packet.
+	ICMPv6NeighborAdvertMinimumSize = ICMPv6HeaderSize + NDPNAMinimumSize
+
+	// ICMPv6NeighborAdvertSize is size of a neighbor advertisement
+	// including the NDP Target Link Layer option for an Ethernet
+	// address.
+	ICMPv6NeighborAdvertSize = ICMPv6HeaderSize + NDPNAMinimumSize + NDPLinkLayerAddressSize
 
 	// ICMPv6EchoMinimumSize is the minimum size of a valid ICMP echo packet.
 	ICMPv6EchoMinimumSize = 8
@@ -68,12 +80,18 @@ const (
 	// icmpv6SequenceOffset is the offset of the sequence field
 	// in a ICMPv6 Echo Request/Reply message.
 	icmpv6SequenceOffset = 6
+
+	// NDPHopLimit is the expected IP hop limit value of 255 for received
+	// NDP packets, as per RFC 4861 sections 4.1 - 4.5, 6.1.1, 6.1.2, 7.1.1,
+	// 7.1.2 and 8.1. If the hop limit value is not 255, nodes MUST silently
+	// drop the NDP packet. All outgoing NDP packets must use this value for
+	// its IP hop limit field.
+	NDPHopLimit = 255
 )
 
 // ICMPv6Type is the ICMP type field described in RFC 4443 and friends.
 type ICMPv6Type byte
 
-// Typical values of ICMPv6Type defined in RFC 4443.
 const (
 	ICMPv6DstUnreachable ICMPv6Type = 1
 	ICMPv6PacketTooBig   ICMPv6Type = 2
@@ -91,10 +109,37 @@ const (
 	ICMPv6RedirectMsg     ICMPv6Type = 137
 )
 
-// Values for ICMP code as defined in RFC 4443.
+// ICMPv6Code is the ICMP code field described in RFC 4443.
+type ICMPv6Code byte
+
+// ICMP codes used with Destination Unreachable (Type 1). As per RFC 4443
+// section 3.1.
 const (
-	ICMPv6PortUnreachable = 4
+	ICMPv6NetworkUnreachable ICMPv6Code = 0
+	ICMPv6Prohibited         ICMPv6Code = 1
+	ICMPv6BeyondScope        ICMPv6Code = 2
+	ICMPv6AddressUnreachable ICMPv6Code = 3
+	ICMPv6PortUnreachable    ICMPv6Code = 4
+	ICMPv6Policy             ICMPv6Code = 5
+	ICMPv6RejectRoute        ICMPv6Code = 6
 )
+
+// ICMP codes used with Time Exceeded (Type 3). As per RFC 4443 section 3.3.
+const (
+	ICMPv6HopLimitExceeded  ICMPv6Code = 0
+	ICMPv6ReassemblyTimeout ICMPv6Code = 1
+)
+
+// ICMP codes used with Parameter Problem (Type 4). As per RFC 4443 section 3.4.
+const (
+	ICMPv6ErroneousHeader ICMPv6Code = 0
+	ICMPv6UnknownHeader   ICMPv6Code = 1
+	ICMPv6UnknownOption   ICMPv6Code = 2
+)
+
+// ICMPv6UnusedCode is the code value used with ICMPv6 messages which don't use
+// the code field. (Types not mentioned above.)
+const ICMPv6UnusedCode ICMPv6Code = 0
 
 // Type is the ICMP type field.
 func (b ICMPv6) Type() ICMPv6Type { return ICMPv6Type(b[0]) }
@@ -103,17 +148,17 @@ func (b ICMPv6) Type() ICMPv6Type { return ICMPv6Type(b[0]) }
 func (b ICMPv6) SetType(t ICMPv6Type) { b[0] = byte(t) }
 
 // Code is the ICMP code field. Its meaning depends on the value of Type.
-func (b ICMPv6) Code() byte { return b[1] }
+func (b ICMPv6) Code() ICMPv6Code { return ICMPv6Code(b[1]) }
 
 // SetCode sets the ICMP code field.
-func (b ICMPv6) SetCode(c byte) { b[1] = c }
+func (b ICMPv6) SetCode(c ICMPv6Code) { b[1] = byte(c) }
 
 // Checksum is the ICMP checksum field.
 func (b ICMPv6) Checksum() uint16 {
 	return binary.BigEndian.Uint16(b[icmpv6ChecksumOffset:])
 }
 
-// SetChecksum calculates and sets the ICMP checksum field.
+// SetChecksum sets the ICMP checksum field.
 func (b ICMPv6) SetChecksum(checksum uint16) {
 	binary.BigEndian.PutUint16(b[icmpv6ChecksumOffset:], checksum)
 }
@@ -166,12 +211,19 @@ func (b ICMPv6) SetSequence(sequence uint16) {
 	binary.BigEndian.PutUint16(b[icmpv6SequenceOffset:], sequence)
 }
 
+// NDPPayload returns the NDP payload buffer. That is, it returns the ICMPv6
+// packet's message body as defined by RFC 4443 section 2.1; the portion of the
+// ICMPv6 buffer after the first ICMPv6HeaderSize bytes.
+func (b ICMPv6) NDPPayload() []byte {
+	return b[ICMPv6HeaderSize:]
+}
+
 // Payload implements Transport.Payload.
 func (b ICMPv6) Payload() []byte {
 	return b[ICMPv6PayloadOffset:]
 }
 
-// ICMPv6Checksum calculates the ICMP checksum over the provided ICMP header,
+// ICMPv6Checksum calculates the ICMP checksum over the provided ICMPv6 header,
 // IPv6 src/dst addresses and the payload.
 func ICMPv6Checksum(h ICMPv6, src, dst tcpip.Address, vv buffer.VectorisedView) uint16 {
 	// Calculate the IPv6 pseudo-header upper-layer checksum.

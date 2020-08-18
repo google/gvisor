@@ -20,18 +20,50 @@
 // tools/go_marshal. See the go_marshal README for details.
 package marshal
 
-// Marshallable represents a type that can be marshalled to and from memory.
+import (
+	"io"
+
+	"gvisor.dev/gvisor/pkg/usermem"
+)
+
+// Task provides a subset of kernel.Task, used in marshalling. We don't import
+// the kernel package directly to avoid circular dependency.
+type Task interface {
+	// CopyScratchBuffer provides a task goroutine-local scratch buffer. See
+	// kernel.CopyScratchBuffer.
+	CopyScratchBuffer(size int) []byte
+
+	// CopyOutBytes writes the contents of b to the task's memory. See
+	// kernel.CopyOutBytes.
+	CopyOutBytes(addr usermem.Addr, b []byte) (int, error)
+
+	// CopyInBytes reads the contents of the task's memory to b. See
+	// kernel.CopyInBytes.
+	CopyInBytes(addr usermem.Addr, b []byte) (int, error)
+}
+
+// Marshallable represents operations on a type that can be marshalled to and
+// from memory.
+//
+// go-marshal automatically generates implementations for this interface for
+// types marked as '+marshal'.
 type Marshallable interface {
+	io.WriterTo
+
 	// SizeBytes is the size of the memory representation of a type in
 	// marshalled form.
+	//
+	// SizeBytes must handle a nil receiver. Practically, this means SizeBytes
+	// cannot deference any fields on the object implementing it (but will
+	// likely make use of the type of these fields).
 	SizeBytes() int
 
-	// MarshalBytes serializes a copy of a type to dst. dst must be at least
-	// SizeBytes() long.
+	// MarshalBytes serializes a copy of a type to dst.
+	// Precondition: dst must be at least SizeBytes() in length.
 	MarshalBytes(dst []byte)
 
-	// UnmarshalBytes deserializes a type from src. src must be at least
-	// SizeBytes() long.
+	// UnmarshalBytes deserializes a type from src.
+	// Precondition: src must be at least SizeBytes() in length.
 	UnmarshalBytes(src []byte)
 
 	// Packed returns true if the marshalled size of the type is the same as the
@@ -39,6 +71,12 @@ type Marshallable interface {
 	// starting at unaligned addresses (should always be true by default for ABI
 	// structs, verified by automatically generated tests when using
 	// go_marshal), and has no fields marked `marshal:"unaligned"`.
+	//
+	// Packed must return the same result for all possible values of the type
+	// implementing it. Violating this constraint implies the type doesn't have
+	// a static memory layout, and will lead to memory corruption.
+	// Go-marshal-generated code reuses the result of Packed for multiple values
+	// of the same type.
 	Packed() bool
 
 	// MarshalUnsafe serializes a type by bulk copying its in-memory
@@ -46,15 +84,100 @@ type Marshallable interface {
 	// has no implicit padding, see Marshallable.Packed. When Packed would
 	// return false, MarshalUnsafe should fall back to the safer but slower
 	// MarshalBytes.
+	// Precondition: dst must be at least SizeBytes() in length.
 	MarshalUnsafe(dst []byte)
 
-	// UnmarshalUnsafe deserializes a type directly to the underlying memory
-	// allocated for the object by the runtime.
+	// UnmarshalUnsafe deserializes a type by directly copying to the underlying
+	// memory allocated for the object by the runtime.
 	//
 	// This allows much faster unmarshalling of types which have no implicit
 	// padding, see Marshallable.Packed. When Packed would return false,
 	// UnmarshalUnsafe should fall back to the safer but slower unmarshal
-	// mechanism implemented in UnmarshalBytes (usually by calling
-	// UnmarshalBytes directly).
+	// mechanism implemented in UnmarshalBytes.
+	// Precondition: src must be at least SizeBytes() in length.
 	UnmarshalUnsafe(src []byte)
+
+	// CopyIn deserializes a Marshallable type from a task's memory. This may
+	// only be called from a task goroutine. This is more efficient than calling
+	// UnmarshalUnsafe on Marshallable.Packed types, as the type being
+	// marshalled does not escape. The implementation should avoid creating
+	// extra copies in memory by directly deserializing to the object's
+	// underlying memory.
+	//
+	// If the copy-in from the task memory is only partially successful, CopyIn
+	// should still attempt to deserialize as much data as possible. See comment
+	// for UnmarshalBytes.
+	CopyIn(task Task, addr usermem.Addr) (int, error)
+
+	// CopyOut serializes a Marshallable type to a task's memory. This may only
+	// be called from a task goroutine. This is more efficient than calling
+	// MarshalUnsafe on Marshallable.Packed types, as the type being serialized
+	// does not escape. The implementation should avoid creating extra copies in
+	// memory by directly serializing from the object's underlying memory.
+	//
+	// The copy-out to the task memory may be partially successful, in which
+	// case CopyOut returns how much data was serialized. See comment for
+	// MarshalBytes for implications.
+	CopyOut(task Task, addr usermem.Addr) (int, error)
+
+	// CopyOutN is like CopyOut, but explicitly requests a partial
+	// copy-out. Note that this may yield unexpected results for non-packed
+	// types and the caller may only want to allow this for packed types. See
+	// comment on MarshalBytes.
+	//
+	// The limit must be less than or equal to SizeBytes().
+	CopyOutN(task Task, addr usermem.Addr, limit int) (int, error)
 }
+
+// go-marshal generates additional functions for a type based on additional
+// clauses to the +marshal directive. They are documented below.
+//
+// Slice API
+// =========
+//
+// Adding a "slice" clause to the +marshal directive for structs or newtypes on
+// primitives like this:
+//
+// // +marshal slice:FooSlice
+// type Foo struct { ... }
+//
+// Generates four additional functions for marshalling slices of Foos like this:
+//
+// // MarshalUnsafeFooSlice is like Foo.MarshalUnsafe, buf for a []Foo. It
+// // might be more efficient that repeatedly calling Foo.MarshalUnsafe
+// // over a []Foo in a loop if the type is Packed.
+// // Preconditions: dst must be at least len(src)*Foo.SizeBytes() in length.
+// func MarshalUnsafeFooSlice(src []Foo, dst []byte) (int, error) { ... }
+//
+// // UnmarshalUnsafeFooSlice is like Foo.UnmarshalUnsafe, buf for a []Foo. It
+// // might be more efficient that repeatedly calling Foo.UnmarshalUnsafe
+// // over a []Foo in a loop if the type is Packed.
+// // Preconditions: src must be at least len(dst)*Foo.SizeBytes() in length.
+// func UnmarshalUnsafeFooSlice(dst []Foo, src []byte) (int, error) { ... }
+//
+// // CopyFooSliceIn copies in a slice of Foo objects from the task's memory.
+// func CopyFooSliceIn(task marshal.Task, addr usermem.Addr, dst []Foo) (int, error) { ... }
+//
+// // CopyFooSliceIn copies out a slice of Foo objects to the task's memory.
+// func CopyFooSliceOut(task marshal.Task, addr usermem.Addr, src []Foo) (int, error) { ... }
+//
+// The name of the functions are of the format "Copy%sIn" and "Copy%sOut", where
+// %s is the first argument to the slice clause. This directive is not supported
+// for newtypes on arrays.
+//
+// The slice clause also takes an optional second argument, which must be the
+// value "inner":
+//
+// // +marshal slice:Int32Slice:inner
+// type Int32 int32
+//
+// This is only valid on newtypes on primitives, and causes the generated
+// functions to accept slices of the inner type instead:
+//
+// func CopyInt32SliceIn(task marshal.Task, addr usermem.Addr, dst []int32) (int, error) { ... }
+//
+// Without "inner", they would instead be:
+//
+// func CopyInt32SliceIn(task marshal.Task, addr usermem.Addr, dst []Int32) (int, error) { ... }
+//
+// This may help avoid a cast depending on how the generated functions are used.

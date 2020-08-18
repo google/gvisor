@@ -17,7 +17,7 @@ package gofer
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
@@ -28,8 +28,13 @@ func (f *fileOperations) afterLoad() {
 
 		// Manually load the open handles.
 		var err error
-		// TODO(b/38173783): Context is not plumbed to save/restore.
-		f.handles, err = f.inodeOperations.fileState.getHandles(context.Background(), f.flags)
+
+		// The file may have been opened with Truncate, but we don't
+		// want to re-open it with Truncate or we will lose data.
+		flags := f.flags
+		flags.Truncate = false
+
+		f.handles, err = f.inodeOperations.fileState.getHandles(context.Background(), flags, f.inodeOperations.cachingInodeOps)
 		if err != nil {
 			return fmt.Errorf("failed to re-open handle: %v", err)
 		}

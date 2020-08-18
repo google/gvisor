@@ -26,8 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -174,7 +174,7 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 					fallthrough
 				case (sre == ERESTARTSYS && !act.IsRestart()):
 					t.Debugf("Not restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
-					t.Arch().SetReturn(uintptr(-t.ExtractErrno(syserror.EINTR, -1)))
+					t.Arch().SetReturn(uintptr(-ExtractErrno(syserror.EINTR, -1)))
 				default:
 					t.Debugf("Restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
 					t.Arch().RestartSyscall()
@@ -255,17 +255,32 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 		}
 	}
 
+	mm := t.MemoryManager()
 	// Set up the signal handler. If we have a saved signal mask, the signal
 	// handler should run with the current mask, but sigreturn should restore
 	// the saved one.
-	st := &arch.Stack{t.Arch(), t.MemoryManager(), sp}
+	st := &arch.Stack{t.Arch(), mm, sp}
 	mask := t.signalMask
 	if t.haveSavedSignalMask {
 		mask = t.savedSignalMask
 	}
+
+	// Set up the restorer.
+	// x86-64 should always uses SA_RESTORER, but this flag is optional on other platforms.
+	// Please see the linux code as reference:
+	// linux/arch/x86/kernel/signal.c:__setup_rt_frame()
+	// If SA_RESTORER is not configured, we can use the sigreturn trampolines
+	// the vdso provides instead.
+	// Please see the linux code as reference:
+	// linux/arch/arm64/kernel/signal.c:setup_return()
+	if act.Flags&linux.SA_RESTORER == 0 {
+		act.Restorer = mm.VDSOSigReturn()
+	}
+
 	if err := t.Arch().SignalSetup(st, &act, info, &alt, mask); err != nil {
 		return err
 	}
+	t.p.FullStateChanged()
 	t.haveSavedSignalMask = false
 
 	// Add our signal mask.
@@ -297,6 +312,7 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 
 	// Restore our signal mask. SIGKILL and SIGSTOP should not be blocked.
 	t.SetSignalMask(sigset &^ UnblockableSignals)
+	t.p.FullStateChanged()
 
 	return ctrlResume, nil
 }
@@ -513,8 +529,6 @@ func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 	if t.stop != nil {
 		return false
 	}
-	// - TODO(b/38173783): No special case for when t is also the sending task,
-	// because the identity of the sender is unknown.
 	// - Do not choose tasks that have already been interrupted, as they may be
 	// busy handling another signal.
 	if len(t.interruptChan) != 0 {
@@ -625,6 +639,7 @@ func (t *Task) SetSavedSignalMask(mask linux.SignalSet) {
 
 // SignalStack returns the task-private signal stack.
 func (t *Task) SignalStack() arch.SignalStack {
+	t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
 	alt := t.signalStack
 	if t.onSignalStack(alt) {
 		alt.Flags |= arch.SignalStackFlagOnStack
@@ -705,7 +720,7 @@ func (tg *ThreadGroup) SetSignalAct(sig linux.Signal, actptr *arch.SignalAct) (a
 func (t *Task) CopyOutSignalAct(addr usermem.Addr, s *arch.SignalAct) error {
 	n := t.Arch().NewSignalAct()
 	n.SerializeFrom(s)
-	_, err := t.CopyOut(addr, n)
+	_, err := n.CopyOut(t, addr)
 	return err
 }
 
@@ -714,7 +729,7 @@ func (t *Task) CopyOutSignalAct(addr usermem.Addr, s *arch.SignalAct) error {
 func (t *Task) CopyInSignalAct(addr usermem.Addr) (arch.SignalAct, error) {
 	n := t.Arch().NewSignalAct()
 	var s arch.SignalAct
-	if _, err := t.CopyIn(addr, n); err != nil {
+	if _, err := n.CopyIn(t, addr); err != nil {
 		return s, err
 	}
 	n.DeserializeTo(&s)
@@ -726,7 +741,7 @@ func (t *Task) CopyInSignalAct(addr usermem.Addr) (arch.SignalAct, error) {
 func (t *Task) CopyOutSignalStack(addr usermem.Addr, s *arch.SignalStack) error {
 	n := t.Arch().NewSignalStack()
 	n.SerializeFrom(s)
-	_, err := t.CopyOut(addr, n)
+	_, err := n.CopyOut(t, addr)
 	return err
 }
 
@@ -735,7 +750,7 @@ func (t *Task) CopyOutSignalStack(addr usermem.Addr, s *arch.SignalStack) error 
 func (t *Task) CopyInSignalStack(addr usermem.Addr) (arch.SignalStack, error) {
 	n := t.Arch().NewSignalStack()
 	var s arch.SignalStack
-	if _, err := t.CopyIn(addr, n); err != nil {
+	if _, err := n.CopyIn(t, addr); err != nil {
 		return s, err
 	}
 	n.DeserializeTo(&s)
@@ -1039,6 +1054,8 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 
 	// Are there signals pending?
 	if info := t.dequeueSignalLocked(t.signalMask); info != nil {
+		t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+
 		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
 			// Indicate that we've dequeued a stop signal before unlocking the
 			// signal mutex; initiateGroupStop will check for races with

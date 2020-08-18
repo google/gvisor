@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build !race
-// +build !amd64
+// +build !amd64,!arm64
 
 package sleep
 
@@ -28,15 +28,6 @@ import "sync/atomic"
 // It is written in assembly because it is called from g0, so it doesn't have
 // a race context.
 func commitSleep(g uintptr, waitingG *uintptr) bool {
-	for {
-		// Check if the wait was aborted.
-		if atomic.LoadUintptr(waitingG) == 0 {
-			return false
-		}
-
-		// Try to store the G so that wakers know who to wake.
-		if atomic.CompareAndSwapUintptr(waitingG, preparingG, g) {
-			return true
-		}
-	}
+	// Try to store the G so that wakers know who to wake.
+	return atomic.CompareAndSwapUintptr(waitingG, preparingG, g)
 }

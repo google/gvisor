@@ -16,6 +16,8 @@
 
 source $(dirname $0)/common.sh
 
+make load-all-images
+
 # Install the runtime and perform basic tests.
 install_runsc_for_test hostnet --network=host
 test_runsc --test_arg=-checkpoint=false //test/image:image_test //test/e2e:integration_test

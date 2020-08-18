@@ -1,8 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
-
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "limits",
@@ -11,11 +9,11 @@ go_library(
         "limits.go",
         "linux.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/limits",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
+        "//pkg/sync",
     ],
 )
 
@@ -25,5 +23,5 @@ go_test(
     srcs = [
         "limits_test.go",
     ],
-    embed = [":limits"],
+    library = ":limits",
 )

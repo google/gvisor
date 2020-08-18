@@ -1,8 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
-
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "proc",
@@ -19,7 +17,6 @@ go_library(
         "mounts.go",
         "net.go",
         "proc.go",
-        "rpcinet_proc.go",
         "stat.go",
         "sys.go",
         "sys_net.go",
@@ -29,17 +26,17 @@ go_library(
         "uptime.go",
         "version.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/proc",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/proc/device",
         "//pkg/sentry/fs/proc/seqfile",
         "//pkg/sentry/fs/ramfs",
+        "//pkg/sentry/fsbridge",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -47,12 +44,13 @@ go_library(
         "//pkg/sentry/limits",
         "//pkg/sentry/mm",
         "//pkg/sentry/socket",
-        "//pkg/sentry/socket/rpcinet",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/tcpip/header",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -64,11 +62,11 @@ go_test(
         "net_test.go",
         "sys_net_test.go",
     ],
-    embed = [":proc"],
+    library = ":proc",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/inet",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

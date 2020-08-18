@@ -22,14 +22,11 @@
 namespace gvisor {
 namespace testing {
 
-std::vector<SocketPairKind> GetSocketPairs() {
-  return ApplyVec<SocketPairKind>(
-      IPv4UDPUnboundSocketPair,
-      AllBitwiseCombinations(List<int>{0, SOCK_NONBLOCK}));
-}
-
-INSTANTIATE_TEST_SUITE_P(IPv4UDPSockets, IPv4UDPUnboundSocketPairTest,
-                         ::testing::ValuesIn(GetSocketPairs()));
+INSTANTIATE_TEST_SUITE_P(
+    IPv4UDPSockets, IPv4UDPUnboundSocketTest,
+    ::testing::ValuesIn(ApplyVec<SocketKind>(IPv4UDPUnboundSocket,
+                                             AllBitwiseCombinations(List<int>{
+                                                 0, SOCK_NONBLOCK}))));
 
 }  // namespace testing
 }  // namespace gvisor

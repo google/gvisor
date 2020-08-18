@@ -17,9 +17,11 @@ package ipv4_test
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"math/rand"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -45,10 +47,6 @@ func TestExcludeBroadcast(t *testing.T) {
 	}
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
-	}
-
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, header.IPv4Any); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
 	}
 
 	s.SetRouteTable([]tcpip.Route{{
@@ -94,15 +92,11 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 }
 
-// makeHdrAndPayload generates a randomize packet. hdrLength indicates how much
+// makeRandPkt generates a randomize packet. hdrLength indicates how much
 // data should already be in the header before WritePacket. extraLength
 // indicates how much extra space should be in the header. The payload is made
 // from many Views of the sizes listed in viewSizes.
-func makeHdrAndPayload(hdrLength int, extraLength int, viewSizes []int) (buffer.Prependable, buffer.VectorisedView) {
-	hdr := buffer.NewPrependable(hdrLength + extraLength)
-	hdr.Prepend(hdrLength)
-	rand.Read(hdr.View())
-
+func makeRandPkt(hdrLength int, extraLength int, viewSizes []int) *stack.PacketBuffer {
 	var views []buffer.View
 	totalLength := 0
 	for _, s := range viewSizes {
@@ -111,18 +105,26 @@ func makeHdrAndPayload(hdrLength int, extraLength int, viewSizes []int) (buffer.
 		views = append(views, newView)
 		totalLength += s
 	}
-	payload := buffer.NewVectorisedView(totalLength, views)
-	return hdr, payload
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: hdrLength + extraLength,
+		Data:               buffer.NewVectorisedView(totalLength, views),
+	})
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	if _, err := rand.Read(pkt.TransportHeader().Push(hdrLength)); err != nil {
+		panic(fmt.Sprintf("rand.Read: %s", err))
+	}
+	return pkt
 }
 
 // comparePayloads compared the contents of all the packets against the contents
 // of the source packet.
-func compareFragments(t *testing.T, packets []packetInfo, sourcePacketInfo packetInfo, mtu uint32) {
+func compareFragments(t *testing.T, packets []*stack.PacketBuffer, sourcePacketInfo *stack.PacketBuffer, mtu uint32) {
 	t.Helper()
 	// Make a complete array of the sourcePacketInfo packet.
-	source := header.IPv4(packets[0].Header.View()[:header.IPv4MinimumSize])
-	source = append(source, sourcePacketInfo.Header.View()...)
-	source = append(source, sourcePacketInfo.Payload.ToView()...)
+	source := header.IPv4(packets[0].NetworkHeader().View()[:header.IPv4MinimumSize])
+	vv := buffer.NewVectorisedView(sourcePacketInfo.Size(), sourcePacketInfo.Views())
+	source = append(source, vv.ToView()...)
 
 	// Make a copy of the IP header, which will be modified in some fields to make
 	// an expected header.
@@ -135,8 +137,7 @@ func compareFragments(t *testing.T, packets []packetInfo, sourcePacketInfo packe
 	var reassembledPayload []byte
 	for i, packet := range packets {
 		// Confirm that the packet is valid.
-		allBytes := packet.Header.View().ToVectorisedView()
-		allBytes.Append(packet.Payload)
+		allBytes := buffer.NewVectorisedView(packet.Size(), packet.Views())
 		ip := header.IPv4(allBytes.ToView())
 		if !ip.IsValid(len(ip)) {
 			t.Errorf("IP packet is invalid:\n%s", hex.Dump(ip))
@@ -147,11 +148,21 @@ func compareFragments(t *testing.T, packets []packetInfo, sourcePacketInfo packe
 		if got, want := len(ip), int(mtu); got > want {
 			t.Errorf("fragment is too large, got %d want %d", got, want)
 		}
-		if got, want := packet.Header.UsedLength(), sourcePacketInfo.Header.UsedLength()+header.IPv4MinimumSize; i == 0 && want < int(mtu) && got != want {
-			t.Errorf("first fragment hdr parts should have unmodified length if possible: got %d, want %d", got, want)
+		if i == 0 {
+			got := packet.NetworkHeader().View().Size() + packet.TransportHeader().View().Size()
+			// sourcePacketInfo does not have NetworkHeader added, simulate one.
+			want := header.IPv4MinimumSize + sourcePacketInfo.TransportHeader().View().Size()
+			// Check that it kept the transport header in packet.TransportHeader if
+			// it fits in the first fragment.
+			if want < int(mtu) && got != want {
+				t.Errorf("first fragment hdr parts should have unmodified length if possible: got %d, want %d", got, want)
+			}
 		}
-		if got, want := packet.Header.AvailableLength(), sourcePacketInfo.Header.AvailableLength()-header.IPv4MinimumSize; got != want {
+		if got, want := packet.AvailableHeaderBytes(), sourcePacketInfo.AvailableHeaderBytes()-header.IPv4MinimumSize; got != want {
 			t.Errorf("fragment #%d should have the same available space for prepending as source: got %d, want %d", i, got, want)
+		}
+		if got, want := packet.NetworkProtocolNumber, sourcePacketInfo.NetworkProtocolNumber; got != want {
+			t.Errorf("fragment #%d has wrong network protocol number: got %d, want %d", i, got, want)
 		}
 		if i < len(packets)-1 {
 			sourceCopy.SetFlagsFragmentOffset(sourceCopy.Flags()|header.IPv4FlagMoreFragments, offset)
@@ -177,7 +188,7 @@ func compareFragments(t *testing.T, packets []packetInfo, sourcePacketInfo packe
 
 type errorChannel struct {
 	*channel.Endpoint
-	Ch                    chan packetInfo
+	Ch                    chan *stack.PacketBuffer
 	packetCollectorErrors []*tcpip.Error
 }
 
@@ -187,15 +198,9 @@ type errorChannel struct {
 func newErrorChannel(size int, mtu uint32, linkAddr tcpip.LinkAddress, packetCollectorErrors []*tcpip.Error) *errorChannel {
 	return &errorChannel{
 		Endpoint:              channel.New(size, mtu, linkAddr),
-		Ch:                    make(chan packetInfo, size),
+		Ch:                    make(chan *stack.PacketBuffer, size),
 		packetCollectorErrors: packetCollectorErrors,
 	}
-}
-
-// packetInfo holds all the information about an outbound packet.
-type packetInfo struct {
-	Header  buffer.Prependable
-	Payload buffer.VectorisedView
 }
 
 // Drain removes all outbound packets from the channel and counts them.
@@ -212,14 +217,9 @@ func (e *errorChannel) Drain() int {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *errorChannel) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	p := packetInfo{
-		Header:  hdr,
-		Payload: payload,
-	}
-
+func (e *errorChannel) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	select {
-	case e.Ch <- p:
+	case e.Ch <- pkt:
 	default:
 	}
 
@@ -295,19 +295,19 @@ func TestFragmentation(t *testing.T) {
 
 	for _, ft := range fragTests {
 		t.Run(ft.description, func(t *testing.T) {
-			hdr, payload := makeHdrAndPayload(ft.hdrLength, ft.extraLength, ft.payloadViewsSizes)
-			source := packetInfo{
-				Header: hdr,
-				// Save the source payload because WritePacket will modify it.
-				Payload: payload.Clone([]buffer.View{}),
-			}
+			pkt := makeRandPkt(ft.hdrLength, ft.extraLength, ft.payloadViewsSizes)
+			source := pkt.Clone()
 			c := buildContext(t, nil, ft.mtu)
-			err := c.Route.WritePacket(ft.gso, hdr, payload, tcp.ProtocolNumber, 42 /* ttl */, false /* useDefaultTTL */)
+			err := c.Route.WritePacket(ft.gso, stack.NetworkHeaderParams{
+				Protocol: tcp.ProtocolNumber,
+				TTL:      42,
+				TOS:      stack.DefaultTOS,
+			}, pkt)
 			if err != nil {
 				t.Errorf("err got %v, want %v", err, nil)
 			}
 
-			var results []packetInfo
+			var results []*stack.PacketBuffer
 		L:
 			for {
 				select {
@@ -347,9 +347,13 @@ func TestFragmentationErrors(t *testing.T) {
 
 	for _, ft := range fragTests {
 		t.Run(ft.description, func(t *testing.T) {
-			hdr, payload := makeHdrAndPayload(ft.hdrLength, header.IPv4MinimumSize, ft.payloadViewsSizes)
+			pkt := makeRandPkt(ft.hdrLength, header.IPv4MinimumSize, ft.payloadViewsSizes)
 			c := buildContext(t, ft.packetCollectorErrors, ft.mtu)
-			err := c.Route.WritePacket(&stack.GSO{}, hdr, payload, tcp.ProtocolNumber, 42 /* ttl */, false /* useDefaultTTL */)
+			err := c.Route.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
+				Protocol: tcp.ProtocolNumber,
+				TTL:      42,
+				TOS:      stack.DefaultTOS,
+			}, pkt)
 			for i := 0; i < len(ft.packetCollectorErrors)-1; i++ {
 				if got, want := ft.packetCollectorErrors[i], (*tcpip.Error)(nil); got != want {
 					t.Errorf("ft.packetCollectorErrors[%d] got %v, want %v", i, got, want)
@@ -362,6 +366,542 @@ func TestFragmentationErrors(t *testing.T) {
 			}
 			if got, want := c.linkEP.Drain(), int(c.Route.Stats().IP.PacketsSent.Value())+1; err != nil && got != want {
 				t.Errorf("after linkEP error len(result) got %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestInvalidFragments(t *testing.T) {
+	// These packets have both IHL and TotalLength set to 0.
+	testCases := []struct {
+		name                   string
+		packets                [][]byte
+		wantMalformedIPPackets uint64
+		wantMalformedFragments uint64
+	}{
+		{
+			"ihl_totallen_zero_valid_frag_offset",
+			[][]byte{
+				{0x40, 0x30, 0x00, 0x00, 0x6c, 0x74, 0x7d, 0x30, 0x30, 0x30, 0x30, 0x30, 0x39, 0x32, 0x39, 0x33, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			},
+			1,
+			0,
+		},
+		{
+			"ihl_totallen_zero_invalid_frag_offset",
+			[][]byte{
+				{0x40, 0x30, 0x00, 0x00, 0x6c, 0x74, 0x20, 0x00, 0x30, 0x30, 0x30, 0x30, 0x39, 0x32, 0x39, 0x33, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			},
+			1,
+			0,
+		},
+		{
+			// Total Length of 37(20 bytes IP header + 17 bytes of
+			// payload)
+			// Frag Offset of 0x1ffe = 8190*8 = 65520
+			// Leading to the fragment end to be past 65535.
+			"ihl_totallen_valid_invalid_frag_offset_1",
+			[][]byte{
+				{0x45, 0x30, 0x00, 0x25, 0x6c, 0x74, 0x1f, 0xfe, 0x30, 0x30, 0x30, 0x30, 0x39, 0x32, 0x39, 0x33, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			},
+			1,
+			1,
+		},
+		// The following 3 tests were found by running a fuzzer and were
+		// triggering a panic in the IPv4 reassembler code.
+		{
+			"ihl_less_than_ipv4_minimum_size_1",
+			[][]byte{
+				{0x42, 0x30, 0x0, 0x30, 0x30, 0x40, 0x0, 0xf3, 0x30, 0x1, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+				{0x42, 0x30, 0x0, 0x8, 0x30, 0x40, 0x20, 0x0, 0x30, 0x1, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			},
+			2,
+			0,
+		},
+		{
+			"ihl_less_than_ipv4_minimum_size_2",
+			[][]byte{
+				{0x42, 0x30, 0x0, 0x30, 0x30, 0x40, 0xb3, 0x12, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+				{0x42, 0x30, 0x0, 0x8, 0x30, 0x40, 0x20, 0x0, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			},
+			2,
+			0,
+		},
+		{
+			"ihl_less_than_ipv4_minimum_size_3",
+			[][]byte{
+				{0x42, 0x30, 0x0, 0x30, 0x30, 0x40, 0xb3, 0x30, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+				{0x42, 0x30, 0x0, 0x8, 0x30, 0x40, 0x20, 0x0, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			},
+			2,
+			0,
+		},
+		{
+			"fragment_with_short_total_len_extra_payload",
+			[][]byte{
+				{0x46, 0x30, 0x00, 0x30, 0x30, 0x40, 0x0e, 0x12, 0x30, 0x06, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+				{0x46, 0x30, 0x00, 0x18, 0x30, 0x40, 0x20, 0x00, 0x30, 0x06, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			},
+			1,
+			1,
+		},
+		{
+			"multiple_fragments_with_more_fragments_set_to_false",
+			[][]byte{
+				{0x45, 0x00, 0x00, 0x1c, 0x30, 0x40, 0x00, 0x10, 0x00, 0x06, 0x34, 0x69, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+				{0x45, 0x00, 0x00, 0x1c, 0x30, 0x40, 0x00, 0x01, 0x61, 0x06, 0x34, 0x69, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+				{0x45, 0x00, 0x00, 0x1c, 0x30, 0x40, 0x20, 0x00, 0x00, 0x06, 0x34, 0x1e, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			},
+			1,
+			1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			const nicID tcpip.NICID = 42
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{
+					ipv4.NewProtocol(),
+				},
+			})
+
+			var linkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x30})
+			var remoteLinkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x31})
+			ep := channel.New(10, 1500, linkAddr)
+			s.CreateNIC(nicID, sniffer.New(ep))
+
+			for _, pkt := range tc.packets {
+				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: buffer.NewVectorisedView(len(pkt), []buffer.View{pkt}),
+				}))
+			}
+
+			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), tc.wantMalformedIPPackets; got != want {
+				t.Errorf("incorrect Stats.IP.MalformedPacketsReceived, got: %d, want: %d", got, want)
+			}
+			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), tc.wantMalformedFragments; got != want {
+				t.Errorf("incorrect Stats.IP.MalformedFragmentsReceived, got: %d, want: %d", got, want)
+			}
+		})
+	}
+}
+
+// TestReceiveFragments feeds fragments in through the incoming packet path to
+// test reassembly
+func TestReceiveFragments(t *testing.T) {
+	const (
+		nicID = 1
+
+		addr1 = "\x0c\xa8\x00\x01" // 192.168.0.1
+		addr2 = "\x0c\xa8\x00\x02" // 192.168.0.2
+		addr3 = "\x0c\xa8\x00\x03" // 192.168.0.3
+	)
+
+	// Build and return a UDP header containing payload.
+	udpGen := func(payloadLen int, multiplier uint8, src, dst tcpip.Address) buffer.View {
+		payload := buffer.NewView(payloadLen)
+		for i := 0; i < len(payload); i++ {
+			payload[i] = uint8(i) * multiplier
+		}
+
+		udpLength := header.UDPMinimumSize + len(payload)
+
+		hdr := buffer.NewPrependable(udpLength)
+		u := header.UDP(hdr.Prepend(udpLength))
+		u.Encode(&header.UDPFields{
+			SrcPort: 5555,
+			DstPort: 80,
+			Length:  uint16(udpLength),
+		})
+		copy(u.Payload(), payload)
+		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(udpLength))
+		sum = header.Checksum(payload, sum)
+		u.SetChecksum(^u.CalculateChecksum(sum))
+		return hdr.View()
+	}
+
+	// UDP header plus a payload of 0..256
+	ipv4Payload1Addr1ToAddr2 := udpGen(256, 1, addr1, addr2)
+	udpPayload1Addr1ToAddr2 := ipv4Payload1Addr1ToAddr2[header.UDPMinimumSize:]
+	ipv4Payload1Addr3ToAddr2 := udpGen(256, 1, addr3, addr2)
+	udpPayload1Addr3ToAddr2 := ipv4Payload1Addr3ToAddr2[header.UDPMinimumSize:]
+	// UDP header plus a payload of 0..256 in increments of 2.
+	ipv4Payload2Addr1ToAddr2 := udpGen(128, 2, addr1, addr2)
+	udpPayload2Addr1ToAddr2 := ipv4Payload2Addr1ToAddr2[header.UDPMinimumSize:]
+	// UDP header plus a payload of 0..256 in increments of 3.
+	// Used to test cases where the fragment blocks are not a multiple of
+	// the fragment block size of 8 (RFC 791 section 3.1 page 14).
+	ipv4Payload3Addr1ToAddr2 := udpGen(127, 3, addr1, addr2)
+	udpPayload3Addr1ToAddr2 := ipv4Payload3Addr1ToAddr2[header.UDPMinimumSize:]
+
+	type fragmentData struct {
+		srcAddr        tcpip.Address
+		dstAddr        tcpip.Address
+		id             uint16
+		flags          uint8
+		fragmentOffset uint16
+		payload        buffer.View
+	}
+
+	tests := []struct {
+		name             string
+		fragments        []fragmentData
+		expectedPayloads [][]byte
+	}{
+		{
+			name: "No fragmentation",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2,
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
+		},
+		{
+			name: "No fragmentation with size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 0,
+					payload:        ipv4Payload3Addr1ToAddr2,
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload3Addr1ToAddr2},
+		},
+		{
+			name: "More fragments without payload",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2,
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Non-zero fragment offset without payload",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 8,
+					payload:        ipv4Payload1Addr1ToAddr2,
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Two fragments",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
+		},
+		{
+			name: "Two fragments out of order",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
+		},
+		{
+			name: "Two fragments with last fragment size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload3Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload3Addr1ToAddr2[64:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload3Addr1ToAddr2},
+		},
+		{
+			name: "Two fragments with first fragment size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload3Addr1ToAddr2[:63],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 63,
+					payload:        ipv4Payload3Addr1ToAddr2[63:],
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Second fragment has MoreFlags set",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Two fragments with different IDs",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             2,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Two interleaved fragmented packets",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             2,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload2Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             2,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload2Addr1ToAddr2[64:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2, udpPayload2Addr1ToAddr2},
+		},
+		{
+			name: "Two interleaved fragmented packets from different sources but with same ID",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr3,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr3ToAddr2[:32],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+				{
+					srcAddr:        addr3,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 32,
+					payload:        ipv4Payload1Addr3ToAddr2[32:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2, udpPayload1Addr3ToAddr2},
+		},
+		{
+			name: "Fragment without followup",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+			},
+			expectedPayloads: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Setup a stack and endpoint.
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+			})
+			e := channel.New(0, 1280, tcpip.LinkAddress("\xf0\x00"))
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, header.IPv4ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, addr2, err)
+			}
+
+			wq := waiter.Queue{}
+			we, ch := waiter.NewChannelEntry(nil)
+			wq.EventRegister(&we, waiter.EventIn)
+			defer wq.EventUnregister(&we)
+			defer close(ch)
+			ep, err := s.NewEndpoint(udp.ProtocolNumber, header.IPv4ProtocolNumber, &wq)
+			if err != nil {
+				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, header.IPv4ProtocolNumber, err)
+			}
+			defer ep.Close()
+
+			bindAddr := tcpip.FullAddress{Addr: addr2, Port: 80}
+			if err := ep.Bind(bindAddr); err != nil {
+				t.Fatalf("Bind(%+v): %s", bindAddr, err)
+			}
+
+			// Prepare and send the fragments.
+			for _, frag := range test.fragments {
+				hdr := buffer.NewPrependable(header.IPv4MinimumSize)
+
+				// Serialize IPv4 fixed header.
+				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+				ip.Encode(&header.IPv4Fields{
+					IHL:            header.IPv4MinimumSize,
+					TotalLength:    header.IPv4MinimumSize + uint16(len(frag.payload)),
+					ID:             frag.id,
+					Flags:          frag.flags,
+					FragmentOffset: frag.fragmentOffset,
+					TTL:            64,
+					Protocol:       uint8(header.UDPProtocolNumber),
+					SrcAddr:        frag.srcAddr,
+					DstAddr:        frag.dstAddr,
+				})
+
+				vv := hdr.View().ToVectorisedView()
+				vv.AppendView(frag.payload)
+
+				e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: vv,
+				}))
+			}
+
+			if got, want := s.Stats().UDP.PacketsReceived.Value(), uint64(len(test.expectedPayloads)); got != want {
+				t.Errorf("got UDP Rx Packets = %d, want = %d", got, want)
+			}
+
+			for i, expectedPayload := range test.expectedPayloads {
+				gotPayload, _, err := ep.Read(nil)
+				if err != nil {
+					t.Fatalf("(i=%d) Read(nil): %s", i, err)
+				}
+				if diff := cmp.Diff(buffer.View(expectedPayload), gotPayload); diff != "" {
+					t.Errorf("(i=%d) got UDP payload mismatch (-want +got):\n%s", i, diff)
+				}
+			}
+
+			if gotPayload, _, err := ep.Read(nil); err != tcpip.ErrWouldBlock {
+				t.Fatalf("(last) got Read(nil) = (%x, _, %v), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
 			}
 		})
 	}

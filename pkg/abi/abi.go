@@ -39,3 +39,7 @@ func (o OS) String() string {
 		return fmt.Sprintf("OS(%d)", o)
 	}
 }
+
+// ABI is an interface that defines OS-specific interactions.
+type ABI interface {
+}

@@ -15,9 +15,10 @@
 package mm
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Dumpability describes if and how core dumps should be created.
@@ -132,7 +133,7 @@ func (mm *MemoryManager) SetAuxv(auxv arch.Auxv) {
 //
 // An additional reference will be taken in the case of a non-nil executable,
 // which must be released by the caller.
-func (mm *MemoryManager) Executable() *fs.Dirent {
+func (mm *MemoryManager) Executable() fsbridge.File {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 
@@ -147,15 +148,15 @@ func (mm *MemoryManager) Executable() *fs.Dirent {
 // SetExecutable sets the executable.
 //
 // This takes a reference on d.
-func (mm *MemoryManager) SetExecutable(d *fs.Dirent) {
+func (mm *MemoryManager) SetExecutable(ctx context.Context, file fsbridge.File) {
 	mm.metadataMu.Lock()
 
 	// Grab a new reference.
-	d.IncRef()
+	file.IncRef()
 
 	// Set the executable.
 	orig := mm.executable
-	mm.executable = d
+	mm.executable = file
 
 	mm.metadataMu.Unlock()
 
@@ -164,6 +165,20 @@ func (mm *MemoryManager) SetExecutable(d *fs.Dirent) {
 	// Do this without holding the lock, since it may wind up doing some
 	// I/O to sync the dirent, etc.
 	if orig != nil {
-		orig.DecRef()
+		orig.DecRef(ctx)
 	}
+}
+
+// VDSOSigReturn returns the address of vdso_sigreturn.
+func (mm *MemoryManager) VDSOSigReturn() uint64 {
+	mm.metadataMu.Lock()
+	defer mm.metadataMu.Unlock()
+	return mm.vdsoSigReturnAddr
+}
+
+// SetVDSOSigReturn sets the address of vdso_sigreturn.
+func (mm *MemoryManager) SetVDSOSigReturn(addr uint64) {
+	mm.metadataMu.Lock()
+	defer mm.metadataMu.Unlock()
+	mm.vdsoSigReturnAddr = addr
 }

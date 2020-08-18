@@ -1,6 +1,6 @@
-package(licenses = ["notice"])
+load("//tools:defs.bzl", "go_library")
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+package(licenses = ["notice"])
 
 go_library(
     name = "hostinet",
@@ -10,28 +10,38 @@ go_library(
         "save_restore.go",
         "socket.go",
         "socket_unsafe.go",
+        "socket_vfs2.go",
+        "sockopt_impl.go",
         "stack.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/hostinet",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/fdnotifier",
         "//pkg/log",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
+        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsimpl/sockfs",
+        "//pkg/sentry/hostfd",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/socket/control",
+        "//pkg/sentry/vfs",
         "//pkg/syserr",
         "//pkg/syserror",
+        "//pkg/tcpip/stack",
+        "//pkg/usermem",
         "//pkg/waiter",
+        "//tools/go_marshal/marshal",
+        "//tools/go_marshal/primitive",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

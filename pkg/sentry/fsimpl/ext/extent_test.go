@@ -177,19 +177,19 @@ func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (*extentFile, []
 	t.Helper()
 
 	mockDisk := make([]byte, mockExtentBlkSize*10)
-	mockExtentFile := &extentFile{
-		regFile: regularFile{
-			inode: inode{
-				diskInode: &disklayout.InodeNew{
-					InodeOld: disklayout.InodeOld{
-						SizeLo: uint32(mockExtentBlkSize) * getNumPhyBlks(root),
-					},
-				},
-				blkSize: mockExtentBlkSize,
-				dev:     bytes.NewReader(mockDisk),
+	mockExtentFile := &extentFile{}
+	args := inodeArgs{
+		fs: &filesystem{
+			dev: bytes.NewReader(mockDisk),
+		},
+		diskInode: &disklayout.InodeNew{
+			InodeOld: disklayout.InodeOld{
+				SizeLo: uint32(mockExtentBlkSize) * getNumPhyBlks(root),
 			},
 		},
+		blkSize: mockExtentBlkSize,
 	}
+	mockExtentFile.regFile.inode.init(args, &mockExtentFile.regFile)
 
 	fileData := writeTree(&mockExtentFile.regFile.inode, mockDisk, node0, mockExtentBlkSize)
 

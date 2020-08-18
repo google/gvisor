@@ -17,7 +17,7 @@ package tmpfs
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
@@ -25,8 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var fsInfo = fs.Info{
@@ -39,14 +39,13 @@ var fsInfo = fs.Info{
 
 // rename implements fs.InodeOperations.Rename for tmpfs nodes.
 func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
-	op, ok := oldParent.InodeOperations.(*Dir)
-	if !ok {
+	// Don't allow renames across different mounts.
+	if newParent.MountSource != oldParent.MountSource {
 		return syserror.EXDEV
 	}
-	np, ok := newParent.InodeOperations.(*Dir)
-	if !ok {
-		return syserror.EXDEV
-	}
+
+	op := oldParent.InodeOperations.(*Dir)
+	np := newParent.InodeOperations.(*Dir)
 	return ramfs.Rename(ctx, op.ramfsDir, oldName, np.ramfsDir, newName, replacement)
 }
 
@@ -148,19 +147,24 @@ func (d *Dir) CreateFifo(ctx context.Context, dir *fs.Inode, name string, perms 
 	return d.ramfsDir.CreateFifo(ctx, dir, name, perms)
 }
 
-// Getxattr implements fs.InodeOperations.Getxattr.
-func (d *Dir) Getxattr(i *fs.Inode, name string) (string, error) {
-	return d.ramfsDir.Getxattr(i, name)
+// GetXattr implements fs.InodeOperations.GetXattr.
+func (d *Dir) GetXattr(ctx context.Context, i *fs.Inode, name string, size uint64) (string, error) {
+	return d.ramfsDir.GetXattr(ctx, i, name, size)
 }
 
-// Setxattr implements fs.InodeOperations.Setxattr.
-func (d *Dir) Setxattr(i *fs.Inode, name, value string) error {
-	return d.ramfsDir.Setxattr(i, name, value)
+// SetXattr implements fs.InodeOperations.SetXattr.
+func (d *Dir) SetXattr(ctx context.Context, i *fs.Inode, name, value string, flags uint32) error {
+	return d.ramfsDir.SetXattr(ctx, i, name, value, flags)
 }
 
-// Listxattr implements fs.InodeOperations.Listxattr.
-func (d *Dir) Listxattr(i *fs.Inode) (map[string]struct{}, error) {
-	return d.ramfsDir.Listxattr(i)
+// ListXattr implements fs.InodeOperations.ListXattr.
+func (d *Dir) ListXattr(ctx context.Context, i *fs.Inode, size uint64) (map[string]struct{}, error) {
+	return d.ramfsDir.ListXattr(ctx, i, size)
+}
+
+// RemoveXattr implements fs.InodeOperations.RemoveXattr.
+func (d *Dir) RemoveXattr(ctx context.Context, i *fs.Inode, name string) error {
+	return d.ramfsDir.RemoveXattr(ctx, i, name)
 }
 
 // Lookup implements fs.InodeOperations.Lookup.

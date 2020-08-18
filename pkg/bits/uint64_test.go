@@ -114,3 +114,21 @@ func TestIsOn(t *testing.T) {
 		}
 	}
 }
+
+func TestIsPowerOfTwo(t *testing.T) {
+	for _, tc := range []struct {
+		v    uint64
+		want bool
+	}{
+		{v: 0, want: false},
+		{v: 1, want: true},
+		{v: 2, want: true},
+		{v: 3, want: false},
+		{v: 4, want: true},
+		{v: 5, want: false},
+	} {
+		if got := IsPowerOfTwo64(tc.v); got != tc.want {
+			t.Errorf("IsPowerOfTwo(%d) = %t, want: %t", tc.v, got, tc.want)
+		}
+	}
+}

@@ -1,42 +1,46 @@
-# These packages are used to run language runtime tests inside gVisor sandboxes.
-
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//test/runtimes:build_defs.bzl", "runtime_test")
+load("//tools:defs.bzl", "bzl_library")
+load("//test/runtimes:defs.bzl", "runtime_test")
 
 package(licenses = ["notice"])
 
-go_binary(
-    name = "runner",
-    testonly = 1,
-    srcs = ["runner.go"],
-    deps = [
-        "//runsc/dockerutil",
-        "//runsc/testutil",
-    ],
-)
-
 runtime_test(
-    image = "gcr.io/gvisor-presubmit/go1.12",
+    name = "go1.12",
+    exclude_file = "exclude_go1.12.csv",
     lang = "go",
+    shard_count = 8,
 )
 
 runtime_test(
-    image = "gcr.io/gvisor-presubmit/java11",
+    name = "java11",
+    batch = 100,
+    exclude_file = "exclude_java11.csv",
     lang = "java",
+    shard_count = 16,
 )
 
 runtime_test(
-    blacklist_file = "blacklist_nodejs12.4.0.csv",
-    image = "gcr.io/gvisor-presubmit/nodejs12.4.0",
+    name = "nodejs12.4.0",
+    exclude_file = "exclude_nodejs12.4.0.csv",
     lang = "nodejs",
+    shard_count = 8,
 )
 
 runtime_test(
-    image = "gcr.io/gvisor-presubmit/php7.3.6",
+    name = "php7.3.6",
+    exclude_file = "exclude_php7.3.6.csv",
     lang = "php",
+    shard_count = 8,
 )
 
 runtime_test(
-    image = "gcr.io/gvisor-presubmit/python3.7.3",
+    name = "python3.7.3",
+    exclude_file = "exclude_python3.7.3.csv",
     lang = "python",
+    shard_count = 8,
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )

@@ -1,0 +1,22 @@
+---
+title: Blog
+layout: blog
+feed: true
+pagination:
+  enabled: true
+---
+
+{% for post in paginator.posts %}
+<div>
+  <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+  <div class="blog-meta">
+    {% include byline.html authors=post.authors date=post.date %}
+  </div>
+  <p>{{ post.excerpt | strip_html }}</p>
+  <p><a href="{{ post.url }}">Full Post &raquo;</a></p>
+</div>
+{% endfor %}
+
+{% if paginator.total_pages > 1 %}
+{% include paginator.html %}
+{% endif %}

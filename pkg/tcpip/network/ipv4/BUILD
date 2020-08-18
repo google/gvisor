@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -9,10 +8,7 @@ go_library(
         "icmp.go",
         "ipv4.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/network/ipv4",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
@@ -41,5 +37,6 @@ go_test(
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

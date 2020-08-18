@@ -17,6 +17,7 @@ package kernel
 import (
 	"fmt"
 	"os"
+	"runtime/trace"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -24,8 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SyscallRestartErrno represents a ERESTART* errno defined in the Linux's kernel
@@ -160,12 +161,19 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		ctrl = ctrlStopAndReinvokeSyscall
 	} else {
 		fn := s.Lookup(sysno)
+		var region *trace.Region // Only non-nil if tracing == true.
+		if trace.IsEnabled() {
+			region = trace.StartRegion(t.traceContext, s.LookupName(sysno))
+		}
 		if fn != nil {
 			// Call our syscall implementation.
 			rval, ctrl, err = fn(t, args)
 		} else {
 			// Use the missing function if not found.
 			rval, err = t.SyscallTable().Missing(t, sysno, args)
+		}
+		if region != nil {
+			region.End()
 		}
 	}
 
@@ -186,6 +194,19 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 //
 // The syscall path is very hot; avoid defer.
 func (t *Task) doSyscall() taskRunState {
+	// Save value of the register which is clobbered in the following
+	// t.Arch().SetReturn(-ENOSYS) operation. This is dedicated to arm64.
+	//
+	// On x86, register rax was shared by syscall number and return
+	// value, and at the entry of the syscall handler, the rax was
+	// saved to regs.orig_rax which was exposed to userspace.
+	// But on arm64, syscall number was passed through X8, and the X0
+	// was shared by the first syscall argument and return value. The
+	// X0 was saved to regs.orig_x0 which was not exposed to userspace.
+	// So we have to do the same operation here to save the X0 value
+	// into the task context.
+	t.Arch().SyscallSaveOrig()
+
 	sysno := t.Arch().SyscallNo()
 	args := t.Arch().SyscallArgs()
 
@@ -261,6 +282,7 @@ func (*runSyscallAfterSyscallEnterStop) execute(t *Task) taskRunState {
 		return (*runSyscallExit)(nil)
 	}
 	args := t.Arch().SyscallArgs()
+
 	return t.doSyscallInvoke(sysno, args)
 }
 
@@ -290,7 +312,7 @@ func (t *Task) doSyscallInvoke(sysno uintptr, args arch.SyscallArguments) taskRu
 			return ctrl.next
 		}
 	} else if err != nil {
-		t.Arch().SetReturn(uintptr(-t.ExtractErrno(err, int(sysno))))
+		t.Arch().SetReturn(uintptr(-ExtractErrno(err, int(sysno))))
 		t.haveSyscallReturn = true
 	} else {
 		t.Arch().SetReturn(rval)
@@ -409,7 +431,7 @@ func (t *Task) doVsyscallInvoke(sysno uintptr, args arch.SyscallArguments, calle
 			// A return is not emulated in this case.
 			return (*runApp)(nil)
 		}
-		t.Arch().SetReturn(uintptr(-t.ExtractErrno(err, int(sysno))))
+		t.Arch().SetReturn(uintptr(-ExtractErrno(err, int(sysno))))
 	}
 	t.Arch().SetIP(t.Arch().Value(caller))
 	t.Arch().SetStack(t.Arch().Stack() + uintptr(t.Arch().Width()))
@@ -419,7 +441,7 @@ func (t *Task) doVsyscallInvoke(sysno uintptr, args arch.SyscallArguments, calle
 // ExtractErrno extracts an integer error number from the error.
 // The syscall number is purely for context in the error case. Use -1 if
 // syscall number is unknown.
-func (t *Task) ExtractErrno(err error, sysno int) int {
+func ExtractErrno(err error, sysno int) int {
 	switch err := err.(type) {
 	case nil:
 		return 0
@@ -433,11 +455,11 @@ func (t *Task) ExtractErrno(err error, sysno int) int {
 		// handled (and the SIGBUS is delivered).
 		return int(syscall.EFAULT)
 	case *os.PathError:
-		return t.ExtractErrno(err.Err, sysno)
+		return ExtractErrno(err.Err, sysno)
 	case *os.LinkError:
-		return t.ExtractErrno(err.Err, sysno)
+		return ExtractErrno(err.Err, sysno)
 	case *os.SyscallError:
-		return t.ExtractErrno(err.Err, sysno)
+		return ExtractErrno(err.Err, sysno)
 	default:
 		if errno, ok := syserror.TranslateError(err); ok {
 			return int(errno)

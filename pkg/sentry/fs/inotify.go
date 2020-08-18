@@ -16,16 +16,16 @@ package fs
 
 import (
 	"io"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -80,7 +80,7 @@ func NewInotify(ctx context.Context) *Inotify {
 
 // Release implements FileOperations.Release. Release removes all watches and
 // frees all resources for an inotify instance.
-func (i *Inotify) Release() {
+func (i *Inotify) Release(ctx context.Context) {
 	// We need to hold i.mu to avoid a race with concurrent calls to
 	// Inotify.targetDestroyed from Watches. There's no risk of Watches
 	// accessing this Inotify after the destructor ends, because we remove all
@@ -93,7 +93,7 @@ func (i *Inotify) Release() {
 		// the owner's destructor.
 		w.target.Watches.Remove(w.ID())
 		// Don't leak any references to the target, held by pins in the watch.
-		w.destroy()
+		w.destroy(ctx)
 	}
 }
 
@@ -143,7 +143,10 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 	}
 
 	var writeLen int64
-	for event := i.events.Front(); event != nil; event = event.Next() {
+	for it := i.events.Front(); it != nil; {
+		event := it
+		it = it.Next()
+
 		// Does the buffer have enough remaining space to hold the event we're
 		// about to write out?
 		if dst.NumBytes() < int64(event.sizeOf()) {
@@ -318,7 +321,7 @@ func (i *Inotify) AddWatch(target *Dirent, mask uint32) int32 {
 //
 // RmWatch looks up an inotify watch for the given 'wd' and configures the
 // target dirent to stop sending events to this inotify instance.
-func (i *Inotify) RmWatch(wd int32) error {
+func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 	i.mu.Lock()
 
 	// Find the watch we were asked to removed.
@@ -343,7 +346,7 @@ func (i *Inotify) RmWatch(wd int32) error {
 	i.queueEvent(newEvent(watch.wd, "", linux.IN_IGNORED, 0))
 
 	// Remove all pins.
-	watch.destroy()
+	watch.destroy(ctx)
 
 	return nil
 }

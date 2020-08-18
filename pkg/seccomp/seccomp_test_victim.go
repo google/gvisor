@@ -31,17 +31,15 @@ func main() {
 
 	syscalls := seccomp.SyscallRules{
 		syscall.SYS_ACCEPT:          {},
-		syscall.SYS_ARCH_PRCTL:      {},
 		syscall.SYS_BIND:            {},
 		syscall.SYS_BRK:             {},
 		syscall.SYS_CLOCK_GETTIME:   {},
 		syscall.SYS_CLONE:           {},
 		syscall.SYS_CLOSE:           {},
 		syscall.SYS_DUP:             {},
-		syscall.SYS_DUP2:            {},
+		syscall.SYS_DUP3:            {},
 		syscall.SYS_EPOLL_CREATE1:   {},
 		syscall.SYS_EPOLL_CTL:       {},
-		syscall.SYS_EPOLL_WAIT:      {},
 		syscall.SYS_EPOLL_PWAIT:     {},
 		syscall.SYS_EXIT:            {},
 		syscall.SYS_EXIT_GROUP:      {},
@@ -68,8 +66,6 @@ func main() {
 		syscall.SYS_MUNLOCK:         {},
 		syscall.SYS_MUNMAP:          {},
 		syscall.SYS_NANOSLEEP:       {},
-		syscall.SYS_NEWFSTATAT:      {},
-		syscall.SYS_OPEN:            {},
 		syscall.SYS_PPOLL:           {},
 		syscall.SYS_PREAD64:         {},
 		syscall.SYS_PSELECT6:        {},
@@ -97,6 +93,9 @@ func main() {
 		syscall.SYS_WRITE:           {},
 		syscall.SYS_WRITEV:          {},
 	}
+
+	arch_syscalls(syscalls)
+
 	die := *dieFlag
 	if !die {
 		syscalls[syscall.SYS_OPENAT] = []seccomp.Rule{

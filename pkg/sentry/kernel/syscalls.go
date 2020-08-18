@@ -16,20 +16,20 @@ package kernel
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // maxSyscallNum is the highest supported syscall number.
 //
 // The types below create fast lookup slices for all syscalls. This maximum
 // serves as a sanity check that we don't allocate huge slices for a very large
-// syscall.
+// syscall. This is checked during registration.
 const maxSyscallNum = 2000
 
 // SyscallSupportLevel is a syscall support levels.
@@ -209,65 +209,71 @@ type Stracer interface {
 	// SyscallEnter is called on syscall entry.
 	//
 	// The returned private data is passed to SyscallExit.
-	//
-	// TODO(gvisor.dev/issue/155): remove kernel imports from the strace
-	// package so that the type can be used directly.
 	SyscallEnter(t *Task, sysno uintptr, args arch.SyscallArguments, flags uint32) interface{}
 
 	// SyscallExit is called on syscall exit.
 	SyscallExit(context interface{}, t *Task, sysno, rval uintptr, err error)
 }
 
-// SyscallTable is a lookup table of system calls. Critically, a SyscallTable
-// is *immutable*. In order to make supporting suspend and resume sane, they
-// must be uniquely registered and may not change during operation.
+// SyscallTable is a lookup table of system calls.
 //
-// +stateify savable
+// Note that a SyscallTable is not savable directly. Instead, they are saved as
+// an OS/Arch pair and lookup happens again on restore.
 type SyscallTable struct {
 	// OS is the operating system that this syscall table implements.
-	OS abi.OS `state:"wait"`
+	OS abi.OS
 
 	// Arch is the architecture that this syscall table targets.
-	Arch arch.Arch `state:"wait"`
+	Arch arch.Arch
 
 	// The OS version that this syscall table implements.
-	Version Version `state:"manual"`
+	Version Version
 
 	// AuditNumber is a numeric constant that represents the syscall table. If
 	// non-zero, auditNumber must be one of the AUDIT_ARCH_* values defined by
 	// linux/audit.h.
-	AuditNumber uint32 `state:"manual"`
+	AuditNumber uint32
 
 	// Table is the collection of functions.
-	Table map[uintptr]Syscall `state:"manual"`
+	Table map[uintptr]Syscall
 
 	// lookup is a fixed-size array that holds the syscalls (indexed by
 	// their numbers). It is used for fast look ups.
-	lookup []SyscallFn `state:"manual"`
+	lookup []SyscallFn
 
 	// Emulate is a collection of instruction addresses to emulate. The
 	// keys are addresses, and the values are system call numbers.
-	Emulate map[usermem.Addr]uintptr `state:"manual"`
+	Emulate map[usermem.Addr]uintptr
 
 	// The function to call in case of a missing system call.
-	Missing MissingFn `state:"manual"`
+	Missing MissingFn
 
 	// Stracer traces this syscall table.
-	Stracer Stracer `state:"manual"`
+	Stracer Stracer
 
 	// External is used to handle an external callback.
-	External func(*Kernel) `state:"manual"`
+	External func(*Kernel)
 
 	// ExternalFilterBefore is called before External is called before the syscall is executed.
 	// External is not called if it returns false.
-	ExternalFilterBefore func(*Task, uintptr, arch.SyscallArguments) bool `state:"manual"`
+	ExternalFilterBefore func(*Task, uintptr, arch.SyscallArguments) bool
 
 	// ExternalFilterAfter is called before External is called after the syscall is executed.
 	// External is not called if it returns false.
-	ExternalFilterAfter func(*Task, uintptr, arch.SyscallArguments) bool `state:"manual"`
+	ExternalFilterAfter func(*Task, uintptr, arch.SyscallArguments) bool
 
 	// FeatureEnable stores the strace and one-shot enable bits.
-	FeatureEnable SyscallFlagsTable `state:"manual"`
+	FeatureEnable SyscallFlagsTable
+}
+
+// MaxSysno returns the largest system call number.
+func (s *SyscallTable) MaxSysno() (max uintptr) {
+	for num := range s.Table {
+		if num > max {
+			max = num
+		}
+	}
+	return max
 }
 
 // allSyscallTables contains all known tables.
@@ -290,6 +296,20 @@ func LookupSyscallTable(os abi.OS, a arch.Arch) (*SyscallTable, bool) {
 
 // RegisterSyscallTable registers a new syscall table for use by a Kernel.
 func RegisterSyscallTable(s *SyscallTable) {
+	if max := s.MaxSysno(); max > maxSyscallNum {
+		panic(fmt.Sprintf("SyscallTable %+v contains too large syscall number %d", s, max))
+	}
+	if _, ok := LookupSyscallTable(s.OS, s.Arch); ok {
+		panic(fmt.Sprintf("Duplicate SyscallTable registered for OS %v Arch %v", s.OS, s.Arch))
+	}
+	allSyscallTables = append(allSyscallTables, s)
+	s.Init()
+}
+
+// Init initializes the system call table.
+//
+// This should normally be called only during registration.
+func (s *SyscallTable) Init() {
 	if s.Table == nil {
 		// Ensure non-nil lookup table.
 		s.Table = make(map[uintptr]Syscall)
@@ -299,35 +319,16 @@ func RegisterSyscallTable(s *SyscallTable) {
 		s.Emulate = make(map[usermem.Addr]uintptr)
 	}
 
-	var max uintptr
-	for num := range s.Table {
-		if num > max {
-			max = num
-		}
-	}
-
-	if max > maxSyscallNum {
-		panic(fmt.Sprintf("SyscallTable %+v contains too large syscall number %d", s, max))
-	}
-
-	s.lookup = make([]SyscallFn, max+1)
+	max := s.MaxSysno() // Checked during RegisterSyscallTable.
 
 	// Initialize the fast-lookup table.
+	s.lookup = make([]SyscallFn, max+1)
 	for num, sc := range s.Table {
 		s.lookup[num] = sc.Fn
 	}
 
+	// Initialize all features.
 	s.FeatureEnable.init(s.Table, max)
-
-	if _, ok := LookupSyscallTable(s.OS, s.Arch); ok {
-		panic(fmt.Sprintf("Duplicate SyscallTable registered for OS %v Arch %v", s.OS, s.Arch))
-	}
-
-	// Save a reference to this table.
-	//
-	// This is required for a Kernel to find the table and for save/restore
-	// operations below.
-	allSyscallTables = append(allSyscallTables, s)
 }
 
 // Lookup returns the syscall implementation, if one exists.
@@ -337,6 +338,14 @@ func (s *SyscallTable) Lookup(sysno uintptr) SyscallFn {
 	}
 
 	return nil
+}
+
+// LookupName looks up a syscall name.
+func (s *SyscallTable) LookupName(sysno uintptr) string {
+	if sc, ok := s.Table[sysno]; ok {
+		return sc.Name
+	}
+	return fmt.Sprintf("sys_%d", sysno) // Unlikely.
 }
 
 // LookupEmulate looks up an emulation syscall number.

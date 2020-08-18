@@ -20,6 +20,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <utime.h>
+
 #include <string>
 
 #include "absl/time/time.h"
@@ -33,17 +34,10 @@ namespace testing {
 
 namespace {
 
-// TODO(b/36516566): utimes(nullptr) does not pick the "now" time in the
-// application's time domain, so when asserting that times are within a window,
-// we expand the window to allow for differences between the time domains.
-constexpr absl::Duration kClockSlack = absl::Milliseconds(100);
-
 // TimeBoxed runs fn, setting before and after to (coarse realtime) times
 // guaranteed* to come before and after fn started and completed, respectively.
 //
 // fn may be called more than once if the clock is adjusted.
-//
-// * See the comment on kClockSlack. gVisor breaks this guarantee.
 void TimeBoxed(absl::Time* before, absl::Time* after,
                std::function<void()> const& fn) {
   do {
@@ -54,12 +48,15 @@ void TimeBoxed(absl::Time* before, absl::Time* after,
     // filesystems set it to 1, so we don't do any truncation.
     struct timespec ts;
     EXPECT_THAT(clock_gettime(CLOCK_REALTIME_COARSE, &ts), SyscallSucceeds());
-    *before = absl::TimeFromTimespec(ts);
+    // FIXME(b/132819225): gVisor filesystem timestamps inconsistently use the
+    // internal or host clock, which may diverge slightly. Allow some slack on
+    // times to account for the difference.
+    *before = absl::TimeFromTimespec(ts) - absl::Seconds(1);
 
     fn();
 
     EXPECT_THAT(clock_gettime(CLOCK_REALTIME_COARSE, &ts), SyscallSucceeds());
-    *after = absl::TimeFromTimespec(ts);
+    *after = absl::TimeFromTimespec(ts) + absl::Seconds(1);
 
     if (*after < *before) {
       // Clock jumped backwards; retry.
@@ -68,23 +65,17 @@ void TimeBoxed(absl::Time* before, absl::Time* after,
       // which could lead to test failures, but that is very unlikely to happen.
       continue;
     }
-
-    if (IsRunningOnGvisor()) {
-      // See comment on kClockSlack.
-      *before -= kClockSlack;
-      *after += kClockSlack;
-    }
   } while (*after < *before);
 }
 
 void TestUtimesOnPath(std::string const& path) {
   struct stat statbuf;
 
-  struct timeval times[2] = {{1, 0}, {2, 0}};
+  struct timeval times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(utimes(path.c_str(), times), SyscallSucceeds());
   EXPECT_THAT(stat(path.c_str(), &statbuf), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 
   absl::Time before;
   absl::Time after;
@@ -115,18 +106,18 @@ TEST(UtimesTest, OnDir) {
 
 TEST(UtimesTest, MissingPath) {
   auto path = NewTempAbsPath();
-  struct timeval times[2] = {{1, 0}, {2, 0}};
+  struct timeval times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(utimes(path.c_str(), times), SyscallFailsWithErrno(ENOENT));
 }
 
 void TestFutimesat(int dirFd, std::string const& path) {
   struct stat statbuf;
 
-  struct timeval times[2] = {{1, 0}, {2, 0}};
+  struct timeval times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(futimesat(dirFd, path.c_str(), times), SyscallSucceeds());
   EXPECT_THAT(fstatat(dirFd, path.c_str(), &statbuf, 0), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 
   absl::Time before;
   absl::Time after;
@@ -162,12 +153,12 @@ TEST(FutimesatTest, OnRelPath) {
 TEST(FutimesatTest, InvalidNsec) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   struct timeval times[4][2] = {{
-                                    {0, 1},                       // Valid
+                                    {0, 1},                         // Valid
                                     {1, static_cast<int64_t>(1e7)}  // Invalid
                                 },
                                 {
                                     {1, static_cast<int64_t>(1e7)},  // Invalid
-                                    {0, 1}                         // Valid
+                                    {0, 1}                           // Valid
                                 },
                                 {
                                     {0, 1},  // Valid
@@ -187,11 +178,11 @@ TEST(FutimesatTest, InvalidNsec) {
 
 void TestUtimensat(int dirFd, std::string const& path) {
   struct stat statbuf;
-  const struct timespec times[2] = {{1, 0}, {2, 0}};
+  const struct timespec times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(utimensat(dirFd, path.c_str(), times, 0), SyscallSucceeds());
   EXPECT_THAT(fstatat(dirFd, path.c_str(), &statbuf, 0), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 
   // Test setting with UTIME_NOW and UTIME_OMIT.
   struct stat statbuf2;
@@ -234,10 +225,7 @@ void TestUtimensat(int dirFd, std::string const& path) {
   EXPECT_GE(mtime3, before);
   EXPECT_LE(mtime3, after);
 
-  if (!IsRunningOnGvisor()) {
-    // FIXME(b/36516566): Gofers set atime and mtime to different "now" times.
-    EXPECT_EQ(atime3, mtime3);
-  }
+  EXPECT_EQ(atime3, mtime3);
 }
 
 TEST(UtimensatTest, OnAbsPath) {
@@ -287,14 +275,15 @@ TEST(UtimeTest, ZeroAtimeandMtime) {
 
 TEST(UtimensatTest, InvalidNsec) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  struct timespec times[2][2] = {{
-                                     {0, UTIME_OMIT},               // Valid
-                                     {2, static_cast<int64_t>(1e10)}  // Invalid
-                                 },
-                                 {
-                                     {2, static_cast<int64_t>(1e10)},  // Invalid
-                                     {0, UTIME_OMIT}                 // Valid
-                                 }};
+  struct timespec times[2][2] = {
+      {
+          {0, UTIME_OMIT},                 // Valid
+          {2, static_cast<int64_t>(1e10)}  // Invalid
+      },
+      {
+          {2, static_cast<int64_t>(1e10)},  // Invalid
+          {0, UTIME_OMIT}                   // Valid
+      }};
 
   for (unsigned int i = 0; i < sizeof(times) / sizeof(times[0]); i++) {
     std::cout << "test:" << i << "\n";
@@ -315,13 +304,13 @@ TEST(Utimensat, NullPath) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDWR));
   struct stat statbuf;
-  const struct timespec times[2] = {{1, 0}, {2, 0}};
+  const struct timespec times[2] = {{10, 0}, {20, 0}};
   // Call syscall directly.
   EXPECT_THAT(syscall(SYS_utimensat, fd.get(), NULL, times, 0),
               SyscallSucceeds());
   EXPECT_THAT(fstatat(0, f.path().c_str(), &statbuf, 0), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 }
 
 }  // namespace

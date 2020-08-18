@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <syscall.h>
 #include <unistd.h>
+
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -31,6 +32,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/node_hash_set.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "test/util/eventfd_util.h"
@@ -227,19 +229,28 @@ class GetdentsTest : public ::testing::Test {
 
 // Multiple template parameters are not allowed, so we must use explicit
 // template specialization to set the syscall number.
+
+// SYS_getdents isn't defined on arm64.
+#ifdef __x86_64__
 template <>
 int GetdentsTest<struct linux_dirent>::SyscallNum() {
   return SYS_getdents;
 }
+#endif
 
 template <>
 int GetdentsTest<struct linux_dirent64>::SyscallNum() {
   return SYS_getdents64;
 }
 
-// Test both legacy getdents and getdents64.
+#ifdef __x86_64__
+// Test both legacy getdents and getdents64 on x86_64.
 typedef ::testing::Types<struct linux_dirent, struct linux_dirent64>
     GetdentsTypes;
+#elif __aarch64__
+// Test only getdents64 on arm64.
+typedef ::testing::Types<struct linux_dirent64> GetdentsTypes;
+#endif
 TYPED_TEST_SUITE(GetdentsTest, GetdentsTypes);
 
 // N.B. TYPED_TESTs require explicitly using this-> to access members of
@@ -383,7 +394,7 @@ TYPED_TEST(GetdentsTest, ProcSelfFd) {
   // Make the buffer very small since we want to iterate.
   typename TestFixture::DirentBufferType dirents(
       2 * sizeof(typename TestFixture::LinuxDirentType));
-  std::unordered_set<int> prev_fds;
+  absl::node_hash_set<int> prev_fds;
   while (true) {
     dirents.Reset();
     int rv;

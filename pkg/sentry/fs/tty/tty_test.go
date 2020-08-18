@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func TestSimpleMasterToSlave(t *testing.T) {

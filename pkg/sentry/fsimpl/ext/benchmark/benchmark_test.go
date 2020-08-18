@@ -15,6 +15,9 @@
 // These benchmarks emulate memfs benchmarks. Ext4 images must be created
 // before this benchmark is run using the `make_deep_ext4.sh` script at
 // /tmp/image-{depth}.ext4 for all the depths tested below.
+//
+// The benchmark itself cannot run the script because the script requires
+// sudo privileges to create the file system images.
 package benchmark_test
 
 import (
@@ -24,8 +27,9 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -48,9 +52,14 @@ func setUp(b *testing.B, imagePath string) (context.Context, *vfs.VirtualFilesys
 	creds := auth.CredentialsFromContext(ctx)
 
 	// Create VFS.
-	vfsObj := vfs.New()
-	vfsObj.MustRegisterFilesystemType("extfs", ext.FilesystemType{})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, imagePath, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	vfsObj.MustRegisterFilesystemType("extfs", ext.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, imagePath, "extfs", &vfs.GetFilesystemOptions{InternalData: int(f.Fd())})
 	if err != nil {
 		f.Close()
 		return nil, nil, nil, nil, err
@@ -59,7 +68,7 @@ func setUp(b *testing.B, imagePath string) (context.Context, *vfs.VirtualFilesys
 	root := mntns.Root()
 
 	tearDown := func() {
-		root.DecRef()
+		root.DecRef(ctx)
 
 		if err := f.Close(); err != nil {
 			b.Fatalf("tearDown failed: %v", err)
@@ -81,7 +90,11 @@ func mount(b *testing.B, imagePath string, vfsfs *vfs.VirtualFilesystem, pop *vf
 	ctx := contexttest.Context(b)
 	creds := auth.CredentialsFromContext(ctx)
 
-	if err := vfsfs.NewMount(ctx, creds, imagePath, pop, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())}); err != nil {
+	if err := vfsfs.MountAt(ctx, creds, imagePath, pop, "extfs", &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalData: int(f.Fd()),
+		},
+	}); err != nil {
 		b.Fatalf("failed to mount tmpfs submount: %v", err)
 	}
 	return func() {
@@ -117,7 +130,7 @@ func BenchmarkVFS2Ext4fsStat(b *testing.B) {
 				stat, err := vfsfs.StatAt(ctx, creds, &vfs.PathOperation{
 					Root:               *root,
 					Start:              *root,
-					Pathname:           filePath,
+					Path:               fspath.Parse(filePath),
 					FollowFinalSymlink: true,
 				}, &vfs.StatOptions{})
 				if err != nil {
@@ -146,9 +159,9 @@ func BenchmarkVFS2ExtfsMountStat(b *testing.B) {
 			creds := auth.CredentialsFromContext(ctx)
 			mountPointName := "/1/"
 			pop := vfs.PathOperation{
-				Root:     *root,
-				Start:    *root,
-				Pathname: mountPointName,
+				Root:  *root,
+				Start: *root,
+				Path:  fspath.Parse(mountPointName),
 			}
 
 			// Save the mount point for later use.
@@ -156,7 +169,7 @@ func BenchmarkVFS2ExtfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to walk to mount point: %v", err)
 			}
-			defer mountPoint.DecRef()
+			defer mountPoint.DecRef(ctx)
 
 			// Create extfs submount.
 			mountTearDown := mount(b, fmt.Sprintf("/tmp/image-%d.ext4", depth), vfsfs, &pop)
@@ -177,7 +190,7 @@ func BenchmarkVFS2ExtfsMountStat(b *testing.B) {
 				stat, err := vfsfs.StatAt(ctx, creds, &vfs.PathOperation{
 					Root:               *root,
 					Start:              *root,
-					Pathname:           filePath,
+					Path:               fspath.Parse(filePath),
 					FollowFinalSymlink: true,
 				}, &vfs.StatOptions{})
 				if err != nil {

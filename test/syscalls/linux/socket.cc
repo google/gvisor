@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/temp_umask.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -58,12 +61,45 @@ TEST(SocketTest, ProtocolInet) {
   }
 }
 
+TEST(SocketTest, UnixSocketStat) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  FileDescriptor bound =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
+
+  // The permissions of the file created with bind(2) should be defined by the
+  // permissions of the bound socket and the umask.
+  mode_t sock_perm = 0765, mask = 0123;
+  ASSERT_THAT(fchmod(bound.get(), sock_perm), SyscallSucceeds());
+  TempUmask m(mask);
+
+  struct sockaddr_un addr =
+      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(/*abstract=*/false, AF_UNIX));
+  ASSERT_THAT(bind(bound.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                   sizeof(addr)),
+              SyscallSucceeds());
+
+  struct stat statbuf = {};
+  ASSERT_THAT(stat(addr.sun_path, &statbuf), SyscallSucceeds());
+
+  // Mode should be S_IFSOCK.
+  EXPECT_EQ(statbuf.st_mode, S_IFSOCK | sock_perm & ~mask);
+
+  // Timestamps should be equal and non-zero.
+  // TODO(b/158882152): Sockets currently don't implement timestamps.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_NE(statbuf.st_atime, 0);
+    EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
+    EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
+  }
+}
+
 using SocketOpenTest = ::testing::TestWithParam<int>;
 
 // UDS cannot be opened.
 TEST_P(SocketOpenTest, Unix) {
   // FIXME(b/142001530): Open incorrectly succeeds on gVisor.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithVFS1());
 
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));

@@ -16,17 +16,16 @@
 package signalfd
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -77,7 +76,7 @@ func New(ctx context.Context, mask linux.SignalSet) (*fs.File, error) {
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *SignalOperations) Release() {}
+func (s *SignalOperations) Release(context.Context) {}
 
 // Mask returns the signal mask.
 func (s *SignalOperations) Mask() linux.SignalSet {
@@ -121,7 +120,10 @@ func (s *SignalOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 
 // Readiness implements waiter.Waitable.Readiness.
 func (s *SignalOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return mask & waiter.EventIn
+	if mask&waiter.EventIn != 0 && s.target.PendingSignals()&s.Mask() != 0 {
+		return waiter.EventIn // Pending signals.
+	}
+	return 0
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

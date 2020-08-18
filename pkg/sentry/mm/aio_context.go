@@ -15,17 +15,15 @@
 package mm
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // aioManager creates and manages asynchronous I/O contexts.
@@ -60,25 +58,27 @@ func (a *aioManager) newAIOContext(events uint32, id uint64) bool {
 	}
 
 	a.contexts[id] = &AIOContext{
-		done:           make(chan struct{}, 1),
+		requestReady:   make(chan struct{}, 1),
 		maxOutstanding: events,
 	}
 	return true
 }
 
-// destroyAIOContext destroys an asynchronous I/O context.
+// destroyAIOContext destroys an asynchronous I/O context. It doesn't wait for
+// for pending requests to complete. Returns the destroyed AIOContext so it can
+// be drained.
 //
-// False is returned if the context does not exist.
-func (a *aioManager) destroyAIOContext(id uint64) bool {
+// Nil is returned if the context does not exist.
+func (a *aioManager) destroyAIOContext(id uint64) *AIOContext {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	ctx, ok := a.contexts[id]
 	if !ok {
-		return false
+		return nil
 	}
 	delete(a.contexts, id)
 	ctx.destroy()
-	return true
+	return ctx
 }
 
 // lookupAIOContext looks up the given context.
@@ -103,8 +103,8 @@ type ioResult struct {
 //
 // +stateify savable
 type AIOContext struct {
-	// done is the notification channel used for all requests.
-	done chan struct{} `state:"nosave"`
+	// requestReady is the notification channel used for all requests.
+	requestReady chan struct{} `state:"nosave"`
 
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
@@ -130,8 +130,14 @@ func (ctx *AIOContext) destroy() {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
 	ctx.dead = true
-	if ctx.outstanding == 0 {
-		close(ctx.done)
+	ctx.checkForDone()
+}
+
+// Preconditions: ctx.mu must be held by caller.
+func (ctx *AIOContext) checkForDone() {
+	if ctx.dead && ctx.outstanding == 0 {
+		close(ctx.requestReady)
+		ctx.requestReady = nil
 	}
 }
 
@@ -155,11 +161,12 @@ func (ctx *AIOContext) PopRequest() (interface{}, bool) {
 
 	// Is there anything ready?
 	if e := ctx.results.Front(); e != nil {
-		ctx.results.Remove(e)
-		ctx.outstanding--
-		if ctx.outstanding == 0 && ctx.dead {
-			close(ctx.done)
+		if ctx.outstanding == 0 {
+			panic("AIOContext outstanding is going negative")
 		}
+		ctx.outstanding--
+		ctx.results.Remove(e)
+		ctx.checkForDone()
 		return e.data, true
 	}
 	return nil, false
@@ -173,26 +180,58 @@ func (ctx *AIOContext) FinishRequest(data interface{}) {
 
 	// Push to the list and notify opportunistically. The channel notify
 	// here is guaranteed to be safe because outstanding must be non-zero.
-	// The done channel is only closed when outstanding reaches zero.
+	// The requestReady channel is only closed when outstanding reaches zero.
 	ctx.results.PushBack(&ioResult{data: data})
 
 	select {
-	case ctx.done <- struct{}{}:
+	case ctx.requestReady <- struct{}{}:
 	default:
 	}
 }
 
 // WaitChannel returns a channel that is notified when an AIO request is
-// completed.
-//
-// The boolean return value indicates whether or not the context is active.
-func (ctx *AIOContext) WaitChannel() (chan struct{}, bool) {
+// completed. Returns nil if the context is destroyed and there are no more
+// outstanding requests.
+func (ctx *AIOContext) WaitChannel() chan struct{} {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
-	if ctx.outstanding == 0 && ctx.dead {
-		return nil, false
+	return ctx.requestReady
+}
+
+// Dead returns true if the context has been destroyed.
+func (ctx *AIOContext) Dead() bool {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	return ctx.dead
+}
+
+// CancelPendingRequest forgets about a request that hasn't yet completed.
+func (ctx *AIOContext) CancelPendingRequest() {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+
+	if ctx.outstanding == 0 {
+		panic("AIOContext outstanding is going negative")
 	}
-	return ctx.done, true
+	ctx.outstanding--
+	ctx.checkForDone()
+}
+
+// Drain drops all completed requests. Pending requests remain untouched.
+func (ctx *AIOContext) Drain() {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+
+	if ctx.outstanding == 0 {
+		return
+	}
+	size := uint32(ctx.results.Len())
+	if ctx.outstanding < size {
+		panic("AIOContext outstanding is going negative")
+	}
+	ctx.outstanding -= size
+	ctx.results.Reset()
+	ctx.checkForDone()
 }
 
 // aioMappable implements memmap.MappingIdentity and memmap.Mappable for AIO
@@ -203,7 +242,7 @@ type aioMappable struct {
 	refs.AtomicRefCount
 
 	mfp pgalloc.MemoryFileProvider
-	fr  platform.FileRange
+	fr  memmap.FileRange
 }
 
 var aioRingBufferSize = uint64(usermem.Addr(linux.AIORingSize).MustRoundUp())
@@ -219,8 +258,8 @@ func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
 }
 
 // DecRef implements refs.RefCounter.DecRef.
-func (m *aioMappable) DecRef() {
-	m.AtomicRefCount.DecRefWithDestructor(func() {
+func (m *aioMappable) DecRef(ctx context.Context) {
+	m.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
 		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }
@@ -328,14 +367,14 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	if err != nil {
 		return 0, err
 	}
-	defer m.DecRef()
+	defer m.DecRef(ctx)
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
 		Length:          aioRingBufferSize,
 		MappingIdentity: m,
 		Mappable:        m,
-		// TODO(fvoznika): Linux does "do_mmap_pgoff(..., PROT_READ |
-		// PROT_WRITE, ...)" in fs/aio.c:aio_setup_ring(); why do we make this
-		// mapping read-only?
+		// Linux uses "do_mmap_pgoff(..., PROT_READ | PROT_WRITE, ...)" in
+		// fs/aio.c:aio_setup_ring(). Since we don't implement AIO_RING_MAGIC,
+		// user mode should not write to this page.
 		Perms:    usermem.Read,
 		MaxPerms: usermem.Read,
 	})
@@ -350,11 +389,11 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	return id, nil
 }
 
-// DestroyAIOContext destroys an asynchronous I/O context. It returns false if
-// the context does not exist.
-func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) bool {
+// DestroyAIOContext destroys an asynchronous I/O context. It returns the
+// destroyed context. nil if the context does not exist.
+func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) *AIOContext {
 	if _, ok := mm.LookupAIOContext(ctx, id); !ok {
-		return false
+		return nil
 	}
 
 	// Only unmaps after it assured that the address is a valid aio context to

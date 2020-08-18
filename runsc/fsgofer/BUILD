@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -6,19 +6,19 @@ go_library(
     name = "fsgofer",
     srcs = [
         "fsgofer.go",
+        "fsgofer_amd64_unsafe.go",
+        "fsgofer_arm64_unsafe.go",
         "fsgofer_unsafe.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/fsgofer",
-    visibility = [
-        "//runsc:__subpackages__",
-    ],
+    visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/cleanup",
         "//pkg/fd",
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/sync",
         "//pkg/syserr",
-        "//runsc/specutils",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -27,9 +27,10 @@ go_test(
     name = "fsgofer_test",
     size = "small",
     srcs = ["fsgofer_test.go"],
-    embed = [":fsgofer"],
+    library = ":fsgofer",
     deps = [
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/test/testutil",
     ],
 )

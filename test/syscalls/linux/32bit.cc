@@ -15,10 +15,12 @@
 #include <string.h>
 #include <sys/mman.h>
 
+#include "gtest/gtest.h"
+#include "absl/base/macros.h"
 #include "test/util/memory_util.h"
+#include "test/util/platform_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
-#include "gtest/gtest.h"
 
 #ifndef __x86_64__
 #error "This test is x86-64 specific."
@@ -30,7 +32,6 @@ namespace testing {
 namespace {
 
 constexpr char kInt3 = '\xcc';
-
 constexpr char kInt80[2] = {'\xcd', '\x80'};
 constexpr char kSyscall[2] = {'\x0f', '\x05'};
 constexpr char kSysenter[2] = {'\x0f', '\x34'};
@@ -43,6 +44,7 @@ void ExitGroup32(const char instruction[2], int code) {
   // Fill with INT 3 in case we execute too far.
   memset(m.ptr(), kInt3, m.len());
 
+  // Copy in the actual instruction.
   memcpy(m.ptr(), instruction, 2);
 
   // We're playing *extremely* fast-and-loose with the various syscall ABIs
@@ -71,77 +73,96 @@ void ExitGroup32(const char instruction[2], int code) {
       "iretl\n"
       "int $3\n"
       :
-      : [code] "m"(code), [ip] "d"(m.ptr())
-      : "rax", "rbx", "rsp");
+      : [ code ] "m"(code), [ ip ] "d"(m.ptr())
+      : "rax", "rbx");
 }
 
 constexpr int kExitCode = 42;
 
 TEST(Syscall32Bit, Int80) {
-  switch (GvisorPlatform()) {
-    case Platform::kKVM:
-      // TODO(b/111805002): 32-bit segments are broken (but not explictly
-      // disabled).
-      return;
-    case Platform::kPtrace:
-      // TODO(gvisor.dev/issue/167): The ptrace platform does not have a
-      // consistent story here.
-      return;
-    case Platform::kNative:
+  switch (PlatformSupport32Bit()) {
+    case PlatformSupport::NotSupported:
+      break;
+    case PlatformSupport::Segfault:
+      EXPECT_EXIT(ExitGroup32(kInt80, kExitCode),
+                  ::testing::KilledBySignal(SIGSEGV), "");
+      break;
+
+    case PlatformSupport::Ignored:
+      // Since the call is ignored, we'll hit the int3 trap.
+      EXPECT_EXIT(ExitGroup32(kInt80, kExitCode),
+                  ::testing::KilledBySignal(SIGTRAP), "");
+      break;
+
+    case PlatformSupport::Allowed:
+      EXPECT_EXIT(ExitGroup32(kInt80, kExitCode), ::testing::ExitedWithCode(42),
+                  "");
       break;
   }
-
-  // Upstream Linux. 32-bit syscalls allowed.
-  EXPECT_EXIT(ExitGroup32(kInt80, kExitCode), ::testing::ExitedWithCode(42),
-              "");
 }
 
 TEST(Syscall32Bit, Sysenter) {
-  switch (GvisorPlatform()) {
-    case Platform::kKVM:
-      // TODO(b/111805002): See above.
-      return;
-    case Platform::kPtrace:
-      // TODO(gvisor.dev/issue/167): See above.
-      return;
-    case Platform::kNative:
-      break;
-  }
-
-  if (GetCPUVendor() == CPUVendor::kAMD) {
+  if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
+       PlatformSupport32Bit() == PlatformSupport::Ignored) &&
+      GetCPUVendor() == CPUVendor::kAMD) {
     // SYSENTER is an illegal instruction in compatibility mode on AMD.
     EXPECT_EXIT(ExitGroup32(kSysenter, kExitCode),
                 ::testing::KilledBySignal(SIGILL), "");
     return;
   }
 
-  // Upstream Linux on !AMD, 32-bit syscalls allowed.
-  EXPECT_EXIT(ExitGroup32(kSysenter, kExitCode), ::testing::ExitedWithCode(42),
-              "");
+  switch (PlatformSupport32Bit()) {
+    case PlatformSupport::NotSupported:
+      break;
+
+    case PlatformSupport::Segfault:
+      EXPECT_EXIT(ExitGroup32(kSysenter, kExitCode),
+                  ::testing::KilledBySignal(SIGSEGV), "");
+      break;
+
+    case PlatformSupport::Ignored:
+      // See above, except expected code is SIGSEGV.
+      EXPECT_EXIT(ExitGroup32(kSysenter, kExitCode),
+                  ::testing::KilledBySignal(SIGSEGV), "");
+      break;
+
+    case PlatformSupport::Allowed:
+      EXPECT_EXIT(ExitGroup32(kSysenter, kExitCode),
+                  ::testing::ExitedWithCode(42), "");
+      break;
+  }
 }
 
 TEST(Syscall32Bit, Syscall) {
-  switch (GvisorPlatform()) {
-    case Platform::kKVM:
-      // TODO(b/111805002): See above.
-      return;
-    case Platform::kPtrace:
-      // TODO(gvisor.dev/issue/167): See above.
-      return;
-    case Platform::kNative:
-      break;
-  }
-
-  if (GetCPUVendor() == CPUVendor::kIntel) {
+  if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
+       PlatformSupport32Bit() == PlatformSupport::Ignored) &&
+      GetCPUVendor() == CPUVendor::kIntel) {
     // SYSCALL is an illegal instruction in compatibility mode on Intel.
     EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
                 ::testing::KilledBySignal(SIGILL), "");
     return;
   }
 
-  // Upstream Linux on !Intel, 32-bit syscalls allowed.
-  EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode), ::testing::ExitedWithCode(42),
-              "");
+  switch (PlatformSupport32Bit()) {
+    case PlatformSupport::NotSupported:
+      break;
+
+    case PlatformSupport::Segfault:
+      EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
+                  ::testing::KilledBySignal(SIGSEGV), "");
+      break;
+
+    case PlatformSupport::Ignored:
+      // See above.
+      EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
+                  ::testing::KilledBySignal(SIGSEGV), "");
+      break;
+
+    case PlatformSupport::Allowed:
+      EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
+                  ::testing::ExitedWithCode(42), "");
+      break;
+  }
 }
 
 // Far call code called below.
@@ -205,19 +226,20 @@ void FarCall32() {
 }
 
 TEST(Call32Bit, Disallowed) {
-  switch (GvisorPlatform()) {
-    case Platform::kKVM:
-      // TODO(b/111805002): See above.
-      return;
-    case Platform::kPtrace:
-      // The ptrace platform cannot prevent switching to compatibility mode.
-      ABSL_FALLTHROUGH_INTENDED;
-    case Platform::kNative:
+  switch (PlatformSupport32Bit()) {
+    case PlatformSupport::NotSupported:
       break;
-  }
 
-  // Shouldn't crash.
-  FarCall32();
+    case PlatformSupport::Segfault:
+      EXPECT_EXIT(FarCall32(), ::testing::KilledBySignal(SIGSEGV), "");
+      break;
+
+    case PlatformSupport::Ignored:
+      ABSL_FALLTHROUGH_INTENDED;
+    case PlatformSupport::Allowed:
+      // Shouldn't crash.
+      FarCall32();
+  }
 }
 
 }  // namespace

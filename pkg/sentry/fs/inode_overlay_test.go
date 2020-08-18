@@ -17,7 +17,7 @@ package fs_test
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
@@ -316,7 +316,7 @@ func TestCacheFlush(t *testing.T) {
 		t.Fatalf("NewMountNamespace failed: %v", err)
 	}
 	root := mns.Root()
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	ctx = &rootContext{
 		Context: ctx,
@@ -345,7 +345,7 @@ func TestCacheFlush(t *testing.T) {
 		}
 
 		// Drop the file reference.
-		file.DecRef()
+		file.DecRef(ctx)
 
 		// Dirent should have 2 refs left.
 		if got, want := dirent.ReadRefs(), 2; int(got) != want {
@@ -361,7 +361,7 @@ func TestCacheFlush(t *testing.T) {
 		}
 
 		// Drop our ref.
-		dirent.DecRef()
+		dirent.DecRef(ctx)
 
 		// We should be back to zero refs.
 		if got, want := dirent.ReadRefs(), 0; int(got) != want {
@@ -382,8 +382,8 @@ type dir struct {
 	ReaddirCalled bool
 }
 
-// Getxattr implements InodeOperations.Getxattr.
-func (d *dir) Getxattr(inode *fs.Inode, name string) (string, error) {
+// GetXattr implements InodeOperations.GetXattr.
+func (d *dir) GetXattr(_ context.Context, _ *fs.Inode, name string, _ uint64) (string, error) {
 	for _, n := range d.negative {
 		if name == fs.XattrOverlayWhiteout(n) {
 			return "y", nil
@@ -398,7 +398,7 @@ func (d *dir) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags
 	if err != nil {
 		return nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 	// Wrap the file's FileOperations in a dirFile.
 	fops := &dirFile{
 		FileOperations: file.FileOperations,

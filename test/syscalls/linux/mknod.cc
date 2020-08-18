@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -39,7 +40,28 @@ TEST(MknodTest, RegularFile) {
   EXPECT_THAT(mknod(node1.c_str(), 0, 0), SyscallSucceeds());
 }
 
-TEST(MknodTest, MknodAtRegularFile) {
+TEST(MknodTest, RegularFilePermissions) {
+  const std::string node = NewTempAbsPath();
+  mode_t newUmask = 0077;
+  umask(newUmask);
+
+  // Attempt to open file with mode 0777. Not specifying file type should create
+  // a regualar file.
+  mode_t perms = S_IRWXU | S_IRWXG | S_IRWXO;
+  EXPECT_THAT(mknod(node.c_str(), perms, 0), SyscallSucceeds());
+
+  // In the absence of a default ACL, the permissions of the created node are
+  // (mode & ~umask).  -- mknod(2)
+  mode_t wantPerms = perms & ~newUmask;
+  struct stat st;
+  ASSERT_THAT(stat(node.c_str(), &st), SyscallSucceeds());
+  ASSERT_EQ(st.st_mode & 0777, wantPerms);
+
+  // "Zero file type is equivalent to type S_IFREG." - mknod(2)
+  ASSERT_EQ(st.st_mode & S_IFMT, S_IFREG);
+}
+
+TEST(MknodTest, MknodAtFIFO) {
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string fifo_relpath = NewTempRelPath();
   const std::string fifo = JoinPath(dir.path(), fifo_relpath);
@@ -72,7 +94,7 @@ TEST(MknodTest, MknodOnExistingPathFails) {
 TEST(MknodTest, UnimplementedTypesReturnError) {
   const std::string path = NewTempAbsPath();
 
-  if (IsRunningOnGvisor()) {
+  if (IsRunningWithVFS1()) {
     ASSERT_THAT(mknod(path.c_str(), S_IFSOCK, 0),
                 SyscallFailsWithErrno(EOPNOTSUPP));
   }

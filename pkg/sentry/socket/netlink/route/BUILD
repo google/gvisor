@@ -1,15 +1,16 @@
-package(licenses = ["notice"])
+load("//tools:defs.bzl", "go_library")
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+package(licenses = ["notice"])
 
 go_library(
     name = "route",
-    srcs = ["protocol.go"],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route",
+    srcs = [
+        "protocol.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

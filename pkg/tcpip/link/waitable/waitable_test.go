@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -35,8 +36,12 @@ type countedEndpoint struct {
 	dispatcher stack.NetworkDispatcher
 }
 
-func (e *countedEndpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+func (e *countedEndpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.dispatchCount++
+}
+
+func (e *countedEndpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("unimplemented")
 }
 
 func (e *countedEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
@@ -65,34 +70,55 @@ func (e *countedEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	e.writeCount++
 	return nil
 }
 
+// WritePackets implements stack.LinkEndpoint.WritePackets.
+func (e *countedEndpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	e.writeCount += pkts.Len()
+	return pkts.Len(), nil
+}
+
+func (e *countedEndpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {
+	e.writeCount++
+	return nil
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (*countedEndpoint) ARPHardwareType() header.ARPHardwareType {
+	panic("unimplemented")
+}
+
 // Wait implements stack.LinkEndpoint.Wait.
 func (*countedEndpoint) Wait() {}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *countedEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("unimplemented")
+}
 
 func TestWaitWrite(t *testing.T) {
 	ep := &countedEndpoint{}
 	wep := New(ep)
 
 	// Write and check that it goes through.
-	wep.WritePacket(nil, nil /* gso */, buffer.Prependable{}, buffer.VectorisedView{}, 0)
+	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 1; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on dispatches, then try to write. It must go through.
 	wep.WaitDispatch()
-	wep.WritePacket(nil, nil /* gso */, buffer.Prependable{}, buffer.VectorisedView{}, 0)
+	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on writes, then try to write. It must not go through.
 	wep.WaitWrite()
-	wep.WritePacket(nil, nil /* gso */, buffer.Prependable{}, buffer.VectorisedView{}, 0)
+	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
@@ -109,21 +135,21 @@ func TestWaitDispatch(t *testing.T) {
 	}
 
 	// Dispatch and check that it goes through.
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket("", "", 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 1; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on writes, then try to dispatch. It must go through.
 	wep.WaitWrite()
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket("", "", 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on dispatches, then try to dispatch. It must not go through.
 	wep.WaitDispatch()
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket("", "", 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}

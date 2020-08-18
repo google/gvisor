@@ -15,17 +15,18 @@
 package host
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// LINT.IfChange
 
 // TTYFileOperations implements fs.FileOperations for a host file descriptor
 // that wraps a TTY FD.
@@ -44,6 +45,7 @@ type TTYFileOperations struct {
 	// connected to this TTY.
 	fgProcessGroup *kernel.ProcessGroup
 
+	// termios contains the terminal attributes for this TTY.
 	termios linux.KernelTermios
 }
 
@@ -111,12 +113,12 @@ func (t *TTYFileOperations) Write(ctx context.Context, file *fs.File, src userme
 }
 
 // Release implements fs.FileOperations.Release.
-func (t *TTYFileOperations) Release() {
+func (t *TTYFileOperations) Release(ctx context.Context) {
 	t.mu.Lock()
 	t.fgProcessGroup = nil
 	t.mu.Unlock()
 
-	t.fileOperations.Release()
+	t.fileOperations.Release(ctx)
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
@@ -306,9 +308,9 @@ func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) e
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		// No task? Linux does not have an analog for this case, but
-		// tty_check_change is more of a blacklist of cases than a
-		// whitelist, and is surprisingly permissive. Allowing the
-		// change seems most appropriate.
+		// tty_check_change only blocks specific cases and is
+		// surprisingly permissive. Allowing the change seems
+		// appropriate.
 		return nil
 	}
 
@@ -358,3 +360,5 @@ func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) e
 	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
 	return kernel.ERESTARTSYS
 }
+
+// LINT.ThenChange(../../fsimpl/host/tty.go)

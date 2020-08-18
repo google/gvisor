@@ -16,8 +16,9 @@
 package limits
 
 import (
-	"sync"
 	"syscall"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // LimitType defines a type of resource limit.

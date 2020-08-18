@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -65,40 +66,25 @@ func NonBlockingWrite(fd int, buf []byte) *tcpip.Error {
 	return nil
 }
 
-// NonBlockingWrite3 writes up to three byte slices to a file descriptor in a
-// single syscall. It fails if partial data is written.
-func NonBlockingWrite3(fd int, b1, b2, b3 []byte) *tcpip.Error {
-	// If the is no second buffer, issue a regular write.
-	if len(b2) == 0 {
-		return NonBlockingWrite(fd, b1)
-	}
-
-	// We have two buffers. Build the iovec that represents them and issue
-	// a writev syscall.
-	iovec := [3]syscall.Iovec{
-		{
-			Base: &b1[0],
-			Len:  uint64(len(b1)),
-		},
-		{
-			Base: &b2[0],
-			Len:  uint64(len(b2)),
-		},
-	}
-	iovecLen := uintptr(2)
-
-	if len(b3) > 0 {
-		iovecLen++
-		iovec[2].Base = &b3[0]
-		iovec[2].Len = uint64(len(b3))
-	}
-
+// NonBlockingWriteIovec writes iovec to a file descriptor in a single syscall.
+// It fails if partial data is written.
+func NonBlockingWriteIovec(fd int, iovec []syscall.Iovec) *tcpip.Error {
+	iovecLen := uintptr(len(iovec))
 	_, _, e := syscall.RawSyscall(syscall.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&iovec[0])), iovecLen)
 	if e != 0 {
 		return TranslateErrno(e)
 	}
-
 	return nil
+}
+
+// NonBlockingSendMMsg sends multiple messages on a socket.
+func NonBlockingSendMMsg(fd int, msgHdrs []MMsgHdr) (int, *tcpip.Error) {
+	n, _, e := syscall.RawSyscall6(unix.SYS_SENDMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), syscall.MSG_DONTWAIT, 0, 0)
+	if e != 0 {
+		return 0, TranslateErrno(e)
+	}
+
+	return int(n), nil
 }
 
 // PollEvent represents the pollfd structure passed to a poll() system call.

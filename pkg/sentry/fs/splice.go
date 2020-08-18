@@ -18,7 +18,7 @@ import (
 	"io"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

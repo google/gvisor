@@ -1,22 +1,22 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "atomicbitops",
     srcs = [
-        "atomic_bitops.go",
-        "atomic_bitops_amd64.s",
-        "atomic_bitops_common.go",
+        "atomicbitops.go",
+        "atomicbitops_amd64.s",
+        "atomicbitops_arm64.s",
+        "atomicbitops_noasm.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/atomicbitops",
     visibility = ["//:sandbox"],
 )
 
 go_test(
     name = "atomicbitops_test",
     size = "small",
-    srcs = ["atomic_bitops_test.go"],
-    embed = [":atomicbitops"],
+    srcs = ["atomicbitops_test.go"],
+    library = ":atomicbitops",
+    deps = ["//pkg/sync"],
 )

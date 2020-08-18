@@ -101,6 +101,8 @@ func NsecToTimeT(nsec int64) TimeT {
 }
 
 // Timespec represents struct timespec in <time.h>.
+//
+// +marshal
 type Timespec struct {
 	Sec  int64
 	Nsec int64
@@ -155,6 +157,8 @@ func DurationToTimespec(dur time.Duration) Timespec {
 const SizeOfTimeval = 16
 
 // Timeval represents struct timeval in <time.h>.
+//
+// +marshal
 type Timeval struct {
 	Sec  int64
 	Usec int64
@@ -228,10 +232,25 @@ type Tms struct {
 type TimerID int32
 
 // StatxTimestamp represents struct statx_timestamp.
+//
+// +marshal
 type StatxTimestamp struct {
 	Sec  int64
 	Nsec uint32
 	_    int32
+}
+
+// ToNsec returns the nanosecond representation.
+func (sxts StatxTimestamp) ToNsec() int64 {
+	return int64(sxts.Sec)*1e9 + int64(sxts.Nsec)
+}
+
+// ToNsecCapped returns the safe nanosecond representation.
+func (sxts StatxTimestamp) ToNsecCapped() int64 {
+	if sxts.Sec > maxSecInDuration {
+		return math.MaxInt64
+	}
+	return sxts.ToNsec()
 }
 
 // NsecToStatxTimestamp translates nanoseconds to StatxTimestamp.
@@ -243,6 +262,8 @@ func NsecToStatxTimestamp(nsec int64) (ts StatxTimestamp) {
 }
 
 // Utime represents struct utimbuf used by utimes(2).
+//
+// +marshal
 type Utime struct {
 	Actime  int64
 	Modtime int64

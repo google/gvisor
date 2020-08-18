@@ -1,9 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
     name = "waiter_list",
@@ -23,8 +21,8 @@ go_library(
         "waiter.go",
         "waiter_list.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/waiter",
     visibility = ["//visibility:public"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(
@@ -33,13 +31,5 @@ go_test(
     srcs = [
         "waiter_test.go",
     ],
-    embed = [":waiter"],
-)
-
-filegroup(
-    name = "autogen",
-    srcs = [
-        "waiter_list.go",
-    ],
-    visibility = ["//:sandbox"],
+    library = ":waiter",
 )

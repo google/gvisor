@@ -14,10 +14,9 @@
 
 #include <fcntl.h>
 #include <stdio.h>
-#include <unistd.h>
-
 #include <sys/syscall.h>
 #include <unistd.h>
+
 #include <string>
 
 #include "gtest/gtest.h"

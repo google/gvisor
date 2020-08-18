@@ -1,13 +1,68 @@
-package(licenses = ["notice"])  # Apache 2.0
+load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
+load("//website:defs.bzl", "doc")
 
-load("@io_bazel_rules_go//go:def.bzl", "go_path", "nogo")
-load("@bazel_gazelle//:def.bzl", "gazelle")
+package(licenses = ["notice"])
+
+exports_files(["LICENSE"])
+
+doc(
+    name = "contributing",
+    src = "CONTRIBUTING.md",
+    category = "Project",
+    permalink = "/contributing/",
+    visibility = ["//website:__pkg__"],
+    weight = "20",
+)
+
+doc(
+    name = "security",
+    src = "SECURITY.md",
+    category = "Project",
+    permalink = "/security/",
+    visibility = ["//website:__pkg__"],
+    weight = "30",
+)
+
+doc(
+    name = "governance",
+    src = "GOVERNANCE.md",
+    category = "Project",
+    permalink = "/community/governance/",
+    subcategory = "Community",
+    visibility = ["//website:__pkg__"],
+    weight = "20",
+)
+
+doc(
+    name = "code_of_conduct",
+    src = "CODE_OF_CONDUCT.md",
+    category = "Project",
+    permalink = "/community/code_of_conduct/",
+    subcategory = "Community",
+    visibility = ["//website:__pkg__"],
+    weight = "99",
+)
 
 # The sandbox filegroup is used for sandbox-internal dependencies.
 package_group(
     name = "sandbox",
-    packages = [
-        "//...",
+    packages = ["//..."],
+)
+
+# For targets that will not normally build internally, we ensure that they are
+# least build by a static BUILD test.
+build_test(
+    name = "build_test",
+    targets = [
+        "//test/e2e:integration_test",
+        "//test/image:image_test",
+        "//test/root:root_test",
+        "//test/benchmarks/base:base_test",
+        "//test/benchmarks/database:database_test",
+        "//test/benchmarks/fs:fs_test",
+        "//test/benchmarks/media:media_test",
+        "//test/benchmarks/ml:ml_test",
+        "//test/benchmarks/network:network_test",
     ],
 )
 
@@ -20,10 +75,24 @@ go_path(
     name = "gopath",
     mode = "link",
     deps = [
+        # Main binary.
         "//runsc",
+        "//shim/v1:gvisor-containerd-shim",
+        "//shim/v2:containerd-shim-runsc-v1",
 
         # Packages that are not dependencies of //runsc.
+        "//pkg/sentry/kernel/memevent",
+        "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/muxed",
+        "//pkg/tcpip/link/sharedmem",
+        "//pkg/tcpip/link/sharedmem/pipe",
+        "//pkg/tcpip/link/sharedmem/queue",
+        "//pkg/tcpip/link/tun",
+        "//pkg/tcpip/link/waitable",
+        "//pkg/tcpip/sample/tun_tcp_connect",
+        "//pkg/tcpip/sample/tun_tcp_echo",
+        "//pkg/tcpip/transport/tcpconntrack",
     ],
 )
 
@@ -32,15 +101,3 @@ go_path(
 # To update the WORKSPACE from go.mod, use:
 #   bazel run //:gazelle -- update-repos -from_file=go.mod
 gazelle(name = "gazelle")
-
-# nogo applies checks to all Go source in this repository, enforcing code
-# guidelines and restrictions. Note that the tool libraries themselves should
-# live in the tools subdirectory (unless they are standard).
-nogo(
-    name = "nogo",
-    config = "tools/nogo.js",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//tools/checkunsafe",
-    ],
-)

@@ -1,0 +1,7 @@
+runtime,method,metric,result
+runc,startup.empty,startup_time_ms,1193.10768
+runc,startup.node,startup_time_ms,2557.95336
+runc,startup.ruby,startup_time_ms,2530.12624
+runsc,startup.empty,startup_time_ms,1144.1775
+runsc,startup.node,startup_time_ms,2441.90284
+runsc,startup.ruby,startup_time_ms,2455.69882

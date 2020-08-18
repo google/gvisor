@@ -59,6 +59,8 @@ begin:
 	CMP $0x0, R0
 	BLT error
 
+	MOVD $0, R9
+
 	// SIGSTOP to wait for attach.
 	//
 	// The SYSCALL instruction will be used for future syscall injection by
@@ -66,22 +68,26 @@ begin:
 	MOVD $SYS_KILL, R8
 	MOVD $SIGSTOP, R1
 	SVC
-	// The tracer may "detach" and/or allow code execution here in three cases:
-	//
-	// 1. New (traced) stub threads are explicitly detached by the
-	// goroutine in newSubprocess. However, they are detached while in
-	// group-stop, so they do not execute code here.
-	//
-	// 2. If a tracer thread exits, it implicitly detaches from the stub,
-	// potentially allowing code execution here. However, the Go runtime
-	// never exits individual threads, so this case never occurs.
-	//
-	// 3. subprocess.createStub clones a new stub process that is untraced,
+
+	// The sentry sets R9 to 1 when creating stub process.
+	CMP $1, R9
+	BEQ clone
+
+done:
+	// Notify the Sentry that syscall exited.
+	BRK $3
+	B done // Be paranoid.
+clone:
+	// subprocess.createStub clones a new stub process that is untraced,
 	// thus executing this code. We setup the PDEATHSIG before SIGSTOPing
 	// ourselves for attach by the tracer.
 	//
 	// R7 has been updated with the expected PPID.
-	B begin
+	CMP $0, R0
+	BEQ begin
+
+	// The clone system call returned a non-zero value.
+	B done
 
 error:
 	// Exit with -errno.

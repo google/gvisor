@@ -23,11 +23,11 @@
 package sharedmem
 
 import (
-	"sync"
 	"sync/atomic"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -183,26 +183,53 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.addr
 }
 
-// WritePacket writes outbound packets to the file descriptor. If it is not
-// currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	// Add the ethernet header here.
-	eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	// Add ethernet header if needed.
+	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 	ethHdr := &header.EthernetFields{
-		DstAddr: r.RemoteLinkAddress,
+		DstAddr: remote,
 		Type:    protocol,
 	}
-	if r.LocalLinkAddress != "" {
-		ethHdr.SrcAddr = r.LocalLinkAddress
+
+	// Preserve the src address if it's set in the route.
+	if local != "" {
+		ethHdr.SrcAddr = local
 	} else {
 		ethHdr.SrcAddr = e.addr
 	}
 	eth.Encode(ethHdr)
+}
 
-	v := payload.ToView()
+// WritePacket writes outbound packets to the file descriptor. If it is not
+// currently writable, the packet is dropped.
+func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
+
+	views := pkt.Views()
 	// Transmit the packet.
 	e.mu.Lock()
-	ok := e.tx.transmit(hdr.View(), v)
+	ok := e.tx.transmit(views...)
+	e.mu.Unlock()
+
+	if !ok {
+		return tcpip.ErrWouldBlock
+	}
+
+	return nil
+}
+
+// WritePackets implements stack.LinkEndpoint.WritePackets.
+func (e *endpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	panic("not implemented")
+}
+
+// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
+func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+	views := vv.Views()
+	// Transmit the packet.
+	e.mu.Lock()
+	ok := e.tx.transmit(views...)
 	e.mu.Unlock()
 
 	if !ok {
@@ -248,13 +275,18 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			rxb[i].Size = e.bufferSize
 		}
 
-		if n < header.EthernetMinimumSize {
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: buffer.View(b).ToVectorisedView(),
+		})
+
+		hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+		if !ok {
 			continue
 		}
+		eth := header.Ethernet(hdr)
 
 		// Send packet up the stack.
-		eth := header.Ethernet(b)
-		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView())
+		d.DeliverNetworkPacket(eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), pkt)
 	}
 
 	// Clean state.
@@ -262,4 +294,9 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 	e.rx.cleanup()
 
 	e.completed.Done()
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
+func (*endpoint) ARPHardwareType() header.ARPHardwareType {
+	return header.ARPHardwareEther
 }

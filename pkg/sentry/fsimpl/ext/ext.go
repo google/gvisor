@@ -21,14 +21,17 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
+
+// Name is the name of this filesystem.
+const Name = "ext"
 
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
@@ -40,14 +43,14 @@ var _ vfs.FilesystemType = (*FilesystemType)(nil)
 // Currently there are two ways of mounting an ext(2/3/4) fs:
 //   1. Specify a mount with our internal special MountType in the OCI spec.
 //   2. Expose the device to the container and mount it from application layer.
-func getDeviceFd(source string, opts vfs.NewFilesystemOptions) (io.ReaderAt, error) {
+func getDeviceFd(source string, opts vfs.GetFilesystemOptions) (io.ReaderAt, error) {
 	if opts.InternalData == nil {
 		// User mount call.
 		// TODO(b/134676337): Open the device specified by `source` and return that.
 		panic("unimplemented")
 	}
 
-	// NewFilesystem call originated from within the sentry.
+	// GetFilesystem call originated from within the sentry.
 	devFd, ok := opts.InternalData.(int)
 	if !ok {
 		return nil, errors.New("internal data for ext fs must be an int containing the file descriptor to device")
@@ -91,42 +94,61 @@ func isCompatible(sb disklayout.SuperBlock) bool {
 	return true
 }
 
-// NewFilesystem implements vfs.FilesystemType.NewFilesystem.
-func (FilesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts vfs.NewFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+// Name implements vfs.FilesystemType.Name.
+func (FilesystemType) Name() string {
+	return Name
+}
+
+// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
+func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	// TODO(b/134676337): Ensure that the user is mounting readonly. If not,
 	// EACCESS should be returned according to mount(2). Filesystem independent
 	// flags (like readonly) are currently not available in pkg/sentry/vfs.
+
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	dev, err := getDeviceFd(source, opts)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	fs := filesystem{dev: dev, inodeCache: make(map[uint32]*inode)}
-	fs.vfsfs.Init(&fs)
+	fs := filesystem{
+		dev:        dev,
+		inodeCache: make(map[uint32]*inode),
+		devMinor:   devMinor,
+	}
+	fs.vfsfs.Init(vfsObj, &fsType, &fs)
 	fs.sb, err = readSuperBlock(dev)
 	if err != nil {
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 
 	if fs.sb.Magic() != linux.EXT_SUPER_MAGIC {
 		// mount(2) specifies that EINVAL should be returned if the superblock is
 		// invalid.
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, syserror.EINVAL
 	}
 
 	// Refuse to mount if the filesystem is incompatible.
 	if !isCompatible(fs.sb) {
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, syserror.EINVAL
 	}
 
 	fs.bgs, err = readBlockGroups(dev, fs.sb)
 	if err != nil {
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 
 	rootInode, err := fs.getOrCreateInodeLocked(disklayout.RootDirInode)
 	if err != nil {
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 	rootInode.incRef()

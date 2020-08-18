@@ -20,8 +20,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ptraceOptions are the subset of options controlling a task's ptrace behavior
@@ -184,7 +184,6 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
 		return false
 	}
-	// TODO: Yama LSM
 	return true
 }
 
@@ -1019,6 +1018,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if err != nil {
 			return err
 		}
+
+		t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+
 		ar := ars.Head()
 		n, err := target.Arch().PtraceGetRegSet(uintptr(addr), &usermem.IOReadWriter{
 			Ctx:  t,
@@ -1045,10 +1047,14 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if err != nil {
 			return err
 		}
+
+		mm := t.MemoryManager()
+		t.p.PullFullState(mm.AddressSpace(), t.Arch())
+
 		ar := ars.Head()
 		n, err := target.Arch().PtraceSetRegSet(uintptr(addr), &usermem.IOReadWriter{
 			Ctx:  t,
-			IO:   t.MemoryManager(),
+			IO:   mm,
 			Addr: ar.Start,
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
@@ -1057,6 +1063,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if err != nil {
 			return err
 		}
+		t.p.FullStateChanged()
 		ar.End -= usermem.Addr(n)
 		return t.CopyOutIovecs(data, usermem.AddrRangeSeqOf(ar))
 

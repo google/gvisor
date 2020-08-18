@@ -1,0 +1,6 @@
+# This is an example configuration file for runsc.
+#
+# By default, it will be parsed from /etc/containerd/runsc.toml, but see the
+# static path configured in v1/main.go. Note that the configuration mechanism
+# for newer container shim versions is different: see the documentation in v2.
+[runsc_config]

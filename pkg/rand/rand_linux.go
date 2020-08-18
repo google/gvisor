@@ -17,11 +17,12 @@
 package rand
 
 import (
+	"bufio"
 	"crypto/rand"
 	"io"
-	"sync"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // reader implements an io.Reader that returns pseudorandom bytes.
@@ -45,8 +46,22 @@ func (r *reader) Read(p []byte) (int, error) {
 	return rand.Read(p)
 }
 
+// bufferedReader implements a threadsafe buffered io.Reader.
+type bufferedReader struct {
+	mu sync.Mutex
+	r  *bufio.Reader
+}
+
+// Read implements io.Reader.Read.
+func (b *bufferedReader) Read(p []byte) (int, error) {
+	b.mu.Lock()
+	n, err := b.r.Read(p)
+	b.mu.Unlock()
+	return n, err
+}
+
 // Reader is the default reader.
-var Reader io.Reader = &reader{}
+var Reader io.Reader = &bufferedReader{r: bufio.NewReader(&reader{})}
 
 // Read reads from the default reader.
 func Read(b []byte) (int, error) {

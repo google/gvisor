@@ -19,7 +19,6 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/memory_util.h"
@@ -110,7 +109,7 @@ PosixErrorOr<std::vector<Mapping>> CreateFragmentedRegion(const int size,
 }
 
 // A contiguous iov that is heavily fragmented in FileMem can still be sent
-// successfully.
+// successfully. See b/115833655.
 TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -166,7 +165,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
 }
 
 // A contiguous iov that is heavily fragmented in FileMem can still be received
-// into successfully.
+// into successfully. Regression test for b/115833655.
 TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -231,11 +230,21 @@ TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
 
-  char buf[100] = {};
+  const int buf_size = 5 * kPageSize;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF, &buf_size,
+                         sizeof(buf_size)),
+              SyscallSucceeds());
+  EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVBUF, &buf_size,
+                         sizeof(buf_size)),
+              SyscallSucceeds());
+
+  // The buffer size should be big enough to avoid many iterations in the next
+  // loop. Otherwise, this will slow down cooperative_save tests.
+  std::vector<char> buf(kPageSize);
   for (;;) {
     int ret;
     ASSERT_THAT(
-        ret = RetryEINTR(send)(sockets->first_fd(), buf, sizeof(buf), 0),
+        ret = RetryEINTR(send)(sockets->first_fd(), buf.data(), buf.size(), 0),
         ::testing::AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EAGAIN)));
     if (ret == -1) {
       break;

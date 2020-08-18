@@ -14,6 +14,9 @@
 
 #include <arpa/inet.h>
 #include <linux/capability.h>
+#ifndef __fuchsia__
+#include <linux/filter.h>
+#endif  // __fuchsia__
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
 #include <net/ethernet.h>
@@ -26,6 +29,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/internal/endian.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -61,6 +65,9 @@ namespace testing {
 
 namespace {
 
+using ::testing::AnyOf;
+using ::testing::Eq;
+
 constexpr char kMessage[] = "soweoneul malhaebwa";
 constexpr in_port_t kPort = 0x409c;  // htons(40000)
 
@@ -93,13 +100,10 @@ class RawPacketTest : public ::testing::TestWithParam<int> {
   int GetLoopbackIndex();
 
   // The socket used for both reading and writing.
-  int socket_;
+  int s_;
 };
 
 void RawPacketTest::SetUp() {
-  // (b/129292371): Remove once we support packet sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
     ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
                 SyscallFailsWithErrno(EPERM));
@@ -107,37 +111,58 @@ void RawPacketTest::SetUp() {
   }
 
   if (!IsRunningOnGvisor()) {
+    // Ensure that looped back packets aren't rejected by the kernel.
     FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDONLY));
+        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDWR));
     FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDONLY));
+        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDWR));
     char enabled;
     ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
                 SyscallSucceedsWithValue(1));
-    ASSERT_EQ(enabled, '1');
+    if (enabled != '1') {
+      enabled = '1';
+      ASSERT_THAT(lseek(acceptLocal.get(), 0, SEEK_SET),
+                  SyscallSucceedsWithValue(0));
+      ASSERT_THAT(write(acceptLocal.get(), &enabled, 1),
+                  SyscallSucceedsWithValue(1));
+      ASSERT_THAT(lseek(acceptLocal.get(), 0, SEEK_SET),
+                  SyscallSucceedsWithValue(0));
+      ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
+                  SyscallSucceedsWithValue(1));
+      ASSERT_EQ(enabled, '1');
+    }
+
     ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
                 SyscallSucceedsWithValue(1));
-    ASSERT_EQ(enabled, '1');
+    if (enabled != '1') {
+      enabled = '1';
+      ASSERT_THAT(lseek(routeLocalnet.get(), 0, SEEK_SET),
+                  SyscallSucceedsWithValue(0));
+      ASSERT_THAT(write(routeLocalnet.get(), &enabled, 1),
+                  SyscallSucceedsWithValue(1));
+      ASSERT_THAT(lseek(routeLocalnet.get(), 0, SEEK_SET),
+                  SyscallSucceedsWithValue(0));
+      ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
+                  SyscallSucceedsWithValue(1));
+      ASSERT_EQ(enabled, '1');
+    }
   }
 
-  ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
+  ASSERT_THAT(s_ = socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
               SyscallSucceeds());
 }
 
 void RawPacketTest::TearDown() {
-  // (b/129292371): Remove once we support packet sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   // TearDown will be run even if we skip the test.
   if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    EXPECT_THAT(close(socket_), SyscallSucceeds());
+    EXPECT_THAT(close(s_), SyscallSucceeds());
   }
 }
 
 int RawPacketTest::GetLoopbackIndex() {
   struct ifreq ifr;
   snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
-  EXPECT_THAT(ioctl(socket_, SIOCGIFINDEX, &ifr), SyscallSucceeds());
+  EXPECT_THAT(ioctl(s_, SIOCGIFINDEX, &ifr), SyscallSucceeds());
   EXPECT_NE(ifr.ifr_ifindex, 0);
   return ifr.ifr_ifindex;
 }
@@ -151,7 +176,7 @@ TEST_P(RawPacketTest, Receive) {
 
   // Wait for the socket to become readable.
   struct pollfd pfd = {};
-  pfd.fd = socket_;
+  pfd.fd = s_;
   pfd.events = POLLIN;
   EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 2000), SyscallSucceedsWithValue(1));
 
@@ -161,20 +186,21 @@ TEST_P(RawPacketTest, Receive) {
   char buf[64];
   struct sockaddr_ll src = {};
   socklen_t src_len = sizeof(src);
-  ASSERT_THAT(recvfrom(socket_, buf, sizeof(buf), 0,
+  ASSERT_THAT(recvfrom(s_, buf, sizeof(buf), 0,
                        reinterpret_cast<struct sockaddr*>(&src), &src_len),
               SyscallSucceedsWithValue(packet_size));
-  // sizeof(src) is the size of a struct sockaddr_ll. sockaddr_ll ends with an 8
-  // byte physical address field, but ethernet (MAC) addresses only use 6 bytes.
-  // Thus src_len should get modified to be 2 less than the size of sockaddr_ll.
-  ASSERT_EQ(src_len, sizeof(src) - 2);
+  // sockaddr_ll ends with an 8 byte physical address field, but ethernet
+  // addresses only use 6 bytes.  Linux used to return sizeof(sockaddr_ll)-2
+  // here, but since commit b2cf86e1563e33a14a1c69b3e508d15dc12f804c returns
+  // sizeof(sockaddr_ll).
+  ASSERT_THAT(src_len, AnyOf(Eq(sizeof(src)), Eq(sizeof(src) - 2)));
 
+  // TODO(gvisor.dev/issue/173): Verify protocol once we return it.
   // Verify the source address.
   EXPECT_EQ(src.sll_family, AF_PACKET);
-  EXPECT_EQ(src.sll_protocol, htons(ETH_P_IP));
   EXPECT_EQ(src.sll_ifindex, GetLoopbackIndex());
-  EXPECT_EQ(src.sll_hatype, ARPHRD_LOOPBACK);
   EXPECT_EQ(src.sll_halen, ETH_ALEN);
+  EXPECT_EQ(ntohs(src.sll_protocol), ETH_P_IP);
   // This came from the loopback device, so the address is all 0s.
   for (int i = 0; i < src.sll_halen; i++) {
     EXPECT_EQ(src.sll_addr[i], 0);
@@ -214,6 +240,9 @@ TEST_P(RawPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(RawPacketTest, Send) {
+  // TODO(gvisor.dev/issue/173): Remove once we support packet socket writing.
+  SKIP_IF(IsRunningOnGvisor());
+
   // Let's send a UDP packet and receive it using a regular UDP socket.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -276,7 +305,7 @@ TEST_P(RawPacketTest, Send) {
          sizeof(kMessage));
 
   // Send it.
-  ASSERT_THAT(sendto(socket_, send_buf, sizeof(send_buf), 0,
+  ASSERT_THAT(sendto(s_, send_buf, sizeof(send_buf), 0,
                      reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
               SyscallSucceedsWithValue(sizeof(send_buf)));
 
@@ -285,13 +314,13 @@ TEST_P(RawPacketTest, Send) {
   pfd.fd = udp_sock.get();
   pfd.events = POLLIN;
   ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
-  pfd.fd = socket_;
+  pfd.fd = s_;
   pfd.events = POLLIN;
   ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
 
   // Receive on the packet socket.
   char recv_buf[sizeof(send_buf)];
-  ASSERT_THAT(recv(socket_, recv_buf, sizeof(recv_buf), 0),
+  ASSERT_THAT(recv(s_, recv_buf, sizeof(recv_buf), 0),
               SyscallSucceedsWithValue(sizeof(recv_buf)));
   ASSERT_EQ(memcmp(recv_buf, send_buf, sizeof(send_buf)), 0);
 
@@ -308,8 +337,320 @@ TEST_P(RawPacketTest, Send) {
   EXPECT_EQ(src.sin_addr.s_addr, htonl(INADDR_LOOPBACK));
 }
 
+// Check that setting SO_RCVBUF below min is clamped to the minimum
+// receive buffer size.
+TEST_P(RawPacketTest, SetSocketRecvBufBelowMin) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  // Discover minimum receive buf size by trying to set it to zero.
+  // See:
+  // https://github.com/torvalds/linux/blob/a5dc8300df75e8b8384b4c82225f1e4a0b4d9b55/net/core/sock.c#L820
+  constexpr int kRcvBufSz = 0;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+      SyscallSucceeds());
+
+  int min = 0;
+  socklen_t min_len = sizeof(min);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &min, &min_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value so let's use a value that when doubled will still
+  // be smaller than min.
+  int below_min = min / 2 - 1;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &below_min, sizeof(below_min)),
+      SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  ASSERT_EQ(min, val);
+}
+
+// Check that setting SO_RCVBUF above max is clamped to the maximum
+// receive buffer size.
+TEST_P(RawPacketTest, SetSocketRecvBufAboveMax) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  // Discover max buf size by trying to set the largest possible buffer size.
+  constexpr int kRcvBufSz = 0xffffffff;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+      SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+              SyscallSucceeds());
+
+  int above_max = max + 1;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &above_max, sizeof(above_max)),
+      SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+  ASSERT_EQ(max, val);
+}
+
+// Check that setting SO_RCVBUF min <= kRcvBufSz <= max is honored.
+TEST_P(RawPacketTest, SetSocketRecvBuf) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int max = 0;
+  int min = 0;
+  {
+    // Discover max buf size by trying to set a really large buffer size.
+    constexpr int kRcvBufSz = 0xffffffff;
+    ASSERT_THAT(
+        setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+        SyscallSucceeds());
+
+    max = 0;
+    socklen_t max_len = sizeof(max);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+                SyscallSucceeds());
+  }
+
+  {
+    // Discover minimum buffer size by trying to set a zero size receive buffer
+    // size.
+    // See:
+    // https://github.com/torvalds/linux/blob/a5dc8300df75e8b8384b4c82225f1e4a0b4d9b55/net/core/sock.c#L820
+    constexpr int kRcvBufSz = 0;
+    ASSERT_THAT(
+        setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+        SyscallSucceeds());
+
+    socklen_t min_len = sizeof(min);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &min, &min_len),
+                SyscallSucceeds());
+  }
+
+  int quarter_sz = min + (max - min) / 4;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &quarter_sz, sizeof(quarter_sz)),
+      SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value set by SO_SNDBUF/SO_RCVBUF.
+  // TODO(gvisor.dev/issue/2926): Remove when Netstack matches linux behavior.
+  if (!IsRunningOnGvisor()) {
+    quarter_sz *= 2;
+  }
+  ASSERT_EQ(quarter_sz, val);
+}
+
+// Check that setting SO_SNDBUF below min is clamped to the minimum
+// receive buffer size.
+TEST_P(RawPacketTest, SetSocketSendBufBelowMin) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  // Discover minimum buffer size by trying to set it to zero.
+  constexpr int kSndBufSz = 0;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &kSndBufSz, sizeof(kSndBufSz)),
+      SyscallSucceeds());
+
+  int min = 0;
+  socklen_t min_len = sizeof(min);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &min, &min_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value so let's use a value that when doubled will still
+  // be smaller than min.
+  int below_min = min / 2 - 1;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &below_min, sizeof(below_min)),
+      SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  ASSERT_EQ(min, val);
+}
+
+// Check that setting SO_SNDBUF above max is clamped to the maximum
+// send buffer size.
+TEST_P(RawPacketTest, SetSocketSendBufAboveMax) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  // Discover maximum buffer size by trying to set it to a large value.
+  constexpr int kSndBufSz = 0xffffffff;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &kSndBufSz, sizeof(kSndBufSz)),
+      SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &max, &max_len),
+              SyscallSucceeds());
+
+  int above_max = max + 1;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &above_max, sizeof(above_max)),
+      SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &val, &val_len),
+              SyscallSucceeds());
+  ASSERT_EQ(max, val);
+}
+
+// Check that setting SO_SNDBUF min <= kSndBufSz <= max is honored.
+TEST_P(RawPacketTest, SetSocketSendBuf) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int max = 0;
+  int min = 0;
+  {
+    // Discover maximum buffer size by trying to set it to a large value.
+    constexpr int kSndBufSz = 0xffffffff;
+    ASSERT_THAT(
+        setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &kSndBufSz, sizeof(kSndBufSz)),
+        SyscallSucceeds());
+
+    max = 0;
+    socklen_t max_len = sizeof(max);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &max, &max_len),
+                SyscallSucceeds());
+  }
+
+  {
+    // Discover minimum buffer size by trying to set it to zero.
+    constexpr int kSndBufSz = 0;
+    ASSERT_THAT(
+        setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &kSndBufSz, sizeof(kSndBufSz)),
+        SyscallSucceeds());
+
+    socklen_t min_len = sizeof(min);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &min, &min_len),
+                SyscallSucceeds());
+  }
+
+  int quarter_sz = min + (max - min) / 4;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &quarter_sz, sizeof(quarter_sz)),
+      SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value set by SO_SNDBUF/SO_RCVBUF.
+  // TODO(gvisor.dev/issue/2926): Remove the gvisor special casing when Netstack
+  // matches linux behavior.
+  if (!IsRunningOnGvisor()) {
+    quarter_sz *= 2;
+  }
+
+  ASSERT_EQ(quarter_sz, val);
+}
+
+TEST_P(RawPacketTest, GetSocketError) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ERROR, &val, &val_len),
+              SyscallSucceeds());
+  ASSERT_EQ(val, 0);
+}
+
+TEST_P(RawPacketTest, GetSocketErrorBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  {
+    // Bind to the loopback device.
+    struct sockaddr_ll bind_addr = {};
+    bind_addr.sll_family = AF_PACKET;
+    bind_addr.sll_protocol = htons(GetParam());
+    bind_addr.sll_ifindex = GetLoopbackIndex();
+
+    ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                     sizeof(bind_addr)),
+                SyscallSucceeds());
+
+    // SO_ERROR should return no errors.
+    int val = 0;
+    socklen_t val_len = sizeof(val);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ERROR, &val, &val_len),
+                SyscallSucceeds());
+    ASSERT_EQ(val, 0);
+  }
+
+  {
+    // Now try binding to an invalid interface.
+    struct sockaddr_ll bind_addr = {};
+    bind_addr.sll_family = AF_PACKET;
+    bind_addr.sll_protocol = htons(GetParam());
+    bind_addr.sll_ifindex = 0xffff;  // Just pick a really large number.
+
+    // Binding should fail with EINVAL
+    ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                     sizeof(bind_addr)),
+                SyscallFailsWithErrno(ENODEV));
+
+    // SO_ERROR does not return error when the device is invalid.
+    // On Linux there is just one odd ball condition where this can return
+    // an error where the device was valid and then removed or disabled
+    // between the first check for index and the actual registration of
+    // the packet endpoint. On Netstack this is not possible as the stack
+    // global mutex is held during registration and check.
+    int val = 0;
+    socklen_t val_len = sizeof(val);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ERROR, &val, &val_len),
+                SyscallSucceeds());
+    ASSERT_EQ(val, 0);
+  }
+}
+
+#ifndef __fuchsia__
+
+TEST_P(RawPacketTest, SetSocketDetachFilterNoInstalledFilter) {
+  // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
+  //
+  // gVisor returns no error on SO_DETACH_FILTER even if there is no filter
+  // attached unlike linux which does return ENOENT in such cases. This is
+  // because gVisor doesn't support SO_ATTACH_FILTER and just silently returns
+  // success.
+  if (IsRunningOnGvisor()) {
+    constexpr int val = 0;
+    ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+                SyscallSucceeds());
+    return;
+  }
+  constexpr int val = 0;
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+              SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_P(RawPacketTest, GetSocketDetachFilter) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
+#endif  // __fuchsia__
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
-                         ::testing::Values(ETH_P_IP /*, ETH_P_ALL*/));
+                         ::testing::Values(ETH_P_IP, ETH_P_ALL));
 
 }  // namespace
 

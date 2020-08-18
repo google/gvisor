@@ -18,8 +18,8 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // MAX_RW_COUNT is the maximum size in bytes of a single read or write.
@@ -30,7 +30,7 @@ var MAX_RW_COUNT = int(usermem.Addr(math.MaxInt32).RoundDown())
 // Activate ensures that the task has an active address space.
 func (t *Task) Activate() {
 	if mm := t.MemoryManager(); mm != nil {
-		if err := mm.Activate(); err != nil {
+		if err := mm.Activate(t); err != nil {
 			panic("unable to activate mm: " + err.Error())
 		}
 	}

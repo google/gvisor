@@ -15,6 +15,8 @@
 // Package inet defines semantics for IP stacks.
 package inet
 
+import "gvisor.dev/gvisor/pkg/tcpip/stack"
+
 // Stack represents a TCP/IP stack.
 type Stack interface {
 	// Interfaces returns all network interfaces as a mapping from interface
@@ -25,6 +27,10 @@ type Stack interface {
 	// InterfaceAddrs returns all network interface addresses as a mapping from
 	// interface indexes to a slice of associated interface address properties.
 	InterfaceAddrs() map[int32][]InterfaceAddr
+
+	// AddInterfaceAddr adds an address to the network interface identified by
+	// index.
+	AddInterfaceAddr(idx int32, addr InterfaceAddr) error
 
 	// SupportsIPv6 returns true if the stack supports IPv6 connectivity.
 	SupportsIPv6() bool
@@ -50,6 +56,12 @@ type Stack interface {
 	// settings.
 	SetTCPSACKEnabled(enabled bool) error
 
+	// TCPRecovery returns the TCP loss detection algorithm.
+	TCPRecovery() (TCPLossRecovery, error)
+
+	// SetTCPRecovery attempts to change TCP loss detection algorithm.
+	SetTCPRecovery(recovery TCPLossRecovery) error
+
 	// Statistics reports stack statistics.
 	Statistics(stat interface{}, arg string) error
 
@@ -58,6 +70,16 @@ type Stack interface {
 
 	// Resume restarts the network stack after restore.
 	Resume()
+
+	// RegisteredEndpoints returns all endpoints which are currently registered.
+	RegisteredEndpoints() []stack.TransportEndpoint
+
+	// CleanupEndpoints returns endpoints currently in the cleanup state.
+	CleanupEndpoints() []stack.TransportEndpoint
+
+	// RestoreCleanupEndpoints adds endpoints to cleanup tracking. This is useful
+	// for restoring a stack after a save.
+	RestoreCleanupEndpoints([]stack.TransportEndpoint)
 }
 
 // Interface contains information about a network interface.
@@ -153,3 +175,34 @@ type Route struct {
 	// GatewayAddr is the route gateway address (RTA_GATEWAY).
 	GatewayAddr []byte
 }
+
+// Below SNMP metrics are from Linux/usr/include/linux/snmp.h.
+
+// StatSNMPIP describes Ip line of /proc/net/snmp.
+type StatSNMPIP [19]uint64
+
+// StatSNMPICMP describes Icmp line of /proc/net/snmp.
+type StatSNMPICMP [27]uint64
+
+// StatSNMPICMPMSG describes IcmpMsg line of /proc/net/snmp.
+type StatSNMPICMPMSG [512]uint64
+
+// StatSNMPTCP describes Tcp line of /proc/net/snmp.
+type StatSNMPTCP [15]uint64
+
+// StatSNMPUDP describes Udp line of /proc/net/snmp.
+type StatSNMPUDP [8]uint64
+
+// StatSNMPUDPLite describes UdpLite line of /proc/net/snmp.
+type StatSNMPUDPLite [8]uint64
+
+// TCPLossRecovery indicates TCP loss detection and recovery methods to use.
+type TCPLossRecovery int32
+
+// Loss recovery constants from include/net/tcp.h which are used to set
+// /proc/sys/net/ipv4/tcp_recovery.
+const (
+	TCP_RACK_LOSS_DETECTION TCPLossRecovery = 1 << iota
+	TCP_RACK_STATIC_REO_WND
+	TCP_RACK_NO_DUPTHRESH
+)

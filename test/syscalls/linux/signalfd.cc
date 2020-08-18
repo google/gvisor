@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -40,6 +39,7 @@ namespace testing {
 namespace {
 
 constexpr int kSigno = SIGUSR1;
+constexpr int kSignoMax = 64;  // SIGRTMAX
 constexpr int kSignoAlt = SIGUSR2;
 
 // Returns a new signalfd.
@@ -52,41 +52,45 @@ inline PosixErrorOr<FileDescriptor> NewSignalFD(sigset_t* mask, int flags = 0) {
   return FileDescriptor(fd);
 }
 
-TEST(Signalfd, Basic) {
+class SignalfdTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(SignalfdTest, Basic) {
+  int signo = GetParam();
   // Create the signalfd.
   sigset_t mask;
   sigemptyset(&mask);
-  sigaddset(&mask, kSigno);
+  sigaddset(&mask, signo);
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, 0));
 
   // Deliver the blocked signal.
   const auto scoped_sigmask =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSigno));
-  ASSERT_THAT(tgkill(getpid(), gettid(), kSigno), SyscallSucceeds());
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, signo));
+  ASSERT_THAT(tgkill(getpid(), gettid(), signo), SyscallSucceeds());
 
   // We should now read the signal.
   struct signalfd_siginfo rbuf;
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
-  EXPECT_EQ(rbuf.ssi_signo, kSigno);
+  EXPECT_EQ(rbuf.ssi_signo, signo);
 }
 
-TEST(Signalfd, MaskWorks) {
+TEST_P(SignalfdTest, MaskWorks) {
+  int signo = GetParam();
   // Create two signalfds with different masks.
   sigset_t mask1, mask2;
   sigemptyset(&mask1);
   sigemptyset(&mask2);
-  sigaddset(&mask1, kSigno);
+  sigaddset(&mask1, signo);
   sigaddset(&mask2, kSignoAlt);
   FileDescriptor fd1 = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask1, 0));
   FileDescriptor fd2 = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask2, 0));
 
   // Deliver the two signals.
   const auto scoped_sigmask1 =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSigno));
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, signo));
   const auto scoped_sigmask2 =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSignoAlt));
-  ASSERT_THAT(tgkill(getpid(), gettid(), kSigno), SyscallSucceeds());
+  ASSERT_THAT(tgkill(getpid(), gettid(), signo), SyscallSucceeds());
   ASSERT_THAT(tgkill(getpid(), gettid(), kSignoAlt), SyscallSucceeds());
 
   // We should see the signals on the appropriate signalfds.
@@ -99,7 +103,7 @@ TEST(Signalfd, MaskWorks) {
   EXPECT_EQ(rbuf2.ssi_signo, kSignoAlt);
   ASSERT_THAT(read(fd1.get(), &rbuf1, sizeof(rbuf1)),
               SyscallSucceedsWithValue(sizeof(rbuf1)));
-  EXPECT_EQ(rbuf1.ssi_signo, kSigno);
+  EXPECT_EQ(rbuf1.ssi_signo, signo);
 }
 
 TEST(Signalfd, Cloexec) {
@@ -112,11 +116,12 @@ TEST(Signalfd, Cloexec) {
   EXPECT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(FD_CLOEXEC));
 }
 
-TEST(Signalfd, Blocking) {
+TEST_P(SignalfdTest, Blocking) {
+  int signo = GetParam();
   // Create the signalfd in blocking mode.
   sigset_t mask;
   sigemptyset(&mask);
-  sigaddset(&mask, kSigno);
+  sigaddset(&mask, signo);
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, 0));
 
   // Shared tid variable.
@@ -137,7 +142,7 @@ TEST(Signalfd, Blocking) {
     struct signalfd_siginfo rbuf;
     ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
                 SyscallSucceedsWithValue(sizeof(rbuf)));
-    EXPECT_EQ(rbuf.ssi_signo, kSigno);
+    EXPECT_EQ(rbuf.ssi_signo, signo);
   });
 
   // Wait until blocked.
@@ -150,20 +155,21 @@ TEST(Signalfd, Blocking) {
   //
   // See gvisor.dev/issue/139.
   if (IsRunningOnGvisor()) {
-    ASSERT_THAT(tgkill(getpid(), gettid(), kSigno), SyscallSucceeds());
+    ASSERT_THAT(tgkill(getpid(), gettid(), signo), SyscallSucceeds());
   } else {
-    ASSERT_THAT(tgkill(getpid(), tid, kSigno), SyscallSucceeds());
+    ASSERT_THAT(tgkill(getpid(), tid, signo), SyscallSucceeds());
   }
 
   // Ensure that it was received.
   t.Join();
 }
 
-TEST(Signalfd, ThreadGroup) {
+TEST_P(SignalfdTest, ThreadGroup) {
+  int signo = GetParam();
   // Create the signalfd in blocking mode.
   sigset_t mask;
   sigemptyset(&mask);
-  sigaddset(&mask, kSigno);
+  sigaddset(&mask, signo);
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, 0));
 
   // Shared variable.
@@ -177,7 +183,7 @@ TEST(Signalfd, ThreadGroup) {
     struct signalfd_siginfo rbuf;
     ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
                 SyscallSucceedsWithValue(sizeof(rbuf)));
-    EXPECT_EQ(rbuf.ssi_signo, kSigno);
+    EXPECT_EQ(rbuf.ssi_signo, signo);
 
     // Wait for the other thread.
     absl::MutexLock ml(&mu);
@@ -186,7 +192,7 @@ TEST(Signalfd, ThreadGroup) {
   });
 
   // Deliver the signal to the threadgroup.
-  ASSERT_THAT(kill(getpid(), kSigno), SyscallSucceeds());
+  ASSERT_THAT(kill(getpid(), signo), SyscallSucceeds());
 
   // Wait for the first thread to process.
   {
@@ -195,13 +201,13 @@ TEST(Signalfd, ThreadGroup) {
   }
 
   // Deliver to the thread group again (other thread still exists).
-  ASSERT_THAT(kill(getpid(), kSigno), SyscallSucceeds());
+  ASSERT_THAT(kill(getpid(), signo), SyscallSucceeds());
 
   // Ensure that we can also receive it.
   struct signalfd_siginfo rbuf;
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
-  EXPECT_EQ(rbuf.ssi_signo, kSigno);
+  EXPECT_EQ(rbuf.ssi_signo, signo);
 
   // Mark the test as done.
   {
@@ -213,11 +219,12 @@ TEST(Signalfd, ThreadGroup) {
   t.Join();
 }
 
-TEST(Signalfd, Nonblock) {
+TEST_P(SignalfdTest, Nonblock) {
+  int signo = GetParam();
   // Create the signalfd in non-blocking mode.
   sigset_t mask;
   sigemptyset(&mask);
-  sigaddset(&mask, kSigno);
+  sigaddset(&mask, signo);
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, SFD_NONBLOCK));
 
@@ -228,20 +235,21 @@ TEST(Signalfd, Nonblock) {
 
   // Block and deliver the signal.
   const auto scoped_sigmask =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSigno));
-  ASSERT_THAT(tgkill(getpid(), gettid(), kSigno), SyscallSucceeds());
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, signo));
+  ASSERT_THAT(tgkill(getpid(), gettid(), signo), SyscallSucceeds());
 
   // Ensure that a read actually works.
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
-  EXPECT_EQ(rbuf.ssi_signo, kSigno);
+  EXPECT_EQ(rbuf.ssi_signo, signo);
 
   // Should block again.
   EXPECT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallFailsWithErrno(EWOULDBLOCK));
 }
 
-TEST(Signalfd, SetMask) {
+TEST_P(SignalfdTest, SetMask) {
+  int signo = GetParam();
   // Create the signalfd matching nothing.
   sigset_t mask;
   sigemptyset(&mask);
@@ -250,8 +258,8 @@ TEST(Signalfd, SetMask) {
 
   // Block and deliver a signal.
   const auto scoped_sigmask =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSigno));
-  ASSERT_THAT(tgkill(getpid(), gettid(), kSigno), SyscallSucceeds());
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, signo));
+  ASSERT_THAT(tgkill(getpid(), gettid(), signo), SyscallSucceeds());
 
   // We should have nothing.
   struct signalfd_siginfo rbuf;
@@ -259,29 +267,30 @@ TEST(Signalfd, SetMask) {
               SyscallFailsWithErrno(EWOULDBLOCK));
 
   // Change the signal mask.
-  sigaddset(&mask, kSigno);
+  sigaddset(&mask, signo);
   ASSERT_THAT(signalfd(fd.get(), &mask, 0), SyscallSucceeds());
 
   // We should now have the signal.
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
-  EXPECT_EQ(rbuf.ssi_signo, kSigno);
+  EXPECT_EQ(rbuf.ssi_signo, signo);
 }
 
-TEST(Signalfd, Poll) {
+TEST_P(SignalfdTest, Poll) {
+  int signo = GetParam();
   // Create the signalfd.
   sigset_t mask;
   sigemptyset(&mask);
-  sigaddset(&mask, kSigno);
+  sigaddset(&mask, signo);
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, 0));
 
   // Block the signal, and start a thread to deliver it.
   const auto scoped_sigmask =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSigno));
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, signo));
   pid_t orig_tid = gettid();
   ScopedThread t([&] {
     absl::SleepFor(absl::Seconds(5));
-    ASSERT_THAT(tgkill(getpid(), orig_tid, kSigno), SyscallSucceeds());
+    ASSERT_THAT(tgkill(getpid(), orig_tid, signo), SyscallSucceeds());
   });
 
   // Start polling for the signal. We expect that it is not available at the
@@ -296,6 +305,36 @@ TEST(Signalfd, Poll) {
   struct signalfd_siginfo rbuf;
   EXPECT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
+}
+
+std::string PrintSigno(::testing::TestParamInfo<int> info) {
+  switch (info.param) {
+    case kSigno:
+      return "kSigno";
+    case kSignoMax:
+      return "kSignoMax";
+    default:
+      return absl::StrCat(info.param);
+  }
+}
+INSTANTIATE_TEST_SUITE_P(Signalfd, SignalfdTest,
+                         ::testing::Values(kSigno, kSignoMax), PrintSigno);
+
+TEST(Signalfd, Ppoll) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGKILL);
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, SFD_CLOEXEC));
+
+  // Ensure that the given ppoll blocks.
+  struct pollfd pfd = {};
+  pfd.fd = fd.get();
+  pfd.events = POLLIN;
+  struct timespec timeout = {};
+  timeout.tv_sec = 1;
+  EXPECT_THAT(RetryEINTR(ppoll)(&pfd, 1, &timeout, &mask),
+              SyscallSucceedsWithValue(0));
 }
 
 TEST(Signalfd, KillStillKills) {
@@ -324,10 +363,11 @@ int main(int argc, char** argv) {
   sigset_t set;
   sigemptyset(&set);
   sigaddset(&set, gvisor::testing::kSigno);
+  sigaddset(&set, gvisor::testing::kSignoMax);
   sigaddset(&set, gvisor::testing::kSignoAlt);
   TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, nullptr) == 0);
 
   gvisor::testing::TestInit(&argc, &argv);
 
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

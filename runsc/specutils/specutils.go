@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/mohae/deepcopy"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
@@ -44,20 +45,31 @@ var ExePath = "/proc/self/exe"
 var Version = specs.Version
 
 // LogSpec logs the spec in a human-friendly way.
-func LogSpec(spec *specs.Spec) {
-	log.Debugf("Spec: %+v", spec)
-	log.Debugf("Spec.Hooks: %+v", spec.Hooks)
-	log.Debugf("Spec.Linux: %+v", spec.Linux)
-	if spec.Linux != nil && spec.Linux.Resources != nil {
-		res := spec.Linux.Resources
-		log.Debugf("Spec.Linux.Resources.Memory: %+v", res.Memory)
-		log.Debugf("Spec.Linux.Resources.CPU: %+v", res.CPU)
-		log.Debugf("Spec.Linux.Resources.BlockIO: %+v", res.BlockIO)
-		log.Debugf("Spec.Linux.Resources.Network: %+v", res.Network)
+func LogSpec(orig *specs.Spec) {
+	if !log.IsLogging(log.Debug) {
+		return
 	}
-	log.Debugf("Spec.Process: %+v", spec.Process)
-	log.Debugf("Spec.Root: %+v", spec.Root)
-	log.Debugf("Spec.Mounts: %+v", spec.Mounts)
+
+	// Strip down parts of the spec that are not interesting.
+	spec := deepcopy.Copy(orig).(*specs.Spec)
+	if spec.Process != nil {
+		spec.Process.Capabilities = nil
+	}
+	if spec.Linux != nil {
+		spec.Linux.Seccomp = nil
+		spec.Linux.MaskedPaths = nil
+		spec.Linux.ReadonlyPaths = nil
+		if spec.Linux.Resources != nil {
+			spec.Linux.Resources.Devices = nil
+		}
+	}
+
+	out, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		log.Debugf("Failed to marshal spec: %v", err)
+		return
+	}
+	log.Debugf("Spec:\n%s", out)
 }
 
 // ValidateSpec validates that the spec is compatible with runsc.
@@ -92,7 +104,13 @@ func ValidateSpec(spec *specs.Spec) error {
 		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
 	}
 
-	// TODO(b/72226747): Apply seccomp to application inside sandbox.
+	// PR_SET_NO_NEW_PRIVS is assumed to always be set.
+	// See kernel.Task.updateCredsForExecLocked.
+	if !spec.Process.NoNewPrivileges {
+		log.Warningf("noNewPrivileges ignored. PR_SET_NO_NEW_PRIVS is assumed to always be set.")
+	}
+
+	// TODO(gvisor.dev/issue/510): Apply seccomp to application inside sandbox.
 	if spec.Linux != nil && spec.Linux.Seccomp != nil {
 		log.Warningf("Seccomp spec is being ignored")
 	}
@@ -108,23 +126,18 @@ func ValidateSpec(spec *specs.Spec) error {
 		}
 	}
 
-	// Two annotations are use by containerd to support multi-container pods.
-	//   "io.kubernetes.cri.container-type"
-	//   "io.kubernetes.cri.sandbox-id"
-	containerType, hasContainerType := spec.Annotations[ContainerdContainerTypeAnnotation]
-	_, hasSandboxID := spec.Annotations[ContainerdSandboxIDAnnotation]
-	switch {
-	// Non-containerd use won't set a container type.
-	case !hasContainerType:
-	case containerType == ContainerdContainerTypeSandbox:
-	// When starting a container in an existing sandbox, the sandbox ID
-	// must be set.
-	case containerType == ContainerdContainerTypeContainer:
-		if !hasSandboxID {
-			return fmt.Errorf("spec has container-type of %s, but no sandbox ID set", containerType)
+	// CRI specifies whether a container should start a new sandbox, or run
+	// another container in an existing sandbox.
+	switch SpecContainerType(spec) {
+	case ContainerTypeContainer:
+		// When starting a container in an existing sandbox, the
+		// sandbox ID must be set.
+		if _, ok := SandboxID(spec); !ok {
+			return fmt.Errorf("spec has container-type of container, but no sandbox ID set")
 		}
+	case ContainerTypeUnknown:
+		return fmt.Errorf("unknown container-type")
 	default:
-		return fmt.Errorf("unknown container-type: %s", containerType)
 	}
 
 	return nil
@@ -338,39 +351,6 @@ func IsSupportedDevMount(m specs.Mount) bool {
 	return true
 }
 
-const (
-	// ContainerdContainerTypeAnnotation is the OCI annotation set by
-	// containerd to indicate whether the container to create should have
-	// its own sandbox or a container within an existing sandbox.
-	ContainerdContainerTypeAnnotation = "io.kubernetes.cri.container-type"
-	// ContainerdContainerTypeContainer is the container type value
-	// indicating the container should be created in an existing sandbox.
-	ContainerdContainerTypeContainer = "container"
-	// ContainerdContainerTypeSandbox is the container type value
-	// indicating the container should be created in a new sandbox.
-	ContainerdContainerTypeSandbox = "sandbox"
-
-	// ContainerdSandboxIDAnnotation is the OCI annotation set to indicate
-	// which sandbox the container should be created in when the container
-	// is not the first container in the sandbox.
-	ContainerdSandboxIDAnnotation = "io.kubernetes.cri.sandbox-id"
-)
-
-// ShouldCreateSandbox returns true if the spec indicates that a new sandbox
-// should be created for the container. If false, the container should be
-// started in an existing sandbox.
-func ShouldCreateSandbox(spec *specs.Spec) bool {
-	t, ok := spec.Annotations[ContainerdContainerTypeAnnotation]
-	return !ok || t == ContainerdContainerTypeSandbox
-}
-
-// SandboxID returns the ID of the sandbox to join and whether an ID was found
-// in the spec.
-func SandboxID(spec *specs.Spec) (string, bool) {
-	id, ok := spec.Annotations[ContainerdSandboxIDAnnotation]
-	return id, ok
-}
-
 // WaitForReady waits for a process to become ready. The process is ready when
 // the 'ready' function returns true. It continues to wait if 'ready' returns
 // false. It returns error on timeout, if the process stops or if 'ready' fails.
@@ -476,36 +456,6 @@ func ContainsStr(strs []string, str string) bool {
 	return false
 }
 
-// Cleanup allows defers to be aborted when cleanup needs to happen
-// conditionally. Usage:
-// c := MakeCleanup(func() { f.Close() })
-// defer c.Clean() // any failure before release is called will close the file.
-// ...
-// c.Release() // on success, aborts closing the file and return it.
-// return f
-type Cleanup struct {
-	clean func()
-}
-
-// MakeCleanup creates a new Cleanup object.
-func MakeCleanup(f func()) Cleanup {
-	return Cleanup{clean: f}
-}
-
-// Clean calls the cleanup function.
-func (c *Cleanup) Clean() {
-	if c.clean != nil {
-		c.clean()
-		c.clean = nil
-	}
-}
-
-// Release releases the cleanup from its duties, i.e. cleanup function is not
-// called after this point.
-func (c *Cleanup) Release() {
-	c.clean = nil
-}
-
 // RetryEintr retries the function until an error different than EINTR is
 // returned.
 func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
@@ -565,4 +515,9 @@ func EnvVar(env []string, name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// FaqErrorMsg returns an error message pointing to the FAQ.
+func FaqErrorMsg(anchor, msg string) string {
+	return fmt.Sprintf("%s; see https://gvisor.dev/faq#%s for more details", msg, anchor)
 }

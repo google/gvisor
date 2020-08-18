@@ -32,6 +32,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -50,7 +52,7 @@ const (
 	ContainerEvent = "containerManager.Event"
 
 	// ContainerExecuteAsync is the URPC endpoint for executing a command in a
-	// container..
+	// container.
 	ContainerExecuteAsync = "containerManager.ExecuteAsync"
 
 	// ContainerPause pauses the container.
@@ -102,6 +104,8 @@ const (
 	StartCPUProfile = "Profile.StartCPUProfile"
 	StopCPUProfile  = "Profile.StopCPUProfile"
 	HeapProfile     = "Profile.HeapProfile"
+	BlockProfile    = "Profile.BlockProfile"
+	MutexProfile    = "Profile.MutexProfile"
 	StartTrace      = "Profile.StartTrace"
 	StopTrace       = "Profile.StopTrace"
 )
@@ -124,43 +128,55 @@ type controller struct {
 
 	// manager holds the containerManager methods.
 	manager *containerManager
+
+	// pprop holds the profile instance if enabled. It may be nil.
+	pprof *control.Profile
 }
 
 // newController creates a new controller. The caller must call
 // controller.srv.StartServing() to start the controller.
 func newController(fd int, l *Loader) (*controller, error) {
-	srv, err := server.CreateFromFD(fd)
+	ctrl := &controller{}
+	var err error
+	ctrl.srv, err = server.CreateFromFD(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	manager := &containerManager{
+	ctrl.manager = &containerManager{
 		startChan:       make(chan struct{}),
 		startResultChan: make(chan error),
 		l:               l,
 	}
-	srv.Register(manager)
+	ctrl.srv.Register(ctrl.manager)
 
-	if eps, ok := l.k.NetworkStack().(*netstack.Stack); ok {
+	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
 		net := &Network{
 			Stack: eps.Stack,
 		}
-		srv.Register(net)
+		ctrl.srv.Register(net)
 	}
 
-	srv.Register(&debug{})
-	srv.Register(&control.Logging{})
-	if l.conf.ProfileEnable {
-		srv.Register(&control.Profile{})
+	ctrl.srv.Register(&debug{})
+	ctrl.srv.Register(&control.Logging{})
+
+	if l.root.conf.ProfileEnable {
+		ctrl.pprof = &control.Profile{Kernel: l.k}
+		ctrl.srv.Register(ctrl.pprof)
 	}
 
-	return &controller{
-		srv:     srv,
-		manager: manager,
-	}, nil
+	return ctrl, nil
 }
 
-// containerManager manages sandboes containers.
+func (c *controller) stop() {
+	if c.pprof != nil {
+		// These are noop if there is nothing being profiled.
+		_ = c.pprof.StopCPUProfile(nil, nil)
+		_ = c.pprof.StopTrace(nil, nil)
+	}
+}
+
+// containerManager manages sandbox containers.
 type containerManager struct {
 	// startChan is used to signal when the root container process should
 	// be started.
@@ -236,6 +252,9 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	if len(args.FilePayload.Files) < 4 {
 		return fmt.Errorf("start arguments must contain stdin, stderr, and stdout followed by at least one file for the container root gofer")
 	}
+
+	// All validation passed, logs the spec for debugging.
+	specutils.LogSpec(args.Spec)
 
 	err := cm.l.startContainer(args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
@@ -323,7 +342,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
 
-	p, err := createPlatform(cm.l.conf, deviceFile)
+	p, err := createPlatform(cm.l.root.conf, deviceFile)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -335,12 +354,12 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("creating memory file: %v", err)
 	}
 	k.SetMemoryFile(mf)
-	networkStack := cm.l.k.NetworkStack()
+	networkStack := cm.l.k.RootNetworkNamespace().Stack()
 	cm.l.k = k
 
 	// Set up the restore environment.
-	mntr := newContainerMounter(cm.l.spec, cm.l.goferFDs, cm.l.k, cm.l.mountHints)
-	renv, err := mntr.createRestoreEnvironment(cm.l.conf)
+	mntr := newContainerMounter(cm.l.root.spec, cm.l.root.goferFDs, cm.l.k, cm.l.mountHints)
+	renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
 	if err != nil {
 		return fmt.Errorf("creating RestoreEnvironment: %v", err)
 	}
@@ -358,10 +377,10 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("file cannot be empty")
 	}
 
-	if cm.l.conf.ProfileEnable {
-		// initializePProf opens /proc/self/maps, so has to be
-		// called before installing seccomp filters.
-		initializePProf()
+	if cm.l.root.conf.ProfileEnable {
+		// pprof.Initialize opens /proc/self/maps, so has to be called before
+		// installing seccomp filters.
+		pprof.Initialize()
 	}
 
 	// Seccomp filters have to be applied before parsing the state file.
@@ -376,12 +395,14 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 
 	// Since we have a new kernel we also must make a new watchdog.
-	dog := watchdog.New(k, watchdog.DefaultTimeout, cm.l.conf.WatchdogAction)
+	dogOpts := watchdog.DefaultOpts
+	dogOpts.TaskTimeoutAction = cm.l.root.conf.WatchdogAction
+	dog := watchdog.New(k, dogOpts)
 
 	// Change the loader fields to reflect the changes made when restoring.
 	cm.l.k = k
 	cm.l.watchdog = dog
-	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
+	cm.l.root.procArgs = kernel.CreateProcessArgs{}
 	cm.l.restore = true
 
 	// Reinitialize the sandbox ID and processes map. Note that it doesn't

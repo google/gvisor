@@ -1,0 +1,27 @@
+// Test that the accept works if the final ACK is dropped and an ack with data
+// follows the dropped ack.
+
+0  socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0 bind(3, ..., ...) = 0
+
+// Set backlog to 1 so that we can easily test.
++0 listen(3, 1) = 0
+
+// Establish a connection without timestamps.
++0.0 < S 0:0(0) win 32792 <mss 1460,sackOK,nop,nop,nop,wscale 7>
++0.0 > S. 0:0(0) ack 1    <...>
+
++0.0 < . 1:5(4) ack 1 win 257
++0.0 > . 1:1(0) ack 5 <...>
+
+// This should cause connection to transition to connected state.
++0.000 accept(3, ..., ...) = 4
++0.000 fcntl(4, F_SETFL, O_RDWR|O_NONBLOCK) = 0
+
+// Now read the data and we should get 4 bytes.
++0.000 read(4,..., 4) = 4
++0.000 close(4) = 0
+
++0.0 > F. 1:1(0) ack 5 <...>
++0.0 < F. 5:5(0) ack 2 win 257
++0.01 > . 2:2(0) ack 6 <...>

@@ -1,9 +1,9 @@
+load("//tools/go_generics:defs.bzl", "go_template")
+
 package(
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
 )
-
-load("//tools/go_generics:defs.bzl", "go_template")
 
 go_template(
     name = "generic_range",
@@ -21,6 +21,8 @@ go_template(
     ],
     opt_consts = [
         "minDegree",
+        # trackGaps must either be 0 or 1.
+        "trackGaps",
     ],
     types = [
         "Key",

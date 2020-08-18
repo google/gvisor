@@ -1,11 +1,7 @@
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("@rules_cc//cc:defs.bzl", "cc_proto_library")
+load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
     name = "pending_signals_list",
@@ -36,7 +32,7 @@ go_template_instance(
     out = "seqatomic_taskgoroutineschedinfo_unsafe.go",
     package = "kernel",
     suffix = "TaskGoroutineSchedInfo",
-    template = "//third_party/gvsync:generic_seqatomic",
+    template = "//pkg/sync:generic_seqatomic",
     types = {
         "Value": "TaskGoroutineSchedInfo",
     },
@@ -79,36 +75,24 @@ go_template_instance(
 )
 
 proto_library(
-    name = "uncaught_signal_proto",
+    name = "uncaught_signal",
     srcs = ["uncaught_signal.proto"],
     visibility = ["//visibility:public"],
     deps = ["//pkg/sentry/arch:registers_proto"],
-)
-
-cc_proto_library(
-    name = "uncaught_signal_cc_proto",
-    visibility = ["//visibility:public"],
-    deps = [":uncaught_signal_proto"],
-)
-
-go_proto_library(
-    name = "uncaught_signal_go_proto",
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto",
-    proto = ":uncaught_signal_proto",
-    visibility = ["//visibility:public"],
-    deps = ["//pkg/sentry/arch:registers_go_proto"],
 )
 
 go_library(
     name = "kernel",
     srcs = [
         "abstract_socket_namespace.go",
+        "aio.go",
         "context.go",
         "fd_table.go",
         "fd_table_unsafe.go",
         "fs_context.go",
         "ipc_namespace.go",
         "kernel.go",
+        "kernel_opts.go",
         "kernel_state.go",
         "pending_signals.go",
         "pending_signals_list.go",
@@ -148,6 +132,7 @@ go_library(
         "task_stop.go",
         "task_syscall.go",
         "task_usermem.go",
+        "task_work.go",
         "thread_group.go",
         "threads.go",
         "timekeeper.go",
@@ -157,7 +142,6 @@ go_library(
         "vdso.go",
         "version.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel",
     imports = [
         "gvisor.dev/gvisor/pkg/bpf",
         "gvisor.dev/gvisor/pkg/sentry/device",
@@ -172,18 +156,27 @@ go_library(
         "//pkg/binary",
         "//pkg/bits",
         "//pkg/bpf",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/eventchannel",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/refs",
+        "//pkg/refs_vfs2",
+        "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fs/timerfd",
+        "//pkg/sentry/fsbridge",
+        "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/fsimpl/pipefs",
+        "//pkg/sentry/fsimpl/sockfs",
+        "//pkg/sentry/fsimpl/timerfd",
+        "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/hostcpu",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel/auth",
@@ -199,7 +192,6 @@ go_library(
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/time",
@@ -207,15 +199,18 @@ go_library(
         "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/vfs",
         "//pkg/state",
         "//pkg/state/statefile",
+        "//pkg/state/wire",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
+        "//pkg/usermem",
         "//pkg/waiter",
-        "//third_party/gvsync",
+        "//tools/go_marshal/marshal",
     ],
 )
 
@@ -228,12 +223,12 @@ go_test(
         "task_test.go",
         "timekeeper_test.go",
     ],
-    embed = [":kernel"],
+    library = ":kernel",
     deps = [
         "//pkg/abi",
+        "//pkg/context",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/filetest",
         "//pkg/sentry/kernel/sched",
@@ -241,7 +236,8 @@ go_test(
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
