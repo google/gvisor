@@ -87,6 +87,9 @@ type connState struct {
 	// version 0 implies 9P2000.L.
 	version uint32
 
+	// pendingWg counts requests that are still being handled.
+	pendingWg sync.WaitGroup
+
 	// -- below relates to the legacy handler --
 
 	// recvOkay indicates that a receive may start.
@@ -479,7 +482,9 @@ func (cs *connState) lookupChannel(id uint32) *channel {
 
 // handle handles a single message.
 func (cs *connState) handle(m message) (r message) {
+	cs.pendingWg.Add(1)
 	defer func() {
+		cs.pendingWg.Done()
 		if r == nil {
 			// Don't allow a panic to propagate.
 			err := recover()
@@ -568,6 +573,11 @@ func (cs *connState) handleRequests() {
 }
 
 func (cs *connState) stop() {
+	// Wait for completion of all inflight requests. This is mostly so that if
+	// a request is stuck, the sandbox supervisor has the opportunity to kill
+	// us with SIGABRT to get a stack dump of the offending handler.
+	cs.pendingWg.Wait()
+
 	// Close all channels.
 	close(cs.recvOkay)
 	close(cs.recvDone)
@@ -606,11 +616,6 @@ func (cs *connState) stop() {
 
 // service services requests concurrently.
 func (cs *connState) service() error {
-	// Pending is the number of handlers that have finished receiving but
-	// not finished processing requests. These must be waiting on properly
-	// below. See the next comment for an explanation of the loop.
-	pending := 0
-
 	// Start the first request handler.
 	go cs.handleRequests() // S/R-SAFE: Irrelevant.
 	cs.recvOkay <- true
@@ -622,15 +627,8 @@ func (cs *connState) service() error {
 		select {
 		case err := <-cs.recvDone:
 			if err != nil {
-				// Wait for pending handlers.
-				for i := 0; i < pending; i++ {
-					<-cs.sendDone
-				}
-				return nil
+				return err
 			}
-
-			// This handler is now pending.
-			pending++
 
 			// Kick the next receiver, or start a new handler
 			// if no receiver is currently waiting.
@@ -642,9 +640,6 @@ func (cs *connState) service() error {
 			}
 
 		case <-cs.sendDone:
-			// This handler is finished.
-			pending--
-
 			// Error sending a response? Nothing can be done.
 			//
 			// We don't terminate on a send error though, since
