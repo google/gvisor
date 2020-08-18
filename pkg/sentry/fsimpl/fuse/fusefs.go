@@ -257,8 +257,17 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		return nil, syserror.EOVERFLOW
 	}
 
-	// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
-	fd := fileDescription{OpenFlag: linux.FOPEN_KEEP_CACHE}
+	var fd *fileDescription
+	var fdImpl vfs.FileDescriptionImpl
+	if isDir {
+		directoryFD := &directoryFD{}
+		fd = &(directoryFD.fileDescription)
+		fdImpl = directoryFD
+	} else {
+		// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
+		fd = &fileDescription{OpenFlag: linux.FOPEN_KEEP_CACHE}
+		fdImpl = fd
+	}
 	// Only send open request when FUSE server support open or is opening a directory.
 	if !i.fs.conn.noOpen || isDir {
 		kernelTask := kernel.TaskFromContext(ctx)
@@ -325,7 +334,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		i.attributeTime = 0
 	}
 
-	if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
+	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -393,6 +402,27 @@ func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentr
 		return nil, err
 	}
 	return i.newEntry(kernelTask, req, name, linux.S_IFLNK, false)
+}
+
+// NewDir implements kernfs.Inode.NewDir.
+func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.Inode.NewDir: couldn't get kernel task from context", i.NodeID)
+		return nil, syserror.EINVAL
+	}
+	in := linux.FUSEMkdirReq{
+		MkdirIn: linux.FUSEMkdirIn{
+			Mode:  uint32(opts.Mode),
+			Umask: uint32(kernelTask.FSContext().Umask()),
+		},
+		Name: name,
+	}
+	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_MKDIR, &in)
+	if err != nil {
+		return nil, err
+	}
+	return i.newEntry(kernelTask, req, name, linux.S_IFDIR, false)
 }
 
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
