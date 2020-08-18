@@ -42,6 +42,7 @@ enum class FuseTestCmd {
   kGetNumUnconsumedRequests,
   kGetNumUnsentResponses,
   kGetTotalReceivedBytes,
+  kSkipRequest,
 };
 
 // Holds the information of a memory block in a serial buffer.
@@ -158,6 +159,10 @@ class FuseTest : public ::testing::Test {
   // bytes from /dev/fuse.
   uint32_t GetServerTotalReceivedBytes();
 
+  // Called by the testing thread to ask the FUSE server to skip stored
+  // request data.
+  void SkipServerActualRequest();
+
  protected:
   TempPath mount_point_;
 
@@ -210,6 +215,10 @@ class FuseTest : public ::testing::Test {
 
   // Sends a uint32_t data via socket.
   inline void ServerSendData(uint32_t data);
+
+  // The FUSE server side's corresponding code of `SkipServerActualRequest()`.
+  // Handles `kSkipRequest` command. Skip the request pointed by current cursor.
+  void ServerSkipReceivedRequest();
 
   // Handles FUSE request sent to /dev/fuse by its saved responses.
   void ServerProcessFuseRequest();
