@@ -39,6 +39,7 @@ enum class FuseTestCmd {
   kSetResponse = 0,
   kSetInodeLookup,
   kGetRequest,
+  kSkipRequest,
 };
 
 // Holds the information of a memory block in a serial buffer.
@@ -140,6 +141,10 @@ class FuseTest : public ::testing::Test {
   // data from server.
   void GetServerActualRequest(std::vector<struct iovec>& iovecs);
 
+  // Called by the testing thread to ask the FUSE server to skip stored
+  // request data.
+  void SkipServerActualRequest();
+
  protected:
   TempPath mount_point_;
 
@@ -186,6 +191,10 @@ class FuseTest : public ::testing::Test {
   // Handles `kGetRequest` command. Sends the next received request pointed by
   // the cursor.
   void ServerSendReceivedRequest();
+
+  // The FUSE server side's corresponding code of `SkipServerActualRequest()`.
+  // Handles `kSkipRequest` command. Skip the request pointed by current cursor.
+  void ServerSkipReceivedRequest();
 
   // Handles FUSE request sent to /dev/fuse by its saved responses.
   void ServerProcessFuseRequest();

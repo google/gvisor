@@ -15,6 +15,7 @@
 #ifndef GVISOR_TEST_UTIL_FUSE_UTIL_H_
 #define GVISOR_TEST_UTIL_FUSE_UTIL_H_
 
+#include <linux/fuse.h>
 #include <sys/uio.h>
 
 #include <string>
@@ -61,6 +62,9 @@ std::vector<struct iovec> FuseGenerateIovecs(T &first, Types &...args) {
                      std::end(iovecs));
   return first_iovec;
 }
+
+// Return a fuse_entry_out FUSE server response body.
+fuse_entry_out DefaultEntryOut(mode_t mode, uint64_t nodeId);
 
 }  // namespace testing
 }  // namespace gvisor
