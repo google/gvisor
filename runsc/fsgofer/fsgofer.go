@@ -46,6 +46,8 @@ const (
 	invalidMode = p9.OpenFlags(math.MaxUint32)
 
 	openFlags = syscall.O_NOFOLLOW | syscall.O_CLOEXEC
+
+	allowedOpenFlags = unix.O_TRUNC
 )
 
 // Config sets configuration options for each attach point.
@@ -357,10 +359,16 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	if l.isOpen() {
 		panic(fmt.Sprintf("attempting to open already opened file: %q", l.hostPath))
 	}
+	mode := flags & p9.OpenFlagsModeMask
+	if mode == p9.WriteOnly || mode == p9.ReadWrite || flags&p9.OpenTruncate != 0 {
+		if err := l.checkROMount(); err != nil {
+			return nil, p9.QID{}, 0, err
+		}
+	}
 
 	// Check if control file can be used or if a new open must be created.
 	var newFile *fd.FD
-	if flags == p9.ReadOnly && l.controlReadable {
+	if mode == p9.ReadOnly && l.controlReadable && flags.OSFlags()&allowedOpenFlags == 0 {
 		log.Debugf("Open reusing control file, flags: %v, %q", flags, l.hostPath)
 		newFile = l.file
 	} else {
@@ -369,8 +377,8 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		// name_to_handle_at and open_by_handle_at aren't supported by overlay2.
 		log.Debugf("Open reopening file, flags: %v, %q", flags, l.hostPath)
 		var err error
-		// Constrain open flags to the open mode and O_TRUNC.
-		newFile, err = reopenProcFd(l.file, openFlags|(flags.OSFlags()&(syscall.O_ACCMODE|syscall.O_TRUNC)))
+		osFlags := flags.OSFlags() & (syscall.O_ACCMODE | allowedOpenFlags)
+		newFile, err = reopenProcFd(l.file, openFlags|osFlags)
 		if err != nil {
 			return nil, p9.QID{}, 0, extractErrno(err)
 		}
@@ -389,31 +397,31 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		}
 		l.file = newFile
 	}
-	l.mode = flags & p9.OpenFlagsModeMask
+	l.mode = mode
 	return fd, l.qid, 0, nil
 }
 
 // Create implements p9.File.
-func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid p9.UID, gid p9.GID) (*fd.FD, p9.File, p9.QID, uint32, error) {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return nil, nil, p9.QID{}, 0, syscall.EBADF
+func (l *localFile) Create(name string, p9Flags p9.OpenFlags, perm p9.FileMode, uid p9.UID, gid p9.GID) (*fd.FD, p9.File, p9.QID, uint32, error) {
+	if err := l.checkROMount(); err != nil {
+		return nil, nil, p9.QID{}, 0, err
 	}
+
+	// Set file creation flags, plus allowed open flags from caller.
+	osFlags := openFlags | syscall.O_CREAT | syscall.O_EXCL
+	osFlags |= p9Flags.OSFlags() & allowedOpenFlags
 
 	// 'file' may be used for other operations (e.g. Walk), so read access is
 	// always added to flags. Note that resulting file might have a wider mode
 	// than needed for each particular case.
-	flags := openFlags | syscall.O_CREAT | syscall.O_EXCL
+	mode := p9Flags & p9.OpenFlagsModeMask
 	if mode == p9.WriteOnly {
-		flags |= syscall.O_RDWR
+		osFlags |= syscall.O_RDWR
 	} else {
-		flags |= mode.OSFlags()
+		osFlags |= mode.OSFlags() & unix.O_ACCMODE
 	}
 
-	child, err := fd.OpenAt(l.file, name, flags, uint32(perm.Permissions()))
+	child, err := fd.OpenAt(l.file, name, osFlags, uint32(perm.Permissions()))
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
@@ -449,12 +457,8 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 
 // Mkdir implements p9.File.
 func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID) (p9.QID, error) {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return p9.QID{}, syscall.EBADF
+	if err := l.checkROMount(); err != nil {
+		return p9.QID{}, err
 	}
 
 	if err := syscall.Mkdirat(l.file.FD(), name, uint32(perm.Permissions())); err != nil {
@@ -637,12 +641,8 @@ func (l *localFile) fillAttr(stat syscall.Stat_t) (p9.AttrMask, p9.Attr) {
 // cannot be changed atomically and user may see partial changes when
 // an error happens.
 func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return syscall.EBADF
+	if err := l.checkROMount(); err != nil {
+		return err
 	}
 
 	allowed := p9.SetAttrMask{
@@ -804,12 +804,8 @@ func (*localFile) Rename(p9.File, string) error {
 
 // RenameAt implements p9.File.RenameAt.
 func (l *localFile) RenameAt(oldName string, directory p9.File, newName string) error {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return syscall.EBADF
+	if err := l.checkROMount(); err != nil {
+		return err
 	}
 
 	newParent := directory.(*localFile)
@@ -855,12 +851,8 @@ func (l *localFile) WriteAt(p []byte, offset uint64) (int, error) {
 
 // Symlink implements p9.File.
 func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.QID, error) {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return p9.QID{}, syscall.EBADF
+	if err := l.checkROMount(); err != nil {
+		return p9.QID{}, err
 	}
 
 	if err := unix.Symlinkat(target, l.file.FD(), newName); err != nil {
@@ -895,12 +887,8 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 
 // Link implements p9.File.
 func (l *localFile) Link(target p9.File, newName string) error {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return syscall.EBADF
+	if err := l.checkROMount(); err != nil {
+		return err
 	}
 
 	targetFile := target.(*localFile)
@@ -912,12 +900,8 @@ func (l *localFile) Link(target p9.File, newName string) error {
 
 // Mknod implements p9.File.
 func (l *localFile) Mknod(name string, mode p9.FileMode, _ uint32, _ uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return p9.QID{}, syscall.EROFS
+	if err := l.checkROMount(); err != nil {
+		return p9.QID{}, err
 	}
 
 	hostPath := path.Join(l.hostPath, name)
@@ -948,12 +932,8 @@ func (l *localFile) Mknod(name string, mode p9.FileMode, _ uint32, _ uint32, _ p
 
 // UnlinkAt implements p9.File.
 func (l *localFile) UnlinkAt(name string, flags uint32) error {
-	conf := l.attachPoint.conf
-	if conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
-		return syscall.EBADF
+	if err := l.checkROMount(); err != nil {
+		return err
 	}
 
 	if err := unix.Unlinkat(l.file.FD(), name, int(flags)); err != nil {
@@ -1177,4 +1157,14 @@ func extractErrno(err error) syscall.Errno {
 	// Fall back to EIO.
 	log.Debugf("Unknown error: %v, defaulting to EIO", err)
 	return syscall.EIO
+}
+
+func (l *localFile) checkROMount() error {
+	if conf := l.attachPoint.conf; conf.ROMount {
+		if conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
+		return syscall.EROFS
+	}
+	return nil
 }
