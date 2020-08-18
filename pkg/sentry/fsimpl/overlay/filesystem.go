@@ -717,17 +717,33 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	mayCreate := opts.Flags&linux.O_CREAT != 0
 	mustCreate := opts.Flags&(linux.O_CREAT|linux.O_EXCL) == (linux.O_CREAT | linux.O_EXCL)
+	mayWrite := vfs.AccessTypesForOpenFlags(&opts).MayWrite()
 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+			unlocked = true
+		}
+	}
+	defer unlock()
 
 	start := rp.Start().Impl().(*dentry)
 	if rp.Done() {
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		return start.openLocked(ctx, rp, &opts)
+		if mayWrite {
+			if err := start.copyUpLocked(ctx); err != nil {
+				return nil, err
+			}
+		}
+		start.IncRef()
+		defer start.DecRef(ctx)
+		unlock()
+		return start.openCopiedUp(ctx, rp, &opts)
 	}
 
 afterTrailingSymlink:
@@ -767,19 +783,23 @@ afterTrailingSymlink:
 		start = parent
 		goto afterTrailingSymlink
 	}
-	return child.openLocked(ctx, rp, &opts)
+	if mayWrite {
+		if err := child.copyUpLocked(ctx); err != nil {
+			return nil, err
+		}
+	}
+	child.IncRef()
+	defer child.DecRef(ctx)
+	unlock()
+	return child.openCopiedUp(ctx, rp, &opts)
 }
 
-// Preconditions: fs.renameMu must be locked.
-func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+// Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite(), then d has
+// been copied up.
+func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
-	}
-	if ats.MayWrite() {
-		if err := d.copyUpLocked(ctx); err != nil {
-			return nil, err
-		}
 	}
 	mnt := rp.Mount()
 
@@ -792,7 +812,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 			return nil, syserror.EISDIR
 		}
 		// Can't open directories writably.
-		if ats&vfs.MayWrite != 0 {
+		if ats.MayWrite() {
 			return nil, syserror.EISDIR
 		}
 		if opts.Flags&linux.O_DIRECT != 0 {
