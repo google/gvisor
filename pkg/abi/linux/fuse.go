@@ -339,3 +339,21 @@ type FUSEOpenOut struct {
 
 	_ uint32
 }
+
+// FUSEReleaseIn is the request sent by the kernel to the daemon
+// when there is no more reference to a file.
+//
+// +marshal
+type FUSEReleaseIn struct {
+	// Fh is the file handler for the file to be released.
+	Fh uint64
+
+	// Flags of the file.
+	Flags uint32
+
+	// ReleaseFlags of this release request.
+	ReleaseFlags uint32
+
+	// LockOwner is the id of the lock owner if there is one.
+	LockOwner uint64
+}

@@ -168,6 +168,9 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 
 			// We're done with this request.
 			fd.queue.Remove(req)
+			if req.hdr.Opcode == linux.FUSE_RELEASE {
+				fd.numActiveRequests -= 1
+			}
 
 			// Restart the read as this request was invalid.
 			log.Warningf("fuse.DeviceFD.Read: request found was too large. Restarting read.")
@@ -184,6 +187,9 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 		if readCursor >= req.hdr.Len {
 			// Fully done with this req, remove it from the queue.
 			fd.queue.Remove(req)
+			if req.hdr.Opcode == linux.FUSE_RELEASE {
+				fd.numActiveRequests -= 1
+			}
 			break
 		}
 	}

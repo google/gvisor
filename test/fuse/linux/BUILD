@@ -30,6 +30,19 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "release_test",
+    testonly = 1,
+    srcs = ["release_test.cc"],
+    deps = [
+        gtest,
+        ":fuse_base",
+        "//test/util:fuse_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
 cc_library(
     name = "fuse_base",
     testonly = 1,

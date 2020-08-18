@@ -61,6 +61,9 @@ class FuseTest : public ::testing::Test {
  protected:
   TempPath mount_point_;
 
+  // Unmounts the mountpoint of the FUSE server.
+  void UnmountFuse();
+
  private:
   void MountFuse();
   void UnmountFuse();
