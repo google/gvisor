@@ -117,6 +117,16 @@ uint32_t FuseTest::GetServerTotalReceivedBytes() {
       static_cast<uint32_t>(FuseTestCmd::kGetTotalReceivedBytes));
 }
 
+// Sends the `kSkipRequest` command to the FUSE server, which would skip
+// current stored request data.
+void FuseTest::SkipServerActualRequest() {
+  uint32_t cmd = static_cast<uint32_t>(FuseTestCmd::kSkipRequest);
+  EXPECT_THAT(RetryEINTR(write)(sock_[0], &cmd, sizeof(cmd)),
+              SyscallSucceedsWithValue(sizeof(cmd)));
+
+  WaitServerComplete();
+}
+
 // Sends the `kSetInodeLookup` command, expected mode, and the path of the
 // inode to create under the mount point.
 void FuseTest::SetServerInodeLookup(const std::string& path, mode_t mode) {
@@ -284,6 +294,9 @@ void FuseTest::ServerHandleCommand() {
     case FuseTestCmd::kGetNumUnsentResponses:
       ServerSendData(static_cast<uint32_t>(responses_.RemainingBlocks()));
       break;
+    case FuseTestCmd::kSkipRequest:
+      ServerSkipReceivedRequest();
+      break;
     default:
       FAIL() << "Unknown FuseTestCmd " << cmd;
       break;
@@ -314,32 +327,7 @@ void FuseTest::ServerReceiveInodeLookup() {
       .len = out_len,
       .error = 0,
   };
-  struct fuse_entry_out out_payload = {
-      .nodeid = nodeid_,
-      .generation = 0,
-      .entry_valid = 0,
-      .attr_valid = 0,
-      .entry_valid_nsec = 0,
-      .attr_valid_nsec = 0,
-      .attr =
-          (struct fuse_attr){
-              .ino = nodeid_,
-              .size = 512,
-              .blocks = 4,
-              .atime = 0,
-              .mtime = 0,
-              .ctime = 0,
-              .atimensec = 0,
-              .mtimensec = 0,
-              .ctimensec = 0,
-              .mode = mode,
-              .nlink = 2,
-              .uid = 1234,
-              .gid = 4321,
-              .rdev = 12,
-              .blksize = 4096,
-          },
-  };
+  struct fuse_entry_out out_payload = DefaultEntryOut(mode, nodeid_);
   // Since this is only used in test, nodeid_ is simply increased by 1 to
   // comply with the unqiueness of different path.
   ++nodeid_;
@@ -361,6 +349,15 @@ void FuseTest::ServerSendReceivedRequest() {
       RetryEINTR(write)(sock_[1], requests_.DataAtOffset(mem_block.offset),
                         mem_block.len),
       SyscallSucceedsWithValue(mem_block.len));
+}
+
+// Skip the request pointed by current cursor.
+void FuseTest::ServerSkipReceivedRequest() {
+  if (requests_.End()) {
+    FAIL() << "No more received request.";
+    return;
+  }
+  requests_.Next();
 }
 
 // Handles FUSE request. Reads request from /dev/fuse, checks if it has the
@@ -390,6 +387,7 @@ void FuseTest::ServerProcessFuseRequest() {
 
   requests_.AddMemBlock(in_header->opcode, buf.data(), len);
 
+  if (in_header->opcode == FUSE_RELEASE) return;
   // Check if there is a corresponding response.
   if (responses_.End()) {
     GTEST_NONFATAL_FAILURE_("No more FUSE response is expected");
