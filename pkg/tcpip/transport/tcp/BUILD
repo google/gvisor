@@ -11,7 +11,8 @@ go_template_instance(
     template = "//pkg/ilist:generic_list",
     types = {
         "Element": "*segment",
-        "Linker": "*segment",
+        "ElementMapper": "segmentMapper",
+        "Linker": "*segmentEntry",
     },
 )
 
@@ -24,6 +25,19 @@ go_template_instance(
     types = {
         "Element": "*endpoint",
         "Linker": "*endpoint",
+    },
+)
+
+go_template_instance(
+    name = "tcp_rack_segment_list",
+    out = "tcp_rack_segment_list.go",
+    package = "tcp",
+    prefix = "rackSegment",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*segment",
+        "ElementMapper": "rackSegmentMapper",
+        "Linker": "*rackSegmentEntry",
     },
 )
 
@@ -55,6 +69,7 @@ go_library(
         "snd.go",
         "snd_state.go",
         "tcp_endpoint_list.go",
+        "tcp_rack_segment_list.go",
         "tcp_segment_list.go",
         "timer.go",
     ],
