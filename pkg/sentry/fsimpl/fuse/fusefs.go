@@ -362,6 +362,15 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 	return i.newEntry(ctx, name, opts.Mode.FileType(), linux.FUSE_MKNOD, &in)
 }
 
+// NewSymlink implements kernfs.Inode.NewSymlink.
+func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentry, error) {
+	in := linux.FUSESymLinkIn{
+		Name:   name,
+		Target: target,
+	}
+	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
+}
+
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
 // Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and FUSE_LOOKUP.
 func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*vfs.Dentry, error) {
