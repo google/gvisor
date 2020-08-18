@@ -374,6 +374,24 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 	return i.newEntry(kernelTask, req, name, opts.Mode.FileType(), false)
 }
 
+// NewSymlink implements kernfs.Inode.NewSymlink.
+func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentry, error) {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.Inode.NewSymlink: couldn't get kernel task from context")
+		return nil, syserror.EINVAL
+	}
+	in := linux.FUSESymLinkIn{
+		Name:   name,
+		Target: target,
+	}
+	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_SYMLINK, &in)
+	if err != nil {
+		return nil, err
+	}
+	return i.newEntry(kernelTask, req, name, linux.S_IFLNK, false)
+}
+
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
 // Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and inode.Lookup.
 func (i *inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fileType linux.FileMode, isLookup bool) (*vfs.Dentry, error) {

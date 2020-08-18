@@ -456,3 +456,28 @@ func (r *FUSEMknodReq) MarshalUnsafe(buf []byte) {
 func (r *FUSEMknodReq) SizeBytes() int {
 	return r.MknodIn.SizeBytes() + len(r.Name) + 1
 }
+
+// FUSESymLinkIn is the request sent by the kernel to the daemon,
+// to create a symbolic link.
+type FUSESymLinkIn struct {
+	marshal.StubMarshallable
+
+	// Name of symlink to create.
+	Name string
+
+	// Target of the symlink.
+	Target string
+}
+
+// MarshalUnsafe serializes r.Name and r.Link to the dst buffer.
+// Left null-termination at end of r.Name and r.Link.
+func (r *FUSESymLinkIn) MarshalUnsafe(buf []byte) {
+	copy(buf, r.Name)
+	copy(buf[len(r.Name)+1:], r.Target)
+}
+
+// SizeBytes is the size of the memory representation of FUSESymLinkIn.
+// 2 extra bytes for null-terminated string.
+func (r *FUSESymLinkIn) SizeBytes() int {
+	return len(r.Name) + len(r.Target) + 2
+}
