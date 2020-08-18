@@ -36,6 +36,10 @@ namespace testing {
 namespace {
 
 class OpenTest : public FuseTest {
+  // OpenTest doesn't care the release request when close a fd,
+  // so doesn't check leftover requests when tearing down.
+  void TearDown() { UnmountFuse(); }
+
  protected:
   const std::string test_file_name_ = "test_file";
 };

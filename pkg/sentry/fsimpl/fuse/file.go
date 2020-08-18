@@ -18,6 +18,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -54,8 +56,32 @@ func (fd *fileDescription) filesystem() *vfs.Filesystem {
 	return fd.vfsfd.VirtualDentry().Mount().Filesystem()
 }
 
+func (fd *fileDescription) statusFlags() uint32 {
+	return fd.vfsfd.StatusFlags()
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *fileDescription) Release(ctx context.Context) {}
+func (fd *fileDescription) Release(ctx context.Context) {
+	in := linux.FUSEReleaseIn{
+		Fh:    fd.Fh,
+		Flags: fd.statusFlags(),
+	}
+	// TODO(gvisor.dev/issue/3245): add logic when we support file lock owner.
+	var opcode linux.FUSEOpcode
+	if fd.inode().Mode().IsDir() {
+		opcode = linux.FUSE_RELEASEDIR
+	} else {
+		opcode = linux.FUSE_RELEASE
+	}
+	conn := fd.inode().fs.conn
+	if !conn.noOpen {
+		kernelTask := kernel.TaskFromContext(ctx)
+		// ignoring error is analogous to Linux's behavior.
+		req, _ := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), fd.inode().NodeID, opcode, &in)
+		// FUSE server doesn't reply to this call.
+		conn.CallAsync(kernelTask, req)
+	}
+}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
