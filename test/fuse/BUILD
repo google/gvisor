@@ -12,3 +12,8 @@ syscall_test(
     fuse = "True",
     test = "//test/fuse/linux:mknod_test",
 )
+
+syscall_test(
+    fuse = "True",
+    test = "//test/fuse/linux:symlink_test",
+)
