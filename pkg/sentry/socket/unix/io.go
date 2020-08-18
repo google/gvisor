@@ -15,8 +15,8 @@
 package unix
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -81,6 +81,19 @@ type EndpointReader struct {
 	// ControlTrunc indicates that SCM_RIGHTS FDs were discarded based on
 	// the value of NumRights.
 	ControlTrunc bool
+}
+
+// Truncate calls RecvMsg on the endpoint without writing to a destination.
+func (r *EndpointReader) Truncate() error {
+	// Ignore bytes read since it will always be zero.
+	_, ms, c, ct, err := r.Endpoint.RecvMsg(r.Ctx, [][]byte{}, r.Creds, r.NumRights, r.Peek, r.From)
+	r.Control = c
+	r.ControlTrunc = ct
+	r.MsgSize = ms
+	if err != nil {
+		return err.ToError()
+	}
+	return nil
 }
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.

@@ -12,23 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64 i386
+// +build amd64 386
 
 package arch
 
 import (
 	"fmt"
 	"io"
-	"sync"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// Registers represents the CPU registers for this architecture.
+//
+// +stateify savable
+type Registers struct {
+	linux.PtraceRegs
+}
 
 // System-related constants for x86.
 const (
@@ -114,6 +121,10 @@ func newX86FPStateSlice() []byte {
 	size, align := cpuid.HostFeatureSet().ExtendedStateSize()
 	capacity := size
 	// Always use at least 4096 bytes.
+	//
+	// For the KVM platform, this state is a fixed 4096 bytes, so make sure
+	// that the underlying array is at _least_ that size otherwise we will
+	// corrupt random memory. This is not a pleasant thing to debug.
 	if capacity < 4096 {
 		capacity = 4096
 	}
@@ -149,21 +160,6 @@ func (f x86FPState) FloatingPointData() *FloatingPointData {
 // This is primarily for use in tests.
 func NewFloatingPointData() *FloatingPointData {
 	return (*FloatingPointData)(&(newX86FPState()[0]))
-}
-
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
-//
-// +stateify savable
-type State struct {
-	// The system registers.
-	Regs syscall.PtraceRegs `state:".(syscallPtraceRegs)"`
-
-	// Our floating point state.
-	x86FPState `state:"wait"`
-
-	// FeatureSet is a pointer to the currently active feature set.
-	FeatureSet *cpuid.FeatureSet
 }
 
 // Proto returns a protobuf representation of the system registers in State.
@@ -278,10 +274,12 @@ func (s *State) RegisterMap() (map[string]uintptr, error) {
 
 // PtraceGetRegs implements Context.PtraceGetRegs.
 func (s *State) PtraceGetRegs(dst io.Writer) (int, error) {
-	return dst.Write(binary.Marshal(nil, usermem.ByteOrder, s.ptraceGetRegs()))
+	regs := s.ptraceGetRegs()
+	n, err := regs.WriteTo(dst)
+	return int(n), err
 }
 
-func (s *State) ptraceGetRegs() syscall.PtraceRegs {
+func (s *State) ptraceGetRegs() Registers {
 	regs := s.Regs
 	// These may not be initialized.
 	if regs.Cs == 0 || regs.Ss == 0 || regs.Eflags == 0 {
@@ -317,16 +315,16 @@ func (s *State) ptraceGetRegs() syscall.PtraceRegs {
 	return regs
 }
 
-var ptraceRegsSize = int(binary.Size(syscall.PtraceRegs{}))
+var ptraceRegistersSize = (*linux.PtraceRegs)(nil).SizeBytes()
 
 // PtraceSetRegs implements Context.PtraceSetRegs.
 func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
-	var regs syscall.PtraceRegs
-	buf := make([]byte, ptraceRegsSize)
+	var regs Registers
+	buf := make([]byte, ptraceRegistersSize)
 	if _, err := io.ReadFull(src, buf); err != nil {
 		return 0, err
 	}
-	binary.Unmarshal(buf, usermem.ByteOrder, &regs)
+	regs.UnmarshalUnsafe(buf)
 	// Truncate segment registers to 16 bits.
 	regs.Cs = uint64(uint16(regs.Cs))
 	regs.Ds = uint64(uint16(regs.Ds))
@@ -380,7 +378,7 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	}
 	regs.Eflags = (s.Regs.Eflags &^ eflagsPtraceMutable) | (regs.Eflags & eflagsPtraceMutable)
 	s.Regs = regs
-	return ptraceRegsSize, nil
+	return ptraceRegistersSize, nil
 }
 
 // isUserSegmentSelector returns true if the given segment selector specifies a
@@ -549,7 +547,7 @@ const (
 func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < ptraceRegsSize {
+		if maxlen < ptraceRegistersSize {
 			return 0, syserror.EFAULT
 		}
 		return s.PtraceGetRegs(dst)
@@ -569,7 +567,7 @@ func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int,
 func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < ptraceRegsSize {
+		if maxlen < ptraceRegistersSize {
 			return 0, syserror.EFAULT
 		}
 		return s.PtraceSetRegs(src)

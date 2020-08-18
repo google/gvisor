@@ -41,7 +41,7 @@ const (
 )
 
 func TestTimeouts(t *testing.T) {
-	nc := NewConn(nil, nil)
+	nc := NewTCPConn(nil, nil)
 	dlfs := []struct {
 		name string
 		f    func(time.Time) error
@@ -127,12 +127,16 @@ func TestCloseReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
 
-	l, e := NewListener(s, addr, ipv4.ProtocolNumber)
+	l, e := ListenTCP(s, addr, ipv4.ProtocolNumber)
 	if e != nil {
 		t.Fatalf("NewListener() = %v", e)
 	}
@@ -151,10 +155,8 @@ func TestCloseReader(t *testing.T) {
 
 		buf := make([]byte, 256)
 		n, err := c.Read(buf)
-		got, ok := err.(*net.OpError)
-		want := tcpip.ErrConnectionAborted
-		if n != 0 || !ok || got.Err.Error() != want.String() {
-			t.Errorf("c.Read() = (%d, %v), want (0, OpError(%v))", n, err, want)
+		if n != 0 || err != io.EOF {
+			t.Errorf("c.Read() = (%d, %v), want (0, EOF)", n, err)
 		}
 	}()
 	sender, err := connect(s, addr)
@@ -170,13 +172,17 @@ func TestCloseReader(t *testing.T) {
 	sender.close()
 }
 
-// TestCloseReaderWithForwarder tests that Conn.Close() wakes Conn.Read() when
+// TestCloseReaderWithForwarder tests that TCPConn.Close wakes TCPConn.Read when
 // using tcp.Forwarder.
 func TestCloseReaderWithForwarder(t *testing.T) {
 	s, err := newLoopbackStack()
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
@@ -194,7 +200,7 @@ func TestCloseReaderWithForwarder(t *testing.T) {
 		defer ep.Close()
 		r.Complete(false)
 
-		c := NewConn(&wq, ep)
+		c := NewTCPConn(&wq, ep)
 
 		// Give c.Read() a chance to block before closing the connection.
 		time.AfterFunc(time.Millisecond*50, func() {
@@ -203,10 +209,8 @@ func TestCloseReaderWithForwarder(t *testing.T) {
 
 		buf := make([]byte, 256)
 		n, e := c.Read(buf)
-		got, ok := e.(*net.OpError)
-		want := tcpip.ErrConnectionAborted
-		if n != 0 || !ok || got.Err.Error() != want.String() {
-			t.Errorf("c.Read() = (%d, %v), want (0, OpError(%v))", n, e, want)
+		if n != 0 || e != io.EOF {
+			t.Errorf("c.Read() = (%d, %v), want (0, EOF)", n, e)
 		}
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
@@ -229,30 +233,21 @@ func TestCloseRead(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("newLoopbackStack() = %v", terr)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
 
 	fwd := tcp.NewForwarder(s, 30000, 10, func(r *tcp.ForwarderRequest) {
 		var wq waiter.Queue
-		ep, err := r.CreateEndpoint(&wq)
+		_, err := r.CreateEndpoint(&wq)
 		if err != nil {
 			t.Fatalf("r.CreateEndpoint() = %v", err)
 		}
-		defer ep.Close()
-		r.Complete(false)
-
-		c := NewConn(&wq, ep)
-
-		buf := make([]byte, 256)
-		n, e := c.Read(buf)
-		if e != nil || string(buf[:n]) != "abc123" {
-			t.Fatalf("c.Read() = (%d, %v), want (6, nil)", n, e)
-		}
-
-		if n, e = c.Write([]byte("abc123")); e != nil {
-			t.Errorf("c.Write() = (%d, %v), want (6, nil)", n, e)
-		}
+		// Endpoint will be closed in deferred s.Close (above).
 	})
 
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
@@ -261,7 +256,7 @@ func TestCloseRead(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("connect() = %v", terr)
 	}
-	c := NewConn(tc.wq, tc.ep)
+	c := NewTCPConn(tc.wq, tc.ep)
 
 	if err := c.CloseRead(); err != nil {
 		t.Errorf("c.CloseRead() = %v", err)
@@ -282,6 +277,10 @@ func TestCloseWrite(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("newLoopbackStack() = %v", terr)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
@@ -295,7 +294,7 @@ func TestCloseWrite(t *testing.T) {
 		defer ep.Close()
 		r.Complete(false)
 
-		c := NewConn(&wq, ep)
+		c := NewTCPConn(&wq, ep)
 
 		n, e := c.Read(make([]byte, 256))
 		if n != 0 || e != io.EOF {
@@ -313,7 +312,7 @@ func TestCloseWrite(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("connect() = %v", terr)
 	}
-	c := NewConn(tc.wq, tc.ep)
+	c := NewTCPConn(tc.wq, tc.ep)
 
 	if err := c.CloseWrite(); err != nil {
 		t.Errorf("c.CloseWrite() = %v", err)
@@ -338,6 +337,10 @@ func TestUDPForwarder(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("newLoopbackStack() = %v", terr)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip1 := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr1 := tcpip.FullAddress{NICID, ip1, 11211}
@@ -357,7 +360,7 @@ func TestUDPForwarder(t *testing.T) {
 		}
 		defer ep.Close()
 
-		c := NewConn(&wq, ep)
+		c := NewTCPConn(&wq, ep)
 
 		buf := make([]byte, 256)
 		n, e := c.Read(buf)
@@ -395,12 +398,16 @@ func TestDeadlineChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
 
-	l, e := NewListener(s, addr, ipv4.ProtocolNumber)
+	l, e := ListenTCP(s, addr, ipv4.ProtocolNumber)
 	if e != nil {
 		t.Fatalf("NewListener() = %v", e)
 	}
@@ -444,6 +451,10 @@ func TestPacketConnTransfer(t *testing.T) {
 	if e != nil {
 		t.Fatalf("newLoopbackStack() = %v", e)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip1 := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr1 := tcpip.FullAddress{NICID, ip1, 11211}
@@ -496,6 +507,10 @@ func TestConnectedPacketConnTransfer(t *testing.T) {
 	if e != nil {
 		t.Fatalf("newLoopbackStack() = %v", e)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr := tcpip.FullAddress{NICID, ip, 11211}
@@ -545,7 +560,7 @@ func makePipe() (c1, c2 net.Conn, stop func(), err error) {
 	addr := tcpip.FullAddress{NICID, ip, 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, ip)
 
-	l, err := NewListener(s, addr, ipv4.ProtocolNumber)
+	l, err := ListenTCP(s, addr, ipv4.ProtocolNumber)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("NewListener: %v", err)
 	}
@@ -566,6 +581,8 @@ func makePipe() (c1, c2 net.Conn, stop func(), err error) {
 	stop = func() {
 		c1.Close()
 		c2.Close()
+		s.Close()
+		s.Wait()
 	}
 
 	if err := l.Close(); err != nil {
@@ -628,6 +645,10 @@ func TestTCPDialError(t *testing.T) {
 	if e != nil {
 		t.Fatalf("newLoopbackStack() = %v", e)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr := tcpip.FullAddress{NICID, ip, 11211}
@@ -645,6 +666,10 @@ func TestDialContextTCPCanceled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
@@ -663,6 +688,10 @@ func TestDialContextTCPTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)

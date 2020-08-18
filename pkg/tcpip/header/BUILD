@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -15,15 +14,17 @@ go_library(
         "interfaces.go",
         "ipv4.go",
         "ipv6.go",
+        "ipv6_extension_headers.go",
         "ipv6_fragment.go",
         "ndp_neighbor_advert.go",
         "ndp_neighbor_solicit.go",
         "ndp_options.go",
         "ndp_router_advert.go",
+        "ndp_router_solicit.go",
+        "ndpoptionidentifier_string.go",
         "tcp.go",
         "udp.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/header",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
@@ -38,12 +39,16 @@ go_test(
     size = "small",
     srcs = [
         "checksum_test.go",
+        "ipv6_test.go",
         "ipversion_test.go",
         "tcp_test.go",
     ],
     deps = [
         ":header",
+        "//pkg/rand",
+        "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
 
@@ -52,8 +57,13 @@ go_test(
     size = "small",
     srcs = [
         "eth_test.go",
+        "ipv6_extension_headers_test.go",
         "ndp_test.go",
     ],
-    embed = [":header"],
-    deps = ["//pkg/tcpip"],
+    library = ":header",
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
 )

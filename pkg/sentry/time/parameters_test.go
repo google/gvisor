@@ -484,3 +484,18 @@ func TestMulDivOverflow(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkMuldiv64(b *testing.B) {
+	var v uint64 = math.MaxUint64
+	for i := uint64(1); i <= 1000000; i++ {
+		mult := uint64(1000000000)
+		div := i * mult
+		res, ok := muldiv64(v, mult, div)
+		if !ok {
+			b.Errorf("Result of %v * %v / %v ok got false want true", v, mult, div)
+		}
+		if want := v / i; res != want {
+			b.Errorf("Bad result of %v * %v / %v: got %v, want %v", v, mult, div, res, want)
+		}
+	}
+}

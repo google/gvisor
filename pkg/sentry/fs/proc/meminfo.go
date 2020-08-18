@@ -18,12 +18,14 @@ import (
 	"bytes"
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// LINT.IfChange
 
 // meminfoData backs /proc/meminfo.
 //
@@ -56,12 +58,16 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "MemTotal:       %8d kB\n", totalSize/1024)
-	memFree := (totalSize - totalUsage) / 1024
+	memFree := totalSize - totalUsage
+	if memFree > totalSize {
+		// Underflow.
+		memFree = 0
+	}
 	// We use MemFree as MemAvailable because we don't swap.
 	// TODO(rahat): When reclaim is implemented the value of MemAvailable
 	// should change.
-	fmt.Fprintf(&buf, "MemFree:        %8d kB\n", memFree)
-	fmt.Fprintf(&buf, "MemAvailable:   %8d kB\n", memFree)
+	fmt.Fprintf(&buf, "MemFree:        %8d kB\n", memFree/1024)
+	fmt.Fprintf(&buf, "MemAvailable:   %8d kB\n", memFree/1024)
 	fmt.Fprintf(&buf, "Buffers:               0 kB\n") // memory usage by block devices
 	fmt.Fprintf(&buf, "Cached:         %8d kB\n", (file+snapshot.Tmpfs)/1024)
 	// Emulate a system with no swap, which disables inactivation of anon pages.
@@ -83,3 +89,5 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	fmt.Fprintf(&buf, "Shmem:          %8d kB\n", snapshot.Tmpfs/1024)
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*meminfoData)(nil)}}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

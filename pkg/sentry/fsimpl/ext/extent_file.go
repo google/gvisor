@@ -38,9 +38,10 @@ var _ io.ReaderAt = (*extentFile)(nil)
 // newExtentFile is the extent file constructor. It reads the entire extent
 // tree into memory.
 // TODO(b/134676337): Build extent tree on demand to reduce memory usage.
-func newExtentFile(regFile regularFile) (*extentFile, error) {
-	file := &extentFile{regFile: regFile}
+func newExtentFile(args inodeArgs) (*extentFile, error) {
+	file := &extentFile{}
 	file.regFile.impl = file
+	file.regFile.inode.init(args, &file.regFile)
 	err := file.buildExtTree()
 	if err != nil {
 		return nil, err
@@ -57,7 +58,7 @@ func newExtentFile(regFile regularFile) (*extentFile, error) {
 func (f *extentFile) buildExtTree() error {
 	rootNodeData := f.regFile.inode.diskInode.Data()
 
-	binary.Unmarshal(rootNodeData[:disklayout.ExtentStructsSize], binary.LittleEndian, &f.root.Header)
+	binary.Unmarshal(rootNodeData[:disklayout.ExtentHeaderSize], binary.LittleEndian, &f.root.Header)
 
 	// Root node can not have more than 4 entries: 60 bytes = 1 header + 4 entries.
 	if f.root.Header.NumEntries > 4 {
@@ -67,7 +68,7 @@ func (f *extentFile) buildExtTree() error {
 	}
 
 	f.root.Entries = make([]disklayout.ExtentEntryPair, f.root.Header.NumEntries)
-	for i, off := uint16(0), disklayout.ExtentStructsSize; i < f.root.Header.NumEntries; i, off = i+1, off+disklayout.ExtentStructsSize {
+	for i, off := uint16(0), disklayout.ExtentEntrySize; i < f.root.Header.NumEntries; i, off = i+1, off+disklayout.ExtentEntrySize {
 		var curEntry disklayout.ExtentEntry
 		if f.root.Header.Height == 0 {
 			// Leaf node.
@@ -76,7 +77,7 @@ func (f *extentFile) buildExtTree() error {
 			// Internal node.
 			curEntry = &disklayout.ExtentIdx{}
 		}
-		binary.Unmarshal(rootNodeData[off:off+disklayout.ExtentStructsSize], binary.LittleEndian, curEntry)
+		binary.Unmarshal(rootNodeData[off:off+disklayout.ExtentEntrySize], binary.LittleEndian, curEntry)
 		f.root.Entries[i].Entry = curEntry
 	}
 
@@ -99,13 +100,13 @@ func (f *extentFile) buildExtTree() error {
 func (f *extentFile) buildExtTreeFromDisk(entry disklayout.ExtentEntry) (*disklayout.ExtentNode, error) {
 	var header disklayout.ExtentHeader
 	off := entry.PhysicalBlock() * f.regFile.inode.blkSize
-	err := readFromDisk(f.regFile.inode.dev, int64(off), &header)
+	err := readFromDisk(f.regFile.inode.fs.dev, int64(off), &header)
 	if err != nil {
 		return nil, err
 	}
 
 	entries := make([]disklayout.ExtentEntryPair, header.NumEntries)
-	for i, off := uint16(0), off+disklayout.ExtentStructsSize; i < header.NumEntries; i, off = i+1, off+disklayout.ExtentStructsSize {
+	for i, off := uint16(0), off+disklayout.ExtentEntrySize; i < header.NumEntries; i, off = i+1, off+disklayout.ExtentEntrySize {
 		var curEntry disklayout.ExtentEntry
 		if header.Height == 0 {
 			// Leaf node.
@@ -115,7 +116,7 @@ func (f *extentFile) buildExtTreeFromDisk(entry disklayout.ExtentEntry) (*diskla
 			curEntry = &disklayout.ExtentIdx{}
 		}
 
-		err := readFromDisk(f.regFile.inode.dev, int64(off), curEntry)
+		err := readFromDisk(f.regFile.inode.fs.dev, int64(off), curEntry)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +230,7 @@ func (f *extentFile) readFromExtent(ex *disklayout.Extent, off uint64, dst []byt
 		toRead = len(dst)
 	}
 
-	n, _ := f.regFile.inode.dev.ReadAt(dst[:toRead], int64(readStart))
+	n, _ := f.regFile.inode.fs.dev.ReadAt(dst[:toRead], int64(readStart))
 	if n < toRead {
 		return n, syserror.EIO
 	}

@@ -16,7 +16,6 @@ package udp
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -44,12 +43,12 @@ func NewForwarder(s *stack.Stack, handler func(*ForwarderRequest)) *Forwarder {
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) bool {
+func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 	f.handler(&ForwarderRequest{
 		stack: f.stack,
 		route: r,
 		id:    id,
-		vv:    vv,
+		pkt:   pkt,
 	})
 
 	return true
@@ -62,7 +61,7 @@ type ForwarderRequest struct {
 	stack *stack.Stack
 	route *stack.Route
 	id    stack.TransportEndpointID
-	vv    buffer.VectorisedView
+	pkt   *stack.PacketBuffer
 }
 
 // ID returns the 4-tuple (src address, src port, dst address, dst port) that
@@ -74,7 +73,7 @@ func (r *ForwarderRequest) ID() stack.TransportEndpointID {
 // CreateEndpoint creates a connected UDP endpoint for the session request.
 func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	ep := newEndpoint(r.stack, r.route.NetProto, queue)
-	if err := r.stack.RegisterTransportEndpoint(r.route.NICID(), []tcpip.NetworkProtocolNumber{r.route.NetProto}, ProtocolNumber, r.id, ep, ep.reusePort, ep.bindToDevice); err != nil {
+	if err := r.stack.RegisterTransportEndpoint(r.route.NICID(), []tcpip.NetworkProtocolNumber{r.route.NetProto}, ProtocolNumber, r.id, ep, ep.portFlags, ep.bindToDevice); err != nil {
 		ep.Close()
 		return nil, err
 	}
@@ -83,6 +82,7 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	ep.route = r.route.Clone()
 	ep.dstPort = r.id.RemotePort
 	ep.RegisterNICID = r.route.NICID()
+	ep.boundPortFlags = ep.portFlags
 
 	ep.state = StateConnected
 
@@ -90,7 +90,7 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	ep.rcvReady = true
 	ep.rcvMu.Unlock()
 
-	ep.HandlePacket(r.route, r.id, r.vv)
+	ep.HandlePacket(r.route, r.id, r.pkt)
 
 	return ep, nil
 }

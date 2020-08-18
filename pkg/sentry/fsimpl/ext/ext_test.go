@@ -25,15 +25,15 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -64,9 +64,14 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 	creds := auth.CredentialsFromContext(ctx)
 
 	// Create VFS.
-	vfsObj := vfs.New()
-	vfsObj.MustRegisterFilesystemType("extfs", FilesystemType{})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, localImagePath, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
+	vfsObj.MustRegisterFilesystemType("extfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, localImagePath, "extfs", &vfs.GetFilesystemOptions{InternalData: int(f.Fd())})
 	if err != nil {
 		f.Close()
 		return nil, nil, nil, nil, err
@@ -75,7 +80,7 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 	root := mntns.Root()
 
 	tearDown := func() {
-		root.DecRef()
+		root.DecRef(ctx)
 
 		if err := f.Close(); err != nil {
 			t.Fatalf("tearDown failed: %v", err)
@@ -140,62 +145,61 @@ func TestSeek(t *testing.T) {
 			fd, err := vfsfs.OpenAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.path)},
 				&vfs.OpenOptions{},
 			)
 			if err != nil {
 				t.Fatalf("vfsfs.OpenAt failed: %v", err)
 			}
 
-			if n, err := fd.Impl().Seek(ctx, 0, linux.SEEK_SET); n != 0 || err != nil {
+			if n, err := fd.Seek(ctx, 0, linux.SEEK_SET); n != 0 || err != nil {
 				t.Errorf("expected seek position 0, got %d and error %v", n, err)
 			}
 
-			stat, err := fd.Impl().Stat(ctx, vfs.StatOptions{})
+			stat, err := fd.Stat(ctx, vfs.StatOptions{})
 			if err != nil {
 				t.Errorf("fd.stat failed for file %s in image %s: %v", test.path, test.image, err)
 			}
 
 			// We should be able to seek beyond the end of file.
 			size := int64(stat.Size)
-			if n, err := fd.Impl().Seek(ctx, size, linux.SEEK_SET); n != size || err != nil {
+			if n, err := fd.Seek(ctx, size, linux.SEEK_SET); n != size || err != nil {
 				t.Errorf("expected seek position %d, got %d and error %v", size, n, err)
 			}
 
 			// EINVAL should be returned if the resulting offset is negative.
-			if _, err := fd.Impl().Seek(ctx, -1, linux.SEEK_SET); err != syserror.EINVAL {
+			if _, err := fd.Seek(ctx, -1, linux.SEEK_SET); err != syserror.EINVAL {
 				t.Errorf("expected error EINVAL but got %v", err)
 			}
 
-			if n, err := fd.Impl().Seek(ctx, 3, linux.SEEK_CUR); n != size+3 || err != nil {
+			if n, err := fd.Seek(ctx, 3, linux.SEEK_CUR); n != size+3 || err != nil {
 				t.Errorf("expected seek position %d, got %d and error %v", size+3, n, err)
 			}
 
 			// Make sure negative offsets work with SEEK_CUR.
-			if n, err := fd.Impl().Seek(ctx, -2, linux.SEEK_CUR); n != size+1 || err != nil {
+			if n, err := fd.Seek(ctx, -2, linux.SEEK_CUR); n != size+1 || err != nil {
 				t.Errorf("expected seek position %d, got %d and error %v", size+1, n, err)
 			}
 
 			// EINVAL should be returned if the resulting offset is negative.
-			if _, err := fd.Impl().Seek(ctx, -(size + 2), linux.SEEK_CUR); err != syserror.EINVAL {
+			if _, err := fd.Seek(ctx, -(size + 2), linux.SEEK_CUR); err != syserror.EINVAL {
 				t.Errorf("expected error EINVAL but got %v", err)
 			}
 
 			// Make sure SEEK_END works with regular files.
-			switch fd.Impl().(type) {
-			case *regularFileFD:
+			if _, ok := fd.Impl().(*regularFileFD); ok {
 				// Seek back to 0.
-				if n, err := fd.Impl().Seek(ctx, -size, linux.SEEK_END); n != 0 || err != nil {
+				if n, err := fd.Seek(ctx, -size, linux.SEEK_END); n != 0 || err != nil {
 					t.Errorf("expected seek position %d, got %d and error %v", 0, n, err)
 				}
 
 				// Seek forward beyond EOF.
-				if n, err := fd.Impl().Seek(ctx, 1, linux.SEEK_END); n != size+1 || err != nil {
+				if n, err := fd.Seek(ctx, 1, linux.SEEK_END); n != size+1 || err != nil {
 					t.Errorf("expected seek position %d, got %d and error %v", size+1, n, err)
 				}
 
 				// EINVAL should be returned if the resulting offset is negative.
-				if _, err := fd.Impl().Seek(ctx, -(size + 1), linux.SEEK_END); err != syserror.EINVAL {
+				if _, err := fd.Seek(ctx, -(size + 1), linux.SEEK_END); err != syserror.EINVAL {
 					t.Errorf("expected error EINVAL but got %v", err)
 				}
 			}
@@ -360,7 +364,7 @@ func TestStatAt(t *testing.T) {
 
 			got, err := vfsfs.StatAt(ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.path)},
 				&vfs.StatOptions{},
 			)
 			if err != nil {
@@ -430,7 +434,7 @@ func TestRead(t *testing.T) {
 			fd, err := vfsfs.OpenAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.absPath},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.absPath)},
 				&vfs.OpenOptions{},
 			)
 			if err != nil {
@@ -456,7 +460,7 @@ func TestRead(t *testing.T) {
 			want := make([]byte, 1)
 			for {
 				n, err := f.Read(want)
-				fd.Impl().Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{})
+				fd.Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{})
 
 				if diff := cmp.Diff(got, want); diff != "" {
 					t.Errorf("file data mismatch (-want +got):\n%s", diff)
@@ -464,7 +468,7 @@ func TestRead(t *testing.T) {
 
 				// Make sure there is no more file data left after getting EOF.
 				if n == 0 || err == io.EOF {
-					if n, _ := fd.Impl().Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{}); n != 0 {
+					if n, _ := fd.Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{}); n != 0 {
 						t.Errorf("extra unexpected file data in file %s in image %s", test.absPath, test.image)
 					}
 
@@ -494,9 +498,9 @@ func newIterDirentCb() *iterDirentsCb {
 }
 
 // Handle implements vfs.IterDirentsCallback.Handle.
-func (cb *iterDirentsCb) Handle(dirent vfs.Dirent) bool {
+func (cb *iterDirentsCb) Handle(dirent vfs.Dirent) error {
 	cb.dirents = append(cb.dirents, dirent)
-	return true
+	return nil
 }
 
 // TestIterDirents tests the FileDescriptionImpl.IterDirents functionality.
@@ -509,27 +513,27 @@ func TestIterDirents(t *testing.T) {
 	}
 
 	wantDirents := []vfs.Dirent{
-		vfs.Dirent{
+		{
 			Name: ".",
 			Type: linux.DT_DIR,
 		},
-		vfs.Dirent{
+		{
 			Name: "..",
 			Type: linux.DT_DIR,
 		},
-		vfs.Dirent{
+		{
 			Name: "lost+found",
 			Type: linux.DT_DIR,
 		},
-		vfs.Dirent{
+		{
 			Name: "file.txt",
 			Type: linux.DT_REG,
 		},
-		vfs.Dirent{
+		{
 			Name: "bigfile.txt",
 			Type: linux.DT_REG,
 		},
-		vfs.Dirent{
+		{
 			Name: "symlink.txt",
 			Type: linux.DT_LNK,
 		},
@@ -566,7 +570,7 @@ func TestIterDirents(t *testing.T) {
 			fd, err := vfsfs.OpenAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.path)},
 				&vfs.OpenOptions{},
 			)
 			if err != nil {
@@ -574,7 +578,7 @@ func TestIterDirents(t *testing.T) {
 			}
 
 			cb := &iterDirentsCb{}
-			if err = fd.Impl().IterDirents(ctx, cb); err != nil {
+			if err = fd.IterDirents(ctx, cb); err != nil {
 				t.Fatalf("dir fd.IterDirents() failed: %v", err)
 			}
 

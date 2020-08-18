@@ -20,11 +20,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // getRegs gets the general purpose register set.
-func (t *thread) getRegs(regs *syscall.PtraceRegs) error {
+func (t *thread) getRegs(regs *arch.Registers) error {
 	iovec := syscall.Iovec{
 		Base: (*byte)(unsafe.Pointer(regs)),
 		Len:  uint64(unsafe.Sizeof(*regs)),
@@ -43,7 +43,7 @@ func (t *thread) getRegs(regs *syscall.PtraceRegs) error {
 }
 
 // setRegs sets the general purpose register set.
-func (t *thread) setRegs(regs *syscall.PtraceRegs) error {
+func (t *thread) setRegs(regs *arch.Registers) error {
 	iovec := syscall.Iovec{
 		Base: (*byte)(unsafe.Pointer(regs)),
 		Len:  uint64(unsafe.Sizeof(*regs)),

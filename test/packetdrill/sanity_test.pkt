@@ -1,0 +1,7 @@
+// Basic sanity test. One system call.
+//
+// All of the plumbing has to be working however, and the packetdrill wire
+// client needs to be able to connect to the wire server and send the script,
+// probe local interfaces, run through the test w/ timings, etc.
+
+0.000 socket(..., SOCK_STREAM, IPPROTO_TCP) = 3

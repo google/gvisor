@@ -12,11 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifdef __linux__
+
 #include <errno.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
 #include "test/util/save_util.h"
+
+#if defined(__x86_64__) || defined(__i386__)
+#define SYS_TRIGGER_SAVE SYS_create_module
+#elif defined(__aarch64__)
+#define SYS_TRIGGER_SAVE SYS_finit_module
+#else
+#error "Unknown architecture"
+#endif
 
 namespace gvisor {
 namespace testing {
@@ -24,10 +34,16 @@ namespace testing {
 void MaybeSave() {
   if (internal::ShouldSave()) {
     int orig_errno = errno;
-    syscall(SYS_create_module, nullptr, 0);
+    // We use it to trigger saving the sentry state
+    // when this syscall is called.
+    // Notice: this needs to be a valid syscall
+    // that is not used in any of the syscall tests.
+    syscall(SYS_TRIGGER_SAVE, nullptr, 0);
     errno = orig_errno;
   }
 }
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif

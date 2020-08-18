@@ -34,6 +34,13 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
+#ifndef AT_STATX_FORCE_SYNC
+#define AT_STATX_FORCE_SYNC 0x2000
+#endif
+#ifndef AT_STATX_DONT_SYNC
+#define AT_STATX_DONT_SYNC 0x4000
+#endif
+
 namespace gvisor {
 namespace testing {
 
@@ -557,6 +564,8 @@ TEST(SimpleStatTest, AnonDeviceAllocatesUniqueInodesAcrossSaveRestore) {
 #ifndef SYS_statx
 #if defined(__x86_64__)
 #define SYS_statx 332
+#elif defined(__aarch64__)
+#define SYS_statx 291
 #else
 #error "Unknown architecture"
 #endif
@@ -599,13 +608,13 @@ struct kernel_statx {
   uint64_t __spare2[14];
 };
 
-int statx(int dirfd, const char *pathname, int flags, unsigned int mask,
-          struct kernel_statx *statxbuf) {
+int statx(int dirfd, const char* pathname, int flags, unsigned int mask,
+          struct kernel_statx* statxbuf) {
   return syscall(SYS_statx, dirfd, pathname, flags, mask, statxbuf);
 }
 
 TEST_F(StatTest, StatxAbsPath) {
-  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
           errno == ENOSYS);
 
   struct kernel_statx stx;
@@ -615,7 +624,7 @@ TEST_F(StatTest, StatxAbsPath) {
 }
 
 TEST_F(StatTest, StatxRelPathDirFD) {
-  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
           errno == ENOSYS);
 
   struct kernel_statx stx;
@@ -629,7 +638,7 @@ TEST_F(StatTest, StatxRelPathDirFD) {
 }
 
 TEST_F(StatTest, StatxRelPathCwd) {
-  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
           errno == ENOSYS);
 
   ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
@@ -641,7 +650,7 @@ TEST_F(StatTest, StatxRelPathCwd) {
 }
 
 TEST_F(StatTest, StatxEmptyPath) {
-  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
           errno == ENOSYS);
 
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDONLY));
@@ -649,6 +658,60 @@ TEST_F(StatTest, StatxEmptyPath) {
   EXPECT_THAT(statx(fd.get(), "", AT_EMPTY_PATH, STATX_ALL, &stx),
               SyscallSucceeds());
   EXPECT_TRUE(S_ISREG(stx.stx_mode));
+}
+
+TEST_F(StatTest, StatxDoesNotRejectExtraneousMaskBits) {
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
+          errno == ENOSYS);
+
+  struct kernel_statx stx;
+  // Set all mask bits except for STATX__RESERVED.
+  uint mask = 0xffffffff & ~0x80000000;
+  EXPECT_THAT(statx(-1, test_file_name_.c_str(), 0, mask, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(stx.stx_mode));
+}
+
+TEST_F(StatTest, StatxRejectsReservedMaskBit) {
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
+          errno == ENOSYS);
+
+  struct kernel_statx stx;
+  // Set STATX__RESERVED in the mask.
+  EXPECT_THAT(statx(-1, test_file_name_.c_str(), 0, 0x80000000, &stx),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(StatTest, StatxSymlink) {
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
+          errno == ENOSYS);
+
+  std::string parent_dir = "/tmp";
+  TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(parent_dir, test_file_name_));
+  std::string p = link.path();
+
+  struct kernel_statx stx;
+  EXPECT_THAT(statx(AT_FDCWD, p.c_str(), AT_SYMLINK_NOFOLLOW, STATX_ALL, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISLNK(stx.stx_mode));
+  EXPECT_THAT(statx(AT_FDCWD, p.c_str(), 0, STATX_ALL, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(stx.stx_mode));
+}
+
+TEST_F(StatTest, StatxInvalidFlags) {
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
+          errno == ENOSYS);
+
+  struct kernel_statx stx;
+  EXPECT_THAT(statx(AT_FDCWD, test_file_name_.c_str(), 12345, 0, &stx),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Sync flags are mutually exclusive.
+  EXPECT_THAT(statx(AT_FDCWD, test_file_name_.c_str(),
+                    AT_STATX_FORCE_SYNC | AT_STATX_DONT_SYNC, 0, &stx),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

@@ -15,7 +15,7 @@
 package tcp
 
 import (
-	"sync"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // segmentQueue is a bounded, thread-safe queue of TCP segments.
@@ -28,10 +28,16 @@ type segmentQueue struct {
 	used  int
 }
 
+// emptyLocked determines if the queue is empty.
+// Preconditions: q.mu must be held.
+func (q *segmentQueue) emptyLocked() bool {
+	return q.used == 0
+}
+
 // empty determines if the queue is empty.
 func (q *segmentQueue) empty() bool {
 	q.mu.Lock()
-	r := q.used == 0
+	r := q.emptyLocked()
 	q.mu.Unlock()
 
 	return r

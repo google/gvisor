@@ -1,6 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//tools:defs.bzl", "bzl_library", "go_binary")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_binary(
     name = "go_marshal",
@@ -11,4 +11,15 @@ go_binary(
     deps = [
         "//tools/go_marshal/gomarshal",
     ],
+)
+
+config_setting(
+    name = "marshal_config_verbose",
+    values = {"define": "gomarshal=verbose"},
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )

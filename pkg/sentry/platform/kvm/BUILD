@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -7,53 +6,67 @@ go_library(
     name = "kvm",
     srcs = [
         "address_space.go",
-        "allocator.go",
         "bluepill.go",
+        "bluepill_allocator.go",
         "bluepill_amd64.go",
         "bluepill_amd64.s",
         "bluepill_amd64_unsafe.go",
+        "bluepill_arm64.go",
+        "bluepill_arm64.s",
+        "bluepill_arm64_unsafe.go",
         "bluepill_fault.go",
         "bluepill_unsafe.go",
         "context.go",
-        "filters.go",
+        "filters_amd64.go",
+        "filters_arm64.go",
         "kvm.go",
         "kvm_amd64.go",
         "kvm_amd64_unsafe.go",
+        "kvm_arm64.go",
+        "kvm_arm64_unsafe.go",
         "kvm_const.go",
+        "kvm_const_arm64.go",
         "machine.go",
         "machine_amd64.go",
         "machine_amd64_unsafe.go",
+        "machine_arm64.go",
+        "machine_arm64_unsafe.go",
         "machine_unsafe.go",
         "physical_map.go",
+        "physical_map_amd64.go",
+        "physical_map_arm64.go",
         "virtual_map.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/kvm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/procid",
+        "//pkg/safecopy",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/ring0",
         "//pkg/sentry/platform/ring0/pagetables",
-        "//pkg/sentry/platform/safecopy",
         "//pkg/sentry/time",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
+        "//pkg/usermem",
     ],
 )
 
 go_test(
     name = "kvm_test",
     srcs = [
+        "kvm_amd64_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
     ],
-    embed = [":kvm"],
+    library = ":kvm",
     tags = [
         "manual",
         "nogotsan",
@@ -65,6 +78,6 @@ go_test(
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/platform/ring0",
         "//pkg/sentry/platform/ring0/pagetables",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

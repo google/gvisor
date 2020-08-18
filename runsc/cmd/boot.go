@@ -21,12 +21,13 @@ import (
 	"strings"
 	"syscall"
 
-	"flag"
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
-	"gvisor.dev/gvisor/runsc/boot/platforms"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -53,10 +54,6 @@ type Boot struct {
 	// provided in that order.
 	stdioFDs intFlags
 
-	// console is set to true if the sandbox should allow terminal ioctl(2)
-	// syscalls.
-	console bool
-
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
 	applyCaps bool
@@ -82,8 +79,13 @@ type Boot struct {
 	// sandbox (e.g. gofer) and sent through this FD.
 	mountsFD int
 
-	// pidns is set if the sanadbox is in its own pid namespace.
+	// pidns is set if the sandbox is in its own pid namespace.
 	pidns bool
+
+	// attached is set to true to kill the sandbox process when the parent process
+	// terminates. This flag is set when the command execve's itself because
+	// parent death signal doesn't propagate through execve when uid/gid changes.
+	attached bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -109,7 +111,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
-	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
@@ -118,6 +119,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
+	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -129,33 +131,36 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
-	debug.SetTraceback("all")
+	debug.SetTraceback("system")
 
 	conf := args[0].(*boot.Config)
+
+	if b.attached {
+		// Ensure this process is killed after parent process terminates when
+		// attached mode is enabled. In the unfortunate event that the parent
+		// terminates before this point, this process leaks.
+		if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0); err != nil {
+			Fatalf("error setting parent death signal: %v", err)
+		}
+	}
 
 	if b.setUpRoot {
 		if err := setUpChroot(b.pidns); err != nil {
 			Fatalf("error setting up chroot: %v", err)
 		}
 
-		if !b.applyCaps {
-			// Remove --setup-root arg to call myself.
-			var args []string
-			for _, arg := range os.Args {
-				if !strings.Contains(arg, "setup-root") {
-					args = append(args, arg)
-				}
+		if !b.applyCaps && !conf.Rootless {
+			// Remove --apply-caps arg to call myself. It has already been done.
+			args := prepareArgs(b.attached, "setup-root")
+
+			// Note that we've already read the spec from the spec FD, and
+			// we will read it again after the exec call. This works
+			// because the ReadSpecFromFile function seeks to the beginning
+			// of the file before reading.
+			if err := callSelfAsNobody(args); err != nil {
+				Fatalf("%v", err)
 			}
-			if !conf.Rootless {
-				// Note that we've already read the spec from the spec FD, and
-				// we will read it again after the exec call. This works
-				// because the ReadSpecFromFile function seeks to the beginning
-				// of the file before reading.
-				if err := callSelfAsNobody(args); err != nil {
-					Fatalf("%v", err)
-				}
-				panic("callSelfAsNobody must never return success")
-			}
+			panic("callSelfAsNobody must never return success")
 		}
 	}
 
@@ -173,7 +178,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		if caps == nil {
 			caps = &specs.LinuxCapabilities{}
 		}
-		if conf.Platform == platforms.Ptrace {
+
+		gPlatform, err := platform.Lookup(conf.Platform)
+		if err != nil {
+			Fatalf("loading platform: %v", err)
+		}
+		if gPlatform.Requirements().RequiresCapSysPtrace {
 			// Ptrace platform requires extra capabilities.
 			const c = "CAP_SYS_PTRACE"
 			caps.Bounding = append(caps.Bounding, c)
@@ -181,13 +191,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			caps.Permitted = append(caps.Permitted, c)
 		}
 
-		// Remove --apply-caps arg to call myself.
-		var args []string
-		for _, arg := range os.Args {
-			if !strings.Contains(arg, "setup-root") && !strings.Contains(arg, "apply-caps") {
-				args = append(args, arg)
-			}
-		}
+		// Remove --apply-caps and --setup-root arg to call myself. Both have
+		// already been done.
+		args := prepareArgs(b.attached, "setup-root", "apply-caps")
 
 		// Note that we've already read the spec from the spec FD, and
 		// we will read it again after the exec call. This works
@@ -218,7 +224,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Device:       os.NewFile(uintptr(b.deviceFD), "platform device"),
 		GoferFDs:     b.ioFDs.GetArray(),
 		StdioFDs:     b.stdioFDs.GetArray(),
-		Console:      b.console,
 		NumCPU:       b.cpuNum,
 		TotalMem:     b.totalMem,
 		UserLogFD:    b.userLogFD,
@@ -257,4 +262,23 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	*waitStatus = syscall.WaitStatus(ws.Status())
 	l.Destroy()
 	return subcommands.ExitSuccess
+}
+
+func prepareArgs(attached bool, exclude ...string) []string {
+	var args []string
+	for _, arg := range os.Args {
+		for _, excl := range exclude {
+			if strings.Contains(arg, excl) {
+				goto skip
+			}
+		}
+		args = append(args, arg)
+		if attached && arg == "boot" {
+			// Strategicaly place "--attached" after the command. This is needed
+			// to ensure the new process is killed when the parent process terminates.
+			args = append(args, "--attached")
+		}
+	skip:
+	}
+	return args
 }

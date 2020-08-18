@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -40,10 +39,10 @@ go_library(
         "lock_set.go",
         "lock_set_functions.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/lock",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",
+        "//pkg/sync",
         "//pkg/waiter",
     ],
 )
@@ -55,5 +54,5 @@ go_test(
         "lock_range_test.go",
         "lock_test.go",
     ],
-    embed = [":lock"],
+    library = ":lock",
 )

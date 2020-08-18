@@ -16,9 +16,9 @@ package gofer
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -32,20 +32,22 @@ func (i *inodeOperations) BoundEndpoint(inode *fs.Inode, path string) transport.
 		return nil
 	}
 
-	if i.session().endpoints != nil {
-		unlock := i.session().endpoints.lock()
+	if i.session().overrides != nil {
+		unlock := i.session().overrides.lock()
 		defer unlock()
-		ep := i.session().endpoints.get(i.fileState.key)
+		ep := i.session().overrides.getBoundEndpoint(i.fileState.key)
 		if ep != nil {
 			return ep
 		}
 
-		// Not found in endpoints map, it may be a gofer backed unix socket...
+		// Not found in overrides map, it may be a gofer backed unix socket...
 	}
 
 	inode.IncRef()
 	return &endpoint{inode, i.fileState.file.file, path}
 }
+
+// LINT.IfChange
 
 // endpoint is a Gofer-backed transport.BoundEndpoint.
 //
@@ -132,17 +134,19 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Connect
 
 	// We don't need the receiver.
 	c.CloseRecv()
-	c.Release()
+	c.Release(ctx)
 
 	return c, nil
 }
 
 // Release implements transport.BoundEndpoint.Release.
-func (e *endpoint) Release() {
-	e.inode.DecRef()
+func (e *endpoint) Release(ctx context.Context) {
+	e.inode.DecRef(ctx)
 }
 
 // Passcred implements transport.BoundEndpoint.Passcred.
 func (e *endpoint) Passcred() bool {
 	return false
 }
+
+// LINT.ThenChange(../../fsimpl/gofer/socket.go)

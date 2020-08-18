@@ -15,7 +15,7 @@
 package vfs
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 )
 
 // contextID is this package's type for context.Context.Value keys.
@@ -24,14 +24,52 @@ type contextID int
 const (
 	// CtxMountNamespace is a Context.Value key for a MountNamespace.
 	CtxMountNamespace contextID = iota
+
+	// CtxRoot is a Context.Value key for a VFS root.
+	CtxRoot
 )
 
-// MountNamespaceFromContext returns the MountNamespace used by ctx. It does
-// not take a reference on the returned MountNamespace. If ctx is not
-// associated with a MountNamespace, MountNamespaceFromContext returns nil.
+// MountNamespaceFromContext returns the MountNamespace used by ctx. If ctx is
+// not associated with a MountNamespace, MountNamespaceFromContext returns nil.
+//
+// A reference is taken on the returned MountNamespace.
 func MountNamespaceFromContext(ctx context.Context) *MountNamespace {
 	if v := ctx.Value(CtxMountNamespace); v != nil {
 		return v.(*MountNamespace)
 	}
 	return nil
+}
+
+// RootFromContext returns the VFS root used by ctx. It takes a reference on
+// the returned VirtualDentry. If ctx does not have a specific VFS root,
+// RootFromContext returns a zero-value VirtualDentry.
+func RootFromContext(ctx context.Context) VirtualDentry {
+	if v := ctx.Value(CtxRoot); v != nil {
+		return v.(VirtualDentry)
+	}
+	return VirtualDentry{}
+}
+
+type rootContext struct {
+	context.Context
+	root VirtualDentry
+}
+
+// WithRoot returns a copy of ctx with the given root.
+func WithRoot(ctx context.Context, root VirtualDentry) context.Context {
+	return &rootContext{
+		Context: ctx,
+		root:    root,
+	}
+}
+
+// Value implements Context.Value.
+func (rc rootContext) Value(key interface{}) interface{} {
+	switch key {
+	case CtxRoot:
+		rc.root.IncRef()
+		return rc.root
+	default:
+		return rc.Context.Value(key)
+	}
 }

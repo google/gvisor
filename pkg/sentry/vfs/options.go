@@ -16,6 +16,7 @@ package vfs
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // GetDentryOptions contains options to VirtualFilesystem.GetDentryAt() and
@@ -32,6 +33,25 @@ type GetDentryOptions struct {
 type MkdirOptions struct {
 	// Mode is the file mode bits for the created directory.
 	Mode linux.FileMode
+
+	// If ForSyntheticMountpoint is true, FilesystemImpl.MkdirAt() may create
+	// the given directory in memory only (as opposed to persistent storage).
+	// The created directory should be able to support the creation of
+	// subdirectories with ForSyntheticMountpoint == true. It does not need to
+	// support the creation of subdirectories with ForSyntheticMountpoint ==
+	// false, or files of other types.
+	//
+	// FilesystemImpls are permitted to ignore the ForSyntheticMountpoint
+	// option.
+	//
+	// The ForSyntheticMountpoint option exists because, unlike mount(2), the
+	// OCI Runtime Specification permits the specification of mount points that
+	// do not exist, under the expectation that container runtimes will create
+	// them. (More accurately, the OCI Runtime Specification completely fails
+	// to document this feature, but it's implemented by runc.)
+	// ForSyntheticMountpoint allows such mount points to be created even when
+	// the underlying persistent filesystem is immutable.
+	ForSyntheticMountpoint bool
 }
 
 // MknodOptions contains options to VirtualFilesystem.MknodAt() and
@@ -44,6 +64,48 @@ type MknodOptions struct {
 	// DevMinor are the major and minor device numbers for the created device.
 	DevMajor uint32
 	DevMinor uint32
+
+	// Endpoint is the endpoint to bind to the created file, if a socket file is
+	// being created for bind(2) on a Unix domain socket.
+	Endpoint transport.BoundEndpoint
+}
+
+// MountFlags contains flags as specified for mount(2), e.g. MS_NOEXEC.
+// MS_RDONLY is not part of MountFlags because it's tracked in Mount.writers.
+type MountFlags struct {
+	// NoExec is equivalent to MS_NOEXEC.
+	NoExec bool
+
+	// NoATime is equivalent to MS_NOATIME and indicates that the
+	// filesystem should not update access time in-place.
+	NoATime bool
+
+	// NoDev is equivalent to MS_NODEV and indicates that the
+	// filesystem should not allow access to devices (special files).
+	// TODO(gVisor.dev/issue/3186): respect this flag in non FUSE
+	// filesystems.
+	NoDev bool
+
+	// NoSUID is equivalent to MS_NOSUID and indicates that the
+	// filesystem should not honor set-user-ID and set-group-ID bits or
+	// file capabilities when executing programs.
+	NoSUID bool
+}
+
+// MountOptions contains options to VirtualFilesystem.MountAt().
+type MountOptions struct {
+	// Flags contains flags as specified for mount(2), e.g. MS_NOEXEC.
+	Flags MountFlags
+
+	// ReadOnly is equivalent to MS_RDONLY.
+	ReadOnly bool
+
+	// GetFilesystemOptions contains options to FilesystemType.GetFilesystem().
+	GetFilesystemOptions GetFilesystemOptions
+
+	// If InternalMount is true, allow the use of filesystem types for which
+	// RegisterFilesystemTypeOptions.AllowUserMount == false.
+	InternalMount bool
 }
 
 // OpenOptions contains options to VirtualFilesystem.OpenAt() and
@@ -51,7 +113,7 @@ type MknodOptions struct {
 type OpenOptions struct {
 	// Flags contains access mode and flags as specified for open(2).
 	//
-	// FilesystemImpls is reponsible for implementing the following flags:
+	// FilesystemImpls are responsible for implementing the following flags:
 	// O_RDONLY, O_WRONLY, O_RDWR, O_APPEND, O_CREAT, O_DIRECT, O_DSYNC,
 	// O_EXCL, O_NOATIME, O_NOCTTY, O_NONBLOCK, O_PATH, O_SYNC, O_TMPFILE, and
 	// O_TRUNC. VFS is responsible for handling O_DIRECTORY, O_LARGEFILE, and
@@ -62,6 +124,12 @@ type OpenOptions struct {
 	// If FilesystemImpl.OpenAt() creates a file, Mode is the file mode for the
 	// created file.
 	Mode linux.FileMode
+
+	// FileExec is set when the file is being opened to be executed.
+	// VirtualFilesystem.OpenAt() checks that the caller has execute permissions
+	// on the file, that the file is a regular file, and that the mount doesn't
+	// have MS_NOEXEC set.
+	FileExec bool
 }
 
 // ReadOptions contains options to FileDescription.PRead(),
@@ -77,6 +145,9 @@ type ReadOptions struct {
 type RenameOptions struct {
 	// Flags contains flags as specified for renameat2(2).
 	Flags uint32
+
+	// If MustBeDir is true, the renamed file must be a directory.
+	MustBeDir bool
 }
 
 // SetStatOptions contains options to VirtualFilesystem.SetStatAt(),
@@ -93,6 +164,58 @@ type SetStatOptions struct {
 	// == UTIME_OMIT (VFS users must unset the corresponding bit in Stat.Mask
 	// instead).
 	Stat linux.Statx
+
+	// NeedWritePerm indicates that write permission on the file is needed for
+	// this operation. This is needed for truncate(2) (note that ftruncate(2)
+	// does not require the same check--instead, it checks that the fd is
+	// writable).
+	NeedWritePerm bool
+}
+
+// BoundEndpointOptions contains options to VirtualFilesystem.BoundEndpointAt()
+// and FilesystemImpl.BoundEndpointAt().
+type BoundEndpointOptions struct {
+	// Addr is the path of the file whose socket endpoint is being retrieved.
+	// It is generally irrelevant: most endpoints are stored at a dentry that
+	// was created through a bind syscall, so the path can be stored on creation.
+	// However, if the endpoint was created in FilesystemImpl.BoundEndpointAt(),
+	// then we may not know what the original bind address was.
+	//
+	// For example, if connect(2) is called with address "foo" which corresponds
+	// a remote named socket in goferfs, we need to generate an endpoint wrapping
+	// that file. In this case, we can use Addr to set the endpoint address to
+	// "foo". Note that Addr is only a best-effort attempt--we still do not know
+	// the exact address that was used on the remote fs to bind the socket (it
+	// may have been "foo", "./foo", etc.).
+	Addr string
+}
+
+// GetxattrOptions contains options to VirtualFilesystem.GetxattrAt(),
+// FilesystemImpl.GetxattrAt(), FileDescription.Getxattr(), and
+// FileDescriptionImpl.Getxattr().
+type GetxattrOptions struct {
+	// Name is the name of the extended attribute to retrieve.
+	Name string
+
+	// Size is the maximum value size that the caller will tolerate. If the value
+	// is larger than size, getxattr methods may return ERANGE, but they are also
+	// free to ignore the hint entirely (i.e. the value returned may be larger
+	// than size). All size checking is done independently at the syscall layer.
+	Size uint64
+}
+
+// SetxattrOptions contains options to VirtualFilesystem.SetxattrAt(),
+// FilesystemImpl.SetxattrAt(), FileDescription.Setxattr(), and
+// FileDescriptionImpl.Setxattr().
+type SetxattrOptions struct {
+	// Name is the name of the extended attribute being mutated.
+	Name string
+
+	// Value is the extended attribute's new value.
+	Value string
+
+	// Flags contains flags as specified for setxattr/lsetxattr/fsetxattr(2).
+	Flags uint32
 }
 
 // StatOptions contains options to VirtualFilesystem.StatAt(),
@@ -112,6 +235,12 @@ type StatOptions struct {
 	// linux.AT_STATX_SYNC_AS_STAT (which is 0, and therefore the default),
 	// linux.AT_STATX_SYNC_FORCE_SYNC, or linux.AT_STATX_SYNC_DONT_SYNC.
 	Sync uint32
+}
+
+// UmountOptions contains options to VirtualFilesystem.UmountAt().
+type UmountOptions struct {
+	// Flags contains flags as specified for umount2(2).
+	Flags uint32
 }
 
 // WriteOptions contains options to FileDescription.PWrite(),

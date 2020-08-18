@@ -56,8 +56,8 @@ func TestSendRecv(t *testing.T) {
 // badDecode overruns on decode.
 type badDecode struct{}
 
-func (*badDecode) Decode(b *buffer) { b.markOverrun() }
-func (*badDecode) Encode(b *buffer) {}
+func (*badDecode) decode(b *buffer) { b.markOverrun() }
+func (*badDecode) encode(b *buffer) {}
 func (*badDecode) Type() MsgType    { return MsgTypeBadDecode }
 func (*badDecode) String() string   { return "badDecode{}" }
 
@@ -81,8 +81,8 @@ func TestRecvOverrun(t *testing.T) {
 // unregistered is not registered on decode.
 type unregistered struct{}
 
-func (*unregistered) Decode(b *buffer) {}
-func (*unregistered) Encode(b *buffer) {}
+func (*unregistered) decode(b *buffer) {}
+func (*unregistered) encode(b *buffer) {}
 func (*unregistered) Type() MsgType    { return MsgTypeUnregistered }
 func (*unregistered) String() string   { return "unregistered{}" }
 
@@ -182,6 +182,8 @@ func TestSendClosed(t *testing.T) {
 }
 
 func BenchmarkSendRecv(b *testing.B) {
+	b.ReportAllocs()
+
 	server, client, err := unet.SocketPair(false)
 	if err != nil {
 		b.Fatalf("socketpair got err %v expected nil", err)

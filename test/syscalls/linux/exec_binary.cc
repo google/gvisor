@@ -20,6 +20,7 @@
 #include <sys/types.h>
 #include <sys/user.h>
 #include <unistd.h>
+
 #include <algorithm>
 #include <functional>
 #include <iterator>
@@ -47,10 +48,17 @@ namespace {
 using ::testing::AnyOf;
 using ::testing::Eq;
 
-#ifndef __x86_64__
+#if !defined(__x86_64__) && !defined(__aarch64__)
 // The assembly stub and ELF internal details must be ported to other arches.
-#error "Test only supported on x86-64"
-#endif  // __x86_64__
+#error "Test only supported on x86-64/arm64"
+#endif  // __x86_64__ || __aarch64__
+
+#if defined(__x86_64__)
+#define EM_TYPE EM_X86_64
+#define IP_REG(p) ((p).rip)
+#define RAX_REG(p) ((p).rax)
+#define RDI_REG(p) ((p).rdi)
+#define RETURN_REG(p) ((p).rax)
 
 // amd64 stub that calls PTRACE_TRACEME and sends itself SIGSTOP.
 const char kPtraceCode[] = {
@@ -137,6 +145,76 @@ const char kPtraceCode[] = {
 
 // Size of a syscall instruction.
 constexpr int kSyscallSize = 2;
+
+#elif defined(__aarch64__)
+#define EM_TYPE EM_AARCH64
+#define IP_REG(p) ((p).pc)
+#define RAX_REG(p) ((p).regs[8])
+#define RDI_REG(p) ((p).regs[0])
+#define RETURN_REG(p) ((p).regs[0])
+
+const char kPtraceCode[] = {
+    // MOVD $117, R8 /* ptrace */
+    '\xa8',
+    '\x0e',
+    '\x80',
+    '\xd2',
+    // MOVD $0, R0 /* PTRACE_TRACEME */
+    '\x00',
+    '\x00',
+    '\x80',
+    '\xd2',
+    // MOVD $0, R1 /* pid */
+    '\x01',
+    '\x00',
+    '\x80',
+    '\xd2',
+    // MOVD $0, R2 /* addr */
+    '\x02',
+    '\x00',
+    '\x80',
+    '\xd2',
+    // MOVD $0, R3 /* data */
+    '\x03',
+    '\x00',
+    '\x80',
+    '\xd2',
+    // SVC
+    '\x01',
+    '\x00',
+    '\x00',
+    '\xd4',
+    // MOVD $172, R8 /* getpid */
+    '\x88',
+    '\x15',
+    '\x80',
+    '\xd2',
+    // SVC
+    '\x01',
+    '\x00',
+    '\x00',
+    '\xd4',
+    // MOVD $129, R8 /* kill, R0=pid */
+    '\x28',
+    '\x10',
+    '\x80',
+    '\xd2',
+    // MOVD $19, R1  /* SIGSTOP */
+    '\x61',
+    '\x02',
+    '\x80',
+    '\xd2',
+    // SVC
+    '\x01',
+    '\x00',
+    '\x00',
+    '\xd4',
+};
+// Size of a syscall instruction.
+constexpr int kSyscallSize = 4;
+#else
+#error "Unknown architecture"
+#endif
 
 // This test suite tests executable loading in the kernel (ELF and interpreter
 // scripts).
@@ -280,7 +358,7 @@ ElfBinary<64> StandardElf() {
   elf.header.e_ident[EI_DATA] = ELFDATA2LSB;
   elf.header.e_ident[EI_VERSION] = EV_CURRENT;
   elf.header.e_type = ET_EXEC;
-  elf.header.e_machine = EM_X86_64;
+  elf.header.e_machine = EM_TYPE;
   elf.header.e_version = EV_CURRENT;
   elf.header.e_phoff = sizeof(elf.header);
   elf.header.e_phentsize = sizeof(decltype(elf)::ElfPhdr);
@@ -326,9 +404,15 @@ TEST(ElfTest, Execute) {
   ASSERT_NO_ERRNO(WaitStopped(child));
 
   struct user_regs_struct regs;
-  ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
-  // RIP is just beyond the final syscall instruction.
-  EXPECT_EQ(regs.rip, elf.header.e_entry + sizeof(kPtraceCode));
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
+  // RIP/PC is just beyond the final syscall instruction.
+  EXPECT_EQ(IP_REG(regs), elf.header.e_entry + sizeof(kPtraceCode));
 
   EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
                          {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
@@ -354,7 +438,12 @@ TEST(ElfTest, MissingText) {
   ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
               SyscallSucceedsWithValue(child));
   // It runs off the end of the zeroes filling the end of the page.
+#if defined(__x86_64__)
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV) << status;
+#elif defined(__aarch64__)
+  // 0 is an invalid instruction opcode on arm64.
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGILL) << status;
+#endif
 }
 
 // Typical ELF with a data + bss segment
@@ -717,9 +806,16 @@ TEST(ElfTest, PIE) {
 
   // RIP tells us which page the first segment was loaded into.
   struct user_regs_struct regs;
-  ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
 
-  const uint64_t load_addr = regs.rip & ~(kPageSize - 1);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
+
+  const uint64_t load_addr = IP_REG(regs) & ~(kPageSize - 1);
 
   EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
                          // text page.
@@ -786,9 +882,15 @@ TEST(ElfTest, PIENonZeroStart) {
 
   // RIP tells us which page the first segment was loaded into.
   struct user_regs_struct regs;
-  ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
 
-  const uint64_t load_addr = regs.rip & ~(kPageSize - 1);
+  const uint64_t load_addr = IP_REG(regs) & ~(kPageSize - 1);
 
   // The ELF is loaded at an arbitrary address, not the first PT_LOAD vaddr.
   //
@@ -909,9 +1011,15 @@ TEST(ElfTest, ELFInterpreter) {
   // RIP tells us which page the first segment of the interpreter was loaded
   // into.
   struct user_regs_struct regs;
-  ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
 
-  const uint64_t interp_load_addr = regs.rip & ~(kPageSize - 1);
+  const uint64_t interp_load_addr = IP_REG(regs) & ~(kPageSize - 1);
 
   EXPECT_THAT(
       child, ContainsMappings(std::vector<ProcMapsEntry>({
@@ -1083,9 +1191,15 @@ TEST(ElfTest, ELFInterpreterRelative) {
   // RIP tells us which page the first segment of the interpreter was loaded
   // into.
   struct user_regs_struct regs;
-  ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
 
-  const uint64_t interp_load_addr = regs.rip & ~(kPageSize - 1);
+  const uint64_t interp_load_addr = IP_REG(regs) & ~(kPageSize - 1);
 
   EXPECT_THAT(
       child, ContainsMappings(std::vector<ProcMapsEntry>({
@@ -1479,14 +1593,21 @@ TEST(ExecveTest, BrkAfterBinary) {
   ASSERT_NO_ERRNO(WaitStopped(child));
 
   struct user_regs_struct regs;
-  ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
 
   // RIP is just beyond the final syscall instruction. Rewind to execute a brk
   // syscall.
-  regs.rip -= kSyscallSize;
-  regs.rax = __NR_brk;
-  regs.rdi = 0;
-  ASSERT_THAT(ptrace(PTRACE_SETREGS, child, 0, &regs), SyscallSucceeds());
+  IP_REG(regs) -= kSyscallSize;
+  RAX_REG(regs) = __NR_brk;
+  RDI_REG(regs) = 0;
+  ASSERT_THAT(ptrace(PTRACE_SETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
 
   // Resume the child, waiting for syscall entry.
   ASSERT_THAT(ptrace(PTRACE_SYSCALL, child, 0, 0), SyscallSucceeds());
@@ -1503,7 +1624,12 @@ TEST(ExecveTest, BrkAfterBinary) {
   ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP)
       << "status = " << status;
 
-  ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
 
   // brk is after the text page.
   //
@@ -1511,7 +1637,7 @@ TEST(ExecveTest, BrkAfterBinary) {
   // address will be, but it is always beyond the final page in the binary.
   // i.e., it does not start immediately after memsz in the middle of a page.
   // Userspace may expect to use that space.
-  EXPECT_GE(regs.rax, 0x41000);
+  EXPECT_GE(RETURN_REG(regs), 0x41000);
 }
 
 }  // namespace

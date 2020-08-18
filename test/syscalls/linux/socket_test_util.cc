@@ -18,10 +18,13 @@
 #include <poll.h>
 #include <sys/socket.h>
 
+#include <memory>
+
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
+#include "absl/types/optional.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
@@ -109,7 +112,10 @@ Creator<SocketPair> AcceptBindSocketPairCreator(bool abstract, int domain,
       MaybeSave();  // Unlinked path.
     }
 
-    return absl::make_unique<AddrFDSocketPair>(connected, accepted, bind_addr,
+    // accepted is before connected to destruct connected before accepted.
+    // Destructors for nonstatic member objects are called in the reverse order
+    // in which they appear in the class declaration.
+    return absl::make_unique<AddrFDSocketPair>(accepted, connected, bind_addr,
                                                extra_addr);
   };
 }
@@ -311,11 +317,16 @@ PosixErrorOr<T> BindIP(int fd, bool dual_stack) {
 }
 
 template <typename T>
-PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> CreateTCPAcceptBindSocketPair(
-    int bound, int connected, int type, bool dual_stack) {
-  ASSIGN_OR_RETURN_ERRNO(T bind_addr, BindIP<T>(bound, dual_stack));
-  RETURN_ERROR_IF_SYSCALL_FAIL(listen(bound, /* backlog = */ 5));
+PosixErrorOr<T> TCPBindAndListen(int fd, bool dual_stack) {
+  ASSIGN_OR_RETURN_ERRNO(T addr, BindIP<T>(fd, dual_stack));
+  RETURN_ERROR_IF_SYSCALL_FAIL(listen(fd, /* backlog = */ 5));
+  return addr;
+}
 
+template <typename T>
+PosixErrorOr<std::unique_ptr<AddrFDSocketPair>>
+CreateTCPConnectAcceptSocketPair(int bound, int connected, int type,
+                                 bool dual_stack, T bind_addr) {
   int connect_result = 0;
   RETURN_ERROR_IF_SYSCALL_FAIL(
       (connect_result = RetryEINTR(connect)(
@@ -353,19 +364,25 @@ PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> CreateTCPAcceptBindSocketPair(
   }
   MaybeSave();  // Successful accept.
 
-  // FIXME(b/110484944)
-  if (connect_result == -1) {
-    absl::SleepFor(absl::Seconds(1));
-  }
+  T extra_addr = {};
+  LocalhostAddr(&extra_addr, dual_stack);
+  return absl::make_unique<AddrFDSocketPair>(connected, accepted, bind_addr,
+                                             extra_addr);
+}
+
+template <typename T>
+PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> CreateTCPAcceptBindSocketPair(
+    int bound, int connected, int type, bool dual_stack) {
+  ASSIGN_OR_RETURN_ERRNO(T bind_addr, TCPBindAndListen<T>(bound, dual_stack));
+
+  auto result = CreateTCPConnectAcceptSocketPair(bound, connected, type,
+                                                 dual_stack, bind_addr);
 
   // Cleanup no longer needed resources.
   RETURN_ERROR_IF_SYSCALL_FAIL(close(bound));
   MaybeSave();  // Successful close.
 
-  T extra_addr = {};
-  LocalhostAddr(&extra_addr, dual_stack);
-  return absl::make_unique<AddrFDSocketPair>(connected, accepted, bind_addr,
-                                             extra_addr);
+  return result;
 }
 
 Creator<SocketPair> TCPAcceptBindSocketPairCreator(int domain, int type,
@@ -386,6 +403,63 @@ Creator<SocketPair> TCPAcceptBindSocketPairCreator(int domain, int type,
     }
     return CreateTCPAcceptBindSocketPair<sockaddr_in6>(bound, connected, type,
                                                        dual_stack);
+  };
+}
+
+Creator<SocketPair> TCPAcceptBindPersistentListenerSocketPairCreator(
+    int domain, int type, int protocol, bool dual_stack) {
+  // These are lazily initialized below, on the first call to the returned
+  // lambda. These values are private to each returned lambda, but shared across
+  // invocations of a specific lambda.
+  //
+  // The sharing allows pairs created with the same parameters to share a
+  // listener. This prevents future connects from failing if the connecting
+  // socket selects a port which had previously been used by a listening socket
+  // that still has some connections in TIME-WAIT.
+  //
+  // The lazy initialization is to avoid creating sockets during parameter
+  // enumeration. This is important because parameters are enumerated during the
+  // build process where networking may not be available.
+  auto listener = std::make_shared<absl::optional<int>>(absl::optional<int>());
+  auto addr4 = std::make_shared<absl::optional<sockaddr_in>>(
+      absl::optional<sockaddr_in>());
+  auto addr6 = std::make_shared<absl::optional<sockaddr_in6>>(
+      absl::optional<sockaddr_in6>());
+
+  return [=]() -> PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> {
+    int connected;
+    RETURN_ERROR_IF_SYSCALL_FAIL(connected = socket(domain, type, protocol));
+    MaybeSave();  // Successful socket creation.
+
+    // Share the listener across invocations.
+    if (!listener->has_value()) {
+      int fd = socket(domain, type, protocol);
+      if (fd < 0) {
+        return PosixError(errno, absl::StrCat("socket(", domain, ", ", type,
+                                              ", ", protocol, ")"));
+      }
+      listener->emplace(fd);
+      MaybeSave();  // Successful socket creation.
+    }
+
+    // Bind the listener once, but create a new connect/accept pair each
+    // time.
+    if (domain == AF_INET) {
+      if (!addr4->has_value()) {
+        addr4->emplace(
+            TCPBindAndListen<sockaddr_in>(listener->value(), dual_stack)
+                .ValueOrDie());
+      }
+      return CreateTCPConnectAcceptSocketPair(listener->value(), connected,
+                                              type, dual_stack, addr4->value());
+    }
+    if (!addr6->has_value()) {
+      addr6->emplace(
+          TCPBindAndListen<sockaddr_in6>(listener->value(), dual_stack)
+              .ValueOrDie());
+    }
+    return CreateTCPConnectAcceptSocketPair(listener->value(), connected, type,
+                                            dual_stack, addr6->value());
   };
 }
 
@@ -518,8 +592,8 @@ size_t CalculateUnixSockAddrLen(const char* sun_path) {
   if (sun_path[0] == 0) {
     return sizeof(sockaddr_un);
   }
-  // Filesystem addresses use the address length plus the 2 byte sun_family and
-  // null terminator.
+  // Filesystem addresses use the address length plus the 2 byte sun_family
+  // and null terminator.
   return strlen(sun_path) + 3;
 }
 
@@ -723,6 +797,24 @@ TestAddress V4MappedLoopback() {
   t.addr_len = sizeof(sockaddr_in6);
   inet_pton(AF_INET6, "::ffff:127.0.0.1",
             reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr.s6_addr);
+  return t;
+}
+
+TestAddress V4Multicast() {
+  TestAddress t("V4Multicast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      inet_addr(kMulticastAddress);
+  return t;
+}
+
+TestAddress V4Broadcast() {
+  TestAddress t("V4Broadcast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      htonl(INADDR_BROADCAST);
   return t;
 }
 

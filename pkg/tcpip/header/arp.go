@@ -14,14 +14,33 @@
 
 package header
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+import (
+	"encoding/binary"
+
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
 
 const (
 	// ARPProtocolNumber is the ARP network protocol number.
 	ARPProtocolNumber tcpip.NetworkProtocolNumber = 0x0806
 
 	// ARPSize is the size of an IPv4-over-Ethernet ARP packet.
-	ARPSize = 2 + 2 + 1 + 1 + 2 + 2*6 + 2*4
+	ARPSize = 28
+)
+
+// ARPHardwareType is the hardware type for LinkEndpoint in an ARP header.
+type ARPHardwareType uint16
+
+// Typical ARP HardwareType values. Some of the constants have to be specific
+// values as they are egressed on the wire in the HTYPE field of an ARP header.
+const (
+	ARPHardwareNone ARPHardwareType = 0
+	// ARPHardwareEther specifically is the HTYPE for Ethernet as specified
+	// in the IANA list here:
+	//
+	// https://www.iana.org/assignments/arp-parameters/arp-parameters.xhtml#arp-parameters-2
+	ARPHardwareEther    ARPHardwareType = 1
+	ARPHardwareLoopback ARPHardwareType = 2
 )
 
 // ARPOp is an ARP opcode.
@@ -36,54 +55,64 @@ const (
 // ARP is an ARP packet stored in a byte array as described in RFC 826.
 type ARP []byte
 
-func (a ARP) hardwareAddressSpace() uint16 { return uint16(a[0])<<8 | uint16(a[1]) }
-func (a ARP) protocolAddressSpace() uint16 { return uint16(a[2])<<8 | uint16(a[3]) }
-func (a ARP) hardwareAddressSize() int     { return int(a[4]) }
-func (a ARP) protocolAddressSize() int     { return int(a[5]) }
+const (
+	hTypeOffset                 = 0
+	protocolOffset              = 2
+	haAddressSizeOffset         = 4
+	protoAddressSizeOffset      = 5
+	opCodeOffset                = 6
+	senderHAAddressOffset       = 8
+	senderProtocolAddressOffset = senderHAAddressOffset + EthernetAddressSize
+	targetHAAddressOffset       = senderProtocolAddressOffset + IPv4AddressSize
+	targetProtocolAddressOffset = targetHAAddressOffset + EthernetAddressSize
+)
+
+func (a ARP) hardwareAddressType() ARPHardwareType {
+	return ARPHardwareType(binary.BigEndian.Uint16(a[hTypeOffset:]))
+}
+
+func (a ARP) protocolAddressSpace() uint16 { return binary.BigEndian.Uint16(a[protocolOffset:]) }
+func (a ARP) hardwareAddressSize() int     { return int(a[haAddressSizeOffset]) }
+func (a ARP) protocolAddressSize() int     { return int(a[protoAddressSizeOffset]) }
 
 // Op is the ARP opcode.
-func (a ARP) Op() ARPOp { return ARPOp(a[6])<<8 | ARPOp(a[7]) }
+func (a ARP) Op() ARPOp { return ARPOp(binary.BigEndian.Uint16(a[opCodeOffset:])) }
 
 // SetOp sets the ARP opcode.
 func (a ARP) SetOp(op ARPOp) {
-	a[6] = uint8(op >> 8)
-	a[7] = uint8(op)
+	binary.BigEndian.PutUint16(a[opCodeOffset:], uint16(op))
 }
 
 // SetIPv4OverEthernet configures the ARP packet for IPv4-over-Ethernet.
 func (a ARP) SetIPv4OverEthernet() {
-	a[0], a[1] = 0, 1       // htypeEthernet
-	a[2], a[3] = 0x08, 0x00 // IPv4ProtocolNumber
-	a[4] = 6                // macSize
-	a[5] = uint8(IPv4AddressSize)
+	binary.BigEndian.PutUint16(a[hTypeOffset:], uint16(ARPHardwareEther))
+	binary.BigEndian.PutUint16(a[protocolOffset:], uint16(IPv4ProtocolNumber))
+	a[haAddressSizeOffset] = EthernetAddressSize
+	a[protoAddressSizeOffset] = uint8(IPv4AddressSize)
 }
 
 // HardwareAddressSender is the link address of the sender.
 // It is a view on to the ARP packet so it can be used to set the value.
 func (a ARP) HardwareAddressSender() []byte {
-	const s = 8
-	return a[s : s+6]
+	return a[senderHAAddressOffset : senderHAAddressOffset+EthernetAddressSize]
 }
 
 // ProtocolAddressSender is the protocol address of the sender.
 // It is a view on to the ARP packet so it can be used to set the value.
 func (a ARP) ProtocolAddressSender() []byte {
-	const s = 8 + 6
-	return a[s : s+4]
+	return a[senderProtocolAddressOffset : senderProtocolAddressOffset+IPv4AddressSize]
 }
 
 // HardwareAddressTarget is the link address of the target.
 // It is a view on to the ARP packet so it can be used to set the value.
 func (a ARP) HardwareAddressTarget() []byte {
-	const s = 8 + 6 + 4
-	return a[s : s+6]
+	return a[targetHAAddressOffset : targetHAAddressOffset+EthernetAddressSize]
 }
 
 // ProtocolAddressTarget is the protocol address of the target.
 // It is a view on to the ARP packet so it can be used to set the value.
 func (a ARP) ProtocolAddressTarget() []byte {
-	const s = 8 + 6 + 4 + 6
-	return a[s : s+4]
+	return a[targetProtocolAddressOffset : targetProtocolAddressOffset+IPv4AddressSize]
 }
 
 // IsValid reports whether this is an ARP packet for IPv4 over Ethernet.
@@ -91,10 +120,8 @@ func (a ARP) IsValid() bool {
 	if len(a) < ARPSize {
 		return false
 	}
-	const htypeEthernet = 1
-	const macSize = 6
-	return a.hardwareAddressSpace() == htypeEthernet &&
+	return a.hardwareAddressType() == ARPHardwareEther &&
 		a.protocolAddressSpace() == uint16(IPv4ProtocolNumber) &&
-		a.hardwareAddressSize() == macSize &&
+		a.hardwareAddressSize() == EthernetAddressSize &&
 		a.protocolAddressSize() == IPv4AddressSize
 }

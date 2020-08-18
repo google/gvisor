@@ -20,8 +20,13 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 
+#include <vector>
+
 #include "gtest/gtest.h"
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
@@ -32,6 +37,31 @@
 namespace gvisor {
 namespace testing {
 namespace {
+
+constexpr const char kProcNet[] = "/proc/net";
+
+TEST(ProcNetSymlinkTarget, FileMode) {
+  struct stat s;
+  ASSERT_THAT(stat(kProcNet, &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_mode & S_IFMT, S_IFDIR);
+  EXPECT_EQ(s.st_mode & 0777, 0555);
+}
+
+TEST(ProcNetSymlink, FileMode) {
+  struct stat s;
+  ASSERT_THAT(lstat(kProcNet, &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_mode & S_IFMT, S_IFLNK);
+  EXPECT_EQ(s.st_mode & 0777, 0777);
+}
+
+TEST(ProcNetSymlink, Contents) {
+  char buf[40] = {};
+  int n = readlink(kProcNet, buf, sizeof(buf));
+  ASSERT_THAT(n, SyscallSucceeds());
+
+  buf[n] = 0;
+  EXPECT_STREQ(buf, "self/net");
+}
 
 TEST(ProcNetIfInet6, Format) {
   auto ifinet6 = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/if_inet6"));
@@ -67,9 +97,62 @@ TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
   EXPECT_EQ(buf, to_write);
 }
 
+// DeviceEntry is an entry in /proc/net/dev
+struct DeviceEntry {
+  std::string name;
+  uint64_t stats[16];
+};
+
+PosixErrorOr<std::vector<DeviceEntry>> GetDeviceMetricsFromProc(
+    const std::string dev) {
+  std::vector<std::string> lines = absl::StrSplit(dev, '\n');
+  std::vector<DeviceEntry> entries;
+
+  // /proc/net/dev prints 2 lines of headers followed by a line of metrics for
+  // each network interface.
+  for (unsigned i = 2; i < lines.size(); i++) {
+    // Ignore empty lines.
+    if (lines[i].empty()) {
+      continue;
+    }
+
+    std::vector<std::string> values =
+        absl::StrSplit(lines[i], ' ', absl::SkipWhitespace());
+
+    // Interface name + 16 values.
+    if (values.size() != 17) {
+      return PosixError(EINVAL, "invalid line: " + lines[i]);
+    }
+
+    DeviceEntry entry;
+    entry.name = values[0];
+    // Skip the interface name and read only the values.
+    for (unsigned j = 1; j < 17; j++) {
+      uint64_t num;
+      if (!absl::SimpleAtoi(values[j], &num)) {
+        return PosixError(EINVAL, "invalid value: " + values[j]);
+      }
+      entry.stats[j - 1] = num;
+    }
+
+    entries.push_back(entry);
+  }
+
+  return entries;
+}
+
+// TEST(ProcNetDev, Format) tests that /proc/net/dev is parsable and
+// contains at least one entry.
+TEST(ProcNetDev, Format) {
+  auto dev = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/dev"));
+  auto entries = ASSERT_NO_ERRNO_AND_VALUE(GetDeviceMetricsFromProc(dev));
+
+  EXPECT_GT(entries.size(), 0);
+}
+
 PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
-                                             const std::string &type,
-                                             const std::string &item) {
+                                             const std::string& type,
+                                             const std::string& item) {
   std::vector<std::string> snmp_vec = absl::StrSplit(snmp, '\n');
 
   // /proc/net/snmp prints a line of headers followed by a line of metrics.
@@ -127,7 +210,7 @@ TEST(ProcNetSnmp, TcpReset_NoRandomSave) {
   };
 
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(connect(s.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(connect(s.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallFailsWithErrno(ECONNREFUSED));
 
   uint64_t newAttemptFails;
@@ -172,19 +255,19 @@ TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
   };
 
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(bind(s_listen.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(bind(s_listen.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceeds());
   ASSERT_THAT(listen(s_listen.get(), 1), SyscallSucceeds());
 
   // Get the port bound by the listening socket.
   socklen_t addrlen = sizeof(sin);
   ASSERT_THAT(
-      getsockname(s_listen.get(), reinterpret_cast<sockaddr *>(&sin), &addrlen),
+      getsockname(s_listen.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
       SyscallSucceeds());
 
   FileDescriptor s_connect =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
-  ASSERT_THAT(connect(s_connect.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(connect(s_connect.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceeds());
 
   auto s_accept =
@@ -260,7 +343,7 @@ TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
       .sin_port = htons(4444),
   };
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(sendto(s.get(), "a", 1, 0, (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(sendto(s.get(), "a", 1, 0, (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceedsWithValue(1));
 
   uint64_t newOutDatagrams;
@@ -275,7 +358,7 @@ TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
   EXPECT_EQ(oldNoPorts, newNoPorts - 1);
 }
 
-TEST(ProcNetSnmp, UdpIn) {
+TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   const DisableSave ds;
 
@@ -295,18 +378,18 @@ TEST(ProcNetSnmp, UdpIn) {
       .sin_port = htons(0),
   };
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(bind(server.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(bind(server.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceeds());
   // Get the port bound by the server socket.
   socklen_t addrlen = sizeof(sin);
   ASSERT_THAT(
-      getsockname(server.get(), reinterpret_cast<sockaddr *>(&sin), &addrlen),
+      getsockname(server.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
       SyscallSucceeds());
 
   FileDescriptor client =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
   ASSERT_THAT(
-      sendto(client.get(), "a", 1, 0, (struct sockaddr *)&sin, sizeof(sin)),
+      sendto(client.get(), "a", 1, 0, (struct sockaddr*)&sin, sizeof(sin)),
       SyscallSucceedsWithValue(1));
 
   char buf[128];
@@ -324,6 +407,113 @@ TEST(ProcNetSnmp, UdpIn) {
 
   EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
   EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
+}
+
+TEST(ProcNetSnmp, CheckNetStat) {
+  // TODO(b/155123175): SNMP and netstat don't work on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/netstat"));
+
+  int name_count = 0;
+  int value_count = 0;
+  std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
+  for (int i = 0; i + 1 < lines.size(); i += 2) {
+    std::vector<absl::string_view> names =
+        absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
+    std::vector<absl::string_view> values =
+        absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
+    EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
+                                           << "' and '" << lines[i + 1] << "'";
+    for (int j = 0; j < names.size() && j < values.size(); ++j) {
+      if (names[j] == "TCPOrigDataSent" || names[j] == "TCPSynRetrans" ||
+          names[j] == "TCPDSACKRecv" || names[j] == "TCPDSACKOfoRecv") {
+        ++name_count;
+        int64_t val;
+        if (absl::SimpleAtoi(values[j], &val)) {
+          ++value_count;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(name_count, 4);
+  EXPECT_EQ(value_count, 4);
+}
+
+TEST(ProcNetSnmp, Stat) {
+  struct stat st = {};
+  ASSERT_THAT(stat("/proc/net/snmp", &st), SyscallSucceeds());
+}
+
+TEST(ProcNetSnmp, CheckSnmp) {
+  // TODO(b/155123175): SNMP and netstat don't work on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+
+  int name_count = 0;
+  int value_count = 0;
+  std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
+  for (int i = 0; i + 1 < lines.size(); i += 2) {
+    std::vector<absl::string_view> names =
+        absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
+    std::vector<absl::string_view> values =
+        absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
+    EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
+                                           << "' and '" << lines[i + 1] << "'";
+    for (int j = 0; j < names.size() && j < values.size(); ++j) {
+      if (names[j] == "RetransSegs") {
+        ++name_count;
+        int64_t val;
+        if (absl::SimpleAtoi(values[j], &val)) {
+          ++value_count;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(name_count, 1);
+  EXPECT_EQ(value_count, 1);
+}
+
+TEST(ProcSysNetIpv4Recovery, Exists) {
+  EXPECT_THAT(open("/proc/sys/net/ipv4/tcp_recovery", O_RDONLY),
+              SyscallSucceeds());
+}
+
+TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
+  // TODO(b/162988252): Enable save/restore for this test after the bug is
+  // fixed.
+  DisableSave ds;
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/net/ipv4/tcp_recovery", O_RDWR));
+
+  char buf[10] = {'\0'};
+  char to_write = '2';
+
+  // Check initial value is set to 1.
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "1\n"), 0);
+
+  // Set tcp_recovery to one of the allowed constants.
+  EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
+              SyscallSucceedsWithValue(sizeof(to_write)));
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "2\n"), 0);
+
+  // Set tcp_recovery to any random value.
+  char kMessage[] = "100";
+  EXPECT_THAT(PwriteFd(fd.get(), kMessage, strlen(kMessage), 0),
+              SyscallSucceedsWithValue(strlen(kMessage)));
+  EXPECT_THAT(PreadFd(fd.get(), buf, sizeof(kMessage), 0),
+              SyscallSucceedsWithValue(sizeof(kMessage)));
+  EXPECT_EQ(strcmp(buf, "100\n"), 0);
 }
 
 TEST(ProcSysNetIpv4IpForward, Exists) {

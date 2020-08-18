@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <netinet/tcp.h>
+
 #include <vector>
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
@@ -22,6 +23,7 @@
 
 namespace gvisor {
 namespace testing {
+namespace {
 
 std::vector<SocketPairKind> GetSocketPairs() {
   return ApplyVecToVec<SocketPairKind>(
@@ -38,5 +40,6 @@ INSTANTIATE_TEST_SUITE_P(
     BlockingTCPSockets, BlockingStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor

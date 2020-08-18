@@ -95,13 +95,7 @@ TEST(SigaltstackTest, ResetByExecve) {
   auto const cleanup_sigstack =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaltstack(stack));
 
-  std::string full_path;
-  char* test_src = getenv("TEST_SRCDIR");
-  if (test_src) {
-    full_path = JoinPath(test_src, "../../linux/sigaltstack_check");
-  }
-
-  ASSERT_FALSE(full_path.empty());
+  std::string full_path = RunfilePath("test/syscalls/linux/sigaltstack_check");
 
   pid_t child_pid = -1;
   int execve_errno = 0;
@@ -120,7 +114,7 @@ TEST(SigaltstackTest, ResetByExecve) {
 
 volatile bool badhandler_on_sigaltstack = true;      // Set by the handler.
 char* volatile badhandler_low_water_mark = nullptr;  // Set by the handler.
-volatile uint8_t badhandler_recursive_faults = 0;      // Consumed by the handler.
+volatile uint8_t badhandler_recursive_faults = 0;    // Consumed by the handler.
 
 void badhandler(int sig, siginfo_t* siginfo, void* arg) {
   char stack_var = 0;
@@ -174,8 +168,8 @@ TEST(SigaltstackTest, WalksOffBottom) {
 
   // Trigger a single fault.
   badhandler_low_water_mark =
-      static_cast<char*>(stack.ss_sp) + SIGSTKSZ;        // Expected top.
-  badhandler_recursive_faults = 0;                       // Disable refault.
+      static_cast<char*>(stack.ss_sp) + SIGSTKSZ;  // Expected top.
+  badhandler_recursive_faults = 0;                 // Disable refault.
   Fault();
   EXPECT_TRUE(badhandler_on_sigaltstack);
   EXPECT_THAT(sigaltstack(nullptr, &stack), SyscallSucceeds());

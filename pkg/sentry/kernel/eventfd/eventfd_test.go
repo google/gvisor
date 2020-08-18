@@ -17,8 +17,8 @@ package eventfd
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 

@@ -60,9 +60,7 @@ std::vector<std::function<PosixErrorOr<Mapping>()>> SyncableMappings() {
     for (int const mflags : {MAP_PRIVATE, MAP_SHARED}) {
       int const prot = PROT_READ | (writable ? PROT_WRITE : 0);
       int const oflags = O_CREAT | (writable ? O_RDWR : O_RDONLY);
-      funcs.push_back([=] {
-        return MmapAnon(kPageSize, prot, mflags);
-      });
+      funcs.push_back([=] { return MmapAnon(kPageSize, prot, mflags); });
       funcs.push_back([=]() -> PosixErrorOr<Mapping> {
         std::string const path = NewTempAbsPath();
         ASSIGN_OR_RETURN_ERRNO(auto fd, Open(path, oflags, 0644));

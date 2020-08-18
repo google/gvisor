@@ -18,19 +18,20 @@ package testutil
 
 import (
 	"reflect"
-	"syscall"
+
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // TwiddleSegments reads segments into known registers.
 func TwiddleSegments()
 
 // SetTestTarget sets the rip appropriately.
-func SetTestTarget(regs *syscall.PtraceRegs, fn func()) {
+func SetTestTarget(regs *arch.Registers, fn func()) {
 	regs.Rip = uint64(reflect.ValueOf(fn).Pointer())
 }
 
 // SetTouchTarget sets rax appropriately.
-func SetTouchTarget(regs *syscall.PtraceRegs, target *uintptr) {
+func SetTouchTarget(regs *arch.Registers, target *uintptr) {
 	if target != nil {
 		regs.Rax = uint64(reflect.ValueOf(target).Pointer())
 	} else {
@@ -39,12 +40,12 @@ func SetTouchTarget(regs *syscall.PtraceRegs, target *uintptr) {
 }
 
 // RewindSyscall rewinds a syscall RIP.
-func RewindSyscall(regs *syscall.PtraceRegs) {
+func RewindSyscall(regs *arch.Registers) {
 	regs.Rip -= 2
 }
 
 // SetTestRegs initializes registers to known values.
-func SetTestRegs(regs *syscall.PtraceRegs) {
+func SetTestRegs(regs *arch.Registers) {
 	regs.R15 = 0x15
 	regs.R14 = 0x14
 	regs.R13 = 0x13
@@ -64,7 +65,7 @@ func SetTestRegs(regs *syscall.PtraceRegs) {
 }
 
 // CheckTestRegs checks that registers were twiddled per TwiddleRegs.
-func CheckTestRegs(regs *syscall.PtraceRegs, full bool) (err error) {
+func CheckTestRegs(regs *arch.Registers, full bool) (err error) {
 	if need := ^uint64(0x15); regs.R15 != need {
 		err = addRegisterMismatch(err, "R15", regs.R15, need)
 	}
@@ -121,13 +122,13 @@ var fsData uint64 = 0x55
 var gsData uint64 = 0x85
 
 // SetTestSegments initializes segments to known values.
-func SetTestSegments(regs *syscall.PtraceRegs) {
+func SetTestSegments(regs *arch.Registers) {
 	regs.Fs_base = uint64(reflect.ValueOf(&fsData).Pointer())
 	regs.Gs_base = uint64(reflect.ValueOf(&gsData).Pointer())
 }
 
 // CheckTestSegments checks that registers were twiddled per TwiddleSegments.
-func CheckTestSegments(regs *syscall.PtraceRegs) (err error) {
+func CheckTestSegments(regs *arch.Registers) (err error) {
 	if regs.Rax != fsData {
 		err = addRegisterMismatch(err, "Rax", regs.Rax, fsData)
 	}

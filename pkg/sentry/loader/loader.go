@@ -23,32 +23,23 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // LoadArgs holds specifications for an executable file to be loaded.
 type LoadArgs struct {
 	// MemoryManager is the memory manager to load the executable into.
 	MemoryManager *mm.MemoryManager
-
-	// Mounts is the mount namespace in which to look up Filename.
-	Mounts *fs.MountNamespace
-
-	// Root is the root directory under which to look up Filename.
-	Root *fs.Dirent
-
-	// WorkingDirectory is the working directory under which to look up
-	// Filename.
-	WorkingDirectory *fs.Dirent
 
 	// RemainingTraversals is the maximum number of symlinks to follow to
 	// resolve Filename. This counter is passed by reference to keep it
@@ -64,7 +55,18 @@ type LoadArgs struct {
 
 	// File is an open fs.File object of the executable. If File is not
 	// nil, then File will be loaded and Filename will be ignored.
-	File *fs.File
+	//
+	// The caller is responsible for checking that the user can execute this file.
+	File fsbridge.File
+
+	// Opener is used to open the executable file when 'File' is nil.
+	Opener fsbridge.Lookup
+
+	// CloseOnExec indicates that the executable (or one of its parent
+	// directories) was opened with O_CLOEXEC. If the executable is an
+	// interpreter script, then cause an ENOENT error to occur, since the
+	// script would otherwise be inaccessible to the interpreter.
+	CloseOnExec bool
 
 	// Argv is the vector of arguments to pass to the executable.
 	Argv []string
@@ -77,135 +79,41 @@ type LoadArgs struct {
 	Features *cpuid.FeatureSet
 }
 
-// readFull behaves like io.ReadFull for an *fs.File.
-func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
-	var total int64
-	for dst.NumBytes() > 0 {
-		n, err := f.Preadv(ctx, dst, offset+total)
-		total += n
-		if err == io.EOF && total != 0 {
-			return total, io.ErrUnexpectedEOF
-		} else if err != nil {
-			return total, err
-		}
-		dst = dst.DropFirst64(n)
-	}
-	return total, nil
-}
-
-// openPath opens args.Filename for loading.
+// openPath opens args.Filename and checks that it is valid for loading.
 //
-// openPath returns the fs.Dirent and an *fs.File for args.Filename, which is
-// not installed in the Task FDTable. The caller takes ownership of both.
+// openPath returns an *fs.Dirent and *fs.File for args.Filename, which is not
+// installed in the Task FDTable. The caller takes ownership of both.
 //
 // args.Filename must be a readable, executable, regular file.
-func openPath(ctx context.Context, args LoadArgs) (*fs.Dirent, *fs.File, error) {
-	var err error
+func openPath(ctx context.Context, args LoadArgs) (fsbridge.File, error) {
 	if args.Filename == "" {
 		ctx.Infof("cannot open empty name")
-		return nil, nil, syserror.ENOENT
+		return nil, syserror.ENOENT
 	}
 
-	var d *fs.Dirent
-	if args.ResolveFinal {
-		d, err = args.Mounts.FindInode(ctx, args.Root, args.WorkingDirectory, args.Filename, args.RemainingTraversals)
-	} else {
-		d, err = args.Mounts.FindLink(ctx, args.Root, args.WorkingDirectory, args.Filename, args.RemainingTraversals)
+	// TODO(gvisor.dev/issue/160): Linux requires only execute permission,
+	// not read. However, our backing filesystems may prevent us from reading
+	// the file without read permission. Additionally, a task with a
+	// non-readable executable has additional constraints on access via
+	// ptrace and procfs.
+	opts := vfs.OpenOptions{
+		Flags:    linux.O_RDONLY,
+		FileExec: true,
 	}
+	return args.Opener.OpenPath(ctx, args.Filename, opts, args.RemainingTraversals, args.ResolveFinal)
+}
+
+// checkIsRegularFile prevents us from trying to execute a directory, pipe, etc.
+func checkIsRegularFile(ctx context.Context, file fsbridge.File, filename string) error {
+	t, err := file.Type(ctx)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	// Open file will take a reference to Dirent, so destroy this one.
-	defer d.DecRef()
-
-	if !args.ResolveFinal && fs.IsSymlink(d.Inode.StableAttr) {
-		return nil, nil, syserror.ELOOP
-	}
-
-	return openFile(ctx, nil, d, args.Filename)
-}
-
-// openFile takes that file's Dirent and performs checks on it. If provided a
-// *fs.Dirent and not a *fs.File, it creates a *fs.File object from the Dirent's
-// Inode and performs checks on that.
-//
-// openFile returns an *fs.File and *fs.Dirent, and the caller takes ownership
-// of both.
-//
-// "dirent" and "file" must not both be nil and point to a readable, executable, regular file.
-func openFile(ctx context.Context, file *fs.File, dirent *fs.Dirent, name string) (*fs.Dirent, *fs.File, error) {
-	// file and dirent must not be nil.
-	if dirent == nil && file == nil {
-		ctx.Infof("dirent and file cannot both be nil.")
-		return nil, nil, syserror.ENOENT
-	}
-
-	if file != nil {
-		dirent = file.Dirent
-	}
-
-	// Perform permissions checks on the file.
-	if err := checkFile(ctx, dirent, name); err != nil {
-		return nil, nil, err
-	}
-
-	if file == nil {
-		var ferr error
-		if file, ferr = dirent.Inode.GetFile(ctx, dirent, fs.FileFlags{Read: true}); ferr != nil {
-			return nil, nil, ferr
-		}
-	} else {
-		// GetFile takes a reference to the created file, so make one in the case
-		// that the file reference already existed.
-		file.IncRef()
-	}
-
-	// We must be able to read at arbitrary offsets.
-	if !file.Flags().Pread {
-		file.DecRef()
-		ctx.Infof("%s cannot be read at an offset: %+v", file.MappedName(ctx), file.Flags())
-		return nil, nil, syserror.EACCES
-	}
-
-	// Grab reference for caller.
-	dirent.IncRef()
-	return dirent, file, nil
-}
-
-// checkFile performs file permissions checks for binaries called in openPath
-// and openFile
-func checkFile(ctx context.Context, d *fs.Dirent, name string) error {
-	perms := fs.PermMask{
-		// TODO(gvisor.dev/issue/160): Linux requires only execute
-		// permission, not read. However, our backing filesystems may
-		// prevent us from reading the file without read permission.
-		//
-		// Additionally, a task with a non-readable executable has
-		// additional constraints on access via ptrace and procfs.
-		Read:    true,
-		Execute: true,
-	}
-	if err := d.Inode.CheckPermission(ctx, perms); err != nil {
 		return err
 	}
-
-	// If they claim it's a directory, then make sure.
-	//
-	// N.B. we reject directories below, but we must first reject
-	// non-directories passed as directories.
-	if len(name) > 0 && name[len(name)-1] == '/' && !fs.IsDir(d.Inode.StableAttr) {
-		return syserror.ENOTDIR
-	}
-
-	// No exec-ing directories, pipes, etc!
-	if !fs.IsRegular(d.Inode.StableAttr) {
-		ctx.Infof("%s is not regular: %v", name, d.Inode.StableAttr)
+	if t != linux.ModeRegular {
+		ctx.Infof("%q is not a regular file: %v", filename, t)
 		return syserror.EACCES
 	}
-
 	return nil
-
 }
 
 // allocStack allocates and maps a stack in to any available part of the address space.
@@ -224,8 +132,10 @@ const (
 	maxLoaderAttempts = 6
 )
 
-// loadExecutable loads an executable that is pointed to by args.File. If nil,
-// the path args.Filename is resolved and loaded. If the executable is an
+// loadExecutable loads an executable that is pointed to by args.File. The
+// caller is responsible for checking that the user can execute this file.
+// If nil, the path args.Filename is resolved and loaded (check that the user
+// can execute this file is done here in this case). If the executable is an
 // interpreter script rather than an ELF, the binary of the corresponding
 // interpreter will be loaded.
 //
@@ -234,33 +144,29 @@ const (
 //  * arch.Context matching the binary arch
 //  * fs.Dirent of the binary file
 //  * Possibly updated args.Argv
-func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
+func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, fsbridge.File, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
-		var (
-			d   *fs.Dirent
-			err error
-		)
 		if args.File == nil {
-			d, args.File, err = openPath(ctx, args)
+			var err error
+			args.File, err = openPath(ctx, args)
+			if err != nil {
+				ctx.Infof("Error opening %s: %v", args.Filename, err)
+				return loadedELF{}, nil, nil, nil, err
+			}
+			// Ensure file is release in case the code loops or errors out.
+			defer args.File.DecRef(ctx)
 		} else {
-			d, args.File, err = openFile(ctx, args.File, nil, "")
+			if err := checkIsRegularFile(ctx, args.File, args.Filename); err != nil {
+				return loadedELF{}, nil, nil, nil, err
+			}
 		}
-
-		if err != nil {
-			ctx.Infof("Error opening %s: %v", args.Filename, err)
-			return loadedELF{}, nil, nil, nil, err
-		}
-		defer args.File.DecRef()
-		// We will return d in the successful case, but defer a DecRef
-		// for intermediate loops and failure cases.
-		defer d.DecRef()
 
 		// Check the header. Is this an ELF or interpreter script?
 		var hdr [4]uint8
 		// N.B. We assume that reading from a regular file cannot block.
-		_, err = readFull(ctx, args.File, usermem.BytesIOSequence(hdr[:]), 0)
-		// Allow unexpected EOF, as a valid executable could be only
-		// three bytes (e.g., #!a).
+		_, err := args.File.ReadFull(ctx, usermem.BytesIOSequence(hdr[:]), 0)
+		// Allow unexpected EOF, as a valid executable could be only three bytes
+		// (e.g., #!a).
 		if err != nil && err != io.ErrUnexpectedEOF {
 			if err == io.EOF {
 				err = syserror.ENOEXEC
@@ -275,15 +181,22 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 				ctx.Infof("Error loading ELF: %v", err)
 				return loadedELF{}, nil, nil, nil, err
 			}
-			// An ELF is always terminal. Hold on to d.
-			d.IncRef()
-			return loaded, ac, d, args.Argv, err
+			// An ELF is always terminal. Hold on to file.
+			args.File.IncRef()
+			return loaded, ac, args.File, args.Argv, err
+
 		case bytes.Equal(hdr[:2], []byte(interpreterScriptMagic)):
+			if args.CloseOnExec {
+				return loadedELF{}, nil, nil, nil, syserror.ENOENT
+			}
 			args.Filename, args.Argv, err = parseInterpreterScript(ctx, args.Filename, args.File, args.Argv)
 			if err != nil {
 				ctx.Infof("Error loading interpreter script: %v", err)
 				return loadedELF{}, nil, nil, nil, err
 			}
+			// Refresh the traversal limit for the interpreter.
+			*args.RemainingTraversals = linux.MaxSymlinkTraversals
+
 		default:
 			ctx.Infof("Unknown magic: %v", hdr)
 			return loadedELF{}, nil, nil, nil, syserror.ENOEXEC
@@ -306,16 +219,16 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 //  * Load is called on the Task goroutine.
 func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
 	// Load the executable itself.
-	loaded, ac, d, newArgv, err := loadExecutable(ctx, args)
+	loaded, ac, file, newArgv, err := loadExecutable(ctx, args)
 	if err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
-	defer d.DecRef()
+	defer file.DecRef(ctx)
 
 	// Load the VDSO.
 	vdsoAddr, err := loadVDSO(ctx, args.MemoryManager, vdso, loaded)
 	if err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Setup the heap. brk starts at the next page after the end of the
@@ -379,7 +292,16 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	m.SetEnvvStart(sl.EnvvStart)
 	m.SetEnvvEnd(sl.EnvvEnd)
 	m.SetAuxv(auxv)
-	m.SetExecutable(d)
+	m.SetExecutable(ctx, file)
+
+	symbolValue, err := getSymbolValueFromVDSO("rt_sigreturn")
+	if err != nil {
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to find rt_sigreturn in vdso: %v", err), syserr.FromError(err).ToLinux())
+	}
+
+	// Found rt_sigretrun.
+	addr := uint64(vdsoAddr) + symbolValue - vdsoPrelink
+	m.SetVDSOSigReturn(addr)
 
 	ac.SetIP(uintptr(loaded.entry))
 	ac.SetStack(uintptr(stack.Bottom))

@@ -18,7 +18,14 @@ if [ "$1" != configure ]; then
   exit 0
 fi
 
+# Update docker configuration.
 if [ -f /etc/docker/daemon.json ]; then
   runsc install
-  systemctl restart docker || echo "unable to restart docker; you must do so manually." >&2
+  if systemctl status docker 2>/dev/null; then
+    systemctl restart docker || echo "unable to restart docker; you must do so manually." >&2
+  fi
 fi
+
+# For containerd-based installers, we don't automatically update the
+# configuration. If it uses a v2 shim, then it will find the package binaries
+# automatically when provided the appropriate annotation.

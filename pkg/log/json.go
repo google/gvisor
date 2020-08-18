@@ -58,11 +58,11 @@ func (lv *Level) UnmarshalJSON(b []byte) error {
 
 // JSONEmitter logs messages in json format.
 type JSONEmitter struct {
-	Writer
+	*Writer
 }
 
 // Emit implements Emitter.Emit.
-func (e JSONEmitter) Emit(level Level, timestamp time.Time, format string, v ...interface{}) {
+func (e JSONEmitter) Emit(_ int, level Level, timestamp time.Time, format string, v ...interface{}) {
 	j := jsonLog{
 		Msg:   fmt.Sprintf(format, v...),
 		Level: level,

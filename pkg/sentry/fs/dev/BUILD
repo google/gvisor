@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,27 +9,32 @@ go_library(
         "device.go",
         "fs.go",
         "full.go",
+        "net_tun.go",
         "null.go",
         "random.go",
         "tty.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/dev",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/rand",
-        "//pkg/sentry/context",
+        "//pkg/safemem",
+        "//pkg/sentry/arch",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/fs/tmpfs",
+        "//pkg/sentry/inet",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
-        "//pkg/sentry/safemem",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/socket/netstack",
         "//pkg/syserror",
+        "//pkg/tcpip/link/tun",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

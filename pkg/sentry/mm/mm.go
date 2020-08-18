@@ -25,7 +25,7 @@
 //           Locks taken by memmap.Mappable.Translate
 //             mm.privateRefs.mu
 //               platform.AddressSpace locks
-//                 platform.File locks
+//                 memmap.File locks
 //         mm.aioManager.mu
 //           mm.AIOContext.mu
 //
@@ -35,16 +35,15 @@
 package mm
 
 import (
-	"sync"
-
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
-	"gvisor.dev/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // MemoryManager implements a virtual address space.
@@ -82,7 +81,7 @@ type MemoryManager struct {
 	users int32
 
 	// mappingMu is analogous to Linux's struct mm_struct::mmap_sem.
-	mappingMu gvsync.DowngradableRWMutex `state:"nosave"`
+	mappingMu sync.RWMutex `state:"nosave"`
 
 	// vmas stores virtual memory areas. Since vmas are stored by value,
 	// clients should usually use vmaIterator.ValuePtr() instead of
@@ -125,7 +124,7 @@ type MemoryManager struct {
 
 	// activeMu is loosely analogous to Linux's struct
 	// mm_struct::page_table_lock.
-	activeMu gvsync.DowngradableRWMutex `state:"nosave"`
+	activeMu sync.RWMutex `state:"nosave"`
 
 	// pmas stores platform mapping areas used to implement vmas. Since pmas
 	// are stored by value, clients should usually use pmaIterator.ValuePtr()
@@ -217,7 +216,7 @@ type MemoryManager struct {
 	// is not nil, it holds a reference on the Dirent.
 	//
 	// executable is protected by metadataMu.
-	executable *fs.Dirent
+	executable fsbridge.File
 
 	// dumpability describes if and how this MemoryManager may be dumped to
 	// userspace.
@@ -228,6 +227,14 @@ type MemoryManager struct {
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
 	// must be cloned when CLONE_VM is used.
 	aioManager aioManager
+
+	// sleepForActivation indicates whether the task should report to be sleeping
+	// before trying to activate the address space. When set to true, delays in
+	// activation are not reported as stuck tasks by the watchdog.
+	sleepForActivation bool
+
+	// vdsoSigReturnAddr is the address of 'vdso_sigreturn'.
+	vdsoSigReturnAddr uint64
 }
 
 // vma represents a virtual memory area.
@@ -280,7 +287,7 @@ type vma struct {
 	mlockMode memmap.MLockMode
 
 	// numaPolicy is the NUMA policy for this vma set by mbind().
-	numaPolicy int32
+	numaPolicy linux.NumaPolicy
 
 	// numaNodemask is the NUMA nodemask for this vma set by mbind().
 	numaNodemask uint64
@@ -389,7 +396,7 @@ type pma struct {
 	// file is the file mapped by this pma. Only pmas for which file ==
 	// MemoryManager.mfp.MemoryFile() may be saved. pmas hold a reference to
 	// the corresponding file range while they exist.
-	file platform.File `state:"nosave"`
+	file memmap.File `state:"nosave"`
 
 	// off is the offset into file at which this pma begins.
 	//
@@ -429,7 +436,7 @@ type pma struct {
 	private bool
 
 	// If internalMappings is not empty, it is the cached return value of
-	// file.MapInternal for the platform.FileRange mapped by this pma.
+	// file.MapInternal for the memmap.FileRange mapped by this pma.
 	internalMappings safemem.BlockSeq `state:"nosave"`
 }
 
@@ -462,10 +469,10 @@ func (fileRefcountSetFunctions) MaxKey() uint64 {
 func (fileRefcountSetFunctions) ClearValue(_ *int32) {
 }
 
-func (fileRefcountSetFunctions) Merge(_ platform.FileRange, rc1 int32, _ platform.FileRange, rc2 int32) (int32, bool) {
+func (fileRefcountSetFunctions) Merge(_ memmap.FileRange, rc1 int32, _ memmap.FileRange, rc2 int32) (int32, bool) {
 	return rc1, rc1 == rc2
 }
 
-func (fileRefcountSetFunctions) Split(_ platform.FileRange, rc int32, _ uint64) (int32, int32) {
+func (fileRefcountSetFunctions) Split(_ memmap.FileRange, rc int32, _ uint64) (int32, int32) {
 	return rc, rc
 }

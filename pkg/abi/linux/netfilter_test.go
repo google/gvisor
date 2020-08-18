@@ -29,12 +29,16 @@ func TestSizes(t *testing.T) {
 		{IPTGetEntries{}, SizeOfIPTGetEntries},
 		{IPTGetinfo{}, SizeOfIPTGetinfo},
 		{IPTIP{}, SizeOfIPTIP},
+		{IPTOwnerInfo{}, SizeOfIPTOwnerInfo},
 		{IPTReplace{}, SizeOfIPTReplace},
 		{XTCounters{}, SizeOfXTCounters},
 		{XTEntryMatch{}, SizeOfXTEntryMatch},
 		{XTEntryTarget{}, SizeOfXTEntryTarget},
 		{XTErrorTarget{}, SizeOfXTErrorTarget},
 		{XTStandardTarget{}, SizeOfXTStandardTarget},
+		{IP6TReplace{}, SizeOfIP6TReplace},
+		{IP6TEntry{}, SizeOfIP6TEntry},
+		{IP6TIP{}, SizeOfIP6TIP},
 	}
 
 	for _, tc := range testCases {

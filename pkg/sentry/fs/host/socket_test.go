@@ -21,13 +21,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -67,11 +67,12 @@ func TestSocketIsBlocking(t *testing.T) {
 	if fl&syscall.O_NONBLOCK == syscall.O_NONBLOCK {
 		t.Fatalf("Expected socket %v to be blocking", pair[1])
 	}
-	sock, err := newSocket(contexttest.Context(t), pair[0], false)
+	ctx := contexttest.Context(t)
+	sock, err := newSocket(ctx, pair[0], false)
 	if err != nil {
 		t.Fatalf("newSocket(%v) failed => %v", pair[0], err)
 	}
-	defer sock.DecRef()
+	defer sock.DecRef(ctx)
 	// Test that the socket now is non-blocking.
 	if fl, err = getFl(pair[0]); err != nil {
 		t.Fatalf("getFl: fcntl(%v, GETFL) => %v", pair[0], err)
@@ -93,11 +94,12 @@ func TestSocketWritev(t *testing.T) {
 	if err != nil {
 		t.Fatalf("host socket creation failed: %v", err)
 	}
-	socket, err := newSocket(contexttest.Context(t), pair[0], false)
+	ctx := contexttest.Context(t)
+	socket, err := newSocket(ctx, pair[0], false)
 	if err != nil {
 		t.Fatalf("newSocket(%v) => %v", pair[0], err)
 	}
-	defer socket.DecRef()
+	defer socket.DecRef(ctx)
 	buf := []byte("hello world\n")
 	n, err := socket.Writev(contexttest.Context(t), usermem.BytesIOSequence(buf))
 	if err != nil {
@@ -115,11 +117,12 @@ func TestSocketWritevLen0(t *testing.T) {
 	if err != nil {
 		t.Fatalf("host socket creation failed: %v", err)
 	}
-	socket, err := newSocket(contexttest.Context(t), pair[0], false)
+	ctx := contexttest.Context(t)
+	socket, err := newSocket(ctx, pair[0], false)
 	if err != nil {
 		t.Fatalf("newSocket(%v) => %v", pair[0], err)
 	}
-	defer socket.DecRef()
+	defer socket.DecRef(ctx)
 	n, err := socket.Writev(contexttest.Context(t), usermem.BytesIOSequence(nil))
 	if err != nil {
 		t.Fatalf("socket writev failed: %v", err)
@@ -136,11 +139,12 @@ func TestSocketSendMsgLen0(t *testing.T) {
 	if err != nil {
 		t.Fatalf("host socket creation failed: %v", err)
 	}
-	sfile, err := newSocket(contexttest.Context(t), pair[0], false)
+	ctx := contexttest.Context(t)
+	sfile, err := newSocket(ctx, pair[0], false)
 	if err != nil {
 		t.Fatalf("newSocket(%v) => %v", pair[0], err)
 	}
-	defer sfile.DecRef()
+	defer sfile.DecRef(ctx)
 
 	s := sfile.FileOperations.(socket.Socket)
 	n, terr := s.SendMsg(nil, usermem.BytesIOSequence(nil), []byte{}, 0, false, ktime.Time{}, socket.ControlMessages{})
@@ -158,18 +162,19 @@ func TestListen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0) => %v", err)
 	}
-	sfile1, err := newSocket(contexttest.Context(t), pair[0], false)
+	ctx := contexttest.Context(t)
+	sfile1, err := newSocket(ctx, pair[0], false)
 	if err != nil {
 		t.Fatalf("newSocket(%v) => %v", pair[0], err)
 	}
-	defer sfile1.DecRef()
+	defer sfile1.DecRef(ctx)
 	socket1 := sfile1.FileOperations.(socket.Socket)
 
-	sfile2, err := newSocket(contexttest.Context(t), pair[1], false)
+	sfile2, err := newSocket(ctx, pair[1], false)
 	if err != nil {
 		t.Fatalf("newSocket(%v) => %v", pair[1], err)
 	}
-	defer sfile2.DecRef()
+	defer sfile2.DecRef(ctx)
 	socket2 := sfile2.FileOperations.(socket.Socket)
 
 	// Socketpairs can not be listened to.
@@ -185,11 +190,11 @@ func TestListen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0) => %v", err)
 	}
-	sfile3, err := newSocket(contexttest.Context(t), sock, false)
+	sfile3, err := newSocket(ctx, sock, false)
 	if err != nil {
 		t.Fatalf("newSocket(%v) => %v", sock, err)
 	}
-	defer sfile3.DecRef()
+	defer sfile3.DecRef(ctx)
 	socket3 := sfile3.FileOperations.(socket.Socket)
 
 	// This socket is not bound so we can't listen on it.
@@ -199,14 +204,14 @@ func TestListen(t *testing.T) {
 }
 
 func TestPasscred(t *testing.T) {
-	e := ConnectedEndpoint{}
+	e := &ConnectedEndpoint{}
 	if got, want := e.Passcred(), false; got != want {
 		t.Errorf("Got %#v.Passcred() = %t, want = %t", e, got, want)
 	}
 }
 
 func TestGetLocalAddress(t *testing.T) {
-	e := ConnectedEndpoint{path: "foo"}
+	e := &ConnectedEndpoint{path: "foo"}
 	want := tcpip.FullAddress{Addr: tcpip.Address("foo")}
 	if got, err := e.GetLocalAddress(); err != nil || got != want {
 		t.Errorf("Got %#v.GetLocalAddress() = %#v, %v, want = %#v, %v", e, got, err, want, nil)
@@ -214,7 +219,7 @@ func TestGetLocalAddress(t *testing.T) {
 }
 
 func TestQueuedSize(t *testing.T) {
-	e := ConnectedEndpoint{}
+	e := &ConnectedEndpoint{}
 	tests := []struct {
 		name string
 		f    func() int64
@@ -237,9 +242,10 @@ func TestRelease(t *testing.T) {
 	}
 	c := &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
 	want := &ConnectedEndpoint{queue: c.queue}
-	want.ref.DecRef()
+	ctx := contexttest.Context(t)
+	want.ref.DecRef(ctx)
 	fdnotifier.AddFD(int32(c.file.FD()), nil)
-	c.Release()
+	c.Release(ctx)
 	if !reflect.DeepEqual(c, want) {
 		t.Errorf("got = %#v, want = %#v", c, want)
 	}

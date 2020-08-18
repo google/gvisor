@@ -37,6 +37,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
+#include <regex>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -51,6 +52,7 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
@@ -98,9 +100,39 @@ namespace {
 #define SUID_DUMP_ROOT 2
 #endif /* SUID_DUMP_ROOT */
 
-// O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
-// because "it isn't needed", even though Linux can return it via F_GETFL.
-constexpr int kOLargeFile = 00100000;
+#if defined(__x86_64__) || defined(__i386__)
+// This list of "required" fields is taken from reading the file
+// arch/x86/kernel/cpu/proc.c and seeing which fields will be unconditionally
+// printed by the kernel.
+static const char* required_fields[] = {
+    "processor",
+    "vendor_id",
+    "cpu family",
+    "model\t\t:",
+    "model name",
+    "stepping",
+    "cpu MHz",
+    "fpu\t\t:",
+    "fpu_exception",
+    "cpuid level",
+    "wp",
+    "bogomips",
+    "clflush size",
+    "cache_alignment",
+    "address sizes",
+    "power management",
+};
+#elif __aarch64__
+// This list of "required" fields is taken from reading the file
+// arch/arm64/kernel/cpuinfo.c and seeing which fields will be unconditionally
+// printed by the kernel.
+static const char* required_fields[] = {
+    "processor",        "BogoMIPS",    "Features", "CPU implementer",
+    "CPU architecture", "CPU variant", "CPU part", "CPU revision",
+};
+#else
+#error "Unknown architecture"
+#endif
 
 // Takes the subprocess command line and pid.
 // If it returns !OK, WithSubprocess returns immediately.
@@ -183,7 +215,8 @@ PosixError WithSubprocess(SubprocessCallback const& running,
   siginfo_t info;
   // Wait until the child process has exited (WEXITED flag) but don't
   // reap the child (WNOWAIT flag).
-  waitid(P_PID, child_pid, &info, WNOWAIT | WEXITED);
+  EXPECT_THAT(waitid(P_PID, child_pid, &info, WNOWAIT | WEXITED),
+              SyscallSucceeds());
 
   if (zombied) {
     // Arg of "Z" refers to a Zombied Process.
@@ -714,28 +747,6 @@ TEST(ProcCpuinfo, RequiredFieldsArePresent) {
   ASSERT_FALSE(proc_cpuinfo.empty());
   std::vector<std::string> cpuinfo_fields = absl::StrSplit(proc_cpuinfo, '\n');
 
-  // This list of "required" fields is taken from reading the file
-  // arch/x86/kernel/cpu/proc.c and seeing which fields will be unconditionally
-  // printed by the kernel.
-  static const char* required_fields[] = {
-      "processor",
-      "vendor_id",
-      "cpu family",
-      "model\t\t:",
-      "model name",
-      "stepping",
-      "cpu MHz",
-      "fpu\t\t:",
-      "fpu_exception",
-      "cpuid level",
-      "wp",
-      "bogomips",
-      "clflush size",
-      "cache_alignment",
-      "address sizes",
-      "power management",
-  };
-
   // Check that the usual fields are there. We don't really care about the
   // contents.
   for (const std::string& field : required_fields) {
@@ -743,8 +754,53 @@ TEST(ProcCpuinfo, RequiredFieldsArePresent) {
   }
 }
 
-TEST(ProcCpuinfo, DeniesWrite) {
-  EXPECT_THAT(open("/proc/cpuinfo", O_WRONLY), SyscallFailsWithErrno(EACCES));
+TEST(ProcCpuinfo, DeniesWriteNonRoot) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FOWNER)));
+
+  // Do setuid in a separate thread so that after finishing this test, the
+  // process can still open files the test harness created before starting this
+  // test. Otherwise, the files are created by root (UID before the test), but
+  // cannot be opened by the `uid` set below after the test. After calling
+  // setuid(non-zero-UID), there is no way to get root privileges back.
+  ScopedThread([&] {
+    // Use syscall instead of glibc setuid wrapper because we want this setuid
+    // call to only apply to this task. POSIX threads, however, require that all
+    // threads have the same UIDs, so using the setuid wrapper sets all threads'
+    // real UID.
+    // Also drops capabilities.
+    constexpr int kNobody = 65534;
+    EXPECT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+    EXPECT_THAT(open("/proc/cpuinfo", O_WRONLY), SyscallFailsWithErrno(EACCES));
+    // TODO(gvisor.dev/issue/1193): Properly support setting size attributes in
+    // kernfs.
+    if (!IsRunningOnGvisor() || IsRunningWithVFS1()) {
+      EXPECT_THAT(truncate("/proc/cpuinfo", 123),
+                  SyscallFailsWithErrno(EACCES));
+    }
+  });
+}
+
+// With root privileges, it is possible to open /proc/cpuinfo with write mode,
+// but all write operations will return EIO.
+TEST(ProcCpuinfo, DeniesWriteRoot) {
+  // VFS1 does not behave differently for root/non-root.
+  SKIP_IF(IsRunningWithVFS1());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FOWNER)));
+
+  int fd;
+  EXPECT_THAT(fd = open("/proc/cpuinfo", O_WRONLY), SyscallSucceeds());
+  if (fd > 0) {
+    EXPECT_THAT(write(fd, "x", 1), SyscallFailsWithErrno(EIO));
+    EXPECT_THAT(pwrite(fd, "x", 1, 123), SyscallFailsWithErrno(EIO));
+  }
+  // TODO(gvisor.dev/issue/1193): Properly support setting size attributes in
+  // kernfs.
+  if (!IsRunningOnGvisor() || IsRunningWithVFS1()) {
+    if (fd > 0) {
+      EXPECT_THAT(ftruncate(fd, 123), SyscallFailsWithErrno(EIO));
+    }
+    EXPECT_THAT(truncate("/proc/cpuinfo", 123), SyscallFailsWithErrno(EIO));
+  }
 }
 
 // Sanity checks that uptime is present.
@@ -983,7 +1039,7 @@ constexpr uint64_t kMappingSize = 100 << 20;
 
 // Tolerance on RSS comparisons to account for background thread mappings,
 // reclaimed pages, newly faulted pages, etc.
-constexpr uint64_t kRSSTolerance = 5 << 20;
+constexpr uint64_t kRSSTolerance = 10 << 20;
 
 // Capture RSS before and after an anonymous mapping with passed prot.
 void MapPopulateRSS(int prot, uint64_t* before, uint64_t* after) {
@@ -1315,8 +1371,6 @@ TEST(ProcPidSymlink, SubprocessRunning) {
               SyscallSucceedsWithValue(sizeof(buf)));
 }
 
-// FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
-// on proc files.
 TEST(ProcPidSymlink, SubprocessZombied) {
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -1326,7 +1380,7 @@ TEST(ProcPidSymlink, SubprocessZombied) {
   int want = EACCES;
   if (!IsRunningOnGvisor()) {
     auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    if (version.major == 4 && version.minor > 3) {
+    if (version.major > 4 || (version.major == 4 && version.minor > 3)) {
       want = ENOENT;
     }
   }
@@ -1339,24 +1393,25 @@ TEST(ProcPidSymlink, SubprocessZombied) {
                 SyscallFailsWithErrno(want));
   }
 
-  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
-  // on proc files.
-  // 4.17 & gVisor: Syscall succeeds and returns 1
-  // EXPECT_THAT(ReadlinkWhileZombied("ns/pid", buf, sizeof(buf)),
-  //            SyscallFailsWithErrno(EACCES));
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between linux on proc
+  // files.
+  //
+  // ~4.3: Syscall fails with EACCES.
+  // 4.17: Syscall succeeds and returns 1.
+  //
+  if (!IsRunningOnGvisor()) {
+    return;
+  }
 
-  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
-  // on proc files.
-  // 4.17 &  gVisor: Syscall succeeds and returns 1.
-  // EXPECT_THAT(ReadlinkWhileZombied("ns/user", buf, sizeof(buf)),
-  //            SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(ReadlinkWhileZombied("ns/pid", buf, sizeof(buf)),
+              SyscallFailsWithErrno(want));
+
+  EXPECT_THAT(ReadlinkWhileZombied("ns/user", buf, sizeof(buf)),
+              SyscallFailsWithErrno(want));
 }
 
 // Test whether /proc/PID/ symlinks can be read for an exited process.
 TEST(ProcPidSymlink, SubprocessExited) {
-  // FIXME(gvisor.dev/issue/164): These all succeed on gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   char buf[1];
 
   EXPECT_THAT(ReadlinkWhileExited("exe", buf, sizeof(buf)),
@@ -1414,14 +1469,24 @@ TEST(ProcPidFile, SubprocessRunning) {
 
   EXPECT_THAT(ReadWhileRunning("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileRunning("oom_score", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileRunning("oom_score_adj", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 // Test whether /proc/PID/ files can be read for a zombie process.
 TEST(ProcPidFile, SubprocessZombie) {
   char buf[1];
 
-  // 4.17: Succeeds and returns 1
-  // gVisor: Succeeds and returns 0
+  // FIXME(gvisor.dev/issue/164): Loosen requirement due to inconsistent
+  // behavior on different kernels.
+  //
+  // ~4.3: Succeds and returns 0.
+  // 4.17: Succeeds and returns 1.
+  // gVisor: Succeeds and returns 0.
   EXPECT_THAT(ReadWhileZombied("auxv", buf, sizeof(buf)), SyscallSucceeds());
 
   EXPECT_THAT(ReadWhileZombied("cmdline", buf, sizeof(buf)),
@@ -1445,9 +1510,18 @@ TEST(ProcPidFile, SubprocessZombie) {
   EXPECT_THAT(ReadWhileZombied("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
+  EXPECT_THAT(ReadWhileZombied("oom_score", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileZombied("oom_score_adj", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
   // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
+  //
+  // ~4.3: Fails and returns EACCES.
   // gVisor & 4.17: Succeeds and returns 1.
+  //
   // EXPECT_THAT(ReadWhileZombied("io", buf, sizeof(buf)),
   //          SyscallFailsWithErrno(EACCES));
 }
@@ -1456,9 +1530,12 @@ TEST(ProcPidFile, SubprocessZombie) {
 TEST(ProcPidFile, SubprocessExited) {
   char buf[1];
 
-  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between kernels
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between kernels.
+  //
+  // ~4.3: Fails and returns ESRCH.
   // gVisor: Fails with ESRCH.
   // 4.17: Succeeds and returns 1.
+  //
   // EXPECT_THAT(ReadWhileExited("auxv", buf, sizeof(buf)),
   //            SyscallFailsWithErrno(ESRCH));
 
@@ -1500,6 +1577,15 @@ TEST(ProcPidFile, SubprocessExited) {
 
   EXPECT_THAT(ReadWhileExited("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  if (!IsRunningOnGvisor()) {
+    // FIXME(gvisor.dev/issue/164): Succeeds on gVisor.
+    EXPECT_THAT(ReadWhileExited("oom_score", buf, sizeof(buf)),
+                SyscallFailsWithErrno(ESRCH));
+  }
+
+  EXPECT_THAT(ReadWhileExited("oom_score_adj", buf, sizeof(buf)),
+              SyscallFailsWithErrno(ESRCH));
 }
 
 PosixError DirContainsImpl(absl::string_view path,
@@ -1630,7 +1716,7 @@ TEST(ProcTask, KilledThreadsDisappear) {
   EXPECT_NO_ERRNO(DirContainsExactly("/proc/self/task",
                                      TaskFiles(initial, {child1.Tid()})));
 
-  // Stat child1's task file.
+  // Stat child1's task file. Regression test for b/32097707.
   struct stat statbuf;
   const std::string child1_task_file =
       absl::StrCat("/proc/self/task/", child1.Tid());
@@ -1658,7 +1744,7 @@ TEST(ProcTask, KilledThreadsDisappear) {
   EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
       "/proc/self/task", TaskFiles(initial, {child3.Tid(), child5.Tid()})));
 
-  // Stat child1's task file again.  This time it should fail.
+  // Stat child1's task file again.  This time it should fail. See b/32097707.
   EXPECT_THAT(stat(child1_task_file.c_str(), &statbuf),
               SyscallFailsWithErrno(ENOENT));
 
@@ -1813,7 +1899,7 @@ TEST(ProcSysVmOvercommitMemory, HasNumericValue) {
 }
 
 // Check that link for proc fd entries point the target node, not the
-// symlink itself.
+// symlink itself. Regression test for b/31155070.
 TEST(ProcTaskFd, FstatatFollowsSymlink) {
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
@@ -1872,6 +1958,20 @@ TEST(ProcMounts, IsSymlink) {
   EXPECT_EQ(link, "self/mounts");
 }
 
+TEST(ProcSelfMountinfo, RequiredFieldsArePresent) {
+  auto mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/mountinfo"));
+  EXPECT_THAT(
+      mountinfo,
+      AllOf(
+          // Root mount.
+          ContainsRegex(
+              R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ /\S* / (rw|ro).*- \S+ \S+ (rw|ro)\S*)"),
+          // Proc mount - always rw.
+          ContainsRegex(
+              R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ / /proc rw.*- \S+ \S+ rw\S*)")));
+}
+
 // Check that /proc/self/mounts looks something like a real mounts file.
 TEST(ProcSelfMounts, RequiredFieldsArePresent) {
   auto mounts = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/mounts"));
@@ -1884,43 +1984,77 @@ TEST(ProcSelfMounts, RequiredFieldsArePresent) {
 }
 
 void CheckDuplicatesRecursively(std::string path) {
-  errno = 0;
-  DIR* dir = opendir(path.c_str());
-  if (dir == nullptr) {
-    // Ignore any directories we can't read or missing directories as the
-    // directory could have been deleted/mutated from the time the parent
-    // directory contents were read.
-    return;
-  }
-  auto dir_closer = Cleanup([&dir]() { closedir(dir); });
-  std::unordered_set<std::string> children;
-  while (true) {
-    // Readdir(3): If the end of the directory stream is reached, NULL is
-    // returned and errno is not changed.  If an error occurs, NULL is returned
-    // and errno is set appropriately.  To distinguish end of stream and from an
-    // error, set errno to zero before calling readdir() and then check the
-    // value of errno if NULL is returned.
+  std::vector<std::string> child_dirs;
+
+  // There is the known issue of the linux procfs, that two consequent calls of
+  // readdir can return the same entry twice if between these calls one or more
+  // entries have been removed from this directory.
+  int max_attempts = 5;
+  for (int i = 0; i < max_attempts; i++) {
+    child_dirs.clear();
     errno = 0;
-    struct dirent* dp = readdir(dir);
-    if (dp == nullptr) {
-      ASSERT_EQ(errno, 0) << path;
-      break;  // We're done.
+    bool success = true;
+    DIR* dir = opendir(path.c_str());
+    if (dir == nullptr) {
+      // Ignore any directories we can't read or missing directories as the
+      // directory could have been deleted/mutated from the time the parent
+      // directory contents were read.
+      return;
     }
+    auto dir_closer = Cleanup([&dir]() { closedir(dir); });
+    std::unordered_set<std::string> children;
+    while (true) {
+      // Readdir(3): If the end of the directory stream is reached, NULL is
+      // returned and errno is not changed.  If an error occurs, NULL is
+      // returned and errno is set appropriately.  To distinguish end of stream
+      // and from an error, set errno to zero before calling readdir() and then
+      // check the value of errno if NULL is returned.
+      errno = 0;
+      struct dirent* dp = readdir(dir);
+      if (dp == nullptr) {
+        // Linux will return EINVAL when calling getdents on a /proc/tid/net
+        // file corresponding to a zombie task.
+        // See fs/proc/proc_net.c:proc_tgid_net_readdir().
+        //
+        // We just ignore the directory in this case.
+        if (errno == EINVAL && absl::StartsWith(path, "/proc/") &&
+            absl::EndsWith(path, "/net")) {
+          break;
+        }
 
-    if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
-      continue;
+        // Otherwise, no errors are allowed.
+        ASSERT_EQ(errno, 0) << path;
+        break;  // We're done.
+      }
+
+      const std::string name = dp->d_name;
+
+      if (name == "." || name == "..") {
+        continue;
+      }
+
+      // Ignore a duplicate entry if it isn't the last attempt.
+      if (i == max_attempts - 1) {
+        ASSERT_EQ(children.find(name), children.end())
+            << absl::StrCat(path, "/", name);
+      } else if (children.find(name) != children.end()) {
+        std::cerr << "Duplicate entry: " << i << ":"
+                  << absl::StrCat(path, "/", name) << std::endl;
+        success = false;
+        break;
+      }
+      children.insert(name);
+
+      if (dp->d_type == DT_DIR) {
+        child_dirs.push_back(name);
+      }
     }
-
-    ASSERT_EQ(children.find(std::string(dp->d_name)), children.end())
-        << dp->d_name;
-    children.insert(std::string(dp->d_name));
-
-    ASSERT_NE(dp->d_type, DT_UNKNOWN);
-
-    if (dp->d_type != DT_DIR) {
-      continue;
+    if (success) {
+      break;
     }
-    CheckDuplicatesRecursively(absl::StrCat(path, "/", dp->d_name));
+  }
+  for (auto dname = child_dirs.begin(); dname != child_dirs.end(); dname++) {
+    CheckDuplicatesRecursively(absl::StrCat(path, "/", *dname));
   }
 }
 
@@ -1983,8 +2117,46 @@ TEST(Proc, GetdentsEnoent) {
       },
       nullptr, nullptr));
   char buf[1024];
-  ASSERT_THAT(syscall(SYS_getdents, fd.get(), buf, sizeof(buf)),
+  ASSERT_THAT(syscall(SYS_getdents64, fd.get(), buf, sizeof(buf)),
               SyscallFailsWithErrno(ENOENT));
+}
+
+void CheckSyscwFromIOFile(const std::string& path, const std::string& regex) {
+  std::string output;
+  ASSERT_NO_ERRNO(GetContents(path, &output));
+  ASSERT_THAT(output, ContainsRegex(absl::StrCat("syscw:\\s+", regex, "\n")));
+}
+
+// Checks that there is variable accounting of IO between threads/tasks.
+TEST(Proc, PidTidIOAccounting) {
+  absl::Notification notification;
+
+  // Run a thread with a bunch of writes. Check that io account records exactly
+  // the number of write calls. File open/close is there to prevent buffering.
+  ScopedThread writer([&notification] {
+    const int num_writes = 100;
+    for (int i = 0; i < num_writes; i++) {
+      auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+      ASSERT_NO_ERRNO(SetContents(path.path(), "a"));
+    }
+    notification.Notify();
+    const std::string& writer_dir =
+        absl::StrCat("/proc/", getpid(), "/task/", gettid(), "/io");
+
+    CheckSyscwFromIOFile(writer_dir, std::to_string(num_writes));
+  });
+
+  // Run a thread and do no writes. Check that no writes are recorded.
+  ScopedThread noop([&notification] {
+    notification.WaitForNotification();
+    const std::string& noop_dir =
+        absl::StrCat("/proc/", getpid(), "/task/", gettid(), "/io");
+
+    CheckSyscwFromIOFile(noop_dir, "0");
+  });
+
+  writer.Join();
+  noop.Join();
 }
 
 }  // namespace
@@ -1997,5 +2169,5 @@ int main(int argc, char** argv) {
   }
 
   gvisor::testing::TestInit(&argc, &argv);
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

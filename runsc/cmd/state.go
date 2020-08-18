@@ -19,11 +19,11 @@ import (
 	"encoding/json"
 	"os"
 
-	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // State implements subcommands.Command for the "state" command.

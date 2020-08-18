@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // FilesystemFlags matches include/linux/fs.h:file_system_type.fs_flags.
@@ -85,20 +85,6 @@ func RegisterFilesystem(f Filesystem) {
 		panic(fmt.Sprintf("filesystem already registered at %q", f.Name()))
 	}
 	filesystems.registered[f.Name()] = f
-}
-
-// UnregisterFilesystem removes a file system from the global set. To keep the
-// file system set compatible with save/restore, UnregisterFilesystem must be
-// called before save/restore methods.
-//
-// For instance, packages may unregister their file system after it is mounted.
-// This makes sense for pseudo file systems that should not be visible or
-// mountable. See whitelistfs in fs/host/fs.go for one example.
-func UnregisterFilesystem(name string) {
-	filesystems.mu.Lock()
-	defer filesystems.mu.Unlock()
-
-	delete(filesystems.registered, name)
 }
 
 // FindFilesystem returns a Filesystem registered at name or (nil, false) if name

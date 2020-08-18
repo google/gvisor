@@ -50,5 +50,6 @@ func linuxToFlags(mask uint) fs.FileFlags {
 		Directory:   mask&linux.O_DIRECTORY != 0,
 		Async:       mask&linux.O_ASYNC != 0,
 		LargeFile:   mask&linux.O_LARGEFILE != 0,
+		Truncate:    mask&linux.O_TRUNC != 0,
 	}
 }

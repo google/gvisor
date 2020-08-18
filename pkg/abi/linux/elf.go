@@ -102,4 +102,7 @@ const (
 
 	// NT_X86_XSTATE is for x86 extended state using xsave.
 	NT_X86_XSTATE = 0x202
+
+	// NT_ARM_TLS is for ARM TLS register.
+	NT_ARM_TLS = 0x401
 )

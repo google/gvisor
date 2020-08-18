@@ -21,3 +21,11 @@ package external
 type External struct {
 	j int64
 }
+
+// NotPacked is an unaligned Marshallable type for use in testing.
+//
+// +marshal
+type NotPacked struct {
+	a int32
+	b byte `marshal:"unaligned"`
+}

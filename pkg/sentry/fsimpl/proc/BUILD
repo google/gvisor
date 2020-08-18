@@ -1,50 +1,68 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "proc",
     srcs = [
-        "filesystems.go",
-        "loadavg.go",
-        "meminfo.go",
-        "mounts.go",
-        "net.go",
-        "proc.go",
-        "stat.go",
-        "sys.go",
+        "filesystem.go",
+        "subtasks.go",
         "task.go",
-        "version.go",
+        "task_fds.go",
+        "task_files.go",
+        "task_net.go",
+        "tasks.go",
+        "tasks_files.go",
+        "tasks_sys.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/proc",
+    visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
-        "//pkg/sentry/fs",
+        "//pkg/refs",
+        "//pkg/safemem",
+        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsbridge",
+        "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
         "//pkg/sentry/mm",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
+        "//pkg/syserror",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/usermem",
     ],
 )
 
 go_test(
     name = "proc_test",
     size = "small",
-    srcs = ["net_test.go"],
-    embed = [":proc"],
+    srcs = [
+        "tasks_sys_test.go",
+        "tasks_test.go",
+    ],
+    library = ":proc",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/fspath",
+        "//pkg/sentry/contexttest",
+        "//pkg/sentry/fsimpl/testutil",
+        "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/inet",
+        "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/vfs",
+        "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

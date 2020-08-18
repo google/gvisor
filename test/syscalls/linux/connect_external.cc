@@ -56,7 +56,7 @@ TEST_P(GoferStreamSeqpacketTest, Echo) {
   ProtocolSocket proto;
   std::tie(env, proto) = GetParam();
 
-  char *val = getenv(env.c_str());
+  char* val = getenv(env.c_str());
   ASSERT_NE(val, nullptr);
   std::string root(val);
 
@@ -69,7 +69,7 @@ TEST_P(GoferStreamSeqpacketTest, Echo) {
   addr.sun_family = AF_UNIX;
   memcpy(addr.sun_path, socket_path.c_str(), socket_path.length());
 
-  ASSERT_THAT(connect(sock.get(), reinterpret_cast<struct sockaddr *>(&addr),
+  ASSERT_THAT(connect(sock.get(), reinterpret_cast<struct sockaddr*>(&addr),
                       sizeof(addr)),
               SyscallSucceeds());
 
@@ -92,7 +92,7 @@ TEST_P(GoferStreamSeqpacketTest, NonListening) {
   ProtocolSocket proto;
   std::tie(env, proto) = GetParam();
 
-  char *val = getenv(env.c_str());
+  char* val = getenv(env.c_str());
   ASSERT_NE(val, nullptr);
   std::string root(val);
 
@@ -105,7 +105,7 @@ TEST_P(GoferStreamSeqpacketTest, NonListening) {
   addr.sun_family = AF_UNIX;
   memcpy(addr.sun_path, socket_path.c_str(), socket_path.length());
 
-  ASSERT_THAT(connect(sock.get(), reinterpret_cast<struct sockaddr *>(&addr),
+  ASSERT_THAT(connect(sock.get(), reinterpret_cast<struct sockaddr*>(&addr),
                       sizeof(addr)),
               SyscallFailsWithErrno(ECONNREFUSED));
 }
@@ -127,7 +127,7 @@ using GoferDgramTest = ::testing::TestWithParam<std::string>;
 // unnamed. The server thus has no way to reply to us.
 TEST_P(GoferDgramTest, Null) {
   std::string env = GetParam();
-  char *val = getenv(env.c_str());
+  char* val = getenv(env.c_str());
   ASSERT_NE(val, nullptr);
   std::string root(val);
 
@@ -140,7 +140,7 @@ TEST_P(GoferDgramTest, Null) {
   addr.sun_family = AF_UNIX;
   memcpy(addr.sun_path, socket_path.c_str(), socket_path.length());
 
-  ASSERT_THAT(connect(sock.get(), reinterpret_cast<struct sockaddr *>(&addr),
+  ASSERT_THAT(connect(sock.get(), reinterpret_cast<struct sockaddr*>(&addr),
                       sizeof(addr)),
               SyscallSucceeds());
 

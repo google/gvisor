@@ -16,21 +16,21 @@ package gofer
 
 import (
 	"errors"
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fdpipe"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -38,8 +38,7 @@ import (
 //
 // +stateify savable
 type inodeOperations struct {
-	fsutil.InodeNotVirtual           `state:"nosave"`
-	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNotVirtual `state:"nosave"`
 
 	// fileState implements fs.CachedFileObject. It exists
 	// to break a circular load dependency between inodeOperations
@@ -180,7 +179,7 @@ func (i *inodeFileState) setSharedHandlesLocked(flags fs.FileFlags, h *handles) 
 // given flags.
 func (i *inodeFileState) getHandles(ctx context.Context, flags fs.FileFlags, cache *fsutil.CachingInodeOperations) (*handles, error) {
 	if !i.canShareHandles() {
-		return newHandles(ctx, i.file, flags)
+		return newHandles(ctx, i.s.client, i.file, flags)
 	}
 
 	i.handlesMu.Lock()
@@ -201,19 +200,25 @@ func (i *inodeFileState) getHandles(ctx context.Context, flags fs.FileFlags, cac
 // whether previously open read handle was recreated. Host mappings must be
 // invalidated if so.
 func (i *inodeFileState) getHandlesLocked(ctx context.Context, flags fs.FileFlags) (*handles, bool, error) {
-	// Do we already have usable shared handles?
-	if flags.Write {
+	// Check if we are able to use cached handles.
+	if flags.Truncate && p9.VersionSupportsOpenTruncateFlag(i.s.client.Version()) {
+		// If we are truncating (and the gofer supports it), then we
+		// always need a new handle. Don't return one from the cache.
+	} else if flags.Write {
 		if i.writeHandles != nil && (i.writeHandlesRW || !flags.Read) {
+			// File is opened for writing, and we have cached write
+			// handles that we can use.
 			i.writeHandles.IncRef()
 			return i.writeHandles, false, nil
 		}
 	} else if i.readHandles != nil {
+		// File is opened for reading and we have cached handles.
 		i.readHandles.IncRef()
 		return i.readHandles, false, nil
 	}
 
-	// No; get new handles and cache them for future sharing.
-	h, err := newHandles(ctx, i.file, flags)
+	// Get new handles and cache them for future sharing.
+	h, err := newHandles(ctx, i.s.client, i.file, flags)
 	if err != nil {
 		return nil, false, err
 	}
@@ -239,7 +244,7 @@ func (i *inodeFileState) recreateReadHandles(ctx context.Context, writer *handle
 	if !flags.Read {
 		// Writer can't be used for read, must create a new handle.
 		var err error
-		h, err = newHandles(ctx, i.file, fs.FileFlags{Read: true})
+		h, err = newHandles(ctx, i.s.client, i.file, fs.FileFlags{Read: true})
 		if err != nil {
 			return err
 		}
@@ -268,7 +273,7 @@ func (i *inodeFileState) recreateReadHandles(ctx context.Context, writer *handle
 	// operations on the old will see the new data. Then, make the new handle take
 	// ownereship of the old FD and mark the old readHandle to not close the FD
 	// when done.
-	if err := syscall.Dup2(h.Host.FD(), i.readHandles.Host.FD()); err != nil {
+	if err := syscall.Dup3(h.Host.FD(), i.readHandles.Host.FD(), syscall.O_CLOEXEC); err != nil {
 		return err
 	}
 
@@ -436,8 +441,9 @@ func (i *inodeOperations) Release(ctx context.Context) {
 	// asynchronously.
 	//
 	// We use AsyncWithContext to avoid needing to allocate an extra
-	// anonymous function on the heap.
-	fs.AsyncWithContext(ctx, i.fileState.Release)
+	// anonymous function on the heap. We must use background context
+	// because the async work cannot happen on the task context.
+	fs.AsyncWithContext(context.Background(), i.fileState.Release)
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
@@ -598,6 +604,26 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length 
 	return i.fileState.file.setAttr(ctx, p9.SetAttrMask{Size: true}, p9.SetAttr{Size: uint64(length)})
 }
 
+// GetXattr implements fs.InodeOperations.GetXattr.
+func (i *inodeOperations) GetXattr(ctx context.Context, _ *fs.Inode, name string, size uint64) (string, error) {
+	return i.fileState.file.getXattr(ctx, name, size)
+}
+
+// SetXattr implements fs.InodeOperations.SetXattr.
+func (i *inodeOperations) SetXattr(ctx context.Context, _ *fs.Inode, name string, value string, flags uint32) error {
+	return i.fileState.file.setXattr(ctx, name, value, flags)
+}
+
+// ListXattr implements fs.InodeOperations.ListXattr.
+func (i *inodeOperations) ListXattr(ctx context.Context, _ *fs.Inode, size uint64) (map[string]struct{}, error) {
+	return i.fileState.file.listXattr(ctx, size)
+}
+
+// RemoveXattr implements fs.InodeOperations.RemoveXattr.
+func (i *inodeOperations) RemoveXattr(ctx context.Context, _ *fs.Inode, name string) error {
+	return i.fileState.file.removeXattr(ctx, name)
+}
+
 // Allocate implements fs.InodeOperations.Allocate.
 func (i *inodeOperations) Allocate(ctx context.Context, inode *fs.Inode, offset, length int64) error {
 	// This can only be called for files anyway.
@@ -615,7 +641,7 @@ func (i *inodeOperations) Allocate(ctx context.Context, inode *fs.Inode, offset,
 
 // WriteOut implements fs.InodeOperations.WriteOut.
 func (i *inodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
-	if !i.session().cachePolicy.cacheUAttrs(inode) {
+	if inode.MountSource.Flags.ReadOnly || !i.session().cachePolicy.cacheUAttrs(inode) {
 		return nil
 	}
 
@@ -685,13 +711,10 @@ func init() {
 }
 
 // AddLink implements InodeOperations.AddLink, but is currently a noop.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (*inodeOperations) AddLink() {}
 
 // DropLink implements InodeOperations.DropLink, but is currently a noop.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (*inodeOperations) DropLink() {}
 
 // NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) NotifyStatusChange(ctx context.Context) {}

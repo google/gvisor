@@ -26,15 +26,12 @@
 // IsRunningOnGvisor returns true if the test is known to be running on gVisor.
 // GvisorPlatform can be used to get more detail:
 //
-//   switch (GvisorPlatform()) {
-//     case Platform::kNative:
-//     case Platform::kGvisor:
-//       EXPECT_THAT(mmap(...), SyscallSucceeds());
-//       break;
-//     case Platform::kPtrace:
-//       EXPECT_THAT(mmap(...), SyscallFailsWithErrno(ENOSYS));
-//       break;
+//   if (GvisorPlatform() == Platform::kPtrace) {
+//       ...
 //   }
+//
+// SetupGvisorDeathTest ensures that signal handling does not interfere with
+/// tests that rely on fatal signals.
 //
 // Matchers
 // ========
@@ -198,6 +195,8 @@
 namespace gvisor {
 namespace testing {
 
+constexpr char kTestOnGvisor[] = "TEST_ON_GVISOR";
+
 // TestInit must be called prior to RUN_ALL_TESTS.
 //
 // This parses all arguments and adjusts argc and argv appropriately.
@@ -213,15 +212,24 @@ void TestInit(int* argc, char*** argv);
     if (expr) GTEST_SKIP() << #expr; \
   } while (0)
 
-enum class Platform {
-  kNative,
-  kKVM,
-  kPtrace,
-};
-bool IsRunningOnGvisor();
-Platform GvisorPlatform();
+// Platform contains platform names.
+namespace Platform {
+constexpr char kNative[] = "native";
+constexpr char kPtrace[] = "ptrace";
+constexpr char kKVM[] = "kvm";
+constexpr char kFuchsia[] = "fuchsia";
+}  // namespace Platform
 
+bool IsRunningOnGvisor();
+const std::string GvisorPlatform();
+bool IsRunningWithHostinet();
+// TODO(gvisor.dev/issue/1624): Delete once VFS1 is gone.
+bool IsRunningWithVFS1();
+bool IsFUSEEnabled();
+
+#ifdef __linux__
 void SetupGvisorDeathTest();
+#endif
 
 struct KernelVersion {
   int major;
@@ -560,6 +568,25 @@ ssize_t ApplyFileIoSyscall(F const& f, size_t const count) {
 
 }  // namespace internal
 
+inline PosixErrorOr<std::string> ReadAllFd(int fd) {
+  std::string all;
+  all.reserve(128 * 1024);  // arbitrary.
+
+  std::vector<char> buffer(16 * 1024);
+  for (;;) {
+    auto const bytes = RetryEINTR(read)(fd, buffer.data(), buffer.size());
+    if (bytes < 0) {
+      return PosixError(errno, "file read");
+    }
+    if (bytes == 0) {
+      return std::move(all);
+    }
+    if (bytes > 0) {
+      all.append(buffer.data(), bytes);
+    }
+  }
+}
+
 inline ssize_t ReadFd(int fd, void* buf, size_t count) {
   return internal::ApplyFileIoSyscall(
       [&](size_t completed) {
@@ -762,7 +789,14 @@ MATCHER_P2(EquivalentWithin, target, tolerance,
   return Equivalent(arg, target, tolerance);
 }
 
+// Returns the absolute path to the a data dependency. 'path' is the runfile
+// location relative to workspace root.
+#ifdef __linux__
+std::string RunfilePath(std::string path);
+#endif
+
 void TestInit(int* argc, char*** argv);
+int RunAllTests(void);
 
 }  // namespace testing
 }  // namespace gvisor

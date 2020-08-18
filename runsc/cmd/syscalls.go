@@ -25,16 +25,17 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Syscalls implements subcommands.Command for the "syscalls" command.
 type Syscalls struct {
-	output string
-	os     string
-	arch   string
+	format   string
+	os       string
+	arch     string
+	filename string
 }
 
 // CompatibilityInfo is a map of system and architecture to compatibility doc.
@@ -95,16 +96,17 @@ func (*Syscalls) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (s *Syscalls) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&s.output, "o", "table", "Output format (table, csv, json).")
+	f.StringVar(&s.format, "format", "table", "Output format (table, csv, json).")
 	f.StringVar(&s.os, "os", osAll, "The OS (e.g. linux)")
 	f.StringVar(&s.arch, "arch", archAll, "The CPU architecture (e.g. amd64).")
+	f.StringVar(&s.filename, "filename", "", "Output filename (otherwise stdout).")
 }
 
 // Execute implements subcommands.Command.Execute.
 func (s *Syscalls) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	out, ok := outputMap[s.output]
+	out, ok := outputMap[s.format]
 	if !ok {
-		Fatalf("Unsupported output format %q", s.output)
+		Fatalf("Unsupported output format %q", s.format)
 	}
 
 	// Build map of all supported architectures.
@@ -124,7 +126,14 @@ func (s *Syscalls) Execute(_ context.Context, f *flag.FlagSet, args ...interface
 		Fatalf("%v", err)
 	}
 
-	if err := out(os.Stdout, info); err != nil {
+	w := os.Stdout // Default.
+	if s.filename != "" {
+		w, err = os.OpenFile(s.filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		if err != nil {
+			Fatalf("Error opening %q: %v", s.filename, err)
+		}
+	}
+	if err := out(w, info); err != nil {
 		Fatalf("Error writing output: %v", err)
 	}
 

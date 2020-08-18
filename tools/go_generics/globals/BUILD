@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -8,6 +8,6 @@ go_library(
         "globals_visitor.go",
         "scope.go",
     ],
-    importpath = "gvisor.dev/gvisor/tools/go_generics/globals",
+    stateify = False,
     visibility = ["//tools/go_generics:__pkg__"],
 )

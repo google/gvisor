@@ -18,10 +18,10 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/temp_umask.h"
 #include "test/util/capability_util.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
+#include "test/util/temp_umask.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -36,20 +36,11 @@ class MkdirTest : public ::testing::Test {
 
   // TearDown unlinks created files.
   void TearDown() override {
-    // FIXME(edahlgren): We don't currently implement rmdir.
-    // We do this unconditionally because there's no harm in trying.
-    rmdir(dirname_.c_str());
+    EXPECT_THAT(rmdir(dirname_.c_str()), SyscallSucceeds());
   }
 
   std::string dirname_;
 };
-
-TEST_F(MkdirTest, DISABLED_CanCreateReadbleDir) {
-  ASSERT_THAT(mkdir(dirname_.c_str(), 0444), SyscallSucceeds());
-  ASSERT_THAT(
-      open(JoinPath(dirname_, "anything").c_str(), O_RDWR | O_CREAT, 0666),
-      SyscallFailsWithErrno(EACCES));
-}
 
 TEST_F(MkdirTest, CanCreateWritableDir) {
   ASSERT_THAT(mkdir(dirname_.c_str(), 0777), SyscallSucceeds());
@@ -84,10 +75,11 @@ TEST_F(MkdirTest, FailsOnDirWithoutWritePerms) {
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
 
-  auto parent = ASSERT_NO_ERRNO_AND_VALUE(
-      TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0555));
-  auto dir = JoinPath(parent.path(), "foo");
-  ASSERT_THAT(mkdir(dir.c_str(), 0777), SyscallFailsWithErrno(EACCES));
+  ASSERT_THAT(mkdir(dirname_.c_str(), 0555), SyscallSucceeds());
+  auto dir = JoinPath(dirname_.c_str(), "foo");
+  EXPECT_THAT(mkdir(dir.c_str(), 0777), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(open(JoinPath(dirname_, "file").c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EACCES));
 }
 
 }  // namespace

@@ -15,10 +15,14 @@
 package proc
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"bytes"
+
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
+
+// LINT.IfChange
 
 func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	k := kernel.KernelFromContext(ctx)
@@ -27,9 +31,11 @@ func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		// Kernel is always initialized with a FeatureSet.
 		panic("cpuinfo read with nil FeatureSet")
 	}
-	contents := make([]byte, 0, 1024)
+	var buf bytes.Buffer
 	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
-		contents = append(contents, []byte(features.CPUInfo(i))...)
+		features.WriteCPUInfoTo(i, &buf)
 	}
-	return newStaticProcInode(ctx, msrc, contents)
+	return newStaticProcInode(ctx, msrc, buf.Bytes())
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

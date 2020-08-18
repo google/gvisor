@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 )
 
@@ -48,7 +49,7 @@ func (d *Dirent) saveChildren() map[string]*Dirent {
 	for name, w := range d.children {
 		if rc := w.Get(); rc != nil {
 			// Drop the reference count obtain in w.Get()
-			rc.DecRef()
+			rc.DecRef(context.Background())
 
 			cd := rc.(*Dirent)
 			if cd.IsNegative() {

@@ -1,17 +1,21 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "gomarshal",
     srcs = [
         "generator.go",
         "generator_interfaces.go",
+        "generator_interfaces_array_newtype.go",
+        "generator_interfaces_primitive_newtype.go",
+        "generator_interfaces_struct.go",
         "generator_tests.go",
         "util.go",
     ],
-    importpath = "gvisor.dev/gvisor/tools/go_marshal/gomarshal",
+    stateify = False,
     visibility = [
         "//:sandbox",
     ],
+    deps = ["//tools/tags"],
 )

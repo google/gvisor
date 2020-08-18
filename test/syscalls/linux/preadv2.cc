@@ -35,6 +35,8 @@ namespace {
 #ifndef SYS_preadv2
 #if defined(__x86_64__)
 #define SYS_preadv2 327
+#elif defined(__aarch64__)
+#define SYS_preadv2 286
 #else
 #error "Unknown architecture"
 #endif
@@ -202,7 +204,7 @@ TEST(Preadv2Test, TestInvalidOffset) {
   iov[0].iov_len = 0;
 
   EXPECT_THAT(preadv2(fd.get(), iov.get(), /*iovcnt=*/1, /*offset=*/-8,
-                      /*flags=*/RWF_HIPRI),
+                      /*flags=*/0),
               SyscallFailsWithErrno(EINVAL));
 }
 

@@ -16,17 +16,22 @@
 package fasync
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// New creates a new FileAsync.
+// New creates a new fs.FileAsync.
 func New() fs.FileAsync {
+	return &FileAsync{}
+}
+
+// NewVFS2 creates a new vfs.FileAsync.
+func NewVFS2() vfs.FileAsync {
 	return &FileAsync{}
 }
 
@@ -170,4 +175,14 @@ func (a *FileAsync) SetOwnerProcessGroup(requester *kernel.Task, recipient *kern
 	a.recipientT = nil
 	a.recipientTG = nil
 	a.recipientPG = recipient
+}
+
+// ClearOwner unsets the current signal recipient.
+func (a *FileAsync) ClearOwner() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.requester = nil
+	a.recipientT = nil
+	a.recipientTG = nil
+	a.recipientPG = nil
 }

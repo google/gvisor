@@ -12,9 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build amd64
+
 package linux
 
+// Constants for open(2).
+const (
+	O_DIRECT    = 000040000
+	O_LARGEFILE = 000100000
+	O_DIRECTORY = 000200000
+	O_NOFOLLOW  = 000400000
+)
+
 // Stat represents struct stat.
+//
+// +marshal
 type Stat struct {
 	Dev     uint64
 	Ino     uint64

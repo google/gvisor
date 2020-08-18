@@ -16,11 +16,11 @@ package eventchannel
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // testEmitter is an emitter that can be used in tests. It records all events
@@ -78,7 +78,7 @@ func TestMultiEmitter(t *testing.T) {
 	for _, name := range names {
 		m := testMessage{name: name}
 		if _, err := me.Emit(m); err != nil {
-			t.Fatal("me.Emit(%v) failed: %v", m, err)
+			t.Fatalf("me.Emit(%v) failed: %v", m, err)
 		}
 	}
 
@@ -96,7 +96,7 @@ func TestMultiEmitter(t *testing.T) {
 
 	// Close multiEmitter.
 	if err := me.Close(); err != nil {
-		t.Fatal("me.Close() failed: %v", err)
+		t.Fatalf("me.Close() failed: %v", err)
 	}
 
 	// All testEmitters should be closed.

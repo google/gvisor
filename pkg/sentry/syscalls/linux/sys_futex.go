@@ -21,8 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // futexWaitRestartBlock encapsulates the state required to restart futex(2)
@@ -73,7 +73,7 @@ func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, fo
 		err = t.BlockWithDeadline(w.C, true, ktime.FromTimespec(ts))
 	}
 
-	t.Futex().WaitComplete(w)
+	t.Futex().WaitComplete(w, t)
 	return 0, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 }
 
@@ -95,7 +95,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 	}
 
 	remaining, err := t.BlockWithTimeout(w.C, !forever, duration)
-	t.Futex().WaitComplete(w)
+	t.Futex().WaitComplete(w, t)
 	if err == nil {
 		return 0, nil
 	}
@@ -148,7 +148,7 @@ func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr usermem.A
 		timer.Destroy()
 	}
 
-	t.Futex().WaitComplete(w)
+	t.Futex().WaitComplete(w, t)
 	return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 }
 
@@ -198,7 +198,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		switch cmd {
 		case linux.FUTEX_WAIT:
 			// WAIT uses a relative timeout.
-			mask = ^uint32(0)
+			mask = linux.FUTEX_BITSET_MATCH_ANY
 			var timeoutDur time.Duration
 			if !forever {
 				timeoutDur = time.Duration(timespec.ToNsecCapped()) * time.Nanosecond
@@ -226,6 +226,11 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if mask == 0 {
 			return 0, nil, syserror.EINVAL
 		}
+		if val <= 0 {
+			// The Linux kernel wakes one waiter even if val is
+			// non-positive.
+			val = 1
+		}
 		n, err := t.Futex().Wake(t, addr, private, mask, val)
 		return uintptr(n), nil, err
 
@@ -242,6 +247,11 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.FUTEX_WAKE_OP:
 		op := uint32(val3)
+		if val <= 0 {
+			// The Linux kernel wakes one waiter even if val is
+			// non-positive.
+			val = 1
+		}
 		n, err := t.Futex().WakeOp(t, addr, naddr, private, val, nreq, op)
 		return uintptr(n), nil, err
 
@@ -275,4 +285,50 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		// We don't even know about this command.
 		return 0, nil, syserror.ENOSYS
 	}
+}
+
+// SetRobustList implements linux syscall set_robust_list(2).
+func SetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// Despite the syscall using the name 'pid' for this variable, it is
+	// very much a tid.
+	head := args[0].Pointer()
+	length := args[1].SizeT()
+
+	if length != uint(linux.SizeOfRobustListHead) {
+		return 0, nil, syserror.EINVAL
+	}
+	t.SetRobustList(head)
+	return 0, nil, nil
+}
+
+// GetRobustList implements linux syscall get_robust_list(2).
+func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// Despite the syscall using the name 'pid' for this variable, it is
+	// very much a tid.
+	tid := args[0].Int()
+	head := args[1].Pointer()
+	size := args[2].Pointer()
+
+	if tid < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	ot := t
+	if tid != 0 {
+		if ot = t.PIDNamespace().TaskWithID(kernel.ThreadID(tid)); ot == nil {
+			return 0, nil, syserror.ESRCH
+		}
+	}
+
+	// Copy out head pointer.
+	if _, err := t.CopyOut(head, uint64(ot.GetRobustList())); err != nil {
+		return 0, nil, err
+	}
+
+	// Copy out size, which is a constant.
+	if _, err := t.CopyOut(size, uint64(linux.SizeOfRobustListHead)); err != nil {
+		return 0, nil, err
+	}
+
+	return 0, nil, nil
 }

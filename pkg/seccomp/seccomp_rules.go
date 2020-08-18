@@ -49,17 +49,24 @@ func (a AllowAny) String() (s string) {
 // AllowValue specifies a value that needs to be strictly matched.
 type AllowValue uintptr
 
+// GreaterThan specifies a value that needs to be strictly smaller.
+type GreaterThan uintptr
+
 func (a AllowValue) String() (s string) {
 	return fmt.Sprintf("%#x ", uintptr(a))
 }
 
-// Rule stores the whitelist of syscall arguments.
+// Rule stores the allowed syscall arguments.
 //
 // For example:
 // rule := Rule {
 //       AllowValue(linux.ARCH_GET_FS | linux.ARCH_SET_FS), // arg0
 // }
-type Rule [6]interface{}
+type Rule [7]interface{} // 6 arguments + RIP
+
+// RuleIP indicates what rules in the Rule array have to be applied to
+// instruction pointer.
+const RuleIP = 6
 
 func (r Rule) String() (s string) {
 	if len(r) == 0 {
@@ -75,7 +82,7 @@ func (r Rule) String() (s string) {
 	return
 }
 
-// SyscallRules stores a map of OR'ed whitelist rules indexed by the syscall number.
+// SyscallRules stores a map of OR'ed argument rules indexed by the syscall number.
 // If the 'Rules' is empty, we treat it as any argument is allowed.
 //
 // For example:

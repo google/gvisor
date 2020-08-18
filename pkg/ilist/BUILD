@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,7 +8,6 @@ go_library(
     srcs = [
         "interface_list.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/ilist",
     visibility = ["//visibility:public"],
 )
 
@@ -41,7 +39,7 @@ go_test(
         "list_test.go",
         "test_list.go",
     ],
-    embed = [":ilist"],
+    library = ":ilist",
 )
 
 go_template(

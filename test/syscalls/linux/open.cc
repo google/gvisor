@@ -27,6 +27,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -73,6 +74,60 @@ class OpenTest : public FileTest {
   const std::string test_data_ = "hello world\n";
 };
 
+TEST_F(OpenTest, OTrunc) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, OTruncAndReadOnlyDir) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, OTruncAndReadOnlyFile) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncfile");
+  const FileDescriptor existing =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dirpath.c_str(), O_RDWR | O_CREAT, 0666));
+  const FileDescriptor otrunc = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666));
+}
+
+TEST_F(OpenTest, OCreateDirectory) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto dirpath = GetAbsoluteTestTmpdir();
+
+  // Normal case: existing directory.
+  ASSERT_THAT(open(dirpath.c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+  // Trailing separator on existing directory.
+  ASSERT_THAT(open(dirpath.append("/").c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+  // Trailing separator on non-existing directory.
+  ASSERT_THAT(open(JoinPath(dirpath, "non-existent").append("/").c_str(),
+                   O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+  // "." special case.
+  ASSERT_THAT(open(JoinPath(dirpath, ".").c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, MustCreateExisting) {
+  auto dirPath = GetAbsoluteTestTmpdir();
+
+  // Existing directory.
+  ASSERT_THAT(open(dirPath.c_str(), O_RDWR | O_CREAT | O_EXCL, 0666),
+              SyscallFailsWithErrno(EEXIST));
+
+  // Existing file.
+  auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dirPath));
+  ASSERT_THAT(open(newFile.path().c_str(), O_RDWR | O_CREAT | O_EXCL, 0666),
+              SyscallFailsWithErrno(EEXIST));
+}
+
 TEST_F(OpenTest, ReadOnly) {
   char buf;
   const FileDescriptor ro_file =
@@ -91,6 +146,26 @@ TEST_F(OpenTest, WriteOnly) {
   EXPECT_THAT(read(wo_file.get(), &buf, 1), SyscallFailsWithErrno(EBADF));
   EXPECT_THAT(lseek(wo_file.get(), 0, SEEK_SET), SyscallSucceeds());
   EXPECT_THAT(write(wo_file.get(), &buf, 1), SyscallSucceedsWithValue(1));
+}
+
+TEST_F(OpenTest, CreateWithAppend) {
+  std::string data = "text";
+  std::string new_file = NewTempAbsPath();
+  const FileDescriptor file = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(new_file, O_WRONLY | O_APPEND | O_CREAT, 0666));
+  EXPECT_THAT(write(file.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_THAT(lseek(file.get(), 0, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(write(file.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+
+  // Check that the size of the file is correct and that the offset has been
+  // incremented to that size.
+  struct stat s0;
+  EXPECT_THAT(fstat(file.get(), &s0), SyscallSucceeds());
+  EXPECT_EQ(s0.st_size, 2 * data.size());
+  EXPECT_THAT(lseek(file.get(), 0, SEEK_CUR),
+              SyscallSucceedsWithValue(2 * data.size()));
 }
 
 TEST_F(OpenTest, ReadWrite) {
@@ -164,6 +239,28 @@ TEST_F(OpenTest, OpenNoFollowStillFollowsLinksInPath) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(path_via_symlink, O_RDONLY | O_NOFOLLOW));
 }
 
+// Test that open(2) can follow symlinks that point back to the same tree.
+// Test sets up files as follows:
+//   root/child/symlink => redirects to ../..
+//   root/child/target => regular file
+//
+// open("root/child/symlink/root/child/file")
+TEST_F(OpenTest, SymlinkRecurse) {
+  auto root =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  auto child = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(child.path(), "../.."));
+  auto target = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(child.path(), "abc", 0644));
+  auto path_via_symlink =
+      JoinPath(symlink.path(), Basename(root.path()), Basename(child.path()),
+               Basename(target.path()));
+  const auto contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(path_via_symlink));
+  ASSERT_EQ(contents, "abc");
+}
+
 TEST_F(OpenTest, Fault) {
   char* totally_not_null = nullptr;
   ASSERT_THAT(open(totally_not_null, O_RDONLY), SyscallFailsWithErrno(EFAULT));
@@ -191,7 +288,7 @@ TEST_F(OpenTest, AppendOnly) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR | O_APPEND));
   EXPECT_THAT(lseek(fd2.get(), 0, SEEK_CUR), SyscallSucceedsWithValue(0));
 
-  // Then try to write to the first file and make sure the bytes are appended.
+  // Then try to write to the first fd and make sure the bytes are appended.
   EXPECT_THAT(WriteFd(fd1.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(buf.size()));
 
@@ -203,7 +300,7 @@ TEST_F(OpenTest, AppendOnly) {
   EXPECT_THAT(lseek(fd1.get(), 0, SEEK_CUR),
               SyscallSucceedsWithValue(kBufSize * 2));
 
-  // Then try to write to the second file and make sure the bytes are appended.
+  // Then try to write to the second fd and make sure the bytes are appended.
   EXPECT_THAT(WriteFd(fd2.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(buf.size()));
 
@@ -312,6 +409,13 @@ TEST_F(OpenTest, FileNotDirectory) {
               SyscallFailsWithErrno(ENOTDIR));
 }
 
+TEST_F(OpenTest, SymlinkDirectory) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string link = NewTempAbsPath();
+  ASSERT_THAT(symlink(dir.path().c_str(), link.c_str()), SyscallSucceeds());
+  ASSERT_NO_ERRNO(Open(link, O_RDONLY | O_DIRECTORY));
+}
+
 TEST_F(OpenTest, Null) {
   char c = '\0';
   ASSERT_THAT(open(&c, O_RDONLY), SyscallFailsWithErrno(ENOENT));
@@ -370,6 +474,35 @@ TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission_NoRandomSave) {
   struct stat stat;
   EXPECT_THAT(fstat(fd2.get(), &stat), SyscallSucceeds());
   EXPECT_EQ(stat.st_size, 0);
+}
+
+TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  const DisableSave ds;  // Permissions are dropped.
+  std::string path = NewTempAbsPath();
+  int fd;
+  // Create a file without user permissions.
+  EXPECT_THAT(  // SAVE_BELOW
+      fd = open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 055),
+      SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+
+  // Cannot open file because we are owner and have no permissions set.
+  EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+
+  // We *can* chmod the file, because we are the owner.
+  EXPECT_THAT(chmod(path.c_str(), 0755), SyscallSucceeds());
+
+  // Now we can open the file again.
+  EXPECT_THAT(fd = open(path.c_str(), O_RDWR), SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+TEST_F(OpenTest, OpenNonDirectoryWithTrailingSlash) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string bad_path = file.path() + "/";
+  EXPECT_THAT(open(bad_path.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOTDIR));
 }
 
 }  // namespace

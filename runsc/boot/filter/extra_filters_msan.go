@@ -26,6 +26,8 @@ import (
 func instrumentationFilters() seccomp.SyscallRules {
 	Report("MSAN is enabled: syscall filters less restrictive!")
 	return seccomp.SyscallRules{
+		syscall.SYS_CLONE:             {},
+		syscall.SYS_MMAP:              {},
 		syscall.SYS_SCHED_GETAFFINITY: {},
 		syscall.SYS_SET_ROBUST_LIST:   {},
 	}

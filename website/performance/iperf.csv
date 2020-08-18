@@ -1,0 +1,5 @@
+runtime,method,metric,result
+runc,network.download,bandwidth,746386000.0
+runc,network.upload,bandwidth,709808000.0
+runsc,network.download,bandwidth,640303500.0
+runsc,network.upload,bandwidth,482254000.0

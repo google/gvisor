@@ -16,6 +16,7 @@ package inet
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // TestStack is a dummy implementation of Stack for tests.
@@ -27,6 +28,7 @@ type TestStack struct {
 	TCPRecvBufSize    TCPBufferSize
 	TCPSendBufSize    TCPBufferSize
 	TCPSACKFlag       bool
+	Recovery          TCPLossRecovery
 	IPForwarding      bool
 }
 
@@ -48,6 +50,12 @@ func (s *TestStack) Interfaces() map[int32]Interface {
 // InterfaceAddrs implements Stack.InterfaceAddrs.
 func (s *TestStack) InterfaceAddrs() map[int32][]InterfaceAddr {
 	return s.InterfaceAddrsMap
+}
+
+// AddInterfaceAddr implements Stack.AddInterfaceAddr.
+func (s *TestStack) AddInterfaceAddr(idx int32, addr InterfaceAddr) error {
+	s.InterfaceAddrsMap[idx] = append(s.InterfaceAddrsMap[idx], addr)
+	return nil
 }
 
 // SupportsIPv6 implements Stack.SupportsIPv6.
@@ -88,6 +96,17 @@ func (s *TestStack) SetTCPSACKEnabled(enabled bool) error {
 	return nil
 }
 
+// TCPRecovery implements Stack.TCPRecovery.
+func (s *TestStack) TCPRecovery() (TCPLossRecovery, error) {
+	return s.Recovery, nil
+}
+
+// SetTCPRecovery implements Stack.SetTCPRecovery.
+func (s *TestStack) SetTCPRecovery(recovery TCPLossRecovery) error {
+	s.Recovery = recovery
+	return nil
+}
+
 // Statistics implements inet.Stack.Statistics.
 func (s *TestStack) Statistics(stat interface{}, arg string) error {
 	return nil
@@ -99,8 +118,20 @@ func (s *TestStack) RouteTable() []Route {
 }
 
 // Resume implements Stack.Resume.
-func (s *TestStack) Resume() {
+func (s *TestStack) Resume() {}
+
+// RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.
+func (s *TestStack) RegisteredEndpoints() []stack.TransportEndpoint {
+	return nil
 }
+
+// CleanupEndpoints implements inet.Stack.CleanupEndpoints.
+func (s *TestStack) CleanupEndpoints() []stack.TransportEndpoint {
+	return nil
+}
+
+// RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
+func (s *TestStack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
 // Forwarding implements inet.Stack.Forwarding.
 func (s *TestStack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {

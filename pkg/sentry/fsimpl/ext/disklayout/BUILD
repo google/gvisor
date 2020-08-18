@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -23,7 +22,6 @@ go_library(
         "superblock_old.go",
         "test_utils.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -44,6 +42,6 @@ go_test(
         "inode_test.go",
         "superblock_test.go",
     ],
-    embed = [":disklayout"],
+    library = ":disklayout",
     deps = ["//pkg/sentry/kernel/time"],
 )

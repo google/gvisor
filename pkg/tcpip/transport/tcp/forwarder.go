@@ -15,10 +15,8 @@
 package tcp
 
 import (
-	"sync"
-
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -63,8 +61,8 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) bool {
-	s := newSegment(r, id, vv)
+func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+	s := newSegment(r, id, pkt)
 	defer s.decRef()
 
 	// We only care about well-formed SYN packets.
@@ -132,7 +130,7 @@ func (r *ForwarderRequest) Complete(sendReset bool) {
 
 	// If the caller requested, send a reset.
 	if sendReset {
-		replyWithReset(r.segment)
+		replyWithReset(r.segment, stack.DefaultTOS, r.segment.route.DefaultTTL())
 	}
 
 	// Release all resources.
@@ -159,13 +157,13 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 		TSVal:         r.synOptions.TSVal,
 		TSEcr:         r.synOptions.TSEcr,
 		SACKPermitted: r.synOptions.SACKPermitted,
-	})
+	}, queue, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	// Start the protocol goroutine.
-	ep.startAcceptedLoop(queue)
+	ep.startAcceptedLoop()
 
 	return ep, nil
 }

@@ -27,10 +27,10 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 

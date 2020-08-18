@@ -18,30 +18,18 @@ package epoll
 
 import (
 	"fmt"
-	"sync"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-// Event describes the event mask that was observed and the user data to be
-// returned when one of the events occurs. It has this format to match the linux
-// format to avoid extra copying/allocation when writing events to userspace.
-type Event struct {
-	// Events is the event mask containing the set of events that have been
-	// observed on an entry.
-	Events uint32
-
-	// Data is an opaque 64-bit value provided by the caller when adding the
-	// entry, and returned to the caller when the entry reports an event.
-	Data [2]int32
-}
 
 // EntryFlags is a bitmask that holds an entry's flags.
 type EntryFlags int
@@ -88,8 +76,8 @@ type pollEntry struct {
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
 // weakReferenceGone is called when the file in the weak reference is destroyed.
 // The poll entry is removed in response to this.
-func (p *pollEntry) WeakRefGone() {
-	p.epoll.RemoveEntry(p.id)
+func (p *pollEntry) WeakRefGone(ctx context.Context) {
+	p.epoll.RemoveEntry(ctx, p.id)
 }
 
 // EventPoll holds all the state associated with an event poll object, that is,
@@ -119,7 +107,7 @@ type EventPoll struct {
 	// different lock to avoid circular lock acquisition order involving
 	// the wait queue mutexes and mu. The full order is mu, observed file
 	// wait queue mutex, then listsMu; this allows listsMu to be acquired
-	// when readyCallback is called.
+	// when (*pollEntry).Callback is called.
 	//
 	// An entry is always in one of the following lists:
 	//	readyList -- when there's a chance that it's ready to have
@@ -128,7 +116,7 @@ type EventPoll struct {
 	//		readEvents() functions always call the entry's file
 	//		Readiness() function to confirm it's ready.
 	//	waitingList -- when there's no chance that the entry is ready,
-	//		so it's waiting for the readyCallback to be called
+	//		so it's waiting for the (*pollEntry).Callback to be called
 	//		on it before it gets moved to the readyList.
 	//	disabledList -- when the entry is disabled. This happens when
 	//		a one-shot entry gets delivered via readEvents().
@@ -156,14 +144,14 @@ func NewEventPoll(ctx context.Context) *fs.File {
 	// name matches fs/eventpoll.c:epoll_create1.
 	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), fmt.Sprintf("anon_inode:[eventpoll]"))
 	// Release the initial dirent reference after NewFile takes a reference.
-	defer dirent.DecRef()
+	defer dirent.DecRef(ctx)
 	return fs.NewFile(ctx, dirent, fs.FileFlags{}, &EventPoll{
 		files: make(map[FileIdentifier]*pollEntry),
 	})
 }
 
 // Release implements fs.FileOperations.Release.
-func (e *EventPoll) Release() {
+func (e *EventPoll) Release(ctx context.Context) {
 	// We need to take the lock now because files may be attempting to
 	// remove entries in parallel if they get destroyed.
 	e.mu.Lock()
@@ -172,8 +160,9 @@ func (e *EventPoll) Release() {
 	// Go through all entries and clean up.
 	for _, entry := range e.files {
 		entry.id.File.EventUnregister(&entry.waiter)
-		entry.file.Drop()
+		entry.file.Drop(ctx)
 	}
+	e.files = nil
 }
 
 // Read implements fs.FileOperations.Read.
@@ -226,9 +215,9 @@ func (e *EventPoll) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // ReadEvents returns up to max available events.
-func (e *EventPoll) ReadEvents(max int) []Event {
+func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 	var local pollEntryList
-	var ret []Event
+	var ret []linux.EpollEvent
 
 	e.listsMu.Lock()
 
@@ -250,7 +239,7 @@ func (e *EventPoll) ReadEvents(max int) []Event {
 		}
 
 		// Add event to the array that will be returned to caller.
-		ret = append(ret, Event{
+		ret = append(ret, linux.EpollEvent{
 			Events: uint32(ready),
 			Data:   entry.userData,
 		})
@@ -280,23 +269,23 @@ func (e *EventPoll) ReadEvents(max int) []Event {
 	return ret
 }
 
-// readyCallback is called when one of the files we're polling becomes ready. It
-// moves said file to the readyList if it's currently in the waiting list.
-type readyCallback struct{}
-
 // Callback implements waiter.EntryCallback.Callback.
-func (*readyCallback) Callback(w *waiter.Entry) {
-	entry := w.Context.(*pollEntry)
-	e := entry.epoll
+//
+// Callback is called when one of the files we're polling becomes ready. It
+// moves said file to the readyList if it's currently in the waiting list.
+func (p *pollEntry) Callback(*waiter.Entry) {
+	e := p.epoll
 
 	e.listsMu.Lock()
 
-	if entry.curList == &e.waitingList {
-		e.waitingList.Remove(entry)
-		e.readyList.PushBack(entry)
-		entry.curList = &e.readyList
+	if p.curList == &e.waitingList {
+		e.waitingList.Remove(p)
+		e.readyList.PushBack(p)
+		p.curList = &e.readyList
+		e.listsMu.Unlock()
 
 		e.Notify(waiter.EventIn)
+		return
 	}
 
 	e.listsMu.Unlock()
@@ -319,7 +308,7 @@ func (e *EventPoll) initEntryReadiness(entry *pollEntry) {
 	// Check if the file happens to already be in a ready state.
 	ready := f.Readiness(entry.mask) & entry.mask
 	if ready != 0 {
-		(*readyCallback).Callback(nil, &entry.waiter)
+		entry.Callback(&entry.waiter)
 	}
 }
 
@@ -389,10 +378,9 @@ func (e *EventPoll) AddEntry(id FileIdentifier, flags EntryFlags, mask waiter.Ev
 		userData: data,
 		epoll:    e,
 		flags:    flags,
-		waiter:   waiter.Entry{Callback: &readyCallback{}},
 		mask:     mask,
 	}
-	entry.waiter.Context = entry
+	entry.waiter.Callback = entry
 	e.files[id] = entry
 	entry.file = refs.NewWeakRef(id.File, entry)
 
@@ -415,7 +403,7 @@ func (e *EventPoll) UpdateEntry(id FileIdentifier, flags EntryFlags, mask waiter
 	}
 
 	// Unregister the old mask and remove entry from the list it's in, so
-	// readyCallback is guaranteed to not be called on this entry anymore.
+	// (*pollEntry).Callback is guaranteed to not be called on this entry anymore.
 	entry.id.File.EventUnregister(&entry.waiter)
 
 	// Remove entry from whatever list it's in. This ensure that no other
@@ -435,7 +423,7 @@ func (e *EventPoll) UpdateEntry(id FileIdentifier, flags EntryFlags, mask waiter
 }
 
 // RemoveEntry a files from the collection of observed files.
-func (e *EventPoll) RemoveEntry(id FileIdentifier) error {
+func (e *EventPoll) RemoveEntry(ctx context.Context, id FileIdentifier) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -457,7 +445,7 @@ func (e *EventPoll) RemoveEntry(id FileIdentifier) error {
 
 	// Remove file from map, and drop weak reference.
 	delete(e.files, id)
-	entry.file.Drop()
+	entry.file.Drop(ctx)
 
 	return nil
 }

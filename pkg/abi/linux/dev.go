@@ -36,8 +36,19 @@ func DecodeDeviceID(rdev uint32) (uint16, uint32) {
 //
 // See Documentations/devices.txt and uapi/linux/major.h.
 const (
+	// UNNAMED_MAJOR is the major device number for "unnamed" devices, whose
+	// minor numbers are dynamically allocated by the kernel.
+	UNNAMED_MAJOR = 0
+
+	// MEM_MAJOR is the major device number for "memory" character devices.
+	MEM_MAJOR = 1
+
 	// TTYAUX_MAJOR is the major device number for alternate TTY devices.
 	TTYAUX_MAJOR = 5
+
+	// MISC_MAJOR is the major device number for non-serial mice, misc feature
+	// devices.
+	MISC_MAJOR = 10
 
 	// UNIX98_PTY_MASTER_MAJOR is the initial major device number for
 	// Unix98 PTY masters.

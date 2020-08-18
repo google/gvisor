@@ -16,14 +16,15 @@ package kernel
 
 import (
 	"fmt"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Timekeeper manages all of the kernel clocks.
@@ -47,6 +48,9 @@ type Timekeeper struct {
 	//
 	// It is set only once, by SetClocks.
 	monotonicOffset int64 `state:"nosave"`
+
+	// monotonicLowerBound is the lowerBound for monotonic time.
+	monotonicLowerBound int64 `state:"nosave"`
 
 	// restored, if non-nil, indicates that this Timekeeper was restored
 	// from a state file. The clocks are not set until restored is closed.
@@ -86,7 +90,7 @@ type Timekeeper struct {
 // NewTimekeeper does not take ownership of paramPage.
 //
 // SetClocks must be called on the returned Timekeeper before it is usable.
-func NewTimekeeper(mfp pgalloc.MemoryFileProvider, paramPage platform.FileRange) (*Timekeeper, error) {
+func NewTimekeeper(mfp pgalloc.MemoryFileProvider, paramPage memmap.FileRange) (*Timekeeper, error) {
 	return &Timekeeper{
 		params: NewVDSOParamPage(mfp, paramPage),
 	}, nil
@@ -182,6 +186,7 @@ func (t *Timekeeper) startUpdater() {
 	timer := time.NewTicker(sentrytime.ApproxUpdateInterval)
 	t.wg.Add(1)
 	go func() { // S/R-SAFE: stopped during save.
+		defer t.wg.Done()
 		for {
 			// Start with an update immediately, so the clocks are
 			// ready ASAP.
@@ -205,9 +210,6 @@ func (t *Timekeeper) startUpdater() {
 					p.realtimeBaseRef = int64(realtimeParams.BaseRef)
 					p.realtimeFrequency = realtimeParams.Frequency
 				}
-
-				log.Debugf("Updating VDSO parameters: %+v", p)
-
 				return p
 			}); err != nil {
 				log.Warningf("Unable to update VDSO parameter page: %v", err)
@@ -216,7 +218,6 @@ func (t *Timekeeper) startUpdater() {
 			select {
 			case <-timer.C:
 			case <-t.stop:
-				t.wg.Done()
 				return
 			}
 		}
@@ -271,6 +272,21 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
 	now, err := t.clocks.GetTime(c)
 	if err == nil && c == sentrytime.Monotonic {
 		now += t.monotonicOffset
+		for {
+			// It's possible that the clock is shaky. This may be due to
+			// platform issues, e.g. the KVM platform relies on the guest
+			// TSC and host TSC, which may not be perfectly in sync. To
+			// work around this issue, ensure that the monotonic time is
+			// always bounded by the last time read.
+			oldLowerBound := atomic.LoadInt64(&t.monotonicLowerBound)
+			if now < oldLowerBound {
+				now = oldLowerBound
+				break
+			}
+			if atomic.CompareAndSwapInt64(&t.monotonicLowerBound, oldLowerBound, now) {
+				break
+			}
+		}
 	}
 	return now, err
 }

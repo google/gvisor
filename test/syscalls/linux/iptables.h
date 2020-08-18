@@ -188,7 +188,7 @@ struct ipt_replace {
   unsigned int num_counters;
 
   // The unchanged values from each ipt_entry's counters.
-  struct xt_counters *counters;
+  struct xt_counters* counters;
 
   // The entries to write to the table. This will run past the size defined by
   // sizeof(srtuct ipt_replace);

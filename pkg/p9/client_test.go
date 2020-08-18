@@ -62,6 +62,8 @@ func TestVersion(t *testing.T) {
 }
 
 func benchmarkSendRecv(b *testing.B, fn func(c *Client) func(message, message) error) {
+	b.ReportAllocs()
+
 	// See above.
 	serverSocket, clientSocket, err := unet.SocketPair(false)
 	if err != nil {
@@ -96,7 +98,12 @@ func benchmarkSendRecv(b *testing.B, fn func(c *Client) func(message, message) e
 }
 
 func BenchmarkSendRecvLegacy(b *testing.B) {
-	benchmarkSendRecv(b, func(c *Client) func(message, message) error { return c.sendRecvLegacy })
+	benchmarkSendRecv(b, func(c *Client) func(message, message) error {
+		return func(t message, r message) error {
+			_, err := c.sendRecvLegacy(t, r)
+			return err
+		}
+	})
 }
 
 func BenchmarkSendRecvChannel(b *testing.B) {

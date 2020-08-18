@@ -22,11 +22,17 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+#ifdef __x86_64__
+// get_kernel_syms is not supported in Linux > 2.6, and not implemented in
+// gVisor.
+constexpr uint32_t kNotImplementedSyscall = SYS_get_kernel_syms;
+#elif __aarch64__
+// Use the last of arch_specific_syscalls which are not implemented on arm64.
+constexpr uint32_t kNotImplementedSyscall = __NR_arch_specific_syscall + 15;
+#endif
 
 TEST(BadSyscallTest, NotImplemented) {
-  // get_kernel_syms is not supported in Linux > 2.6, and not implemented in
-  // gVisor.
-  EXPECT_THAT(syscall(SYS_get_kernel_syms), SyscallFailsWithErrno(ENOSYS));
+  EXPECT_THAT(syscall(kNotImplementedSyscall), SyscallFailsWithErrno(ENOSYS));
 }
 
 TEST(BadSyscallTest, NegativeOne) {

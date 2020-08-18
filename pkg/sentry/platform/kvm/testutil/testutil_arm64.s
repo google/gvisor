@@ -50,6 +50,23 @@ TEXT ·SpinLoop(SB),NOSPLIT,$0
 start:
 	B start
 
+TEXT ·FloatingPointWorks(SB),NOSPLIT,$0-8
+	NO_LOCAL_POINTERS
+	// gc will touch fpsimd, so we should test it.
+	// such as in <runtime.deductSweepCredit>.
+	FMOVD $(9.9), F0
+	MOVD $SYS_GETPID, R8 // getpid
+	SVC
+	FMOVD $(9.9), F1
+	FCMPD F0, F1
+	BNE isNaN
+	MOVD $1, R0
+	MOVD R0, ret+0(FP)
+	RET
+isNaN:
+	MOVD $0, ret+0(FP)
+	RET
+
 // MVN: bitwise logical NOT
 // This case simulates an application that modified R0-R30.
 #define TWIDDLE_REGS() \
@@ -87,5 +104,15 @@ start:
 
 TEXT ·TwiddleRegsSyscall(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
+	MSR R10, TPIDR_EL0
+	// Trapped in el0_svc.
 	SVC
+	RET // never reached
+
+TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
+	TWIDDLE_REGS()
+	MSR R10, TPIDR_EL0
+	// Trapped in el0_ia.
+	// Branch to Register branches unconditionally to an address in <Rn>.
+	JMP (R6) // <=> br x6, must fault
 	RET // never reached

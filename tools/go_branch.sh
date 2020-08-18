@@ -14,12 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -eo pipefail
+set -xeo pipefail
 
 # Discovery the package name from the go.mod file.
-declare -r gomod="$(pwd)/go.mod"
-declare -r module=$(cat "${gomod}" | grep -E "^module" | cut -d' ' -f2)
-declare -r gosum="$(pwd)/go.sum"
+declare -r module=$(cat go.mod | grep -E "^module" | cut -d' ' -f2)
+declare -r origpwd=$(pwd)
+declare -r othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
 
 # Check that gopath has been built.
 declare -r gopath_dir="$(pwd)/bazel-bin/gopath/src/${module}"
@@ -40,9 +40,15 @@ trap finish EXIT
 # Record the current working commit.
 declare -r head=$(git describe --always)
 
-# We expect to have an existing go branch that we will use as the basis for
-# this commit. That branch may be empty, but it must exist.
-declare -r go_branch=$(git show-ref --hash origin/go)
+# We expect to have an existing go branch that we will use as the basis for this
+# commit. That branch may be empty, but it must exist. We search for this branch
+# using the local branch, the "origin" branch, and other remotes, in order.
+git fetch --all
+declare -r go_branch=$( \
+  git show-ref --hash refs/heads/go || \
+  git show-ref --hash refs/remotes/origin/go || \
+  git show-ref --hash go | head -n 1 \
+)
 
 # Clone the current repository to the temporary directory, and check out the
 # current go_branch directory. We move to the new repository for convenience.
@@ -65,15 +71,42 @@ git checkout -b go "${go_branch}"
 git merge --no-commit --strategy ours ${head} || \
   git merge --allow-unrelated-histories --no-commit --strategy ours ${head}
 
-# Sync the entire gopath_dir and go.mod.
-rsync --recursive --verbose --delete --exclude .git --exclude README.md -L "${gopath_dir}/" .
-cp "${gomod}" .
-cp "${gosum}" .
+# Normalize the permissions on the old branch. Note that they should be
+# normalized if constructed by this tool, but we do so before the rsync.
+find . -type f -exec chmod 0644 {} \;
+find . -type d -exec chmod 0755 {} \;
+
+# Sync the entire gopath_dir.
+rsync --recursive --verbose --delete --exclude .git -L "${gopath_dir}/" .
+
+# Add additional files.
+for file in "${othersrc[@]}"; do
+  cp "${origpwd}"/"${file}" .
+done
+
+# Construct a new README.md.
+cat > README.md <<EOF
+# gVisor
+
+This branch is a synthetic branch, containing only Go sources, that is
+compatible with standard Go tools. See the master branch for authoritative
+sources and tests.
+EOF
 
 # There are a few solitary files that can get left behind due to the way bazel
 # constructs the gopath target. Note that we don't find all Go files here
 # because they may correspond to unused templates, etc.
-cp "${repo_orig}"/runsc/*.go runsc/
+declare -ar binaries=( "runsc" "shim/v1" "shim/v2" )
+for target in "${binaries[@]}"; do
+  mkdir -p "${target}"
+  cp "${repo_orig}/${target}"/*.go "${target}/"
+done
+
+# Normalize all permissions. The way bazel constructs the :gopath tree may leave
+# some strange permissions on files. We don't have anything in this tree that
+# should be execution, only the Go source files, README.md, and ${othersrc}.
+find . -type f -exec chmod 0644 {} \;
+find . -type d -exec chmod 0755 {} \;
 
 # Update the current working set and commit.
 git add . && git commit -m "Merge ${head} (automated)"

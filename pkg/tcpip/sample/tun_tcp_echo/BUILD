@@ -1,10 +1,11 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary")
 
 package(licenses = ["notice"])
 
 go_binary(
     name = "tun_tcp_echo",
     srcs = ["main.go"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/link/fdbased",

@@ -24,6 +24,7 @@ namespace testing {
 
 namespace {
 
+#if defined(__x86_64__) || defined(__i386__)
 time_t vsyscall_time(time_t* t) {
   constexpr uint64_t kVsyscallTimeEntry = 0xffffffffff600400;
   return reinterpret_cast<time_t (*)(time_t*)>(kVsyscallTimeEntry)(t);
@@ -37,6 +38,7 @@ TEST(VsyscallTest, VsyscallAlwaysAvailableOnGvisor) {
   time_t t;
   EXPECT_THAT(vsyscall_time(&t), SyscallSucceeds());
 }
+#endif
 
 }  // namespace
 

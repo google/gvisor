@@ -66,12 +66,12 @@ const (
 func TestInitialize(t *testing.T) {
 	defer reset()
 
-	_, err := NewUint64Metric("/foo", false, fooDescription)
+	_, err := NewUint64Metric("/foo", false, pb.MetricMetadata_UNITS_NONE, fooDescription)
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	_, err = NewUint64Metric("/bar", true, barDescription)
+	_, err = NewUint64Metric("/bar", true, pb.MetricMetadata_UNITS_NANOSECONDS, barDescription)
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
@@ -94,8 +94,8 @@ func TestInitialize(t *testing.T) {
 	foundFoo := false
 	foundBar := false
 	for _, m := range mr.Metrics {
-		if m.Type != pb.MetricMetadata_UINT64 {
-			t.Errorf("Metadata %+v Type got %v want %v", m, m.Type, pb.MetricMetadata_UINT64)
+		if m.Type != pb.MetricMetadata_TYPE_UINT64 {
+			t.Errorf("Metadata %+v Type got %v want %v", m, m.Type, pb.MetricMetadata_TYPE_UINT64)
 		}
 		if !m.Cumulative {
 			t.Errorf("Metadata %+v Cumulative got false want true", m)
@@ -110,6 +110,9 @@ func TestInitialize(t *testing.T) {
 			if m.Sync {
 				t.Errorf("/foo %+v Sync got true want false", m)
 			}
+			if m.Units != pb.MetricMetadata_UNITS_NONE {
+				t.Errorf("/foo %+v Units got %v want %v", m, m.Units, pb.MetricMetadata_UNITS_NONE)
+			}
 		case "/bar":
 			foundBar = true
 			if m.Description != barDescription {
@@ -117,6 +120,9 @@ func TestInitialize(t *testing.T) {
 			}
 			if !m.Sync {
 				t.Errorf("/bar %+v Sync got true want false", m)
+			}
+			if m.Units != pb.MetricMetadata_UNITS_NANOSECONDS {
+				t.Errorf("/bar %+v Units got %v want %v", m, m.Units, pb.MetricMetadata_UNITS_NANOSECONDS)
 			}
 		}
 	}
@@ -132,12 +138,12 @@ func TestInitialize(t *testing.T) {
 func TestDisable(t *testing.T) {
 	defer reset()
 
-	_, err := NewUint64Metric("/foo", false, fooDescription)
+	_, err := NewUint64Metric("/foo", false, pb.MetricMetadata_UNITS_NONE, fooDescription)
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	_, err = NewUint64Metric("/bar", true, barDescription)
+	_, err = NewUint64Metric("/bar", true, pb.MetricMetadata_UNITS_NONE, barDescription)
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
@@ -161,12 +167,12 @@ func TestDisable(t *testing.T) {
 func TestEmitMetricUpdate(t *testing.T) {
 	defer reset()
 
-	foo, err := NewUint64Metric("/foo", false, fooDescription)
+	foo, err := NewUint64Metric("/foo", false, pb.MetricMetadata_UNITS_NONE, fooDescription)
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	_, err = NewUint64Metric("/bar", true, barDescription)
+	_, err = NewUint64Metric("/bar", true, pb.MetricMetadata_UNITS_NONE, barDescription)
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}

@@ -18,6 +18,7 @@ package fdbased
 
 import (
 	"encoding/binary"
+	"fmt"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -25,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 const (
@@ -169,10 +171,9 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 	var (
 		p             tcpip.NetworkProtocolNumber
 		remote, local tcpip.LinkAddress
-		eth           header.Ethernet
 	)
 	if d.e.hdrSize > 0 {
-		eth = header.Ethernet(pkt)
+		eth := header.Ethernet(pkt)
 		p = eth.Type()
 		remote = eth.SourceAddress()
 		local = eth.DestinationAddress()
@@ -189,7 +190,14 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 		}
 	}
 
-	pkt = pkt[d.e.hdrSize:]
-	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, buffer.NewVectorisedView(len(pkt), []buffer.View{buffer.View(pkt)}), buffer.View(eth))
+	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buffer.View(pkt).ToVectorisedView(),
+	})
+	if d.e.hdrSize > 0 {
+		if _, ok := pbuf.LinkHeader().Consume(d.e.hdrSize); !ok {
+			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
+		}
+	}
+	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pbuf)
 	return true, nil
 }

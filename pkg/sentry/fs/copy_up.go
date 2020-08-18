@@ -17,13 +17,14 @@ package fs
 import (
 	"fmt"
 	"io"
-	"sync"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // copyUp copies a file in an overlay from a lower filesystem to an
@@ -200,7 +201,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	parentUpper := parent.Inode.overlay.upper
 	root := RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 
 	// Create the file in the upper filesystem and get an Inode for it.
@@ -211,7 +212,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 			log.Warningf("copy up failed to create file: %v", err)
 			return syserror.EIO
 		}
-		defer childFile.DecRef()
+		defer childFile.DecRef(ctx)
 		childUpperInode = childFile.Dirent.Inode
 
 	case Directory:
@@ -221,11 +222,11 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		}
 		childUpper, err := parentUpper.Lookup(ctx, next.name)
 		if err != nil {
-			log.Warningf("copy up failed to lookup directory: %v", err)
-			cleanupUpper(ctx, parentUpper, next.name)
+			werr := fmt.Errorf("copy up failed to lookup directory: %v", err)
+			cleanupUpper(ctx, parentUpper, next.name, werr)
 			return syserror.EIO
 		}
-		defer childUpper.DecRef()
+		defer childUpper.DecRef(ctx)
 		childUpperInode = childUpper.Inode
 
 	case Symlink:
@@ -241,11 +242,11 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		}
 		childUpper, err := parentUpper.Lookup(ctx, next.name)
 		if err != nil {
-			log.Warningf("copy up failed to lookup symlink: %v", err)
-			cleanupUpper(ctx, parentUpper, next.name)
+			werr := fmt.Errorf("copy up failed to lookup symlink: %v", err)
+			cleanupUpper(ctx, parentUpper, next.name, werr)
 			return syserror.EIO
 		}
-		defer childUpper.DecRef()
+		defer childUpper.DecRef(ctx)
 		childUpperInode = childUpper.Inode
 
 	default:
@@ -255,23 +256,23 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	// Bring file attributes up to date. This does not include size, which will be
 	// brought up to date with copyContentsLocked.
 	if err := copyAttributesLocked(ctx, childUpperInode, next.Inode.overlay.lower); err != nil {
-		log.Warningf("copy up failed to copy up attributes: %v", err)
-		cleanupUpper(ctx, parentUpper, next.name)
+		werr := fmt.Errorf("copy up failed to copy up attributes: %v", err)
+		cleanupUpper(ctx, parentUpper, next.name, werr)
 		return syserror.EIO
 	}
 
 	// Copy the entire file.
 	if err := copyContentsLocked(ctx, childUpperInode, next.Inode.overlay.lower, attrs.Size); err != nil {
-		log.Warningf("copy up failed to copy up contents: %v", err)
-		cleanupUpper(ctx, parentUpper, next.name)
+		werr := fmt.Errorf("copy up failed to copy up contents: %v", err)
+		cleanupUpper(ctx, parentUpper, next.name, werr)
 		return syserror.EIO
 	}
 
 	lowerMappable := next.Inode.overlay.lower.Mappable()
 	upperMappable := childUpperInode.Mappable()
 	if lowerMappable != nil && upperMappable == nil {
-		log.Warningf("copy up failed: cannot ensure memory mapping coherence")
-		cleanupUpper(ctx, parentUpper, next.name)
+		werr := fmt.Errorf("copy up failed: cannot ensure memory mapping coherence")
+		cleanupUpper(ctx, parentUpper, next.name, werr)
 		return syserror.EIO
 	}
 
@@ -323,12 +324,14 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	return nil
 }
 
-// cleanupUpper removes name from parent, and panics if it is unsuccessful.
-func cleanupUpper(ctx context.Context, parent *Inode, name string) {
+// cleanupUpper is called when copy-up fails. It logs the copy-up error and
+// attempts to remove name from parent. If that fails, then it panics.
+func cleanupUpper(ctx context.Context, parent *Inode, name string, copyUpErr error) {
+	log.Warningf(copyUpErr.Error())
 	if err := parent.InodeOperations.Remove(ctx, parent, name); err != nil {
 		// Unfortunately we don't have much choice. We shouldn't
 		// willingly give the caller access to a nonsense filesystem.
-		panic(fmt.Sprintf("overlay filesystem is in an inconsistent state: failed to remove %q from upper filesystem: %v", name, err))
+		panic(fmt.Sprintf("overlay filesystem is in an inconsistent state: copyUp got error: %v; then cleanup failed to remove %q from upper filesystem: %v.", copyUpErr, name, err))
 	}
 }
 
@@ -349,14 +352,14 @@ func copyContentsLocked(ctx context.Context, upper *Inode, lower *Inode, size in
 	if err != nil {
 		return err
 	}
-	defer upperFile.DecRef()
+	defer upperFile.DecRef(ctx)
 
 	// Get a handle to the lower filesystem, which we will read from.
 	lowerFile, err := overlayFile(ctx, lower, FileFlags{Read: true})
 	if err != nil {
 		return err
 	}
-	defer lowerFile.DecRef()
+	defer lowerFile.DecRef(ctx)
 
 	// Use a buffer pool to minimize allocations.
 	buf := copyUpBuffers.Get().([]byte)
@@ -395,12 +398,12 @@ func copyContentsLocked(ctx context.Context, upper *Inode, lower *Inode, size in
 // Size and permissions are set on upper when the file content is copied
 // and when the file is created respectively.
 func copyAttributesLocked(ctx context.Context, upper *Inode, lower *Inode) error {
-	// Extract attributes fro the lower filesystem.
+	// Extract attributes from the lower filesystem.
 	lowerAttr, err := lower.UnstableAttr(ctx)
 	if err != nil {
 		return err
 	}
-	lowerXattr, err := lower.Listxattr()
+	lowerXattr, err := lower.ListXattr(ctx, linux.XATTR_SIZE_MAX)
 	if err != nil && err != syserror.EOPNOTSUPP {
 		return err
 	}
@@ -421,11 +424,11 @@ func copyAttributesLocked(ctx context.Context, upper *Inode, lower *Inode) error
 		if isXattrOverlay(name) {
 			continue
 		}
-		value, err := lower.Getxattr(name)
+		value, err := lower.GetXattr(ctx, name, linux.XATTR_SIZE_MAX)
 		if err != nil {
 			return err
 		}
-		if err := upper.InodeOperations.Setxattr(upper, name, value); err != nil {
+		if err := upper.InodeOperations.SetXattr(ctx, upper, name, value, 0 /* flags */); err != nil {
 			return err
 		}
 	}

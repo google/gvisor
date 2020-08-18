@@ -1,14 +1,13 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "gonet",
     srcs = ["gonet.go"],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/adapters/gonet",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/stack",
@@ -22,7 +21,7 @@ go_test(
     name = "gonet_test",
     size = "small",
     srcs = ["gonet_test.go"],
-    embed = [":gonet"],
+    library = ":gonet",
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",

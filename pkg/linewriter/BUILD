@@ -1,17 +1,18 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "linewriter",
     srcs = ["linewriter.go"],
-    importpath = "gvisor.dev/gvisor/pkg/linewriter",
+    marshal = False,
+    stateify = False,
     visibility = ["//visibility:public"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(
     name = "linewriter_test",
     srcs = ["linewriter_test.go"],
-    embed = [":linewriter"],
+    library = ":linewriter",
 )

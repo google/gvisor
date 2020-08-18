@@ -1,0 +1,17 @@
+.jumbotron {
+  background-image: url(/assets/images/background.jpg);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-blend-mode: darken;
+  background-color: rgba(0, 0, 0, 0.3);
+
+  p {
+    color: #fff;
+    margin-top: 0;
+    margin-bottom: 0;
+    font-weight: 300;
+    font-size: 24px;
+    line-height: 30px;
+  }
+}

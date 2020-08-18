@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -8,14 +8,13 @@ go_library(
         "anon.go",
         "device.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/anon",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

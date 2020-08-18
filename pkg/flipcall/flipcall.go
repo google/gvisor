@@ -95,7 +95,7 @@ func (ep *Endpoint) Init(side EndpointSide, pwd PacketWindowDescriptor, opts ...
 	if pwd.Length > math.MaxUint32 {
 		return fmt.Errorf("packet window size (%d) exceeds maximum (%d)", pwd.Length, math.MaxUint32)
 	}
-	m, _, e := syscall.RawSyscall6(syscall.SYS_MMAP, 0, uintptr(pwd.Length), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED, uintptr(pwd.FD), uintptr(pwd.Offset))
+	m, e := packetWindowMmap(pwd)
 	if e != 0 {
 		return fmt.Errorf("failed to mmap packet window: %v", e)
 	}
@@ -136,8 +136,8 @@ func (ep *Endpoint) unmapPacket() {
 
 // Shutdown causes concurrent and future calls to ep.Connect(), ep.SendRecv(),
 // ep.RecvFirst(), and ep.SendLast(), as well as the same calls in the peer
-// Endpoint, to unblock and return errors. It does not wait for concurrent
-// calls to return. Successive calls to Shutdown have no effect.
+// Endpoint, to unblock and return ShutdownErrors. It does not wait for
+// concurrent calls to return. Successive calls to Shutdown have no effect.
 //
 // Shutdown is the only Endpoint method that may be called concurrently with
 // other methods on the same Endpoint.
@@ -154,10 +154,12 @@ func (ep *Endpoint) isShutdownLocally() bool {
 	return atomic.LoadUint32(&ep.shutdown) != 0
 }
 
-type shutdownError struct{}
+// ShutdownError is returned by most Endpoint methods after Endpoint.Shutdown()
+// has been called.
+type ShutdownError struct{}
 
 // Error implements error.Error.
-func (shutdownError) Error() string {
+func (ShutdownError) Error() string {
 	return "flipcall connection shutdown"
 }
 

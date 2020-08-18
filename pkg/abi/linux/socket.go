@@ -83,7 +83,6 @@ const (
 	MSG_MORE             = 0x8000
 	MSG_WAITFORONE       = 0x10000
 	MSG_SENDPAGE_NOTLAST = 0x20000
-	MSG_REINJECT         = 0x8000000
 	MSG_ZEROCOPY         = 0x4000000
 	MSG_FASTOPEN         = 0x20000000
 	MSG_CMSG_CLOEXEC     = 0x40000000
@@ -132,6 +131,15 @@ const (
 	SHUT_RD   = 0
 	SHUT_WR   = 1
 	SHUT_RDWR = 2
+)
+
+// Packet types from <linux/if_packet.h>
+const (
+	PACKET_HOST      = 0 // To us
+	PACKET_BROADCAST = 1 // To all
+	PACKET_MULTICAST = 2 // To group
+	PACKET_OTHERHOST = 3 // To someone else
+	PACKET_OUTGOING  = 4 // Outgoing of any type
 )
 
 // Socket options from socket.h.
@@ -225,14 +233,18 @@ const (
 const SockAddrMax = 128
 
 // InetAddr is struct in_addr, from uapi/linux/in.h.
+//
+// +marshal
 type InetAddr [4]byte
 
 // SockAddrInet is struct sockaddr_in, from uapi/linux/in.h.
+//
+// +marshal
 type SockAddrInet struct {
 	Family uint16
 	Port   uint16
 	Addr   InetAddr
-	Zero   [8]uint8 // pad to sizeof(struct sockaddr).
+	_      [8]uint8 // pad to sizeof(struct sockaddr).
 }
 
 // InetMulticastRequest is struct ip_mreq, from uapi/linux/in.h.
@@ -246,6 +258,11 @@ type InetMulticastRequestWithNIC struct {
 	InetMulticastRequest
 	InterfaceIndex int32
 }
+
+// Inet6Addr is struct in6_addr, from uapi/linux/in6.h.
+//
+// +marshal
+type Inet6Addr [16]byte
 
 // SockAddrInet6 is struct sockaddr_in6, from uapi/linux/in6.h.
 type SockAddrInet6 struct {
@@ -294,6 +311,8 @@ func (s *SockAddrUnix) implementsSockAddr()    {}
 func (s *SockAddrNetlink) implementsSockAddr() {}
 
 // Linger is struct linger, from include/linux/socket.h.
+//
+// +marshal
 type Linger struct {
 	OnOff  int32
 	Linger int32
@@ -308,6 +327,8 @@ const SizeOfLinger = 8
 // the end of this struct or within existing unusued space, so its size grows
 // over time. The current iteration is based on linux v4.17. New versions are
 // always backwards compatible.
+//
+// +marshal
 type TCPInfo struct {
 	State       uint8
 	CaState     uint8
@@ -405,10 +426,21 @@ var SizeOfControlMessageHeader = int(binary.Size(ControlMessageHeader{}))
 // A ControlMessageCredentials is an SCM_CREDENTIALS socket control message.
 //
 // ControlMessageCredentials represents struct ucred from linux/socket.h.
+//
+// +marshal
 type ControlMessageCredentials struct {
 	PID int32
 	UID uint32
 	GID uint32
+}
+
+// A ControlMessageIPPacketInfo is IP_PKTINFO socket control message.
+//
+// ControlMessageIPPacketInfo represents struct in_pktinfo from linux/in.h.
+type ControlMessageIPPacketInfo struct {
+	NIC             int32
+	LocalAddr       InetAddr
+	DestinationAddr InetAddr
 }
 
 // SizeOfControlMessageCredentials is the binary size of a
@@ -421,6 +453,19 @@ type ControlMessageRights []int32
 // SizeOfControlMessageRight is the size of a single element in
 // ControlMessageRights.
 const SizeOfControlMessageRight = 4
+
+// SizeOfControlMessageInq is the size of a TCP_INQ control message.
+const SizeOfControlMessageInq = 4
+
+// SizeOfControlMessageTOS is the size of an IP_TOS control message.
+const SizeOfControlMessageTOS = 1
+
+// SizeOfControlMessageTClass is the size of an IPV6_TCLASS control message.
+const SizeOfControlMessageTClass = 4
+
+// SizeOfControlMessageIPPacketInfo is the size of an IP_PKTINFO
+// control message.
+const SizeOfControlMessageIPPacketInfo = 12
 
 // SCM_MAX_FD is the maximum number of FDs accepted in a single sendmsg call.
 // From net/scm.h.

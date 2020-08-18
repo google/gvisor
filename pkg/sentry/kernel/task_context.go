@@ -18,13 +18,13 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var errNoSyscalls = syserr.New("no syscall table found", linux.ENOEXEC)
@@ -49,7 +49,7 @@ type TaskContext struct {
 	fu *futex.Manager
 
 	// st is the task's syscall table.
-	st *SyscallTable
+	st *SyscallTable `state:".(syscallTableInfo)"`
 }
 
 // release releases all resources held by the TaskContext. release is called by
@@ -58,7 +58,6 @@ func (tc *TaskContext) release() {
 	// Nil out pointers so that if the task is saved after release, it doesn't
 	// follow the pointers to possibly now-invalid objects.
 	if tc.MemoryManager != nil {
-		// TODO(b/38173783)
 		tc.MemoryManager.DecUsers(context.Background())
 		tc.MemoryManager = nil
 	}
@@ -136,11 +135,11 @@ func (t *Task) Stack() *arch.Stack {
 func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskContext, *syserr.Error) {
 	// If File is not nil, we should load that instead of resolving Filename.
 	if args.File != nil {
-		args.Filename = args.File.MappedName(ctx)
+		args.Filename = args.File.PathnameWithDeleted(ctx)
 	}
 
 	// Prepare a new user address space to load into.
-	m := mm.NewMemoryManager(k, k)
+	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
 	defer m.DecUsers(ctx)
 	args.MemoryManager = m
 

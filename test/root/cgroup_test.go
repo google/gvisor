@@ -16,6 +16,7 @@ package root
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -24,10 +25,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
-	"gvisor.dev/gvisor/runsc/dockerutil"
-	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 func verifyPid(pid int, path string) error {
@@ -52,15 +54,82 @@ func verifyPid(pid int, path string) error {
 	if scanner.Err() != nil {
 		return scanner.Err()
 	}
-	return fmt.Errorf("got: %s, want: %d", gots, pid)
+	return fmt.Errorf("got: %v, want: %d", gots, pid)
+}
+
+func TestMemCgroup(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Start a new container and allocate the specified about of memory.
+	allocMemSize := 128 << 20
+	allocMemLimit := 2 * allocMemSize
+
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image:  "basic/ubuntu",
+		Memory: allocMemLimit, // Must be in bytes.
+	}, "python3", "-c", fmt.Sprintf("import time; s = 'a' * %d; time.sleep(100)", allocMemSize)); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Extract the ID to lookup the cgroup.
+	gid := d.ID()
+	t.Logf("cgroup ID: %s", gid)
+
+	// Wait when the container will allocate memory.
+	memUsage := 0
+	start := time.Now()
+	for time.Since(start) < 30*time.Second {
+		// Sleep for a brief period of time after spawning the
+		// container (so that Docker can create the cgroup etc.
+		// or after looping below (so the application can start).
+		time.Sleep(100 * time.Millisecond)
+
+		// Read the cgroup memory limit.
+		path := filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.limit_in_bytes")
+		outRaw, err := ioutil.ReadFile(path)
+		if err != nil {
+			// It's possible that the container does not exist yet.
+			continue
+		}
+		out := strings.TrimSpace(string(outRaw))
+		memLimit, err := strconv.Atoi(out)
+		if err != nil {
+			t.Fatalf("Atoi(%v): %v", out, err)
+		}
+		if memLimit != allocMemLimit {
+			// The group may not have had the correct limit set yet.
+			continue
+		}
+
+		// Read the cgroup memory usage.
+		path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.max_usage_in_bytes")
+		outRaw, err = ioutil.ReadFile(path)
+		if err != nil {
+			t.Fatalf("error reading usage: %v", err)
+		}
+		out = strings.TrimSpace(string(outRaw))
+		memUsage, err = strconv.Atoi(out)
+		if err != nil {
+			t.Fatalf("Atoi(%v): %v", out, err)
+		}
+		t.Logf("read usage: %v, wanted: %v", memUsage, allocMemSize)
+
+		// Are we done?
+		if memUsage >= allocMemSize {
+			return
+		}
+	}
+
+	t.Fatalf("%vMB is less than %vMB", memUsage>>20, allocMemSize>>20)
 }
 
 // TestCgroup sets cgroup options and checks that cgroup was properly configured.
 func TestCgroup(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("cgroup-test")
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// This is not a comprehensive list of attributes.
 	//
@@ -69,84 +138,133 @@ func TestCgroup(t *testing.T) {
 	// are often run on a single core virtual machine, and there is only a single
 	// CPU available in our current set, and every container's set.
 	attrs := []struct {
-		arg            string
+		field          string
+		value          int64
 		ctrl           string
 		file           string
 		want           string
 		skipIfNotFound bool
 	}{
 		{
-			arg:  "--cpu-shares=1000",
-			ctrl: "cpu",
-			file: "cpu.shares",
-			want: "1000",
+			field: "cpu-shares",
+			value: 1000,
+			ctrl:  "cpu",
+			file:  "cpu.shares",
+			want:  "1000",
 		},
 		{
-			arg:  "--cpu-period=2000",
-			ctrl: "cpu",
-			file: "cpu.cfs_period_us",
-			want: "2000",
+			field: "cpu-period",
+			value: 2000,
+			ctrl:  "cpu",
+			file:  "cpu.cfs_period_us",
+			want:  "2000",
 		},
 		{
-			arg:  "--cpu-quota=3000",
-			ctrl: "cpu",
-			file: "cpu.cfs_quota_us",
-			want: "3000",
+			field: "cpu-quota",
+			value: 3000,
+			ctrl:  "cpu",
+			file:  "cpu.cfs_quota_us",
+			want:  "3000",
 		},
 		{
-			arg:  "--kernel-memory=100MB",
-			ctrl: "memory",
-			file: "memory.kmem.limit_in_bytes",
-			want: "104857600",
+			field: "kernel-memory",
+			value: 100 << 20,
+			ctrl:  "memory",
+			file:  "memory.kmem.limit_in_bytes",
+			want:  "104857600",
 		},
 		{
-			arg:  "--memory=1GB",
-			ctrl: "memory",
-			file: "memory.limit_in_bytes",
-			want: "1073741824",
+			field: "memory",
+			value: 1 << 30,
+			ctrl:  "memory",
+			file:  "memory.limit_in_bytes",
+			want:  "1073741824",
 		},
 		{
-			arg:  "--memory-reservation=500MB",
-			ctrl: "memory",
-			file: "memory.soft_limit_in_bytes",
-			want: "524288000",
+			field: "memory-reservation",
+			value: 500 << 20,
+			ctrl:  "memory",
+			file:  "memory.soft_limit_in_bytes",
+			want:  "524288000",
 		},
 		{
-			arg:            "--memory-swap=2GB",
+			field:          "memory-swap",
+			value:          2 << 30,
 			ctrl:           "memory",
 			file:           "memory.memsw.limit_in_bytes",
 			want:           "2147483648",
 			skipIfNotFound: true, // swap may be disabled on the machine.
 		},
 		{
-			arg:  "--memory-swappiness=5",
-			ctrl: "memory",
-			file: "memory.swappiness",
-			want: "5",
+			field: "memory-swappiness",
+			value: 5,
+			ctrl:  "memory",
+			file:  "memory.swappiness",
+			want:  "5",
 		},
 		{
-			arg:  "--blkio-weight=750",
-			ctrl: "blkio",
-			file: "blkio.weight",
-			want: "750",
+			field:          "blkio-weight",
+			value:          750,
+			ctrl:           "blkio",
+			file:           "blkio.weight",
+			want:           "750",
+			skipIfNotFound: true, // blkio groups may not be available.
+		},
+		{
+			field: "pids-limit",
+			value: 1000,
+			ctrl:  "pids",
+			file:  "pids.max",
+			want:  "1000",
 		},
 	}
 
-	args := make([]string, 0, len(attrs))
+	// Make configs.
+	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "10000")
+
+	// Add Cgroup arguments to configs.
 	for _, attr := range attrs {
-		args = append(args, attr.arg)
+		switch attr.field {
+		case "cpu-shares":
+			hostconf.Resources.CPUShares = attr.value
+		case "cpu-period":
+			hostconf.Resources.CPUPeriod = attr.value
+		case "cpu-quota":
+			hostconf.Resources.CPUQuota = attr.value
+		case "kernel-memory":
+			hostconf.Resources.KernelMemory = attr.value
+		case "memory":
+			hostconf.Resources.Memory = attr.value
+		case "memory-reservation":
+			hostconf.Resources.MemoryReservation = attr.value
+		case "memory-swap":
+			hostconf.Resources.MemorySwap = attr.value
+		case "memory-swappiness":
+			val := attr.value
+			hostconf.Resources.MemorySwappiness = &val
+		case "blkio-weight":
+			hostconf.Resources.BlkioWeight = uint16(attr.value)
+		case "pids-limit":
+			val := attr.value
+			hostconf.Resources.PidsLimit = &val
+
+		}
 	}
 
-	args = append(args, "alpine", "sleep", "10000")
-	if err := d.Run(args...); err != nil {
-		t.Fatal("docker create failed:", err)
+	// Create container.
+	if err := d.CreateFrom(ctx, conf, hostconf, nil); err != nil {
+		t.Fatalf("create failed with: %v", err)
 	}
-	defer d.CleanUp()
 
-	gid, err := d.ID()
-	if err != nil {
-		t.Fatalf("Docker.ID() failed: %v", err)
+	// Start container.
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("start failed with: %v", err)
 	}
+
+	// Lookup the relevant cgroup ID.
+	gid := d.ID()
 	t.Logf("cgroup ID: %s", gid)
 
 	// Check list of attributes defined above.
@@ -161,7 +279,7 @@ func TestCgroup(t *testing.T) {
 			t.Fatalf("failed to read %q: %v", path, err)
 		}
 		if got := strings.TrimSpace(string(out)); got != attr.want {
-			t.Errorf("arg: %q, cgroup attribute %s/%s, got: %q, want: %q", attr.arg, attr.ctrl, attr.file, got, attr.want)
+			t.Errorf("field: %q, cgroup attribute %s/%s, got: %q, want: %q", attr.field, attr.ctrl, attr.file, got, attr.want)
 		}
 	}
 
@@ -179,7 +297,7 @@ func TestCgroup(t *testing.T) {
 		"pids",
 		"systemd",
 	}
-	pid, err := d.SandboxPid()
+	pid, err := d.SandboxPid(ctx)
 	if err != nil {
 		t.Fatalf("SandboxPid: %v", err)
 	}
@@ -191,25 +309,34 @@ func TestCgroup(t *testing.T) {
 	}
 }
 
+// TestCgroupParent sets the "CgroupParent" option and checks that the child and parent's
+// cgroups are created correctly relative to each other.
 func TestCgroupParent(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("cgroup-test")
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
-	parent := testutil.RandomName("runsc")
-	if err := d.Run("--cgroup-parent", parent, "alpine", "sleep", "10000"); err != nil {
-		t.Fatal("docker create failed:", err)
+	// Construct a known cgroup name.
+	parent := testutil.RandomID("runsc-")
+	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "10000")
+	hostconf.Resources.CgroupParent = parent
+
+	if err := d.CreateFrom(ctx, conf, hostconf, nil); err != nil {
+		t.Fatalf("create failed with: %v", err)
 	}
-	defer d.CleanUp()
-	gid, err := d.ID()
-	if err != nil {
-		t.Fatalf("Docker.ID() failed: %v", err)
+
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("start failed with: %v", err)
 	}
+
+	// Extract the ID to look up the cgroup.
+	gid := d.ID()
 	t.Logf("cgroup ID: %s", gid)
 
 	// Check that sandbox is inside cgroup.
-	pid, err := d.SandboxPid()
+	pid, err := d.SandboxPid(ctx)
 	if err != nil {
 		t.Fatalf("SandboxPid: %v", err)
 	}

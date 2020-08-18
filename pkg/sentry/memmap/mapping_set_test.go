@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type testMappingSpace struct {

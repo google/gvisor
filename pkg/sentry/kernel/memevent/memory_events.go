@@ -17,7 +17,6 @@
 package memevent
 
 import (
-	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/eventchannel"
@@ -26,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	pb "gvisor.dev/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 var totalTicks = metric.MustCreateNewUint64Metric("/memory_events/ticks", false /*sync*/, "Total number of memory event periods that have elapsed since startup.")

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.12
-// +build !go1.14
+// +build !go1.16
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 //go:linkname throw runtime.throw
@@ -49,11 +51,38 @@ func uintptrValue(addr *byte) uintptr {
 	return (uintptr)(unsafe.Pointer(addr))
 }
 
+// bluepillArchContext returns the UContext64.
+//
+//go:nosplit
+func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
+	return &((*arch.UContext64)(context).MContext)
+}
+
+// bluepillHandleHlt is reponsible for handling VM-Exit.
+//
+//go:nosplit
+func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
+	// Copy out registers.
+	bluepillArchExit(c, bluepillArchContext(context))
+
+	// Return to the vCPUReady state; notify any waiters.
+	user := atomic.LoadUint32(&c.state) & vCPUUser
+	switch atomic.SwapUint32(&c.state, user) {
+	case user | vCPUGuest: // Expected case.
+	case user | vCPUGuest | vCPUWaiter:
+		c.notify()
+	default:
+		throw("invalid state")
+	}
+}
+
 // bluepillHandler is called from the signal stub.
 //
 // The world may be stopped while this is executing, and it executes on the
 // signal stack. It should only execute raw system calls and functions that are
 // explicitly marked go:nosplit.
+//
+// +checkescape:all
 //
 //go:nosplit
 func bluepillHandler(context unsafe.Pointer) {
@@ -73,20 +102,25 @@ func bluepillHandler(context unsafe.Pointer) {
 	}
 
 	for {
-		switch _, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0); errno {
+		_, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0) // escapes: no.
+		switch errno {
 		case 0: // Expected case.
 		case syscall.EINTR:
 			// First, we process whatever pending signal
 			// interrupted KVM. Since we're in a signal handler
 			// currently, all signals are masked and the signal
 			// must have been delivered directly to this thread.
-			sig, _, errno := syscall.RawSyscall6(
+			timeout := syscall.Timespec{}
+			sig, _, errno := syscall.RawSyscall6( // escapes: no.
 				syscall.SYS_RT_SIGTIMEDWAIT,
 				uintptr(unsafe.Pointer(&bounceSignalMask)),
-				0, // siginfo.
-				0, // timeout.
-				8, // sigset size.
+				0,                                 // siginfo.
+				uintptr(unsafe.Pointer(&timeout)), // timeout.
+				8,                                 // sigset size.
 				0, 0)
+			if errno == syscall.EAGAIN {
+				continue
+			}
 			if errno != 0 {
 				throw("error waiting for pending signal")
 			}
@@ -99,12 +133,12 @@ func bluepillHandler(context unsafe.Pointer) {
 			// PIC, we can't inject an interrupt while they are
 			// masked. We need to request a window if it's not
 			// ready.
-			if c.runData.readyForInterruptInjection == 0 {
-				c.runData.requestInterruptWindow = 1
-				continue // Rerun vCPU.
-			} else {
+			if bluepillReadyStopGuest(c) {
 				// Force injection below; the vCPU is ready.
 				c.runData.exitReason = _KVM_EXIT_IRQ_WINDOW_OPEN
+			} else {
+				c.runData.requestInterruptWindow = 1
+				continue // Rerun vCPU.
 			}
 		case syscall.EFAULT:
 			// If a fault is not serviceable due to the host
@@ -112,7 +146,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			// MMIO exit we receive EFAULT from the run ioctl. We
 			// always inject an NMI here since we may be in kernel
 			// mode and have interrupts disabled.
-			if _, _, errno := syscall.RawSyscall(
+			if _, _, errno := syscall.RawSyscall( // escapes: no.
 				syscall.SYS_IOCTL,
 				uintptr(c.fd),
 				_KVM_NMI, 0); errno != 0 {
@@ -143,26 +177,21 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "debug")
 			return
 		case _KVM_EXIT_HLT:
-			// Copy out registers.
-			bluepillArchExit(c, bluepillArchContext(context))
-
-			// Return to the vCPUReady state; notify any waiters.
-			user := atomic.LoadUint32(&c.state) & vCPUUser
-			switch atomic.SwapUint32(&c.state, user) {
-			case user | vCPUGuest: // Expected case.
-			case user | vCPUGuest | vCPUWaiter:
-				c.notify()
-			default:
-				throw("invalid state")
-			}
+			bluepillGuestExit(c, context)
 			return
 		case _KVM_EXIT_MMIO:
+			physical := uintptr(c.runData.data[0])
+			if getHypercallID(physical) == _KVM_HYPERCALL_VMEXIT {
+				bluepillGuestExit(c, context)
+				return
+			}
+
 			// Increment the fault count.
 			atomic.AddUint32(&c.faults, 1)
 
 			// For MMIO, the physical address is the first data item.
-			physical := uintptr(c.runData.data[0])
-			virtual, ok := handleBluepillFault(c.machine, physical)
+			physical = uintptr(c.runData.data[0])
+			virtual, ok := handleBluepillFault(c.machine, physical, physicalRegions, _KVM_MEM_FLAGS_NONE)
 			if !ok {
 				c.die(bluepillArchContext(context), "invalid physical address")
 				return
@@ -188,17 +217,7 @@ func bluepillHandler(context unsafe.Pointer) {
 				}
 			}
 		case _KVM_EXIT_IRQ_WINDOW_OPEN:
-			// Interrupt: we must have requested an interrupt
-			// window; set the interrupt line.
-			if _, _, errno := syscall.RawSyscall(
-				syscall.SYS_IOCTL,
-				uintptr(c.fd),
-				_KVM_INTERRUPT,
-				uintptr(unsafe.Pointer(&bounce))); errno != 0 {
-				throw("interrupt injection failed")
-			}
-			// Clear previous injection request.
-			c.runData.requestInterruptWindow = 0
+			bluepillStopGuest(c)
 		case _KVM_EXIT_SHUTDOWN:
 			c.die(bluepillArchContext(context), "shutdown")
 			return

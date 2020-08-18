@@ -22,10 +22,11 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Platform provides abstractions for execution contexts (Context,
@@ -114,6 +115,17 @@ func (NoCPUPreemptionDetection) PreemptAllCPUs() error {
 	panic("This platform does not support CPU preemption detection")
 }
 
+// MemoryManager represents an abstraction above the platform address space
+// which manages memory mappings and their contents.
+type MemoryManager interface {
+	//usermem.IO provides access to the contents of a virtual memory space.
+	usermem.IO
+	// MMap establishes a memory mapping.
+	MMap(ctx context.Context, opts memmap.MMapOpts) (usermem.Addr, error)
+	// AddressSpace returns the AddressSpace bound to mm.
+	AddressSpace() AddressSpace
+}
+
 // Context represents the execution context for a single thread.
 type Context interface {
 	// Switch resumes execution of the thread specified by the arch.Context
@@ -143,11 +155,43 @@ type Context interface {
 	// concurrent call to Switch().
 	//
 	// - ErrContextCPUPreempted: See the definition of that error for details.
-	Switch(as AddressSpace, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error)
+	Switch(ctx context.Context, mm MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error)
+
+	// PullFullState() pulls a full state of the application thread.
+	//
+	// A platform can support lazy loading/restoring of a thread state
+	// which includes registers and a floating point state.
+	//
+	// For example, when the Sentry handles a system call, it may have only
+	// syscall arguments without other registers and a floating point
+	// state. And in this case, if the Sentry will need to construct a
+	// signal frame to call a signal handler, it will need to call
+	// PullFullState() to load all registers and FPU state.
+	//
+	// Preconditions: The caller must be running on the task goroutine.
+	PullFullState(as AddressSpace, ac arch.Context)
+
+	// FullStateChanged() indicates that a thread state has been changed by
+	// the Sentry. This happens in case of the rt_sigreturn, execve, etc.
+	//
+	// First, it indicates that the Sentry has the full state of the thread
+	// and PullFullState() has to do nothing if it is called after
+	// FullStateChanged().
+	//
+	// Second, it forces restoring the full state of the application
+	// thread. A platform can support lazy loading/restoring of a thread
+	// state. This means that if the Sentry has not changed a thread state,
+	// the platform may not restore it.
+	//
+	// Preconditions: The caller must be running on the task goroutine.
+	FullStateChanged()
 
 	// Interrupt interrupts a concurrent call to Switch(), causing it to return
 	// ErrContextInterrupt.
 	Interrupt()
+
+	// Release() releases any resources associated with this context.
+	Release()
 }
 
 var (
@@ -204,7 +248,7 @@ type AddressSpace interface {
 	// Preconditions: addr and fr must be page-aligned. fr.Length() > 0.
 	// at.Any() == true. At least one reference must be held on all pages in
 	// fr, and must continue to be held as long as pages are mapped.
-	MapFile(addr usermem.Addr, f File, fr FileRange, at usermem.AccessType, precommit bool) error
+	MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error
 
 	// Unmap unmaps the given range.
 	//
@@ -214,6 +258,13 @@ type AddressSpace interface {
 	// Release releases this address space. After releasing, a new AddressSpace
 	// must be acquired via platform.NewAddressSpace().
 	Release()
+
+	// PreFork() is called before creating a copy of AddressSpace. This
+	// guarantees that this address space will be in a consistent state.
+	PreFork()
+
+	// PostFork() is called after creating a copy of AddressSpace.
+	PostFork()
 
 	// AddressSpaceIO methods are supported iff the associated platform's
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this
@@ -307,56 +358,28 @@ func (f SegmentationFault) Error() string {
 	return fmt.Sprintf("segmentation fault at %#x", f.Addr)
 }
 
-// File represents a host file that may be mapped into an AddressSpace.
-type File interface {
-	// All pages in a File are reference-counted.
-
-	// IncRef increments the reference count on all pages in fr.
-	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
-	// 0. At least one reference must be held on all pages in fr. (The File
-	// interface does not provide a way to acquire an initial reference;
-	// implementors may define mechanisms for doing so.)
-	IncRef(fr FileRange)
-
-	// DecRef decrements the reference count on all pages in fr.
-	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
-	// 0. At least one reference must be held on all pages in fr.
-	DecRef(fr FileRange)
-
-	// MapInternal returns a mapping of the given file offsets in the invoking
-	// process' address space for reading and writing.
-	//
-	// Note that fr.Start and fr.End need not be page-aligned.
-	//
-	// Preconditions: fr.Length() > 0. At least one reference must be held on
-	// all pages in fr.
-	//
-	// Postconditions: The returned mapping is valid as long as at least one
-	// reference is held on the mapped pages.
-	MapInternal(fr FileRange, at usermem.AccessType) (safemem.BlockSeq, error)
-
-	// FD returns the file descriptor represented by the File.
-	//
-	// The only permitted operation on the returned file descriptor is to map
-	// pages from it consistent with the requirements of AddressSpace.MapFile.
-	FD() int
-}
-
-// FileRange represents a range of uint64 offsets into a File.
-//
-// type FileRange <generated using go_generics>
-
-// String implements fmt.Stringer.String.
-func (fr FileRange) String() string {
-	return fmt.Sprintf("[%#x, %#x)", fr.Start, fr.End)
+// Requirements is used to specify platform specific requirements.
+type Requirements struct {
+	// RequiresCurrentPIDNS indicates that the sandbox has to be started in the
+	// current pid namespace.
+	RequiresCurrentPIDNS bool
+	// RequiresCapSysPtrace indicates that the sandbox has to be started with
+	// the CAP_SYS_PTRACE capability.
+	RequiresCapSysPtrace bool
 }
 
 // Constructor represents a platform type.
 type Constructor interface {
+	// New returns a new platform instance.
+	//
+	// Arguments:
+	//
+	// * deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
 	New(deviceFile *os.File) (Platform, error)
 	OpenDevice() (*os.File, error)
+
+	// Requirements returns platform specific requirements.
+	Requirements() Requirements
 }
 
 // platforms contains all available platform types.

@@ -9,30 +9,16 @@ automatically generating code to marshal go data structures to memory.
 `binary.Marshal` by moving the go runtime reflection necessary to marshal a
 struct to compile-time.
 
-`go_marshal` automatically generates implementations for `abi.Marshallable` and
-`safemem.{Reader,Writer}`. Call-sites for serialization (typically syscall
-implementations) can directly invoke `safemem.Reader.ReadToBlocks` and
-`safemem.Writer.WriteFromBlocks`. Data structures that require custom
-serialization will have manual implementations for these interfaces.
+`go_marshal` automatically generates implementations for `marshal.Marshallable`
+and `safemem.{Reader,Writer}`. Data structures that require custom serialization
+will have manual implementations for these interfaces.
 
 Data structures can be flagged for code generation by adding a struct-level
 comment `// +marshal`.
 
 # Usage
 
-See `defs.bzl`: two new rules are provided, `go_marshal` and `go_library`.
-
-The recommended way to generate a go library with marshalling is to use the
-`go_library` with mostly identical configuration as the native go_library rule.
-
-```
-load("<PKGPATH>/gvisor/tools/go_marshal:defs.bzl", "go_library")
-
-go_library(
-    name = "foo",
-    srcs = ["foo.go"],
-)
-```
+See `defs.bzl`: a new rule is provided, `go_marshal`.
 
 Under the hood, the `go_marshal` rule is used to generate a file that will
 appear in a Go target; the output file should appear explicitly in a srcs list.
@@ -54,11 +40,7 @@ go_library(
         "foo.go",
         "foo_abi.go",
     ],
-    deps = [
-        "<PKGPATH>/gvisor/pkg/abi",
-        "<PKGPATH>/gvisor/pkg/sentry/safemem/safemem",
-        "<PKGPATH>/gvisor/pkg/sentry/usermem/usermem",
-    ],
+    ...
 )
 ```
 
@@ -68,22 +50,6 @@ simple round-trip test through Marshal/Unmarshal to verify the implementation.
 These tests use reflection to verify properties of the ABI struct, and should be
 considered part of the generated interfaces (but are too expensive to execute at
 runtime). Ensure these tests run at some point.
-
-```
-$ cat BUILD
-load("<PKGPATH>/gvisor/tools/go_marshal:defs.bzl", "go_library")
-
-go_library(
-    name = "foo",
-    srcs = ["foo.go"],
-)
-$ blaze build :foo
-$ blaze query ...
-<path-to-dir>:foo_abi_autogen
-<path-to-dir>:foo_abi_autogen_test
-$ blaze test :foo_abi_autogen_test
-<test-output>
-```
 
 # Restrictions
 
@@ -130,22 +96,6 @@ for embedded structs that are not aligned.
 
 Because of this, it's generally best to avoid using `marshal:"unaligned"` and
 insert explicit padding fields instead.
-
-## Debugging go_marshal
-
-To enable debugging output from the go marshal tool, pass the `-debug` flag to
-the tool. When using the build rules from above, add a `debug = True` field to
-the build rule like this:
-
-```
-load("<PKGPATH>/gvisor/tools/go_marshal:defs.bzl", "go_library")
-
-go_library(
-    name = "foo",
-    srcs = ["foo.go"],
-    debug = True,
-)
-```
 
 ## Modifying the `go_marshal` Tool
 

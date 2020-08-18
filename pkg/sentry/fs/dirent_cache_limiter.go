@@ -16,7 +16,8 @@ package fs
 
 import (
 	"fmt"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // DirentCacheLimiter acts as a global limit for all dirent caches in the

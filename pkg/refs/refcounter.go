@@ -21,10 +21,11 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
-	"sync"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // RefCounter is the interface to be implemented by objects that are reference
@@ -38,7 +39,7 @@ type RefCounter interface {
 	// Note that AtomicRefCounter.DecRef() does not support destructors.
 	// If a type has a destructor, it must implement its own DecRef()
 	// method and call AtomicRefCounter.DecRefWithDestructor(destructor).
-	DecRef()
+	DecRef(ctx context.Context)
 
 	// TryIncRef attempts to increase the reference counter on the object,
 	// but may fail if all references have already been dropped. This
@@ -57,7 +58,7 @@ type RefCounter interface {
 // A WeakRefUser is notified when the last non-weak reference is dropped.
 type WeakRefUser interface {
 	// WeakRefGone is called when the last non-weak reference is dropped.
-	WeakRefGone()
+	WeakRefGone(ctx context.Context)
 }
 
 // WeakRef is a weak reference.
@@ -123,7 +124,7 @@ func (w *WeakRef) Get() RefCounter {
 // Drop drops this weak reference. You should always call drop when you are
 // finished with the weak reference. You may not use this object after calling
 // drop.
-func (w *WeakRef) Drop() {
+func (w *WeakRef) Drop(ctx context.Context) {
 	rc, ok := w.get()
 	if !ok {
 		// We've been zapped already. When the refcounter has called
@@ -145,7 +146,7 @@ func (w *WeakRef) Drop() {
 
 	// And now aren't on the object's list of weak references. So it won't
 	// zap us if this causes the reference count to drop to zero.
-	rc.DecRef()
+	rc.DecRef(ctx)
 
 	// Return to the pool.
 	weakRefPool.Put(w)
@@ -214,6 +215,8 @@ type AtomicRefCount struct {
 // LeakMode configures the leak checker.
 type LeakMode uint32
 
+// TODO(gvisor.dev/issue/1624): Simplify down to two modes once vfs1 ref
+// counting is gone.
 const (
 	// UninitializedLeakChecking indicates that the leak checker has not yet been initialized.
 	UninitializedLeakChecking LeakMode = iota
@@ -241,6 +244,11 @@ var leakMode uint32
 // SetLeakMode configures the reference leak checker.
 func SetLeakMode(mode LeakMode) {
 	atomic.StoreUint32(&leakMode, uint32(mode))
+}
+
+// GetLeakMode returns the current leak mode.
+func GetLeakMode() LeakMode {
+	return LeakMode(atomic.LoadUint32(&leakMode))
 }
 
 const maxStackFrames = 40
@@ -427,7 +435,7 @@ func (r *AtomicRefCount) dropWeakRef(w *WeakRef) {
 //	A: TryIncRef [transform speculative to real]
 //
 //go:nosplit
-func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
+func (r *AtomicRefCount) DecRefWithDestructor(ctx context.Context, destroy func(context.Context)) {
 	switch v := atomic.AddInt64(&r.refCount, -1); {
 	case v < -1:
 		panic("Decrementing non-positive ref count")
@@ -448,7 +456,7 @@ func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 
 			if user != nil {
 				r.mu.Unlock()
-				user.WeakRefGone()
+				user.WeakRefGone(ctx)
 				r.mu.Lock()
 			}
 		}
@@ -456,7 +464,7 @@ func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 
 		// Call the destructor.
 		if destroy != nil {
-			destroy()
+			destroy(ctx)
 		}
 	}
 }
@@ -464,6 +472,16 @@ func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 // DecRef decrements this object's reference count.
 //
 //go:nosplit
-func (r *AtomicRefCount) DecRef() {
-	r.DecRefWithDestructor(nil)
+func (r *AtomicRefCount) DecRef(ctx context.Context) {
+	r.DecRefWithDestructor(ctx, nil)
+}
+
+// OnExit is called on sandbox exit. It runs GC to enqueue refcount finalizers,
+// which check for reference leaks. There is no way to guarantee that every
+// finalizer will run before exiting, but this at least ensures that they will
+// be discovered/enqueued by GC.
+func OnExit() {
+	if LeakMode(atomic.LoadUint32(&leakMode)) != NoLeakChecking {
+		runtime.GC()
+	}
 }

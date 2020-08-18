@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type checker struct {

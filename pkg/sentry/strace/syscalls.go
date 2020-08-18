@@ -206,6 +206,38 @@ const (
 	// PollFDs is an array of struct pollfd. The number of entries in the
 	// array is in the next argument.
 	PollFDs
+
+	// SelectFDSet is an fd_set argument in select(2)/pselect(2). The
+	// number of FDs represented must be the first argument.
+	SelectFDSet
+
+	// GetSockOptVal is the optval argument in getsockopt(2).
+	//
+	// Formatted after syscall execution.
+	GetSockOptVal
+
+	// SetSockOptVal is the optval argument in setsockopt(2).
+	//
+	// Contents omitted after syscall execution.
+	SetSockOptVal
+
+	// SockOptLevel is the level argument in getsockopt(2) and
+	// setsockopt(2).
+	SockOptLevel
+
+	// SockOptLevel is the optname argument in getsockopt(2) and
+	// setsockopt(2).
+	SockOptName
+
+	// EpollCtlOp is the op argument to epoll_ctl(2).
+	EpollCtlOp
+
+	// EpollEvent is the event argument in epoll_ctl(2).
+	EpollEvent
+
+	// EpollEvents is an array of struct epoll_event. It is the events
+	// argument in epoll_wait(2)/epoll_pwait(2).
+	EpollEvents
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is
@@ -246,14 +278,7 @@ type syscallTable struct {
 	syscalls SyscallMap
 }
 
-// syscallTables contains all syscall tables.
-var syscallTables = []syscallTable{
-	{
-		os:       abi.Linux,
-		arch:     arch.AMD64,
-		syscalls: linuxAMD64,
-	},
-}
+var syscallTables []syscallTable
 
 // Lookup returns the SyscallMap for the OS/Arch combination. The returned map
 // must not be changed.

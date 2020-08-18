@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.11
-// +build !go1.14
+// +build !go1.16
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -75,6 +75,8 @@ package sleep
 import (
 	"sync/atomic"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (
@@ -299,20 +301,17 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
 		}
 	}
 
-	for {
-		// Nothing to do if there isn't a G waiting.
-		g := atomic.LoadUintptr(&s.waitingG)
-		if g == 0 {
-			return
-		}
+	// Nothing to do if there isn't a G waiting.
+	if atomic.LoadUintptr(&s.waitingG) == 0 {
+		return
+	}
 
-		// Signal to the sleeper that a waker has been asserted.
-		if atomic.CompareAndSwapUintptr(&s.waitingG, g, 0) {
-			if g != preparingG {
-				// We managed to get a G. Wake it up.
-				goready(g, 0)
-			}
-		}
+	// Signal to the sleeper that a waker has been asserted.
+	switch g := atomic.SwapUintptr(&s.waitingG, 0); g {
+	case 0, preparingG:
+	default:
+		// We managed to get a G. Wake it up.
+		goready(g, 0)
 	}
 }
 
@@ -326,7 +325,12 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
 //
 // This struct is thread-safe, that is, its methods can be called concurrently
 // by multiple goroutines.
+//
+// Note, it is not safe to copy a Waker as its fields are modified by value
+// (the pointer fields are individually modified with atomic operations).
 type Waker struct {
+	_ sync.NoCopy
+
 	// s is the sleeper that this waker can wake up. Only one sleeper at a
 	// time is allowed. This field can have three classes of values:
 	// nil -- the waker is not asserted: it either is not associated with

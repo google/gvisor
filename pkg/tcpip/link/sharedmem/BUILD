@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -11,12 +10,10 @@ go_library(
         "sharedmem_unsafe.go",
         "tx.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sharedmem",
-    visibility = [
-        "//:sandbox",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/log",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
@@ -31,8 +28,9 @@ go_test(
     srcs = [
         "sharedmem_test.go",
     ],
-    embed = [":sharedmem"],
+    library = ":sharedmem",
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",

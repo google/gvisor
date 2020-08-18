@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,7 +8,6 @@ go_template_instance(
     out = "dirty_set_impl.go",
     imports = {
         "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
     prefix = "Dirty",
@@ -26,16 +24,16 @@ go_template_instance(
     name = "frame_ref_set_impl",
     out = "frame_ref_set_impl.go",
     imports = {
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
     },
     package = "fsutil",
-    prefix = "frameRef",
+    prefix = "FrameRef",
     template = "//pkg/segment:generic_set",
     types = {
         "Key": "uint64",
-        "Range": "platform.FileRange",
+        "Range": "memmap.FileRange",
         "Value": "uint64",
-        "Functions": "frameRefSetFunctions",
+        "Functions": "FrameRefSetFunctions",
     },
 )
 
@@ -44,7 +42,6 @@ go_template_instance(
     out = "file_range_set_impl.go",
     imports = {
         "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
     prefix = "FileRange",
@@ -53,7 +50,7 @@ go_template_instance(
         "Key": "uint64",
         "Range": "memmap.MappableRange",
         "Value": "uint64",
-        "Functions": "fileRangeSetFunctions",
+        "Functions": "FileRangeSetFunctions",
     },
 )
 
@@ -75,25 +72,24 @@ go_library(
         "inode.go",
         "inode_cached.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/fsutil",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
-        "//pkg/sentry/platform",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/state",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -105,15 +101,15 @@ go_test(
         "dirty_set_test.go",
         "inode_cached_test.go",
     ],
-    embed = [":fsutil"],
+    library = ":fsutil",
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/safemem",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/safemem",
-        "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

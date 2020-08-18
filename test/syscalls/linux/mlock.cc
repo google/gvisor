@@ -16,6 +16,7 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
 #include <cerrno>
 #include <cstring>
 
@@ -58,7 +59,6 @@ bool IsPageMlocked(uintptr_t addr) {
   TEST_PCHECK_MSG(errno == EBUSY, "msync failed with unexpected errno");
   return true;
 }
-
 
 TEST(MlockTest, Basic) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanMlock()));
@@ -199,8 +199,10 @@ TEST(MunlockallTest, Basic) {
 }
 
 #ifndef SYS_mlock2
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #define SYS_mlock2 325
+#elif defined(__aarch64__)
+#define SYS_mlock2 284
 #endif
 #endif
 

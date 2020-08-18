@@ -1,9 +1,16 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//tools:defs.bzl", "bzl_library", "go_binary")
 
 package(licenses = ["notice"])
 
 go_binary(
     name = "stateify",
     srcs = ["main.go"],
-    visibility = ["//visibility:public"],
+    visibility = ["//:sandbox"],
+    deps = ["//tools/tags"],
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )

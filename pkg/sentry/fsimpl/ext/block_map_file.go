@@ -58,15 +58,16 @@ var _ io.ReaderAt = (*blockMapFile)(nil)
 
 // newBlockMapFile is the blockMapFile constructor. It initializes the file to
 // physical blocks map with (at most) the first 12 (direct) blocks.
-func newBlockMapFile(regFile regularFile) (*blockMapFile, error) {
-	file := &blockMapFile{regFile: regFile}
+func newBlockMapFile(args inodeArgs) (*blockMapFile, error) {
+	file := &blockMapFile{}
 	file.regFile.impl = file
+	file.regFile.inode.init(args, &file.regFile)
 
 	for i := uint(0); i < 4; i++ {
-		file.coverage[i] = getCoverage(regFile.inode.blkSize, i)
+		file.coverage[i] = getCoverage(file.regFile.inode.blkSize, i)
 	}
 
-	blkMap := regFile.inode.diskInode.Data()
+	blkMap := file.regFile.inode.diskInode.Data()
 	binary.Unmarshal(blkMap[:numDirectBlks*4], binary.LittleEndian, &file.directBlks)
 	binary.Unmarshal(blkMap[numDirectBlks*4:(numDirectBlks+1)*4], binary.LittleEndian, &file.indirectBlk)
 	binary.Unmarshal(blkMap[(numDirectBlks+1)*4:(numDirectBlks+2)*4], binary.LittleEndian, &file.doubleIndirectBlk)
@@ -154,7 +155,7 @@ func (f *blockMapFile) read(curPhyBlk uint32, relFileOff uint64, height uint, ds
 			toRead = len(dst)
 		}
 
-		n, _ := f.regFile.inode.dev.ReadAt(dst[:toRead], curPhyBlkOff+int64(relFileOff))
+		n, _ := f.regFile.inode.fs.dev.ReadAt(dst[:toRead], curPhyBlkOff+int64(relFileOff))
 		if n < toRead {
 			return n, syserror.EIO
 		}
@@ -174,7 +175,7 @@ func (f *blockMapFile) read(curPhyBlk uint32, relFileOff uint64, height uint, ds
 	curChildOff := relFileOff % childCov
 	for i := startIdx; i < endIdx; i++ {
 		var childPhyBlk uint32
-		err := readFromDisk(f.regFile.inode.dev, curPhyBlkOff+int64(i*4), &childPhyBlk)
+		err := readFromDisk(f.regFile.inode.fs.dev, curPhyBlkOff+int64(i*4), &childPhyBlk)
 		if err != nil {
 			return read, err
 		}

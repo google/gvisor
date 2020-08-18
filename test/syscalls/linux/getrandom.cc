@@ -29,6 +29,8 @@ namespace {
 #define SYS_getrandom 318
 #elif defined(__i386__)
 #define SYS_getrandom 355
+#elif defined(__aarch64__)
+#define SYS_getrandom 278
 #else
 #error "Unknown architecture"
 #endif

@@ -22,10 +22,10 @@ package fdnotifier
 
 import (
 	"fmt"
-	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 

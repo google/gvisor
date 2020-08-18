@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.12
-// +build !go1.14
+// +build !go1.16
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -34,6 +34,30 @@ func entersyscall()
 
 //go:linkname exitsyscall runtime.exitsyscall
 func exitsyscall()
+
+// setMemoryRegion initializes a region.
+//
+// This may be called from bluepillHandler, and therefore returns an errno
+// directly (instead of wrapping in an error) to avoid allocations.
+//
+//go:nosplit
+func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, flags uint32) syscall.Errno {
+	userRegion := userMemoryRegion{
+		slot:          uint32(slot),
+		flags:         uint32(flags),
+		guestPhysAddr: uint64(physical),
+		memorySize:    uint64(length),
+		userspaceAddr: uint64(virtual),
+	}
+
+	// Set the region.
+	_, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(m.fd),
+		_KVM_SET_USER_MEMORY_REGION,
+		uintptr(unsafe.Pointer(&userRegion)))
+	return errno
+}
 
 // mapRunData maps the vCPU run data.
 func mapRunData(fd int) (*runData, error) {
@@ -59,46 +83,6 @@ func unmapRunData(r *runData) error {
 		uintptr(runDataSize),
 		0); errno != 0 {
 		return fmt.Errorf("error unmapping runData: %v", errno)
-	}
-	return nil
-}
-
-// setUserRegisters sets user registers in the vCPU.
-func (c *vCPU) setUserRegisters(uregs *userRegs) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_SET_REGS,
-		uintptr(unsafe.Pointer(uregs))); errno != 0 {
-		return fmt.Errorf("error setting user registers: %v", errno)
-	}
-	return nil
-}
-
-// getUserRegisters reloads user registers in the vCPU.
-//
-// This is safe to call from a nosplit context.
-//
-//go:nosplit
-func (c *vCPU) getUserRegisters(uregs *userRegs) syscall.Errno {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_GET_REGS,
-		uintptr(unsafe.Pointer(uregs))); errno != 0 {
-		return errno
-	}
-	return 0
-}
-
-// setSystemRegisters sets system registers.
-func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_SET_SREGS,
-		uintptr(unsafe.Pointer(sregs))); errno != 0 {
-		return fmt.Errorf("error setting system registers: %v", errno)
 	}
 	return nil
 }
@@ -131,7 +115,7 @@ func (a *atomicAddressSpace) get() *addressSpace {
 //
 //go:nosplit
 func (c *vCPU) notify() {
-	_, _, errno := syscall.RawSyscall6(
+	_, _, errno := syscall.RawSyscall6( // escapes: no.
 		syscall.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,

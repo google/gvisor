@@ -21,8 +21,7 @@ import (
 
 // afterLoad is invoked by stateify.
 func (p *pollEntry) afterLoad() {
-	p.waiter = waiter.Entry{Callback: &readyCallback{}}
-	p.waiter.Context = p
+	p.waiter.Callback = p
 	p.file = refs.NewWeakRef(p.id.File, p)
 	p.id.File.EventRegister(&p.waiter, p.mask)
 }
@@ -38,11 +37,14 @@ func (e *EventPoll) afterLoad() {
 		}
 	}
 
-	for it := e.waitingList.Front(); it != nil; it = it.Next() {
-		if it.id.File.Readiness(it.mask) != 0 {
-			e.waitingList.Remove(it)
-			e.readyList.PushBack(it)
-			it.curList = &e.readyList
+	for it := e.waitingList.Front(); it != nil; {
+		entry := it
+		it = it.Next()
+
+		if entry.id.File.Readiness(entry.mask) != 0 {
+			e.waitingList.Remove(entry)
+			e.readyList.PushBack(entry)
+			entry.curList = &e.readyList
 			e.Notify(waiter.EventIn)
 		}
 	}

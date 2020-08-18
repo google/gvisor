@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -10,11 +10,12 @@ go_library(
     srcs = [
         "context.go",
         "inet.go",
+        "namespace.go",
         "test_stack.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/inet",
     deps = [
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/tcpip",
+        "//pkg/tcpip/stack",
     ],
 )

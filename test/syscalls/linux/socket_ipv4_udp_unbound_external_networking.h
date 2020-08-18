@@ -29,17 +29,15 @@ class IPv4UDPUnboundExternalNetworkingSocketTest : public SimpleSocketTest {
 
   IfAddrHelper if_helper_;
 
-  // got_if_infos_ is set to false if SetUp() could not obtain all interface
-  // infos that we need.
-  bool got_if_infos_;
+  // found_net_interfaces_ is set to false if SetUp() could not obtain
+  // all interface infos that we need.
+  bool found_net_interfaces_;
 
   // Interface infos.
   int lo_if_idx_;
   int eth_if_idx_;
-  sockaddr* lo_if_addr_;
-  sockaddr* eth_if_addr_;
-  in_addr lo_if_sin_addr_;
-  in_addr eth_if_sin_addr_;
+  sockaddr_in lo_if_addr_;
+  sockaddr_in eth_if_addr_;
 };
 
 }  // namespace testing

@@ -29,13 +29,18 @@ func Sysinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	mf.UpdateUsage()
 	_, totalUsage := usage.MemoryAccounting.Copy()
 	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)
+	memFree := totalSize - totalUsage
+	if memFree > totalSize {
+		// Underflow.
+		memFree = 0
+	}
 
 	// Only a subset of the fields in sysinfo_t make sense to return.
 	si := linux.Sysinfo{
 		Procs:    uint16(len(t.PIDNamespace().Tasks())),
 		Uptime:   t.Kernel().MonotonicClock().Now().Seconds(),
 		TotalRAM: totalSize,
-		FreeRAM:  totalSize - totalUsage,
+		FreeRAM:  memFree,
 		Unit:     1,
 	}
 	_, err := t.CopyOut(addr, si)

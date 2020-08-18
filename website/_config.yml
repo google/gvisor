@@ -1,0 +1,36 @@
+destination: _site
+markdown: kramdown
+kramdown:
+  syntax_highlighter: rouge
+  toc_levels: "2,3"
+highlighter: rouge
+paginate: 5
+paginate_path: "/blog/page:num/"
+plugins:
+  - jekyll-paginate
+  - jekyll-autoprefixer
+  - jekyll-inline-svg
+  - jekyll-relative-links
+  - jekyll-feed
+  - jekyll-sitemap
+site_url: https://gvisor.dev
+feed:
+  path: blog/index.xml
+svg:
+  optimize: true
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+analytics: "UA-150193582-1"
+authors:
+  jsprad:
+    name: Jeremiah Spradlin
+    email: jsprad@google.com
+  zkoopmans:
+    name: Zach Koopmans
+    email: zkoopmans@google.com
+  igudger:
+    name: Ian Gudger
+    email: igudger@google.com

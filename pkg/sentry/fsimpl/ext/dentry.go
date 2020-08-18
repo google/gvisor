@@ -15,12 +15,17 @@
 package ext
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // dentry implements vfs.DentryImpl.
 type dentry struct {
 	vfsd vfs.Dentry
+
+	// Protected by filesystem.mu.
+	parent *dentry
+	name   string
 
 	// inode is the inode represented by this dentry. Multiple Dentries may
 	// share a single non-directory Inode (with hard links). inode is
@@ -41,16 +46,35 @@ func newDentry(in *inode) *dentry {
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
-func (d *dentry) IncRef(vfsfs *vfs.Filesystem) {
+func (d *dentry) IncRef() {
 	d.inode.incRef()
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
-func (d *dentry) TryIncRef(vfsfs *vfs.Filesystem) bool {
+func (d *dentry) TryIncRef() bool {
 	return d.inode.tryIncRef()
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef(vfsfs *vfs.Filesystem) {
-	d.inode.decRef(vfsfs.Impl().(*filesystem))
+func (d *dentry) DecRef(ctx context.Context) {
+	// FIXME(b/134676337): filesystem.mu may not be locked as required by
+	// inode.decRef().
+	d.inode.decRef()
 }
+
+// InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
+//
+// TODO(b/134676337): Implement inotify.
+func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {}
+
+// Watches implements vfs.DentryImpl.Watches.
+//
+// TODO(b/134676337): Implement inotify.
+func (d *dentry) Watches() *vfs.Watches {
+	return nil
+}
+
+// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
+//
+// TODO(b/134676337): Implement inotify.
+func (d *dentry) OnZeroWatches(context.Context) {}

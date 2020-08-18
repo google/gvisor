@@ -85,18 +85,6 @@ func (n *blkNumGen) next() uint32 {
 // the inode covers and that is written to disk.
 func blockMapSetUp(t *testing.T) (*blockMapFile, []byte) {
 	mockDisk := make([]byte, mockBMDiskSize)
-	regFile := regularFile{
-		inode: inode{
-			diskInode: &disklayout.InodeNew{
-				InodeOld: disklayout.InodeOld{
-					SizeLo: getMockBMFileFize(),
-				},
-			},
-			dev:     bytes.NewReader(mockDisk),
-			blkSize: uint64(mockBMBlkSize),
-		},
-	}
-
 	var fileData []byte
 	blkNums := newBlkNumGen()
 	var data []byte
@@ -123,9 +111,20 @@ func blockMapSetUp(t *testing.T) (*blockMapFile, []byte) {
 	data = binary.Marshal(data, binary.LittleEndian, triplyIndirectBlk)
 	fileData = append(fileData, writeFileDataToBlock(mockDisk, triplyIndirectBlk, 3, blkNums)...)
 
-	copy(regFile.inode.diskInode.Data(), data)
+	args := inodeArgs{
+		fs: &filesystem{
+			dev: bytes.NewReader(mockDisk),
+		},
+		diskInode: &disklayout.InodeNew{
+			InodeOld: disklayout.InodeOld{
+				SizeLo: getMockBMFileFize(),
+			},
+		},
+		blkSize: uint64(mockBMBlkSize),
+	}
+	copy(args.diskInode.Data(), data)
 
-	mockFile, err := newBlockMapFile(regFile)
+	mockFile, err := newBlockMapFile(args)
 	if err != nil {
 		t.Fatalf("newBlockMapFile failed: %v", err)
 	}

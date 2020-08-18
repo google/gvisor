@@ -56,7 +56,7 @@ void TryDeleteRecursively(std::string const& path) {
     if (undeleted_dirs || undeleted_files || !status.ok()) {
       std::cerr << path << ": failed to delete " << undeleted_dirs
                 << " directories and " << undeleted_files
-                << " files: " << status;
+                << " files: " << status << std::endl;
     }
   }
 }
@@ -77,6 +77,7 @@ std::string NewTempAbsPath() {
 std::string NewTempRelPath() { return NextTempBasename(); }
 
 std::string GetAbsoluteTestTmpdir() {
+  // Note that TEST_TMPDIR is guaranteed to be set.
   char* env_tmpdir = getenv("TEST_TMPDIR");
   std::string tmp_dir =
       env_tmpdir != nullptr ? std::string(env_tmpdir) : "/tmp";

@@ -16,11 +16,17 @@
 
 set -xeou pipefail
 
-if [[ -f $(dirname $0)/common_google.sh ]]; then
-  source $(dirname $0)/common_google.sh
+# Get the path to the directory this script lives in.
+# If this script is being called with `source`, $0 will be the path of the
+# *sourcing* script, so we can't use `dirname $0` to find scripts in this
+# directory.
+if [[ -v BASH_SOURCE && "$0" != "$BASH_SOURCE" ]]; then
+  declare -r script_dir="$(dirname "$BASH_SOURCE")"
 else
-  source $(dirname $0)/common_bazel.sh
+  declare -r script_dir="$(dirname "$0")"
 fi
+
+source "${script_dir}/common_build.sh"
 
 # Ensure it attempts to collect logs in all cases.
 trap collect_logs EXIT
@@ -73,7 +79,7 @@ function install_runsc() {
   sudo "${RUNSC_BIN}" install --experimental=true --runtime="${runtime}" -- --debug-log "${RUNSC_LOGS}" "$@"
 
   # Clear old logs files that may exist.
-  sudo rm -f "${RUNSC_LOGS_DIR}"/*
+  sudo rm -f "${RUNSC_LOGS_DIR}"/'*'
 
   # Restart docker to pick up the new runtime configuration.
   sudo systemctl restart docker

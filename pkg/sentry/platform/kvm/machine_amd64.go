@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // initArchState initializes architecture-specific state.
@@ -51,9 +51,10 @@ func (m *machine) initArchState() error {
 		recover()
 		debug.SetPanicOnFault(old)
 	}()
-	m.retryInGuest(func() {
-		ring0.SetCPUIDFaulting(true)
-	})
+	c := m.Get()
+	defer m.Put(c)
+	bluepill(c)
+	ring0.SetCPUIDFaulting(true)
 
 	return nil
 }
@@ -89,8 +90,10 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 	defer m.mu.Unlock()
 
 	// Clear from all PCIDs.
-	for _, c := range m.vCPUs {
-		c.PCIDs.Drop(pt)
+	for _, c := range m.vCPUsByID {
+		if c != nil && c.PCIDs != nil {
+			c.PCIDs.Drop(pt)
+		}
 	}
 }
 
@@ -333,25 +336,12 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	}
 }
 
-// retryInGuest runs the given function in guest mode.
-//
-// If the function does not complete in guest mode (due to execution of a
-// system call due to a GC stall, for example), then it will be retried. The
-// given function must be idempotent as a result of the retry mechanism.
-func (m *machine) retryInGuest(fn func()) {
-	c := m.Get()
-	defer m.Put(c)
-	for {
-		c.ClearErrorCode() // See below.
-		bluepill(c)        // Force guest mode.
-		fn()               // Execute the given function.
-		_, user := c.ErrorCode()
-		if user {
-			// If user is set, then we haven't bailed back to host
-			// mode via a kernel exception or system call. We
-			// consider the full function to have executed in guest
-			// mode and we can return.
-			break
-		}
-	}
+// On x86 platform, the flags for "setMemoryRegion" can always be set as 0.
+// There is no need to return read-only physicalRegions.
+func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
+	return nil
+}
+
+func availableRegionsForSetMem() (phyRegions []physicalRegion) {
+	return physicalRegions
 }

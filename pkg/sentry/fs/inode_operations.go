@@ -17,7 +17,7 @@ package fs
 import (
 	"errors"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -170,20 +170,38 @@ type InodeOperations interface {
 	// file system events.
 	UnstableAttr(ctx context.Context, inode *Inode) (UnstableAttr, error)
 
-	// Getxattr retrieves the value of extended attribute name. Inodes that
-	// do not support extended attributes return EOPNOTSUPP. Inodes that
-	// support extended attributes but don't have a value at name return
+	// GetXattr retrieves the value of extended attribute specified by name.
+	// Inodes that do not support extended attributes return EOPNOTSUPP. Inodes
+	// that support extended attributes but don't have a value at name return
 	// ENODATA.
-	Getxattr(inode *Inode, name string) (string, error)
+	//
+	// If this is called through the getxattr(2) syscall, size indicates the
+	// size of the buffer that the application has allocated to hold the
+	// attribute value. If the value is larger than size, implementations may
+	// return ERANGE to indicate that the buffer is too small, but they are also
+	// free to ignore the hint entirely (i.e. the value returned may be larger
+	// than size). All size checking is done independently at the syscall layer.
+	GetXattr(ctx context.Context, inode *Inode, name string, size uint64) (string, error)
 
-	// Setxattr sets the value of extended attribute name. Inodes that
-	// do not support extended attributes return EOPNOTSUPP.
-	Setxattr(inode *Inode, name, value string) error
+	// SetXattr sets the value of extended attribute specified by name. Inodes
+	// that do not support extended attributes return EOPNOTSUPP.
+	SetXattr(ctx context.Context, inode *Inode, name, value string, flags uint32) error
 
-	// Listxattr returns the set of all extended attributes names that
+	// ListXattr returns the set of all extended attributes names that
 	// have values. Inodes that do not support extended attributes return
 	// EOPNOTSUPP.
-	Listxattr(inode *Inode) (map[string]struct{}, error)
+	//
+	// If this is called through the listxattr(2) syscall, size indicates the
+	// size of the buffer that the application has allocated to hold the
+	// attribute list. If the list would be larger than size, implementations may
+	// return ERANGE to indicate that the buffer is too small, but they are also
+	// free to ignore the hint entirely. All size checking is done independently
+	// at the syscall layer.
+	ListXattr(ctx context.Context, inode *Inode, size uint64) (map[string]struct{}, error)
+
+	// RemoveXattr removes an extended attribute specified by name. Inodes that
+	// do not support extended attributes return EOPNOTSUPP.
+	RemoveXattr(ctx context.Context, inode *Inode, name string) error
 
 	// Check determines whether an Inode can be accessed with the
 	// requested permission mask using the context (which gives access

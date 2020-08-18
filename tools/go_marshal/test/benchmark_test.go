@@ -22,9 +22,9 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/analysis"
-	test "gvisor.dev/gvisor/tools/go_marshal/test"
+	"gvisor.dev/gvisor/tools/go_marshal/test"
 )
 
 // Marshalling using the standard encoding/binary package.
@@ -167,6 +167,48 @@ func BenchmarkGoMarshalUnsafe(b *testing.B) {
 		buf := make([]byte, s1.SizeBytes())
 		s1.MarshalUnsafe(buf)
 		s2.UnmarshalUnsafe(buf)
+	}
+
+	b.StopTimer()
+
+	// Sanity check, make sure the values were preserved.
+	if !reflect.DeepEqual(s1, s2) {
+		panic(fmt.Sprintf("Data corruption across marshal/unmarshal cycle:\nBefore: %+v\nAfter: %+v\n", s1, s2))
+	}
+}
+
+func BenchmarkBinarySlice(b *testing.B) {
+	var s1, s2 [64]test.Stat
+	analysis.RandomizeValue(&s1)
+
+	size := binary.Size(s1)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		buf := make([]byte, 0, size)
+		buf = binary.Marshal(buf, usermem.ByteOrder, &s1)
+		binary.Unmarshal(buf, usermem.ByteOrder, &s2)
+	}
+
+	b.StopTimer()
+
+	// Sanity check, make sure the values were preserved.
+	if !reflect.DeepEqual(s1, s2) {
+		panic(fmt.Sprintf("Data corruption across marshal/unmarshal cycle:\nBefore: %+v\nAfter: %+v\n", s1, s2))
+	}
+}
+
+func BenchmarkGoMarshalUnsafeSlice(b *testing.B) {
+	var s1, s2 [64]test.Stat
+	analysis.RandomizeValue(&s1)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		buf := make([]byte, (*test.Stat)(nil).SizeBytes()*len(s1))
+		test.MarshalUnsafeStatSlice(s1[:], buf)
+		test.UnmarshalUnsafeStatSlice(s2[:], buf)
 	}
 
 	b.StopTimer()

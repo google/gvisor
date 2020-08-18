@@ -15,32 +15,17 @@
 package vfs
 
 import (
-	"fmt"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// Dentry represents a node in a Filesystem tree which may represent a file.
+// Dentry represents a node in a Filesystem tree at which a file exists.
 //
 // Dentries are reference-counted. Unless otherwise specified, all Dentry
 // methods require that a reference is held.
-//
-// A Dentry transitions through up to 3 different states through its lifetime:
-//
-// - Dentries are initially "independent". Independent Dentries have no parent,
-// and consequently no name.
-//
-// - Dentry.InsertChild() causes an independent Dentry to become a "child" of
-// another Dentry. A child node has a parent node, and a name in that parent,
-// both of which are mutable by DentryMoveChild(). Each child Dentry's name is
-// unique within its parent.
-//
-// - Dentry.RemoveChild() causes a child Dentry to become "disowned". A
-// disowned Dentry can still refer to its former parent and its former name in
-// said parent, but the disowned Dentry is no longer reachable from its parent,
-// and a new Dentry with the same name may become a child of the parent. (This
-// is analogous to a struct dentry being "unhashed" in Linux.)
 //
 // Dentry is loosely analogous to Linux's struct dentry, but:
 //
@@ -50,14 +35,11 @@ import (
 // and not inodes. Furthermore, when parties outside the scope of VFS can
 // rename inodes on such filesystems, VFS generally cannot "follow" the rename,
 // both due to synchronization issues and because it may not even be able to
-// name the destination path; this implies that it would in fact be *incorrect*
+// name the destination path; this implies that it would in fact be incorrect
 // for Dentries to be associated with inodes on such filesystems. Consequently,
 // operations that are inode operations in Linux are FilesystemImpl methods
 // and/or FileDescriptionImpl methods in gVisor's VFS. Filesystems that do
 // support inodes may store appropriate state in implementations of DentryImpl.
-//
-// - VFS does not provide synchronization for mutable Dentry fields, other than
-// mount-related ones.
 //
 // - VFS does not require that Dentries are instantiated for all paths accessed
 // through VFS, only those that are tracked beyond the scope of a single
@@ -66,37 +48,33 @@ import (
 // of Dentries for operations on mutable remote filesystems that can't actually
 // cache any state in the Dentry.
 //
+// - VFS does not track filesystem structure (i.e. relationships between
+// Dentries), since both the relevant state and synchronization are
+// filesystem-specific.
+//
 // - For the reasons above, VFS is not directly responsible for managing Dentry
 // lifetime. Dentry reference counts only indicate the extent to which VFS
 // requires Dentries to exist; Filesystems may elect to cache or discard
 // Dentries with zero references.
+//
+// +stateify savable
 type Dentry struct {
-	// parent is this Dentry's parent in this Filesystem. If this Dentry is
-	// independent, parent is nil.
-	parent *Dentry
+	// mu synchronizes deletion/invalidation and mounting over this Dentry.
+	mu sync.Mutex `state:"nosave"`
 
-	// name is this Dentry's name in parent.
-	name string
-
-	flags uint32
+	// dead is true if the file represented by this Dentry has been deleted (by
+	// CommitDeleteDentry or CommitRenameReplaceDentry) or invalidated (by
+	// InvalidateDentry). dead is protected by mu.
+	dead bool
 
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
 	// mounts is accessed using atomic memory operations.
 	mounts uint32
 
-	// children are child Dentries.
-	children map[string]*Dentry
-
 	// impl is the DentryImpl associated with this Dentry. impl is immutable.
 	// This should be the last field in Dentry.
 	impl DentryImpl
 }
-
-const (
-	// dflagsDisownedMask is set in Dentry.flags if the Dentry has been
-	// disowned.
-	dflagsDisownedMask = 1 << iota
-)
 
 // Init must be called before first use of d.
 func (d *Dentry) Init(impl DentryImpl) {
@@ -114,7 +92,7 @@ func (d *Dentry) Impl() DentryImpl {
 type DentryImpl interface {
 	// IncRef increments the Dentry's reference count. A Dentry with a non-zero
 	// reference count must remain coherent with the state of the filesystem.
-	IncRef(fs *Filesystem)
+	IncRef()
 
 	// TryIncRef increments the Dentry's reference count and returns true. If
 	// the Dentry's reference count is zero, TryIncRef may do nothing and
@@ -122,148 +100,140 @@ type DentryImpl interface {
 	// guarantee that the Dentry is coherent with the state of the filesystem.)
 	//
 	// TryIncRef does not require that a reference is held on the Dentry.
-	TryIncRef(fs *Filesystem) bool
+	TryIncRef() bool
 
 	// DecRef decrements the Dentry's reference count.
-	DecRef(fs *Filesystem)
+	DecRef(ctx context.Context)
+
+	// InotifyWithParent notifies all watches on the targets represented by this
+	// dentry and its parent. The parent's watches are notified first, followed
+	// by this dentry's.
+	//
+	// InotifyWithParent automatically adds the IN_ISDIR flag for dentries
+	// representing directories.
+	//
+	// Note that the events may not actually propagate up to the user, depending
+	// on the event masks.
+	InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType)
+
+	// Watches returns the set of inotify watches for the file corresponding to
+	// the Dentry. Dentries that are hard links to the same underlying file
+	// share the same watches.
+	//
+	// Watches may return nil if the dentry belongs to a FilesystemImpl that
+	// does not support inotify. If an implementation returns a non-nil watch
+	// set, it must always return a non-nil watch set. Likewise, if an
+	// implementation returns a nil watch set, it must always return a nil watch
+	// set.
+	//
+	// The caller does not need to hold a reference on the dentry.
+	Watches() *Watches
+
+	// OnZeroWatches is called whenever the number of watches on a dentry drops
+	// to zero. This is needed by some FilesystemImpls (e.g. gofer) to manage
+	// dentry lifetime.
+	//
+	// The caller does not need to hold a reference on the dentry. OnZeroWatches
+	// may acquire inotify locks, so to prevent deadlock, no inotify locks should
+	// be held by the caller.
+	OnZeroWatches(ctx context.Context)
 }
 
-// IsDisowned returns true if d is disowned.
-func (d *Dentry) IsDisowned() bool {
-	return atomic.LoadUint32(&d.flags)&dflagsDisownedMask != 0
+// IncRef increments d's reference count.
+func (d *Dentry) IncRef() {
+	d.impl.IncRef()
 }
 
-// Preconditions: !d.IsDisowned().
-func (d *Dentry) setDisowned() {
-	atomic.AddUint32(&d.flags, dflagsDisownedMask)
+// TryIncRef increments d's reference count and returns true. If d's reference
+// count is zero, TryIncRef may instead do nothing and return false.
+func (d *Dentry) TryIncRef() bool {
+	return d.impl.TryIncRef()
+}
+
+// DecRef decrements d's reference count.
+func (d *Dentry) DecRef(ctx context.Context) {
+	d.impl.DecRef(ctx)
+}
+
+// IsDead returns true if d has been deleted or invalidated by its owning
+// filesystem.
+func (d *Dentry) IsDead() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.dead
 }
 
 func (d *Dentry) isMounted() bool {
 	return atomic.LoadUint32(&d.mounts) != 0
 }
 
-func (d *Dentry) incRef(fs *Filesystem) {
-	d.impl.IncRef(fs)
+// InotifyWithParent notifies all watches on the targets represented by d and
+// its parent of events.
+func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType) {
+	d.impl.InotifyWithParent(ctx, events, cookie, et)
 }
 
-func (d *Dentry) tryIncRef(fs *Filesystem) bool {
-	return d.impl.TryIncRef(fs)
-}
-
-func (d *Dentry) decRef(fs *Filesystem) {
-	d.impl.DecRef(fs)
-}
-
-// These functions are exported so that filesystem implementations can use
-// them. The vfs package, and users of VFS, should not call these functions.
-// Unless otherwise specified, these methods require that there are no
-// concurrent mutators of d.
-
-// Name returns d's name in its parent in its owning Filesystem. If d is
-// independent, Name returns an empty string.
-func (d *Dentry) Name() string {
-	return d.name
-}
-
-// Parent returns d's parent in its owning Filesystem. It does not take a
-// reference on the returned Dentry. If d is independent, Parent returns nil.
-func (d *Dentry) Parent() *Dentry {
-	return d.parent
-}
-
-// ParentOrSelf is equivalent to Parent, but returns d if d is independent.
-func (d *Dentry) ParentOrSelf() *Dentry {
-	if d.parent == nil {
-		return d
-	}
-	return d.parent
-}
-
-// Child returns d's child with the given name in its owning Filesystem. It
-// does not take a reference on the returned Dentry. If no such child exists,
-// Child returns nil.
-func (d *Dentry) Child(name string) *Dentry {
-	return d.children[name]
-}
-
-// HasChildren returns true if d has any children.
-func (d *Dentry) HasChildren() bool {
-	return len(d.children) != 0
-}
-
-// InsertChild makes child a child of d with the given name.
+// Watches returns the set of inotify watches associated with d.
 //
-// InsertChild is a mutator of d and child.
-//
-// Preconditions: child must be an independent Dentry. d and child must be from
-// the same Filesystem. d must not already have a child with the given name.
-func (d *Dentry) InsertChild(child *Dentry, name string) {
-	if checkInvariants {
-		if _, ok := d.children[name]; ok {
-			panic(fmt.Sprintf("parent already contains a child named %q", name))
-		}
-		if child.parent != nil || child.name != "" {
-			panic(fmt.Sprintf("child is not independent: parent = %v, name = %q", child.parent, child.name))
-		}
-	}
-	if d.children == nil {
-		d.children = make(map[string]*Dentry)
-	}
-	d.children[name] = child
-	child.parent = d
-	child.name = name
+// Watches will return nil if d belongs to a FilesystemImpl that does not
+// support inotify.
+func (d *Dentry) Watches() *Watches {
+	return d.impl.Watches()
 }
+
+// OnZeroWatches performs cleanup tasks whenever the number of watches on a
+// dentry drops to zero.
+func (d *Dentry) OnZeroWatches(ctx context.Context) {
+	d.impl.OnZeroWatches(ctx)
+}
+
+// The following functions are exported so that filesystem implementations can
+// use them. The vfs package, and users of VFS, should not call these
+// functions.
 
 // PrepareDeleteDentry must be called before attempting to delete the file
 // represented by d. If PrepareDeleteDentry succeeds, the caller must call
 // AbortDeleteDentry or CommitDeleteDentry depending on the deletion's outcome.
-//
-// Preconditions: d is a child Dentry.
 func (vfs *VirtualFilesystem) PrepareDeleteDentry(mntns *MountNamespace, d *Dentry) error {
-	if checkInvariants {
-		if d.parent == nil {
-			panic("d is independent")
-		}
-		if d.IsDisowned() {
-			panic("d is already disowned")
-		}
-	}
-	vfs.mountMu.RLock()
-	if _, ok := mntns.mountpoints[d]; ok {
-		vfs.mountMu.RUnlock()
+	vfs.mountMu.Lock()
+	if mntns.mountpoints[d] != 0 {
+		vfs.mountMu.Unlock()
 		return syserror.EBUSY
 	}
-	// Return with vfs.mountMu locked, which will be unlocked by
-	// AbortDeleteDentry or CommitDeleteDentry.
+	d.mu.Lock()
+	vfs.mountMu.Unlock()
+	// Return with d.mu locked to block attempts to mount over it; it will be
+	// unlocked by AbortDeleteDentry or CommitDeleteDentry.
 	return nil
 }
 
 // AbortDeleteDentry must be called after PrepareDeleteDentry if the deletion
 // fails.
-func (vfs *VirtualFilesystem) AbortDeleteDentry() {
-	vfs.mountMu.RUnlock()
+func (vfs *VirtualFilesystem) AbortDeleteDentry(d *Dentry) {
+	d.mu.Unlock()
 }
 
-// CommitDeleteDentry must be called after the file represented by d is
-// deleted, and causes d to become disowned.
-//
-// Preconditions: PrepareDeleteDentry was previously called on d.
-func (vfs *VirtualFilesystem) CommitDeleteDentry(d *Dentry) {
-	delete(d.parent.children, d.name)
-	d.setDisowned()
-	// TODO: lazily unmount mounts at d
-	vfs.mountMu.RUnlock()
-}
-
-// DeleteDentry combines PrepareDeleteDentry and CommitDeleteDentry, as
-// appropriate for in-memory filesystems that don't need to ensure that some
-// external state change succeeds before committing the deletion.
-func (vfs *VirtualFilesystem) DeleteDentry(mntns *MountNamespace, d *Dentry) error {
-	if err := vfs.PrepareDeleteDentry(mntns, d); err != nil {
-		return err
+// CommitDeleteDentry must be called after PrepareDeleteDentry if the deletion
+// succeeds.
+func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry) {
+	d.dead = true
+	d.mu.Unlock()
+	if d.isMounted() {
+		vfs.forgetDeadMountpoint(ctx, d)
 	}
-	vfs.CommitDeleteDentry(d)
-	return nil
+}
+
+// InvalidateDentry is called when d ceases to represent the file it formerly
+// did for reasons outside of VFS' control (e.g. d represents the local state
+// of a file on a remote filesystem on which the file has already been
+// deleted).
+func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) {
+	d.mu.Lock()
+	d.dead = true
+	d.mu.Unlock()
+	if d.isMounted() {
+		vfs.forgetDeadMountpoint(ctx, d)
+	}
 }
 
 // PrepareRenameDentry must be called before attempting to rename the file
@@ -272,37 +242,24 @@ func (vfs *VirtualFilesystem) DeleteDentry(mntns *MountNamespace, d *Dentry) err
 // caller must call AbortRenameDentry, CommitRenameReplaceDentry, or
 // CommitRenameExchangeDentry depending on the rename's outcome.
 //
-// Preconditions: from is a child Dentry. If to is not nil, it must be a child
-// Dentry from the same Filesystem.
+// Preconditions: If to is not nil, it must be a child Dentry from the same
+// Filesystem. from != to.
 func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, to *Dentry) error {
-	if checkInvariants {
-		if from.parent == nil {
-			panic("from is independent")
-		}
-		if from.IsDisowned() {
-			panic("from is already disowned")
-		}
-		if to != nil {
-			if to.parent == nil {
-				panic("to is independent")
-			}
-			if to.IsDisowned() {
-				panic("to is already disowned")
-			}
-		}
-	}
-	vfs.mountMu.RLock()
-	if _, ok := mntns.mountpoints[from]; ok {
-		vfs.mountMu.RUnlock()
+	vfs.mountMu.Lock()
+	if mntns.mountpoints[from] != 0 {
+		vfs.mountMu.Unlock()
 		return syserror.EBUSY
 	}
 	if to != nil {
-		if _, ok := mntns.mountpoints[to]; ok {
-			vfs.mountMu.RUnlock()
+		if mntns.mountpoints[to] != 0 {
+			vfs.mountMu.Unlock()
 			return syserror.EBUSY
 		}
+		to.mu.Lock()
 	}
-	// Return with vfs.mountMu locked, which will be unlocked by
+	from.mu.Lock()
+	vfs.mountMu.Unlock()
+	// Return with from.mu and to.mu locked, which will be unlocked by
 	// AbortRenameDentry, CommitRenameReplaceDentry, or
 	// CommitRenameExchangeDentry.
 	return nil
@@ -310,8 +267,11 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 
 // AbortRenameDentry must be called after PrepareRenameDentry if the rename
 // fails.
-func (vfs *VirtualFilesystem) AbortRenameDentry() {
-	vfs.mountMu.RUnlock()
+func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
+	from.mu.Unlock()
+	if to != nil {
+		to.mu.Unlock()
+	}
 }
 
 // CommitRenameReplaceDentry must be called after the file represented by from
@@ -319,19 +279,15 @@ func (vfs *VirtualFilesystem) AbortRenameDentry() {
 // that was replaced by from.
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
-// newParent.Child(newName) == to.
-func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(from, newParent *Dentry, newName string, to *Dentry) {
+func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, from, to *Dentry) {
+	from.mu.Unlock()
 	if to != nil {
-		to.setDisowned()
-		// TODO: lazily unmount mounts at d
+		to.dead = true
+		to.mu.Unlock()
+		if to.isMounted() {
+			vfs.forgetDeadMountpoint(ctx, to)
+		}
 	}
-	if newParent.children == nil {
-		newParent.children = make(map[string]*Dentry)
-	}
-	newParent.children[newName] = from
-	from.parent = newParent
-	from.name = newName
-	vfs.mountMu.RUnlock()
 }
 
 // CommitRenameExchangeDentry must be called after the files represented by
@@ -339,9 +295,31 @@ func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(from, newParent *Dentry,
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
 func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
-	from.parent, to.parent = to.parent, from.parent
-	from.name, to.name = to.name, from.name
-	from.parent.children[from.name] = from
-	to.parent.children[to.name] = to
-	vfs.mountMu.RUnlock()
+	from.mu.Unlock()
+	to.mu.Unlock()
+}
+
+// forgetDeadMountpoint is called when a mount point is deleted or invalidated
+// to umount all mounts using it in all other mount namespaces.
+//
+// forgetDeadMountpoint is analogous to Linux's
+// fs/namespace.c:__detach_mounts().
+func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentry) {
+	var (
+		vdsToDecRef    []VirtualDentry
+		mountsToDecRef []*Mount
+	)
+	vfs.mountMu.Lock()
+	vfs.mounts.seq.BeginWrite()
+	for mnt := range vfs.mountpoints[d] {
+		vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(mnt, &umountRecursiveOptions{}, vdsToDecRef, mountsToDecRef)
+	}
+	vfs.mounts.seq.EndWrite()
+	vfs.mountMu.Unlock()
+	for _, vd := range vdsToDecRef {
+		vd.DecRef(ctx)
+	}
+	for _, mnt := range mountsToDecRef {
+		mnt.DecRef(ctx)
+	}
 }

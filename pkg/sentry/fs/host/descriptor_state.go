@@ -16,7 +16,7 @@ package host
 
 // beforeSave is invoked by stateify.
 func (d *descriptor) beforeSave() {
-	if d.donated && d.origFD < 0 {
+	if d.origFD < 0 {
 		panic("donated file descriptor cannot be saved")
 	}
 }

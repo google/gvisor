@@ -80,12 +80,12 @@ func IPv4FragmentHash(h header.IPv4) uint32 {
 // RFC 2640 (sec 4.5) is not very sharp on this aspect.
 // As a reference, also Linux ignores the protocol to compute
 // the hash (inet6_hash_frag).
-func IPv6FragmentHash(h header.IPv6, f header.IPv6Fragment) uint32 {
+func IPv6FragmentHash(h header.IPv6, id uint32) uint32 {
 	t := h.SourceAddress()
 	y := uint32(t[0]) | uint32(t[1])<<8 | uint32(t[2])<<16 | uint32(t[3])<<24
 	t = h.DestinationAddress()
 	z := uint32(t[0]) | uint32(t[1])<<8 | uint32(t[2])<<16 | uint32(t[3])<<24
-	return Hash3Words(f.ID(), y, z, hashIV)
+	return Hash3Words(id, y, z, hashIV)
 }
 
 func rol32(v, shift uint32) uint32 {

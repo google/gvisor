@@ -22,11 +22,11 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"flag"
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // List implements subcommands.Command for the "list" command for the "list" command.

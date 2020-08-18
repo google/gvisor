@@ -76,36 +76,47 @@ func (*endpoint) Wait() {}
 
 // WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
 // packets to the network-layer dispatcher.
-func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	views := make([]buffer.View, 1, 1+len(payload.Views()))
-	views[0] = hdr.View()
-	views = append(views, payload.Views()...)
-	vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
+func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	// Construct data as the unparsed portion for the loopback packet.
+	data := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 
-	// Because we're immediately turning around and writing the packet back to the
-	// rx path, we intentionally don't preserve the remote and local link
-	// addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv, nil /* linkHeader */)
+	// Because we're immediately turning around and writing the packet back
+	// to the rx path, we intentionally don't preserve the remote and local
+	// link addresses from the stack.Route we're passed.
+	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: data,
+	})
+	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, newPkt)
 
 	return nil
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	panic("not implemented")
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
-	// Reject the packet if it's shorter than an ethernet header.
-	if packet.Size() < header.EthernetMinimumSize {
+func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: vv,
+	})
+	// There should be an ethernet header at the beginning of vv.
+	hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+	if !ok {
+		// Reject the packet if it's shorter than an ethernet header.
 		return tcpip.ErrBadAddress
 	}
-
-	// There should be an ethernet header at the beginning of packet.
-	linkHeader := header.Ethernet(packet.First()[:header.EthernetMinimumSize])
-	packet.TrimFront(len(linkHeader))
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, linkHeader.Type(), packet, buffer.View(linkHeader))
+	linkHeader := header.Ethernet(hdr)
+	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, linkHeader.Type(), pkt)
 
 	return nil
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (*endpoint) ARPHardwareType() header.ARPHardwareType {
+	return header.ARPHardwareLoopback
+}
+
+func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 }

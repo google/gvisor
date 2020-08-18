@@ -26,30 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/time"
 )
 
-// setMemoryRegion initializes a region.
-//
-// This may be called from bluepillHandler, and therefore returns an errno
-// directly (instead of wrapping in an error) to avoid allocations.
-//
-//go:nosplit
-func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr) syscall.Errno {
-	userRegion := userMemoryRegion{
-		slot:          uint32(slot),
-		flags:         0,
-		guestPhysAddr: uint64(physical),
-		memorySize:    uint64(length),
-		userspaceAddr: uint64(virtual),
-	}
-
-	// Set the region.
-	_, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(m.fd),
-		_KVM_SET_USER_MEMORY_REGION,
-		uintptr(unsafe.Pointer(&userRegion)))
-	return errno
-}
-
 // loadSegments copies the current segments.
 //
 // This may be called from within the signal context and throws on error.
@@ -156,6 +132,46 @@ func (c *vCPU) setSignalMask() error {
 		_KVM_SET_SIGNAL_MASK,
 		uintptr(unsafe.Pointer(&data))); errno != 0 {
 		return fmt.Errorf("error setting signal mask: %v", errno)
+	}
+	return nil
+}
+
+// setUserRegisters sets user registers in the vCPU.
+func (c *vCPU) setUserRegisters(uregs *userRegs) error {
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_REGS,
+		uintptr(unsafe.Pointer(uregs))); errno != 0 {
+		return fmt.Errorf("error setting user registers: %v", errno)
+	}
+	return nil
+}
+
+// getUserRegisters reloads user registers in the vCPU.
+//
+// This is safe to call from a nosplit context.
+//
+//go:nosplit
+func (c *vCPU) getUserRegisters(uregs *userRegs) syscall.Errno {
+	if _, _, errno := syscall.RawSyscall( // escapes: no.
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_GET_REGS,
+		uintptr(unsafe.Pointer(uregs))); errno != 0 {
+		return errno
+	}
+	return 0
+}
+
+// setSystemRegisters sets system registers.
+func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_SREGS,
+		uintptr(unsafe.Pointer(sregs))); errno != 0 {
+		return fmt.Errorf("error setting system registers: %v", errno)
 	}
 	return nil
 }

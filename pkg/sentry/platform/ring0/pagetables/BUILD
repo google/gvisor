@@ -1,14 +1,14 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test", "select_arch")
 load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
 
 package(licenses = ["notice"])
 
 go_template(
     name = "generic_walker",
-    srcs = [
-        "walker_amd64.go",
-    ],
+    srcs = select_arch(
+        amd64 = ["walker_amd64.go"],
+        arm64 = ["walker_arm64.go"],
+    ),
     opt_types = [
         "Visitor",
     ],
@@ -76,20 +76,29 @@ go_library(
         "allocator.go",
         "allocator_unsafe.go",
         "pagetables.go",
+        "pagetables_aarch64.go",
         "pagetables_amd64.go",
+        "pagetables_arm64.go",
         "pagetables_x86.go",
+        "pcids.go",
+        "pcids_aarch64.go",
+        "pcids_aarch64.s",
         "pcids_x86.go",
+        "walker_amd64.go",
+        "walker_arm64.go",
         "walker_empty.go",
         "walker_lookup.go",
         "walker_map.go",
         "walker_unmap.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables",
     visibility = [
         "//pkg/sentry/platform/kvm:__subpackages__",
         "//pkg/sentry/platform/ring0:__subpackages__",
     ],
-    deps = ["//pkg/sentry/usermem"],
+    deps = [
+        "//pkg/sync",
+        "//pkg/usermem",
+    ],
 )
 
 go_test(
@@ -97,9 +106,10 @@ go_test(
     size = "small",
     srcs = [
         "pagetables_amd64_test.go",
+        "pagetables_arm64_test.go",
         "pagetables_test.go",
         "walker_check.go",
     ],
-    embed = [":pagetables"],
-    deps = ["//pkg/sentry/usermem"],
+    library = ":pagetables",
+    deps = ["//pkg/usermem"],
 )

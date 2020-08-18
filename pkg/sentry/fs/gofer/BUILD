@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -10,6 +9,7 @@ go_library(
         "cache_policy.go",
         "context_file.go",
         "device.go",
+        "fifo.go",
         "file.go",
         "file_state.go",
         "fs.go",
@@ -22,31 +22,32 @@ go_library(
         "socket.go",
         "util.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/gofer",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fd",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
+        "//pkg/safemem",
         "//pkg/secio",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fdpipe",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/host",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/unet",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -55,12 +56,12 @@ go_test(
     name = "gofer_test",
     size = "small",
     srcs = ["gofer_test.go"],
-    embed = [":gofer"],
+    library = ":gofer",
     deps = [
+        "//pkg/context",
         "//pkg/p9",
         "//pkg/p9/p9test",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
     ],
 )

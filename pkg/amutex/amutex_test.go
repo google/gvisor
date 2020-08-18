@@ -15,9 +15,10 @@
 package amutex
 
 import (
-	"sync"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 type sleeper struct {

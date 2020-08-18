@@ -19,11 +19,11 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/temp_umask.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
+#include "test/util/temp_umask.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -88,6 +88,30 @@ TEST(CreateTest, CreateExclusively) {
               SyscallFailsWithErrno(EEXIST));
 }
 
+TEST(CreateTeast, CreatWithOTrunc) {
+  std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST(CreateTeast, CreatDirWithOTruncAndReadOnly) {
+  std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC | O_RDONLY, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST(CreateTeast, CreatFileWithOTruncAndReadOnly) {
+  std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncfile");
+  int dirfd;
+  ASSERT_THAT(dirfd = open(dirpath.c_str(), O_RDWR | O_CREAT, 0666),
+              SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC | O_RDONLY, 0666),
+              SyscallSucceeds());
+  ASSERT_THAT(close(dirfd), SyscallSucceeds());
+}
+
 TEST(CreateTest, CreateFailsOnUnpermittedDir) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // always override directory permissions.
@@ -108,6 +132,7 @@ TEST(CreateTest, CreateFailsOnDirWithoutWritePerms) {
 }
 
 // A file originally created RW, but opened RO can later be opened RW.
+// Regression test for b/65385065.
 TEST(CreateTest, OpenCreateROThenRW) {
   TempPath file(NewTempAbsPath());
 

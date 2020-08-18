@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // AddressSpace returns the platform.AddressSpace bound to mm.
@@ -39,11 +39,18 @@ func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
 //
 // When this MemoryManager is no longer needed by a task, it should call
 // Deactivate to release the reference.
-func (mm *MemoryManager) Activate() error {
+func (mm *MemoryManager) Activate(ctx context.Context) error {
 	// Fast path: the MemoryManager already has an active
 	// platform.AddressSpace, and we just need to indicate that we need it too.
-	if atomicbitops.IncUnlessZeroInt32(&mm.active) {
-		return nil
+	for {
+		active := atomic.LoadInt32(&mm.active)
+		if active == 0 {
+			// Fall back to the slow path.
+			break
+		}
+		if atomic.CompareAndSwapInt32(&mm.active, active, active+1) {
+			return nil
+		}
 	}
 
 	for {
@@ -85,16 +92,20 @@ func (mm *MemoryManager) Activate() error {
 		if as == nil {
 			// AddressSpace is unavailable, we must wait.
 			//
-			// activeMu must not be held while waiting, as the user
-			// of the address space we are waiting on may attempt
-			// to take activeMu.
-			//
-			// Don't call UninterruptibleSleepStart to register the
-			// wait to allow the watchdog stuck task to trigger in
-			// case a process is starved waiting for the address
-			// space.
+			// activeMu must not be held while waiting, as the user of the address
+			// space we are waiting on may attempt to take activeMu.
 			mm.activeMu.Unlock()
+
+			sleep := mm.p.CooperativelySchedulesAddressSpace() && mm.sleepForActivation
+			if sleep {
+				// Mark this task sleeping while waiting for the address space to
+				// prevent the watchdog from reporting it as a stuck task.
+				ctx.UninterruptibleSleepStart(false)
+			}
 			<-c
+			if sleep {
+				ctx.UninterruptibleSleepFinish(false)
+			}
 			continue
 		}
 
@@ -118,8 +129,15 @@ func (mm *MemoryManager) Activate() error {
 func (mm *MemoryManager) Deactivate() {
 	// Fast path: this is not the last goroutine to deactivate the
 	// MemoryManager.
-	if atomicbitops.DecUnlessOneInt32(&mm.active) {
-		return
+	for {
+		active := atomic.LoadInt32(&mm.active)
+		if active == 1 {
+			// Fall back to the slow path.
+			break
+		}
+		if atomic.CompareAndSwapInt32(&mm.active, active, active-1) {
+			return
+		}
 	}
 
 	mm.activeMu.Lock()
@@ -183,8 +201,10 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar usermem.AddrRange, pre
 		if pma.needCOW {
 			perms.Write = false
 		}
-		if err := mm.as.MapFile(pmaMapAR.Start, pma.file, pseg.fileRangeOf(pmaMapAR), perms, precommit); err != nil {
-			return err
+		if perms.Any() { // MapFile precondition
+			if err := mm.as.MapFile(pmaMapAR.Start, pma.file, pseg.fileRangeOf(pmaMapAR), perms, precommit); err != nil {
+				return err
+			}
 		}
 		pseg = pseg.NextSegment()
 	}

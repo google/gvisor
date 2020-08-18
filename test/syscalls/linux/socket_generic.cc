@@ -447,6 +447,62 @@ TEST_P(AllSocketPairTest, RecvTimeoutRecvmsgSucceeds) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
+TEST_P(AllSocketPairTest, SendTimeoutDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  timeval actual_tv = {.tv_sec = -1, .tv_usec = -1};
+  socklen_t len = sizeof(actual_tv);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO,
+                         &actual_tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(actual_tv.tv_sec, 0);
+  EXPECT_EQ(actual_tv.tv_usec, 0);
+}
+
+TEST_P(AllSocketPairTest, SetGetSendTimeout) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // tv_usec should be a multiple of 4000 to work on most systems.
+  timeval tv = {.tv_sec = 89, .tv_usec = 42000};
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
+      SyscallSucceeds());
+
+  timeval actual_tv = {};
+  socklen_t len = sizeof(actual_tv);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO,
+                         &actual_tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(actual_tv.tv_sec, tv.tv_sec);
+  EXPECT_EQ(actual_tv.tv_usec, tv.tv_usec);
+}
+
+TEST_P(AllSocketPairTest, SetGetSendTimeoutLargerArg) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval_with_extra {
+    struct timeval tv;
+    int64_t extra_data;
+  } ABSL_ATTRIBUTE_PACKED;
+
+  // tv_usec should be a multiple of 4000 to work on most systems.
+  timeval_with_extra tv_extra = {
+      .tv = {.tv_sec = 0, .tv_usec = 124000},
+  };
+
+  EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO,
+                         &tv_extra, sizeof(tv_extra)),
+              SyscallSucceeds());
+
+  timeval_with_extra actual_tv = {};
+  socklen_t len = sizeof(actual_tv);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO,
+                         &actual_tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(actual_tv.tv.tv_sec, tv_extra.tv.tv_sec);
+  EXPECT_EQ(actual_tv.tv.tv_usec, tv_extra.tv.tv_usec);
+}
+
 TEST_P(AllSocketPairTest, SendTimeoutAllowsWrite) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -491,18 +547,36 @@ TEST_P(AllSocketPairTest, SendTimeoutAllowsSendmsg) {
   ASSERT_NO_FATAL_FAILURE(SendNullCmsg(sockets->first_fd(), buf, sizeof(buf)));
 }
 
-TEST_P(AllSocketPairTest, SoRcvTimeoIsSet) {
+TEST_P(AllSocketPairTest, RecvTimeoutDefault) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 35
-  };
+  timeval actual_tv = {.tv_sec = -1, .tv_usec = -1};
+  socklen_t len = sizeof(actual_tv);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO,
+                         &actual_tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(actual_tv.tv_sec, 0);
+  EXPECT_EQ(actual_tv.tv_usec, 0);
+}
+
+TEST_P(AllSocketPairTest, SetGetRecvTimeout) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  timeval tv = {.tv_sec = 123, .tv_usec = 456000};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
+
+  timeval actual_tv = {};
+  socklen_t len = sizeof(actual_tv);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO,
+                         &actual_tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(actual_tv.tv_sec, 123);
+  EXPECT_EQ(actual_tv.tv_usec, 456000);
 }
 
-TEST_P(AllSocketPairTest, SoRcvTimeoIsSetLargerArg) {
+TEST_P(AllSocketPairTest, SetGetRecvTimeoutLargerArg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct timeval_with_extra {
@@ -510,13 +584,21 @@ TEST_P(AllSocketPairTest, SoRcvTimeoIsSetLargerArg) {
     int64_t extra_data;
   } ABSL_ATTRIBUTE_PACKED;
 
-  timeval_with_extra tv_extra;
-  tv_extra.tv.tv_sec = 0;
-  tv_extra.tv.tv_usec = 25;
+  timeval_with_extra tv_extra = {
+      .tv = {.tv_sec = 0, .tv_usec = 432000},
+  };
 
   EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO,
                          &tv_extra, sizeof(tv_extra)),
               SyscallSucceeds());
+
+  timeval_with_extra actual_tv = {};
+  socklen_t len = sizeof(actual_tv);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO,
+                         &actual_tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(actual_tv.tv.tv_sec, 0);
+  EXPECT_EQ(actual_tv.tv.tv_usec, 432000);
 }
 
 TEST_P(AllSocketPairTest, RecvTimeoutRecvmsgOneSecondSucceeds) {
