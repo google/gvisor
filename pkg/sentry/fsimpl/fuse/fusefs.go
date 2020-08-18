@@ -287,6 +287,18 @@ func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentr
 	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
 }
 
+// NewDir implements kernfs.Inode.NewDir.
+func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
+	in := linux.FUSEMkdirIn{
+		MkdirMeta: linux.FUSEMkdirMeta{
+			Mode:  uint32(opts.Mode),
+			Umask: uint32(kernel.TaskFromContext(ctx).FSContext().Umask()),
+		},
+		Name: name,
+	}
+	return i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
+}
+
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
 // Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and FUSE_LOOKUP.
 func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*vfs.Dentry, error) {

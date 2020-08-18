@@ -22,3 +22,8 @@ syscall_test(
     fuse = "True",
     test = "//test/fuse/linux:readlink_test",
 )
+
+syscall_test(
+    fuse = "True",
+    test = "//test/fuse/linux:mkdir_test",
+)

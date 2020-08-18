@@ -31,6 +31,8 @@ go_library(
     srcs = [
         "connection.go",
         "dev.go",
+        "directory.go",
+        "file.go",
         "fusefs.go",
         "init.go",
         "inode_refs.go",
