@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -29,23 +28,33 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "file_range",
+    out = "file_range.go",
+    package = "memmap",
+    prefix = "File",
+    template = "//pkg/segment:generic_range",
+    types = {
+        "T": "uint64",
+    },
+)
+
 go_library(
     name = "memmap",
     srcs = [
+        "file_range.go",
         "mappable_range.go",
         "mapping_set.go",
         "mapping_set_impl.go",
         "memmap.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/memmap",
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/refs",
-        "//pkg/sentry/context",
-        "//pkg/sentry/platform",
-        "//pkg/sentry/usermem",
+        "//pkg/safemem",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -53,6 +62,6 @@ go_test(
     name = "memmap_test",
     size = "small",
     srcs = ["mapping_set_test.go"],
-    embed = [":memmap"],
-    deps = ["//pkg/sentry/usermem"],
+    library = ":memmap",
+    deps = ["//pkg/usermem"],
 )

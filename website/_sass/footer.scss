@@ -1,0 +1,15 @@
+.footer {
+  margin-top: 40px;
+  background-color: #222;
+  color: #fff;
+  padding: 20px;
+
+  a {
+    color: $inverse-link-color;
+
+    &:hover,
+    &:focus {
+      color: $inverse-link-hover-color;
+    }
+  }
+}

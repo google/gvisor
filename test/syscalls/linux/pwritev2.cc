@@ -34,6 +34,8 @@ namespace {
 #ifndef SYS_pwritev2
 #if defined(__x86_64__)
 #define SYS_pwritev2 328
+#elif defined(__aarch64__)
+#define SYS_pwritev2 287
 #else
 #error "Unknown architecture"
 #endif
@@ -67,7 +69,7 @@ ssize_t pwritev2(unsigned long fd, const struct iovec* iov,
 }
 
 // This test is the base case where we call pwritev (no offset, no flags).
-TEST(Writev2Test, TestBaseCall) {
+TEST(Writev2Test, BaseCall) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
@@ -95,7 +97,7 @@ TEST(Writev2Test, TestBaseCall) {
 }
 
 // This test is where we call pwritev2 with a positive offset and no flags.
-TEST(Pwritev2Test, TestValidPositiveOffset) {
+TEST(Pwritev2Test, ValidPositiveOffset) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   std::string prefix(kBufSize, '0');
@@ -127,7 +129,7 @@ TEST(Pwritev2Test, TestValidPositiveOffset) {
 // This test is the base case where we call writev by using -1 as the offset.
 // The write should use the file offset, so the test increments the file offset
 // prior to call pwritev2.
-TEST(Pwritev2Test, TestNegativeOneOffset) {
+TEST(Pwritev2Test, NegativeOneOffset) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const std::string prefix = "00";
@@ -162,7 +164,7 @@ TEST(Pwritev2Test, TestNegativeOneOffset) {
 
 // pwritev2 requires if the RWF_HIPRI flag is passed, the fd must be opened with
 // O_DIRECT. This test implements a correct call with the RWF_HIPRI flag.
-TEST(Pwritev2Test, TestCallWithRWF_HIPRI) {
+TEST(Pwritev2Test, CallWithRWF_HIPRI) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
@@ -187,47 +189,8 @@ TEST(Pwritev2Test, TestCallWithRWF_HIPRI) {
   EXPECT_EQ(buf, content);
 }
 
-// This test checks that pwritev2 can be called with valid flags
-TEST(Pwritev2Test, TestCallWithValidFlags) {
-  SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
-
-  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
-  const FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
-
-  std::vector<char> content(kBufSize, '0');
-  struct iovec iov;
-  iov.iov_base = content.data();
-  iov.iov_len = content.size();
-
-  EXPECT_THAT(pwritev2(fd.get(), &iov, /*iovcnt=*/1,
-                       /*offset=*/0, /*flags=*/RWF_DSYNC),
-              SyscallSucceedsWithValue(kBufSize));
-
-  std::vector<char> buf(content.size());
-  EXPECT_THAT(read(fd.get(), buf.data(), buf.size()),
-              SyscallSucceedsWithValue(buf.size()));
-
-  EXPECT_EQ(buf, content);
-
-  SetContent(content);
-
-  EXPECT_THAT(pwritev2(fd.get(), &iov, /*iovcnt=*/1,
-                       /*offset=*/0, /*flags=*/0x4),
-              SyscallSucceedsWithValue(kBufSize));
-
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_CUR),
-              SyscallSucceedsWithValue(content.size()));
-
-  EXPECT_THAT(pread(fd.get(), buf.data(), buf.size(), /*offset=*/0),
-              SyscallSucceedsWithValue(buf.size()));
-
-  EXPECT_EQ(buf, content);
-}
-
 // This test calls pwritev2 with a bad file descriptor.
-TEST(Writev2Test, TestBadFile) {
+TEST(Writev2Test, BadFile) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
   ASSERT_THAT(pwritev2(/*fd=*/-1, /*iov=*/nullptr, /*iovcnt=*/0,
                        /*offset=*/0, /*flags=*/0),
@@ -235,7 +198,7 @@ TEST(Writev2Test, TestBadFile) {
 }
 
 // This test calls pwrite2 with an invalid offset.
-TEST(Pwritev2Test, TestInvalidOffset) {
+TEST(Pwritev2Test, InvalidOffset) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
@@ -253,7 +216,7 @@ TEST(Pwritev2Test, TestInvalidOffset) {
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(Pwritev2Test, TestUnseekableFileValid) {
+TEST(Pwritev2Test, UnseekableFileValid) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   int pipe_fds[2];
@@ -283,7 +246,7 @@ TEST(Pwritev2Test, TestUnseekableFileValid) {
 // Calling pwritev2 with a non-negative offset calls pwritev.  Calling pwritev
 // with an unseekable file is not allowed. A pipe is used for an unseekable
 // file.
-TEST(Pwritev2Test, TestUnseekableFileInValid) {
+TEST(Pwritev2Test, UnseekableFileInvalid) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   int pipe_fds[2];
@@ -302,7 +265,7 @@ TEST(Pwritev2Test, TestUnseekableFileInValid) {
   EXPECT_THAT(close(pipe_fds[1]), SyscallSucceeds());
 }
 
-TEST(Pwritev2Test, TestReadOnlyFile) {
+TEST(Pwritev2Test, ReadOnlyFile) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
@@ -321,7 +284,7 @@ TEST(Pwritev2Test, TestReadOnlyFile) {
 }
 
 // This test calls pwritev2 with an invalid flag.
-TEST(Pwritev2Test, TestInvalidFlag) {
+TEST(Pwritev2Test, InvalidFlag) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(

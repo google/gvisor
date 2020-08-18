@@ -17,7 +17,6 @@ package p9
 import (
 	"io"
 	"runtime/debug"
-	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -25,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fdchannel"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -453,7 +453,11 @@ func (cs *connState) initializeChannels() (err error) {
 		go func() { // S/R-SAFE: Server side.
 			defer cs.channelWg.Done()
 			if err := res.service(cs); err != nil {
-				log.Warningf("p9.channel.service: %v", err)
+				// Don't log flipcall.ShutdownErrors, which we expect to be
+				// returned during server shutdown.
+				if _, ok := err.(flipcall.ShutdownError); !ok {
+					log.Warningf("p9.channel.service: %v", err)
+				}
 			}
 		}()
 	}
@@ -478,10 +482,10 @@ func (cs *connState) handle(m message) (r message) {
 	defer func() {
 		if r == nil {
 			// Don't allow a panic to propagate.
-			recover()
+			err := recover()
 
 			// Include a useful log message.
-			log.Warningf("panic in handler: %s", debug.Stack())
+			log.Warningf("panic in handler: %v\n%s", err, debug.Stack())
 
 			// Wrap in an EFAULT error; we don't really have a
 			// better way to describe this kind of error. It will

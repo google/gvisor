@@ -20,9 +20,9 @@ import (
 	"errors"
 	"io"
 	"net"
-	"sync"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -43,18 +43,28 @@ func (e *timeoutError) Error() string   { return "i/o timeout" }
 func (e *timeoutError) Timeout() bool   { return true }
 func (e *timeoutError) Temporary() bool { return true }
 
-// A Listener is a wrapper around a tcpip endpoint that implements
+// A TCPListener is a wrapper around a TCP tcpip.Endpoint that implements
 // net.Listener.
-type Listener struct {
+type TCPListener struct {
 	stack  *stack.Stack
 	ep     tcpip.Endpoint
 	wq     *waiter.Queue
 	cancel chan struct{}
 }
 
-// NewListener creates a new Listener.
-func NewListener(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*Listener, error) {
-	// Create TCP endpoint, bind it, then start listening.
+// NewTCPListener creates a new TCPListener from a listening tcpip.Endpoint.
+func NewTCPListener(s *stack.Stack, wq *waiter.Queue, ep tcpip.Endpoint) *TCPListener {
+	return &TCPListener{
+		stack:  s,
+		ep:     ep,
+		wq:     wq,
+		cancel: make(chan struct{}),
+	}
+}
+
+// ListenTCP creates a new TCPListener.
+func ListenTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPListener, error) {
+	// Create a TCP endpoint, bind it, then start listening.
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
 	if err != nil {
@@ -81,28 +91,23 @@ func NewListener(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkPr
 		}
 	}
 
-	return &Listener{
-		stack:  s,
-		ep:     ep,
-		wq:     &wq,
-		cancel: make(chan struct{}),
-	}, nil
+	return NewTCPListener(s, &wq, ep), nil
 }
 
 // Close implements net.Listener.Close.
-func (l *Listener) Close() error {
+func (l *TCPListener) Close() error {
 	l.ep.Close()
 	return nil
 }
 
 // Shutdown stops the HTTP server.
-func (l *Listener) Shutdown() {
+func (l *TCPListener) Shutdown() {
 	l.ep.Shutdown(tcpip.ShutdownWrite | tcpip.ShutdownRead)
 	close(l.cancel) // broadcast cancellation
 }
 
 // Addr implements net.Listener.Addr.
-func (l *Listener) Addr() net.Addr {
+func (l *TCPListener) Addr() net.Addr {
 	a, err := l.ep.GetLocalAddress()
 	if err != nil {
 		return nil
@@ -208,9 +213,9 @@ func (d *deadlineTimer) SetDeadline(t time.Time) error {
 	return nil
 }
 
-// A Conn is a wrapper around a tcpip.Endpoint that implements the net.Conn
+// A TCPConn is a wrapper around a TCP tcpip.Endpoint that implements the net.Conn
 // interface.
-type Conn struct {
+type TCPConn struct {
 	deadlineTimer
 
 	wq *waiter.Queue
@@ -228,9 +233,9 @@ type Conn struct {
 	read buffer.View
 }
 
-// NewConn creates a new Conn.
-func NewConn(wq *waiter.Queue, ep tcpip.Endpoint) *Conn {
-	c := &Conn{
+// NewTCPConn creates a new TCPConn.
+func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
+	c := &TCPConn{
 		wq: wq,
 		ep: ep,
 	}
@@ -239,7 +244,7 @@ func NewConn(wq *waiter.Queue, ep tcpip.Endpoint) *Conn {
 }
 
 // Accept implements net.Conn.Accept.
-func (l *Listener) Accept() (net.Conn, error) {
+func (l *TCPListener) Accept() (net.Conn, error) {
 	n, wq, err := l.ep.Accept()
 
 	if err == tcpip.ErrWouldBlock {
@@ -272,7 +277,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 		}
 	}
 
-	return NewConn(wq, n), nil
+	return NewTCPConn(wq, n), nil
 }
 
 type opErrorer interface {
@@ -323,13 +328,18 @@ func commonRead(ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, a
 }
 
 // Read implements net.Conn.Read.
-func (c *Conn) Read(b []byte) (int, error) {
+func (c *TCPConn) Read(b []byte) (int, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 
 	deadline := c.readCancel()
 
 	numRead := 0
+	defer func() {
+		if numRead != 0 {
+			c.ep.ModerateRecvBuf(numRead)
+		}
+	}()
 	for numRead != len(b) {
 		if len(c.read) == 0 {
 			var err error
@@ -352,7 +362,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 }
 
 // Write implements net.Conn.Write.
-func (c *Conn) Write(b []byte) (int, error) {
+func (c *TCPConn) Write(b []byte) (int, error) {
 	deadline := c.writeCancel()
 
 	// Check if deadlineTimer has already expired.
@@ -431,7 +441,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 }
 
 // Close implements net.Conn.Close.
-func (c *Conn) Close() error {
+func (c *TCPConn) Close() error {
 	c.ep.Close()
 	return nil
 }
@@ -440,7 +450,7 @@ func (c *Conn) Close() error {
 // should just use Close.
 //
 // A TCP Half-Close is performed the same as CloseRead for *net.TCPConn.
-func (c *Conn) CloseRead() error {
+func (c *TCPConn) CloseRead() error {
 	if terr := c.ep.Shutdown(tcpip.ShutdownRead); terr != nil {
 		return c.newOpError("close", errors.New(terr.String()))
 	}
@@ -451,7 +461,7 @@ func (c *Conn) CloseRead() error {
 // should just use Close.
 //
 // A TCP Half-Close is performed the same as CloseWrite for *net.TCPConn.
-func (c *Conn) CloseWrite() error {
+func (c *TCPConn) CloseWrite() error {
 	if terr := c.ep.Shutdown(tcpip.ShutdownWrite); terr != nil {
 		return c.newOpError("close", errors.New(terr.String()))
 	}
@@ -459,7 +469,7 @@ func (c *Conn) CloseWrite() error {
 }
 
 // LocalAddr implements net.Conn.LocalAddr.
-func (c *Conn) LocalAddr() net.Addr {
+func (c *TCPConn) LocalAddr() net.Addr {
 	a, err := c.ep.GetLocalAddress()
 	if err != nil {
 		return nil
@@ -468,7 +478,7 @@ func (c *Conn) LocalAddr() net.Addr {
 }
 
 // RemoteAddr implements net.Conn.RemoteAddr.
-func (c *Conn) RemoteAddr() net.Addr {
+func (c *TCPConn) RemoteAddr() net.Addr {
 	a, err := c.ep.GetRemoteAddress()
 	if err != nil {
 		return nil
@@ -476,7 +486,7 @@ func (c *Conn) RemoteAddr() net.Addr {
 	return fullToTCPAddr(a)
 }
 
-func (c *Conn) newOpError(op string, err error) *net.OpError {
+func (c *TCPConn) newOpError(op string, err error) *net.OpError {
 	return &net.OpError{
 		Op:     op,
 		Net:    "tcp",
@@ -494,14 +504,14 @@ func fullToUDPAddr(addr tcpip.FullAddress) *net.UDPAddr {
 	return &net.UDPAddr{IP: net.IP(addr.Addr), Port: int(addr.Port)}
 }
 
-// DialTCP creates a new TCP Conn connected to the specified address.
-func DialTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*Conn, error) {
+// DialTCP creates a new TCPConn connected to the specified address.
+func DialTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	return DialContextTCP(context.Background(), s, addr, network)
 }
 
-// DialContextTCP creates a new TCP Conn connected to the specified address
+// DialContextTCP creates a new TCPConn connected to the specified address
 // with the option of adding cancellation and timeouts.
-func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*Conn, error) {
+func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -543,12 +553,12 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 		}
 	}
 
-	return NewConn(&wq, ep), nil
+	return NewTCPConn(&wq, ep), nil
 }
 
-// A PacketConn is a wrapper around a tcpip endpoint that implements
-// net.PacketConn.
-type PacketConn struct {
+// A UDPConn is a wrapper around a UDP tcpip.Endpoint that implements
+// net.Conn and net.PacketConn.
+type UDPConn struct {
 	deadlineTimer
 
 	stack *stack.Stack
@@ -556,12 +566,23 @@ type PacketConn struct {
 	wq    *waiter.Queue
 }
 
-// DialUDP creates a new PacketConn.
+// NewUDPConn creates a new UDPConn.
+func NewUDPConn(s *stack.Stack, wq *waiter.Queue, ep tcpip.Endpoint) *UDPConn {
+	c := &UDPConn{
+		stack: s,
+		ep:    ep,
+		wq:    wq,
+	}
+	c.deadlineTimer.init()
+	return c
+}
+
+// DialUDP creates a new UDPConn.
 //
 // If laddr is nil, a local address is automatically chosen.
 //
-// If raddr is nil, the PacketConn is left unconnected.
-func DialUDP(s *stack.Stack, laddr, raddr *tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*PacketConn, error) {
+// If raddr is nil, the UDPConn is left unconnected.
+func DialUDP(s *stack.Stack, laddr, raddr *tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*UDPConn, error) {
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(udp.ProtocolNumber, network, &wq)
 	if err != nil {
@@ -580,12 +601,7 @@ func DialUDP(s *stack.Stack, laddr, raddr *tcpip.FullAddress, network tcpip.Netw
 		}
 	}
 
-	c := PacketConn{
-		stack: s,
-		ep:    ep,
-		wq:    &wq,
-	}
-	c.deadlineTimer.init()
+	c := NewUDPConn(s, &wq, ep)
 
 	if raddr != nil {
 		if err := c.ep.Connect(*raddr); err != nil {
@@ -599,14 +615,14 @@ func DialUDP(s *stack.Stack, laddr, raddr *tcpip.FullAddress, network tcpip.Netw
 		}
 	}
 
-	return &c, nil
+	return c, nil
 }
 
-func (c *PacketConn) newOpError(op string, err error) *net.OpError {
+func (c *UDPConn) newOpError(op string, err error) *net.OpError {
 	return c.newRemoteOpError(op, nil, err)
 }
 
-func (c *PacketConn) newRemoteOpError(op string, remote net.Addr, err error) *net.OpError {
+func (c *UDPConn) newRemoteOpError(op string, remote net.Addr, err error) *net.OpError {
 	return &net.OpError{
 		Op:     op,
 		Net:    "udp",
@@ -617,22 +633,22 @@ func (c *PacketConn) newRemoteOpError(op string, remote net.Addr, err error) *ne
 }
 
 // RemoteAddr implements net.Conn.RemoteAddr.
-func (c *PacketConn) RemoteAddr() net.Addr {
+func (c *UDPConn) RemoteAddr() net.Addr {
 	a, err := c.ep.GetRemoteAddress()
 	if err != nil {
 		return nil
 	}
-	return fullToTCPAddr(a)
+	return fullToUDPAddr(a)
 }
 
 // Read implements net.Conn.Read
-func (c *PacketConn) Read(b []byte) (int, error) {
+func (c *UDPConn) Read(b []byte) (int, error) {
 	bytesRead, _, err := c.ReadFrom(b)
 	return bytesRead, err
 }
 
 // ReadFrom implements net.PacketConn.ReadFrom.
-func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
+func (c *UDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	deadline := c.readCancel()
 
 	var addr tcpip.FullAddress
@@ -644,12 +660,12 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return copy(b, read), fullToUDPAddr(addr), nil
 }
 
-func (c *PacketConn) Write(b []byte) (int, error) {
+func (c *UDPConn) Write(b []byte) (int, error) {
 	return c.WriteTo(b, nil)
 }
 
 // WriteTo implements net.PacketConn.WriteTo.
-func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	deadline := c.writeCancel()
 
 	// Check if deadline has already expired.
@@ -707,13 +723,13 @@ func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 }
 
 // Close implements net.PacketConn.Close.
-func (c *PacketConn) Close() error {
+func (c *UDPConn) Close() error {
 	c.ep.Close()
 	return nil
 }
 
 // LocalAddr implements net.PacketConn.LocalAddr.
-func (c *PacketConn) LocalAddr() net.Addr {
+func (c *UDPConn) LocalAddr() net.Addr {
 	a, err := c.ep.GetLocalAddress()
 	if err != nil {
 		return nil

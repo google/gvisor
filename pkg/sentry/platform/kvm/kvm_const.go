@@ -35,6 +35,8 @@ const (
 	_KVM_GET_SUPPORTED_CPUID    = 0xc008ae05
 	_KVM_SET_CPUID2             = 0x4008ae90
 	_KVM_SET_SIGNAL_MASK        = 0x4004ae8b
+	_KVM_GET_VCPU_EVENTS        = 0x8040ae9f
+	_KVM_SET_VCPU_EVENTS        = 0x4040aea0
 )
 
 // KVM exit reasons.
@@ -49,11 +51,15 @@ const (
 	_KVM_EXIT_SHUTDOWN        = 0x8
 	_KVM_EXIT_FAIL_ENTRY      = 0x9
 	_KVM_EXIT_INTERNAL_ERROR  = 0x11
+	_KVM_EXIT_SYSTEM_EVENT    = 0x18
 )
 
 // KVM capability options.
 const (
-	_KVM_CAP_MAX_VCPUS = 0x42
+	_KVM_CAP_MAX_VCPUS             = 0x42
+	_KVM_CAP_ARM_VM_IPA_SIZE       = 0xa5
+	_KVM_CAP_VCPU_EVENTS           = 0x29
+	_KVM_CAP_ARM_INJECT_SERROR_ESR = 0x9e
 )
 
 // KVM limits.
@@ -61,4 +67,21 @@ const (
 	_KVM_NR_VCPUS         = 0xff
 	_KVM_NR_INTERRUPTS    = 0x100
 	_KVM_NR_CPUID_ENTRIES = 0x100
+)
+
+// KVM kvm_memory_region::flags.
+const (
+	_KVM_MEM_LOG_DIRTY_PAGES = uint32(1) << 0
+	_KVM_MEM_READONLY        = uint32(1) << 1
+	_KVM_MEM_FLAGS_NONE      = 0
+)
+
+// KVM hypercall list.
+// Canonical list of hypercalls supported.
+const (
+	// On amd64, it uses 'HLT' to leave the guest.
+	// Unlike amd64, arm64 can only uses mmio_exit/psci to leave the guest.
+	// _KVM_HYPERCALL_VMEXIT is only used on Arm64 for now.
+	_KVM_HYPERCALL_VMEXIT int = iota
+	_KVM_HYPERCALL_MAX
 )

@@ -109,7 +109,7 @@ PosixErrorOr<std::vector<Mapping>> CreateFragmentedRegion(const int size,
 }
 
 // A contiguous iov that is heavily fragmented in FileMem can still be sent
-// successfully.
+// successfully. See b/115833655.
 TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -165,7 +165,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
 }
 
 // A contiguous iov that is heavily fragmented in FileMem can still be received
-// into successfully.
+// into successfully. Regression test for b/115833655.
 TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

@@ -264,5 +264,5 @@ int main(int argc, char** argv) {
            prctl(PR_GET_KEEPCAPS, 0, 0, 0, 0);
   }
 
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

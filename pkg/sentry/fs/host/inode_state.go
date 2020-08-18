@@ -18,29 +18,14 @@ import (
 	"fmt"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
-// beforeSave is invoked by stateify.
-func (i *inodeFileState) beforeSave() {
-	if !i.queue.IsEmpty() {
-		panic("event queue must be empty")
-	}
-	if !i.descriptor.donated && i.sattr.Type == fs.RegularFile {
-		uattr, err := i.unstableAttr(context.Background())
-		if err != nil {
-			panic(fs.ErrSaveRejection{fmt.Errorf("failed to get unstable atttribute of %s: %v", i.mops.inodeMappings[i.sattr.InodeID], err)})
-		}
-		i.savedUAttr = &uattr
-	}
-}
-
 // afterLoad is invoked by stateify.
 func (i *inodeFileState) afterLoad() {
 	// Initialize the descriptor value.
-	if err := i.descriptor.initAfterLoad(i.mops, i.sattr.InodeID, &i.queue); err != nil {
+	if err := i.descriptor.initAfterLoad(i.sattr.InodeID, &i.queue); err != nil {
 		panic(fmt.Sprintf("failed to load value of descriptor: %v", err))
 	}
 
@@ -60,20 +45,5 @@ func (i *inodeFileState) afterLoad() {
 		// Since this violates the contract that filesystems cannot
 		// change across save and restore, error out.
 		panic(fs.ErrCorruption{fmt.Errorf("host %s conflict in host device mappings: %s", key, hostFileDevice)})
-	}
-
-	if !i.descriptor.donated && i.sattr.Type == fs.RegularFile {
-		env, ok := fs.CurrentRestoreEnvironment()
-		if !ok {
-			panic("missing restore environment")
-		}
-		uattr := unstableAttr(i.mops, &s)
-		if env.ValidateFileSize && uattr.Size != i.savedUAttr.Size {
-			panic(fs.ErrCorruption{fmt.Errorf("file size has changed for %s: previously %d, now %d", i.mops.inodeMappings[i.sattr.InodeID], i.savedUAttr.Size, uattr.Size)})
-		}
-		if env.ValidateFileTimestamp && uattr.ModificationTime != i.savedUAttr.ModificationTime {
-			panic(fs.ErrCorruption{fmt.Errorf("file modification time has changed for %s: previously %v, now %v", i.mops.inodeMappings[i.sattr.InodeID], i.savedUAttr.ModificationTime, uattr.ModificationTime)})
-		}
-		i.savedUAttr = nil
 	}
 }

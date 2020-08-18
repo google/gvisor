@@ -113,7 +113,7 @@ func (ep *Endpoint) enterFutexWait() error {
 		return nil
 	case epsBlocked | epsShutdown:
 		atomic.AddInt32(&ep.ctrl.state, -epsBlocked)
-		return shutdownError{}
+		return ShutdownError{}
 	default:
 		// Most likely due to ep.enterFutexWait() being called concurrently
 		// from multiple goroutines.

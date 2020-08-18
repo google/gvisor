@@ -16,6 +16,7 @@ package proc
 
 import (
 	"fmt"
+
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 )
 

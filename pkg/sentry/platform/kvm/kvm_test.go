@@ -27,7 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var dummyFPState = (*byte)(arch.NewFloatingPointData())
@@ -117,10 +117,10 @@ func TestKernelFloatingPoint(t *testing.T) {
 	})
 }
 
-func applicationTest(t testHarness, useHostMappings bool, target func(), fn func(*vCPU, *syscall.PtraceRegs, *pagetables.PageTables) bool) {
+func applicationTest(t testHarness, useHostMappings bool, target func(), fn func(*vCPU, *arch.Registers, *pagetables.PageTables) bool) {
 	// Initialize registers & page tables.
 	var (
-		regs syscall.PtraceRegs
+		regs arch.Registers
 		pt   *pagetables.PageTables
 	)
 	testutil.SetTestTarget(&regs, target)
@@ -154,7 +154,7 @@ func applicationTest(t testHarness, useHostMappings bool, target func(), fn func
 }
 
 func TestApplicationSyscall(t *testing.T) {
-	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -168,7 +168,7 @@ func TestApplicationSyscall(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -184,7 +184,7 @@ func TestApplicationSyscall(t *testing.T) {
 }
 
 func TestApplicationFault(t *testing.T) {
-	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
@@ -199,7 +199,7 @@ func TestApplicationFault(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
@@ -216,7 +216,7 @@ func TestApplicationFault(t *testing.T) {
 }
 
 func TestRegistersSyscall(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleRegsSyscall, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.TwiddleRegsSyscall, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
 			var si arch.SignalInfo
@@ -239,7 +239,7 @@ func TestRegistersSyscall(t *testing.T) {
 }
 
 func TestRegistersFault(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleRegsFault, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.TwiddleRegsFault, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
 			var si arch.SignalInfo
@@ -262,32 +262,8 @@ func TestRegistersFault(t *testing.T) {
 	})
 }
 
-func TestSegments(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleSegments, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
-		testutil.SetTestSegments(regs)
-		for {
-			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
-				Registers:          regs,
-				FloatingPointState: dummyFPState,
-				PageTables:         pt,
-				FullRestore:        true,
-			}, &si); err == platform.ErrContextInterrupt {
-				continue // Retry.
-			} else if err != nil {
-				t.Errorf("application segment check with full restore got unexpected error: %v", err)
-			}
-			if err := testutil.CheckTestSegments(regs); err != nil {
-				t.Errorf("application segment check with full restore failed: %v", err)
-			}
-			break // Done.
-		}
-		return false
-	})
-}
-
 func TestBounce(t *testing.T) {
-	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		go func() {
 			time.Sleep(time.Millisecond)
 			c.BounceToKernel()
@@ -302,7 +278,7 @@ func TestBounce(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		go func() {
 			time.Sleep(time.Millisecond)
 			c.BounceToKernel()
@@ -321,7 +297,7 @@ func TestBounce(t *testing.T) {
 }
 
 func TestBounceStress(t *testing.T) {
-	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		randomSleep := func() {
 			// O(hundreds of microseconds) is appropriate to ensure
 			// different overlaps and different schedules.
@@ -357,7 +333,7 @@ func TestBounceStress(t *testing.T) {
 
 func TestInvalidate(t *testing.T) {
 	var data uintptr // Used below.
-	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, &data) // Read legitimate value.
 		for {
 			var si arch.SignalInfo
@@ -398,7 +374,7 @@ func IsFault(err error, si *arch.SignalInfo) bool {
 }
 
 func TestEmptyAddressSpace(t *testing.T) {
-	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -412,7 +388,7 @@ func TestEmptyAddressSpace(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -471,7 +447,7 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 		i int // Iteration includes machine.Get() / machine.Put().
 		a int // Count for ErrContextInterrupt.
 	)
-	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -493,7 +469,7 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 
 func BenchmarkKernelSyscall(b *testing.B) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
-	applicationTest(b, true, testutil.Getpid, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(b, true, testutil.Getpid, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		// iteration does not include machine.Get() / machine.Put().
 		for i := 0; i < b.N; i++ {
 			testutil.Getpid()
@@ -508,7 +484,7 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 		i int
 		a int
 	)
-	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,

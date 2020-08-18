@@ -15,10 +15,11 @@
 package integration
 
 import (
+	"context"
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 // Test that UDS can be created using overlay when parent directory is in lower
@@ -27,19 +28,20 @@ import (
 // Prerequisite: the directory where the socket file is created must not have
 // been open for write before bind(2) is called.
 func TestBindOverlay(t *testing.T) {
-	if err := dockerutil.Pull("ubuntu:trusty"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("bind-overlay-test")
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
-	cmd := "nc -l -U /var/run/sock & p=$! && sleep 1 && echo foobar-asdf | nc -U /var/run/sock && wait $p"
-	got, err := d.RunFg("ubuntu:trusty", "bash", "-c", cmd)
+	// Run the container.
+	got, err := d.Run(ctx, dockerutil.RunOpts{
+		Image: "basic/ubuntu",
+	}, "bash", "-c", "nc -l -U /var/run/sock & p=$! && sleep 1 && echo foobar-asdf | nc -U /var/run/sock && wait $p")
 	if err != nil {
-		t.Fatal("docker run failed:", err)
+		t.Fatalf("docker run failed: %v", err)
 	}
 
+	// Check the output contains what we want.
 	if want := "foobar-asdf"; !strings.Contains(got, want) {
 		t.Fatalf("docker run output is missing %q: %s", want, got)
 	}
-	defer d.CleanUp()
 }

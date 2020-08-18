@@ -16,6 +16,7 @@
 package buffer
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
 )
@@ -231,5 +232,290 @@ func TestToClone(t *testing.T) {
 					c.inView, c.inBuffer, got, c.inView)
 			}
 		})
+	}
+}
+
+func TestVVReadToVV(t *testing.T) {
+	testCases := []struct {
+		comment     string
+		vv          VectorisedView
+		bytesToRead int
+		wantBytes   string
+		leftVV      VectorisedView
+	}{
+		{
+			comment:     "large VV, short read",
+			vv:          vv(30, "012345678901234567890123456789"),
+			bytesToRead: 10,
+			wantBytes:   "0123456789",
+			leftVV:      vv(20, "01234567890123456789"),
+		},
+		{
+			comment:     "largeVV, multiple views, short read",
+			vv:          vv(13, "123", "345", "567", "8910"),
+			bytesToRead: 6,
+			wantBytes:   "123345",
+			leftVV:      vv(7, "567", "8910"),
+		},
+		{
+			comment:     "smallVV (multiple views), large read",
+			vv:          vv(3, "1", "2", "3"),
+			bytesToRead: 10,
+			wantBytes:   "123",
+			leftVV:      vv(0, ""),
+		},
+		{
+			comment:     "smallVV (single view), large read",
+			vv:          vv(1, "1"),
+			bytesToRead: 10,
+			wantBytes:   "1",
+			leftVV:      vv(0, ""),
+		},
+		{
+			comment:     "emptyVV, large read",
+			vv:          vv(0, ""),
+			bytesToRead: 10,
+			wantBytes:   "",
+			leftVV:      vv(0, ""),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.comment, func(t *testing.T) {
+			var readTo VectorisedView
+			inSize := tc.vv.Size()
+			copied := tc.vv.ReadToVV(&readTo, tc.bytesToRead)
+			if got, want := copied, len(tc.wantBytes); got != want {
+				t.Errorf("incorrect number of bytes copied returned in ReadToVV got: %d, want: %d, tc: %+v", got, want, tc)
+			}
+			if got, want := string(readTo.ToView()), tc.wantBytes; got != want {
+				t.Errorf("unexpected content in readTo got: %s, want: %s", got, want)
+			}
+			if got, want := tc.vv.Size(), inSize-copied; got != want {
+				t.Errorf("test VV has incorrect size after reading got: %d, want: %d, tc.vv: %+v", got, want, tc.vv)
+			}
+			if got, want := string(tc.vv.ToView()), string(tc.leftVV.ToView()); got != want {
+				t.Errorf("unexpected data left in vv after read got: %+v, want: %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestVVRead(t *testing.T) {
+	testCases := []struct {
+		comment     string
+		vv          VectorisedView
+		bytesToRead int
+		readBytes   string
+		leftBytes   string
+		wantError   bool
+	}{
+		{
+			comment:     "large VV, short read",
+			vv:          vv(30, "012345678901234567890123456789"),
+			bytesToRead: 10,
+			readBytes:   "0123456789",
+			leftBytes:   "01234567890123456789",
+		},
+		{
+			comment:     "largeVV, multiple buffers, short read",
+			vv:          vv(13, "123", "345", "567", "8910"),
+			bytesToRead: 6,
+			readBytes:   "123345",
+			leftBytes:   "5678910",
+		},
+		{
+			comment:     "smallVV, large read",
+			vv:          vv(3, "1", "2", "3"),
+			bytesToRead: 10,
+			readBytes:   "123",
+			leftBytes:   "",
+		},
+		{
+			comment:     "smallVV, large read",
+			vv:          vv(1, "1"),
+			bytesToRead: 10,
+			readBytes:   "1",
+			leftBytes:   "",
+		},
+		{
+			comment:     "emptyVV, large read",
+			vv:          vv(0, ""),
+			bytesToRead: 10,
+			readBytes:   "",
+			wantError:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.comment, func(t *testing.T) {
+			readTo := NewView(tc.bytesToRead)
+			inSize := tc.vv.Size()
+			copied, err := tc.vv.Read(readTo)
+			if !tc.wantError && err != nil {
+				t.Fatalf("unexpected error in tc.vv.Read(..) = %s", err)
+			}
+			readTo = readTo[:copied]
+			if got, want := copied, len(tc.readBytes); got != want {
+				t.Errorf("incorrect number of bytes copied returned in ReadToVV got: %d, want: %d, tc.vv: %+v", got, want, tc.vv)
+			}
+			if got, want := string(readTo), tc.readBytes; got != want {
+				t.Errorf("unexpected data in readTo got: %s, want: %s", got, want)
+			}
+			if got, want := tc.vv.Size(), inSize-copied; got != want {
+				t.Errorf("test VV has incorrect size after reading got: %d, want: %d, tc.vv: %+v", got, want, tc.vv)
+			}
+			if got, want := string(tc.vv.ToView()), tc.leftBytes; got != want {
+				t.Errorf("vv has incorrect data after Read got: %s, want: %s", got, want)
+			}
+		})
+	}
+}
+
+var pullUpTestCases = []struct {
+	comment string
+	in      VectorisedView
+	count   int
+	want    []byte
+	result  VectorisedView
+	ok      bool
+}{
+	{
+		comment: "simple case",
+		in:      vv(2, "12"),
+		count:   1,
+		want:    []byte("1"),
+		result:  vv(2, "12"),
+		ok:      true,
+	},
+	{
+		comment: "entire View",
+		in:      vv(2, "1", "2"),
+		count:   1,
+		want:    []byte("1"),
+		result:  vv(2, "1", "2"),
+		ok:      true,
+	},
+	{
+		comment: "spanning across two Views",
+		in:      vv(3, "1", "23"),
+		count:   2,
+		want:    []byte("12"),
+		result:  vv(3, "12", "3"),
+		ok:      true,
+	},
+	{
+		comment: "spanning across all Views",
+		in:      vv(5, "1", "23", "45"),
+		count:   5,
+		want:    []byte("12345"),
+		result:  vv(5, "12345"),
+		ok:      true,
+	},
+	{
+		comment: "count = 0",
+		in:      vv(1, "1"),
+		count:   0,
+		want:    []byte{},
+		result:  vv(1, "1"),
+		ok:      true,
+	},
+	{
+		comment: "count = size",
+		in:      vv(1, "1"),
+		count:   1,
+		want:    []byte("1"),
+		result:  vv(1, "1"),
+		ok:      true,
+	},
+	{
+		comment: "count too large",
+		in:      vv(3, "1", "23"),
+		count:   4,
+		want:    nil,
+		result:  vv(3, "1", "23"),
+		ok:      false,
+	},
+	{
+		comment: "empty vv",
+		in:      vv(0, ""),
+		count:   1,
+		want:    nil,
+		result:  vv(0, ""),
+		ok:      false,
+	},
+	{
+		comment: "empty vv, count = 0",
+		in:      vv(0, ""),
+		count:   0,
+		want:    nil,
+		result:  vv(0, ""),
+		ok:      true,
+	},
+	{
+		comment: "empty views",
+		in:      vv(3, "", "1", "", "23"),
+		count:   2,
+		want:    []byte("12"),
+		result:  vv(3, "12", "3"),
+		ok:      true,
+	},
+}
+
+func TestPullUp(t *testing.T) {
+	for _, c := range pullUpTestCases {
+		got, ok := c.in.PullUp(c.count)
+
+		// Is the return value right?
+		if ok != c.ok {
+			t.Errorf("Test %q failed when calling PullUp(%d) on %v. Got an ok of %t. Want %t",
+				c.comment, c.count, c.in, ok, c.ok)
+		}
+		if bytes.Compare(got, View(c.want)) != 0 {
+			t.Errorf("Test %q failed when calling PullUp(%d) on %v. Got %v. Want %v",
+				c.comment, c.count, c.in, got, c.want)
+		}
+
+		// Is the underlying structure right?
+		if !reflect.DeepEqual(c.in, c.result) {
+			t.Errorf("Test %q failed when calling PullUp(%d). Got vv with structure %v. Wanted %v",
+				c.comment, c.count, c.in, c.result)
+		}
+	}
+}
+
+func TestToVectorisedView(t *testing.T) {
+	testCases := []struct {
+		in   View
+		want VectorisedView
+	}{
+		{nil, VectorisedView{}},
+		{View{}, VectorisedView{}},
+		{View{'a'}, VectorisedView{size: 1, views: []View{{'a'}}}},
+	}
+	for _, tc := range testCases {
+		if got, want := tc.in.ToVectorisedView(), tc.want; !reflect.DeepEqual(got, want) {
+			t.Errorf("(%v).ToVectorisedView failed got: %+v, want: %+v", tc.in, got, want)
+		}
+	}
+}
+
+func TestAppendView(t *testing.T) {
+	testCases := []struct {
+		vv   VectorisedView
+		in   View
+		want VectorisedView
+	}{
+		{VectorisedView{}, nil, VectorisedView{}},
+		{VectorisedView{}, View{}, VectorisedView{}},
+		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, nil, VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}},
+		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, View{}, VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}},
+		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, View{'e'}, VectorisedView{[]View{{'a', 'b', 'c', 'd'}, {'e'}}, 5}},
+	}
+	for _, tc := range testCases {
+		tc.vv.AppendView(tc.in)
+		if got, want := tc.vv, tc.want; !reflect.DeepEqual(got, want) {
+			t.Errorf("(%v).ToVectorisedView failed got: %+v, want: %+v", tc.in, got, want)
+		}
 	}
 }

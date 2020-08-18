@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
@@ -60,8 +60,7 @@ const (
 	limitHostFDTranslationKey = "limit_host_fd_translation"
 
 	// overlayfsStaleRead if present closes cached readonly file after the first
-	// write. This is done to workaround a limitation of overlayfs in kernels
-	// before 4.19 where open FDs are not updated after the file is copied up.
+	// write. This is done to workaround a limitation of Linux overlayfs.
 	overlayfsStaleRead = "overlayfs_stale_read"
 )
 

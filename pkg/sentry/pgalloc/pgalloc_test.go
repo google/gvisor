@@ -17,45 +17,55 @@ package pgalloc
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
 	page     = usermem.PageSize
 	hugepage = usermem.HugePageSize
+	topPage  = (1 << 63) - page
 )
 
 func TestFindUnallocatedRange(t *testing.T) {
 	for _, test := range []struct {
-		desc           string
-		usage          *usageSegmentDataSlices
-		start          uint64
-		length         uint64
-		alignment      uint64
-		unallocated    uint64
-		minUnallocated uint64
+		desc       string
+		usage      *usageSegmentDataSlices
+		fileSize   int64
+		length     uint64
+		alignment  uint64
+		start      uint64
+		expectFail bool
 	}{
 		{
-			desc:           "Initial allocation succeeds",
-			usage:          &usageSegmentDataSlices{},
-			start:          0,
-			length:         page,
-			alignment:      page,
-			unallocated:    0,
-			minUnallocated: 0,
+			desc:      "Initial allocation succeeds",
+			usage:     &usageSegmentDataSlices{},
+			length:    page,
+			alignment: page,
+			start:     chunkSize - page, // Grows by chunkSize, allocate down.
 		},
 		{
-			desc: "Allocation begins at start of file",
+			desc: "Allocation finds empty space at start of file",
 			usage: &usageSegmentDataSlices{
 				Start:  []uint64{page},
 				End:    []uint64{2 * page},
 				Values: []usageInfo{{refs: 1}},
 			},
-			start:          0,
-			length:         page,
-			alignment:      page,
-			unallocated:    0,
-			minUnallocated: 0,
+			fileSize:  2 * page,
+			length:    page,
+			alignment: page,
+			start:     0,
+		},
+		{
+			desc: "Allocation finds empty space at end of file",
+			usage: &usageSegmentDataSlices{
+				Start:  []uint64{0},
+				End:    []uint64{page},
+				Values: []usageInfo{{refs: 1}},
+			},
+			fileSize:  2 * page,
+			length:    page,
+			alignment: page,
+			start:     page,
 		},
 		{
 			desc: "In-use frames are not allocatable",
@@ -64,11 +74,10 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 2 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 2}},
 			},
-			start:          0,
-			length:         page,
-			alignment:      page,
-			unallocated:    2 * page,
-			minUnallocated: 2 * page,
+			fileSize:  2 * page,
+			length:    page,
+			alignment: page,
+			start:     3 * page, // Double fileSize, allocate top-down.
 		},
 		{
 			desc: "Reclaimable frames are not allocatable",
@@ -77,11 +86,10 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 2 * page, 3 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 0}, {refs: 1}},
 			},
-			start:          0,
-			length:         page,
-			alignment:      page,
-			unallocated:    3 * page,
-			minUnallocated: 3 * page,
+			fileSize:  3 * page,
+			length:    page,
+			alignment: page,
+			start:     5 * page, // Double fileSize, grow down.
 		},
 		{
 			desc: "Gaps between in-use frames are allocatable",
@@ -90,11 +98,10 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 3 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 1}},
 			},
-			start:          0,
-			length:         page,
-			alignment:      page,
-			unallocated:    page,
-			minUnallocated: page,
+			fileSize:  3 * page,
+			length:    page,
+			alignment: page,
+			start:     page,
 		},
 		{
 			desc: "Inadequately-sized gaps are rejected",
@@ -103,14 +110,13 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 3 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 1}},
 			},
-			start:          0,
-			length:         2 * page,
-			alignment:      page,
-			unallocated:    3 * page,
-			minUnallocated: page,
+			fileSize:  3 * page,
+			length:    2 * page,
+			alignment: page,
+			start:     4 * page, // Double fileSize, grow down.
 		},
 		{
-			desc: "Hugepage alignment is honored",
+			desc: "Alignment is honored at end of file",
 			usage: &usageSegmentDataSlices{
 				Start: []uint64{0, hugepage + page},
 				// Hugepage-sized gap here that shouldn't be allocated from
@@ -118,37 +124,103 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, hugepage + 2*page},
 				Values: []usageInfo{{refs: 1}, {refs: 1}},
 			},
-			start:          0,
-			length:         hugepage,
-			alignment:      hugepage,
-			unallocated:    2 * hugepage,
-			minUnallocated: page,
+			fileSize:  hugepage + 2*page,
+			length:    hugepage,
+			alignment: hugepage,
+			start:     3 * hugepage, // Double fileSize until alignment is satisfied, grow down.
 		},
 		{
-			desc: "Pages before start ignored",
+			desc: "Alignment is honored before end of file",
+			usage: &usageSegmentDataSlices{
+				Start: []uint64{0, 2*hugepage + page},
+				// Page will need to be shifted down from top.
+				End:    []uint64{page, 2*hugepage + 2*page},
+				Values: []usageInfo{{refs: 1}, {refs: 1}},
+			},
+			fileSize:  2*hugepage + 2*page,
+			length:    hugepage,
+			alignment: hugepage,
+			start:     hugepage,
+		},
+		{
+			desc:      "Allocation doubles file size more than once if necessary",
+			usage:     &usageSegmentDataSlices{},
+			fileSize:  page,
+			length:    4 * page,
+			alignment: page,
+			start:     0,
+		},
+		{
+			desc: "Allocations are compact if possible",
 			usage: &usageSegmentDataSlices{
 				Start:  []uint64{page, 3 * page},
 				End:    []uint64{2 * page, 4 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 2}},
 			},
-			start:          page,
-			length:         page,
-			alignment:      page,
-			unallocated:    2 * page,
-			minUnallocated: 2 * page,
+			fileSize:  4 * page,
+			length:    page,
+			alignment: page,
+			start:     2 * page,
 		},
 		{
-			desc: "start may be in the middle of segment",
+			desc: "Top-down allocation within one gap",
 			usage: &usageSegmentDataSlices{
-				Start:  []uint64{0, 3 * page},
+				Start:  []uint64{page, 4 * page, 7 * page},
+				End:    []uint64{2 * page, 5 * page, 8 * page},
+				Values: []usageInfo{{refs: 1}, {refs: 2}, {refs: 1}},
+			},
+			fileSize:  8 * page,
+			length:    page,
+			alignment: page,
+			start:     6 * page,
+		},
+		{
+			desc: "Top-down allocation between multiple gaps",
+			usage: &usageSegmentDataSlices{
+				Start:  []uint64{page, 3 * page, 5 * page},
+				End:    []uint64{2 * page, 4 * page, 6 * page},
+				Values: []usageInfo{{refs: 1}, {refs: 2}, {refs: 1}},
+			},
+			fileSize:  6 * page,
+			length:    page,
+			alignment: page,
+			start:     4 * page,
+		},
+		{
+			desc: "Top-down allocation with large top gap",
+			usage: &usageSegmentDataSlices{
+				Start:  []uint64{page, 3 * page},
 				End:    []uint64{2 * page, 4 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 2}},
 			},
-			start:          page,
-			length:         page,
-			alignment:      page,
-			unallocated:    2 * page,
-			minUnallocated: 2 * page,
+			fileSize:  8 * page,
+			length:    page,
+			alignment: page,
+			start:     7 * page,
+		},
+		{
+			desc: "Gaps found with possible overflow",
+			usage: &usageSegmentDataSlices{
+				Start:  []uint64{page, topPage - page},
+				End:    []uint64{2 * page, topPage},
+				Values: []usageInfo{{refs: 1}, {refs: 1}},
+			},
+			fileSize:  topPage,
+			length:    page,
+			alignment: page,
+			start:     topPage - 2*page,
+		},
+		{
+			desc: "Overflow detected",
+			usage: &usageSegmentDataSlices{
+				Start:  []uint64{page},
+				End:    []uint64{topPage},
+				Values: []usageInfo{{refs: 1}},
+			},
+			fileSize:   topPage,
+			length:     2 * page,
+			alignment:  page,
+			expectFail: true,
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
@@ -156,12 +228,18 @@ func TestFindUnallocatedRange(t *testing.T) {
 			if err := usage.ImportSortedSlices(test.usage); err != nil {
 				t.Fatalf("Failed to initialize usage from %v: %v", test.usage, err)
 			}
-			unallocated, minUnallocated := findUnallocatedRange(&usage, test.start, test.length, test.alignment)
-			if unallocated != test.unallocated {
-				t.Errorf("findUnallocatedRange(%v, %x, %x, %x): got unallocated %x, wanted %x", test.usage, test.start, test.length, test.alignment, unallocated, test.unallocated)
+			fr, ok := findAvailableRange(&usage, test.fileSize, test.length, test.alignment)
+			if !test.expectFail && !ok {
+				t.Fatalf("findAvailableRange(%v, %x, %x, %x): got %x, false wanted %x, true", test.usage, test.fileSize, test.length, test.alignment, fr.Start, test.start)
 			}
-			if minUnallocated != test.minUnallocated {
-				t.Errorf("findUnallocatedRange(%v, %x, %x, %x): got minUnallocated %x, wanted %x", test.usage, test.start, test.length, test.alignment, minUnallocated, test.minUnallocated)
+			if test.expectFail && ok {
+				t.Fatalf("findAvailableRange(%v, %x, %x, %x): got %x, true wanted %x, false", test.usage, test.fileSize, test.length, test.alignment, fr.Start, test.start)
+			}
+			if ok && fr.Start != test.start {
+				t.Errorf("findAvailableRange(%v, %x, %x, %x): got start=%x, wanted %x", test.usage, test.fileSize, test.length, test.alignment, fr.Start, test.start)
+			}
+			if ok && fr.End != test.start+test.length {
+				t.Errorf("findAvailableRange(%v, %x, %x, %x): got end=%x, wanted %x", test.usage, test.fileSize, test.length, test.alignment, fr.End, test.start+test.length)
 			}
 		})
 	}

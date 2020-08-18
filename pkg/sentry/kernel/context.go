@@ -15,8 +15,9 @@
 package kernel
 
 import (
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"time"
+
+	"gvisor.dev/gvisor/pkg/context"
 )
 
 // contextID is the kernel package's type for context.Context.Value keys.
@@ -97,39 +98,17 @@ func TaskFromContext(ctx context.Context) *Task {
 	return nil
 }
 
-// AsyncContext returns a context.Context that may be used by goroutines that
-// do work on behalf of t and therefore share its contextual values, but are
-// not t's task goroutine (e.g. asynchronous I/O).
-func (t *Task) AsyncContext() context.Context {
-	return taskAsyncContext{t: t}
+// Deadline implements context.Context.Deadline.
+func (*Task) Deadline() (time.Time, bool) {
+	return time.Time{}, false
 }
 
-type taskAsyncContext struct {
-	context.NoopSleeper
-	t *Task
+// Done implements context.Context.Done.
+func (*Task) Done() <-chan struct{} {
+	return nil
 }
 
-// Debugf implements log.Logger.Debugf.
-func (ctx taskAsyncContext) Debugf(format string, v ...interface{}) {
-	ctx.t.Debugf(format, v...)
-}
-
-// Infof implements log.Logger.Infof.
-func (ctx taskAsyncContext) Infof(format string, v ...interface{}) {
-	ctx.t.Infof(format, v...)
-}
-
-// Warningf implements log.Logger.Warningf.
-func (ctx taskAsyncContext) Warningf(format string, v ...interface{}) {
-	ctx.t.Warningf(format, v...)
-}
-
-// IsLogging implements log.Logger.IsLogging.
-func (ctx taskAsyncContext) IsLogging(level log.Level) bool {
-	return ctx.t.IsLogging(level)
-}
-
-// Value implements context.Context.Value.
-func (ctx taskAsyncContext) Value(key interface{}) interface{} {
-	return ctx.t.Value(key)
+// Err implements context.Context.Err.
+func (*Task) Err() error {
+	return nil
 }

@@ -17,8 +17,8 @@
 package unimpl
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // contextID is the events package's type for context.Context.Value keys.

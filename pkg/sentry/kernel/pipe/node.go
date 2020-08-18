@@ -15,12 +15,11 @@
 package pipe
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -94,7 +93,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 		if i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() {
 			if !waitFor(&i.mu, &i.wWakeup, ctx) {
-				r.DecRef()
+				r.DecRef(ctx)
 				return nil, syserror.ErrInterrupted
 			}
 		}
@@ -112,12 +111,12 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 			// On a nonblocking, write-only open, the open fails with ENXIO if the
 			// read side isn't open yet.
 			if flags.NonBlocking {
-				w.DecRef()
+				w.DecRef(ctx)
 				return nil, syserror.ENXIO
 			}
 
 			if !waitFor(&i.mu, &i.rWakeup, ctx) {
-				w.DecRef()
+				w.DecRef(ctx)
 				return nil, syserror.ErrInterrupted
 			}
 		}

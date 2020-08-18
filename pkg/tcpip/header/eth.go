@@ -53,6 +53,10 @@ const (
 	// (all bits set to 0).
 	unspecifiedEthernetAddress = tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00")
 
+	// EthernetBroadcastAddress is an ethernet address that addresses every node
+	// on a local link.
+	EthernetBroadcastAddress = tcpip.LinkAddress("\xff\xff\xff\xff\xff\xff")
+
 	// unicastMulticastFlagMask is the mask of the least significant bit in
 	// the first octet (in network byte order) of an ethernet address that
 	// determines whether the ethernet address is a unicast or multicast. If
@@ -133,4 +137,45 @@ func IsValidUnicastEthernetAddress(addr tcpip.LinkAddress) bool {
 
 	// addr is a valid unicast ethernet address.
 	return true
+}
+
+// EthernetAddressFromMulticastIPv4Address returns a multicast Ethernet address
+// for a multicast IPv4 address.
+//
+// addr MUST be a multicast IPv4 address.
+func EthernetAddressFromMulticastIPv4Address(addr tcpip.Address) tcpip.LinkAddress {
+	var linkAddrBytes [EthernetAddressSize]byte
+	// RFC 1112 Host Extensions for IP Multicasting
+	//
+	// 6.4. Extensions to an Ethernet Local Network Module:
+	//
+	// An IP host group address is mapped to an Ethernet multicast
+	// address by placing the low-order 23-bits of the IP address
+	// into the low-order 23 bits of the Ethernet multicast address
+	// 01-00-5E-00-00-00 (hex).
+	linkAddrBytes[0] = 0x1
+	linkAddrBytes[2] = 0x5e
+	linkAddrBytes[3] = addr[1] & 0x7F
+	copy(linkAddrBytes[4:], addr[IPv4AddressSize-2:])
+	return tcpip.LinkAddress(linkAddrBytes[:])
+}
+
+// EthernetAddressFromMulticastIPv6Address returns a multicast Ethernet address
+// for a multicast IPv6 address.
+//
+// addr MUST be a multicast IPv6 address.
+func EthernetAddressFromMulticastIPv6Address(addr tcpip.Address) tcpip.LinkAddress {
+	// RFC 2464 Transmission of IPv6 Packets over Ethernet Networks
+	//
+	// 7. Address Mapping -- Multicast
+	//
+	// An IPv6 packet with a multicast destination address DST,
+	// consisting of the sixteen octets DST[1] through DST[16], is
+	// transmitted to the Ethernet multicast address whose first
+	// two octets are the value 3333 hexadecimal and whose last
+	// four octets are the last four octets of DST.
+	linkAddrBytes := []byte(addr[IPv6AddressSize-EthernetAddressSize:])
+	linkAddrBytes[0] = 0x33
+	linkAddrBytes[1] = 0x33
+	return tcpip.LinkAddress(linkAddrBytes[:])
 }

@@ -149,6 +149,35 @@ TEST_P(UnixSocketPairCmsgTest, BadFDPass) {
               SyscallFailsWithErrno(EBADF));
 }
 
+TEST_P(UnixSocketPairCmsgTest, ShortCmsg) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  int sent_fd = -1;
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(sizeof(sent_fd))];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_len = 1;
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  memcpy(CMSG_DATA(cmsg), &sent_fd, sizeof(sent_fd));
+
+  struct iovec iov;
+  iov.iov_base = sent_data;
+  iov.iov_len = sizeof(sent_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(sockets->first_fd(), &msg, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 // BasicFDPassNoSpace starts off by sending a single FD just like BasicFDPass.
 // The difference is that when calling recvmsg, no space for FDs is provided,
 // only space for the cmsg header.

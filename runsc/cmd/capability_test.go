@@ -23,10 +23,10 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 func init() {
@@ -85,21 +85,20 @@ func TestCapabilities(t *testing.T) {
 		Inheritable: caps,
 	}
 
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 
 	// Use --network=host to make sandbox use spec's capabilities.
 	conf.Network = boot.NetworkHost
 
-	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
-	defer os.RemoveAll(rootDir)
-	defer os.RemoveAll(bundleDir)
+	defer cleanup()
 
 	// Create and start the container.
 	args := container.Args{
-		ID:        testutil.UniqueContainerID(),
+		ID:        testutil.RandomContainerID(),
 		Spec:      spec,
 		BundleDir: bundleDir,
 	}

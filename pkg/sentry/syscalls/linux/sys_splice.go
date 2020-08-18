@@ -25,6 +25,14 @@ import (
 
 // doSplice implements a blocking splice operation.
 func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonBlocking bool) (int64, error) {
+	if opts.Length < 0 || opts.SrcStart < 0 || opts.DstStart < 0 || (opts.SrcStart+opts.Length < 0) {
+		return 0, syserror.EINVAL
+	}
+
+	if opts.Length > int64(kernel.MAX_RW_COUNT) {
+		opts.Length = int64(kernel.MAX_RW_COUNT)
+	}
+
 	var (
 		total int64
 		n     int64
@@ -72,6 +80,12 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		}
 	}
 
+	if total > 0 {
+		// On Linux, inotify behavior is not very consistent with splice(2). We try
+		// our best to emulate Linux for very basic calls to splice, where for some
+		// reason, events are generated for output files, but not input files.
+		outFile.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
+	}
 	return total, err
 }
 
@@ -82,17 +96,12 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	offsetAddr := args[2].Pointer()
 	count := int64(args[3].SizeT())
 
-	// Don't send a negative number of bytes.
-	if count < 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
 	// Get files.
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	if !inFile.Flags().Read {
 		return 0, nil, syserror.EBADF
@@ -102,7 +111,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	if !outFile.Flags().Write {
 		return 0, nil, syserror.EBADF
@@ -134,11 +143,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		var offset int64
 		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
 			return 0, nil, err
-		}
-
-		// The offset must be valid.
-		if offset < 0 {
-			return 0, nil, syserror.EINVAL
 		}
 
 		// Do the splice.
@@ -188,13 +192,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	// The operation is non-blocking if anything is non-blocking.
 	//
@@ -211,8 +215,10 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	opts := fs.SpliceOpts{
 		Length: count,
 	}
+	inFileAttr := inFile.Dirent.Inode.StableAttr
+	outFileAttr := outFile.Dirent.Inode.StableAttr
 	switch {
-	case fs.IsPipe(inFile.Dirent.Inode.StableAttr) && !fs.IsPipe(outFile.Dirent.Inode.StableAttr):
+	case fs.IsPipe(inFileAttr) && !fs.IsPipe(outFileAttr):
 		if inOffset != 0 {
 			return 0, nil, syserror.ESPIPE
 		}
@@ -225,11 +231,12 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			if _, err := t.CopyIn(outOffset, &offset); err != nil {
 				return 0, nil, err
 			}
+
 			// Use the destination offset.
 			opts.DstOffset = true
 			opts.DstStart = offset
 		}
-	case !fs.IsPipe(inFile.Dirent.Inode.StableAttr) && fs.IsPipe(outFile.Dirent.Inode.StableAttr):
+	case !fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
 		if outOffset != 0 {
 			return 0, nil, syserror.ESPIPE
 		}
@@ -242,17 +249,18 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			if _, err := t.CopyIn(inOffset, &offset); err != nil {
 				return 0, nil, err
 			}
+
 			// Use the source offset.
 			opts.SrcOffset = true
 			opts.SrcStart = offset
 		}
-	case fs.IsPipe(inFile.Dirent.Inode.StableAttr) && fs.IsPipe(outFile.Dirent.Inode.StableAttr):
+	case fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
 		if inOffset != 0 || outOffset != 0 {
 			return 0, nil, syserror.ESPIPE
 		}
 
 		// We may not refer to the same pipe; otherwise it's a continuous loop.
-		if inFile.Dirent.Inode.StableAttr.InodeID == outFile.Dirent.Inode.StableAttr.InodeID {
+		if inFileAttr.InodeID == outFileAttr.InodeID {
 			return 0, nil, syserror.EINVAL
 		}
 	default:
@@ -261,6 +269,15 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Splice data.
 	n, err := doSplice(t, outFile, inFile, opts, nonBlock)
+
+	// Special files can have additional requirements for granularity.  For
+	// example, read from eventfd returns EINVAL if a size is less 8 bytes.
+	// Inotify is another example. read will return EINVAL is a buffer is
+	// too small to return the next event, but a size of an event isn't
+	// fixed, it is sizeof(struct inotify_event) + {NAME_LEN} + 1.
+	if n != 0 && err != nil && (fs.IsAnonymous(inFileAttr) || fs.IsAnonymous(outFileAttr)) {
+		err = nil
+	}
 
 	// See above; inFile is chosen arbitrarily here.
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "splice", inFile)
@@ -283,13 +300,13 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	// All files must be pipes.
 	if !fs.IsPipe(inFile.Dirent.Inode.StableAttr) || !fs.IsPipe(outFile.Dirent.Inode.StableAttr) {

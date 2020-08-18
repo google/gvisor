@@ -64,6 +64,8 @@ begin:
 	CMPQ AX, $0
 	JL error
 
+	MOVQ $0, BX
+
 	// SIGSTOP to wait for attach.
 	//
 	// The SYSCALL instruction will be used for future syscall injection by
@@ -73,23 +75,26 @@ begin:
 	MOVQ $SIGSTOP, SI
 	SYSCALL
 
-	// The tracer may "detach" and/or allow code execution here in three cases:
-	//
-	// 1. New (traced) stub threads are explicitly detached by the
-	// goroutine in newSubprocess. However, they are detached while in
-	// group-stop, so they do not execute code here.
-	//
-	// 2. If a tracer thread exits, it implicitly detaches from the stub,
-	// potentially allowing code execution here. However, the Go runtime
-	// never exits individual threads, so this case never occurs.
-	//
-	// 3. subprocess.createStub clones a new stub process that is untraced,
+	// The sentry sets BX to 1 when creating stub process.
+	CMPQ BX, $1
+	JE clone
+
+	// Notify the Sentry that syscall exited.
+done:
+	INT $3
+	// Be paranoid.
+	JMP done
+clone:
+	// subprocess.createStub clones a new stub process that is untraced,
 	// thus executing this code. We setup the PDEATHSIG before SIGSTOPing
 	// ourselves for attach by the tracer.
 	//
 	// R15 has been updated with the expected PPID.
-	JMP begin
+	CMPQ AX, $0
+	JE begin
 
+	// The clone syscall returns a non-zero value.
+	JMP done
 error:
 	// Exit with -errno.
 	MOVQ AX, DI

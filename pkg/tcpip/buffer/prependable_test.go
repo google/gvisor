@@ -45,6 +45,6 @@ func TestNewPrependableFromView(t *testing.T) {
 			if !reflect.DeepEqual(prep, testCase.want) {
 				t.Errorf("NewPrependableFromView(%#v, %d) = %#v; want %#v", testCase.view, testCase.extraSize, prep, testCase.want)
 			}
-		} )
+		})
 	}
 }

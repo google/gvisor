@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "test/syscalls/linux/ip_socket_test_util.h"
+
 #include <net/if.h>
 #include <netinet/in.h>
-#include <sys/ioctl.h>
 #include <sys/socket.h>
-#include <cstring>
 
-#include "test/syscalls/linux/ip_socket_test_util.h"
+#include <cstring>
 
 namespace gvisor {
 namespace testing {
@@ -34,12 +34,11 @@ uint16_t PortFromInetSockaddr(const struct sockaddr* addr) {
 }
 
 PosixErrorOr<int> InterfaceIndex(std::string name) {
-  // TODO(igudger): Consider using netlink.
-  ifreq req = {};
-  memcpy(req.ifr_name, name.c_str(), name.size());
-  ASSIGN_OR_RETURN_ERRNO(auto sock, Socket(AF_INET, SOCK_DGRAM, 0));
-  RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(sock.get(), SIOCGIFINDEX, &req));
-  return req.ifr_ifindex;
+  int index = if_nametoindex(name.c_str());
+  if (index) {
+    return index;
+  }
+  return PosixError(errno);
 }
 
 namespace {
@@ -76,6 +75,33 @@ SocketPairKind DualStackTCPAcceptBindSocketPair(int type) {
       description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
       TCPAcceptBindSocketPairCreator(AF_INET6, type | SOCK_STREAM, 0,
                                      /* dual_stack = */ true)};
+}
+
+SocketPairKind IPv6TCPAcceptBindPersistentListenerSocketPair(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "connected IPv6 TCP socket");
+  return SocketPairKind{description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
+                        TCPAcceptBindPersistentListenerSocketPairCreator(
+                            AF_INET6, type | SOCK_STREAM, 0,
+                            /* dual_stack = */ false)};
+}
+
+SocketPairKind IPv4TCPAcceptBindPersistentListenerSocketPair(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "connected IPv4 TCP socket");
+  return SocketPairKind{description, AF_INET, type | SOCK_STREAM, IPPROTO_TCP,
+                        TCPAcceptBindPersistentListenerSocketPairCreator(
+                            AF_INET, type | SOCK_STREAM, 0,
+                            /* dual_stack = */ false)};
+}
+
+SocketPairKind DualStackTCPAcceptBindPersistentListenerSocketPair(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "connected dual stack TCP socket");
+  return SocketPairKind{description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
+                        TCPAcceptBindPersistentListenerSocketPairCreator(
+                            AF_INET6, type | SOCK_STREAM, 0,
+                            /* dual_stack = */ true)};
 }
 
 SocketPairKind IPv6UDPBidirectionalBindSocketPair(int type) {
@@ -149,17 +175,17 @@ SocketKind IPv6TCPUnboundSocket(int type) {
 PosixError IfAddrHelper::Load() {
   Release();
   RETURN_ERROR_IF_SYSCALL_FAIL(getifaddrs(&ifaddr_));
-  return PosixError(0);
+  return NoError();
 }
 
 void IfAddrHelper::Release() {
   if (ifaddr_) {
     freeifaddrs(ifaddr_);
+    ifaddr_ = nullptr;
   }
-  ifaddr_ = nullptr;
 }
 
-std::vector<std::string> IfAddrHelper::InterfaceList(int family) {
+std::vector<std::string> IfAddrHelper::InterfaceList(int family) const {
   std::vector<std::string> names;
   for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
@@ -170,7 +196,7 @@ std::vector<std::string> IfAddrHelper::InterfaceList(int family) {
   return names;
 }
 
-sockaddr* IfAddrHelper::GetAddr(int family, std::string name) {
+const sockaddr* IfAddrHelper::GetAddr(int family, std::string name) const {
   for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
       continue;
@@ -182,28 +208,28 @@ sockaddr* IfAddrHelper::GetAddr(int family, std::string name) {
   return nullptr;
 }
 
-PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) {
+PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) const {
   return InterfaceIndex(name);
 }
 
-std::string GetAddr4Str(in_addr* a) {
+std::string GetAddr4Str(const in_addr* a) {
   char str[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, a, str, sizeof(str));
   return std::string(str);
 }
 
-std::string GetAddr6Str(in6_addr* a) {
+std::string GetAddr6Str(const in6_addr* a) {
   char str[INET6_ADDRSTRLEN];
   inet_ntop(AF_INET6, a, str, sizeof(str));
   return std::string(str);
 }
 
-std::string GetAddrStr(sockaddr* a) {
+std::string GetAddrStr(const sockaddr* a) {
   if (a->sa_family == AF_INET) {
-    auto src = &(reinterpret_cast<sockaddr_in*>(a)->sin_addr);
+    auto src = &(reinterpret_cast<const sockaddr_in*>(a)->sin_addr);
     return GetAddr4Str(src);
   } else if (a->sa_family == AF_INET6) {
-    auto src = &(reinterpret_cast<sockaddr_in6*>(a)->sin6_addr);
+    auto src = &(reinterpret_cast<const sockaddr_in6*>(a)->sin6_addr);
     return GetAddr6Str(src);
   }
   return std::string("<invalid>");

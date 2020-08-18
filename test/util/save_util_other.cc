@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef __linux__
+
 namespace gvisor {
 namespace testing {
 
@@ -21,3 +23,5 @@ void MaybeSave() {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif

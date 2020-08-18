@@ -86,11 +86,21 @@ func (l *List) Back() Element {
 	return l.tail
 }
 
+// Len returns the number of elements in the list.
+//
+// NOTE: This is an O(n) operation.
+func (l *List) Len() (count int) {
+	for e := l.Front(); e != nil; e = (ElementMapper{}.linkerFor(e)).Next() {
+		count++
+	}
+	return count
+}
+
 // PushFront inserts the element e at the front of list l.
 func (l *List) PushFront(e Element) {
-	ElementMapper{}.linkerFor(e).SetNext(l.head)
-	ElementMapper{}.linkerFor(e).SetPrev(nil)
-
+	linker := ElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 	if l.head != nil {
 		ElementMapper{}.linkerFor(l.head).SetPrev(e)
 	} else {
@@ -102,9 +112,9 @@ func (l *List) PushFront(e Element) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *List) PushBack(e Element) {
-	ElementMapper{}.linkerFor(e).SetNext(nil)
-	ElementMapper{}.linkerFor(e).SetPrev(l.tail)
-
+	linker := ElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 	if l.tail != nil {
 		ElementMapper{}.linkerFor(l.tail).SetNext(e)
 	} else {
@@ -125,17 +135,20 @@ func (l *List) PushBackList(m *List) {
 
 		l.tail = m.tail
 	}
-
 	m.head = nil
 	m.tail = nil
 }
 
 // InsertAfter inserts e after b.
 func (l *List) InsertAfter(b, e Element) {
-	a := ElementMapper{}.linkerFor(b).Next()
-	ElementMapper{}.linkerFor(e).SetNext(a)
-	ElementMapper{}.linkerFor(e).SetPrev(b)
-	ElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := ElementMapper{}.linkerFor(b)
+	eLinker := ElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		ElementMapper{}.linkerFor(a).SetPrev(e)
@@ -146,10 +159,13 @@ func (l *List) InsertAfter(b, e Element) {
 
 // InsertBefore inserts e before a.
 func (l *List) InsertBefore(a, e Element) {
-	b := ElementMapper{}.linkerFor(a).Prev()
-	ElementMapper{}.linkerFor(e).SetNext(a)
-	ElementMapper{}.linkerFor(e).SetPrev(b)
-	ElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := ElementMapper{}.linkerFor(a)
+	eLinker := ElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		ElementMapper{}.linkerFor(b).SetNext(e)
@@ -160,20 +176,24 @@ func (l *List) InsertBefore(a, e Element) {
 
 // Remove removes e from l.
 func (l *List) Remove(e Element) {
-	prev := ElementMapper{}.linkerFor(e).Prev()
-	next := ElementMapper{}.linkerFor(e).Next()
+	linker := ElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		ElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		ElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

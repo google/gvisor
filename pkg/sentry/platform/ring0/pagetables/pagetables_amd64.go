@@ -41,5 +41,14 @@ const (
 	entriesPerPage = 512
 )
 
+// Init initializes a set of PageTables.
+//
+//go:nosplit
+func (p *PageTables) Init(allocator Allocator) {
+	p.Allocator = allocator
+	p.root = p.Allocator.NewPTEs()
+	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
+}
+
 // PTEs is a collection of entries.
 type PTEs [entriesPerPage]PTE

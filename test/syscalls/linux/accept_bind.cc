@@ -13,9 +13,12 @@
 // limitations under the License.
 
 #include <stdio.h>
+#include <sys/socket.h>
 #include <sys/un.h>
+
 #include <algorithm>
 #include <vector>
+
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
@@ -133,6 +136,47 @@ TEST_P(AllSocketPairTest, Connect) {
               SyscallSucceeds());
 
   ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+
+  ASSERT_THAT(connect(sockets->second_fd(), sockets->first_addr(),
+                      sockets->first_addr_size()),
+              SyscallSucceeds());
+}
+
+TEST_P(AllSocketPairTest, ConnectWithWrongType) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int type;
+  socklen_t typelen = sizeof(type);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_TYPE, &type, &typelen),
+      SyscallSucceeds());
+  switch (type) {
+    case SOCK_STREAM:
+      type = SOCK_SEQPACKET;
+      break;
+    case SOCK_SEQPACKET:
+      type = SOCK_STREAM;
+      break;
+  }
+
+  const FileDescriptor another_socket =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, type, 0));
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+
+  if (sockets->first_addr()->sa_data[0] != 0) {
+    ASSERT_THAT(connect(another_socket.get(), sockets->first_addr(),
+                        sockets->first_addr_size()),
+                SyscallFailsWithErrno(EPROTOTYPE));
+  } else {
+    ASSERT_THAT(connect(another_socket.get(), sockets->first_addr(),
+                        sockets->first_addr_size()),
+                SyscallFailsWithErrno(ECONNREFUSED));
+  }
 
   ASSERT_THAT(connect(sockets->second_fd(), sockets->first_addr(),
                       sockets->first_addr_size()),

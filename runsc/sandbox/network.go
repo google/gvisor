@@ -21,13 +21,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -62,7 +62,7 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.HardwareGSO, conf.SoftwareGSO, conf.NumNetworkChannels); err != nil {
+		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.HardwareGSO, conf.SoftwareGSO, conf.TXChecksumOffload, conf.RXChecksumOffload, conf.NumNetworkChannels, conf.QDisc); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case boot.NetworkHost:
@@ -74,30 +74,8 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 }
 
 func createDefaultLoopbackInterface(conn *urpc.Client) error {
-	link := boot.LoopbackLink{
-		Name: "lo",
-		Addresses: []net.IP{
-			net.IP("\x7f\x00\x00\x01"),
-			net.IPv6loopback,
-		},
-		Routes: []boot.Route{
-			{
-				Destination: net.IPNet{
-
-					IP:   net.IPv4(0x7f, 0, 0, 0),
-					Mask: net.IPv4Mask(0xff, 0, 0, 0),
-				},
-			},
-			{
-				Destination: net.IPNet{
-					IP:   net.IPv6loopback,
-					Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
-				},
-			},
-		},
-	}
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
-		LoopbackLinks: []boot.LoopbackLink{link},
+		LoopbackLinks: []boot.LoopbackLink{boot.DefaultLoopbackLink},
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
 	}
@@ -137,7 +115,7 @@ func isRootNS() (bool, error) {
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareGSO bool, softwareGSO bool, numNetworkChannels int) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareGSO bool, softwareGSO bool, txChecksumOffload bool, rxChecksumOffload bool, numNetworkChannels int, qDisc boot.QueueingDiscipline) error {
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {
@@ -156,7 +134,6 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 		return err
 	}
 	if isRoot {
-
 		return fmt.Errorf("cannot run with network enabled in root network namespace")
 	}
 
@@ -173,53 +150,59 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 			return fmt.Errorf("fetching interface addresses for %q: %v", iface.Name, err)
 		}
 
-		// We build our own loopback devices.
+		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
-			links, err := loopbackLinks(iface, allAddrs)
+			link, err := loopbackLink(iface, allAddrs)
 			if err != nil {
-				return fmt.Errorf("getting loopback routes and links for iface %q: %v", iface.Name, err)
+				return fmt.Errorf("getting loopback link for iface %q: %v", iface.Name, err)
 			}
-			args.LoopbackLinks = append(args.LoopbackLinks, links...)
+			args.LoopbackLinks = append(args.LoopbackLinks, link)
 			continue
 		}
 
-		// Keep only IPv4 addresses.
-		var ip4addrs []*net.IPNet
+		var ipAddrs []*net.IPNet
 		for _, ifaddr := range allAddrs {
 			ipNet, ok := ifaddr.(*net.IPNet)
 			if !ok {
 				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
 			}
-			if ipNet.IP.To4() == nil {
-				log.Warningf("IPv6 is not supported, skipping: %v", ipNet)
-				continue
-			}
-			ip4addrs = append(ip4addrs, ipNet)
+			ipAddrs = append(ipAddrs, ipNet)
 		}
-		if len(ip4addrs) == 0 {
-			log.Warningf("No IPv4 address found for interface %q, skipping", iface.Name)
+		if len(ipAddrs) == 0 {
+			log.Warningf("No usable IP addresses found for interface %q, skipping", iface.Name)
 			continue
 		}
 
 		// Scrape the routes before removing the address, since that
 		// will remove the routes as well.
-		routes, def, err := routesForIface(iface)
+		routes, defv4, defv6, err := routesForIface(iface)
 		if err != nil {
 			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
 		}
-		if def != nil {
-			if !args.DefaultGateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, def, args.DefaultGateway)
+		if defv4 != nil {
+			if !args.Defaultv4Gateway.Route.Empty() {
+				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
 			}
-			args.DefaultGateway.Route = *def
-			args.DefaultGateway.Name = iface.Name
+			args.Defaultv4Gateway.Route = *defv4
+			args.Defaultv4Gateway.Name = iface.Name
+		}
+
+		if defv6 != nil {
+			if !args.Defaultv6Gateway.Route.Empty() {
+				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+			}
+			args.Defaultv6Gateway.Route = *defv6
+			args.Defaultv6Gateway.Name = iface.Name
 		}
 
 		link := boot.FDBasedLink{
-			Name:        iface.Name,
-			MTU:         iface.MTU,
-			Routes:      routes,
-			NumChannels: numNetworkChannels,
+			Name:              iface.Name,
+			MTU:               iface.MTU,
+			Routes:            routes,
+			TXChecksumOffload: txChecksumOffload,
+			RXChecksumOffload: rxChecksumOffload,
+			NumChannels:       numNetworkChannels,
+			QDisc:             qDisc,
 		}
 
 		// Get the link for the interface.
@@ -247,6 +230,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 			}
 			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 		}
+
 		if link.GSOMaxSize == 0 && softwareGSO {
 			// Hardware GSO is disabled. Let's enable software GSO.
 			link.GSOMaxSize = stack.SoftwareGSOMaxSize
@@ -255,7 +239,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 
 		// Collect the addresses for the interface, enable forwarding,
 		// and remove them from the host.
-		for _, addr := range ip4addrs {
+		for _, addr := range ipAddrs {
 			link.Addresses = append(link.Addresses, addr.IP)
 
 			// Steal IP address from NIC.
@@ -316,81 +300,96 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 		}
 	}
 
-	// Use SO_RCVBUFFORCE because on linux the receive buffer for an
-	// AF_PACKET socket is capped by "net.core.rmem_max". rmem_max
-	// defaults to a unusually low value of 208KB. This is too low
-	// for gVisor to be able to receive packets at high throughputs
-	// without incurring packet drops.
-	const rcvBufSize = 4 << 20 // 4MB.
+	// Use SO_RCVBUFFORCE/SO_SNDBUFFORCE because on linux the receive/send buffer
+	// for an AF_PACKET socket is capped by "net.core.rmem_max/wmem_max".
+	// wmem_max/rmem_max default to a unusually low value of 208KB. This is too low
+	// for gVisor to be able to receive packets at high throughputs without
+	// incurring packet drops.
+	const bufSize = 4 << 20 // 4MB.
 
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, rcvBufSize); err != nil {
-		return nil, fmt.Errorf("failed to increase socket rcv buffer to %d: %v", rcvBufSize, err)
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, bufSize); err != nil {
+		return nil, fmt.Errorf("failed to increase socket rcv buffer to %d: %v", bufSize, err)
 	}
+
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUFFORCE, bufSize); err != nil {
+		return nil, fmt.Errorf("failed to increase socket snd buffer to %d: %v", bufSize, err)
+	}
+
 	return &socketEntry{deviceFile, gsoMaxSize}, nil
 }
 
-// loopbackLinks collects the links for a loopback interface.
-func loopbackLinks(iface net.Interface, addrs []net.Addr) ([]boot.LoopbackLink, error) {
-	var links []boot.LoopbackLink
+// loopbackLink returns the link with addresses and routes for a loopback
+// interface.
+func loopbackLink(iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, error) {
+	link := boot.LoopbackLink{
+		Name: iface.Name,
+	}
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)
 		if !ok {
-			return nil, fmt.Errorf("address is not IPNet: %+v", addr)
+			return boot.LoopbackLink{}, fmt.Errorf("address is not IPNet: %+v", addr)
 		}
 		dst := *ipNet
 		dst.IP = dst.IP.Mask(dst.Mask)
-		links = append(links, boot.LoopbackLink{
-			Name:      iface.Name,
-			Addresses: []net.IP{ipNet.IP},
-			Routes: []boot.Route{{
-				Destination: dst,
-			}},
+		link.Addresses = append(link.Addresses, ipNet.IP)
+		link.Routes = append(link.Routes, boot.Route{
+			Destination: dst,
 		})
 	}
-	return links, nil
+	return link, nil
 }
 
 // routesForIface iterates over all routes for the given interface and converts
-// them to boot.Routes.
-func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
+// them to boot.Routes. It also returns the a default v4/v6 route if found.
+func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, *boot.Route, error) {
 	link, err := netlink.LinkByIndex(iface.Index)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	rs, err := netlink.RouteList(link, netlink.FAMILY_ALL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting routes from %q: %v", iface.Name, err)
+		return nil, nil, nil, fmt.Errorf("getting routes from %q: %v", iface.Name, err)
 	}
 
-	var def *boot.Route
+	var defv4, defv6 *boot.Route
 	var routes []boot.Route
 	for _, r := range rs {
 		// Is it a default route?
 		if r.Dst == nil {
 			if r.Gw == nil {
-				return nil, nil, fmt.Errorf("default route with no gateway %q: %+v", iface.Name, r)
-			}
-			if r.Gw.To4() == nil {
-				log.Warningf("IPv6 is not supported, skipping default route: %v", r)
-				continue
-			}
-			if def != nil {
-				return nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, def, r)
+				return nil, nil, nil, fmt.Errorf("default route with no gateway %q: %+v", iface.Name, r)
 			}
 			// Create a catch all route to the gateway.
-			def = &boot.Route{
-				Destination: net.IPNet{
-					IP:   net.IPv4zero,
-					Mask: net.IPMask(net.IPv4zero),
-				},
-				Gateway: r.Gw,
+			switch len(r.Gw) {
+			case header.IPv4AddressSize:
+				if defv4 != nil {
+					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv4, r)
+				}
+				defv4 = &boot.Route{
+					Destination: net.IPNet{
+						IP:   net.IPv4zero,
+						Mask: net.IPMask(net.IPv4zero),
+					},
+					Gateway: r.Gw,
+				}
+			case header.IPv6AddressSize:
+				if defv6 != nil {
+					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv6, r)
+				}
+
+				defv6 = &boot.Route{
+					Destination: net.IPNet{
+						IP:   net.IPv6zero,
+						Mask: net.IPMask(net.IPv6zero),
+					},
+					Gateway: r.Gw,
+				}
+			default:
+				return nil, nil, nil, fmt.Errorf("unexpected address size for gateway: %+v for route: %+v", r.Gw, r)
 			}
 			continue
 		}
-		if r.Dst.IP.To4() == nil {
-			log.Warningf("IPv6 is not supported, skipping route: %v", r)
-			continue
-		}
+
 		dst := *r.Dst
 		dst.IP = dst.IP.Mask(dst.Mask)
 		routes = append(routes, boot.Route{
@@ -398,7 +397,7 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
 			Gateway:     r.Gw,
 		})
 	}
-	return routes, def, nil
+	return routes, defv4, defv6, nil
 }
 
 // removeAddress removes IP address from network device. It's equivalent to:

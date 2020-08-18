@@ -23,10 +23,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func singlePipeFD() (int, error) {
@@ -98,10 +98,11 @@ func TestNewPipe(t *testing.T) {
 		}
 		f := fd.New(gfd)
 
-		p, err := newPipeOperations(contexttest.Context(t), nil, test.flags, f, test.readAheadBuffer)
+		ctx := contexttest.Context(t)
+		p, err := newPipeOperations(ctx, nil, test.flags, f, test.readAheadBuffer)
 		if p != nil {
 			// This is necessary to remove the fd from the global fd notifier.
-			defer p.Release()
+			defer p.Release(ctx)
 		} else {
 			// If there is no p to DecRef on, because newPipeOperations failed, then the
 			// file still needs to be closed.
@@ -119,7 +120,7 @@ func TestNewPipe(t *testing.T) {
 				continue
 			}
 			if flags := p.flags; test.flags != flags {
-				t.Errorf("%s: got file flags %s, want %s", test.desc, flags, test.flags)
+				t.Errorf("%s: got file flags %v, want %v", test.desc, flags, test.flags)
 				continue
 			}
 			if len(test.readAheadBuffer) != len(p.readAheadBuffer) {
@@ -136,7 +137,7 @@ func TestNewPipe(t *testing.T) {
 				continue
 			}
 			if !fdnotifier.HasFD(int32(f.FD())) {
-				t.Errorf("%s: pipe fd %d is not registered for events", test.desc, f.FD)
+				t.Errorf("%s: pipe fd %d is not registered for events", test.desc, f.FD())
 			}
 		}
 	}
@@ -153,13 +154,14 @@ func TestPipeDestruction(t *testing.T) {
 	syscall.Close(fds[1])
 
 	// Test the read end, but it doesn't really matter which.
-	p, err := newPipeOperations(contexttest.Context(t), nil, fs.FileFlags{Read: true}, f, nil)
+	ctx := contexttest.Context(t)
+	p, err := newPipeOperations(ctx, nil, fs.FileFlags{Read: true}, f, nil)
 	if err != nil {
 		f.Close()
 		t.Fatalf("newPipeOperations got error %v, want nil", err)
 	}
 	// Drop our only reference, which should trigger the destructor.
-	p.Release()
+	p.Release(ctx)
 
 	if fdnotifier.HasFD(int32(fds[0])) {
 		t.Fatalf("after DecRef fdnotifier has fd %d, want no longer registered", fds[0])
@@ -282,7 +284,7 @@ func TestPipeRequest(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: newPipeOperations got error %v, want nil", test.desc, err)
 		}
-		defer p.Release()
+		defer p.Release(ctx)
 
 		inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{Type: fs.Pipe})
 		file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, p)
@@ -334,7 +336,7 @@ func TestPipeReadAheadBuffer(t *testing.T) {
 		rfile.Close()
 		t.Fatalf("newPipeOperations got error %v, want nil", err)
 	}
-	defer p.Release()
+	defer p.Release(ctx)
 
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,
@@ -380,7 +382,7 @@ func TestPipeReadsAccumulate(t *testing.T) {
 	}
 	// Don't forget to remove the fd from the fd notifier.  Otherwise other tests will
 	// likely be borked, because it's global :(
-	defer p.Release()
+	defer p.Release(ctx)
 
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,
@@ -448,7 +450,7 @@ func TestPipeWritesAccumulate(t *testing.T) {
 	}
 	// Don't forget to remove the fd from the fd notifier. Otherwise other tests
 	// will likely be borked, because it's global :(
-	defer p.Release()
+	defer p.Release(ctx)
 
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,

@@ -23,17 +23,14 @@ import (
 	"go/token"
 	"os"
 	"sort"
+	"strings"
+
+	"gvisor.dev/gvisor/tools/tags"
 )
 
-const (
-	marshalImport  = "gvisor.dev/gvisor/tools/go_marshal/marshal"
-	usermemImport  = "gvisor.dev/gvisor/pkg/sentry/usermem"
-	safecopyImport = "gvisor.dev/gvisor/pkg/sentry/platform/safecopy"
-)
-
-// List of identifiers we use in generated code, that may conflict a
-// similarly-named source identifier. Avoid problems by refusing the generate
-// code when we see these.
+// List of identifiers we use in generated code that may conflict with a
+// similarly-named source identifier. Abort gracefully when we see these to
+// avoid potentially confusing compilation failures in generated code.
 //
 // This only applies to import aliases at the moment. All other identifiers
 // are qualified by a receiver argument, since they're struct fields.
@@ -41,8 +38,19 @@ const (
 // All recievers are single letters, so we don't allow import aliases to be a
 // single letter.
 var badIdents = []string{
-	"src", "srcs", "dst", "dsts", "blk", "buf", "err",
+	"addr", "blk", "buf", "dst", "dsts", "count", "err", "hdr", "idx", "inner",
+	"length", "limit", "ptr", "size", "src", "srcs", "task", "val",
 	// All single-letter identifiers.
+}
+
+// Constructed fromt badIdents in init().
+var badIdentsMap map[string]struct{}
+
+func init() {
+	badIdentsMap = make(map[string]struct{})
+	for _, ident := range badIdents {
+		badIdentsMap[ident] = struct{}{}
+	}
 }
 
 // Generator drives code generation for a single invocation of the go_marshal
@@ -62,15 +70,12 @@ type Generator struct {
 	outputTest *os.File
 	// Package name for the generated file.
 	pkg string
-	// Go import path for package we're processing. This package should directly
-	// declare the type we're generating code for.
-	declaration string
 	// Set of extra packages to import in the generated file.
 	imports *importTable
 }
 
 // NewGenerator creates a new code Generator.
-func NewGenerator(srcs []string, out, outTest, pkg, declaration string, imports []string) (*Generator, error) {
+func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*Generator, error) {
 	f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't open output file %q: %v", out, err)
@@ -80,25 +85,29 @@ func NewGenerator(srcs []string, out, outTest, pkg, declaration string, imports 
 		return nil, fmt.Errorf("Couldn't open test output file %q: %v", out, err)
 	}
 	g := Generator{
-		inputs:      srcs,
-		output:      f,
-		outputTest:  fTest,
-		pkg:         pkg,
-		declaration: declaration,
-		imports:     newImportTable(),
+		inputs:     srcs,
+		output:     f,
+		outputTest: fTest,
+		pkg:        pkg,
+		imports:    newImportTable(),
 	}
 	for _, i := range imports {
 		// All imports on the extra imports list are unconditionally marked as
-		// used, so they're always added to the generated code.
+		// used, so that they're always added to the generated code.
 		g.imports.add(i).markUsed()
 	}
-	g.imports.add(marshalImport).markUsed()
-	// The follow imports may or may not be used by the generated
-	// code, depending what's required for the target types. Don't
-	// mark these imports as used by default.
-	g.imports.add(usermemImport)
-	g.imports.add(safecopyImport)
+
+	// The following imports may or may not be used by the generated code,
+	// depending on what's required for the target types. Don't mark these as
+	// used by default.
+	g.imports.add("io")
+	g.imports.add("reflect")
+	g.imports.add("runtime")
 	g.imports.add("unsafe")
+	g.imports.add("gvisor.dev/gvisor/pkg/gohacks")
+	g.imports.add("gvisor.dev/gvisor/pkg/safecopy")
+	g.imports.add("gvisor.dev/gvisor/pkg/usermem")
+	g.imports.add("gvisor.dev/gvisor/tools/go_marshal/marshal")
 
 	return &g, nil
 }
@@ -108,6 +117,14 @@ func NewGenerator(srcs []string, out, outTest, pkg, declaration string, imports 
 func (g *Generator) writeHeader() error {
 	var b sourceBuffer
 	b.emit("// Automatically generated marshal implementation. See tools/go_marshal.\n\n")
+
+	// Emit build tags.
+	if t := tags.Aggregate(g.inputs); len(t) > 0 {
+		b.emit(strings.Join(t.Lines(), "\n"))
+		b.emit("\n\n")
+	}
+
+	// Package header.
 	b.emit("package %s\n\n", g.pkg)
 	if err := b.write(g.output); err != nil {
 		return err
@@ -172,10 +189,73 @@ func (g *Generator) parse() ([]*ast.File, []*token.FileSet, error) {
 	return files, fsets, nil
 }
 
-// collectMarshallabeTypes walks the parsed AST and collects a list of type
+// sliceAPI carries information about the '+marshal slice' directive.
+type sliceAPI struct {
+	// Comment node in the AST containing the +marshal tag.
+	comment *ast.Comment
+	// Identifier fragment to use when naming generated functions for the slice
+	// API.
+	ident string
+	// Whether the generated functions should reference the newtype name, or the
+	// inner type name. Only meaningful on newtype declarations on primitives.
+	inner bool
+}
+
+// marshallableType carries information about a type marked with the '+marshal'
+// directive.
+type marshallableType struct {
+	spec  *ast.TypeSpec
+	slice *sliceAPI
+}
+
+func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.TypeSpec) marshallableType {
+	mt := marshallableType{
+		spec:  spec,
+		slice: nil,
+	}
+
+	var unhandledTags []string
+
+	for _, tag := range strings.Fields(strings.TrimPrefix(tagLine.Text, "// +marshal")) {
+		if strings.HasPrefix(tag, "slice:") {
+			tokens := strings.Split(tag, ":")
+			if len(tokens) < 2 || len(tokens) > 3 {
+				abortAt(fset.Position(tagLine.Slash), fmt.Sprintf("+marshal directive has invalid 'slice' clause. Expecting format 'slice:<IDENTIFIER>[:inner]', got '%v'", tag))
+			}
+			if len(tokens[1]) == 0 {
+				abortAt(fset.Position(tagLine.Slash), "+marshal slice directive has empty identifier argument. Expecting '+marshal slice:identifier'")
+			}
+
+			sa := &sliceAPI{
+				comment: tagLine,
+				ident:   tokens[1],
+			}
+			mt.slice = sa
+
+			if len(tokens) == 3 {
+				if tokens[2] != "inner" {
+					abortAt(fset.Position(tagLine.Slash), "+marshal slice directive has an invalid argument. Expecting '+marshal slice:<IDENTIFIER>[:inner]'")
+				}
+				sa.inner = true
+			}
+
+			continue
+		}
+
+		unhandledTags = append(unhandledTags, tag)
+	}
+
+	if len(unhandledTags) > 0 {
+		abortAt(fset.Position(tagLine.Slash), fmt.Sprintf("+marshal directive contained the following unknown clauses: %v", strings.Join(unhandledTags, " ")))
+	}
+
+	return mt
+}
+
+// collectMarshallableTypes walks the parsed AST and collects a list of type
 // declarations for which we need to generate the Marshallable interface.
-func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*ast.TypeSpec {
-	var types []*ast.TypeSpec
+func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []marshallableType {
+	var types []marshallableType
 	for _, decl := range a.Decls {
 		gdecl, ok := decl.(*ast.GenDecl)
 		// Type declaration?
@@ -190,9 +270,11 @@ func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*as
 		}
 		// Does the comment contain a "+marshal" line?
 		marked := false
+		var tagLine *ast.Comment
 		for _, c := range gdecl.Doc.List {
-			if c.Text == "// +marshal" {
+			if strings.HasPrefix(c.Text, "// +marshal") {
 				marked = true
+				tagLine = c
 				break
 			}
 		}
@@ -201,14 +283,23 @@ func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*as
 			continue
 		}
 		for _, spec := range gdecl.Specs {
-			// We already confirmed we're in a type declaration earlier.
+			// We already confirmed we're in a type declaration earlier, so this
+			// cast will succeed.
 			t := spec.(*ast.TypeSpec)
-			if _, ok := t.Type.(*ast.StructType); ok {
-				debugfAt(f.Position(t.Pos()), "Collected marshallable type %s.\n", t.Name.Name)
-				types = append(types, t)
-				continue
+			switch t.Type.(type) {
+			case *ast.StructType:
+				debugfAt(f.Position(t.Pos()), "Collected marshallable struct %s.\n", t.Name.Name)
+			case *ast.Ident: // Newtype on primitive.
+				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on primitive %s.\n", t.Name.Name)
+			case *ast.ArrayType: // Newtype on array.
+				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on array %s.\n", t.Name.Name)
+			default:
+				// A user specifically requested marshalling on this type, but we
+				// don't support it.
+				abortAt(f.Position(t.Pos()), fmt.Sprintf("Marshalling codegen was requested on type '%s', but go-marshal doesn't support this kind of declaration.\n", t.Name))
 			}
-			debugf("Skipping declaration %v since it's not a struct declaration.\n", gdecl)
+			types = append(types, newMarshallableType(f, tagLine, t))
+
 		}
 	}
 	return types
@@ -222,11 +313,6 @@ func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*as
 // identifiers in the generated code don't conflict with any imported package
 // names.
 func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]importStmt {
-	badImportNames := make(map[string]bool)
-	for _, i := range badIdents {
-		badImportNames[i] = true
-	}
-
 	is := make(map[string]importStmt)
 	for _, decl := range a.Decls {
 		gdecl, ok := decl.(*ast.GenDecl)
@@ -240,10 +326,10 @@ func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]imp
 
 			// Make sure we have an import that doesn't use any local names that
 			// would conflict with identifiers in the generated code.
-			if len(i.name) == 1 {
+			if len(i.name) == 1 && i.name != "_" {
 				abortAt(f.Position(spec.Pos()), fmt.Sprintf("Import has a single character local name '%s'; this may conflict with code generated by go_marshal, use a multi-character import alias", i.name))
 			}
-			if badImportNames[i.name] {
+			if _, ok := badIdentsMap[i.name]; ok {
 				abortAt(f.Position(spec.Pos()), fmt.Sprintf("Import name '%s' is likely to conflict with code generated by go_marshal, use a different import alias", i.name))
 			}
 		}
@@ -252,20 +338,40 @@ func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]imp
 
 }
 
-func (g *Generator) generateOne(t *ast.TypeSpec, fset *token.FileSet) *interfaceGenerator {
-	// We're guaranteed to have only struct type specs by now. See
-	// Generator.collectMarshallabeTypes.
-	i := newInterfaceGenerator(t, fset)
-	i.validate()
-	i.emitMarshallable()
+func (g *Generator) generateOne(t marshallableType, fset *token.FileSet) *interfaceGenerator {
+	i := newInterfaceGenerator(t.spec, fset)
+	switch ty := t.spec.Type.(type) {
+	case *ast.StructType:
+		i.validateStruct(t.spec, ty)
+		i.emitMarshallableForStruct(ty)
+		if t.slice != nil {
+			i.emitMarshallableSliceForStruct(ty, t.slice)
+		}
+	case *ast.Ident:
+		i.validatePrimitiveNewtype(ty)
+		i.emitMarshallableForPrimitiveNewtype(ty)
+		if t.slice != nil {
+			i.emitMarshallableSliceForPrimitiveNewtype(ty, t.slice)
+		}
+	case *ast.ArrayType:
+		i.validateArrayNewtype(t.spec.Name, ty)
+		// After validate, we can safely call arrayLen.
+		i.emitMarshallableForArrayNewtype(t.spec.Name, ty, ty.Elt.(*ast.Ident))
+		if t.slice != nil {
+			abortAt(fset.Position(t.slice.comment.Slash), fmt.Sprintf("Array type marked as '+marshal slice:...', but this is not supported. Perhaps fold one of the dimensions?"))
+		}
+	default:
+		// This should've been filtered out by collectMarshallabeTypes.
+		panic(fmt.Sprintf("Unexpected type %+v", ty))
+	}
 	return i
 }
 
 // generateOneTestSuite generates a test suite for the automatically generated
 // implementations type t.
-func (g *Generator) generateOneTestSuite(t *ast.TypeSpec) *testGenerator {
-	i := newTestGenerator(t, g.declaration)
-	i.emitTests()
+func (g *Generator) generateOneTestSuite(t marshallableType) *testGenerator {
+	i := newTestGenerator(t.spec)
+	i.emitTests(t.slice)
 	return i
 }
 
@@ -304,33 +410,22 @@ func (g *Generator) Run() error {
 	for i, a := range asts {
 		// Collect type declarations marked for code generation and generate
 		// Marshallable interfaces.
-		for _, t := range g.collectMarshallabeTypes(a, fsets[i]) {
+		for _, t := range g.collectMarshallableTypes(a, fsets[i]) {
 			impl := g.generateOne(t, fsets[i])
 			// Collect Marshallable types referenced by the generated code.
-			for ref, _ := range impl.ms {
+			for ref := range impl.ms {
 				ms[ref] = struct{}{}
 			}
 			impls = append(impls, impl)
 			// Collect imports referenced by the generated code and add them to
 			// the list of imports we need to copy to the generated code.
-			for name, _ := range impl.is {
+			for name := range impl.is {
 				if !g.imports.markUsed(name) {
-					panic(fmt.Sprintf("Generated code for '%s' referenced a non-existent import with local name '%s'", impl.typeName(), name))
+					panic(fmt.Sprintf("Generated code for '%s' referenced a non-existent import with local name '%s'. Either go-marshal needs to add an import to the generated file, or a package in an input source file has a package name differ from the final component of its path, which go-marshal doesn't know how to detect; use an import alias to work around this limitation.", impl.typeName(), name))
 				}
 			}
 			ts = append(ts, g.generateOneTestSuite(t))
 		}
-	}
-
-	// Tool was invoked with input files with no data structures marked for code
-	// generation. This is probably not what the user intended.
-	if len(impls) == 0 {
-		var buf bytes.Buffer
-		fmt.Fprintf(&buf, "go_marshal invoked on these files, but they don't contain any types requiring code generation. Perhaps mark some with \"// +marshal\"?:\n")
-		for _, i := range g.inputs {
-			fmt.Fprintf(&buf, "  %s\n", i)
-		}
-		abort(buf.String())
 	}
 
 	// Write output file header. These include things like package name and
@@ -359,11 +454,12 @@ func (g *Generator) Run() error {
 // source file.
 func (g *Generator) writeTests(ts []*testGenerator) error {
 	var b sourceBuffer
-	b.emit("package %s_test\n\n", g.pkg)
+	b.emit("package %s\n\n", g.pkg)
 	if err := b.write(g.outputTest); err != nil {
 		return err
 	}
 
+	// Collect and write test import statements.
 	imports := newImportTable()
 	for _, t := range ts {
 		imports.merge(t.imports)
@@ -371,6 +467,27 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 
 	if err := imports.write(g.outputTest); err != nil {
 		return err
+	}
+
+	// Write test functions.
+
+	// If we didn't generate any Marshallable implementations, we can't just
+	// emit an empty test file, since that causes the build to fail with "no
+	// tests/benchmarks/examples found". Unfortunately we can't signal bazel to
+	// omit the entire package since the outputs are already defined before
+	// go-marshal is called. If we'd otherwise emit an empty test suite, emit an
+	// empty example instead.
+	if len(ts) == 0 {
+		b.reset()
+		b.emit("func Example() {\n")
+		b.inIndent(func() {
+			b.emit("// This example is intentionally empty to ensure this file contains at least\n")
+			b.emit("// one testable entity. go-marshal is forced to emit a test file if a package\n")
+			b.emit("// is marked marshallable, but emitting a test file with no entities results\n")
+			b.emit("// in a build failure.\n")
+		})
+		b.emit("}\n")
+		return b.write(g.outputTest)
 	}
 
 	for _, t := range ts {

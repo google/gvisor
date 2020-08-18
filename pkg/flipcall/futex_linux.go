@@ -61,7 +61,7 @@ func (ep *Endpoint) futexSwitchToPeer() error {
 	if !atomic.CompareAndSwapUint32(ep.connState(), ep.activeState, ep.inactiveState) {
 		switch cs := atomic.LoadUint32(ep.connState()); cs {
 		case csShutdown:
-			return shutdownError{}
+			return ShutdownError{}
 		default:
 			return fmt.Errorf("unexpected connection state before FUTEX_WAKE: %v", cs)
 		}
@@ -81,14 +81,14 @@ func (ep *Endpoint) futexSwitchFromPeer() error {
 			return nil
 		case ep.inactiveState:
 			if ep.isShutdownLocally() {
-				return shutdownError{}
+				return ShutdownError{}
 			}
 			if err := ep.futexWaitConnState(ep.inactiveState); err != nil {
 				return fmt.Errorf("failed to FUTEX_WAIT for peer Endpoint: %v", err)
 			}
 			continue
 		case csShutdown:
-			return shutdownError{}
+			return ShutdownError{}
 		default:
 			return fmt.Errorf("unexpected connection state before FUTEX_WAIT: %v", cs)
 		}

@@ -15,16 +15,27 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/eventfd.h>
 #include <sys/resource.h>
+#include <sys/signalfd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/timerfd.h>
 #include <syscall.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <ctime>
+
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/file_base.h"
+#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -33,7 +44,7 @@ namespace testing {
 namespace {
 
 int fallocate(int fd, int mode, off_t offset, off_t len) {
-  return syscall(__NR_fallocate, fd, mode, offset, len);
+  return RetryEINTR(syscall)(__NR_fallocate, fd, mode, offset, len);
 }
 
 class AllocateTest : public FileTest {
@@ -47,27 +58,33 @@ TEST_F(AllocateTest, Fallocate) {
   EXPECT_EQ(buf.st_size, 0);
 
   // Grow to ten bytes.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 0, 10), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 0, 10), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 10);
 
   // Allocate to a smaller size should be noop.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 0, 5), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 0, 5), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 10);
 
   // Grow again.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 0, 20), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 0, 20), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 20);
 
   // Grow with offset.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 10, 20), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 10, 20), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 30);
 
   // Grow with offset beyond EOF.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 39, 1), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 39, 1), SyscallSucceeds());
+  ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 40);
+
+  // Given length 0 should fail with EINVAL.
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 50, 0),
+              SyscallFailsWithErrno(EINVAL));
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 40);
 }
@@ -134,6 +151,34 @@ TEST_F(AllocateTest, FallocateRlimit) {
   timelimit.tv_sec = 10;
   EXPECT_EQ(sigtimedwait(&new_mask, nullptr, &timelimit), SIGXFSZ);
   ASSERT_THAT(sigprocmask(SIG_UNBLOCK, &new_mask, nullptr), SyscallSucceeds());
+}
+
+TEST_F(AllocateTest, FallocateOtherFDs) {
+  int fd;
+  ASSERT_THAT(fd = timerfd_create(CLOCK_MONOTONIC, 0), SyscallSucceeds());
+  auto timer_fd = FileDescriptor(fd);
+  EXPECT_THAT(fallocate(timer_fd.get(), 0, 0, 10),
+              SyscallFailsWithErrno(ENODEV));
+
+  sigset_t mask;
+  sigemptyset(&mask);
+  ASSERT_THAT(fd = signalfd(-1, &mask, 0), SyscallSucceeds());
+  auto sfd = FileDescriptor(fd);
+  EXPECT_THAT(fallocate(sfd.get(), 0, 0, 10), SyscallFailsWithErrno(ENODEV));
+
+  auto efd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
+  EXPECT_THAT(fallocate(efd.get(), 0, 0, 10), SyscallFailsWithErrno(ENODEV));
+
+  auto sockfd = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  EXPECT_THAT(fallocate(sockfd.get(), 0, 0, 10), SyscallFailsWithErrno(ENODEV));
+
+  int socks[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, PF_UNIX, socks),
+              SyscallSucceeds());
+  auto sock0 = FileDescriptor(socks[0]);
+  auto sock1 = FileDescriptor(socks[1]);
+  EXPECT_THAT(fallocate(sock0.get(), 0, 0, 10), SyscallFailsWithErrno(ENODEV));
 }
 
 }  // namespace

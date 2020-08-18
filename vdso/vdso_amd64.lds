@@ -95,6 +95,7 @@ VERSION {
     __vdso_getcpu;
     time;
     __vdso_time;
+    __kernel_rt_sigreturn;
 
   local: *;
   };

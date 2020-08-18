@@ -15,7 +15,7 @@
 package tty
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -108,4 +108,4 @@ func (superOperations) ResetInodeMappings() {}
 func (superOperations) SaveInodeMapping(*fs.Inode, string) {}
 
 // Destroy implements MountSourceOperations.Destroy.
-func (superOperations) Destroy() {}
+func (superOperations) Destroy(context.Context) {}

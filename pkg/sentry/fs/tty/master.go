@@ -16,15 +16,17 @@ package tty
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// LINT.IfChange
 
 // masterInodeOperations are the fs.InodeOperations for the master end of the
 // Terminal (ptmx file).
@@ -73,7 +75,12 @@ func newMasterInode(ctx context.Context, d *dirInodeOperations, owner fs.FileOwn
 }
 
 // Release implements fs.InodeOperations.Release.
-func (mi *masterInodeOperations) Release(ctx context.Context) {
+func (mi *masterInodeOperations) Release(context.Context) {
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (*masterInodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -113,9 +120,9 @@ type masterFileOperations struct {
 var _ fs.FileOperations = (*masterFileOperations)(nil)
 
 // Release implements fs.FileOperations.Release.
-func (mf *masterFileOperations) Release() {
-	mf.d.masterClose(mf.t)
-	mf.t.DecRef()
+func (mf *masterFileOperations) Release(ctx context.Context) {
+	mf.d.masterClose(ctx, mf.t)
+	mf.t.DecRef(ctx)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -227,3 +234,5 @@ func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
 		unimpl.EmitUnimplementedEvent(ctx)
 	}
 }
+
+// LINT.ThenChange(../../fsimpl/devpts/master.go)

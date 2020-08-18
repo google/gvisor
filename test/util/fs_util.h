@@ -26,6 +26,17 @@
 
 namespace gvisor {
 namespace testing {
+
+// O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
+// because "it isn't needed", even though Linux can return it via F_GETFL.
+#if defined(__x86_64__)
+constexpr int kOLargeFile = 00100000;
+#elif defined(__aarch64__)
+constexpr int kOLargeFile = 00400000;
+#else
+#error "Unknown architecture"
+#endif
+
 // Returns a status or the current working directory.
 PosixErrorOr<std::string> GetCWD();
 
@@ -33,8 +44,13 @@ PosixErrorOr<std::string> GetCWD();
 // can't be determined.
 PosixErrorOr<bool> Exists(absl::string_view path);
 
-// Returns a stat structure for the given path or an error.
+// Returns a stat structure for the given path or an error. If the path
+// represents a symlink, it will be traversed.
 PosixErrorOr<struct stat> Stat(absl::string_view path);
+
+// Returns a stat structure for the given path or an error. If the path
+// represents a symlink, it will not be traversed.
+PosixErrorOr<struct stat> Lstat(absl::string_view path);
 
 // Returns a stat struct for the given fd.
 PosixErrorOr<struct stat> Fstat(int fd);

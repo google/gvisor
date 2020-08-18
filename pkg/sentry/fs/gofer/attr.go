@@ -17,12 +17,12 @@ package gofer
 import (
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // getattr returns the 9p attributes of the p9.File. On success, Mode, Size, and RDev
@@ -75,10 +75,18 @@ func owner(mounter fs.FileOwner, valid p9.AttrMask, pattr p9.Attr) fs.FileOwner 
 	// task's EUID/EGID.
 	owner := mounter
 	if valid.UID {
-		owner.UID = auth.KUID(pattr.UID)
+		if pattr.UID.Ok() {
+			owner.UID = auth.KUID(pattr.UID)
+		} else {
+			owner.UID = auth.KUID(auth.OverflowUID)
+		}
 	}
 	if valid.GID {
-		owner.GID = auth.KGID(pattr.GID)
+		if pattr.GID.Ok() {
+			owner.GID = auth.KGID(pattr.GID)
+		} else {
+			owner.GID = auth.KGID(auth.OverflowGID)
+		}
 	}
 	return owner
 }
@@ -88,8 +96,9 @@ func bsize(pattr p9.Attr) int64 {
 	if pattr.BlockSize > 0 {
 		return int64(pattr.BlockSize)
 	}
-	// Some files may have no clue of their block size. Better not to report
-	// something misleading or buggy and have a safe default.
+	// Some files, particularly those that are not on a local file system,
+	// may have no clue of their block size. Better not to report something
+	// misleading or buggy and have a safe default.
 	return usermem.PageSize
 }
 
@@ -149,6 +158,7 @@ func links(valid p9.AttrMask, pattr p9.Attr) uint64 {
 	}
 
 	// This node is likely backed by a file system that doesn't support links.
+	//
 	// We could readdir() and count children directories to provide an accurate
 	// link count. However this may be expensive since the gofer may be backed by remote
 	// storage. Instead, simply return 2 links for directories and 1 for everything else

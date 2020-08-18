@@ -58,11 +58,11 @@
 package waiter
 
 import (
-	"sync"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // EventMask represents io events as used in the poll() syscall.
-type EventMask uint16
+type EventMask uint64
 
 // Events that waiters can wait on. The meaning is the same as those in the
 // poll() syscall.
@@ -128,13 +128,6 @@ type EntryCallback interface {
 //
 // +stateify savable
 type Entry struct {
-	// Context stores any state the waiter may wish to store in the entry
-	// itself, which may be used at wake up time.
-	//
-	// Note that use of this field is optional and state may alternatively be
-	// stored in the callback itself.
-	Context interface{}
-
 	Callback EntryCallback
 
 	// The following fields are protected by the queue lock.
@@ -142,13 +135,14 @@ type Entry struct {
 	waiterEntry
 }
 
-type channelCallback struct{}
+type channelCallback struct {
+	ch chan struct{}
+}
 
 // Callback implements EntryCallback.Callback.
-func (*channelCallback) Callback(e *Entry) {
-	ch := e.Context.(chan struct{})
+func (c *channelCallback) Callback(*Entry) {
 	select {
-	case ch <- struct{}{}:
+	case c.ch <- struct{}{}:
 	default:
 	}
 }
@@ -164,7 +158,7 @@ func NewChannelEntry(c chan struct{}) (Entry, chan struct{}) {
 		c = make(chan struct{}, 1)
 	}
 
-	return Entry{Context: c, Callback: &channelCallback{}}, c
+	return Entry{Callback: &channelCallback{ch: c}}, c
 }
 
 // Queue represents the wait queue where waiters can be added and

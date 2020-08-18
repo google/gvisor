@@ -24,16 +24,15 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
-	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 // TestSharedVolume checks that modifications to a volume mount are propagated
 // into and out of the sandbox.
 func TestSharedVolume(t *testing.T) {
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.FileAccess = boot.FileAccessShared
-	t.Logf("Running test with conf: %+v", conf)
 
 	// Main process just sleeps. We will use "exec" to probe the state of
 	// the filesystem.
@@ -44,16 +43,15 @@ func TestSharedVolume(t *testing.T) {
 		t.Fatalf("TempDir failed: %v", err)
 	}
 
-	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
-	defer os.RemoveAll(rootDir)
-	defer os.RemoveAll(bundleDir)
+	defer cleanup()
 
 	// Create and start the container.
 	args := Args{
-		ID:        testutil.UniqueContainerID(),
+		ID:        testutil.RandomContainerID(),
 		Spec:      spec,
 		BundleDir: bundleDir,
 	}
@@ -190,9 +188,8 @@ func checkFile(c *Container, filename string, want []byte) error {
 // TestSharedVolumeFile tests that changes to file content outside the sandbox
 // is reflected inside.
 func TestSharedVolumeFile(t *testing.T) {
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.FileAccess = boot.FileAccessShared
-	t.Logf("Running test with conf: %+v", conf)
 
 	// Main process just sleeps. We will use "exec" to probe the state of
 	// the filesystem.
@@ -203,16 +200,15 @@ func TestSharedVolumeFile(t *testing.T) {
 		t.Fatalf("TempDir failed: %v", err)
 	}
 
-	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
-	defer os.RemoveAll(rootDir)
-	defer os.RemoveAll(bundleDir)
+	defer cleanup()
 
 	// Create and start the container.
 	args := Args{
-		ID:        testutil.UniqueContainerID(),
+		ID:        testutil.RandomContainerID(),
 		Spec:      spec,
 		BundleDir: bundleDir,
 	}

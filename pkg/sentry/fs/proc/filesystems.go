@@ -18,10 +18,12 @@ import (
 	"bytes"
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 )
+
+// LINT.IfChange
 
 // filesystemsData backs /proc/filesystems.
 //
@@ -59,3 +61,5 @@ func (*filesystemsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle
 	// Return the SeqData and advance the generation counter.
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*filesystemsData)(nil)}}, 1
 }
+
+// LINT.ThenChange(../../fsimpl/proc/filesystem.go)

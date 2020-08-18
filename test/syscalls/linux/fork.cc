@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
 #include <atomic>
 #include <cstdlib>
 
@@ -214,6 +215,8 @@ TEST_F(ForkTest, PrivateMapping) {
   EXPECT_THAT(Wait(child), SyscallSucceedsWithValue(0));
 }
 
+// CPUID is x86 specific.
+#ifdef __x86_64__
 // Test that cpuid works after a fork.
 TEST_F(ForkTest, Cpuid) {
   pid_t child = Fork();
@@ -226,6 +229,7 @@ TEST_F(ForkTest, Cpuid) {
   }
   EXPECT_THAT(Wait(child), SyscallSucceedsWithValue(0));
 }
+#endif
 
 TEST_F(ForkTest, Mmap) {
   pid_t child = Fork();
@@ -267,7 +271,7 @@ TEST_F(ForkTest, Alarm) {
   EXPECT_EQ(0, alarmed);
 }
 
-// Child cannot affect parent private memory.
+// Child cannot affect parent private memory. Regression test for b/24137240.
 TEST_F(ForkTest, PrivateMemory) {
   std::atomic<uint32_t> local(0);
 
@@ -294,6 +298,9 @@ TEST_F(ForkTest, PrivateMemory) {
 }
 
 // Kernel-accessed buffers should remain coherent across COW.
+//
+// The buffer must be >= usermem.ZeroCopyMinBytes, as UnsafeAccess operates
+// differently. Regression test for b/33811887.
 TEST_F(ForkTest, COWSegment) {
   constexpr int kBufSize = 1024;
   char* read_buf = private_;
@@ -424,7 +431,6 @@ TEST(CloneTest, NewUserNamespacePermitsAllOtherNamespaces) {
       << "status = " << status;
 }
 
-#ifdef __x86_64__
 // Clone with CLONE_SETTLS and a non-canonical TLS address is rejected.
 TEST(CloneTest, NonCanonicalTLS) {
   constexpr uintptr_t kNonCanonical = 1ull << 48;
@@ -433,11 +439,25 @@ TEST(CloneTest, NonCanonicalTLS) {
   // on this.
   char stack;
 
+  // The raw system call interface on x86-64 is:
+  // long clone(unsigned long flags, void *stack,
+  //            int *parent_tid, int *child_tid,
+  //            unsigned long tls);
+  //
+  // While on arm64, the order of the last two arguments is reversed:
+  // long clone(unsigned long flags, void *stack,
+  //            int *parent_tid, unsigned long tls,
+  //            int *child_tid);
+#if defined(__x86_64__)
   EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
                       nullptr, kNonCanonical),
               SyscallFailsWithErrno(EPERM));
-}
+#elif defined(__aarch64__)
+  EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
+                      kNonCanonical, nullptr),
+              SyscallFailsWithErrno(EPERM));
 #endif
+}
 
 }  // namespace
 }  // namespace testing

@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -12,7 +11,6 @@ go_library(
         "interpreter.go",
         "program_builder.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/bpf",
     visibility = ["//visibility:public"],
     deps = ["//pkg/abi/linux"],
 )
@@ -25,7 +23,7 @@ go_test(
         "interpreter_test.go",
         "program_builder_test.go",
     ],
-    embed = [":bpf"],
+    library = ":bpf",
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",

@@ -56,10 +56,6 @@ TEST(EpollTest, AllWritable) {
   struct epoll_event result[kFDsPerEpoll];
   ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
-  // TODO(edahlgren): Why do some tests check epoll_event::data, and others
-  // don't? Does Linux actually guarantee that, in any of these test cases,
-  // epoll_wait will necessarily write out the epoll_events in the order that
-  // they were registered?
   for (int i = 0; i < kFDsPerEpoll; i++) {
     ASSERT_EQ(result[i].events, EPOLLOUT);
   }
@@ -424,6 +420,28 @@ TEST(EpollTest, CloseFile) {
 
   EXPECT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, 100),
               SyscallSucceedsWithValue(0));
+}
+
+TEST(EpollTest, PipeReaderHupAfterWriterClosed) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  int pipefds[2];
+  ASSERT_THAT(pipe(pipefds), SyscallSucceeds());
+  FileDescriptor rfd(pipefds[0]);
+  FileDescriptor wfd(pipefds[1]);
+
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd.get(), rfd.get(), 0, kMagicConstant));
+  struct epoll_event result[kFDsPerEpoll];
+  // Initially, rfd should not generate any events of interest.
+  ASSERT_THAT(epoll_wait(epollfd.get(), result, kFDsPerEpoll, 0),
+              SyscallSucceedsWithValue(0));
+  // Close the write end of the pipe.
+  wfd.reset();
+  // rfd should now generate EPOLLHUP, which EPOLL_CTL_ADD unconditionally adds
+  // to the set of events of interest.
+  ASSERT_THAT(epoll_wait(epollfd.get(), result, kFDsPerEpoll, 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(result[0].events, EPOLLHUP);
+  EXPECT_EQ(result[0].data.u64, kMagicConstant);
 }
 
 }  // namespace

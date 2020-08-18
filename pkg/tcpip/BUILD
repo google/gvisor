@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -8,12 +7,12 @@ go_library(
     srcs = [
         "tcpip.go",
         "time_unsafe.go",
+        "timer.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip/buffer",
-        "//pkg/tcpip/iptables",
         "//pkg/waiter",
     ],
 )
@@ -22,5 +21,12 @@ go_test(
     name = "tcpip_test",
     size = "small",
     srcs = ["tcpip_test.go"],
-    embed = [":tcpip"],
+    library = ":tcpip",
+)
+
+go_test(
+    name = "tcpip_x_test",
+    size = "small",
+    srcs = ["timer_test.go"],
+    deps = [":tcpip"],
 )

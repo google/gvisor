@@ -1,0 +1,31 @@
+// Test that closing a listening socket closes any connections in SYN-RCVD
+// state and any packets bound for these connections generate a RESET.
+
+0  socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0 bind(3, ..., ...) = 0
+
+// Set backlog to 1 so that we can easily test.
++0 listen(3, 1) = 0
+
+// Establish a connection without timestamps.
++0 < S 0:0(0) win 32792 <mss 1460,sackOK,nop,nop,nop,wscale 7>
++0 > S. 0:0(0) ack 1 <...>
+
++0.100 close(3) = 0
++0.1 < P. 1:1(0) ack 1 win 257
+
+// Linux generates a reset with no ack number/bit set. This is contradictory to
+// what is specified in Rule 1 under Reset Generation in
+// https://tools.ietf.org/html/rfc793#section-3.4.
+//   "1. If the connection does not exist (CLOSED) then a reset is sent
+//    in response to any incoming segment except another reset.  In
+//    particular, SYNs addressed to a non-existent connection are rejected
+//    by this means.
+//
+//    If the incoming segment has an ACK field, the reset takes its
+//    sequence number from the ACK field of the segment, otherwise the
+//    reset has sequence number zero and the ACK field is set to the sum
+//    of the sequence number and segment length of the incoming segment.
+//    The connection remains in the CLOSED state."
+
++0.0  > R 1:1(0) win 0

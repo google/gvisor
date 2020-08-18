@@ -114,6 +114,9 @@ class FDSocketPair : public SocketPair {
  public:
   FDSocketPair(int first_fd, int second_fd)
       : first_(first_fd), second_(second_fd) {}
+  FDSocketPair(std::unique_ptr<FileDescriptor> first_fd,
+               std::unique_ptr<FileDescriptor> second_fd)
+      : first_(first_fd->release()), second_(second_fd->release()) {}
 
   int first_fd() const override { return first_.get(); }
   int second_fd() const override { return second_.get(); }
@@ -269,6 +272,12 @@ Creator<SocketPair> AbstractUnboundSocketPairCreator(int domain, int type,
 Creator<SocketPair> TCPAcceptBindSocketPairCreator(int domain, int type,
                                                    int protocol,
                                                    bool dual_stack);
+
+// TCPAcceptBindPersistentListenerSocketPairCreator is like
+// TCPAcceptBindSocketPairCreator, except it uses the same listening socket to
+// create all SocketPairs.
+Creator<SocketPair> TCPAcceptBindPersistentListenerSocketPairCreator(
+    int domain, int type, int protocol, bool dual_stack);
 
 // UDPBidirectionalBindSocketPairCreator returns a Creator<SocketPair> that
 // obtains file descriptors by invoking the bind() and connect() syscalls on UDP
@@ -475,10 +484,15 @@ struct TestAddress {
       : description(std::move(description)), addr(), addr_len() {}
 };
 
+constexpr char kMulticastAddress[] = "224.0.2.1";
+constexpr char kBroadcastAddress[] = "255.255.255.255";
+
 TestAddress V4Any();
+TestAddress V4Broadcast();
 TestAddress V4Loopback();
 TestAddress V4MappedAny();
 TestAddress V4MappedLoopback();
+TestAddress V4Multicast();
 TestAddress V6Any();
 TestAddress V6Loopback();
 

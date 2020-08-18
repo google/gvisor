@@ -14,10 +14,14 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/types.h>
 #include <syscall.h>
 #include <unistd.h>
 
+#include <iostream>
+#include <list>
 #include <string>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
@@ -30,10 +34,13 @@
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
+#include "test/util/fs_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 #include "test/util/timer_util.h"
 
 ABSL_FLAG(std::string, child_setlock_on, "",
@@ -52,10 +59,6 @@ ABSL_FLAG(int32_t, socket_fd, -1,
 
 namespace gvisor {
 namespace testing {
-
-// O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
-// because "it isn't needed", even though Linux can return it via F_GETFL.
-constexpr int kOLargeFile = 00100000;
 
 class FcntlLockTest : public ::testing::Test {
  public:
@@ -114,6 +117,15 @@ PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
   }
 
   return std::move(cleanup);
+}
+
+TEST(FcntlTest, SetCloExecBadFD) {
+  // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag not set.
+  FileDescriptor f = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
+  auto fd = f.get();
+  f.reset();
+  ASSERT_THAT(fcntl(fd, F_GETFD), SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(fcntl(fd, F_SETFD, FD_CLOEXEC), SyscallFailsWithErrno(EBADF));
 }
 
 TEST(FcntlTest, SetCloExec) {
@@ -183,45 +195,85 @@ TEST(FcntlTest, SetFlags) {
   EXPECT_EQ(rflags, expected);
 }
 
-TEST_F(FcntlLockTest, SetLockBadFd) {
+void TestLock(int fd, short lock_type = F_RDLCK) {  // NOLINT, type in flock
   struct flock fl;
-  fl.l_type = F_WRLCK;
+  fl.l_type = lock_type;
   fl.l_whence = SEEK_SET;
   fl.l_start = 0;
-  // len 0 has a special meaning: lock all bytes despite how
-  // large the file grows.
+  // len 0 locks all bytes despite how large the file grows.
   fl.l_len = 0;
-  EXPECT_THAT(fcntl(-1, F_SETLK, &fl), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(fcntl(fd, F_SETLK, &fl), SyscallSucceeds());
+}
+
+void TestLockBadFD(int fd,
+                   short lock_type = F_RDLCK) {  // NOLINT, type in flock
+  struct flock fl;
+  fl.l_type = lock_type;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  // len 0 locks all bytes despite how large the file grows.
+  fl.l_len = 0;
+  EXPECT_THAT(fcntl(fd, F_SETLK, &fl), SyscallFailsWithErrno(EBADF));
+}
+
+TEST_F(FcntlLockTest, SetLockBadFd) { TestLockBadFD(-1); }
+
+TEST_F(FcntlLockTest, SetLockDir) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY, 0000));
+  TestLock(fd.get());
+}
+
+TEST_F(FcntlLockTest, SetLockSymlink) {
+  // TODO(gvisor.dev/issue/2782): Replace with IsRunningWithVFS1() when O_PATH
+  // is supported.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), file.path()));
+
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(symlink.path(), O_RDONLY | O_PATH, 0000));
+  TestLockBadFD(fd.get());
+}
+
+TEST_F(FcntlLockTest, SetLockProc) {
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/status", O_RDONLY, 0000));
+  TestLock(fd.get());
 }
 
 TEST_F(FcntlLockTest, SetLockPipe) {
+  SKIP_IF(IsRunningWithVFS1());
+
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
 
-  struct flock fl;
-  fl.l_type = F_WRLCK;
-  fl.l_whence = SEEK_SET;
-  fl.l_start = 0;
-  // Same as SetLockBadFd, but doesn't matter, we expect this to fail.
-  fl.l_len = 0;
-  EXPECT_THAT(fcntl(fds[0], F_SETLK, &fl), SyscallFailsWithErrno(EBADF));
+  TestLock(fds[0]);
+  TestLockBadFD(fds[0], F_WRLCK);
+
+  TestLock(fds[1], F_WRLCK);
+  TestLockBadFD(fds[1]);
+
   EXPECT_THAT(close(fds[0]), SyscallSucceeds());
   EXPECT_THAT(close(fds[1]), SyscallSucceeds());
 }
 
-TEST_F(FcntlLockTest, SetLockDir) {
-  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY, 0666));
+TEST_F(FcntlLockTest, SetLockSocket) {
+  SKIP_IF(IsRunningWithVFS1());
 
-  struct flock fl;
-  fl.l_type = F_RDLCK;
-  fl.l_whence = SEEK_SET;
-  fl.l_start = 0;
-  // Same as SetLockBadFd.
-  fl.l_len = 0;
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  ASSERT_THAT(sock, SyscallSucceeds());
 
-  EXPECT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+  struct sockaddr_un addr =
+      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true /* abstract */, AF_UNIX));
+  ASSERT_THAT(
+      bind(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallSucceeds());
+
+  TestLock(sock);
+  EXPECT_THAT(close(sock), SyscallSucceeds());
 }
 
 TEST_F(FcntlLockTest, SetLockBadOpenFlagsWrite) {
@@ -233,8 +285,7 @@ TEST_F(FcntlLockTest, SetLockBadOpenFlagsWrite) {
   fl0.l_type = F_WRLCK;
   fl0.l_whence = SEEK_SET;
   fl0.l_start = 0;
-  // Same as SetLockBadFd.
-  fl0.l_len = 0;
+  fl0.l_len = 0;  // Lock all file
 
   // Expect that setting a write lock using a read only file descriptor
   // won't work.
@@ -696,7 +747,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingWriteLock) {
       << "Exited with code: " << status;
 }
 
-// This test will veirfy that blocking works as expected when another process
+// This test will verify that blocking works as expected when another process
 // holds a read lock when obtaining a write lock. This test will hold the lock
 // for some amount of time and then wait for the second process to send over the
 // socket_fd the amount of time it was blocked for before the lock succeeded.
@@ -906,12 +957,344 @@ TEST(FcntlTest, DupAfterO_ASYNC) {
   EXPECT_EQ(after & O_ASYNC, O_ASYNC);
 }
 
-TEST(FcntlTest, GetOwn) {
+TEST(FcntlTest, GetOwnNone) {
   FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
 
-  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+  // Use the raw syscall because the glibc wrapper may convert F_{GET,SET}OWN
+  // into F_{GET,SET}OWN_EX.
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
+  MaybeSave();
+}
+
+TEST(FcntlTest, GetOwnExNone) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex owner = {};
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &owner),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST(FcntlTest, SetOwnInvalidPid) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 12345678),
+              SyscallFailsWithErrno(ESRCH));
+}
+
+TEST(FcntlTest, SetOwnInvalidPgrp) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -12345678),
+              SyscallFailsWithErrno(ESRCH));
+}
+
+TEST(FcntlTest, SetOwnPid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  pid_t pid;
+  EXPECT_THAT(pid = getpid(), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(pid));
+  MaybeSave();
+}
+
+TEST(FcntlTest, SetOwnPgrp) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  pid_t pgid;
+  EXPECT_THAT(pgid = getpgrp(), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -pgid),
+              SyscallSucceedsWithValue(0));
+
+  // Verify with F_GETOWN_EX; using F_GETOWN on Linux may incorrectly treat the
+  // negative return value as an error, converting the return value to -1 and
+  // setting errno accordingly.
+  f_owner_ex got_owner = {};
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(got_owner.type, F_OWNER_PGRP);
+  EXPECT_EQ(got_owner.pid, pgid);
+  MaybeSave();
+}
+
+TEST(FcntlTest, SetOwnUnset) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  // Set and unset pid.
+  pid_t pid;
+  EXPECT_THAT(pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
+
+  // Set and unset pgid.
+  pid_t pgid;
+  EXPECT_THAT(pgid = getpgrp(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -pgid),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
+  MaybeSave();
+}
+
+// F_SETOWN flips the sign of negative values, an operation that is guarded
+// against overflow.
+TEST(FcntlTest, SetOwnOverflow) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, INT_MIN),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FcntlTest, SetOwnExInvalidType) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex owner = {};
+  owner.type = __pid_type(-1);
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FcntlTest, SetOwnExInvalidTid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex owner = {};
+  owner.type = F_OWNER_TID;
+  owner.pid = -1;
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallFailsWithErrno(ESRCH));
+}
+
+TEST(FcntlTest, SetOwnExInvalidPid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex owner = {};
+  owner.type = F_OWNER_PID;
+  owner.pid = -1;
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallFailsWithErrno(ESRCH));
+}
+
+TEST(FcntlTest, SetOwnExInvalidPgrp) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex owner = {};
+  owner.type = F_OWNER_PGRP;
+  owner.pid = -1;
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallFailsWithErrno(ESRCH));
+}
+
+TEST(FcntlTest, SetOwnExTid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex owner = {};
+  owner.type = F_OWNER_TID;
+  EXPECT_THAT(owner.pid = syscall(__NR_gettid), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(owner.pid));
+  MaybeSave();
+}
+
+TEST(FcntlTest, SetOwnExPid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex owner = {};
+  owner.type = F_OWNER_PID;
+  EXPECT_THAT(owner.pid = getpid(), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(owner.pid));
+  MaybeSave();
+}
+
+TEST(FcntlTest, SetOwnExPgrp) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex set_owner = {};
+  set_owner.type = F_OWNER_PGRP;
+  EXPECT_THAT(set_owner.pid = getpgrp(), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
+              SyscallSucceedsWithValue(0));
+
+  // Verify with F_GETOWN_EX; using F_GETOWN on Linux may incorrectly treat the
+  // negative return value as an error, converting the return value to -1 and
+  // setting errno accordingly.
+  f_owner_ex got_owner = {};
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(got_owner.type, set_owner.type);
+  EXPECT_EQ(got_owner.pid, set_owner.pid);
+  MaybeSave();
+}
+
+TEST(FcntlTest, SetOwnExUnset) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  // Set and unset pid.
+  f_owner_ex owner = {};
+  owner.type = F_OWNER_PID;
+  EXPECT_THAT(owner.pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceedsWithValue(0));
+  owner.pid = 0;
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
+
+  // Set and unset pgid.
+  owner.type = F_OWNER_PGRP;
+  EXPECT_THAT(owner.pid = getpgrp(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceedsWithValue(0));
+  owner.pid = 0;
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
+  MaybeSave();
+}
+
+TEST(FcntlTest, GetOwnExTid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex set_owner = {};
+  set_owner.type = F_OWNER_TID;
+  EXPECT_THAT(set_owner.pid = syscall(__NR_gettid), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
+              SyscallSucceedsWithValue(0));
+
+  f_owner_ex got_owner = {};
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(got_owner.type, set_owner.type);
+  EXPECT_EQ(got_owner.pid, set_owner.pid);
+}
+
+TEST(FcntlTest, GetOwnExPid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex set_owner = {};
+  set_owner.type = F_OWNER_PID;
+  EXPECT_THAT(set_owner.pid = getpid(), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
+              SyscallSucceedsWithValue(0));
+
+  f_owner_ex got_owner = {};
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(got_owner.type, set_owner.type);
+  EXPECT_EQ(got_owner.pid, set_owner.pid);
+}
+
+TEST(FcntlTest, GetOwnExPgrp) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  f_owner_ex set_owner = {};
+  set_owner.type = F_OWNER_PGRP;
+  EXPECT_THAT(set_owner.pid = getpgrp(), SyscallSucceeds());
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
+              SyscallSucceedsWithValue(0));
+
+  f_owner_ex got_owner = {};
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(got_owner.type, set_owner.type);
+  EXPECT_EQ(got_owner.pid, set_owner.pid);
+}
+
+// Make sure that making multiple concurrent changes to async signal generation
+// does not cause any race issues.
+TEST(FcntlTest, SetFlSetOwnDoNotRace) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  pid_t pid;
+  EXPECT_THAT(pid = getpid(), SyscallSucceeds());
+
+  constexpr absl::Duration runtime = absl::Milliseconds(300);
+  auto setAsync = [&s, &runtime] {
+    for (auto start = absl::Now(); absl::Now() - start < runtime;) {
+      ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETFL, O_ASYNC),
+                  SyscallSucceeds());
+      sched_yield();
+    }
+  };
+  auto resetAsync = [&s, &runtime] {
+    for (auto start = absl::Now(); absl::Now() - start < runtime;) {
+      ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETFL, 0), SyscallSucceeds());
+      sched_yield();
+    }
+  };
+  auto setOwn = [&s, &pid, &runtime] {
+    for (auto start = absl::Now(); absl::Now() - start < runtime;) {
+      ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid),
+                  SyscallSucceeds());
+      sched_yield();
+    }
+  };
+
+  std::list<ScopedThread> threads;
+  for (int i = 0; i < 10; i++) {
+    threads.emplace_back(setAsync);
+    threads.emplace_back(resetAsync);
+    threads.emplace_back(setOwn);
+  }
 }
 
 }  // namespace
@@ -943,8 +1326,7 @@ int main(int argc, char** argv) {
     fl.l_start = absl::GetFlag(FLAGS_child_setlock_start);
     fl.l_len = absl::GetFlag(FLAGS_child_setlock_len);
 
-    // Test the fcntl, no need to log, the error is unambiguously
-    // from fcntl at this point.
+    // Test the fcntl.
     int err = 0;
     int ret = 0;
 
@@ -957,6 +1339,8 @@ int main(int argc, char** argv) {
 
     if (ret == -1 && errno != 0) {
       err = errno;
+      std::cerr << "CHILD lock " << setlock_on << " failed " << err
+                << std::endl;
     }
 
     // If there is a socket fd let's send back the time in microseconds it took
@@ -971,5 +1355,5 @@ int main(int argc, char** argv) {
     exit(err);
   }
 
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

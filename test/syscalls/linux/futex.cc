@@ -18,6 +18,7 @@
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <syscall.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -237,6 +238,27 @@ TEST_P(PrivateAndSharedFutexTest, Wake1_NoRandomSave) {
   // returns EAGAIN instead of hanging the test.
   a.fetch_add(1);
   EXPECT_THAT(futex_wake(IsPrivate(), &a, 1), SyscallSucceedsWithValue(1));
+}
+
+TEST_P(PrivateAndSharedFutexTest, Wake0_NoRandomSave) {
+  constexpr int kInitialValue = 1;
+  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+
+  // Prevent save/restore from interrupting futex_wait, which will cause it to
+  // return EAGAIN instead of the expected result if futex_wait is restarted
+  // after we change the value of a below.
+  DisableSave ds;
+  ScopedThread thread([&] {
+    EXPECT_THAT(futex_wait(IsPrivate(), &a, kInitialValue),
+                SyscallSucceedsWithValue(0));
+  });
+  absl::SleepFor(kWaiterStartupDelay);
+
+  // Change a so that if futex_wake happens before futex_wait, the latter
+  // returns EAGAIN instead of hanging the test.
+  a.fetch_add(1);
+  // The Linux kernel wakes one waiter even if val is 0 or negative.
+  EXPECT_THAT(futex_wake(IsPrivate(), &a, 0), SyscallSucceedsWithValue(1));
 }
 
 TEST_P(PrivateAndSharedFutexTest, WakeAll_NoRandomSave) {
@@ -713,6 +735,97 @@ TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency_NoRandomSave) {
         }
       }
     });
+  }
+}
+
+int get_robust_list(int pid, struct robust_list_head** head_ptr,
+                    size_t* len_ptr) {
+  return syscall(__NR_get_robust_list, pid, head_ptr, len_ptr);
+}
+
+int set_robust_list(struct robust_list_head* head, size_t len) {
+  return syscall(__NR_set_robust_list, head, len);
+}
+
+TEST(RobustFutexTest, BasicSetGet) {
+  struct robust_list_head hd = {};
+  struct robust_list_head* hd_ptr = &hd;
+
+  // Set!
+  EXPECT_THAT(set_robust_list(hd_ptr, sizeof(hd)), SyscallSucceedsWithValue(0));
+
+  // Get!
+  struct robust_list_head* new_hd_ptr = hd_ptr;
+  size_t len;
+  EXPECT_THAT(get_robust_list(0, &new_hd_ptr, &len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(new_hd_ptr, hd_ptr);
+  EXPECT_EQ(len, sizeof(hd));
+}
+
+TEST(RobustFutexTest, GetFromOtherTid) {
+  // Get the current tid and list head.
+  pid_t tid = gettid();
+  struct robust_list_head* hd_ptr = {};
+  size_t len;
+  EXPECT_THAT(get_robust_list(0, &hd_ptr, &len), SyscallSucceedsWithValue(0));
+
+  // Create a new thread.
+  ScopedThread t([&] {
+    // Current tid list head should be different from parent tid.
+    struct robust_list_head* got_hd_ptr = {};
+    EXPECT_THAT(get_robust_list(0, &got_hd_ptr, &len),
+                SyscallSucceedsWithValue(0));
+    EXPECT_NE(hd_ptr, got_hd_ptr);
+
+    // Get the parent list head by passing its tid.
+    EXPECT_THAT(get_robust_list(tid, &got_hd_ptr, &len),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(hd_ptr, got_hd_ptr);
+  });
+
+  // Wait for thread.
+  t.Join();
+}
+
+TEST(RobustFutexTest, InvalidSize) {
+  struct robust_list_head* hd = {};
+  EXPECT_THAT(set_robust_list(hd, sizeof(*hd) + 1),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(RobustFutexTest, PthreadMutexAttr) {
+  constexpr int kNumMutexes = 3;
+
+  // Create a bunch of robust mutexes.
+  pthread_mutexattr_t attrs[kNumMutexes];
+  pthread_mutex_t mtxs[kNumMutexes];
+  for (int i = 0; i < kNumMutexes; i++) {
+    TEST_PCHECK(pthread_mutexattr_init(&attrs[i]) == 0);
+    TEST_PCHECK(pthread_mutexattr_setrobust(&attrs[i], PTHREAD_MUTEX_ROBUST) ==
+                0);
+    TEST_PCHECK(pthread_mutex_init(&mtxs[i], &attrs[i]) == 0);
+  }
+
+  // Start thread to lock the mutexes and then exit.
+  ScopedThread t([&] {
+    for (int i = 0; i < kNumMutexes; i++) {
+      TEST_PCHECK(pthread_mutex_lock(&mtxs[i]) == 0);
+    }
+    pthread_exit(NULL);
+  });
+
+  // Wait for thread.
+  t.Join();
+
+  // Now try to take the mutexes.
+  for (int i = 0; i < kNumMutexes; i++) {
+    // Should get EOWNERDEAD.
+    EXPECT_EQ(pthread_mutex_lock(&mtxs[i]), EOWNERDEAD);
+    // Make the mutex consistent.
+    EXPECT_EQ(pthread_mutex_consistent(&mtxs[i]), 0);
+    // Unlock.
+    EXPECT_EQ(pthread_mutex_unlock(&mtxs[i]), 0);
   }
 }
 

@@ -38,7 +38,8 @@ const (
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
 // fields of a packet that needs to be encoded.
 type IPv4Fields struct {
-	// IHL is the "internet header length" field of an IPv4 packet.
+	// IHL is the "internet header length" field of an IPv4 packet. The value
+	// is in bytes.
 	IHL uint8
 
 	// TOS is the "type of service" field of an IPv4 packet.
@@ -100,6 +101,11 @@ const (
 	// IPv4Version is the version of the ipv4 protocol.
 	IPv4Version = 4
 
+	// IPv4AllSystems is the all systems IPv4 multicast address as per
+	// IANA's IPv4 Multicast Address Space Registry. See
+	// https://www.iana.org/assignments/multicast-addresses/multicast-addresses.xhtml.
+	IPv4AllSystems tcpip.Address = "\xe0\x00\x00\x01"
+
 	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
 	IPv4Broadcast tcpip.Address = "\xff\xff\xff\xff"
 
@@ -138,7 +144,7 @@ func IPVersion(b []byte) int {
 }
 
 // HeaderLength returns the value of the "header length" field of the ipv4
-// header.
+// header. The length returned is in bytes.
 func (b IPv4) HeaderLength() uint8 {
 	return (b[versIHL] & 0xf) * 4
 }
@@ -156,6 +162,11 @@ func (b IPv4) Protocol() uint8 {
 // Flags returns the "flags" field of the ipv4 header.
 func (b IPv4) Flags() uint8 {
 	return uint8(binary.BigEndian.Uint16(b[flagsFO:]) >> 13)
+}
+
+// More returns whether the more fragments flag is set.
+func (b IPv4) More() bool {
+	return b.Flags()&IPv4FlagMoreFragments != 0
 }
 
 // TTL returns the "TTL" field of the ipv4 header.
@@ -303,4 +314,13 @@ func IsV4MulticastAddress(addr tcpip.Address) bool {
 		return false
 	}
 	return (addr[0] & 0xf0) == 0xe0
+}
+
+// IsV4LoopbackAddress determines if the provided address is an IPv4 loopback
+// address (belongs to 127.0.0.1/8 subnet).
+func IsV4LoopbackAddress(addr tcpip.Address) bool {
+	if len(addr) != IPv4AddressSize {
+		return false
+	}
+	return addr[0] == 0x7f
 }

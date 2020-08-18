@@ -42,3 +42,11 @@ func Mask(is ...int) T {
 func MaskOf(i int) T {
 	return T(1) << T(i)
 }
+
+// IsPowerOfTwo returns true if v is power of 2.
+func IsPowerOfTwo(v T) bool {
+	if v == 0 {
+		return false
+	}
+	return v&(v-1) == 0
+}

@@ -129,7 +129,7 @@ TEST_F(RawSocketICMPTest, SendAndReceiveBadChecksum) {
   EXPECT_THAT(RetryEINTR(recv)(s_, recv_buf, sizeof(recv_buf), MSG_DONTWAIT),
               SyscallFailsWithErrno(EAGAIN));
 }
-//
+
 // Send and receive an ICMP packet.
 TEST_F(RawSocketICMPTest, SendAndReceive) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));

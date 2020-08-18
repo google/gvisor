@@ -16,6 +16,8 @@
 
 source $(dirname $0)/common.sh
 
+make load-all-images
+
 # Ensure that KVM is loaded, and we can use it.
 (lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
 sudo chmod a+rw /dev/kvm

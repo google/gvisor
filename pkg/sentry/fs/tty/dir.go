@@ -19,16 +19,16 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -132,7 +132,7 @@ func (d *dirInodeOperations) Release(ctx context.Context) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.master.DecRef()
+	d.master.DecRef(ctx)
 	if len(d.slaves) != 0 {
 		panic(fmt.Sprintf("devpts directory still contains active terminals: %+v", d))
 	}
@@ -263,7 +263,7 @@ func (d *dirInodeOperations) allocateTerminal(ctx context.Context) (*Terminal, e
 }
 
 // masterClose is called when the master end of t is closed.
-func (d *dirInodeOperations) masterClose(t *Terminal) {
+func (d *dirInodeOperations) masterClose(ctx context.Context, t *Terminal) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -277,7 +277,7 @@ func (d *dirInodeOperations) masterClose(t *Terminal) {
 		panic(fmt.Sprintf("Terminal %+v doesn't exist in %+v?", t, d))
 	}
 
-	s.DecRef()
+	s.DecRef(ctx)
 	delete(d.slaves, t.n)
 	d.dentryMap.Remove(strconv.FormatUint(uint64(t.n), 10))
 }
@@ -322,7 +322,7 @@ func (df *dirFileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirCt
 func (df *dirFileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 	dirCtx := &fs.DirCtx{
 		Serializer: serializer,

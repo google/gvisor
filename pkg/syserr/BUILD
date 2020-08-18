@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,7 +9,6 @@ go_library(
         "netstack.go",
         "syserr.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/syserr",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",

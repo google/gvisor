@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,14 +16,14 @@ package kernel
 
 import (
 	"runtime"
-	"sync"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/filetest"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (
@@ -150,13 +150,13 @@ func TestFDTable(t *testing.T) {
 			t.Fatalf("fdTable.Get(2): got a %v, wanted nil", ref)
 		}
 
-		ref := fdTable.Remove(1)
+		ref, _ := fdTable.Remove(1)
 		if ref == nil {
 			t.Fatalf("fdTable.Remove(1) for an existing FD: failed, want success")
 		}
-		ref.DecRef()
+		ref.DecRef(ctx)
 
-		if ref := fdTable.Remove(1); ref != nil {
+		if ref, _ := fdTable.Remove(1); ref != nil {
 			t.Fatalf("r.Remove(1) for a removed FD: got success, want failure")
 		}
 	})
@@ -191,7 +191,7 @@ func BenchmarkFDLookupAndDecRef(b *testing.B) {
 		b.StartTimer() // Benchmark.
 		for i := 0; i < b.N; i++ {
 			tf, _ := fdTable.Get(fds[i%len(fds)])
-			tf.DecRef()
+			tf.DecRef(ctx)
 		}
 	})
 }
@@ -219,7 +219,7 @@ func BenchmarkFDLookupAndDecRefConcurrent(b *testing.B) {
 				defer wg.Done()
 				for i := 0; i < each; i++ {
 					tf, _ := fdTable.Get(fds[i%len(fds)])
-					tf.DecRef()
+					tf.DecRef(ctx)
 				}
 			}()
 		}

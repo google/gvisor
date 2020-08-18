@@ -17,19 +17,21 @@ package proc
 import (
 	"fmt"
 	"io"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// LINT.IfChange
 
 type tcpMemDir int
 
@@ -65,7 +67,7 @@ var _ fs.InodeOperations = (*tcpMemInode)(nil)
 
 func newTCPMemInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack, dir tcpMemDir) *fs.Inode {
 	tm := &tcpMemInode{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
 		s:               s,
 		dir:             dir,
 	}
@@ -76,6 +78,11 @@ func newTCPMemInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack, dir
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, tm, msrc, sattr)
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (*tcpMemInode) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -169,14 +176,15 @@ func writeSize(dirType tcpMemDir, s inet.Stack, size inet.TCPBufferSize) error {
 
 // +stateify savable
 type tcpSack struct {
+	fsutil.SimpleFileInode
+
 	stack   inet.Stack `state:"wait"`
 	enabled *bool
-	fsutil.SimpleFileInode
 }
 
 func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
 	ts := &tcpSack{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
 		stack:           s,
 	}
 	sattr := fs.StableAttr{
@@ -186,6 +194,11 @@ func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *f
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, ts, msrc, sattr)
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (*tcpSack) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -260,6 +273,96 @@ func (f *tcpSackFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSeque
 	return n, f.tcpSack.stack.SetTCPSACKEnabled(*f.tcpSack.enabled)
 }
 
+// +stateify savable
+type tcpRecovery struct {
+	fsutil.SimpleFileInode
+
+	stack    inet.Stack `state:"wait"`
+	recovery inet.TCPLossRecovery
+}
+
+func newTCPRecoveryInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
+	ts := &tcpRecovery{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
+		stack:           s,
+	}
+	sattr := fs.StableAttr{
+		DeviceID:  device.ProcDevice.DeviceID(),
+		InodeID:   device.ProcDevice.NextIno(),
+		BlockSize: usermem.PageSize,
+		Type:      fs.SpecialFile,
+	}
+	return fs.NewInode(ctx, ts, msrc, sattr)
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (*tcpRecovery) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (r *tcpRecovery) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
+	flags.Pwrite = true
+	return fs.NewFile(ctx, dirent, flags, &tcpRecoveryFile{
+		tcpRecovery: r,
+		stack:       r.stack,
+	}), nil
+}
+
+// +stateify savable
+type tcpRecoveryFile struct {
+	fsutil.FileGenericSeek          `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+
+	tcpRecovery *tcpRecovery
+
+	stack inet.Stack `state:"wait"`
+}
+
+// Read implements fs.FileOperations.Read.
+func (f *tcpRecoveryFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		return 0, io.EOF
+	}
+
+	recovery, err := f.stack.TCPRecovery()
+	if err != nil {
+		return 0, err
+	}
+	f.tcpRecovery.recovery = recovery
+	s := fmt.Sprintf("%d\n", f.tcpRecovery.recovery)
+	n, err := dst.CopyOut(ctx, []byte(s))
+	return int64(n), err
+}
+
+// Write implements fs.FileOperations.Write.
+func (f *tcpRecoveryFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+	f.tcpRecovery.recovery = inet.TCPLossRecovery(v)
+	if err := f.tcpRecovery.stack.SetTCPRecovery(f.tcpRecovery.recovery); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (p *proc) newSysNetCore(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
 	// The following files are simple stubs until they are implemented in
 	// netstack, most of these files are configuration related. We use the
@@ -318,15 +421,22 @@ func newIPForwardingInode(ctx context.Context, msrc *fs.MountSource, s inet.Stac
 	return fs.NewInode(ctx, ipf, msrc, sattr)
 }
 
+// Truncate implements fs.InodeOperations.Truncate. Truncate is called when
+// O_TRUNC is specified for any kind of existing Dirent but is not called via
+// (f)truncate for proc files.
+func (*ipForwarding) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
+}
+
 // +stateify savable
 type ipForwardingFile struct {
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
 	fsutil.FileNoSplice             `state:"nosave"`
-	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 	waiter.AlwaysReady              `state:"nosave"`
@@ -443,13 +553,20 @@ func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s ine
 		contents["tcp_wmem"] = newTCPMemInode(ctx, msrc, s, tcpWMem)
 	}
 
+	// Add tcp_recovery.
+	if _, err := s.TCPRecovery(); err == nil {
+		contents["tcp_recovery"] = newTCPRecoveryInode(ctx, msrc, s)
+	}
+
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 func (p *proc) newSysNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	var contents map[string]*fs.Inode
-	if s := p.k.NetworkStack(); s != nil {
+	// TODO(gvisor.dev/issue/1833): Support for using the network stack in the
+	// network namespace of the calling process.
+	if s := p.k.RootNetworkNamespace().Stack(); s != nil {
 		contents = map[string]*fs.Inode{
 			"ipv4": p.newSysNetIPv4Dir(ctx, msrc, s),
 			"core": p.newSysNetCore(ctx, msrc, s),
@@ -458,3 +575,5 @@ func (p *proc) newSysNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_sys.go)

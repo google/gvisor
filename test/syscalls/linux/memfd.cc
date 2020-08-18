@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <linux/magic.h>
 #include <linux/memfd.h>
+#include <linux/unistd.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/statfs.h>

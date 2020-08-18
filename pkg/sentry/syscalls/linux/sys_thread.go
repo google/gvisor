@@ -21,11 +21,12 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -116,10 +117,11 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 	resolveFinal := flags&linux.AT_SYMLINK_NOFOLLOW == 0
 
 	root := t.FSContext().RootDirectory()
-	defer root.DecRef()
+	defer root.DecRef(t)
 
 	var wd *fs.Dirent
-	var executable *fs.File
+	var executable fsbridge.File
+	var closeOnExec bool
 	if dirFD == linux.AT_FDCWD || path.IsAbs(pathname) {
 		// Even if the pathname is absolute, we may still need the wd
 		// for interpreter scripts if the path of the interpreter is
@@ -127,14 +129,23 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		wd = t.FSContext().WorkingDirectory()
 	} else {
 		// Need to extract the given FD.
-		f := t.GetFile(dirFD)
+		f, fdFlags := t.FDTable().Get(dirFD)
 		if f == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer f.DecRef()
+		defer f.DecRef(t)
+		closeOnExec = fdFlags.CloseOnExec
 
 		if atEmptyPath && len(pathname) == 0 {
-			executable = f
+			// TODO(gvisor.dev/issue/160): Linux requires only execute permission,
+			// not read. However, our backing filesystems may prevent us from reading
+			// the file without read permission. Additionally, a task with a
+			// non-readable executable has additional constraints on access via
+			// ptrace and procfs.
+			if err := f.Dirent.Inode.CheckPermission(t, fs.PermMask{Read: true, Execute: true}); err != nil {
+				return 0, nil, err
+			}
+			executable = fsbridge.NewFSFile(f)
 		} else {
 			wd = f.Dirent
 			wd.IncRef()
@@ -144,19 +155,18 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		}
 	}
 	if wd != nil {
-		defer wd.DecRef()
+		defer wd.DecRef(t)
 	}
 
 	// Load the new TaskContext.
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	loadArgs := loader.LoadArgs{
-		Mounts:              t.MountNamespace(),
-		Root:                root,
-		WorkingDirectory:    wd,
+		Opener:              fsbridge.NewFSLookup(t.MountNamespace(), root, wd),
 		RemainingTraversals: &remainingTraversals,
 		ResolveFinal:        resolveFinal,
 		Filename:            pathname,
 		File:                executable,
+		CloseOnExec:         closeOnExec,
 		Argv:                argv,
 		Envv:                envv,
 		Features:            t.Arch().FeatureSet(),
@@ -215,19 +225,6 @@ func clone(t *kernel.Task, flags int, stack usermem.Addr, parentTID usermem.Addr
 	}
 	ntid, ctrl, err := t.Clone(&opts)
 	return uintptr(ntid), ctrl, err
-}
-
-// Clone implements linux syscall clone(2).
-// sys_clone has so many flavors. We implement the default one in linux 3.11
-// x86_64:
-//    sys_clone(clone_flags, newsp, parent_tidptr, child_tidptr, tls_val)
-func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	flags := int(args[0].Int())
-	stack := args[1].Pointer()
-	parentTID := args[2].Pointer()
-	childTID := args[3].Pointer()
-	tls := args[4].Pointer()
-	return clone(t, flags, stack, parentTID, childTID, tls)
 }
 
 // Fork implements Linux syscall fork(2).

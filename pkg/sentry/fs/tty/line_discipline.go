@@ -16,16 +16,18 @@ package tty
 
 import (
 	"bytes"
-	"sync"
 	"unicode/utf8"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// LINT.IfChange
 
 const (
 	// canonMaxBytes is the number of bytes that fit into a single line of
@@ -140,8 +142,10 @@ func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arc
 	// buffer to its read buffer. Anything already in the read buffer is
 	// now readable.
 	if oldCanonEnabled && !l.termios.LEnabled(linux.ICANON) {
-		l.inQueue.pushWaitBuf(l)
+		l.inQueue.mu.Lock()
+		l.inQueue.pushWaitBufLocked(l)
 		l.inQueue.readable = true
+		l.inQueue.mu.Unlock()
 		l.slaveWaiter.Notify(waiter.EventIn)
 	}
 
@@ -441,3 +445,5 @@ func (l *lineDiscipline) peek(b []byte) int {
 	}
 	return size
 }
+
+// LINT.ThenChange(../../fsimpl/devpts/line_discipline.go)

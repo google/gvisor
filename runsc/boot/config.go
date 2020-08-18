@@ -158,6 +158,9 @@ type Config struct {
 	// DebugLog is the path to log debug information to, if not empty.
 	DebugLog string
 
+	// PanicLog is the path to log GO's runtime messages, if not empty.
+	PanicLog string
+
 	// DebugLogFormat is the log format for debug.
 	DebugLogFormat string
 
@@ -183,6 +186,16 @@ type Config struct {
 
 	// SoftwareGSO indicates that software segmentation offload is enabled.
 	SoftwareGSO bool
+
+	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
+	TXChecksumOffload bool
+
+	// RXChecksumOffload indicates that RX Checksum Offload is enabled.
+	RXChecksumOffload bool
+
+	// QDisc indicates the type of queuening discipline to use by default
+	// for non-loopback interfaces.
+	QDisc QueueingDiscipline
 
 	// LogPackets indicates that all network packets should be logged.
 	LogPackets bool
@@ -234,8 +247,10 @@ type Config struct {
 	// ReferenceLeakMode sets reference leak check mode
 	ReferenceLeakMode refs.LeakMode
 
-	// OverlayfsStaleRead causes cached FDs to reopen after a file is opened for
-	// write to workaround overlayfs limitation on kernels before 4.19.
+	// OverlayfsStaleRead instructs the sandbox to assume that the root mount
+	// is on a Linux overlayfs mount, which does not necessarily preserve
+	// coherence between read-only and subsequent writable file descriptors
+	// representing the "same" file.
 	OverlayfsStaleRead bool
 
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
@@ -250,6 +265,18 @@ type Config struct {
 	// multiple tests are run in parallel, since there is no way to pass
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string
+
+	// CPUNumFromQuota sets CPU number count to available CPU quota, using
+	// least integer value greater than or equal to quota.
+	//
+	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
+	CPUNumFromQuota bool
+
+	// Enables VFS2 (not plumbled through yet).
+	VFS2 bool
+
+	// Enables FUSE usage (not plumbled through yet).
+	FUSE bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -260,6 +287,7 @@ func (c *Config) ToFlags() []string {
 		"--log=" + c.LogFilename,
 		"--log-format=" + c.LogFormat,
 		"--debug-log=" + c.DebugLog,
+		"--panic-log=" + c.PanicLog,
 		"--debug-log-format=" + c.DebugLogFormat,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
@@ -280,7 +308,13 @@ func (c *Config) ToFlags() []string {
 		"--ref-leak-mode=" + refsLeakModeToString(c.ReferenceLeakMode),
 		"--gso=" + strconv.FormatBool(c.HardwareGSO),
 		"--software-gso=" + strconv.FormatBool(c.SoftwareGSO),
+		"--rx-checksum-offload=" + strconv.FormatBool(c.RXChecksumOffload),
+		"--tx-checksum-offload=" + strconv.FormatBool(c.TXChecksumOffload),
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
+		"--qdisc=" + c.QDisc.String(),
+	}
+	if c.CPUNumFromQuota {
+		f = append(f, "--cpu-num-from-quota")
 	}
 	// Only include these if set since it is never to be used by users.
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
@@ -289,5 +323,14 @@ func (c *Config) ToFlags() []string {
 	if len(c.TestOnlyTestNameEnv) != 0 {
 		f = append(f, "--TESTONLY-test-name-env="+c.TestOnlyTestNameEnv)
 	}
+
+	if c.VFS2 {
+		f = append(f, "--vfs2=true")
+	}
+
+	if c.FUSE {
+		f = append(f, "--fuse=true")
+	}
+
 	return f
 }

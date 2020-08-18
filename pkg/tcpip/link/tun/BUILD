@@ -1,12 +1,26 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "tun",
-    srcs = ["tun_unsafe.go"],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/tun",
-    visibility = [
-        "//visibility:public",
+    srcs = [
+        "device.go",
+        "protocol.go",
+        "tun_unsafe.go",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/context",
+        "//pkg/refs",
+        "//pkg/sync",
+        "//pkg/syserror",
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/stack",
+        "//pkg/waiter",
     ],
 )

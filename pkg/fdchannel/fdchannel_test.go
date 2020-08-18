@@ -17,10 +17,11 @@ package fdchannel
 import (
 	"io/ioutil"
 	"os"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func TestSendRecvFD(t *testing.T) {

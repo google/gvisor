@@ -13,12 +13,14 @@
 // limitations under the License.
 
 #include <signal.h>
+
 #include <atomic>
 
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/platform_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -44,7 +46,8 @@ TEST(ConcurrencyTest, SingleProcessMultithreaded) {
 }
 
 // Test that multiple threads in this process continue to execute in parallel,
-// even if an unrelated second process is spawned.
+// even if an unrelated second process is spawned. Regression test for
+// b/32119508.
 TEST(ConcurrencyTest, MultiProcessMultithreaded) {
   // In PID 1, start TIDs 1 and 2, and put both to sleep.
   //
@@ -98,6 +101,7 @@ TEST(ConcurrencyTest, MultiProcessMultithreaded) {
 // Test that multiple processes can execute concurrently, even if one process
 // never yields.
 TEST(ConcurrencyTest, MultiProcessConcurrency) {
+  SKIP_IF(PlatformSupportMultiProcess() == PlatformSupport::NotSupported);
 
   pid_t child_pid = fork();
   if (child_pid == 0) {

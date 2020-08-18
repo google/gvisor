@@ -17,7 +17,7 @@ package gofer
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
@@ -127,6 +127,9 @@ func (cp cachePolicy) revalidate(ctx context.Context, name string, parent, child
 
 	childIops, ok := child.InodeOperations.(*inodeOperations)
 	if !ok {
+		if _, ok := child.InodeOperations.(*fifo); ok {
+			return false
+		}
 		panic(fmt.Sprintf("revalidating inode operations of unknown type %T", child.InodeOperations))
 	}
 	parentIops, ok := parent.InodeOperations.(*inodeOperations)

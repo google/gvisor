@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ import (
 	"context"
 	"fmt"
 
-	"flag"
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // NewHelp returns a help command for the given commander.
@@ -65,16 +65,10 @@ func (h *Help) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}
 	switch f.NArg() {
 	case 0:
 		fmt.Fprintf(h.cdr.Output, "Usage: %s <flags> <subcommand> <subcommand args>\n\n", h.cdr.Name())
-		fmt.Fprintf(h.cdr.Output, `runsc is a command line client for running applications packaged in the Open
-Container Initiative (OCI) format. Applications run by runsc are run in an
-isolated gVisor sandbox that emulates a Linux environment.
+		fmt.Fprintf(h.cdr.Output, `runsc is the gVisor container runtime.
 
-gVisor is a user-space kernel, written in Go, that implements a substantial
-portion of the Linux system call interface. It provides an additional layer
-of isolation between running applications and the host operating system.
-
-Functionality is provided by subcommands. For additonal help on individual
-subcommands use "%s %s <subcommand>".
+Functionality is provided by subcommands. For help with a specific subcommand,
+use "%s %s <subcommand>".
 
 `, h.cdr.Name(), h.Name())
 		h.cdr.VisitGroups(func(g *subcommands.CommandGroup) {

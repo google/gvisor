@@ -16,7 +16,7 @@ package ext
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -26,33 +26,15 @@ import (
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
-
-	// flags is the same as vfs.OpenOptions.Flags which are passed to
-	// vfs.FilesystemImpl.OpenAt.
-	// TODO(b/134676337): syscalls like read(2), write(2), fchmod(2), fchown(2),
-	// fgetxattr(2), ioctl(2), mmap(2) should fail with EBADF if O_PATH is set.
-	// Only close(2), fstat(2), fstatfs(2) should work.
-	flags uint32
+	vfs.LockFD
 }
 
 func (fd *fileDescription) filesystem() *filesystem {
-	return fd.vfsfd.VirtualDentry().Mount().Filesystem().Impl().(*filesystem)
+	return fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 }
 
 func (fd *fileDescription) inode() *inode {
-	return fd.vfsfd.VirtualDentry().Dentry().Impl().(*dentry).inode
-}
-
-// StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.
-func (fd *fileDescription) StatusFlags(ctx context.Context) (uint32, error) {
-	return fd.flags, nil
-}
-
-// SetStatusFlags implements vfs.FileDescriptionImpl.SetStatusFlags.
-func (fd *fileDescription) SetStatusFlags(ctx context.Context, flags uint32) error {
-	// None of the flags settable by fcntl(F_SETFL) are supported, so this is a
-	// no-op.
-	return nil
+	return fd.vfsfd.Dentry().Impl().(*dentry).inode
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.

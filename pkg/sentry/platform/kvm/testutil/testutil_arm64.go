@@ -19,16 +19,17 @@ package testutil
 import (
 	"fmt"
 	"reflect"
-	"syscall"
+
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // SetTestTarget sets the rip appropriately.
-func SetTestTarget(regs *syscall.PtraceRegs, fn func()) {
+func SetTestTarget(regs *arch.Registers, fn func()) {
 	regs.Pc = uint64(reflect.ValueOf(fn).Pointer())
 }
 
 // SetTouchTarget sets rax appropriately.
-func SetTouchTarget(regs *syscall.PtraceRegs, target *uintptr) {
+func SetTouchTarget(regs *arch.Registers, target *uintptr) {
 	if target != nil {
 		regs.Regs[8] = uint64(reflect.ValueOf(target).Pointer())
 	} else {
@@ -37,23 +38,27 @@ func SetTouchTarget(regs *syscall.PtraceRegs, target *uintptr) {
 }
 
 // RewindSyscall rewinds a syscall RIP.
-func RewindSyscall(regs *syscall.PtraceRegs) {
+func RewindSyscall(regs *arch.Registers) {
 	regs.Pc -= 4
 }
 
 // SetTestRegs initializes registers to known values.
-func SetTestRegs(regs *syscall.PtraceRegs) {
+func SetTestRegs(regs *arch.Registers) {
 	for i := 0; i <= 30; i++ {
 		regs.Regs[i] = uint64(i) + 1
 	}
 }
 
 // CheckTestRegs checks that registers were twiddled per TwiddleRegs.
-func CheckTestRegs(regs *syscall.PtraceRegs, full bool) (err error) {
+func CheckTestRegs(regs *arch.Registers, full bool) (err error) {
 	for i := 0; i <= 30; i++ {
 		if need := ^uint64(i + 1); regs.Regs[i] != need {
 			err = addRegisterMismatch(err, fmt.Sprintf("R%d", i), regs.Regs[i], need)
 		}
+	}
+	// Check tls.
+	if need := ^uint64(11); regs.TPIDR_EL0 != need {
+		err = addRegisterMismatch(err, "tpdir_el0", regs.TPIDR_EL0, need)
 	}
 	return
 }

@@ -19,6 +19,7 @@ package cgroup
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -30,29 +31,31 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
 	cgroupRoot = "/sys/fs/cgroup"
 )
 
-var controllers = map[string]controller{
-	"blkio":    &blockIO{},
-	"cpu":      &cpu{},
-	"cpuset":   &cpuSet{},
-	"memory":   &memory{},
-	"net_cls":  &networkClass{},
-	"net_prio": &networkPrio{},
+var controllers = map[string]config{
+	"blkio":    config{ctrlr: &blockIO{}},
+	"cpu":      config{ctrlr: &cpu{}},
+	"cpuset":   config{ctrlr: &cpuSet{}},
+	"hugetlb":  config{ctrlr: &hugeTLB{}, optional: true},
+	"memory":   config{ctrlr: &memory{}},
+	"net_cls":  config{ctrlr: &networkClass{}},
+	"net_prio": config{ctrlr: &networkPrio{}},
+	"pids":     config{ctrlr: &pids{}},
 
 	// These controllers either don't have anything in the OCI spec or is
-	// irrevalant for a sandbox, e.g. pids.
-	"devices":    &noop{},
-	"freezer":    &noop{},
-	"perf_event": &noop{},
-	"pids":       &noop{},
-	"systemd":    &noop{},
+	// irrelevant for a sandbox.
+	"devices":    config{ctrlr: &noop{}},
+	"freezer":    config{ctrlr: &noop{}},
+	"perf_event": config{ctrlr: &noop{}},
+	"rdma":       config{ctrlr: &noop{}, optional: true},
+	"systemd":    config{ctrlr: &noop{}},
 }
 
 func setOptionalValueInt(path, name string, val *int64) error {
@@ -89,7 +92,17 @@ func setOptionalValueUint16(path, name string, val *uint16) error {
 
 func setValue(path, name, data string) error {
 	fullpath := filepath.Join(path, name)
-	return ioutil.WriteFile(fullpath, []byte(data), 0700)
+
+	// Retry writes on EINTR; see:
+	//    https://github.com/golang/go/issues/38033
+	for {
+		err := ioutil.WriteFile(fullpath, []byte(data), 0700)
+		if err == nil {
+			return nil
+		} else if !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+	}
 }
 
 func getValue(path, name string) (string, error) {
@@ -99,6 +112,14 @@ func getValue(path, name string) (string, error) {
 		return "", err
 	}
 	return string(out), nil
+}
+
+func getInt(path, name string) (int, error) {
+	s, err := getValue(path, name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(s))
 }
 
 // fillFromAncestor sets the value of a cgroup file from the first ancestor
@@ -114,15 +135,23 @@ func fillFromAncestor(path string) (string, error) {
 		return val, nil
 	}
 
-	// File is not set, recurse to parent and then  set here.
+	// File is not set, recurse to parent and then set here.
 	name := filepath.Base(path)
 	parent := filepath.Dir(filepath.Dir(path))
 	val, err = fillFromAncestor(filepath.Join(parent, name))
 	if err != nil {
 		return "", err
 	}
-	if err := ioutil.WriteFile(path, []byte(val), 0700); err != nil {
-		return "", err
+
+	// Retry writes on EINTR; see:
+	//    https://github.com/golang/go/issues/38033
+	for {
+		err := ioutil.WriteFile(path, []byte(val), 0700)
+		if err == nil {
+			break
+		} else if !errors.Is(err, syscall.EINTR) {
+			return "", err
+		}
 	}
 	return val, nil
 }
@@ -188,8 +217,9 @@ func LoadPaths(pid string) (map[string]string, error) {
 	return paths, nil
 }
 
-// Cgroup represents a group inside all controllers. For example: Name='/foo/bar'
-// maps to /sys/fs/cgroup/<controller>/foo/bar on all controllers.
+// Cgroup represents a group inside all controllers. For example:
+//   Name='/foo/bar' maps to /sys/fs/cgroup/<controller>/foo/bar on
+//   all controllers.
 type Cgroup struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
@@ -234,16 +264,20 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 
 	// The Cleanup object cleans up partially created cgroups when an error occurs.
 	// Errors occuring during cleanup itself are ignored.
-	clean := specutils.MakeCleanup(func() { _ = c.Uninstall() })
+	clean := cleanup.Make(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
-	for key, ctrl := range controllers {
+	for key, cfg := range controllers {
 		path := c.makePath(key)
 		if err := os.MkdirAll(path, 0755); err != nil {
+			if cfg.optional && errors.Is(err, syscall.EROFS) {
+				log.Infof("Skipping cgroup %q", key)
+				continue
+			}
 			return err
 		}
 		if res != nil {
-			if err := ctrl.set(res, path); err != nil {
+			if err := cfg.ctrlr.set(res, path); err != nil {
 				return err
 			}
 		}
@@ -313,14 +347,33 @@ func (c *Cgroup) Join() (func(), error) {
 	}
 
 	// Now join the cgroups.
-	for key := range controllers {
+	for key, cfg := range controllers {
 		path := c.makePath(key)
 		log.Debugf("Joining cgroup %q", path)
 		if err := setValue(path, "cgroup.procs", "0"); err != nil {
+			if cfg.optional && os.IsNotExist(err) {
+				continue
+			}
 			return undo, err
 		}
 	}
 	return undo, nil
+}
+
+func (c *Cgroup) CPUQuota() (float64, error) {
+	path := c.makePath("cpu")
+	quota, err := getInt(path, "cpu.cfs_quota_us")
+	if err != nil {
+		return -1, err
+	}
+	period, err := getInt(path, "cpu.cfs_period_us")
+	if err != nil {
+		return -1, err
+	}
+	if quota <= 0 || period <= 0 {
+		return -1, err
+	}
+	return float64(quota) / float64(period), nil
 }
 
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.
@@ -349,6 +402,11 @@ func (c *Cgroup) makePath(controllerName string) string {
 		path = filepath.Join(parent, c.Name)
 	}
 	return filepath.Join(cgroupRoot, controllerName, path)
+}
+
+type config struct {
+	ctrlr    controller
+	optional bool
 }
 
 type controller interface {
@@ -406,7 +464,13 @@ func (*cpu) set(spec *specs.LinuxResources, path string) error {
 	if err := setOptionalValueInt(path, "cpu.cfs_quota_us", spec.CPU.Quota); err != nil {
 		return err
 	}
-	return setOptionalValueUint(path, "cpu.cfs_period_us", spec.CPU.Period)
+	if err := setOptionalValueUint(path, "cpu.cfs_period_us", spec.CPU.Period); err != nil {
+		return err
+	}
+	if err := setOptionalValueUint(path, "cpu.rt_period_us", spec.CPU.RealtimePeriod); err != nil {
+		return err
+	}
+	return setOptionalValueInt(path, "cpu.rt_runtime_us", spec.CPU.RealtimeRuntime)
 }
 
 type cpuSet struct{}
@@ -447,13 +511,17 @@ func (*blockIO) set(spec *specs.LinuxResources, path string) error {
 	}
 
 	for _, dev := range spec.BlockIO.WeightDevice {
-		val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, dev.Weight)
-		if err := setValue(path, "blkio.weight_device", val); err != nil {
-			return err
+		if dev.Weight != nil {
+			val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, *dev.Weight)
+			if err := setValue(path, "blkio.weight_device", val); err != nil {
+				return err
+			}
 		}
-		val = fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, dev.LeafWeight)
-		if err := setValue(path, "blkio.leaf_weight_device", val); err != nil {
-			return err
+		if dev.LeafWeight != nil {
+			val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, *dev.LeafWeight)
+			if err := setValue(path, "blkio.leaf_weight_device", val); err != nil {
+				return err
+			}
 		}
 	}
 	if err := setThrottle(path, "blkio.throttle.read_bps_device", spec.BlockIO.ThrottleReadBpsDevice); err != nil {
@@ -496,6 +564,29 @@ func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
 	for _, prio := range spec.Network.Priorities {
 		val := fmt.Sprintf("%s %d", prio.Name, prio.Priority)
 		if err := setValue(path, "net_prio.ifpriomap", val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type pids struct{}
+
+func (*pids) set(spec *specs.LinuxResources, path string) error {
+	if spec.Pids == nil || spec.Pids.Limit <= 0 {
+		return nil
+	}
+	val := strconv.FormatInt(spec.Pids.Limit, 10)
+	return setValue(path, "pids.max", val)
+}
+
+type hugeTLB struct{}
+
+func (*hugeTLB) set(spec *specs.LinuxResources, path string) error {
+	for _, limit := range spec.HugepageLimits {
+		name := fmt.Sprintf("hugetlb.%s.limit_in_bytes", limit.Pagesize)
+		val := strconv.FormatUint(limit.Limit, 10)
+		if err := setValue(path, name, val); err != nil {
 			return err
 		}
 	}

@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,7 +8,7 @@ go_template_instance(
     out = "atomicptr_bucket_unsafe.go",
     package = "futex",
     suffix = "Bucket",
-    template = "//third_party/gvsync:generic_atomicptr",
+    template = "//pkg/sync:generic_atomicptr",
     types = {
         "Value": "bucket",
     },
@@ -34,15 +33,15 @@ go_library(
         "futex.go",
         "waiter_list.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/futex",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -50,6 +49,10 @@ go_test(
     name = "futex_test",
     size = "small",
     srcs = ["futex_test.go"],
-    embed = [":futex"],
-    deps = ["//pkg/sentry/usermem"],
+    library = ":futex",
+    deps = [
+        "//pkg/context",
+        "//pkg/sync",
+        "//pkg/usermem",
+    ],
 )

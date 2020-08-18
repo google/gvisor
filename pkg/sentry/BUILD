@@ -1,8 +1,8 @@
-# This BUILD file defines a package_group that allows for interdependencies for
-# sentry-internal packages.
-
 package(licenses = ["notice"])
 
+# The "internal" package_group should be used as much as possible by packages
+# that should remain Sentry-internal (i.e. not be exposed directly to command
+# line tooling or APIs).
 package_group(
     name = "internal",
     packages = [

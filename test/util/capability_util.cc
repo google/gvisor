@@ -36,10 +36,10 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
   ASSIGN_OR_RETURN_ERRNO(
       auto child_stack,
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
-  int const child_pid =
-      clone(+[](void*) { return 0; },
-            reinterpret_cast<void*>(child_stack.addr() + kPageSize),
-            CLONE_NEWUSER | SIGCHLD, /* arg = */ nullptr);
+  int const child_pid = clone(
+      +[](void*) { return 0; },
+      reinterpret_cast<void*>(child_stack.addr() + kPageSize),
+      CLONE_NEWUSER | SIGCHLD, /* arg = */ nullptr);
   if (child_pid > 0) {
     int status;
     int const ret = waitpid(child_pid, &status, /* options = */ 0);
@@ -63,13 +63,13 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
     // is in a chroot environment (i.e., the caller's root directory does
     // not match the root directory of the mount namespace in which it
     // resides)."
-    std::cerr << "clone(CLONE_NEWUSER) failed with EPERM";
+    std::cerr << "clone(CLONE_NEWUSER) failed with EPERM" << std::endl;
     return false;
   } else if (errno == EUSERS) {
     // "(since Linux 3.11) CLONE_NEWUSER was specified in flags, and the call
     // would cause the limit on the number of nested user namespaces to be
     // exceeded. See user_namespaces(7)."
-    std::cerr << "clone(CLONE_NEWUSER) failed with EUSERS";
+    std::cerr << "clone(CLONE_NEWUSER) failed with EUSERS" << std::endl;
     return false;
   } else {
     // Unexpected error code; indicate an actual error.

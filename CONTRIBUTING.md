@@ -32,11 +32,13 @@ will need to be added to the appropriate `BUILD` files, and the `:gopath` target
 will need to be re-run to generate appropriate symlinks in the `GOPATH`
 directory tree.
 
+Dependencies can be added by using `go mod get`. In order to keep the
+`WORKSPACE` file in sync, run `tools/go_mod.sh` in place of `go mod`.
+
 ### Coding Guidelines
 
-All Go code should conform to the [Go style guidelines][gostyle]. C++ code
-should conform to the [Google C++ Style Guide][cppstyle] and the guidelines
-described for [tests][teststyle].
+All code should comply with the [style guide](g3doc/style.md). Note that code
+may be automatically formatted per the guidelines when merged.
 
 As a secure runtime, we need to maintain the safety of all of code included in
 gVisor. The following rules help mitigate issues.
@@ -46,7 +48,7 @@ Definitions for the rules below:
 `core`:
 
 *   `//pkg/sentry/...`
-*   Transitive dependencies in `//pkg/...`, `//third_party/...`.
+*   Transitive dependencies in `//pkg/...`, etc.
 
 `runsc`:
 
@@ -104,32 +106,15 @@ ignored.
 
 ### Build and test with Docker
 
-`scripts/dev.sh` is a convenient script that builds and installs `runsc` as a
-new Docker runtime for you. The scripts tries to extract the runtime name from
-your local environment and will print it at the end. You can also customize it.
-The script creates one regular runtime and another with debug flags enabled.
-Here are a few examples:
+Running `make dev` is a convenient way to build and install `runsc` as a Docker
+runtime. The output of this command will show the runtimes installed.
+
+You may use `make refresh` to refresh the binary after any changes. For example:
 
 ```bash
-# Default case (inside branch my-branch)
-$ scripts/dev.sh
-...
-Runtimes my-branch and my-branch-d (debug enabled) setup.
-Use --runtime=my-branch with your Docker command.
-  docker run --rm --runtime=my-branch --rm hello-world
-
-If you rebuild, use scripts/dev.sh --refresh.
-Logs are in: /tmp/my-branch/logs
-
-# --refresh just updates the runtime binary and doesn't restart docker.
-$ git/my_branch> scripts/dev.sh --refresh
-
-# Using a custom runtime name
-$ git/my_branch> scripts/dev.sh my-runtime
-...
-Runtimes my-runtime and my-runtime-d (debug enabled) setup.
-Use --runtime=my-runtime with your Docker command.
-  docker run --rm --runtime=my-runtime --rm hello-world
+make dev
+docker run --rm --runtime=my-branch --rm hello-world
+make refresh
 ```
 
 ### The small print
@@ -138,10 +123,7 @@ Contributions made by corporations are covered by a different agreement than the
 one above, the
 [Software Grant and Corporate Contributor License Agreement][gccla].
 
-[cppstyle]: https://google.github.io/styleguide/cppguide.html
 [gcla]: https://cla.developers.google.com/about/google-individual
 [gccla]: https://cla.developers.google.com/about/google-corporate
 [github]: https://github.com/google/gvisor/compare
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
-[gostyle]: https://github.com/golang/go/wiki/CodeReviewComments
-[teststyle]: ./test/

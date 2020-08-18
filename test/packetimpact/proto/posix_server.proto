@@ -1,0 +1,230 @@
+// Copyright 2020 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package posix_server;
+
+message SockaddrIn {
+  int32 family = 1;
+  uint32 port = 2;
+  bytes addr = 3;
+}
+
+message SockaddrIn6 {
+  uint32 family = 1;
+  uint32 port = 2;
+  uint32 flowinfo = 3;
+  bytes addr = 4;
+  uint32 scope_id = 5;
+}
+
+message Sockaddr {
+  oneof sockaddr {
+    SockaddrIn in = 1;
+    SockaddrIn6 in6 = 2;
+  }
+}
+
+message Timeval {
+  int64 seconds = 1;
+  int64 microseconds = 2;
+}
+
+message SockOptVal {
+  oneof val {
+    bytes bytesval = 1;
+    int32 intval = 2;
+    Timeval timeval = 3;
+  }
+}
+
+// Request and Response pairs for each Posix service RPC call, sorted.
+
+message AcceptRequest {
+  int32 sockfd = 1;
+}
+
+message AcceptResponse {
+  int32 fd = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  Sockaddr addr = 3;
+}
+
+message BindRequest {
+  int32 sockfd = 1;
+  Sockaddr addr = 2;
+}
+
+message BindResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message CloseRequest {
+  int32 fd = 1;
+}
+
+message CloseResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message ConnectRequest {
+  int32 sockfd = 1;
+  Sockaddr addr = 2;
+}
+
+message ConnectResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message FcntlRequest {
+  int32 fd = 1;
+  int32 cmd = 2;
+  int32 arg = 3;
+}
+
+message FcntlResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
+message GetSockNameRequest {
+  int32 sockfd = 1;
+}
+
+message GetSockNameResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  Sockaddr addr = 3;
+}
+
+message GetSockOptRequest {
+  int32 sockfd = 1;
+  int32 level = 2;
+  int32 optname = 3;
+  int32 optlen = 4;
+  enum SockOptType {
+    UNSPECIFIED = 0;
+    BYTES = 1;
+    INT = 2;
+    TIME = 3;
+  }
+  SockOptType type = 5;
+}
+
+message GetSockOptResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  SockOptVal optval = 3;
+}
+
+message ListenRequest {
+  int32 sockfd = 1;
+  int32 backlog = 2;
+}
+
+message ListenResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message SendRequest {
+  int32 sockfd = 1;
+  bytes buf = 2;
+  int32 flags = 3;
+}
+
+message SendResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message SendToRequest {
+  int32 sockfd = 1;
+  bytes buf = 2;
+  int32 flags = 3;
+  Sockaddr dest_addr = 4;
+}
+
+message SendToResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message SetSockOptRequest {
+  int32 sockfd = 1;
+  int32 level = 2;
+  int32 optname = 3;
+  SockOptVal optval = 4;
+}
+
+message SetSockOptResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message SocketRequest {
+  int32 domain = 1;
+  int32 type = 2;
+  int32 protocol = 3;
+}
+
+message SocketResponse {
+  int32 fd = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
+message RecvRequest {
+  int32 sockfd = 1;
+  int32 len = 2;
+  int32 flags = 3;
+}
+
+message RecvResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  bytes buf = 3;
+}
+
+service Posix {
+  // Call accept() on the DUT.
+  rpc Accept(AcceptRequest) returns (AcceptResponse);
+  // Call bind() on the DUT.
+  rpc Bind(BindRequest) returns (BindResponse);
+  // Call close() on the DUT.
+  rpc Close(CloseRequest) returns (CloseResponse);
+  // Call connect() on the DUT.
+  rpc Connect(ConnectRequest) returns (ConnectResponse);
+  // Call fcntl() on the DUT.
+  rpc Fcntl(FcntlRequest) returns (FcntlResponse);
+  // Call getsockname() on the DUT.
+  rpc GetSockName(GetSockNameRequest) returns (GetSockNameResponse);
+  // Call getsockopt() on the DUT.
+  rpc GetSockOpt(GetSockOptRequest) returns (GetSockOptResponse);
+  // Call listen() on the DUT.
+  rpc Listen(ListenRequest) returns (ListenResponse);
+  // Call send() on the DUT.
+  rpc Send(SendRequest) returns (SendResponse);
+  // Call sendto() on the DUT.
+  rpc SendTo(SendToRequest) returns (SendToResponse);
+  // Call setsockopt() on the DUT.
+  rpc SetSockOpt(SetSockOptRequest) returns (SetSockOptResponse);
+  // Call socket() on the DUT.
+  rpc Socket(SocketRequest) returns (SocketResponse);
+  // Call recv() on the DUT.
+  rpc Recv(RecvRequest) returns (RecvResponse);
+}

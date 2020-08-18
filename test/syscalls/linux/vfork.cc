@@ -191,5 +191,5 @@ int main(int argc, char** argv) {
     return gvisor::testing::RunChild();
   }
 
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

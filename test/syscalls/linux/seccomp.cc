@@ -25,6 +25,7 @@
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
+
 #include <atomic>
 
 #include "gmock/gmock.h"
@@ -48,7 +49,12 @@ namespace testing {
 namespace {
 
 // A syscall not implemented by Linux that we don't expect to be called.
+#ifdef __x86_64__
 constexpr uint32_t kFilteredSyscall = SYS_vserver;
+#elif __aarch64__
+// Use the last of arch_specific_syscalls which are not implemented on arm64.
+constexpr uint32_t kFilteredSyscall = __NR_arch_specific_syscall + 15;
+#endif
 
 // Applies a seccomp-bpf filter that returns `filtered_result` for
 // `sysno` and allows all other syscalls. Async-signal-safe.
@@ -64,20 +70,27 @@ void ApplySeccompFilter(uint32_t sysno, uint32_t filtered_result,
   MaybeSave();
 
   struct sock_filter filter[] = {
-      // A = seccomp_data.arch
-      BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 4),
-      // if (A != AUDIT_ARCH_X86_64) goto kill
-      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 0, 4),
-      // A = seccomp_data.nr
-      BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 0),
-      // if (A != sysno) goto allow
-      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, sysno, 0, 1),
-      // return filtered_result
-      BPF_STMT(BPF_RET | BPF_K, filtered_result),
-      // allow: return SECCOMP_RET_ALLOW
-      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-      // kill: return SECCOMP_RET_KILL
-      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
+    // A = seccomp_data.arch
+    BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 4),
+#if defined(__x86_64__)
+    // if (A != AUDIT_ARCH_X86_64) goto kill
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 0, 4),
+#elif defined(__aarch64__)
+    // if (A != AUDIT_ARCH_AARCH64) goto kill
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 0, 4),
+#else
+#error "Unknown architecture"
+#endif
+    // A = seccomp_data.nr
+    BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 0),
+    // if (A != sysno) goto allow
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, sysno, 0, 1),
+    // return filtered_result
+    BPF_STMT(BPF_RET | BPF_K, filtered_result),
+    // allow: return SECCOMP_RET_ALLOW
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    // kill: return SECCOMP_RET_KILL
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
   };
   struct sock_fprog prog;
   prog.len = ABSL_ARRAYSIZE(filter);
@@ -112,7 +125,8 @@ TEST(SeccompTest, RetKillCausesDeathBySIGSYS) {
   pid_t const pid = fork();
   if (pid == 0) {
     // Register a signal handler for SIGSYS that we don't expect to be invoked.
-    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    RegisterSignalHandler(
+        SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
     syscall(kFilteredSyscall);
     TEST_CHECK_MSG(false, "Survived invocation of test syscall");
@@ -131,7 +145,8 @@ TEST(SeccompTest, RetKillOnlyKillsOneThread) {
   pid_t const pid = fork();
   if (pid == 0) {
     // Register a signal handler for SIGSYS that we don't expect to be invoked.
-    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    RegisterSignalHandler(
+        SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
     // Pass CLONE_VFORK to block the original thread in the child process until
     // the clone thread exits with SIGSYS.
@@ -171,9 +186,12 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
           TEST_CHECK(info->si_errno == kTrapValue);
           TEST_CHECK(info->si_call_addr != nullptr);
           TEST_CHECK(info->si_syscall == kFilteredSyscall);
-#ifdef __x86_64__
+#if defined(__x86_64__)
           TEST_CHECK(info->si_arch == AUDIT_ARCH_X86_64);
           TEST_CHECK(uc->uc_mcontext.gregs[REG_RAX] == kFilteredSyscall);
+#elif defined(__aarch64__)
+          TEST_CHECK(info->si_arch == AUDIT_ARCH_AARCH64);
+          TEST_CHECK(uc->uc_mcontext.regs[8] == kFilteredSyscall);
 #endif  // defined(__x86_64__)
           _exit(0);
         });
@@ -345,7 +363,8 @@ TEST(SeccompTest, LeastPermissiveFilterReturnValueApplies) {
   // one that causes the kill that should be ignored.
   pid_t const pid = fork();
   if (pid == 0) {
-    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    RegisterSignalHandler(
+        SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_TRACE);
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_ERRNO | ENOTNAM);
@@ -402,5 +421,5 @@ int main(int argc, char** argv) {
   }
 
   gvisor::testing::TestInit(&argc, &argv);
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

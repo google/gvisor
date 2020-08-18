@@ -72,6 +72,10 @@ func (s *scope) deepLookup(n string) *symbol {
 }
 
 func (s *scope) add(name string, kind SymKind, pos token.Pos) {
+	if s.syms[name] != nil {
+		return
+	}
+
 	s.syms[name] = &symbol{
 		kind:  kind,
 		pos:   pos,

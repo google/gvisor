@@ -115,6 +115,8 @@ const (
 )
 
 // SignalSet is a signal mask with a bit corresponding to each signal.
+//
+// +marshal
 type SignalSet uint64
 
 // SignalSetSize is the size in bytes of a SignalSet.

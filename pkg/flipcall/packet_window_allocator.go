@@ -134,7 +134,7 @@ func (pwa *PacketWindowAllocator) Allocate(size int) (PacketWindowDescriptor, er
 	start := pwa.nextAlloc
 	pwa.nextAlloc = end
 	return PacketWindowDescriptor{
-		FD:     pwa.fd,
+		FD:     pwa.FD(),
 		Offset: start,
 		Length: size,
 	}, nil
@@ -158,7 +158,7 @@ func (pwa *PacketWindowAllocator) ensureFileSize(min int64) error {
 		}
 		newSize = newNewSize
 	}
-	if err := syscall.Ftruncate(pwa.fd, newSize); err != nil {
+	if err := syscall.Ftruncate(pwa.FD(), newSize); err != nil {
 		return fmt.Errorf("ftruncate failed: %v", err)
 	}
 	pwa.fileSize = newSize

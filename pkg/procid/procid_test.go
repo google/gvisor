@@ -17,9 +17,10 @@ package procid
 import (
 	"os"
 	"runtime"
-	"sync"
 	"syscall"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // runOnMain is used to send functions to run on the main (initial) thread.

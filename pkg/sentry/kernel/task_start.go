@@ -17,11 +17,14 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // TaskConfig defines the configuration of a new Task (see below).
@@ -63,9 +66,8 @@ type TaskConfig struct {
 	// Niceness is the niceness of the new task.
 	Niceness int
 
-	// If NetworkNamespaced is true, the new task should observe a non-root
-	// network namespace.
-	NetworkNamespaced bool
+	// NetworkNamespace is the network namespace to be used for the new task.
+	NetworkNamespace *inet.Namespace
 
 	// AllowedCPUMask contains the cpus that this task can run on.
 	AllowedCPUMask sched.CPUSet
@@ -79,6 +81,16 @@ type TaskConfig struct {
 	// AbstractSocketNamespace is the AbstractSocketNamespace of the new task.
 	AbstractSocketNamespace *AbstractSocketNamespace
 
+	// MountNamespaceVFS2 is the MountNamespace of the new task.
+	MountNamespaceVFS2 *vfs.MountNamespace
+
+	// RSeqAddr is a pointer to the the userspace linux.RSeq structure.
+	RSeqAddr usermem.Addr
+
+	// RSeqSignature is the signature that the rseq abort IP must be signed
+	// with.
+	RSeqSignature uint32
+
 	// ContainerID is the container the new task belongs to.
 	ContainerID string
 }
@@ -90,8 +102,11 @@ func (ts *TaskSet) NewTask(cfg *TaskConfig) (*Task, error) {
 	t, err := ts.newTask(cfg)
 	if err != nil {
 		cfg.TaskContext.release()
-		cfg.FSContext.DecRef()
-		cfg.FDTable.DecRef()
+		cfg.FSContext.DecRef(t)
+		cfg.FDTable.DecRef(t)
+		if cfg.MountNamespaceVFS2 != nil {
+			cfg.MountNamespaceVFS2.DecRef(t)
+		}
 		return nil, err
 	}
 	return t, nil
@@ -108,26 +123,29 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 			parent:   cfg.Parent,
 			children: make(map[*Task]struct{}),
 		},
-		runState:        (*runApp)(nil),
-		interruptChan:   make(chan struct{}, 1),
-		signalMask:      cfg.SignalMask,
-		signalStack:     arch.SignalStack{Flags: arch.SignalStackFlagDisable},
-		tc:              *tc,
-		fsContext:       cfg.FSContext,
-		fdTable:         cfg.FDTable,
-		p:               cfg.Kernel.Platform.NewContext(),
-		k:               cfg.Kernel,
-		ptraceTracees:   make(map[*Task]struct{}),
-		allowedCPUMask:  cfg.AllowedCPUMask.Copy(),
-		ioUsage:         &usage.IO{},
-		niceness:        cfg.Niceness,
-		netns:           cfg.NetworkNamespaced,
-		utsns:           cfg.UTSNamespace,
-		ipcns:           cfg.IPCNamespace,
-		abstractSockets: cfg.AbstractSocketNamespace,
-		rseqCPU:         -1,
-		futexWaiter:     futex.NewWaiter(),
-		containerID:     cfg.ContainerID,
+		runState:           (*runApp)(nil),
+		interruptChan:      make(chan struct{}, 1),
+		signalMask:         cfg.SignalMask,
+		signalStack:        arch.SignalStack{Flags: arch.SignalStackFlagDisable},
+		tc:                 *tc,
+		fsContext:          cfg.FSContext,
+		fdTable:            cfg.FDTable,
+		p:                  cfg.Kernel.Platform.NewContext(),
+		k:                  cfg.Kernel,
+		ptraceTracees:      make(map[*Task]struct{}),
+		allowedCPUMask:     cfg.AllowedCPUMask.Copy(),
+		ioUsage:            &usage.IO{},
+		niceness:           cfg.Niceness,
+		netns:              cfg.NetworkNamespace,
+		utsns:              cfg.UTSNamespace,
+		ipcns:              cfg.IPCNamespace,
+		abstractSockets:    cfg.AbstractSocketNamespace,
+		mountNamespaceVFS2: cfg.MountNamespaceVFS2,
+		rseqCPU:            -1,
+		rseqAddr:           cfg.RSeqAddr,
+		rseqSignature:      cfg.RSeqSignature,
+		futexWaiter:        futex.NewWaiter(),
+		containerID:        cfg.ContainerID,
 	}
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
@@ -154,10 +172,10 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	// Below this point, newTask is expected not to fail (there is no rollback
 	// of assignTIDsLocked or any of the following).
 
-	// Logging on t's behalf will panic if t.logPrefix hasn't been initialized.
-	// This is the earliest point at which we can do so (since t now has thread
-	// IDs).
-	t.updateLogPrefixLocked()
+	// Logging on t's behalf will panic if t.logPrefix hasn't been
+	// initialized. This is the earliest point at which we can do so
+	// (since t now has thread IDs).
+	t.updateInfoLocked()
 
 	if cfg.InheritParent != nil {
 		t.parent = cfg.InheritParent.parent

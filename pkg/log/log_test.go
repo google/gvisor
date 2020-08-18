@@ -16,17 +16,22 @@ package log
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
 type testWriter struct {
 	lines []string
 	fail  bool
+	limit int
 }
 
 func (w *testWriter) Write(bytes []byte) (int, error) {
 	if w.fail {
 		return 0, fmt.Errorf("simulated failure")
+	}
+	if w.limit > 0 && len(w.lines) >= w.limit {
+		return len(bytes), nil
 	}
 	w.lines = append(w.lines, string(bytes))
 	return len(bytes), nil
@@ -47,7 +52,7 @@ func TestDropMessages(t *testing.T) {
 		t.Fatalf("Write should have failed")
 	}
 
-	fmt.Printf("writer: %+v\n", w)
+	fmt.Printf("writer: %#v\n", &w)
 
 	tw.fail = false
 	if _, err := w.Write([]byte("line 2\n")); err != nil {
@@ -66,5 +71,35 @@ func TestDropMessages(t *testing.T) {
 		if l == expected[i] {
 			t.Fatalf("line %d doesn't match, got: %v, expected: %v", i, l, expected[i])
 		}
+	}
+}
+
+func TestCaller(t *testing.T) {
+	tw := &testWriter{}
+	e := GoogleEmitter{Writer: &Writer{Next: tw}}
+	bl := &BasicLogger{
+		Emitter: e,
+		Level:   Debug,
+	}
+	bl.Debugf("testing...\n") // Just for file + line.
+	if len(tw.lines) != 1 {
+		t.Errorf("expected 1 line, got %d", len(tw.lines))
+	}
+	if !strings.Contains(tw.lines[0], "log_test.go") {
+		t.Errorf("expected log_test.go, got %q", tw.lines[0])
+	}
+}
+
+func BenchmarkGoogleLogging(b *testing.B) {
+	tw := &testWriter{
+		limit: 1, // Only record one message.
+	}
+	e := GoogleEmitter{Writer: &Writer{Next: tw}}
+	bl := &BasicLogger{
+		Emitter: e,
+		Level:   Debug,
+	}
+	for i := 0; i < b.N; i++ {
+		bl.Debugf("hello %d, %d, %d", 1, 2, 3)
 	}
 }

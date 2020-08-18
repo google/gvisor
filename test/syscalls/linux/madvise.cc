@@ -139,7 +139,7 @@ TEST(MadviseDontneedTest, IgnoresPermissions) {
 TEST(MadviseDontforkTest, AddressLength) {
   auto m =
       ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
-  char *addr = static_cast<char *>(m.ptr());
+  char* addr = static_cast<char*>(m.ptr());
 
   // Address must be page aligned.
   EXPECT_THAT(madvise(addr + 1, kPageSize, MADV_DONTFORK),
@@ -168,9 +168,9 @@ TEST(MadviseDontforkTest, DontforkShared) {
   Mapping m = ASSERT_NO_ERRNO_AND_VALUE(Mmap(
       nullptr, kPageSize * 2, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0));
 
-  const Mapping ms1 = Mapping(reinterpret_cast<void *>(m.addr()), kPageSize);
+  const Mapping ms1 = Mapping(reinterpret_cast<void*>(m.addr()), kPageSize);
   const Mapping ms2 =
-      Mapping(reinterpret_cast<void *>(m.addr() + kPageSize), kPageSize);
+      Mapping(reinterpret_cast<void*>(m.addr() + kPageSize), kPageSize);
   m.release();
 
   ASSERT_THAT(madvise(ms2.ptr(), kPageSize, MADV_DONTFORK), SyscallSucceeds());
@@ -197,11 +197,11 @@ TEST(MadviseDontforkTest, DontforkAnonPrivate) {
   // Mmap three anonymous pages and MADV_DONTFORK the middle page.
   Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize * 3, PROT_READ | PROT_WRITE, MAP_PRIVATE));
-  const Mapping mp1 = Mapping(reinterpret_cast<void *>(m.addr()), kPageSize);
+  const Mapping mp1 = Mapping(reinterpret_cast<void*>(m.addr()), kPageSize);
   const Mapping mp2 =
-      Mapping(reinterpret_cast<void *>(m.addr() + kPageSize), kPageSize);
+      Mapping(reinterpret_cast<void*>(m.addr() + kPageSize), kPageSize);
   const Mapping mp3 =
-      Mapping(reinterpret_cast<void *>(m.addr() + 2 * kPageSize), kPageSize);
+      Mapping(reinterpret_cast<void*>(m.addr() + 2 * kPageSize), kPageSize);
   m.release();
 
   ASSERT_THAT(madvise(mp2.ptr(), kPageSize, MADV_DONTFORK), SyscallSucceeds());

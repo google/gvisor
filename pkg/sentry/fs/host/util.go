@@ -16,7 +16,6 @@ package host
 
 import (
 	"os"
-	"path"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -27,45 +26,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
-
-func open(parent *inodeOperations, name string) (int, error) {
-	if parent == nil && !path.IsAbs(name) {
-		return -1, syserror.EINVAL
-	}
-	name = path.Clean(name)
-
-	// Don't follow through symlinks.
-	flags := syscall.O_NOFOLLOW
-
-	if fd, err := openAt(parent, name, flags|syscall.O_RDWR, 0); err == nil {
-		return fd, nil
-	}
-	// Retry as read-only.
-	if fd, err := openAt(parent, name, flags|syscall.O_RDONLY, 0); err == nil {
-		return fd, nil
-	}
-
-	// Retry as write-only.
-	if fd, err := openAt(parent, name, flags|syscall.O_WRONLY, 0); err == nil {
-		return fd, nil
-	}
-
-	// Retry as a symlink, by including O_PATH as an option.
-	fd, err := openAt(parent, name, linux.O_PATH|flags, 0)
-	if err == nil {
-		return fd, nil
-	}
-
-	// Everything failed.
-	return -1, err
-}
-
-func openAt(parent *inodeOperations, name string, flags int, perm linux.FileMode) (int, error) {
-	if parent == nil {
-		return syscall.Open(name, flags, uint32(perm))
-	}
-	return syscall.Openat(parent.fileState.FD(), name, flags, uint32(perm))
-}
 
 func nodeType(s *syscall.Stat_t) fs.InodeType {
 	switch x := (s.Mode & syscall.S_IFMT); x {
@@ -107,55 +67,23 @@ func stableAttr(s *syscall.Stat_t) fs.StableAttr {
 	}
 }
 
-func owner(mo *superOperations, s *syscall.Stat_t) fs.FileOwner {
-	// User requested no translation, just return actual owner.
-	if mo.dontTranslateOwnership {
-		return fs.FileOwner{auth.KUID(s.Uid), auth.KGID(s.Gid)}
+func owner(s *syscall.Stat_t) fs.FileOwner {
+	return fs.FileOwner{
+		UID: auth.KUID(s.Uid),
+		GID: auth.KGID(s.Gid),
 	}
-
-	// Show only IDs relevant to the sandboxed task. I.e. if we not own the
-	// file, no sandboxed task can own the file. In that case, we
-	// use OverflowID for UID, implying that the IDs are not mapped in the
-	// "root" user namespace.
-	//
-	// E.g.
-	// sandbox's host EUID/EGID is 1/1.
-	// some_dir's host UID/GID is 2/1.
-	// Task that mounted this fs has virtualized EUID/EGID 5/5.
-	//
-	// If you executed `ls -n` in the sandboxed task, it would show:
-	// drwxwrxwrx [...] 65534 5 [...] some_dir
-
-	// Files are owned by OverflowID by default.
-	owner := fs.FileOwner{auth.KUID(auth.OverflowUID), auth.KGID(auth.OverflowGID)}
-
-	// If we own file on host, let mounting task's initial EUID own
-	// the file.
-	if s.Uid == hostUID {
-		owner.UID = mo.mounter.UID
-	}
-
-	// If our group matches file's group, make file's group match
-	// the mounting task's initial EGID.
-	for _, gid := range hostGIDs {
-		if s.Gid == gid {
-			owner.GID = mo.mounter.GID
-			break
-		}
-	}
-	return owner
 }
 
-func unstableAttr(mo *superOperations, s *syscall.Stat_t) fs.UnstableAttr {
+func unstableAttr(s *syscall.Stat_t) fs.UnstableAttr {
 	return fs.UnstableAttr{
 		Size:             s.Size,
 		Usage:            s.Blocks * 512,
 		Perms:            fs.FilePermsFromMode(linux.FileMode(s.Mode)),
-		Owner:            owner(mo, s),
+		Owner:            owner(s),
 		AccessTime:       ktime.FromUnix(s.Atim.Sec, s.Atim.Nsec),
 		ModificationTime: ktime.FromUnix(s.Mtim.Sec, s.Mtim.Nsec),
 		StatusChangeTime: ktime.FromUnix(s.Ctim.Sec, s.Ctim.Nsec),
-		Links:            s.Nlink,
+		Links:            uint64(s.Nlink),
 	}
 }
 
@@ -164,6 +92,8 @@ type dirInfo struct {
 	nbuf int    // length of buf; return value from ReadDirent.
 	bufp int    // location of next record in buf.
 }
+
+// LINT.IfChange
 
 // isBlockError unwraps os errors and checks if they are caused by EAGAIN or
 // EWOULDBLOCK. This is so they can be transformed into syserror.ErrWouldBlock.
@@ -176,6 +106,8 @@ func isBlockError(err error) bool {
 	}
 	return false
 }
+
+// LINT.ThenChange(../../fsimpl/host/util.go)
 
 func hostEffectiveKIDs() (uint32, []uint32, error) {
 	gids, err := os.Getgroups()

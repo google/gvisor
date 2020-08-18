@@ -1,8 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
-
-load("//tools/go_marshal:defs.bzl", "go_library")
+licenses(["notice"])
 
 package_group(
     name = "gomarshal_test",
@@ -17,7 +15,7 @@ go_test(
     deps = [
         ":test",
         "//pkg/binary",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
         "//tools/go_marshal/analysis",
     ],
 )
@@ -26,6 +24,21 @@ go_library(
     name = "test",
     testonly = 1,
     srcs = ["test.go"],
-    importpath = "gvisor.dev/gvisor/tools/go_marshal/test",
+    marshal = True,
+    visibility = ["//tools/go_marshal/test:__subpackages__"],
     deps = ["//tools/go_marshal/test/external"],
+)
+
+go_test(
+    name = "marshal_test",
+    size = "small",
+    srcs = ["marshal_test.go"],
+    deps = [
+        ":test",
+        "//pkg/syserror",
+        "//pkg/usermem",
+        "//tools/go_marshal/analysis",
+        "//tools/go_marshal/marshal",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
 )

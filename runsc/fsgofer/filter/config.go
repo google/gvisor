@@ -25,11 +25,7 @@ import (
 
 // allowedSyscalls is the set of syscalls executed by the gofer.
 var allowedSyscalls = seccomp.SyscallRules{
-	syscall.SYS_ACCEPT: {},
-	syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
-		{seccomp.AllowValue(linux.ARCH_GET_FS)},
-		{seccomp.AllowValue(linux.ARCH_SET_FS)},
-	},
+	syscall.SYS_ACCEPT:        {},
 	syscall.SYS_CLOCK_GETTIME: {},
 	syscall.SYS_CLONE: []seccomp.Rule{
 		{
@@ -132,6 +128,19 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_MADVISE:      {},
 	unix.SYS_MEMFD_CREATE:    {}, /// Used by flipcall.PacketWindowAllocator.Init().
 	syscall.SYS_MKDIRAT:      {},
+	syscall.SYS_MKNODAT:      {},
+	// Used by the Go runtime as a temporarily workaround for a Linux
+	// 5.2-5.4 bug.
+	//
+	// See src/runtime/os_linux_x86.go.
+	//
+	// TODO(b/148688965): Remove once this is gone from Go.
+	syscall.SYS_MLOCK: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(4096),
+		},
+	},
 	syscall.SYS_MMAP: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},
@@ -155,7 +164,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_MPROTECT:   {},
 	syscall.SYS_MUNMAP:     {},
 	syscall.SYS_NANOSLEEP:  {},
-	syscall.SYS_NEWFSTATAT: {},
 	syscall.SYS_OPENAT:     {},
 	syscall.SYS_PPOLL:      {},
 	syscall.SYS_PREAD64:    {},

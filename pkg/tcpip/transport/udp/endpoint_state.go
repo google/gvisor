@@ -37,6 +37,24 @@ func (u *udpPacket) loadData(data buffer.VectorisedView) {
 	u.data = data
 }
 
+// saveLastError is invoked by stateify.
+func (e *endpoint) saveLastError() string {
+	if e.lastError == nil {
+		return ""
+	}
+
+	return e.lastError.String()
+}
+
+// loadLastError is invoked by stateify.
+func (e *endpoint) loadLastError(s string) {
+	if s == "" {
+		return
+	}
+
+	e.lastError = tcpip.StringToError(s)
+}
+
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
 	// Stop incoming packets from being handled (and mutate endpoint state).
@@ -69,6 +87,9 @@ func (e *endpoint) afterLoad() {
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	e.stack = s
 
 	for _, m := range e.multicastMemberships {
@@ -109,7 +130,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	// pass it to the reservation machinery.
 	id := e.ID
 	e.ID.LocalPort = 0
-	e.ID, err = e.registerWithStack(e.RegisterNICID, e.effectiveNetProtos, id)
+	e.ID, e.boundBindToDevice, err = e.registerWithStack(e.RegisterNICID, e.effectiveNetProtos, id)
 	if err != nil {
 		panic(err)
 	}

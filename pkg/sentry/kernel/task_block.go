@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"runtime"
+	"runtime/trace"
 	"time"
 
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -133,19 +134,24 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 		runtime.Gosched()
 	}
 
+	region := trace.StartRegion(t.traceContext, blockRegion)
 	select {
 	case <-C:
+		region.End()
 		t.SleepFinish(true)
+		// Woken by event.
 		return nil
 
 	case <-interrupt:
+		region.End()
 		t.SleepFinish(false)
 		// Return the indicated error on interrupt.
 		return syserror.ErrInterrupted
 
 	case <-timerChan:
-		// We've timed out.
+		region.End()
 		t.SleepFinish(true)
+		// We've timed out.
 		return syserror.ETIMEDOUT
 	}
 }

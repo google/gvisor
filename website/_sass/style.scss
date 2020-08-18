@@ -1,0 +1,154 @@
+$primary: #262362;
+$secondary: #fff;
+$link-color: #286fd7;
+$inverse-link-color: #fff;
+
+$link-hover-color: darken($link-color, 10%);
+$inverse-link-hover-color: darken($inverse-link-color, 10%);
+
+$text-color: #444;
+
+$body-font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+$code-font-family: 'Source Code Pro', monospace;
+
+html {
+  position: relative;
+  min-height: 100%;
+}
+
+body {
+  color: $text-color;
+  font-family: $body-font-family;
+  padding-top: 40px;
+}
+
+a {
+  color: $link-color;
+
+  &:hover,
+  &:focus {
+    color: $link-hover-color;
+    text-decoration: none;
+  }
+
+  code {
+    color: $link-color;
+  }
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: $text-color;
+  font-weight: 400;
+}
+
+h1 code,
+h2 code,
+h3 code,
+h4 code,
+h5 code,
+h6 code {
+  color: $text-color;
+  background: transparent;
+}
+
+h1 {
+  font-size: 30px;
+  margin-top: 40px;
+  margin-bottom: 40px;
+}
+
+h2 {
+  font-size: 24px;
+  margin-top: 30px;
+  margin-bottom: 30px;
+
+  code {
+    font-size: 24px;
+  }
+}
+
+h3 {
+  font-size: 20px;
+  margin-top: 24px;
+  margin-bottom: 24px;
+
+  code {
+    font-size: 20px;
+  }
+}
+
+h4 {
+  font-size: 18px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+
+  code {
+    font-size: 18px;
+  }
+}
+
+p,
+li {
+  font-size: 14px;
+  line-height: 22px;
+}
+
+code {
+  font-family: $code-font-family;
+  font-size: 13px;
+}
+
+.btn {
+  color: $text-color;
+  background-color: $inverse-link-color;
+}
+
+.btn-inverse {
+  color: $text-color;
+  background-color: #fff;
+}
+
+.well {
+  box-shadow: none;
+}
+
+table {
+  width: 100%;
+}
+
+table td,
+table th {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+
+table tr:nth-child(even) {
+  background-color: #eee;
+}
+
+table th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  background-color: $primary;
+  color: $secondary;
+}
+
+.blog-meta {
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.docs-content * img {
+  display: block;
+  margin: 20px auto;
+}
+
+.blog-content * img {
+  display: block;
+  margin: 20px auto;
+}

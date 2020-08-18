@@ -24,6 +24,14 @@ namespace gvisor {
 namespace testing {
 
 PosixErrorOr<FileDescriptor> OpenSlave(const FileDescriptor& master) {
+  PosixErrorOr<int> n = SlaveID(master);
+  if (!n.ok()) {
+    return PosixErrorOr<FileDescriptor>(n.error());
+  }
+  return Open(absl::StrCat("/dev/pts/", n.ValueOrDie()), O_RDWR | O_NONBLOCK);
+}
+
+PosixErrorOr<int> SlaveID(const FileDescriptor& master) {
   // Get pty index.
   int n;
   int ret = ioctl(master.get(), TIOCGPTN, &n);
@@ -38,7 +46,7 @@ PosixErrorOr<FileDescriptor> OpenSlave(const FileDescriptor& master) {
     return PosixError(errno, "ioctl(TIOSPTLCK) failed");
   }
 
-  return Open(absl::StrCat("/dev/pts/", n), O_RDWR | O_NONBLOCK);
+  return n;
 }
 
 }  // namespace testing

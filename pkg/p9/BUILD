@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -17,18 +16,18 @@ go_library(
         "messages.go",
         "p9.go",
         "path_tree.go",
-        "pool.go",
         "server.go",
         "transport.go",
         "transport_flipcall.go",
         "version.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/p9",
     deps = [
         "//pkg/fd",
         "//pkg/fdchannel",
         "//pkg/flipcall",
         "//pkg/log",
+        "//pkg/pool",
+        "//pkg/sync",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -42,11 +41,10 @@ go_test(
         "client_test.go",
         "messages_test.go",
         "p9_test.go",
-        "pool_test.go",
         "transport_test.go",
         "version_test.go",
     ],
-    embed = [":p9"],
+    library = ":p9",
     deps = [
         "//pkg/fd",
         "//pkg/unet",

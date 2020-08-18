@@ -54,7 +54,7 @@ void SigHandler(int sig, siginfo_t* info, void* context) {
   TEST_CHECK(info->si_code == SI_TKILL);
 }
 
-// Test with a real signal.
+// Test with a real signal. Regression test for b/24790092.
 TEST(TkillTest, ValidTIDAndRealSignal) {
   struct sigaction sa;
   sa.sa_sigaction = SigHandler;

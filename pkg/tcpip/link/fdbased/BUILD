@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -13,11 +12,11 @@ go_library(
         "mmap_unsafe.go",
         "packet_dispatchers.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/fdbased",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
+        "//pkg/binary",
+        "//pkg/iovec",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
@@ -31,12 +30,13 @@ go_test(
     name = "fdbased_test",
     size = "small",
     srcs = ["endpoint_test.go"],
-    embed = [":fdbased"],
+    library = ":fdbased",
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/stack",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

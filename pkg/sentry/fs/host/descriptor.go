@@ -16,7 +16,6 @@ package host
 
 import (
 	"fmt"
-	"path"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -28,12 +27,9 @@ import (
 //
 // +stateify savable
 type descriptor struct {
-	// donated is true if the host fd was donated by another process.
-	donated bool
-
 	// If origFD >= 0, it is the host fd that this file was originally created
 	// from, which must be available at time of restore. The FD can be closed
-	// after descriptor is created. Only set if donated is true.
+	// after descriptor is created.
 	origFD int
 
 	// wouldBlock is true if value (below) points to a file that can
@@ -41,15 +37,13 @@ type descriptor struct {
 	wouldBlock bool
 
 	// value is the wrapped host fd. It is never saved or restored
-	// directly. How it is restored depends on whether it was
-	// donated and the fs.MountSource it was originally
-	// opened/created from.
+	// directly.
 	value int `state:"nosave"`
 }
 
 // newDescriptor returns a wrapped host file descriptor. On success,
 // the descriptor is registered for event notifications with queue.
-func newDescriptor(fd int, donated bool, saveable bool, wouldBlock bool, queue *waiter.Queue) (*descriptor, error) {
+func newDescriptor(fd int, saveable bool, wouldBlock bool, queue *waiter.Queue) (*descriptor, error) {
 	ownedFD := fd
 	origFD := -1
 	if saveable {
@@ -69,7 +63,6 @@ func newDescriptor(fd int, donated bool, saveable bool, wouldBlock bool, queue *
 		}
 	}
 	return &descriptor{
-		donated:    donated,
 		origFD:     origFD,
 		wouldBlock: wouldBlock,
 		value:      ownedFD,
@@ -77,25 +70,11 @@ func newDescriptor(fd int, donated bool, saveable bool, wouldBlock bool, queue *
 }
 
 // initAfterLoad initializes the value of the descriptor after Load.
-func (d *descriptor) initAfterLoad(mo *superOperations, id uint64, queue *waiter.Queue) error {
-	if d.donated {
-		var err error
-		d.value, err = syscall.Dup(d.origFD)
-		if err != nil {
-			return fmt.Errorf("failed to dup restored fd %d: %v", d.origFD, err)
-		}
-	} else {
-		name, ok := mo.inodeMappings[id]
-		if !ok {
-			return fmt.Errorf("failed to find path for inode number %d", id)
-		}
-		fullpath := path.Join(mo.root, name)
-
-		var err error
-		d.value, err = open(nil, fullpath)
-		if err != nil {
-			return fmt.Errorf("failed to open %q: %v", fullpath, err)
-		}
+func (d *descriptor) initAfterLoad(id uint64, queue *waiter.Queue) error {
+	var err error
+	d.value, err = syscall.Dup(d.origFD)
+	if err != nil {
+		return fmt.Errorf("failed to dup restored fd %d: %v", d.origFD, err)
 	}
 	if d.wouldBlock {
 		if err := syscall.SetNonblock(d.value, true); err != nil {

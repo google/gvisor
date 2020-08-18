@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <stdio.h>
-
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
@@ -474,7 +473,7 @@ TEST(ShmTest, PartialUnmap) {
 }
 
 // Check that sentry does not panic when asked for a zero-length private shm
-// segment.
+// segment. Regression test for b/110694797.
 TEST(ShmTest, GracefullyFailOnZeroLenSegmentCreation) {
   EXPECT_THAT(Shmget(IPC_PRIVATE, 0, 0), PosixErrorIs(EINVAL, _));
 }

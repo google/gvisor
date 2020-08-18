@@ -69,6 +69,12 @@ int __common_gettimeofday(struct timeval* tv, struct timezone* tz) {
 }
 }  // namespace
 
+// __kernel_rt_sigreturn() implements rt_sigreturn()
+extern "C" void __kernel_rt_sigreturn(unsigned long unused) {
+  // No optimizations yet, just make the real system call.
+  sys_rt_sigreturn();
+}
+
 #if __x86_64__
 
 // __vdso_clock_gettime() implements clock_gettime()
@@ -126,6 +132,10 @@ extern "C" int __kernel_clock_getres(clockid_t clock, struct timespec* res) {
     case CLOCK_REALTIME:
     case CLOCK_MONOTONIC:
     case CLOCK_BOOTTIME: {
+      if (res == nullptr) {
+        return 0;
+      }
+
       res->tv_sec = 0;
       res->tv_nsec = 1;
       break;
@@ -137,12 +147,6 @@ extern "C" int __kernel_clock_getres(clockid_t clock, struct timespec* res) {
   }
 
   return ret;
-}
-
-// __kernel_rt_sigreturn() implements gettimeofday()
-extern "C" int __kernel_rt_sigreturn(unsigned long unused) {
-  // No optimizations yet, just make the real system call.
-  return sys_rt_sigreturn();
 }
 
 #else

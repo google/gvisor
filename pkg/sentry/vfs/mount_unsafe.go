@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.12
-// +build !go1.14
+// +build !go1.16
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -26,7 +26,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"gvisor.dev/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/pkg/gohacks"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // mountKey represents the location at which a Mount is mounted. It is
@@ -38,16 +39,6 @@ type mountKey struct {
 	point  unsafe.Pointer // *Dentry
 }
 
-// Invariant: mnt.key's fields are nil. parent and point are non-nil.
-func (mnt *Mount) storeKey(parent *Mount, point *Dentry) {
-	atomic.StorePointer(&mnt.key.parent, unsafe.Pointer(parent))
-	atomic.StorePointer(&mnt.key.point, unsafe.Pointer(point))
-}
-
-func (mnt *Mount) loadKey() (*Mount, *Dentry) {
-	return (*Mount)(atomic.LoadPointer(&mnt.key.parent)), (*Dentry)(atomic.LoadPointer(&mnt.key.point))
-}
-
 func (mnt *Mount) parent() *Mount {
 	return (*Mount)(atomic.LoadPointer(&mnt.key.parent))
 }
@@ -56,11 +47,26 @@ func (mnt *Mount) point() *Dentry {
 	return (*Dentry)(atomic.LoadPointer(&mnt.key.point))
 }
 
+func (mnt *Mount) loadKey() VirtualDentry {
+	return VirtualDentry{
+		mount:  mnt.parent(),
+		dentry: mnt.point(),
+	}
+}
+
+// Invariant: mnt.key.parent == nil. vd.Ok().
+func (mnt *Mount) storeKey(vd VirtualDentry) {
+	atomic.StorePointer(&mnt.key.parent, unsafe.Pointer(vd.mount))
+	atomic.StorePointer(&mnt.key.point, unsafe.Pointer(vd.dentry))
+}
+
 // mountTable maps (mount parent, mount point) pairs to mounts. It supports
 // efficient concurrent lookup, even in the presence of concurrent mutators
 // (provided mutation is sufficiently uncommon).
 //
 // mountTable.Init() must be called on new mountTables before use.
+//
+// +stateify savable
 type mountTable struct {
 	// mountTable is implemented as a seqcount-protected hash table that
 	// resolves collisions with linear probing, featuring Robin Hood insertion
@@ -72,8 +78,8 @@ type mountTable struct {
 	// intrinsics and inline assembly, limiting the performance of this
 	// approach.)
 
-	seq  gvsync.SeqCount
-	seed uint32 // for hashing keys
+	seq  sync.SeqCount `state:"nosave"`
+	seed uint32        // for hashing keys
 
 	// size holds both length (number of elements) and capacity (number of
 	// slots): capacity is stored as its base-2 log (referred to as order) in
@@ -86,7 +92,7 @@ type mountTable struct {
 	// length and cap in separate uint32s) for ~free.
 	size uint64
 
-	slots unsafe.Pointer // []mountSlot; never nil after Init
+	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
 
 type mountSlot struct {
@@ -155,7 +161,7 @@ func newMountTableSlots(cap uintptr) unsafe.Pointer {
 // Lookup may be called even if there are concurrent mutators of mt.
 func (mt *mountTable) Lookup(parent *Mount, point *Dentry) *Mount {
 	key := mountKey{parent: unsafe.Pointer(parent), point: unsafe.Pointer(point)}
-	hash := memhash(noescape(unsafe.Pointer(&key)), uintptr(mt.seed), mountKeyBytes)
+	hash := memhash(gohacks.Noescape(unsafe.Pointer(&key)), uintptr(mt.seed), mountKeyBytes)
 
 loop:
 	for {
@@ -201,9 +207,19 @@ loop:
 
 // Insert inserts the given mount into mt.
 //
-// Preconditions: There are no concurrent mutators of mt. mt must not already
-// contain a Mount with the same mount point and parent.
+// Preconditions: mt must not already contain a Mount with the same mount point
+// and parent.
 func (mt *mountTable) Insert(mount *Mount) {
+	mt.seq.BeginWrite()
+	mt.insertSeqed(mount)
+	mt.seq.EndWrite()
+}
+
+// insertSeqed inserts the given mount into mt.
+//
+// Preconditions: mt.seq must be in a writer critical section. mt must not
+// already contain a Mount with the same mount point and parent.
+func (mt *mountTable) insertSeqed(mount *Mount) {
 	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
 
 	// We're under the maximum load factor if:
@@ -215,10 +231,8 @@ func (mt *mountTable) Insert(mount *Mount) {
 	tcap := uintptr(1) << order
 	if ((tlen + 1) * mtMaxLoadDen) <= (uint64(mtMaxLoadNum) << order) {
 		// Atomically insert the new element into the table.
-		mt.seq.BeginWrite()
 		atomic.AddUint64(&mt.size, mtSizeLenOne)
 		mtInsertLocked(mt.slots, tcap, unsafe.Pointer(mount), hash)
-		mt.seq.EndWrite()
 		return
 	}
 
@@ -241,8 +255,6 @@ func (mt *mountTable) Insert(mount *Mount) {
 	for {
 		oldSlot := (*mountSlot)(oldCur)
 		if oldSlot.value != nil {
-			// Don't need to lock mt.seq yet since newSlots isn't visible
-			// to readers.
 			mtInsertLocked(newSlots, newCap, oldSlot.value, oldSlot.hash)
 		}
 		if oldCur == oldLast {
@@ -252,11 +264,9 @@ func (mt *mountTable) Insert(mount *Mount) {
 	}
 	// Insert the new element into the new table.
 	mtInsertLocked(newSlots, newCap, unsafe.Pointer(mount), hash)
-	// Atomically switch to the new table.
-	mt.seq.BeginWrite()
+	// Switch to the new table.
 	atomic.AddUint64(&mt.size, mtSizeLenOne|mtSizeOrderOne)
 	atomic.StorePointer(&mt.slots, newSlots)
-	mt.seq.EndWrite()
 }
 
 // Preconditions: There are no concurrent mutators of the table (slots, cap).
@@ -294,9 +304,18 @@ func mtInsertLocked(slots unsafe.Pointer, cap uintptr, value unsafe.Pointer, has
 
 // Remove removes the given mount from mt.
 //
-// Preconditions: There are no concurrent mutators of mt. mt must contain
-// mount.
+// Preconditions: mt must contain mount.
 func (mt *mountTable) Remove(mount *Mount) {
+	mt.seq.BeginWrite()
+	mt.removeSeqed(mount)
+	mt.seq.EndWrite()
+}
+
+// removeSeqed removes the given mount from mt.
+//
+// Preconditions: mt.seq must be in a writer critical section. mt must contain
+// mount.
+func (mt *mountTable) removeSeqed(mount *Mount) {
 	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
 	tcap := uintptr(1) << (mt.size & mtSizeOrderMask)
 	mask := tcap - 1
@@ -311,7 +330,6 @@ func (mt *mountTable) Remove(mount *Mount) {
 			// backward until we either find an empty slot, or an element that
 			// is already in its first-probed slot. (This is backward shift
 			// deletion.)
-			mt.seq.BeginWrite()
 			for {
 				nextOff := (off + mountSlotBytes) & offmask
 				nextSlot := (*mountSlot)(unsafe.Pointer(uintptr(slots) + nextOff))
@@ -330,7 +348,6 @@ func (mt *mountTable) Remove(mount *Mount) {
 			}
 			atomic.StorePointer(&slot.value, nil)
 			atomic.AddUint64(&mt.size, mtSizeLenNegOne)
-			mt.seq.EndWrite()
 			return
 		}
 		if checkInvariants && slotValue == nil {
@@ -345,12 +362,3 @@ func memhash(p unsafe.Pointer, seed, s uintptr) uintptr
 
 //go:linkname rand32 runtime.fastrand
 func rand32() uint32
-
-// This is copy/pasted from runtime.noescape(), and is needed because arguments
-// apparently escape from all functions defined by linkname.
-//
-//go:nosplit
-func noescape(p unsafe.Pointer) unsafe.Pointer {
-	x := uintptr(p)
-	return unsafe.Pointer(x ^ 0)
-}

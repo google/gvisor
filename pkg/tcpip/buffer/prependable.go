@@ -42,7 +42,7 @@ func NewPrependableFromView(v View, extraCap int) Prependable {
 	if extraCap == 0 {
 		return Prependable{buf: v, usedIdx: 0}
 	}
-	buf := make([]byte, extraCap, extraCap + len(v))
+	buf := make([]byte, extraCap, extraCap+len(v))
 	buf = append(buf, v...)
 	return Prependable{buf: buf, usedIdx: extraCap}
 }
@@ -82,4 +82,10 @@ func (p *Prependable) Prepend(size int) []byte {
 
 	p.usedIdx -= size
 	return p.View()[:size:size]
+}
+
+// DeepCopy copies p and the bytes backing it.
+func (p Prependable) DeepCopy() Prependable {
+	p.buf = append(View(nil), p.buf...)
+	return p
 }

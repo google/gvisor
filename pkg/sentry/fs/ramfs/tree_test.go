@@ -17,7 +17,7 @@ package ramfs
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
@@ -67,7 +67,7 @@ func TestMakeDirectoryTree(t *testing.T) {
 			continue
 		}
 		root := mm.Root()
-		defer mm.DecRef()
+		defer mm.DecRef(ctx)
 
 		for _, p := range test.subdirs {
 			maxTraversals := uint(0)

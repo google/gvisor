@@ -17,7 +17,7 @@
 package ring0
 
 import (
-	"syscall"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // This is an assembly function.
@@ -41,7 +41,7 @@ func swapgs()
 // The return code is the vector that interrupted execution.
 //
 // See stubs.go for a note regarding the frame size of this function.
-func sysret(*CPU, *syscall.PtraceRegs) Vector
+func sysret(*CPU, *arch.Registers) Vector
 
 // "iret is the cadillac of CPL switching."
 //
@@ -50,7 +50,7 @@ func sysret(*CPU, *syscall.PtraceRegs) Vector
 // iret is nearly identical to sysret, except an iret is used to fully restore
 // all user state. This must be called in cases where all registers need to be
 // restored.
-func iret(*CPU, *syscall.PtraceRegs) Vector
+func iret(*CPU, *arch.Registers) Vector
 
 // exception is the generic exception entry.
 //

@@ -19,7 +19,7 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
@@ -43,9 +43,6 @@ const (
 	// cacheRevalidate allows dirents to be cached, but revalidates them on each
 	// lookup.
 	cacheRevalidate = "revalidate"
-
-	// TODO(edahlgren/mpratt): support a tmpfs size limit.
-	// size = "size"
 
 	// Permissions that exceed modeMask will be rejected.
 	modeMask = 01777

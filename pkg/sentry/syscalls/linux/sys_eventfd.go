@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -22,32 +23,24 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-const (
-	// EFD_SEMAPHORE is a flag used in syscall eventfd(2) and eventfd2(2). Please
-	// see its man page for more information.
-	EFD_SEMAPHORE = 1
-	EFD_NONBLOCK  = 0x800
-	EFD_CLOEXEC   = 0x80000
-)
-
 // Eventfd2 implements linux syscall eventfd2(2).
 func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	initVal := args[0].Int()
 	flags := uint(args[1].Uint())
-	allOps := uint(EFD_SEMAPHORE | EFD_NONBLOCK | EFD_CLOEXEC)
+	allOps := uint(linux.EFD_SEMAPHORE | linux.EFD_NONBLOCK | linux.EFD_CLOEXEC)
 
 	if flags & ^allOps != 0 {
 		return 0, nil, syserror.EINVAL
 	}
 
-	event := eventfd.New(t, uint64(initVal), flags&EFD_SEMAPHORE != 0)
+	event := eventfd.New(t, uint64(initVal), flags&linux.EFD_SEMAPHORE != 0)
 	event.SetFlags(fs.SettableFileFlags{
-		NonBlocking: flags&EFD_NONBLOCK != 0,
+		NonBlocking: flags&linux.EFD_NONBLOCK != 0,
 	})
-	defer event.DecRef()
+	defer event.DecRef(t)
 
 	fd, err := t.NewFDFrom(0, event, kernel.FDFlags{
-		CloseOnExec: flags&EFD_CLOEXEC != 0,
+		CloseOnExec: flags&linux.EFD_CLOEXEC != 0,
 	})
 	if err != nil {
 		return 0, nil, err

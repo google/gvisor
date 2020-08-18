@@ -1,0 +1,9 @@
+runtime,method,metric,result
+runc,fio.read,bandwidth,4240686080
+runc,fio.write,bandwidth,3029744640
+runsc,fio.read,bandwidth,2533604352
+runsc,fio.write,bandwidth,1207536640
+runc,fio.randread,bandwidth,1221472256
+runc,fio.randwrite,bandwidth,1046094848
+runsc,fio.randread,bandwidth,68940800
+runsc,fio.randwrite,bandwidth,67286016

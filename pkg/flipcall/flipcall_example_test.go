@@ -17,7 +17,8 @@ package flipcall
 import (
 	"bytes"
 	"fmt"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func Example() {

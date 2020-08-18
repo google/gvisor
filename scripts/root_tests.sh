@@ -16,16 +16,10 @@
 
 source $(dirname $0)/common.sh
 
-# Reinstall the latest containerd shim.
-declare -r base="https://storage.googleapis.com/cri-containerd-staging/gvisor-containerd-shim"
-declare -r latest=$(mktemp --tmpdir gvisor-containerd-shim-latest.XXXXXX)
-declare -r shim_path=$(mktemp --tmpdir gvisor-containerd-shim.XXXXXX)
-wget --no-verbose "${base}"/latest -O ${latest}
-wget --no-verbose "${base}"/gvisor-containerd-shim-$(cat ${latest}) -O ${shim_path}
-chmod +x ${shim_path}
-sudo mv ${shim_path} /usr/local/bin/gvisor-containerd-shim
+make load-all-images
+CONTAINERD_VERSION=1.3.4 make sudo TARGETS="tools/installers:containerd"
+make sudo TARGETS="tools/installers:shim"
 
 # Run the tests that require root.
 install_runsc_for_test root
 run_as_root //test/root:root_test --runtime=${RUNTIME}
-

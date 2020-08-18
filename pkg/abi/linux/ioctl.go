@@ -67,8 +67,53 @@ const (
 
 // ioctl(2) requests provided by uapi/linux/sockios.h
 const (
-	SIOCGIFMEM    = 0x891f
-	SIOCGIFPFLAGS = 0x8935
-	SIOCGMIIPHY   = 0x8947
-	SIOCGMIIREG   = 0x8948
+	SIOCGIFNAME    = 0x8910
+	SIOCGIFCONF    = 0x8912
+	SIOCGIFFLAGS   = 0x8913
+	SIOCGIFADDR    = 0x8915
+	SIOCGIFDSTADDR = 0x8917
+	SIOCGIFBRDADDR = 0x8919
+	SIOCGIFNETMASK = 0x891b
+	SIOCGIFMETRIC  = 0x891d
+	SIOCGIFMTU     = 0x8921
+	SIOCGIFMEM     = 0x891f
+	SIOCGIFHWADDR  = 0x8927
+	SIOCGIFINDEX   = 0x8933
+	SIOCGIFPFLAGS  = 0x8935
+	SIOCGIFTXQLEN  = 0x8942
+	SIOCETHTOOL    = 0x8946
+	SIOCGMIIPHY    = 0x8947
+	SIOCGMIIREG    = 0x8948
+	SIOCGIFMAP     = 0x8970
 )
+
+// ioctl(2) requests provided by uapi/asm-generic/sockios.h
+const (
+	SIOCGSTAMP = 0x8906
+)
+
+// ioctl(2) directions. Used to calculate requests number.
+// Constants from asm-generic/ioctl.h.
+const (
+	_IOC_NONE  = 0
+	_IOC_WRITE = 1
+	_IOC_READ  = 2
+)
+
+// Constants from asm-generic/ioctl.h.
+const (
+	_IOC_NRBITS   = 8
+	_IOC_TYPEBITS = 8
+	_IOC_SIZEBITS = 14
+	_IOC_DIRBITS  = 2
+
+	_IOC_NRSHIFT   = 0
+	_IOC_TYPESHIFT = _IOC_NRSHIFT + _IOC_NRBITS
+	_IOC_SIZESHIFT = _IOC_TYPESHIFT + _IOC_TYPEBITS
+	_IOC_DIRSHIFT  = _IOC_SIZESHIFT + _IOC_SIZEBITS
+)
+
+// IOC outputs the result of _IOC macro in asm-generic/ioctl.h.
+func IOC(dir, typ, nr, size uint32) uint32 {
+	return uint32(dir)<<_IOC_DIRSHIFT | typ<<_IOC_TYPESHIFT | nr<<_IOC_NRSHIFT | size<<_IOC_SIZESHIFT
+}

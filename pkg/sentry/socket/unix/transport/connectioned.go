@@ -15,10 +15,9 @@
 package transport
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -212,7 +211,7 @@ func (e *connectionedEndpoint) Listening() bool {
 // The socket will be a fresh state after a call to close and may be reused.
 // That is, close may be used to "unbind" or "disconnect" the socket in error
 // paths.
-func (e *connectionedEndpoint) Close() {
+func (e *connectionedEndpoint) Close(ctx context.Context) {
 	e.Lock()
 	var c ConnectedEndpoint
 	var r Receiver
@@ -234,7 +233,7 @@ func (e *connectionedEndpoint) Close() {
 	case e.Listening():
 		close(e.acceptedChan)
 		for n := range e.acceptedChan {
-			n.Close()
+			n.Close(ctx)
 		}
 		e.acceptedChan = nil
 		e.path = ""
@@ -242,18 +241,18 @@ func (e *connectionedEndpoint) Close() {
 	e.Unlock()
 	if c != nil {
 		c.CloseNotify()
-		c.Release()
+		c.Release(ctx)
 	}
 	if r != nil {
 		r.CloseNotify()
-		r.Release()
+		r.Release(ctx)
 	}
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
 	if ce.Type() != e.stype {
-		return syserr.ErrConnectionRefused
+		return syserr.ErrWrongProtocolForSocket
 	}
 
 	// Check if ce is e to avoid a deadlock.
@@ -341,7 +340,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return ECONNREFUSED per spec.
-		ne.Close()
+		ne.Close(ctx)
 		e.Unlock()
 		ce.Unlock()
 		return syserr.ErrConnectionRefused
@@ -477,6 +476,9 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 
 // State implements socket.Socket.State.
 func (e *connectionedEndpoint) State() uint32 {
+	e.Lock()
+	defer e.Unlock()
+
 	if e.Connected() {
 		return linux.SS_CONNECTED
 	}

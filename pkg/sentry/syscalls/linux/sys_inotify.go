@@ -40,7 +40,7 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		NonBlocking: flags&linux.IN_NONBLOCK != 0,
 	}
 	n := fs.NewFile(t, dirent, fileFlags, fs.NewInotify(t))
-	defer n.DecRef()
+	defer n.DecRef(t)
 
 	fd, err := t.NewFDFrom(0, n, kernel.FDFlags{
 		CloseOnExec: flags&linux.IN_CLOEXEC != 0,
@@ -71,7 +71,7 @@ func fdToInotify(t *kernel.Task, fd int32) (*fs.Inotify, *fs.File, error) {
 	ino, ok := file.FileOperations.(*fs.Inotify)
 	if !ok {
 		// Not an inotify fd.
-		file.DecRef()
+		file.DecRef(t)
 		return nil, nil, syserror.EINVAL
 	}
 
@@ -98,7 +98,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
@@ -128,6 +128,6 @@ func InotifyRmWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
-	return 0, nil, ino.RmWatch(wd)
+	defer file.DecRef(t)
+	return 0, nil, ino.RmWatch(t, wd)
 }

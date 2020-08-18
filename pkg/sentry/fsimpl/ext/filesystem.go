@@ -17,12 +17,15 @@ package ext
 import (
 	"errors"
 	"io"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -61,6 +64,10 @@ type filesystem struct {
 	// bgs represents all the block group descriptors for the filesystem.
 	// Immutable after initialization.
 	bgs []disklayout.BlockGroup
+
+	// devMinor is this filesystem's device minor number. Immutable after
+	// initialization.
+	devMinor uint32
 }
 
 // Compiles only if filesystem implements vfs.FilesystemImpl.
@@ -77,7 +84,7 @@ var _ vfs.FilesystemImpl = (*filesystem)(nil)
 //     - filesystem.mu must be locked (for writing if write param is true).
 //     - !rp.Done().
 //     - inode == vfsd.Impl().(*Dentry).inode.
-func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write bool) (*vfs.Dentry, *inode, error) {
+func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write bool) (*vfs.Dentry, *inode, error) {
 	if !inode.isDir() {
 		return nil, nil, syserror.ENOTDIR
 	}
@@ -86,14 +93,33 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 	}
 
 	for {
-		nextVFSD, err := rp.ResolveComponent(vfsd)
-		if err != nil {
-			return nil, nil, err
+		name := rp.Component()
+		if name == "." {
+			rp.Advance()
+			return vfsd, inode, nil
 		}
-		if nextVFSD == nil {
-			// Since the Dentry tree is not the sole source of truth for extfs, if it's
-			// not in the Dentry tree, it might need to be pulled from disk.
-			childDirent, ok := inode.impl.(*directory).childMap[rp.Component()]
+		d := vfsd.Impl().(*dentry)
+		if name == ".." {
+			isRoot, err := rp.CheckRoot(ctx, vfsd)
+			if err != nil {
+				return nil, nil, err
+			}
+			if isRoot || d.parent == nil {
+				rp.Advance()
+				return vfsd, inode, nil
+			}
+			if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
+				return nil, nil, err
+			}
+			rp.Advance()
+			return &d.parent.vfsd, d.parent.inode, nil
+		}
+
+		dir := inode.impl.(*directory)
+		child, ok := dir.childCache[name]
+		if !ok {
+			// We may need to instantiate a new dentry for this child.
+			childDirent, ok := dir.childMap[name]
 			if !ok {
 				// The underlying inode does not exist on disk.
 				return nil, nil, syserror.ENOENT
@@ -112,21 +138,22 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 			}
 			// incRef because this is being added to the dentry tree.
 			childInode.incRef()
-			child := newDentry(childInode)
-			vfsd.InsertChild(&child.vfsd, rp.Component())
-
-			// Continue as usual now that nextVFSD is not nil.
-			nextVFSD = &child.vfsd
+			child = newDentry(childInode)
+			child.parent = d
+			child.name = name
+			dir.childCache[name] = child
 		}
-		nextInode := nextVFSD.Impl().(*dentry).inode
-		if nextInode.isSymlink() && rp.ShouldFollowSymlink() {
-			if err := rp.HandleSymlink(inode.impl.(*symlink).target); err != nil {
+		if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
+			return nil, nil, err
+		}
+		if child.inode.isSymlink() && rp.ShouldFollowSymlink() {
+			if err := rp.HandleSymlink(child.inode.impl.(*symlink).target); err != nil {
 				return nil, nil, err
 			}
 			continue
 		}
 		rp.Advance()
-		return nextVFSD, nextInode, nil
+		return &child.vfsd, child.inode, nil
 	}
 }
 
@@ -140,12 +167,12 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 //
 // Preconditions:
 //     - filesystem.mu must be locked (for writing if write param is true).
-func walkLocked(rp *vfs.ResolvingPath, write bool) (*vfs.Dentry, *inode, error) {
+func walkLocked(ctx context.Context, rp *vfs.ResolvingPath, write bool) (*vfs.Dentry, *inode, error) {
 	vfsd := rp.Start()
 	inode := vfsd.Impl().(*dentry).inode
 	for !rp.Done() {
 		var err error
-		vfsd, inode, err = stepLocked(rp, vfsd, inode, write)
+		vfsd, inode, err = stepLocked(ctx, rp, vfsd, inode, write)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -169,12 +196,12 @@ func walkLocked(rp *vfs.ResolvingPath, write bool) (*vfs.Dentry, *inode, error) 
 // Preconditions:
 //     - filesystem.mu must be locked (for writing if write param is true).
 //     - !rp.Done().
-func walkParentLocked(rp *vfs.ResolvingPath, write bool) (*vfs.Dentry, *inode, error) {
+func walkParentLocked(ctx context.Context, rp *vfs.ResolvingPath, write bool) (*vfs.Dentry, *inode, error) {
 	vfsd := rp.Start()
 	inode := vfsd.Impl().(*dentry).inode
 	for !rp.Final() {
 		var err error
-		vfsd, inode, err = stepLocked(rp, vfsd, inode, write)
+		vfsd, inode, err = stepLocked(ctx, rp, vfsd, inode, write)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -189,7 +216,7 @@ func walkParentLocked(rp *vfs.ResolvingPath, write bool) (*vfs.Dentry, *inode, e
 // the rp till the parent of the last component which should be an existing
 // directory. If parent is false then resolves rp entirely. Attemps to resolve
 // the path as far as it can with a read lock and upgrades the lock if needed.
-func (fs *filesystem) walk(rp *vfs.ResolvingPath, parent bool) (*vfs.Dentry, *inode, error) {
+func (fs *filesystem) walk(ctx context.Context, rp *vfs.ResolvingPath, parent bool) (*vfs.Dentry, *inode, error) {
 	var (
 		vfsd  *vfs.Dentry
 		inode *inode
@@ -200,9 +227,9 @@ func (fs *filesystem) walk(rp *vfs.ResolvingPath, parent bool) (*vfs.Dentry, *in
 	// of disk. This reduces congestion (allows concurrent walks).
 	fs.mu.RLock()
 	if parent {
-		vfsd, inode, err = walkParentLocked(rp, false)
+		vfsd, inode, err = walkParentLocked(ctx, rp, false)
 	} else {
-		vfsd, inode, err = walkLocked(rp, false)
+		vfsd, inode, err = walkLocked(ctx, rp, false)
 	}
 	fs.mu.RUnlock()
 
@@ -211,9 +238,9 @@ func (fs *filesystem) walk(rp *vfs.ResolvingPath, parent bool) (*vfs.Dentry, *in
 		// walk is fine as this is a read only filesystem.
 		fs.mu.Lock()
 		if parent {
-			vfsd, inode, err = walkParentLocked(rp, true)
+			vfsd, inode, err = walkParentLocked(ctx, rp, true)
 		} else {
-			vfsd, inode, err = walkLocked(rp, true)
+			vfsd, inode, err = walkLocked(ctx, rp, true)
 		}
 		fs.mu.Unlock()
 	}
@@ -254,9 +281,18 @@ func (fs *filesystem) statTo(stat *linux.Statfs) {
 	// TODO(b/134676337): Set Statfs.Flags and Statfs.FSID.
 }
 
+// AccessAt implements vfs.Filesystem.Impl.AccessAt.
+func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	_, inode, err := fs.walk(ctx, rp, false)
+	if err != nil {
+		return err
+	}
+	return inode.checkPermissions(rp.Credentials(), ats)
+}
+
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.
 func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetDentryOptions) (*vfs.Dentry, error) {
-	vfsd, inode, err := fs.walk(rp, false)
+	vfsd, inode, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return nil, err
 	}
@@ -274,9 +310,19 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	return vfsd, nil
 }
 
+// GetParentDentryAt implements vfs.FilesystemImpl.GetParentDentryAt.
+func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, error) {
+	vfsd, inode, err := fs.walk(ctx, rp, true)
+	if err != nil {
+		return nil, err
+	}
+	inode.incRef()
+	return vfsd, nil
+}
+
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	vfsd, inode, err := fs.walk(rp, false)
+	vfsd, inode, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return nil, err
 	}
@@ -285,12 +331,12 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if vfs.MayWriteFileWithOpenFlags(opts.Flags) || opts.Flags&(linux.O_CREAT|linux.O_EXCL|linux.O_TMPFILE) != 0 {
 		return nil, syserror.EROFS
 	}
-	return inode.open(rp, vfsd, opts.Flags)
+	return inode.open(rp, vfsd, &opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
 func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
-	_, inode, err := fs.walk(rp, false)
+	_, inode, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return "", err
 	}
@@ -303,7 +349,7 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
-	_, inode, err := fs.walk(rp, false)
+	_, inode, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return linux.Statx{}, err
 	}
@@ -314,7 +360,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
 func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
-	if _, _, err := fs.walk(rp, false); err != nil {
+	if _, _, err := fs.walk(ctx, rp, false); err != nil {
 		return linux.Statfs{}, err
 	}
 
@@ -324,7 +370,9 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {}
+func (fs *filesystem) Release(ctx context.Context) {
+	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+}
 
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *filesystem) Sync(ctx context.Context) error {
@@ -342,7 +390,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return syserror.EEXIST
 	}
 
-	if _, _, err := fs.walk(rp, true); err != nil {
+	if _, _, err := fs.walk(ctx, rp, true); err != nil {
 		return err
 	}
 
@@ -355,7 +403,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return syserror.EEXIST
 	}
 
-	if _, _, err := fs.walk(rp, true); err != nil {
+	if _, _, err := fs.walk(ctx, rp, true); err != nil {
 		return err
 	}
 
@@ -368,7 +416,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return syserror.EEXIST
 	}
 
-	_, _, err := fs.walk(rp, true)
+	_, _, err := fs.walk(ctx, rp, true)
 	if err != nil {
 		return err
 	}
@@ -377,12 +425,12 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
-func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry, opts vfs.RenameOptions) error {
+func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
 	if rp.Done() {
 		return syserror.ENOENT
 	}
 
-	_, _, err := fs.walk(rp, false)
+	_, _, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return err
 	}
@@ -392,7 +440,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, vd vf
 
 // RmdirAt implements vfs.FilesystemImpl.RmdirAt.
 func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error {
-	_, inode, err := fs.walk(rp, false)
+	_, inode, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return err
 	}
@@ -406,7 +454,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
 func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
-	_, _, err := fs.walk(rp, false)
+	_, _, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return err
 	}
@@ -420,7 +468,7 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		return syserror.EEXIST
 	}
 
-	_, _, err := fs.walk(rp, true)
+	_, _, err := fs.walk(ctx, rp, true)
 	if err != nil {
 		return err
 	}
@@ -430,7 +478,7 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 
 // UnlinkAt implements vfs.FilesystemImpl.UnlinkAt.
 func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error {
-	_, inode, err := fs.walk(rp, false)
+	_, inode, err := fs.walk(ctx, rp, false)
 	if err != nil {
 		return err
 	}
@@ -440,4 +488,61 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 
 	return syserror.EROFS
+}
+
+// BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
+func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
+	_, inode, err := fs.walk(ctx, rp, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+		return nil, err
+	}
+
+	// TODO(b/134676337): Support sockets.
+	return nil, syserror.ECONNREFUSED
+}
+
+// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
+func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
+	_, _, err := fs.walk(ctx, rp, false)
+	if err != nil {
+		return nil, err
+	}
+	return nil, syserror.ENOTSUP
+}
+
+// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
+func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
+	_, _, err := fs.walk(ctx, rp, false)
+	if err != nil {
+		return "", err
+	}
+	return "", syserror.ENOTSUP
+}
+
+// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
+func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+	_, _, err := fs.walk(ctx, rp, false)
+	if err != nil {
+		return err
+	}
+	return syserror.ENOTSUP
+}
+
+// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
+func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+	_, _, err := fs.walk(ctx, rp, false)
+	if err != nil {
+		return err
+	}
+	return syserror.ENOTSUP
+}
+
+// PrependPath implements vfs.FilesystemImpl.PrependPath.
+func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
 }

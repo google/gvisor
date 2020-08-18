@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -30,12 +30,19 @@ type Protocol interface {
 	// Protocol returns the Linux netlink protocol value.
 	Protocol() int
 
+	// CanSend returns true if this protocol may ever send messages.
+	//
+	// TODO(gvisor.dev/issue/1119): This is a workaround to allow
+	// advertising support for otherwise unimplemented features on sockets
+	// that will never send messages, thus making those features no-ops.
+	CanSend() bool
+
 	// ProcessMessage processes a single message from userspace.
 	//
 	// If err == nil, any messages added to ms will be sent back to the
 	// other end of the socket. Setting ms.Multi will cause an NLMSG_DONE
 	// message to be sent even if ms contains no messages.
-	ProcessMessage(ctx context.Context, hdr linux.NetlinkMessageHeader, data []byte, ms *MessageSet) *syserr.Error
+	ProcessMessage(ctx context.Context, msg *Message, ms *MessageSet) *syserr.Error
 }
 
 // Provider is a function that creates a new Protocol for a specific netlink
@@ -59,6 +66,8 @@ func RegisterProvider(protocol int, provider Provider) {
 
 	protocols[protocol] = provider
 }
+
+// LINT.IfChange
 
 // socketProvider implements socket.Provider.
 type socketProvider struct {
@@ -88,7 +97,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 	}
 
 	d := socket.NewDirent(t, netlinkSocketDevice)
-	defer d.DecRef()
+	defer d.DecRef(t)
 	return fs.NewFile(t, d, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, s), nil
 }
 
@@ -98,7 +107,10 @@ func (*socketProvider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.Fi
 	return nil, nil, syserr.ErrNotSupported
 }
 
+// LINT.ThenChange(./provider_vfs2.go)
+
 // init registers the socket provider.
 func init() {
 	socket.RegisterProvider(linux.AF_NETLINK, &socketProvider{})
+	socket.RegisterProviderVFS2(linux.AF_NETLINK, &socketProviderVFS2{})
 }

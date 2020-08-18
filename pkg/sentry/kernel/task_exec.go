@@ -69,6 +69,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -129,6 +130,7 @@ type runSyscallAfterExecStop struct {
 }
 
 func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
+	t.traceExecEvent(r.tc)
 	t.tg.pidns.owner.mu.Lock()
 	t.tg.execing = nil
 	if t.killed() {
@@ -189,15 +191,24 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.updateRSSLocked()
 	// Restartable sequence state is discarded.
 	t.rseqPreempted = false
-	t.rseqCPUAddr = 0
 	t.rseqCPU = -1
-	t.tg.rscr.Store(&RSEQCriticalRegion{})
+	t.rseqAddr = 0
+	t.rseqSignature = 0
+	t.oldRSeqCPUAddr = 0
+	t.tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	t.tg.pidns.owner.mu.Unlock()
 
+	oldFDTable := t.fdTable
+	t.fdTable = t.fdTable.Fork(t)
+	oldFDTable.DecRef(t)
+
 	// Remove FDs with the CloseOnExec flag set.
-	t.fdTable.RemoveIf(func(file *fs.File, flags FDFlags) bool {
+	t.fdTable.RemoveIf(t, func(_ *fs.File, _ *vfs.FileDescription, flags FDFlags) bool {
 		return flags.CloseOnExec
 	})
+
+	// Handle the robust futex list.
+	t.exitRobustList()
 
 	// NOTE(b/30815691): We currently do not implement privileged
 	// executables (set-user/group-ID bits and file capabilities). This
@@ -215,8 +226,9 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tc = *r.tc
 	t.mu.Unlock()
 	t.unstopVforkParent()
+	t.p.FullStateChanged()
 	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
-	t.MemoryManager().Activate()
+	t.MemoryManager().Activate(t)
 
 	t.ptraceExec(oldTID)
 	return (*runSyscallExit)(nil)
@@ -253,7 +265,7 @@ func (t *Task) promoteLocked() {
 
 	t.tg.leader = t
 	t.Infof("Becoming TID %d (in root PID namespace)", t.tg.pidns.owner.Root.tids[t])
-	t.updateLogPrefixLocked()
+	t.updateInfoLocked()
 	// Reap the original leader. If it has a tracer, detach it instead of
 	// waiting for it to acknowledge the original leader's death.
 	oldLeader.exitParentNotified = true

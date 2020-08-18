@@ -16,12 +16,12 @@ package stack
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -48,7 +48,7 @@ type testLinkAddressResolver struct {
 	onLinkAddressRequest func()
 }
 
-func (r *testLinkAddressResolver) LinkAddressRequest(addr, _ tcpip.Address, _ LinkEndpoint) *tcpip.Error {
+func (r *testLinkAddressResolver) LinkAddressRequest(addr, _ tcpip.Address, _ tcpip.LinkAddress, _ LinkEndpoint) *tcpip.Error {
 	time.AfterFunc(r.delay, func() { r.fakeRequest(addr) })
 	if f := r.onLinkAddressRequest; f != nil {
 		f()

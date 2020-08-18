@@ -17,9 +17,9 @@ package proc
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func TestQuerySendBufferSize(t *testing.T) {
@@ -124,7 +124,9 @@ func TestConfigureRecvBufferSize(t *testing.T) {
 	}
 }
 
-func TestConfigureIPForwarding(t *testing.T) {
+// TestIPForwarding tests the implementation of
+// /proc/sys/net/ipv4/ip_forwarding
+func TestIPForwarding(t *testing.T) {
 	ctx := context.Background()
 	s := inet.NewTestStack()
 

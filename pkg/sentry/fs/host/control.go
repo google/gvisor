@@ -17,11 +17,13 @@ package host
 import (
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
+
+// LINT.IfChange
 
 type scmRights struct {
 	fds []int
@@ -55,7 +57,7 @@ func (c *scmRights) Clone() transport.RightsControlMessage {
 }
 
 // Release implements transport.RightsControlMessage.Release.
-func (c *scmRights) Release() {
+func (c *scmRights) Release(ctx context.Context) {
 	for _, fd := range c.fds {
 		syscall.Close(fd)
 	}
@@ -76,7 +78,7 @@ func fdsToFiles(ctx context.Context, fds []int) []*fs.File {
 		}
 
 		// Create the file backed by hostFD.
-		file, err := NewFile(ctx, fd, fs.FileOwnerFromContext(ctx))
+		file, err := NewFile(ctx, fd)
 		if err != nil {
 			ctx.Warningf("Error creating file from host FD: %v", err)
 			break
@@ -91,3 +93,5 @@ func fdsToFiles(ctx context.Context, fds []int) []*fs.File {
 	}
 	return files
 }
+
+// LINT.ThenChange(../../fsimpl/host/control.go)

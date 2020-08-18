@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <signal.h>
+#include <sys/syscall.h>
 
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
@@ -23,45 +24,53 @@ namespace testing {
 namespace {
 
 TEST(SigactionTest, GetLessThanOrEqualToZeroFails) {
-  struct sigaction act;
-  memset(&act, 0, sizeof(act));
-  ASSERT_THAT(sigaction(-1, NULL, &act), SyscallFailsWithErrno(EINVAL));
-  ASSERT_THAT(sigaction(0, NULL, &act), SyscallFailsWithErrno(EINVAL));
+  struct sigaction act = {};
+  ASSERT_THAT(sigaction(-1, nullptr, &act), SyscallFailsWithErrno(EINVAL));
+  ASSERT_THAT(sigaction(0, nullptr, &act), SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SigactionTest, SetLessThanOrEqualToZeroFails) {
-  struct sigaction act;
-  memset(&act, 0, sizeof(act));
-  ASSERT_THAT(sigaction(0, &act, NULL), SyscallFailsWithErrno(EINVAL));
-  ASSERT_THAT(sigaction(0, &act, NULL), SyscallFailsWithErrno(EINVAL));
+  struct sigaction act = {};
+  ASSERT_THAT(sigaction(0, &act, nullptr), SyscallFailsWithErrno(EINVAL));
+  ASSERT_THAT(sigaction(0, &act, nullptr), SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SigactionTest, GetGreaterThanMaxFails) {
-  struct sigaction act;
-  memset(&act, 0, sizeof(act));
-  ASSERT_THAT(sigaction(SIGRTMAX + 1, NULL, &act),
+  struct sigaction act = {};
+  ASSERT_THAT(sigaction(SIGRTMAX + 1, nullptr, &act),
               SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SigactionTest, SetGreaterThanMaxFails) {
-  struct sigaction act;
-  memset(&act, 0, sizeof(act));
-  ASSERT_THAT(sigaction(SIGRTMAX + 1, &act, NULL),
+  struct sigaction act = {};
+  ASSERT_THAT(sigaction(SIGRTMAX + 1, &act, nullptr),
               SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SigactionTest, SetSigkillFails) {
-  struct sigaction act;
-  memset(&act, 0, sizeof(act));
-  ASSERT_THAT(sigaction(SIGKILL, NULL, &act), SyscallSucceeds());
-  ASSERT_THAT(sigaction(SIGKILL, &act, NULL), SyscallFailsWithErrno(EINVAL));
+  struct sigaction act = {};
+  ASSERT_THAT(sigaction(SIGKILL, nullptr, &act), SyscallSucceeds());
+  ASSERT_THAT(sigaction(SIGKILL, &act, nullptr), SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SigactionTest, SetSigstopFails) {
-  struct sigaction act;
-  memset(&act, 0, sizeof(act));
-  ASSERT_THAT(sigaction(SIGSTOP, NULL, &act), SyscallSucceeds());
-  ASSERT_THAT(sigaction(SIGSTOP, &act, NULL), SyscallFailsWithErrno(EINVAL));
+  struct sigaction act = {};
+  ASSERT_THAT(sigaction(SIGSTOP, nullptr, &act), SyscallSucceeds());
+  ASSERT_THAT(sigaction(SIGSTOP, &act, nullptr), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SigactionTest, BadSigsetFails) {
+  constexpr size_t kWrongSigSetSize = 43;
+
+  struct sigaction act = {};
+
+  // The syscall itself (rather than the libc wrapper) takes the sigset_t size.
+  ASSERT_THAT(
+      syscall(SYS_rt_sigaction, SIGTERM, nullptr, &act, kWrongSigSetSize),
+      SyscallFailsWithErrno(EINVAL));
+  ASSERT_THAT(
+      syscall(SYS_rt_sigaction, SIGTERM, &act, nullptr, kWrongSigSetSize),
+      SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

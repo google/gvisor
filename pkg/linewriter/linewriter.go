@@ -17,7 +17,8 @@ package linewriter
 
 import (
 	"bytes"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Writer is an io.Writer which buffers input, flushing

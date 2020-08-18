@@ -259,14 +259,14 @@ TEST_F(PollTest, Nfds) {
   TEST_PCHECK(getrlimit(RLIMIT_NOFILE, &rlim) == 0);
 
   // gVisor caps the number of FDs that epoll can use beyond RLIMIT_NOFILE.
-  constexpr rlim_t gVisorMax = 1048576;
-  if (rlim.rlim_cur > gVisorMax) {
-    rlim.rlim_cur = gVisorMax;
+  constexpr rlim_t maxFD = 4096;
+  if (rlim.rlim_cur > maxFD) {
+    rlim.rlim_cur = maxFD;
     TEST_PCHECK(setrlimit(RLIMIT_NOFILE, &rlim) == 0);
   }
 
   rlim_t max_fds = rlim.rlim_cur;
-  std::cout << "Using limit: " << max_fds;
+  std::cout << "Using limit: " << max_fds << std::endl;
 
   // Create an eventfd. Since its value is initially zero, it is writable.
   FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
@@ -275,7 +275,8 @@ TEST_F(PollTest, Nfds) {
   // Each entry in the 'fds' array refers to the eventfd and polls for
   // "writable" events (events=POLLOUT). This essentially guarantees that the
   // poll() is a no-op and allows negative testing of the 'nfds' parameter.
-  std::vector<struct pollfd> fds(max_fds, {.fd = efd.get(), .events = POLLOUT});
+  std::vector<struct pollfd> fds(max_fds + 1,
+                                 {.fd = efd.get(), .events = POLLOUT});
 
   // Verify that 'nfds' up to RLIMIT_NOFILE are allowed.
   EXPECT_THAT(RetryEINTR(poll)(fds.data(), 1, 1), SyscallSucceedsWithValue(1));

@@ -16,7 +16,9 @@ package fs
 
 import (
 	"fmt"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // DirentCache is an LRU cache of Dirents. The Dirent's refCount is
@@ -100,9 +102,7 @@ func (c *DirentCache) remove(d *Dirent) {
 		panic(fmt.Sprintf("trying to remove %v, which is not in the dirent cache", d))
 	}
 	c.list.Remove(d)
-	d.SetPrev(nil)
-	d.SetNext(nil)
-	d.DecRef()
+	d.DecRef(context.Background())
 	c.currentSize--
 	if c.limit != nil {
 		c.limit.dec()

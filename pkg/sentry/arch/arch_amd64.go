@@ -22,10 +22,9 @@ import (
 	"math/rand"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Host specifies the host architecture.
@@ -174,8 +173,8 @@ func (c *context64) SetTLS(value uintptr) bool {
 	return true
 }
 
-// SetRSEQInterruptedIP implements Context.SetRSEQInterruptedIP.
-func (c *context64) SetRSEQInterruptedIP(value uintptr) {
+// SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
+func (c *context64) SetOldRSeqInterruptedIP(value uintptr) {
 	c.Regs.R10 = uint64(value)
 }
 
@@ -301,11 +300,13 @@ func (c *context64) PtracePeekUser(addr uintptr) (interface{}, error) {
 	// PTRACE_PEEKUSER and PTRACE_POKEUSER are only effective on regs and
 	// u_debugreg, returning 0 or silently no-oping for other fields
 	// respectively.
-	if addr < uintptr(ptraceRegsSize) {
-		buf := binary.Marshal(nil, usermem.ByteOrder, c.ptraceGetRegs())
+	if addr < uintptr(ptraceRegistersSize) {
+		regs := c.ptraceGetRegs()
+		buf := make([]byte, regs.SizeBytes())
+		regs.MarshalUnsafe(buf)
 		return c.Native(uintptr(usermem.ByteOrder.Uint64(buf[addr:]))), nil
 	}
-	// TODO(b/34088053): debug registers
+	// Note: x86 debug registers are missing.
 	return c.Native(0), nil
 }
 
@@ -314,12 +315,14 @@ func (c *context64) PtracePokeUser(addr, data uintptr) error {
 	if addr&7 != 0 || addr >= userStructSize {
 		return syscall.EIO
 	}
-	if addr < uintptr(ptraceRegsSize) {
-		buf := binary.Marshal(nil, usermem.ByteOrder, c.ptraceGetRegs())
+	if addr < uintptr(ptraceRegistersSize) {
+		regs := c.ptraceGetRegs()
+		buf := make([]byte, regs.SizeBytes())
+		regs.MarshalUnsafe(buf)
 		usermem.ByteOrder.PutUint64(buf[addr:], uint64(data))
 		_, err := c.PtraceSetRegs(bytes.NewBuffer(buf))
 		return err
 	}
-	// TODO(b/34088053): debug registers
+	// Note: x86 debug registers are missing.
 	return nil
 }

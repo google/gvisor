@@ -14,6 +14,14 @@
 
 package linux
 
+import (
+	"io"
+
+	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/tools/go_marshal/marshal"
+	"gvisor.dev/gvisor/tools/go_marshal/primitive"
+)
+
 // This file contains structures required to support netfilter, specifically
 // the iptables tool.
 
@@ -42,7 +50,16 @@ const (
 	NF_RETURN = -NF_REPEAT - 1
 )
 
-// Socket options. These correspond to values in
+// VerdictStrings maps int verdicts to the strings they represent. It is used
+// for debugging.
+var VerdictStrings = map[int32]string{
+	-NF_DROP - 1:   "DROP",
+	-NF_ACCEPT - 1: "ACCEPT",
+	-NF_QUEUE - 1:  "QUEUE",
+	NF_RETURN:      "RETURN",
+}
+
+// Socket options for SOL_SOCKET. These correspond to values in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
 const (
 	IPT_BASE_CTL            = 64
@@ -57,6 +74,12 @@ const (
 	IPT_SO_GET_MAX             = IPT_SO_GET_REVISION_TARGET
 )
 
+// Socket option for SOL_IP. This corresponds to the value in
+// include/uapi/linux/netfilter_ipv4.h.
+const (
+	SO_ORIGINAL_DST = 80
+)
+
 // Name lengths. These correspond to values in
 // include/uapi/linux/netfilter/x_tables.h.
 const (
@@ -67,6 +90,8 @@ const (
 
 // IPTEntry is an iptable rule. It corresponds to struct ipt_entry in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
+//
+// +marshal
 type IPTEntry struct {
 	// IP is used to filter packets based on the IP header.
 	IP IPTIP
@@ -103,21 +128,41 @@ type IPTEntry struct {
 // SizeOfIPTEntry is the size of an IPTEntry.
 const SizeOfIPTEntry = 112
 
-// KernelIPTEntry is identical to IPTEntry, but includes the Elems field. This
-// struct marshaled via the binary package to write an IPTEntry to userspace.
+// KernelIPTEntry is identical to IPTEntry, but includes the Elems field.
+// KernelIPTEntry itself is not Marshallable but it implements some methods of
+// marshal.Marshallable that help in other implementations of Marshallable.
 type KernelIPTEntry struct {
-	IPTEntry
+	Entry IPTEntry
 
 	// Elems holds the data for all this rule's matches followed by the
 	// target. It is variable length -- users have to iterate over any
 	// matches and use TargetOffset and NextOffset to make sense of the
 	// data.
-	Elems []byte
+	Elems primitive.ByteSlice
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (ke *KernelIPTEntry) SizeBytes() int {
+	return ke.Entry.SizeBytes() + ke.Elems.SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (ke *KernelIPTEntry) MarshalBytes(dst []byte) {
+	ke.Entry.MarshalBytes(dst)
+	ke.Elems.MarshalBytes(dst[ke.Entry.SizeBytes():])
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (ke *KernelIPTEntry) UnmarshalBytes(src []byte) {
+	ke.Entry.UnmarshalBytes(src)
+	ke.Elems.UnmarshalBytes(src[ke.Entry.SizeBytes():])
 }
 
 // IPTIP contains information for matching a packet's IP header.
 // It corresponds to struct ipt_ip in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
+//
+// +marshal
 type IPTIP struct {
 	// Src is the source IP address.
 	Src InetAddr
@@ -137,7 +182,7 @@ type IPTIP struct {
 	// OutputInterface is the output network interface.
 	OutputInterface [IFNAMSIZ]byte
 
-	// InputInterfaceMask is the intput interface mask.
+	// InputInterfaceMask is the input interface mask.
 	InputInterfaceMask [IFNAMSIZ]byte
 
 	// OuputInterfaceMask is the output interface mask.
@@ -149,15 +194,39 @@ type IPTIP struct {
 	// Flags define matching behavior for the IP header.
 	Flags uint8
 
-	// InverseFlags invert the meaning of fields in struct IPTIP.
+	// InverseFlags invert the meaning of fields in struct IPTIP. See the
+	// IPT_INV_* flags.
 	InverseFlags uint8
 }
+
+// Flags in IPTIP.InverseFlags. Corresponding constants are in
+// include/uapi/linux/netfilter_ipv4/ip_tables.h.
+const (
+	// Invert the meaning of InputInterface.
+	IPT_INV_VIA_IN = 0x01
+	// Invert the meaning of OutputInterface.
+	IPT_INV_VIA_OUT = 0x02
+	// Unclear what this is, as no references to it exist in the kernel.
+	IPT_INV_TOS = 0x04
+	// Invert the meaning of Src.
+	IPT_INV_SRCIP = 0x08
+	// Invert the meaning of Dst.
+	IPT_INV_DSTIP = 0x10
+	// Invert the meaning of the IPT_F_FRAG flag.
+	IPT_INV_FRAG = 0x20
+	// Invert the meaning of the Protocol field.
+	IPT_INV_PROTO = 0x40
+	// Enable all flags.
+	IPT_INV_MASK = 0x7F
+)
 
 // SizeOfIPTIP is the size of an IPTIP.
 const SizeOfIPTIP = 84
 
 // XTCounters holds packet and byte counts for a rule. It corresponds to struct
 // xt_counters in include/uapi/linux/netfilter/x_tables.h.
+//
+// +marshal
 type XTCounters struct {
 	// Pcnt is the packet count.
 	Pcnt uint64
@@ -179,7 +248,7 @@ const SizeOfXTCounters = 16
 // the user data.
 type XTEntryMatch struct {
 	MatchSize uint16
-	Name      [XT_EXTENSION_MAXNAMELEN]byte
+	Name      ExtensionName
 	Revision  uint8
 	// Data is omitted here because it would cause XTEntryMatch to be an
 	// extra byte larger (see http://www.catb.org/esr/structure-packing/).
@@ -188,6 +257,13 @@ type XTEntryMatch struct {
 
 // SizeOfXTEntryMatch is the size of an XTEntryMatch.
 const SizeOfXTEntryMatch = 32
+
+// KernelXTEntryMatch is identical to XTEntryMatch, but contains
+// variable-length Data field.
+type KernelXTEntryMatch struct {
+	XTEntryMatch
+	Data []byte
+}
 
 // XTEntryTarget holds a target for a rule. For example, it can specify that
 // packets matching the rule should DROP, ACCEPT, or use an extension target.
@@ -199,7 +275,7 @@ const SizeOfXTEntryMatch = 32
 // the user data.
 type XTEntryTarget struct {
 	TargetSize uint16
-	Name       [XT_EXTENSION_MAXNAMELEN]byte
+	Name       ExtensionName
 	Revision   uint8
 	// Data is omitted here because it would cause XTEntryTarget to be an
 	// extra byte larger (see http://www.catb.org/esr/structure-packing/).
@@ -209,11 +285,14 @@ type XTEntryTarget struct {
 // SizeOfXTEntryTarget is the size of an XTEntryTarget.
 const SizeOfXTEntryTarget = 32
 
-// XTStandardTarget is a builtin target, one of ACCEPT, DROP, JUMP, QUEUE, or
-// RETURN. It corresponds to struct xt_standard_target in
+// XTStandardTarget is a built-in target, one of ACCEPT, DROP, JUMP, QUEUE,
+// RETURN, or jump. It corresponds to struct xt_standard_target in
 // include/uapi/linux/netfilter/x_tables.h.
 type XTStandardTarget struct {
-	Target  XTEntryTarget
+	Target XTEntryTarget
+	// A positive verdict indicates a jump, and is the offset from the
+	// start of the table to jump to. A negative value means one of the
+	// other built-in targets.
 	Verdict int32
 	_       [4]byte
 }
@@ -226,18 +305,64 @@ const SizeOfXTStandardTarget = 40
 // ErrorName. It corresponds to struct xt_error_target in
 // include/uapi/linux/netfilter/x_tables.h.
 type XTErrorTarget struct {
-	Target    XTEntryTarget
-	ErrorName [XT_FUNCTION_MAXNAMELEN]byte
-	_         [2]byte
+	Target XTEntryTarget
+	Name   ErrorName
+	_      [2]byte
 }
 
 // SizeOfXTErrorTarget is the size of an XTErrorTarget.
 const SizeOfXTErrorTarget = 64
 
+// Flag values for NfNATIPV4Range. The values indicate whether to map
+// protocol specific part(ports) or IPs. It corresponds to values in
+// include/uapi/linux/netfilter/nf_nat.h.
+const (
+	NF_NAT_RANGE_MAP_IPS            = 1 << 0
+	NF_NAT_RANGE_PROTO_SPECIFIED    = 1 << 1
+	NF_NAT_RANGE_PROTO_RANDOM       = 1 << 2
+	NF_NAT_RANGE_PERSISTENT         = 1 << 3
+	NF_NAT_RANGE_PROTO_RANDOM_FULLY = 1 << 4
+	NF_NAT_RANGE_PROTO_RANDOM_ALL   = (NF_NAT_RANGE_PROTO_RANDOM | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+	NF_NAT_RANGE_MASK               = (NF_NAT_RANGE_MAP_IPS |
+		NF_NAT_RANGE_PROTO_SPECIFIED | NF_NAT_RANGE_PROTO_RANDOM |
+		NF_NAT_RANGE_PERSISTENT | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+)
+
+// NfNATIPV4Range corresponds to struct nf_nat_ipv4_range
+// in include/uapi/linux/netfilter/nf_nat.h. The fields are in
+// network byte order.
+type NfNATIPV4Range struct {
+	Flags   uint32
+	MinIP   [4]byte
+	MaxIP   [4]byte
+	MinPort uint16
+	MaxPort uint16
+}
+
+// NfNATIPV4MultiRangeCompat corresponds to struct
+// nf_nat_ipv4_multi_range_compat in include/uapi/linux/netfilter/nf_nat.h.
+type NfNATIPV4MultiRangeCompat struct {
+	RangeSize uint32
+	RangeIPV4 NfNATIPV4Range
+}
+
+// XTRedirectTarget triggers a redirect when reached.
+// Adding 4 bytes of padding to make the struct 8 byte aligned.
+type XTRedirectTarget struct {
+	Target  XTEntryTarget
+	NfRange NfNATIPV4MultiRangeCompat
+	_       [4]byte
+}
+
+// SizeOfXTRedirectTarget is the size of an XTRedirectTarget.
+const SizeOfXTRedirectTarget = 56
+
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
+//
+// +marshal
 type IPTGetinfo struct {
-	Name       [XT_TABLE_MAXNAMELEN]byte
+	Name       TableName
 	ValidHooks uint32
 	HookEntry  [NF_INET_NUMHOOKS]uint32
 	Underflow  [NF_INET_NUMHOOKS]uint32
@@ -248,16 +373,13 @@ type IPTGetinfo struct {
 // SizeOfIPTGetinfo is the size of an IPTGetinfo.
 const SizeOfIPTGetinfo = 84
 
-// TableName returns the table name.
-func (info *IPTGetinfo) TableName() string {
-	return tableName(info.Name[:])
-}
-
 // IPTGetEntries is the argument for the IPT_SO_GET_ENTRIES sockopt. It
 // corresponds to struct ipt_get_entries in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
+//
+// +marshal
 type IPTGetEntries struct {
-	Name [XT_TABLE_MAXNAMELEN]byte
+	Name TableName
 	Size uint32
 	_    [4]byte
 	// Entrytable is omitted here because it would cause IPTGetEntries to
@@ -266,34 +388,112 @@ type IPTGetEntries struct {
 	// Entrytable [0]IPTEntry
 }
 
-// TableName returns the entries' table name.
-func (entries *IPTGetEntries) TableName() string {
-	return tableName(entries.Name[:])
-}
-
 // SizeOfIPTGetEntries is the size of an IPTGetEntries.
 const SizeOfIPTGetEntries = 40
 
-// KernelIPTGetEntries is identical to IPTEntry, but includes the Elems field.
-// This struct marshaled via the binary package to write an KernelIPTGetEntries
-// to userspace.
+// KernelIPTGetEntries is identical to IPTGetEntries, but includes the
+// Entrytable field. This has been manually made marshal.Marshallable since it
+// is dynamically sized.
 type KernelIPTGetEntries struct {
-	Name       [XT_TABLE_MAXNAMELEN]byte
-	Size       uint32
-	_          [4]byte
+	IPTGetEntries
 	Entrytable []KernelIPTEntry
 }
 
-// TableName returns the entries' table name.
-func (entries *KernelIPTGetEntries) TableName() string {
-	return tableName(entries.Name[:])
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (ke *KernelIPTGetEntries) SizeBytes() int {
+	res := ke.IPTGetEntries.SizeBytes()
+	for _, entry := range ke.Entrytable {
+		res += entry.SizeBytes()
+	}
+	return res
 }
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (ke *KernelIPTGetEntries) MarshalBytes(dst []byte) {
+	ke.IPTGetEntries.MarshalBytes(dst)
+	marshalledUntil := ke.IPTGetEntries.SizeBytes()
+	for i := range ke.Entrytable {
+		ke.Entrytable[i].MarshalBytes(dst[marshalledUntil:])
+		marshalledUntil += ke.Entrytable[i].SizeBytes()
+	}
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (ke *KernelIPTGetEntries) UnmarshalBytes(src []byte) {
+	ke.IPTGetEntries.UnmarshalBytes(src)
+	unmarshalledUntil := ke.IPTGetEntries.SizeBytes()
+	for i := range ke.Entrytable {
+		ke.Entrytable[i].UnmarshalBytes(src[unmarshalledUntil:])
+		unmarshalledUntil += ke.Entrytable[i].SizeBytes()
+	}
+}
+
+// Packed implements marshal.Marshallable.Packed.
+func (ke *KernelIPTGetEntries) Packed() bool {
+	// KernelIPTGetEntries isn't packed because the ke.Entrytable contains an
+	// indirection to the actual data we want to marshal (the slice data
+	// pointer), and the memory for KernelIPTGetEntries contains the slice
+	// header which we don't want to marshal.
+	return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (ke *KernelIPTGetEntries) MarshalUnsafe(dst []byte) {
+	// Fall back to safe Marshal because the type in not packed.
+	ke.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (ke *KernelIPTGetEntries) UnmarshalUnsafe(src []byte) {
+	// Fall back to safe Unmarshal because the type in not packed.
+	ke.UnmarshalBytes(src)
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (ke *KernelIPTGetEntries) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+	buf := task.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+	length, err := task.CopyInBytes(addr, buf)    // escapes: okay.
+	// Unmarshal unconditionally. If we had a short copy-in, this results in a
+	// partially unmarshalled struct.
+	ke.UnmarshalBytes(buf) // escapes: fallback.
+	return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (ke *KernelIPTGetEntries) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
+	// Type KernelIPTGetEntries doesn't have a packed layout in memory, fall
+	// back to MarshalBytes.
+	return task.CopyOutBytes(addr, ke.marshalAll(task))
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (ke *KernelIPTGetEntries) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+	// Type KernelIPTGetEntries doesn't have a packed layout in memory, fall
+	// back to MarshalBytes.
+	return task.CopyOutBytes(addr, ke.marshalAll(task)[:limit])
+}
+
+func (ke *KernelIPTGetEntries) marshalAll(task marshal.Task) []byte {
+	buf := task.CopyScratchBuffer(ke.SizeBytes())
+	ke.MarshalBytes(buf)
+	return buf
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (ke *KernelIPTGetEntries) WriteTo(w io.Writer) (int64, error) {
+	buf := make([]byte, ke.SizeBytes())
+	ke.MarshalBytes(buf)
+	length, err := w.Write(buf)
+	return int64(length), err
+}
+
+var _ marshal.Marshallable = (*KernelIPTGetEntries)(nil)
 
 // IPTReplace is the argument for the IPT_SO_SET_REPLACE sockopt. It
 // corresponds to struct ipt_replace in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
 type IPTReplace struct {
-	Name        [XT_TABLE_MAXNAMELEN]byte
+	Name        TableName
 	ValidHooks  uint32
 	NumEntries  uint32
 	Size        uint32
@@ -309,11 +509,172 @@ type IPTReplace struct {
 // SizeOfIPTReplace is the size of an IPTReplace.
 const SizeOfIPTReplace = 96
 
-func tableName(name []byte) string {
-	for i, c := range name {
+// ExtensionName holds the name of a netfilter extension.
+type ExtensionName [XT_EXTENSION_MAXNAMELEN]byte
+
+// String implements fmt.Stringer.
+func (en ExtensionName) String() string {
+	return goString(en[:])
+}
+
+// TableName holds the name of a netfilter table.
+//
+// +marshal
+type TableName [XT_TABLE_MAXNAMELEN]byte
+
+// String implements fmt.Stringer.
+func (tn TableName) String() string {
+	return goString(tn[:])
+}
+
+// ErrorName holds the name of a netfilter error. These can also hold
+// user-defined chains.
+type ErrorName [XT_FUNCTION_MAXNAMELEN]byte
+
+// String implements fmt.Stringer.
+func (en ErrorName) String() string {
+	return goString(en[:])
+}
+
+func goString(cstring []byte) string {
+	for i, c := range cstring {
 		if c == 0 {
-			return string(name[:i])
+			return string(cstring[:i])
 		}
 	}
-	return string(name)
+	return string(cstring)
 }
+
+// XTTCP holds data for matching TCP packets. It corresponds to struct xt_tcp
+// in include/uapi/linux/netfilter/xt_tcpudp.h.
+type XTTCP struct {
+	// SourcePortStart specifies the inclusive start of the range of source
+	// ports to which the matcher applies.
+	SourcePortStart uint16
+
+	// SourcePortEnd specifies the inclusive end of the range of source ports
+	// to which the matcher applies.
+	SourcePortEnd uint16
+
+	// DestinationPortStart specifies the start of the destination port
+	// range to which the matcher applies.
+	DestinationPortStart uint16
+
+	// DestinationPortEnd specifies the end of the destination port
+	// range to which the matcher applies.
+	DestinationPortEnd uint16
+
+	// Option specifies that a particular TCP option must be set.
+	Option uint8
+
+	// FlagMask masks TCP flags when comparing to the FlagCompare byte. It allows
+	// for specification of which flags are important to the matcher.
+	FlagMask uint8
+
+	// FlagCompare, in combination with FlagMask, is used to match only packets
+	// that have certain flags set.
+	FlagCompare uint8
+
+	// InverseFlags flips the meaning of certain fields. See the
+	// TX_TCP_INV_* flags.
+	InverseFlags uint8
+}
+
+// SizeOfXTTCP is the size of an XTTCP.
+const SizeOfXTTCP = 12
+
+// Flags in XTTCP.InverseFlags. Corresponding constants are in
+// include/uapi/linux/netfilter/xt_tcpudp.h.
+const (
+	// Invert the meaning of SourcePortStart/End.
+	XT_TCP_INV_SRCPT = 0x01
+	// Invert the meaning of DestinationPortStart/End.
+	XT_TCP_INV_DSTPT = 0x02
+	// Invert the meaning of FlagCompare.
+	XT_TCP_INV_FLAGS = 0x04
+	// Invert the meaning of Option.
+	XT_TCP_INV_OPTION = 0x08
+	// Enable all flags.
+	XT_TCP_INV_MASK = 0x0F
+)
+
+// XTUDP holds data for matching UDP packets. It corresponds to struct xt_udp
+// in include/uapi/linux/netfilter/xt_tcpudp.h.
+type XTUDP struct {
+	// SourcePortStart is the inclusive start of the range of source ports
+	// to which the matcher applies.
+	SourcePortStart uint16
+
+	// SourcePortEnd is the inclusive end of the range of source ports to
+	// which the matcher applies.
+	SourcePortEnd uint16
+
+	// DestinationPortStart is the inclusive start of the destination port
+	// range to which the matcher applies.
+	DestinationPortStart uint16
+
+	// DestinationPortEnd is the inclusive end of the destination port
+	// range to which the matcher applies.
+	DestinationPortEnd uint16
+
+	// InverseFlags flips the meaning of certain fields. See the
+	// TX_UDP_INV_* flags.
+	InverseFlags uint8
+
+	_ uint8
+}
+
+// SizeOfXTUDP is the size of an XTUDP.
+const SizeOfXTUDP = 10
+
+// Flags in XTUDP.InverseFlags. Corresponding constants are in
+// include/uapi/linux/netfilter/xt_tcpudp.h.
+const (
+	// Invert the meaning of SourcePortStart/End.
+	XT_UDP_INV_SRCPT = 0x01
+	// Invert the meaning of DestinationPortStart/End.
+	XT_UDP_INV_DSTPT = 0x02
+	// Enable all flags.
+	XT_UDP_INV_MASK = 0x03
+)
+
+// IPTOwnerInfo holds data for matching packets with owner. It corresponds
+// to struct ipt_owner_info in libxt_owner.c of iptables binary.
+type IPTOwnerInfo struct {
+	// UID is user id which created the packet.
+	UID uint32
+
+	// GID is group id which created the packet.
+	GID uint32
+
+	// PID is process id of the process which created the packet.
+	PID uint32
+
+	// SID is session id which created the packet.
+	SID uint32
+
+	// Comm is the command name which created the packet.
+	Comm [16]byte
+
+	// Match is used to match UID/GID of the socket. See the
+	// XT_OWNER_* flags below.
+	Match uint8
+
+	// Invert flips the meaning of Match field.
+	Invert uint8
+}
+
+// SizeOfIPTOwnerInfo is the size of an XTOwnerMatchInfo.
+const SizeOfIPTOwnerInfo = 34
+
+// Flags in IPTOwnerInfo.Match. Corresponding constants are in
+// include/uapi/linux/netfilter/xt_owner.h.
+const (
+	// Match the UID of the packet.
+	XT_OWNER_UID = 1 << 0
+	// Match the GID of the packet.
+	XT_OWNER_GID = 1 << 1
+	// Match if the socket exists for the packet. Forwarded
+	// packets do not have an associated socket.
+	XT_OWNER_SOCKET = 1 << 2
+)

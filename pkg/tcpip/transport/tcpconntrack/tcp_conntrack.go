@@ -106,6 +106,11 @@ func (t *TCB) UpdateStateOutbound(tcp header.TCP) Result {
 	return st
 }
 
+// State returns the current state of the TCB.
+func (t *TCB) State() Result {
+	return t.state
+}
+
 // IsAlive returns true as long as the connection is established(Alive)
 // or connecting state.
 func (t *TCB) IsAlive() bool {
@@ -311,17 +316,7 @@ type stream struct {
 // the window is zero, if it's a packet with no payload and sequence number
 // equal to una.
 func (s *stream) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
-	wnd := s.una.Size(s.end)
-	if wnd == 0 {
-		return segLen == 0 && segSeq == s.una
-	}
-
-	// Make sure [segSeq, seqSeq+segLen) is non-empty.
-	if segLen == 0 {
-		segLen = 1
-	}
-
-	return seqnum.Overlap(s.una, wnd, segSeq, segLen)
+	return header.Acceptable(segSeq, segLen, s.una, s.end)
 }
 
 // closed determines if the stream has already been closed. This happens when
@@ -346,4 +341,17 @@ func logicalLen(tcp header.TCP) seqnum.Size {
 		l++
 	}
 	return l
+}
+
+// IsEmpty returns true if tcb is not initialized.
+func (t *TCB) IsEmpty() bool {
+	if t.inbound != (stream{}) || t.outbound != (stream{}) {
+		return false
+	}
+
+	if t.firstFin != nil || t.state != ResultDrop {
+		return false
+	}
+
+	return true
 }

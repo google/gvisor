@@ -15,9 +15,8 @@
 package ptrace
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // fpRegSet returns the GETREGSET/SETREGSET register set type to be used.
@@ -25,6 +24,6 @@ func fpRegSet(_ bool) uintptr {
 	return linux.NT_PRFPREG
 }
 
-func stackPointer(r *syscall.PtraceRegs) uintptr {
+func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Sp)
 }
