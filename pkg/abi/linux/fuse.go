@@ -492,3 +492,41 @@ func (r *FUSEEmptyIn) MarshalUnsafe(buf []byte) {}
 func (r *FUSEEmptyIn) SizeBytes() int {
 	return 0
 }
+
+// FUSEMkdirIn contains the first argument in the request sent by the
+// kernel to the daemon to create a new directory.
+// This behavior is analogous to Linux's behavior of sending
+// two arguments with FUSE_MKDIR request.
+//
+// +marshal
+type FUSEMkdirIn struct {
+	// Mode of the directory of create.
+	Mode uint32
+
+	// Umask is the user file creation mask.
+	Umask uint32
+}
+
+// FUSEMkdirReq contains all the arguments sent by the kernel
+// to the daemon to create a new directory.
+type FUSEMkdirReq struct {
+	marshal.StubMarshallable
+
+	// MkdirIn contains Mode and Umask of the directory to create.
+	MkdirIn FUSEMkdirIn
+
+	// Name of the directory to create.
+	Name string
+}
+
+// MarshalUnsafe serializes r.MkdirIn and r.Name to the dst buffer.
+func (r *FUSEMkdirReq) MarshalUnsafe(buf []byte) {
+	r.MkdirIn.MarshalUnsafe(buf[:r.MkdirIn.SizeBytes()])
+	copy(buf[r.MkdirIn.SizeBytes():], r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSEMkdirReq.
+// 1 extra byte for null-terminated Name string.
+func (r *FUSEMkdirReq) SizeBytes() int {
+	return r.MkdirIn.SizeBytes() + len(r.Name) + 1
+}
