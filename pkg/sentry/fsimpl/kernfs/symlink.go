@@ -52,7 +52,7 @@ func (s *StaticSymlink) Init(creds *auth.Credentials, devMajor uint32, devMinor 
 }
 
 // Readlink implements Inode.
-func (s *StaticSymlink) Readlink(_ context.Context) (string, error) {
+func (s *StaticSymlink) Readlink(_ context.Context, _ *vfs.Mount) (string, error) {
 	return s.target, nil
 }
 

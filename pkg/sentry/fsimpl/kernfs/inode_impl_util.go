@@ -172,7 +172,7 @@ func (InodeNoDynamicLookup) Valid(ctx context.Context) bool {
 type InodeNotSymlink struct{}
 
 // Readlink implements Inode.Readlink.
-func (InodeNotSymlink) Readlink(context.Context) (string, error) {
+func (InodeNotSymlink) Readlink(context.Context, *vfs.Mount) (string, error) {
 	return "", syserror.EINVAL
 }
 
