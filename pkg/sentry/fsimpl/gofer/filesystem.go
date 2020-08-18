@@ -834,7 +834,14 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+			unlocked = true
+		}
+	}
+	defer unlock()
 
 	start := rp.Start().Impl().(*dentry)
 	if !start.cachedMetadataAuthoritative() {
@@ -851,7 +858,10 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		return start.openLocked(ctx, rp, &opts)
+		start.IncRef()
+		defer start.DecRef(ctx)
+		unlock()
+		return start.open(ctx, rp, &opts)
 	}
 
 afterTrailingSymlink:
@@ -901,11 +911,15 @@ afterTrailingSymlink:
 	if rp.MustBeDir() && !child.isDir() {
 		return nil, syserror.ENOTDIR
 	}
-	return child.openLocked(ctx, rp, &opts)
+	child.IncRef()
+	defer child.DecRef(ctx)
+	unlock()
+	return child.open(ctx, rp, &opts)
 }
 
-// Preconditions: fs.renameMu must be locked.
-func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+// Preconditions: The caller must hold no locks (since opening pipes may block
+// indefinitely).
+func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
@@ -968,7 +982,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 			return nil, syserror.ENXIO
 		}
 		if d.fs.iopts.OpenSocketsByConnecting {
-			return d.connectSocketLocked(ctx, opts)
+			return d.openSocketByConnecting(ctx, opts)
 		}
 	case linux.S_IFIFO:
 		if d.isSynthetic() {
@@ -977,7 +991,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	}
 
 	if vfd == nil {
-		if vfd, err = d.openSpecialFileLocked(ctx, mnt, opts); err != nil {
+		if vfd, err = d.openSpecialFile(ctx, mnt, opts); err != nil {
 			return nil, err
 		}
 	}
@@ -996,7 +1010,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	return vfd, err
 }
 
-func (d *dentry) connectSocketLocked(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, syserror.EINVAL
 	}
@@ -1016,7 +1030,7 @@ func (d *dentry) connectSocketLocked(ctx context.Context, opts *vfs.OpenOptions)
 	return fd, nil
 }
 
-func (d *dentry) openSpecialFileLocked(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, syserror.EINVAL

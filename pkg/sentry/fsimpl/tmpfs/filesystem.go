@@ -307,18 +307,28 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// don't need fs.mu for writing.
 	if opts.Flags&linux.O_CREAT == 0 {
 		fs.mu.RLock()
-		defer fs.mu.RUnlock()
 		d, err := resolveLocked(ctx, rp)
 		if err != nil {
+			fs.mu.RUnlock()
 			return nil, err
 		}
+		d.IncRef()
+		defer d.DecRef(ctx)
+		fs.mu.RUnlock()
 		return d.open(ctx, rp, &opts, false /* afterCreate */)
 	}
 
 	mustCreate := opts.Flags&linux.O_EXCL != 0
 	start := rp.Start().Impl().(*dentry)
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			fs.mu.Unlock()
+			unlocked = true
+		}
+	}
+	defer unlock()
 	if rp.Done() {
 		// Reject attempts to open mount root directory with O_CREAT.
 		if rp.MustBeDir() {
@@ -327,6 +337,9 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
+		start.IncRef()
+		defer start.DecRef(ctx)
+		unlock()
 		return start.open(ctx, rp, &opts, false /* afterCreate */)
 	}
 afterTrailingSymlink:
@@ -364,6 +377,7 @@ afterTrailingSymlink:
 		creds := rp.Credentials()
 		child := fs.newDentry(fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode))
 		parentDir.insertChildLocked(child, name)
+		unlock()
 		fd, err := child.open(ctx, rp, &opts, true)
 		if err != nil {
 			return nil, err
@@ -392,9 +406,14 @@ afterTrailingSymlink:
 	if rp.MustBeDir() && !child.inode.isDir() {
 		return nil, syserror.ENOTDIR
 	}
+	child.IncRef()
+	defer child.DecRef(ctx)
+	unlock()
 	return child.open(ctx, rp, &opts, false)
 }
 
+// Preconditions: The caller must hold no locks (since opening pipes may block
+// indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if !afterCreate {
