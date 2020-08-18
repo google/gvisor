@@ -413,3 +413,46 @@ type FUSEReleaseIn struct {
 	// LockOwner is the id of the lock owner if there is one.
 	LockOwner uint64
 }
+
+// FUSEMknodIn contains first argument in request sent by the
+// kernel to the daemon to create a new file node.
+// This behavior is analogous to Linux's behavior of sending
+// two argument with FUSE_MKNOD request.
+//
+// +marshal
+type FUSEMknodIn struct {
+	// Mode of the inode to create.
+	Mode uint32
+
+	// Rdev encodes device major and minor information.
+	Rdev uint32
+
+	// Umask is the current file mode creation mask.
+	Umask uint32
+
+	_ uint32
+}
+
+// FUSEMknodReq contains all the arguments sent by the kernel
+// to the daemon in FUSE_MKNOD operation.
+type FUSEMknodReq struct {
+	marshal.StubMarshallable
+
+	// MknodIn contains mode, rdev and umash field for FUSE_MKNODS.
+	MknodIn FUSEMknodIn
+
+	// Name is the name of the node to create.
+	Name string
+}
+
+// MarshalUnsafe serializes r.MknodIn and r.Name to the dst buffer.
+func (r *FUSEMknodReq) MarshalUnsafe(buf []byte) {
+	r.MknodIn.MarshalUnsafe(buf[:r.MknodIn.SizeBytes()])
+	copy(buf[r.MknodIn.SizeBytes():], r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSEMknodReq.
+// 1 extra byte for null-terminated string.
+func (r *FUSEMknodReq) SizeBytes() int {
+	return r.MknodIn.SizeBytes() + len(r.Name) + 1
+}

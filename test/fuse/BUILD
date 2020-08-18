@@ -16,3 +16,8 @@ syscall_test(
     fuse = "True",
     test = "//test/fuse/linux:release_test",
 )
+
+syscall_test(
+    fuse = "True",
+    test = "//test/fuse/linux:mknod_test",
+)
