@@ -387,7 +387,8 @@ void FuseTest::ServerProcessFuseRequest() {
 
   requests_.AddMemBlock(in_header->opcode, buf.data(), len);
 
-  if (in_header->opcode == FUSE_RELEASE) return;
+  if (in_header->opcode == FUSE_RELEASE || in_header->opcode == FUSE_RELEASEDIR)
+    return;
   // Check if there is a corresponding response.
   if (responses_.End()) {
     GTEST_NONFATAL_FAILURE_("No more FUSE response is expected");

@@ -166,12 +166,12 @@ class FuseTest : public ::testing::Test {
  protected:
   TempPath mount_point_;
 
+  // Unmounts the mountpoint of the FUSE server.
+  void UnmountFuse();
+
  private:
   // Opens /dev/fuse and inherit the file descriptor for the FUSE server.
   void MountFuse();
-
-  // Unmounts the mountpoint of the FUSE server.
-  void UnmountFuse();
 
   // Creates a socketpair for communication and forks FUSE server.
   void SetUpFuseServer();
