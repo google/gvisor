@@ -397,15 +397,21 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// Do not create new file.
 	if opts.Flags&linux.O_CREAT == 0 {
 		fs.mu.RLock()
-		defer fs.processDeferredDecRefs(ctx)
-		defer fs.mu.RUnlock()
 		vfsd, inode, err := fs.walkExistingLocked(ctx, rp)
 		if err != nil {
+			fs.mu.RUnlock()
+			fs.processDeferredDecRefs(ctx)
 			return nil, err
 		}
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+			fs.mu.RUnlock()
+			fs.processDeferredDecRefs(ctx)
 			return nil, err
 		}
+		inode.IncRef()
+		defer inode.DecRef(ctx)
+		fs.mu.RUnlock()
+		fs.processDeferredDecRefs(ctx)
 		return inode.Open(ctx, rp, vfsd, opts)
 	}
 
@@ -414,7 +420,14 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	vfsd := rp.Start()
 	inode := vfsd.Impl().(*Dentry).inode
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			fs.mu.Unlock()
+			unlocked = true
+		}
+	}
+	defer unlock()
 	if rp.Done() {
 		if rp.MustBeDir() {
 			return nil, syserror.EISDIR
@@ -425,6 +438,9 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
+		inode.IncRef()
+		defer inode.DecRef(ctx)
+		unlock()
 		return inode.Open(ctx, rp, vfsd, opts)
 	}
 afterTrailingSymlink:
@@ -466,6 +482,9 @@ afterTrailingSymlink:
 		}
 		child := childVFSD.Impl().(*Dentry)
 		parentVFSD.Impl().(*Dentry).InsertChild(pc, child)
+		child.inode.IncRef()
+		defer child.inode.DecRef(ctx)
+		unlock()
 		return child.inode.Open(ctx, rp, childVFSD, opts)
 	}
 	if err != nil {
@@ -499,6 +518,9 @@ afterTrailingSymlink:
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+	child.inode.IncRef()
+	defer child.inode.DecRef(ctx)
+	unlock()
 	return child.inode.Open(ctx, rp, &child.vfsd, opts)
 }
 
