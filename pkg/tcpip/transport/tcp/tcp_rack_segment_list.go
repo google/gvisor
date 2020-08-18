@@ -11,49 +11,49 @@ package tcp
 //      }
 //
 // +stateify savable
-type segmentList struct {
+type rackSegmentList struct {
 	head *segment
 	tail *segment
 }
 
 // Reset resets list l to the empty state.
-func (l *segmentList) Reset() {
+func (l *rackSegmentList) Reset() {
 	l.head = nil
 	l.tail = nil
 }
 
 // Empty returns true iff the list is empty.
-func (l *segmentList) Empty() bool {
+func (l *rackSegmentList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
-func (l *segmentList) Front() *segment {
+func (l *rackSegmentList) Front() *segment {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
-func (l *segmentList) Back() *segment {
+func (l *rackSegmentList) Back() *segment {
 	return l.tail
 }
 
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
-func (l *segmentList) Len() (count int) {
-	for e := l.Front(); e != nil; e = (segmentMapper{}.linkerFor(e)).Next() {
+func (l *rackSegmentList) Len() (count int) {
+	for e := l.Front(); e != nil; e = (rackSegmentMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
 }
 
 // PushFront inserts the element e at the front of list l.
-func (l *segmentList) PushFront(e *segment) {
-	linker := segmentMapper{}.linkerFor(e)
+func (l *rackSegmentList) PushFront(e *segment) {
+	linker := rackSegmentMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
 	linker.SetPrev(nil)
 	if l.head != nil {
-		segmentMapper{}.linkerFor(l.head).SetPrev(e)
+		rackSegmentMapper{}.linkerFor(l.head).SetPrev(e)
 	} else {
 		l.tail = e
 	}
@@ -62,12 +62,12 @@ func (l *segmentList) PushFront(e *segment) {
 }
 
 // PushBack inserts the element e at the back of list l.
-func (l *segmentList) PushBack(e *segment) {
-	linker := segmentMapper{}.linkerFor(e)
+func (l *rackSegmentList) PushBack(e *segment) {
+	linker := rackSegmentMapper{}.linkerFor(e)
 	linker.SetNext(nil)
 	linker.SetPrev(l.tail)
 	if l.tail != nil {
-		segmentMapper{}.linkerFor(l.tail).SetNext(e)
+		rackSegmentMapper{}.linkerFor(l.tail).SetNext(e)
 	} else {
 		l.head = e
 	}
@@ -76,13 +76,13 @@ func (l *segmentList) PushBack(e *segment) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
-func (l *segmentList) PushBackList(m *segmentList) {
+func (l *rackSegmentList) PushBackList(m *rackSegmentList) {
 	if l.head == nil {
 		l.head = m.head
 		l.tail = m.tail
 	} else if m.head != nil {
-		segmentMapper{}.linkerFor(l.tail).SetNext(m.head)
-		segmentMapper{}.linkerFor(m.head).SetPrev(l.tail)
+		rackSegmentMapper{}.linkerFor(l.tail).SetNext(m.head)
+		rackSegmentMapper{}.linkerFor(m.head).SetPrev(l.tail)
 
 		l.tail = m.tail
 	}
@@ -91,9 +91,9 @@ func (l *segmentList) PushBackList(m *segmentList) {
 }
 
 // InsertAfter inserts e after b.
-func (l *segmentList) InsertAfter(b, e *segment) {
-	bLinker := segmentMapper{}.linkerFor(b)
-	eLinker := segmentMapper{}.linkerFor(e)
+func (l *rackSegmentList) InsertAfter(b, e *segment) {
+	bLinker := rackSegmentMapper{}.linkerFor(b)
+	eLinker := rackSegmentMapper{}.linkerFor(e)
 
 	a := bLinker.Next()
 
@@ -102,16 +102,16 @@ func (l *segmentList) InsertAfter(b, e *segment) {
 	bLinker.SetNext(e)
 
 	if a != nil {
-		segmentMapper{}.linkerFor(a).SetPrev(e)
+		rackSegmentMapper{}.linkerFor(a).SetPrev(e)
 	} else {
 		l.tail = e
 	}
 }
 
 // InsertBefore inserts e before a.
-func (l *segmentList) InsertBefore(a, e *segment) {
-	aLinker := segmentMapper{}.linkerFor(a)
-	eLinker := segmentMapper{}.linkerFor(e)
+func (l *rackSegmentList) InsertBefore(a, e *segment) {
+	aLinker := rackSegmentMapper{}.linkerFor(a)
+	eLinker := rackSegmentMapper{}.linkerFor(e)
 
 	b := aLinker.Prev()
 	eLinker.SetNext(a)
@@ -119,26 +119,26 @@ func (l *segmentList) InsertBefore(a, e *segment) {
 	aLinker.SetPrev(e)
 
 	if b != nil {
-		segmentMapper{}.linkerFor(b).SetNext(e)
+		rackSegmentMapper{}.linkerFor(b).SetNext(e)
 	} else {
 		l.head = e
 	}
 }
 
 // Remove removes e from l.
-func (l *segmentList) Remove(e *segment) {
-	linker := segmentMapper{}.linkerFor(e)
+func (l *rackSegmentList) Remove(e *segment) {
+	linker := rackSegmentMapper{}.linkerFor(e)
 	prev := linker.Prev()
 	next := linker.Next()
 
 	if prev != nil {
-		segmentMapper{}.linkerFor(prev).SetNext(next)
+		rackSegmentMapper{}.linkerFor(prev).SetNext(next)
 	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
-		segmentMapper{}.linkerFor(next).SetPrev(prev)
+		rackSegmentMapper{}.linkerFor(next).SetPrev(prev)
 	} else if l.tail == e {
 		l.tail = prev
 	}
@@ -152,27 +152,27 @@ func (l *segmentList) Remove(e *segment) {
 // methods needed by List.
 //
 // +stateify savable
-type segmentEntry struct {
+type rackSegmentEntry struct {
 	next *segment
 	prev *segment
 }
 
 // Next returns the entry that follows e in the list.
-func (e *segmentEntry) Next() *segment {
+func (e *rackSegmentEntry) Next() *segment {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
-func (e *segmentEntry) Prev() *segment {
+func (e *rackSegmentEntry) Prev() *segment {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
-func (e *segmentEntry) SetNext(elem *segment) {
+func (e *rackSegmentEntry) SetNext(elem *segment) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
-func (e *segmentEntry) SetPrev(elem *segment) {
+func (e *rackSegmentEntry) SetPrev(elem *segment) {
 	e.prev = elem
 }
