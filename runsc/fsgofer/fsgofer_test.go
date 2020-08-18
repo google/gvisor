@@ -491,30 +491,50 @@ func TestLink(t *testing.T) {
 }
 
 func TestROMountChecks(t *testing.T) {
+	const want = syscall.EROFS
 	runCustom(t, allTypes, roConfs, func(t *testing.T, s state) {
-		if _, _, _, _, err := s.file.Create("some_file", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
-			t.Errorf("%v: Create() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if s.fileType != syscall.S_IFLNK {
+			if _, _, _, err := s.file.Open(p9.WriteOnly); err != want {
+				t.Errorf("Open() should have failed, got: %v, expected: %v", err, want)
+			}
+			if _, _, _, err := s.file.Open(p9.ReadWrite); err != want {
+				t.Errorf("Open() should have failed, got: %v, expected: %v", err, want)
+			}
+			if _, _, _, err := s.file.Open(p9.ReadOnly | p9.OpenTruncate); err != want {
+				t.Errorf("Open() should have failed, got: %v, expected: %v", err, want)
+			}
+			f, _, _, err := s.file.Open(p9.ReadOnly)
+			if err != nil {
+				t.Errorf("Open() failed: %v", err)
+			}
+			if f != nil {
+				_ = f.Close()
+			}
 		}
-		if _, err := s.file.Mkdir("some_dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
-			t.Errorf("%v: MkDir() should have failed, got: %v, expected: syscall.EBADF", s, err)
+
+		if _, _, _, _, err := s.file.Create("some_file", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != want {
+			t.Errorf("Create() should have failed, got: %v, expected: %v", err, want)
 		}
-		if err := s.file.RenameAt("some_file", s.file, "other_file"); err != syscall.EBADF {
-			t.Errorf("%v: Rename() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if _, err := s.file.Mkdir("some_dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != want {
+			t.Errorf("MkDir() should have failed, got: %v, expected: %v", err, want)
 		}
-		if _, err := s.file.Symlink("some_place", "some_symlink", p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
-			t.Errorf("%v: Symlink() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if err := s.file.RenameAt("some_file", s.file, "other_file"); err != want {
+			t.Errorf("Rename() should have failed, got: %v, expected: %v", err, want)
 		}
-		if err := s.file.UnlinkAt("some_file", 0); err != syscall.EBADF {
-			t.Errorf("%v: UnlinkAt() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if _, err := s.file.Symlink("some_place", "some_symlink", p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != want {
+			t.Errorf("Symlink() should have failed, got: %v, expected: %v", err, want)
 		}
-		if err := s.file.Link(s.file, "some_link"); err != syscall.EBADF {
-			t.Errorf("%v: Link() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if err := s.file.UnlinkAt("some_file", 0); err != want {
+			t.Errorf("UnlinkAt() should have failed, got: %v, expected: %v", err, want)
+		}
+		if err := s.file.Link(s.file, "some_link"); err != want {
+			t.Errorf("Link() should have failed, got: %v, expected: %v", err, want)
 		}
 
 		valid := p9.SetAttrMask{Size: true}
 		attr := p9.SetAttr{Size: 0}
-		if err := s.file.SetAttr(valid, attr); err != syscall.EBADF {
-			t.Errorf("%v: SetAttr() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if err := s.file.SetAttr(valid, attr); err != want {
+			t.Errorf("SetAttr() should have failed, got: %v, expected: %v", err, want)
 		}
 	})
 }
@@ -522,6 +542,9 @@ func TestROMountChecks(t *testing.T) {
 func TestROMountPanics(t *testing.T) {
 	conf := Config{ROMount: true, PanicOnWrite: true}
 	runCustom(t, allTypes, []Config{conf}, func(t *testing.T, s state) {
+		if s.fileType != syscall.S_IFLNK {
+			assertPanic(t, func() { s.file.Open(p9.WriteOnly) })
+		}
 		assertPanic(t, func() { s.file.Create("some_file", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
 		assertPanic(t, func() { s.file.Mkdir("some_dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
 		assertPanic(t, func() { s.file.RenameAt("some_file", s.file, "other_file") })
@@ -740,4 +763,37 @@ func TestDoubleAttachError(t *testing.T) {
 	if _, err := a.Attach(); err == nil {
 		t.Fatalf("Attach should have failed, got %v want non-nil", err)
 	}
+}
+
+func TestTruncate(t *testing.T) {
+	runCustom(t, []uint32{syscall.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+		child, err := createFile(s.file, "test")
+		if err != nil {
+			t.Fatalf("createFile() failed, err: %v", err)
+		}
+		defer child.Close()
+		want := []byte("foobar")
+		w, err := child.WriteAt(want, 0)
+		if err != nil {
+			t.Fatalf("Write() failed, err: %v", err)
+		}
+		if w != len(want) {
+			t.Fatalf("Write() was partial, got: %d, expected: %d", w, len(want))
+		}
+
+		_, l, err := s.file.Walk([]string{"test"})
+		if err != nil {
+			t.Fatalf("Walk(%s) failed, err: %v", "test", err)
+		}
+		if _, _, _, err := l.Open(p9.ReadOnly | p9.OpenTruncate); err != nil {
+			t.Fatalf("Open() failed, err: %v", err)
+		}
+		_, mask, attr, err := l.GetAttr(p9.AttrMask{Size: true})
+		if !mask.Size {
+			t.Fatalf("GetAttr() didn't return size: %+v", mask)
+		}
+		if attr.Size != 0 {
+			t.Fatalf("truncate didn't work, want: 0, got: %d", attr.Size)
+		}
+	})
 }
