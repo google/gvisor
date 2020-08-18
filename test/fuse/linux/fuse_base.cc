@@ -268,32 +268,7 @@ void FuseTest::ServerReceiveInodeLookup() {
       .len = out_len,
       .error = 0,
   };
-  struct fuse_entry_out out_payload = {
-      .nodeid = nodeid_,
-      .generation = 0,
-      .entry_valid = 0,
-      .attr_valid = 0,
-      .entry_valid_nsec = 0,
-      .attr_valid_nsec = 0,
-      .attr =
-          (struct fuse_attr){
-              .ino = nodeid_,
-              .size = 512,
-              .blocks = 4,
-              .atime = 0,
-              .mtime = 0,
-              .ctime = 0,
-              .atimensec = 0,
-              .mtimensec = 0,
-              .ctimensec = 0,
-              .mode = mode,
-              .nlink = 2,
-              .uid = 1234,
-              .gid = 4321,
-              .rdev = 12,
-              .blksize = 4096,
-          },
-  };
+  struct fuse_entry_out out_payload = DefaultEntryOut(mode, nodeid_);
   // Since this is only used in test, nodeid_ is simply increased by 1 to
   // comply with the unqiueness of different path.
   ++nodeid_;
