@@ -98,6 +98,16 @@ func TaskFromContext(ctx context.Context) *Task {
 	return nil
 }
 
+// TaskFromContextOrDie return TaskFromContext(ctx) if the latter is not nil.
+// Otherwise, panic is triggered.
+func TaskFromContextOrDie(ctx context.Context) *Task {
+	t := TaskFromContext(ctx)
+	if t == nil {
+		panic("failed to create task from context")
+	}
+	return t
+}
+
 // Deadline implements context.Context.Deadline.
 func (*Task) Deadline() (time.Time, bool) {
 	return time.Time{}, false

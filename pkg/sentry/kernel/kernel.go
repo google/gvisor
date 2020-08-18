@@ -1658,7 +1658,7 @@ func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
 		k.unimplementedSyscallEmitter = eventchannel.RateLimitedEmitterFrom(eventchannel.DefaultEmitter, unimplementedSyscallsMaxRate, unimplementedSyscallBurst)
 	})
 
-	t := TaskFromContext(ctx)
+	t := TaskFromContextOrDie(ctx)
 	k.unimplementedSyscallEmitter.Emit(&uspb.UnimplementedSyscall{
 		Tid:       int32(t.ThreadID()),
 		Registers: t.Arch().StateData().Proto(),
