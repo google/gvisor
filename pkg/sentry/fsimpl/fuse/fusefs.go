@@ -490,5 +490,37 @@ type fileDescription struct {
 	OpenFlag uint32
 }
 
+func (fd *fileDescription) dentry() *kernfs.Dentry {
+	return fd.vfsfd.Dentry().Impl().(*kernfs.Dentry)
+}
+
+func (fd *fileDescription) inode() *inode {
+	return fd.dentry().Inode().(*inode)
+}
+
+func (fd *fileDescription) statusFlags() uint32 {
+	return fd.vfsfd.StatusFlags()
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *fileDescription) Release(ctx context.Context) {}
+func (fd *fileDescription) Release(ctx context.Context) {
+	in := linux.FUSEReleaseIn{
+		Fh:    fd.Fh,
+		Flags: fd.statusFlags(),
+	}
+	// TODO(gvisor.dev/issue/3245): add logic when we support file lock owner.
+	var opcode linux.FUSEOpcode
+	if fd.inode().Mode().IsDir() {
+		opcode = linux.FUSE_RELEASEDIR
+	} else {
+		opcode = linux.FUSE_RELEASE
+	}
+	conn := fd.inode().fs.conn
+	if !conn.noOpen {
+		kernelTask := kernel.TaskFromContext(ctx)
+		// ignoring error is analogous to Linux's behavior.
+		req, _ := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), fd.inode().NodeID, opcode, &in)
+		// FUSE server doesn't reply to this call.
+		conn.CallAsync(kernelTask, req)
+	}
+}
