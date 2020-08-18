@@ -29,6 +29,8 @@ namespace testing {
 namespace {
 
 using ::testing::_;
+using ::testing::AnyOf;
+using ::testing::Eq;
 
 const uint64_t kAllocSize = kPageSize * 128ULL;
 
@@ -394,7 +396,8 @@ TEST(ShmDeathTest, SegmentNotAccessibleAfterDetach) {
   };
 
   EXPECT_THAT(InForkedProcess(rest),
-              IsPosixErrorOkAndHolds(W_EXITCODE(0, SIGSEGV)));
+              IsPosixErrorOkAndHolds(AnyOf(Eq(W_EXITCODE(0, SIGSEGV)),
+                                           Eq(W_EXITCODE(0, 128 + SIGSEGV)))));
 }
 
 TEST(ShmTest, RequestingSegmentSmallerThanSHMMINFails) {
