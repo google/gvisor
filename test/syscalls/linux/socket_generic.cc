@@ -463,7 +463,7 @@ TEST_P(AllSocketPairTest, SetGetSendTimeout) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   // tv_usec should be a multiple of 4000 to work on most systems.
-  timeval tv = {.tv_sec = 89, .tv_usec = 42000};
+  timeval tv = {.tv_sec = 89, .tv_usec = 44000};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
