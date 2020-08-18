@@ -43,6 +43,8 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
+using ::testing::AnyOf;
+using ::testing::Eq;
 using ::testing::Gt;
 
 namespace gvisor {
@@ -296,7 +298,8 @@ TEST_F(MMapTest, MapDevZeroSegfaultAfterUnmap) {
   };
 
   EXPECT_THAT(InForkedProcess(rest),
-              IsPosixErrorOkAndHolds(W_EXITCODE(0, SIGSEGV)));
+              IsPosixErrorOkAndHolds(AnyOf(Eq(W_EXITCODE(0, SIGSEGV)),
+                                           Eq(W_EXITCODE(0, 128 + SIGSEGV)))));
 }
 
 TEST_F(MMapTest, MapDevZeroUnaligned) {
