@@ -54,6 +54,10 @@ class FuseTest : public ::testing::Test {
   // complains if the FUSE server responds failure during tests.
   void WaitCompleted();
 
+  // Called by the testing thread to ask the FUSE server to skip stored
+  // request data.
+  void SkipServerActualRequest();
+
  protected:
   TempPath mount_point_;
 

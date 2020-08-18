@@ -17,6 +17,7 @@ package fuse
 
 import (
 	"strconv"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -205,9 +206,24 @@ type inode struct {
 	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
 
-	locks vfs.FileLocks
-
+	NodeID uint64
 	dentry kernfs.Dentry
+	locks  vfs.FileLocks
+
+	// the owning filesystem. fs is immutable.
+	fs *filesystem
+
+	// size of the file.
+	size uint64
+
+	// attributeVersion is the version of inode's attributes.
+	attributeVersion uint64
+
+	// attributeTime is the remaining vaild time of attributes.
+	attributeTime uint64
+
+	// version of the inode.
+	version uint64
 }
 
 func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
@@ -222,13 +238,87 @@ func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *ke
 
 // Open implements kernfs.Inode.Open.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
-		SeekEnd: kernfs.SeekEndStaticEntries,
-	})
-	if err != nil {
+	isDir := i.InodeAttrs.Mode().IsDir()
+	// return error if specified to open directory but inode is not a directory.
+	if !isDir && opts.Mode.IsDir() {
+		return nil, syserror.ENOTDIR
+	}
+	if opts.Flags&linux.O_LARGEFILE == 0 && atomic.LoadUint64(&i.size) > linux.MAX_NON_LFS {
+		return nil, syserror.EOVERFLOW
+	}
+
+	// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
+	fd := fileDescription{OpenFlag: linux.FOPEN_KEEP_CACHE}
+	// Only send open request when FUSE server support open or is opening a directory.
+	if !i.fs.conn.noOpen || isDir {
+		kernelTask := kernel.TaskFromContext(ctx)
+		if kernelTask == nil {
+			log.Warningf("fusefs.Inode.Open: couldn't get kernel task from context")
+			return nil, syserror.EINVAL
+		}
+
+		var opcode linux.FUSEOpcode
+		if isDir {
+			opcode = linux.FUSE_OPENDIR
+		} else {
+			opcode = linux.FUSE_OPEN
+		}
+		in := linux.FUSEOpenIn{Flags: opts.Flags & ^uint32(linux.O_CREAT|linux.O_EXCL|linux.O_NOCTTY)}
+		if !i.fs.conn.atomicOTrunc {
+			in.Flags &= ^uint32(linux.O_TRUNC)
+		}
+		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, opcode, &in)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := i.fs.conn.Call(kernelTask, req)
+		if err != nil {
+			return nil, err
+		}
+		if err := res.Error(); err == syserror.ENOSYS && !isDir {
+			i.fs.conn.noOpen = true
+		} else if err != nil {
+			return nil, err
+		} else {
+			out := linux.FUSEOpenOut{}
+			if err := res.UnmarshalPayload(&out); err != nil {
+				return nil, err
+			}
+			fd.OpenFlag = out.OpenFlag
+			fd.Fh = out.Fh
+		}
+	}
+
+	if isDir {
+		fd.OpenFlag &= ^uint32(linux.FOPEN_DIRECT_IO)
+	}
+
+	// TODO(gvisor.dev/issue/3234): invalidate mmap after implemented it for FUSE Inode
+	fd.DirectIO = fd.OpenFlag&linux.FOPEN_DIRECT_IO != 0
+	fdOptions := &vfs.FileDescriptionOptions{}
+	if fd.OpenFlag&linux.FOPEN_NONSEEKABLE != 0 {
+		fdOptions.DenyPRead = true
+		fdOptions.DenyPWrite = true
+		fd.Nonseekable = true
+	}
+
+	// If we don't send SETATTR before open (which is indicated by atomicOTrunc)
+	// and O_TRUNC is set, update the inode's version number and clean existing data
+	// by setting the file size to 0.
+	if i.fs.conn.atomicOTrunc && opts.Flags&linux.O_TRUNC != 0 {
+		i.fs.conn.mu.Lock()
+		i.fs.conn.attributeVersion++
+		i.attributeVersion = i.fs.conn.attributeVersion
+		atomic.StoreUint64(&i.size, 0)
+		i.fs.conn.mu.Unlock()
+		i.attributeTime = 0
+	}
+
+	if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
 		return nil, err
 	}
-	return fd.VFSFileDescription(), nil
+	return &fd.vfsfd, nil
 }
 
 // statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx. The

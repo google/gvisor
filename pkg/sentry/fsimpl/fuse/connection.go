@@ -78,8 +78,13 @@ type Response struct {
 type connection struct {
 	fd *DeviceFD
 
+	// mu protect access to struct memebers.
+	mu sync.Mutex
+
+	// attributeVersion is the version of connection's attributes.
+	attributeVersion uint64
+
 	// The following FUSE_INIT flags are currently unsupported by this implementation:
-	// - FUSE_ATOMIC_O_TRUNC: requires open(..., O_TRUNC)
 	// - FUSE_EXPORT_SUPPORT
 	// - FUSE_HANDLE_KILLPRIV
 	// - FUSE_POSIX_LOCKS: requires POSIX locks
@@ -112,6 +117,11 @@ type connection struct {
 	// aborted via sysfs.
 	// TODO(gvisor.dev/issue/3185): abort all queued requests.
 	aborted bool
+
+	// atomicOTrunc is true when FUSE does not send a separate SETATTR request
+	// before open with O_TRUNC flag.
+	// Negotiated and only set in INIT.
+	atomicOTrunc bool
 
 	// connInitError if FUSE_INIT encountered error (major version mismatch).
 	// Only set in INIT.
@@ -189,6 +199,10 @@ type connection struct {
 	// dontMask if filestestem does not apply umask to creation modes.
 	// Negotiated in INIT.
 	dontMask bool
+
+	// noOpen if FUSE server doesn't support open operation.
+	// This flag only influence performance, not correctness of the program.
+	noOpen bool
 }
 
 // newFUSEConnection creates a FUSE connection to fd.
