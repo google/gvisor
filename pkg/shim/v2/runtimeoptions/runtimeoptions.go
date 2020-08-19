@@ -23,5 +23,8 @@ import (
 type Options = pb.Options
 
 func init() {
+	// The generated proto file auto registers with "golang/protobuf/proto"
+	// package. However, typeurl uses "golang/gogo/protobuf/proto". So registers
+	// the type there too.
 	proto.RegisterType((*Options)(nil), "cri.runtimeoptions.v1.Options")
 }

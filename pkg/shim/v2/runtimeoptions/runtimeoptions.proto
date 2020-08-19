@@ -14,11 +14,11 @@
 
 syntax = "proto3";
 
-package runtimeoptions;
+package cri.runtimeoptions.v1;
 
 // This is a version of the runtimeoptions CRI API that is vendored.
 //
-// Imported the full CRI package is a nightmare.
+// Importing the full CRI package is a nightmare.
 message Options {
   string type_url = 1;
   string config_path = 2;
