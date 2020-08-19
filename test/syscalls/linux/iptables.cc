@@ -67,7 +67,7 @@ TEST(IPTablesBasic, FailSockoptNonRaw) {
   struct ipt_getinfo info = {};
   snprintf(info.name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
   socklen_t info_size = sizeof(info);
-  EXPECT_THAT(getsockopt(sock, IPPROTO_IP, SO_GET_INFO, &info, &info_size),
+  EXPECT_THAT(getsockopt(sock, IPPROTO_IP, IPT_SO_GET_INFO, &info, &info_size),
               SyscallFailsWithErrno(ENOPROTOOPT));
 
   ASSERT_THAT(close(sock), SyscallSucceeds());
@@ -112,7 +112,7 @@ TEST_F(IPTablesTest, InitialState) {
   struct ipt_getinfo info = {};
   snprintf(info.name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
   socklen_t info_size = sizeof(info);
-  ASSERT_THAT(getsockopt(s_, IPPROTO_IP, SO_GET_INFO, &info, &info_size),
+  ASSERT_THAT(getsockopt(s_, IPPROTO_IP, IPT_SO_GET_INFO, &info, &info_size),
               SyscallSucceeds());
 
   // The nat table supports PREROUTING, and OUTPUT.
@@ -148,7 +148,7 @@ TEST_F(IPTablesTest, InitialState) {
   snprintf(entries->name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
   entries->size = info.size;
   ASSERT_THAT(
-      getsockopt(s_, IPPROTO_IP, SO_GET_ENTRIES, entries, &entries_size),
+      getsockopt(s_, IPPROTO_IP, IPT_SO_GET_ENTRIES, entries, &entries_size),
       SyscallSucceeds());
 
   // Verify the name and size.
