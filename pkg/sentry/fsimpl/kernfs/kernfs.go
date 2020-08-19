@@ -328,10 +328,6 @@ type inodeRefs interface {
 	IncRef()
 	DecRef(ctx context.Context)
 	TryIncRef() bool
-	// Destroy is called when the inode reaches zero references. Destroy release
-	// all resources (references) on objects referenced by the inode, including
-	// any child dentries.
-	Destroy(ctx context.Context)
 }
 
 type inodeMetadata interface {
