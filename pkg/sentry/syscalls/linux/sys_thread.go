@@ -262,7 +262,7 @@ func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
 		wopts.Events |= kernel.EventGroupContinue
 	}
 	if options&linux.WNOHANG == 0 {
-		wopts.BlockInterruptErr = kernel.ERESTARTSYS
+		wopts.BlockInterruptErr = syserror.ERESTARTSYS
 	}
 	if options&linux.WNOTHREAD == 0 {
 		wopts.SiblingChildren = true

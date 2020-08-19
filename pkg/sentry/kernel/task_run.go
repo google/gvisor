@@ -26,6 +26,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -189,8 +190,8 @@ func (app *runApp) execute(t *Task) taskRunState {
 	// a pending signal, causing another interruption, but that signal should
 	// not interact with the interrupted syscall.)
 	if t.haveSyscallReturn {
-		if sre, ok := SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
-			if sre == ERESTART_RESTARTBLOCK {
+		if sre, ok := syserror.SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
+			if sre == syserror.ERESTART_RESTARTBLOCK {
 				t.Debugf("Restarting syscall %d with restart block after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
 				t.Arch().RestartSyscallWithRestartBlock()
 			} else {

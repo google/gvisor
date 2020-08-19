@@ -348,7 +348,7 @@ func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 // Pause implements linux syscall pause(2).
 func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), kernel.ERESTARTNOHAND)
+	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
 }
 
 // RtSigpending implements linux syscall rt_sigpending(2).
@@ -496,7 +496,7 @@ func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	t.SetSavedSignalMask(oldmask)
 
 	// Perform the wait.
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), kernel.ERESTARTNOHAND)
+	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
 }
 
 // RestartSyscall implements the linux syscall restart_syscall(2).
