@@ -62,7 +62,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	n, err := read(t, file, dst, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "read", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "read", file)
 }
 
 // Readv implements Linux syscall readv(2).
@@ -87,7 +87,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := read(t, file, dst, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "readv", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "readv", file)
 }
 
 func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
@@ -174,7 +174,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := pread(t, file, dst, offset, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pread64", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pread64", file)
 }
 
 // Preadv implements Linux syscall preadv(2).
@@ -205,7 +205,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := pread(t, file, dst, offset, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "preadv", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "preadv", file)
 }
 
 // Preadv2 implements Linux syscall preadv2(2).
@@ -251,7 +251,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		n, err = pread(t, file, dst, offset, opts)
 	}
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "preadv2", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "preadv2", file)
 }
 
 func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
@@ -332,7 +332,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := write(t, file, src, vfs.WriteOptions{})
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "write", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "write", file)
 }
 
 // Writev implements Linux syscall writev(2).
@@ -357,7 +357,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := write(t, file, src, vfs.WriteOptions{})
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "writev", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "writev", file)
 }
 
 func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
@@ -444,7 +444,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	n, err := pwrite(t, file, src, offset, vfs.WriteOptions{})
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pwrite64", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pwrite64", file)
 }
 
 // Pwritev implements Linux syscall pwritev(2).
@@ -475,7 +475,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := pwrite(t, file, src, offset, vfs.WriteOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pwritev", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pwritev", file)
 }
 
 // Pwritev2 implements Linux syscall pwritev2(2).
@@ -521,7 +521,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		n, err = pwrite(t, file, src, offset, opts)
 	}
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pwritev2", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pwritev2", file)
 }
 
 func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {

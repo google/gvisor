@@ -184,7 +184,7 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 
 		file, err := d.Inode.GetFile(t, d, fileFlags)
 		if err != nil {
-			return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+			return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 		}
 		defer file.DecRef(t)
 
@@ -414,7 +414,7 @@ func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode l
 			// Create a new fs.File.
 			newFile, err = found.Inode.GetFile(t, found, fileFlags)
 			if err != nil {
-				return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+				return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 			}
 			defer newFile.DecRef(t)
 		case syserror.ENOENT:
