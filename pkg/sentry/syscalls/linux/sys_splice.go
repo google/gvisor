@@ -170,7 +170,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// We can only pass a single file to handleIOError, so pick inFile
 	// arbitrarily. This is used only for debugging purposes.
-	return uintptr(n), nil, handleIOError(t, false, err, kernel.ERESTARTSYS, "sendfile", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "sendfile", inFile)
 }
 
 // Splice implements splice(2).
@@ -280,7 +280,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "splice", inFile)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "splice", inFile)
 }
 
 // Tee imlements tee(2).
@@ -333,5 +333,5 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	}
 
 	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, false, err, kernel.ERESTARTSYS, "tee", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "tee", inFile)
 }

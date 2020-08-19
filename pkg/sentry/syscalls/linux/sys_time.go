@@ -213,7 +213,7 @@ func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, ts linux.Timespec) error
 		return nil
 	}
 
-	return syserror.ConvertIntr(err, kernel.ERESTARTNOHAND)
+	return syserror.ConvertIntr(err, syserror.ERESTARTNOHAND)
 }
 
 // clockNanosleepFor blocks for a specified duration.
@@ -254,7 +254,7 @@ func clockNanosleepFor(t *kernel.Task, c ktime.Clock, dur time.Duration, rem use
 			duration: remaining,
 			rem:      rem,
 		})
-		return kernel.ERESTART_RESTARTBLOCK
+		return syserror.ERESTART_RESTARTBLOCK
 	default:
 		panic(fmt.Sprintf("Impossible BlockWithTimer error %v", err))
 	}
