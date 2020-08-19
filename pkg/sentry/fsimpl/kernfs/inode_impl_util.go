@@ -48,10 +48,6 @@ func (InodeNoopRefCount) TryIncRef() bool {
 	return true
 }
 
-// Destroy implements Inode.Destroy.
-func (InodeNoopRefCount) Destroy(context.Context) {
-}
-
 // InodeDirectoryNoNewChildren partially implements the Inode interface.
 // InodeDirectoryNoNewChildren represents a directory inode which does not
 // support creation of new children.
@@ -367,15 +363,12 @@ func (o *OrderedChildren) Init(opts OrderedChildrenOptions) {
 
 // DecRef implements Inode.DecRef.
 func (o *OrderedChildren) DecRef(ctx context.Context) {
-	o.AtomicRefCount.DecRefWithDestructor(ctx, o.Destroy)
-}
-
-// Destroy cleans up resources referenced by this OrderedChildren.
-func (o *OrderedChildren) Destroy(context.Context) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.order.Reset()
-	o.set = nil
+	o.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		o.order.Reset()
+		o.set = nil
+	})
 }
 
 // Populate inserts children into this OrderedChildren, and d's dentry
