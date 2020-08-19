@@ -432,17 +432,14 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 
 // DecRef implements kernfs.Inode.
 func (i *inode) DecRef(ctx context.Context) {
-	i.AtomicRefCount.DecRefWithDestructor(ctx, i.Destroy)
-}
-
-// Destroy implements kernfs.Inode.
-func (i *inode) Destroy(context.Context) {
-	if i.wouldBlock {
-		fdnotifier.RemoveFD(int32(i.hostFD))
-	}
-	if err := unix.Close(i.hostFD); err != nil {
-		log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
-	}
+	i.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
+		if i.wouldBlock {
+			fdnotifier.RemoveFD(int32(i.hostFD))
+		}
+		if err := unix.Close(i.hostFD); err != nil {
+			log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
+		}
+	})
 }
 
 // Open implements kernfs.Inode.
