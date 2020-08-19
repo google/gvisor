@@ -267,7 +267,7 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	})
 	// MSync calls fsync, the same interrupt conversion rules apply, see
 	// mm/msync.c, fsync POSIX.1-2008.
-	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 }
 
 // Mlock implements linux syscall mlock(2).

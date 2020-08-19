@@ -108,7 +108,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 
 	if flags&linux.SYNC_FILE_RANGE_WAIT_AFTER != 0 {
 		if err := file.Sync(t); err != nil {
-			return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+			return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 		}
 	}
 	return 0, nil, nil
