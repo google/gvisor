@@ -185,7 +185,7 @@ TEST_F(FlockTest, TestMultipleHolderSharedExclusive) {
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
 }
 
-TEST_F(FlockTest, TestSharedLockFailExclusiveHolder) {
+TEST_F(FlockTest, TestSharedLockFailExclusiveHolderNonblocking) {
   // This test will verify that a shared lock is denied while
   // someone holds an exclusive lock.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX | LOCK_NB),
@@ -203,7 +203,33 @@ TEST_F(FlockTest, TestSharedLockFailExclusiveHolder) {
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
 }
 
-TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolder) {
+void trivial_handler(int signum) {}
+
+TEST_F(FlockTest, TestSharedLockFailExclusiveHolderBlocking_NoRandomSave) {
+  const DisableSave ds;  // Timing-related.
+
+  // This test will verify that a shared lock is denied while
+  // someone holds an exclusive lock.
+  ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX | LOCK_NB),
+              SyscallSucceedsWithValue(0));
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
+
+  // Register a signal handler for SIGALRM and set an alarm that will go off
+  // while blocking in the subsequent flock() call. This will interrupt flock()
+  // and cause it to return EINTR.
+  struct sigaction act = {};
+  act.sa_handler = trivial_handler;
+  ASSERT_THAT(sigaction(SIGALRM, &act, NULL), SyscallSucceeds());
+  ASSERT_THAT(ualarm(10000, 0), SyscallSucceeds());
+  ASSERT_THAT(flock(fd.get(), LOCK_SH), SyscallFailsWithErrno(EINTR));
+
+  // Unlock
+  ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
+}
+
+TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolderNonblocking) {
   // This test will verify that an exclusive lock is denied while
   // someone already holds an exclsuive lock.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX | LOCK_NB),
@@ -216,6 +242,30 @@ TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolder) {
   // because someone is already holding an exclusive lock.
   ASSERT_THAT(flock(fd.get(), LOCK_EX | LOCK_NB),
               SyscallFailsWithErrno(EWOULDBLOCK));
+
+  // Unlock
+  ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
+}
+
+TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolderBlocking_NoRandomSave) {
+  const DisableSave ds;  // Timing-related.
+
+  // This test will verify that an exclusive lock is denied while
+  // someone already holds an exclsuive lock.
+  ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX | LOCK_NB),
+              SyscallSucceedsWithValue(0));
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
+
+  // Register a signal handler for SIGALRM and set an alarm that will go off
+  // while blocking in the subsequent flock() call. This will interrupt flock()
+  // and cause it to return EINTR.
+  struct sigaction act = {};
+  act.sa_handler = trivial_handler;
+  ASSERT_THAT(sigaction(SIGALRM, &act, NULL), SyscallSucceeds());
+  ASSERT_THAT(ualarm(10000, 0), SyscallSucceeds());
+  ASSERT_THAT(flock(fd.get(), LOCK_EX), SyscallFailsWithErrno(EINTR));
 
   // Unlock
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
