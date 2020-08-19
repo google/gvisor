@@ -65,47 +65,6 @@ func TestLayout(t *testing.T) {
 	}
 }
 
-func TestGenerate(t *testing.T) {
-	// The input data has size dataSize. It starts with the data in startWith,
-	// and all other bytes are zeroes.
-	testCases := []struct {
-		data         []byte
-		expectedRoot []byte
-	}{
-		{
-			data:         bytes.Repeat([]byte{0}, usermem.PageSize),
-			expectedRoot: []byte{173, 127, 172, 178, 88, 111, 198, 233, 102, 192, 4, 215, 209, 209, 107, 2, 79, 88, 5, 255, 124, 180, 124, 122, 133, 218, 189, 139, 72, 137, 44, 167},
-		},
-		{
-			data:         bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
-			expectedRoot: []byte{62, 93, 40, 92, 161, 241, 30, 223, 202, 99, 39, 2, 132, 113, 240, 139, 117, 99, 79, 243, 54, 18, 100, 184, 141, 121, 238, 46, 149, 202, 203, 132},
-		},
-		{
-			data:         []byte{'a'},
-			expectedRoot: []byte{52, 75, 204, 142, 172, 129, 37, 14, 145, 137, 103, 203, 11, 162, 209, 205, 30, 169, 213, 72, 20, 28, 243, 24, 242, 2, 92, 43, 169, 59, 110, 210},
-		},
-		{
-			data:         bytes.Repeat([]byte{'a'}, usermem.PageSize),
-			expectedRoot: []byte{201, 62, 238, 45, 13, 176, 47, 16, 172, 199, 70, 13, 149, 118, 225, 34, 220, 248, 205, 83, 196, 191, 141, 252, 174, 27, 62, 116, 235, 207, 255, 90},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%d:%v", len(tc.data), tc.data[0]), func(t *testing.T) {
-			var tree bytes.Buffer
-
-			root, err := Generate(bytes.NewBuffer(tc.data), int64(len(tc.data)), &tree, &tree)
-			if err != nil {
-				t.Fatalf("Generate failed: %v", err)
-			}
-
-			if !bytes.Equal(root, tc.expectedRoot) {
-				t.Errorf("Unexpected root")
-			}
-		})
-	}
-}
-
 // bytesReadWriter is used to read from/write to/seek in a byte array. Unlike
 // bytes.Buffer, it keeps the whole buffer during read so that it can be reused.
 type bytesReadWriter struct {
@@ -149,6 +108,50 @@ func (brw *bytesReadWriter) Seek(offset int64, whence int) (int64, error) {
 	}
 	brw.readPos = int(off)
 	return off, nil
+}
+
+func TestGenerate(t *testing.T) {
+	// The input data has size dataSize. It starts with the data in startWith,
+	// and all other bytes are zeroes.
+	testCases := []struct {
+		data         []byte
+		expectedRoot []byte
+	}{
+		{
+			data:         bytes.Repeat([]byte{0}, usermem.PageSize),
+			expectedRoot: []byte{173, 127, 172, 178, 88, 111, 198, 233, 102, 192, 4, 215, 209, 209, 107, 2, 79, 88, 5, 255, 124, 180, 124, 122, 133, 218, 189, 139, 72, 137, 44, 167},
+		},
+		{
+			data:         bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
+			expectedRoot: []byte{62, 93, 40, 92, 161, 241, 30, 223, 202, 99, 39, 2, 132, 113, 240, 139, 117, 99, 79, 243, 54, 18, 100, 184, 141, 121, 238, 46, 149, 202, 203, 132},
+		},
+		{
+			data:         []byte{'a'},
+			expectedRoot: []byte{52, 75, 204, 142, 172, 129, 37, 14, 145, 137, 103, 203, 11, 162, 209, 205, 30, 169, 213, 72, 20, 28, 243, 24, 242, 2, 92, 43, 169, 59, 110, 210},
+		},
+		{
+			data:         bytes.Repeat([]byte{'a'}, usermem.PageSize),
+			expectedRoot: []byte{201, 62, 238, 45, 13, 176, 47, 16, 172, 199, 70, 13, 149, 118, 225, 34, 220, 248, 205, 83, 196, 191, 141, 252, 174, 27, 62, 116, 235, 207, 255, 90},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%d:%v", len(tc.data), tc.data[0]), func(t *testing.T) {
+			var tree bytes.Buffer
+
+			root, err := Generate(&bytesReadWriter{
+				bytes:   tc.data,
+				readPos: 0,
+			}, int64(len(tc.data)), &tree, &tree)
+			if err != nil {
+				t.Fatalf("Generate failed: %v", err)
+			}
+
+			if !bytes.Equal(root, tc.expectedRoot) {
+				t.Errorf("Unexpected root")
+			}
+		})
+	}
 }
 
 func TestVerify(t *testing.T) {
@@ -286,7 +289,10 @@ func TestVerify(t *testing.T) {
 			rand.Read(data)
 			var tree bytesReadWriter
 
-			root, err := Generate(bytes.NewBuffer(data), int64(tc.dataSize), &tree, &tree)
+			root, err := Generate(&bytesReadWriter{
+				bytes:   data,
+				readPos: 0,
+			}, int64(tc.dataSize), &tree, &tree)
 			if err != nil {
 				t.Fatalf("Generate failed: %v", err)
 			}
@@ -320,7 +326,10 @@ func TestVerifyRandom(t *testing.T) {
 	rand.Read(data)
 	var tree bytesReadWriter
 
-	root, err := Generate(bytes.NewBuffer(data), int64(dataSize), &tree, &tree)
+	root, err := Generate(&bytesReadWriter{
+		bytes:   data,
+		readPos: 0,
+	}, int64(dataSize), &tree, &tree)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}

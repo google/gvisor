@@ -107,10 +107,21 @@ func (layout Layout) blockOffset(level int, index int64) int64 {
 // written to treeWriter. The treeReader should be able to read the tree after
 // it has been written. That is, treeWriter and treeReader should point to the
 // same underlying data but have separate cursors.
-func Generate(data io.Reader, dataSize int64, treeReader io.Reader, treeWriter io.Writer) ([]byte, error) {
+// Generate will modify the cursor for data, but always restores it to its
+// original position upon exit. The cursor for tree is modified and not
+// restored.
+func Generate(data io.ReadSeeker, dataSize int64, treeReader io.Reader, treeWriter io.Writer) ([]byte, error) {
 	layout := InitLayout(dataSize)
 
 	numBlocks := (dataSize + layout.blockSize - 1) / layout.blockSize
+
+	// Store the current offset, so we can set it back once verification
+	// finishes.
+	origOffset, err := data.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, fmt.Errorf("Find current data offset failed: %v", err)
+	}
+	defer data.Seek(origOffset, io.SeekStart)
 
 	var root []byte
 	for level := 0; level < layout.numLevels(); level++ {
@@ -255,8 +266,9 @@ func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset in
 // original data. The block is verified through each level of the tree. It
 // fails if the calculated hash from block is different from any level of
 // hashes stored in tree. And the final root hash is compared with
-// expectedRoot.  verifyBlock modifies the cursor for tree. Users needs to
-// maintain the cursor if intended.
+// expectedRoot.
+// verifyBlock modifies the cursor for tree. Users needs to maintain the cursor
+// if intended.
 func verifyBlock(tree io.ReadSeeker, layout Layout, dataBlock []byte, blockIndex int64, expectedRoot []byte) error {
 	if len(dataBlock) != int(layout.blockSize) {
 		return fmt.Errorf("incorrect block size")
