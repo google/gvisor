@@ -161,7 +161,7 @@ type connection struct {
 	bgLock sync.Mutex
 
 	// maxRead is the maximum size of a read buffer in in bytes.
-	// Set as fuse fs parameters.
+	// Initialized from a fuse fs parameter.
 	maxRead uint32
 
 	// maxWrite is the maximum size of a write buffer in bytes.

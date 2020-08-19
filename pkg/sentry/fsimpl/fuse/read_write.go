@@ -15,6 +15,7 @@
 package fuse
 
 import (
+	"fmt"
 	"math"
 	"sync/atomic"
 
@@ -27,16 +28,17 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// Read sends a FUSE_READ request, block on it for reply, process the reply and return the payload as a byte slice.
-func (fs *filesystem) Read(ctx context.Context, fd *regularFileFD, off uint64, size uint32) ([]byte, uint32, error) {
+// ReadInPages sends FUSE_READ requests for the size after round it up to a multiple of page size,
+// block on it for reply, process the reply and return the payload (or joined payloads) as a byte slice.
+// This is used for the general purpose reading. We do not support direct IO (which read the exact number of bytes) at this moment.
+func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off uint64, size uint32) ([]byte, uint32, error) {
 	attributeVersion := atomic.LoadUint64(&fs.conn.attributeVersion)
 
 	// Round up to a multiple of pages size.
-	// size will not be zero, as checked in regularFdReadWriter.ReadToBlocks().
 	readSize, _ := usermem.PageRoundUp(uint64(size))
 
 	// One request cannnot exceed either maxRead or maxPages.
-	maxPages := uint32(math.Ceil(float64(fs.conn.maxRead) / usermem.PageSize))
+	maxPages := uint32(math.Floor(float64(fs.conn.maxRead) / usermem.PageSize))
 	if maxPages > uint32(fs.conn.maxPages) {
 		maxPages = uint32(fs.conn.maxPages)
 	}
@@ -88,8 +90,14 @@ func (fs *filesystem) Read(ctx context.Context, fd *regularFileFD, off uint64, s
 			return nil, 0, err
 		}
 
-		// No bytes in response, e.g. reached EOF.
+		// Not enough bytes in response,
+		// either we reached EOF,
+		// or the FUSE server sends back a response
+		// that cannot even fit the hdr.
 		if len(res.data) <= res.hdr.SizeBytes() {
+			if len(res.data) < res.hdr.SizeBytes() {
+				return nil, 0, fmt.Errorf("payload too small. Minimum data lenth required: %d,  but got data length %d", res.hdr.SizeBytes(), len(res.data))
+			}
 			break
 		}
 
@@ -101,6 +109,8 @@ func (fs *filesystem) Read(ctx context.Context, fd *regularFileFD, off uint64, s
 		pagesRead += pagesCanRead
 	}
 
+	defer fs.ReadCallback(ctx, fd, off, size, sizeRead, attributeVersion)
+
 	// No bytes returned; perhaps user tries to read beyond EOF.
 	if len(outs) == 0 {
 		return []byte{}, 0, nil
@@ -109,7 +119,6 @@ func (fs *filesystem) Read(ctx context.Context, fd *regularFileFD, off uint64, s
 	// Finished with one reply.
 	// Return the slice directly from the buffer in response.
 	if len(outs) == 1 {
-		fs.ReadCallback(ctx, fd, off, size, sizeRead, attributeVersion)
 		return outs[0], sizeRead, nil
 	}
 
@@ -122,7 +131,6 @@ func (fs *filesystem) Read(ctx context.Context, fd *regularFileFD, off uint64, s
 		bufPos += copy(buf[bufPos:], v)
 	}
 
-	fs.ReadCallback(ctx, fd, off, size, sizeRead, attributeVersion)
 	return buf, sizeRead, nil
 }
 
@@ -135,17 +143,17 @@ func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off u
 	// TODO(gvisor.dev/issue/1193): Invalidate or update atime.
 
 	// Reached EOF.
-	if size < sizeRead {
+	if sizeRead < size {
 		// TODO(gvisor.dev/issue/3630): If we have writeback cache, then we need to fill this hole.
 		// Might need to update the buf to be returned from the Read().
 
 		// Update existing size.
 		newSize := off + uint64(sizeRead)
 		fs.conn.mu.Lock()
-		if attributeVersion == i.attributeVersion && newSize < i.size {
+		if attributeVersion == i.attributeVersion && newSize < atomic.LoadUint64(&i.size) {
 			fs.conn.attributeVersion++
 			i.attributeVersion = i.fs.conn.attributeVersion
-			i.size = newSize
+			atomic.StoreUint64(&i.size, newSize)
 		}
 		fs.conn.mu.Unlock()
 	}

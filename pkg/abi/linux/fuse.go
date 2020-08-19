@@ -394,7 +394,7 @@ type FUSEOpenOut struct {
 	OpenFlag uint32
 }
 
-// FUSE_READ flags, consist with the ones in include/uapi/linux/fuse.h.
+// FUSE_READ flags, consistent with the ones in include/uapi/linux/fuse.h.
 const (
 	FUSE_READ_LOCKOWNER = 1 << 1
 )
