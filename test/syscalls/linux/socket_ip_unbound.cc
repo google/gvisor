@@ -217,6 +217,8 @@ TEST_P(IPUnboundSocketTest, InvalidLargeTOS) {
 }
 
 TEST_P(IPUnboundSocketTest, CheckSkipECN) {
+  // Test is inconsistant on different kernels.
+  SKIP_IF(!IsRunningOnGvisor());
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   int set = 0xFF;
   socklen_t set_sz = sizeof(set);
