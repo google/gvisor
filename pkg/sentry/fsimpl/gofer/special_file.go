@@ -39,8 +39,14 @@ type specialFileFD struct {
 	// handle is used for file I/O. handle is immutable.
 	handle handle
 
+	// isRegularFile is true if this FD represents a regular file which is only
+	// possible when filesystemOptions.regularFilesUseSpecialFileFD is in
+	// effect. isRegularFile is immutable.
+	isRegularFile bool
+
 	// seekable is true if this file description represents a file for which
-	// file offset is significant, i.e. a regular file. seekable is immutable.
+	// file offset is significant, i.e. a regular file, character device or
+	// block device. seekable is immutable.
 	seekable bool
 
 	// haveQueue is true if this file description represents a file for which
@@ -55,12 +61,13 @@ type specialFileFD struct {
 
 func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks, flags uint32) (*specialFileFD, error) {
 	ftype := d.fileType()
-	seekable := ftype == linux.S_IFREG
+	seekable := ftype == linux.S_IFREG || ftype == linux.S_IFCHR || ftype == linux.S_IFBLK
 	haveQueue := (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK) && h.fd >= 0
 	fd := &specialFileFD{
-		handle:    h,
-		seekable:  seekable,
-		haveQueue: haveQueue,
+		handle:        h,
+		isRegularFile: ftype == linux.S_IFREG,
+		seekable:      seekable,
+		haveQueue:     haveQueue,
 	}
 	fd.LockFD.Init(locks)
 	if haveQueue {
@@ -200,13 +207,13 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	// If the regular file fd was opened with O_APPEND, make sure the file size
 	// is updated. There is a possible race here if size is modified externally
 	// after metadata cache is updated.
-	if fd.seekable && fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
+	if fd.isRegularFile && fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
 		if err := d.updateFromGetattr(ctx); err != nil {
 			return 0, offset, err
 		}
 	}
 
-	if fd.seekable {
+	if fd.isRegularFile {
 		// We need to hold the metadataMu *while* writing to a regular file.
 		d.metadataMu.Lock()
 		defer d.metadataMu.Unlock()
@@ -236,18 +243,20 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	if err == syserror.EAGAIN {
 		err = syserror.ErrWouldBlock
 	}
-	finalOff = offset
+	// Update offset if the offset is valid.
+	if offset >= 0 {
+		offset += int64(n)
+	}
 	// Update file size for regular files.
-	if fd.seekable {
-		finalOff += int64(n)
+	if fd.isRegularFile {
 		// d.metadataMu is already locked at this point.
-		if uint64(finalOff) > d.size {
+		if uint64(offset) > d.size {
 			d.dataMu.Lock()
 			defer d.dataMu.Unlock()
-			atomic.StoreUint64(&d.size, uint64(finalOff))
+			atomic.StoreUint64(&d.size, uint64(offset))
 		}
 	}
-	return int64(n), finalOff, err
+	return int64(n), offset, err
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
