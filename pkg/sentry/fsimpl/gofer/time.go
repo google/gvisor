@@ -38,7 +38,7 @@ func statxTimestampFromDentry(ns int64) linux.StatxTimestamp {
 
 // Preconditions: d.cachedMetadataAuthoritative() == true.
 func (d *dentry) touchAtime(mnt *vfs.Mount) {
-	if mnt.Flags.NoATime {
+	if mnt.Flags.NoATime || mnt.ReadOnly() {
 		return
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {

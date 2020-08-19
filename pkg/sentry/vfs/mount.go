@@ -114,7 +114,7 @@ func (mnt *Mount) Options() MountOptions {
 	defer mnt.vfs.mountMu.Unlock()
 	return MountOptions{
 		Flags:    mnt.Flags,
-		ReadOnly: mnt.readOnly(),
+		ReadOnly: mnt.ReadOnly(),
 	}
 }
 
@@ -688,7 +688,8 @@ func (mnt *Mount) setReadOnlyLocked(ro bool) error {
 	return nil
 }
 
-func (mnt *Mount) readOnly() bool {
+// ReadOnly returns true if mount is readonly.
+func (mnt *Mount) ReadOnly() bool {
 	return atomic.LoadInt64(&mnt.writers) < 0
 }
 
@@ -756,7 +757,7 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		}
 
 		opts := "rw"
-		if mnt.readOnly() {
+		if mnt.ReadOnly() {
 			opts = "ro"
 		}
 		if mnt.Flags.NoATime {
@@ -844,7 +845,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 
 		// (6) Mount options.
 		opts := "rw"
-		if mnt.readOnly() {
+		if mnt.ReadOnly() {
 			opts = "ro"
 		}
 		if mnt.Flags.NoATime {
@@ -883,7 +884,7 @@ func superBlockOpts(mountPath string, mnt *Mount) string {
 	// gVisor doesn't (yet) have a concept of super block options, so we
 	// use the ro/rw bit from the mount flag.
 	opts := "rw"
-	if mnt.readOnly() {
+	if mnt.ReadOnly() {
 		opts = "ro"
 	}
 
