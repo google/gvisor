@@ -60,7 +60,7 @@ type filesystemOptions struct {
 	// Call the server.
 	maxActiveRequests uint64
 
-	// maxRead is the max number of bytes to read.
+	// maxRead is the max number of bytes to read,
 	// specified as "max_read" in fs parameters.
 	// If not specified by user, use math.MaxUint32 as default value.
 	maxRead uint32
@@ -262,19 +262,12 @@ func (fs *filesystem) newInode(nodeID uint64, attr linux.FUSEAttr) *kernfs.Dentr
 	i := &inode{fs: fs, NodeID: nodeID}
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
 	i.InodeAttrs.Init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
-	// TODO(gvisor.dev/issue/1193): This should be handled in Init,
-	// unfortunately we need it for this implementation now.
 	atomic.StoreUint64(&i.size, attr.Size)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.EnableLeakCheck()
 	i.dentry.Init(i)
 
 	return &i.dentry
-}
-
-// Ino overrides the Ino() from InodeAttrs.
-func (i *inode) Ino() uint64 {
-	return i.NodeID
 }
 
 // Open implements kernfs.Inode.Open.
@@ -295,9 +288,9 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		fd = &(directoryFD.fileDescription)
 		fdImpl = directoryFD
 	} else {
-		regularFd := &regularFileFD{}
-		fd = &(regularFd.fileDescription)
-		fdImpl = regularFd
+		regularFD := &regularFileFD{}
+		fd = &(regularFD.fileDescription)
+		fdImpl = regularFD
 	}
 	// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
 	fd.OpenFlag = linux.FOPEN_KEEP_CACHE
@@ -518,7 +511,7 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 // TODO(gvisor.dev/issue/3679): Add support for other fields.
 func (i *inode) getFUSEAttr() linux.FUSEAttr {
 	return linux.FUSEAttr{
-		Ino:  i.NodeID,
+		Ino:  i.Ino(),
 		Size: atomic.LoadUint64(&i.size),
 		Mode: uint32(i.Mode()),
 	}
@@ -577,14 +570,14 @@ func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
 	return stat
 }
 
-// getAttr get the attribute of this inode by issuing a FUSE_GETATTR request
+// getAttr gets the attribute of this inode by issuing a FUSE_GETATTR request
 // or read from local cache.
 // It updates the corresponding attributes if necessary.
 func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.FUSEAttr, error) {
 	attributeVersion := atomic.LoadUint64(&i.fs.conn.attributeVersion)
 
 	// TODO(gvisor.dev/issue/3679): send the request only if
-	// - local cache is invalid for the requested fields (as specified in the opts.Mask)
+	// - invalid local cache for fields specified in the opts.Mask
 	// - forced update
 	// - i.attributeTime expired
 	// If local cache is still valid, return local cache.
@@ -637,17 +630,15 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 	}
 
 	// Set the size if no error (after SetStat() check).
-	// TODO(gvisor.dev/issue/1193): This should be handled in SetStat,
-	// unfortunately we need it for this implementation now.
 	atomic.StoreUint64(&i.size, out.Attr.Size)
 
 	return out.Attr, nil
 }
 
-// renewAttr attempts to update the attributes for internal purposes
+// reviseAttr attempts to update the attributes for internal purposes
 // by calling getAttr with a pre-specified mask.
 // Used by read, write, lseek.
-func (i *inode) renewAttr(ctx context.Context) error {
+func (i *inode) reviseAttr(ctx context.Context) error {
 	// Never need atime for internal purposes.
 	_, err := i.getAttr(ctx, i.fs.VFSFilesystem(), vfs.StatOptions{
 		Mask: linux.STATX_BASIC_STATS &^ linux.STATX_ATIME,

@@ -406,7 +406,7 @@ func (fd *DeviceFD) noReceiverAction(ctx context.Context, r *Response) error {
 		creds := auth.CredentialsFromContext(ctx)
 		rootUserNs := kernel.KernelFromContext(ctx).RootUserNamespace()
 		return fd.fs.conn.InitRecv(r, creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, rootUserNs))
-		// TODO(gvisor/dev/issue/3247): support async read: correctly process the response using information from r.options.
+		// TODO(gvisor.dev/issue/3247): support async read: correctly process the response using information from r.options.
 	}
 
 	return nil

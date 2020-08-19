@@ -430,7 +430,7 @@ type FUSEReadIn struct {
 	// LockOwner is the id of the lock owner if there is one.
 	LockOwner uint64
 
-	// Flags for the underling file.
+	// Flags for the underlying file.
 	Flags uint32
 
 	_ uint32

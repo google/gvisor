@@ -54,14 +54,14 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		return 0, nil
 	}
 
-	rw := getRegularFdReadWriter(ctx, fd, size, offset)
+	rw := getRegularFDReadWriter(ctx, fd, size, offset)
 
 	// TODO(gvisor.dev/issue/3678): Add direct IO support.
 
 	rw.read()
 	n, err := dst.CopyOutFrom(ctx, rw)
 
-	putRegularFdReadWriter(rw)
+	putRegularFDReadWriter(rw)
 
 	return n, err
 }
@@ -75,7 +75,7 @@ func (fd *regularFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 	return n, err
 }
 
-type regularFdReadWriter struct {
+type regularFDReadWriter struct {
 	ctx context.Context
 	fd  *regularFileFD
 
@@ -97,18 +97,18 @@ type regularFdReadWriter struct {
 	buf []byte
 }
 
-func (rw *regularFdReadWriter) fs() *filesystem {
+func (rw *regularFDReadWriter) fs() *filesystem {
 	return rw.fd.inode().fs
 }
 
 var regularFdReadWriterPool = sync.Pool{
 	New: func() interface{} {
-		return &regularFdReadWriter{}
+		return &regularFDReadWriter{}
 	},
 }
 
-func getRegularFdReadWriter(ctx context.Context, fd *regularFileFD, size uint32, offset int64) *regularFdReadWriter {
-	rw := regularFdReadWriterPool.Get().(*regularFdReadWriter)
+func getRegularFDReadWriter(ctx context.Context, fd *regularFileFD, size uint32, offset int64) *regularFDReadWriter {
+	rw := regularFdReadWriterPool.Get().(*regularFDReadWriter)
 	rw.ctx = ctx
 	rw.fd = fd
 	rw.size = size
@@ -116,7 +116,7 @@ func getRegularFdReadWriter(ctx context.Context, fd *regularFileFD, size uint32,
 	return rw
 }
 
-func putRegularFdReadWriter(rw *regularFdReadWriter) {
+func putRegularFDReadWriter(rw *regularFDReadWriter) {
 	rw.ctx = nil
 	rw.fd = nil
 	rw.buf = nil
@@ -127,7 +127,7 @@ func putRegularFdReadWriter(rw *regularFdReadWriter) {
 
 // read handles and issues the actual FUSE read request.
 // See ReadToBlocks() regarding its purpose.
-func (rw *regularFdReadWriter) read() {
+func (rw *regularFDReadWriter) read() {
 	// TODO(gvisor.dev/issue/3237): support indirect IO (e.g. caching):
 	// use caching when possible.
 
@@ -135,7 +135,7 @@ func (rw *regularFdReadWriter) read() {
 
 	// Reading beyond EOF, update file size if outdated.
 	if rw.off+uint64(rw.size) >= atomic.LoadUint64(&inode.size) {
-		if err := inode.renewAttr(rw.ctx); err != nil {
+		if err := inode.reviseAttr(rw.ctx); err != nil {
 			rw.err = err
 			return
 		}
@@ -165,7 +165,7 @@ func (rw *regularFdReadWriter) read() {
 // will try to acquire the same lock), have to separate the rw.read() from the
 // ReadToBlocks() function. Therefore, ReadToBlocks() only handles copying
 // the result into user memory while read() handles the actual reading.
-func (rw *regularFdReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
+func (rw *regularFDReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	if rw.err != nil {
 		return 0, rw.err
 	}

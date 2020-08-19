@@ -29,12 +29,12 @@ import (
 )
 
 // ReadInPages sends FUSE_READ requests for the size after round it up to a multiple of page size,
-// block on it for reply, process the reply and return the payload (or joined payloads) as a byte slice.
+// blocks on it for reply, processes the reply and returns the payload (or joined payloads) as a byte slice.
 // This is used for the general purpose reading. We do not support direct IO (which read the exact number of bytes) at this moment.
 func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off uint64, size uint32) ([]byte, uint32, error) {
 	attributeVersion := atomic.LoadUint64(&fs.conn.attributeVersion)
 
-	// Round up to a multiple of pages size.
+	// Round up to a multiple of page size.
 	readSize, _ := usermem.PageRoundUp(uint64(size))
 
 	// One request cannnot exceed either maxRead or maxPages.
@@ -80,7 +80,7 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 			return nil, 0, err
 		}
 
-		// TODO(gvisor/dev/issue/3247): support async read.
+		// TODO(gvisor.dev/issue/3247): support async read.
 
 		res, err := fs.conn.Call(t, req)
 		if err != nil {
@@ -96,7 +96,7 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 		// that cannot even fit the hdr.
 		if len(res.data) <= res.hdr.SizeBytes() {
 			if len(res.data) < res.hdr.SizeBytes() {
-				return nil, 0, fmt.Errorf("payload too small. Minimum data lenth required: %d,  but got data length %d", res.hdr.SizeBytes(), len(res.data))
+				return nil, 0, fmt.Errorf("FUSE_READ response too small. Minimum length required: %d,  but got length %d", res.hdr.SizeBytes(), len(res.data))
 			}
 			break
 		}
@@ -123,7 +123,7 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 	}
 
 	// Join data from multiple fragmented replies.
-	// TODO(gvisor/dev/issue/3628): avoid this extra copy,
+	// TODO(gvisor.dev/issue/3628): avoid this extra copy,
 	// perhaps we can use iovec, which requires upperstream support.
 	buf := make([]byte, sizeRead)
 	bufPos := 0
@@ -136,7 +136,7 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 
 // ReadCallback updates several information after receiving a read response.
 func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off uint64, size uint32, sizeRead uint32, attributeVersion uint64) {
-	// TODO(gvisor/dev/issue/3247): support async read. If this is called by an async read, correctly process it.
+	// TODO(gvisor.dev/issue/3247): support async read. If this is called by an async read, correctly process it.
 	// May need to update the signature.
 
 	i := fd.inode()
