@@ -632,6 +632,8 @@ var sockOptNames = map[uint64]abi.ValueSet{
 		linux.IPV6_UNICAST_IF:          "IPV6_UNICAST_IF",
 		linux.MCAST_MSFILTER:           "MCAST_MSFILTER",
 		linux.IPV6_ADDRFORM:            "IPV6_ADDRFORM",
+		linux.IP6T_SO_GET_INFO:         "IP6T_SO_GET_INFO",
+		linux.IP6T_SO_GET_ENTRIES:      "IP6T_SO_GET_ENTRIES",
 	},
 	linux.SOL_NETLINK: {
 		linux.NETLINK_BROADCAST_ERROR:  "NETLINK_BROADCAST_ERROR",
