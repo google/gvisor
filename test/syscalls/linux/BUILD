@@ -1030,6 +1030,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "ip6tables_test",
+    testonly = 1,
+    srcs = [
+        "ip6tables.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":iptables_types",
+        ":socket_test_util",
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "itimer_test",
     testonly = 1,
     srcs = ["itimer.cc"],
