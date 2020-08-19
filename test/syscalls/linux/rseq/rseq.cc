@@ -74,84 +74,95 @@ int TestUnaligned() {
 // Sanity test that registration works.
 int TestRegister() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, 0); sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, 0);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
   return 0;
-};
+}
 
 // Registration can't be done twice.
 int TestDoubleRegister() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, 0); sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, 0);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
-  if (int ret = sys_rseq(&r, sizeof(r), 0, 0); sys_errno(ret) != EBUSY) {
+  ret = sys_rseq(&r, sizeof(r), 0, 0);
+  if (sys_errno(ret) != EBUSY) {
     return 1;
   }
 
   return 0;
-};
+}
 
 // Registration can be done again after unregister.
 int TestRegisterUnregister() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, 0); sys_errno(ret) != 0) {
+
+  int ret = sys_rseq(&r, sizeof(r), 0, 0);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
-  if (int ret = sys_rseq(&r, sizeof(r), kRseqFlagUnregister, 0);
-      sys_errno(ret) != 0) {
+  ret = sys_rseq(&r, sizeof(r), kRseqFlagUnregister, 0);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
-  if (int ret = sys_rseq(&r, sizeof(r), 0, 0); sys_errno(ret) != 0) {
+  ret = sys_rseq(&r, sizeof(r), 0, 0);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
   return 0;
-};
+}
 
 // The pointer to rseq must match on register/unregister.
 int TestUnregisterDifferentPtr() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, 0); sys_errno(ret) != 0) {
+
+  int ret = sys_rseq(&r, sizeof(r), 0, 0);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
   struct rseq r2 = {};
-  if (int ret = sys_rseq(&r2, sizeof(r2), kRseqFlagUnregister, 0);
-      sys_errno(ret) != EINVAL) {
+
+  ret = sys_rseq(&r2, sizeof(r2), kRseqFlagUnregister, 0);
+  if (sys_errno(ret) != EINVAL) {
     return 1;
   }
 
   return 0;
-};
+}
 
 // The signature must match on register/unregister.
 int TestUnregisterDifferentSignature() {
   constexpr int kSignature = 0;
 
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, kSignature); sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, kSignature);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
-  if (int ret = sys_rseq(&r, sizeof(r), kRseqFlagUnregister, kSignature + 1);
-      sys_errno(ret) != EPERM) {
+  ret = sys_rseq(&r, sizeof(r), kRseqFlagUnregister, kSignature + 1);
+  if (sys_errno(ret) != EPERM) {
     return 1;
   }
 
   return 0;
-};
+}
 
 // The CPU ID is initialized.
 int TestCPU() {
   struct rseq r = {};
   r.cpu_id = kRseqCPUIDUninitialized;
 
-  if (int ret = sys_rseq(&r, sizeof(r), 0, 0); sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, 0);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
@@ -163,13 +174,13 @@ int TestCPU() {
   }
 
   return 0;
-};
+}
 
 // Critical section is eventually aborted.
 int TestAbort() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-      sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
@@ -185,13 +196,13 @@ int TestAbort() {
   rseq_loop(&r, &cs);
 
   return 0;
-};
+}
 
 // Abort may be before the critical section.
 int TestAbortBefore() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-      sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
@@ -207,13 +218,13 @@ int TestAbortBefore() {
   rseq_loop(&r, &cs);
 
   return 0;
-};
+}
 
 // Signature must match.
 int TestAbortSignature() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature + 1);
-      sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature + 1);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
@@ -229,13 +240,13 @@ int TestAbortSignature() {
   rseq_loop(&r, &cs);
 
   return 1;
-};
+}
 
 // Abort must not be in the critical section.
 int TestAbortPreCommit() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature + 1);
-      sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature + 1);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
@@ -251,13 +262,13 @@ int TestAbortPreCommit() {
   rseq_loop(&r, &cs);
 
   return 1;
-};
+}
 
 // rseq.rseq_cs is cleared on abort.
 int TestAbortClearsCS() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-      sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
@@ -277,13 +288,13 @@ int TestAbortClearsCS() {
   }
 
   return 0;
-};
+}
 
 // rseq.rseq_cs is cleared on abort outside of critical section.
 int TestInvalidAbortClearsCS() {
   struct rseq r = {};
-  if (int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-      sys_errno(ret) != 0) {
+  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
+  if (sys_errno(ret) != 0) {
     return 1;
   }
 
@@ -306,7 +317,7 @@ int TestInvalidAbortClearsCS() {
   }
 
   return 0;
-};
+}
 
 // Exit codes:
 //  0 - Pass
