@@ -46,7 +46,13 @@ func (fl *FileLocks) LockBSD(uid fslock.UniqueID, t fslock.LockType, block fsloc
 	if fl.bsd.LockRegion(uid, t, fslock.LockRange{0, fslock.LockEOF}, block) {
 		return nil
 	}
-	return syserror.ErrWouldBlock
+
+	// Return an appropriate error for the unsuccessful lock attempt, depending on
+	// whether this is a blocking or non-blocking operation.
+	if block == nil {
+		return syserror.ErrWouldBlock
+	}
+	return syserror.ERESTARTSYS
 }
 
 // UnlockBSD releases a BSD-style lock on the entire file.
@@ -66,7 +72,13 @@ func (fl *FileLocks) LockPOSIX(ctx context.Context, fd *FileDescription, uid fsl
 	if fl.posix.LockRegion(uid, t, rng, block) {
 		return nil
 	}
-	return syserror.ErrWouldBlock
+
+	// Return an appropriate error for the unsuccessful lock attempt, depending on
+	// whether this is a blocking or non-blocking operation.
+	if block == nil {
+		return syserror.ErrWouldBlock
+	}
+	return syserror.ERESTARTSYS
 }
 
 // UnlockPOSIX releases a POSIX-style lock on a file region.
