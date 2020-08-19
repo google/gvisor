@@ -189,10 +189,9 @@ const (
 
 // Constants relevant to FUSE operations.
 const (
-	FUSE_NAME_MAX       = 1024
-	FUSE_PAGE_SIZE      = 4096
-	FUSE_DIRENT_ALIGN   = 8
-	FUSE_READ_LOCKOWNER = 1 << 1
+	FUSE_NAME_MAX     = 1024
+	FUSE_PAGE_SIZE    = 4096
+	FUSE_DIRENT_ALIGN = 8
 )
 
 // FUSEInitIn is the request sent by the kernel to the daemon,
@@ -404,6 +403,11 @@ type FUSEOpenOut struct {
 	// OpenFlag for the opened file.
 	OpenFlag uint32
 }
+
+// FUSE_READ flags, consistent with the ones in include/uapi/linux/fuse.h.
+const (
+	FUSE_READ_LOCKOWNER = 1 << 1
+)
 
 // FUSEReadIn is the request sent by the kernel to the daemon
 // for FUSE_READ.
