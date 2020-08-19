@@ -37,6 +37,8 @@ namespace testing {
 namespace {
 
 class ReadTest : public FuseTest {
+ void TearDown() { UnmountFuse(); }
+
  protected:
   const std::string test_file = "test_file";
   const std::string test_file_path = JoinPath(kMountPoint, test_file);
@@ -70,7 +72,7 @@ TEST_F(ReadTest, ReadWhole) {
   const int n_read = 5;
   std::string data = std::string(n_read, 'a');
   struct fuse_out_header read_out_header = {
-    .len = static_cast<uint32_t>(sizeof(struct fuse_out_header) + data.size()),
+    .len = static_cast<uint32_t>(sizeof(struct fuse_out_header) + data.size() + 1),
   };
   auto iov_out_read = FuseGenerateIovecs(read_out_header, data);
   SetServerResponse(FUSE_READ, iov_out_read);
@@ -124,7 +126,7 @@ TEST_F(ReadTest, ReadPartial) {
   // Therefore, the test below should make sure the size to read does not exceed
   // n_data.
   struct fuse_out_header read_out_header = {
-    .len = static_cast<uint32_t>(sizeof(struct fuse_out_header) + data.size()),
+    .len = static_cast<uint32_t>(sizeof(struct fuse_out_header) + data.size() + 1),
   };
   auto iov_out_read = FuseGenerateIovecs(read_out_header, data);
   struct fuse_in_header in_header;
@@ -187,7 +189,7 @@ TEST_F(ReadTest, PRead) {
   const int n_read = 5;
   std::string data = std::string(n_read, 'a');
   struct fuse_out_header read_out_header = {
-    .len = static_cast<uint32_t>(sizeof(struct fuse_out_header) + data.size()),
+    .len = static_cast<uint32_t>(sizeof(struct fuse_out_header) + data.size() + 1),
   };
   auto iov_out_read = FuseGenerateIovecs(read_out_header, data);
   SetServerResponse(FUSE_READ, iov_out_read);
