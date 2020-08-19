@@ -159,7 +159,7 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 	sigact := computeAction(linux.Signal(info.Signo), act)
 
 	if t.haveSyscallReturn {
-		if sre, ok := SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
+		if sre, ok := syserror.SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
 			// Signals that are ignored, cause a thread group stop, or
 			// terminate the thread group do not interact with interrupted
 			// syscalls; in Linux terms, they are never returned to the signal
@@ -168,11 +168,11 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 			// signal that is actually handled (by userspace).
 			if sigact == SignalActionHandler {
 				switch {
-				case sre == ERESTARTNOHAND:
+				case sre == syserror.ERESTARTNOHAND:
 					fallthrough
-				case sre == ERESTART_RESTARTBLOCK:
+				case sre == syserror.ERESTART_RESTARTBLOCK:
 					fallthrough
-				case (sre == ERESTARTSYS && !act.IsRestart()):
+				case (sre == syserror.ERESTARTSYS && !act.IsRestart()):
 					t.Debugf("Not restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
 					t.Arch().SetReturn(uintptr(-ExtractErrno(syserror.EINTR, -1)))
 				default:

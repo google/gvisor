@@ -358,7 +358,7 @@ func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) e
 	//
 	// Linux ignores the result of kill_pgrp().
 	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
-	return kernel.ERESTARTSYS
+	return syserror.ERESTARTSYS
 }
 
 // LINT.ThenChange(../../fsimpl/host/tty.go)
