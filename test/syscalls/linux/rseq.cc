@@ -24,12 +24,16 @@
 #include "test/syscalls/linux/rseq/uapi.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
 
 namespace {
+
+using ::testing::AnyOf;
+using ::testing::Eq;
 
 // Syscall test for rseq (restartable sequences).
 //
@@ -98,7 +102,7 @@ void RunChildTest(std::string test_case, int want_status) {
 
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
-  ASSERT_EQ(status, want_status);
+  ASSERT_THAT(status, AnyOf(Eq(want_status), Eq(128 + want_status)));
 }
 
 // Test that rseq must be aligned.
