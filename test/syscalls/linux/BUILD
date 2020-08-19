@@ -1972,6 +1972,7 @@ cc_binary(
         gtest,
         "//test/util:logging",
         "//test/util:multiprocess_util",
+        "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
