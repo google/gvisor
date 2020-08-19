@@ -410,7 +410,7 @@ func poll(t *kernel.Task, pfdAddr usermem.Addr, nfds uint, timeout time.Duration
 			nfds:    nfds,
 			timeout: remainingTimeout,
 		})
-		return 0, kernel.ERESTART_RESTARTBLOCK
+		return 0, syserror.ERESTART_RESTARTBLOCK
 	}
 	return n, err
 }
@@ -464,7 +464,7 @@ func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Note that this means that if err is nil but copyErr is not, copyErr is
 	// ignored. This is consistent with Linux.
 	if err == syserror.EINTR && copyErr == nil {
-		err = kernel.ERESTARTNOHAND
+		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
 }
@@ -494,7 +494,7 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	copyErr := copyOutTimevalRemaining(t, startNs, timeout, timevalAddr)
 	// See comment in Ppoll.
 	if err == syserror.EINTR && copyErr == nil {
-		err = kernel.ERESTARTNOHAND
+		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
 }
@@ -539,7 +539,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	copyErr := copyOutTimespecRemaining(t, startNs, timeout, timespecAddr)
 	// See comment in Ppoll.
 	if err == syserror.EINTR && copyErr == nil {
-		err = kernel.ERESTARTNOHAND
+		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
 }

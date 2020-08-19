@@ -147,7 +147,7 @@ func handleIOErrorImpl(t *kernel.Task, partialResult bool, err, intr error, op s
 	}
 
 	switch err.(type) {
-	case kernel.SyscallRestartErrno:
+	case syserror.SyscallRestartErrno:
 		// Identical to the EINTR case.
 		return true, nil
 	}

@@ -57,7 +57,7 @@ func Fsync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	defer file.DecRef(t)
 
 	err := file.Fsync(t, 0, fs.FileMaxOffset, fs.SyncAll)
-	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 }
 
 // Fdatasync implements linux syscall fdatasync(2).
@@ -73,7 +73,7 @@ func Fdatasync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	defer file.DecRef(t)
 
 	err := file.Fsync(t, 0, fs.FileMaxOffset, fs.SyncData)
-	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 }
 
 // SyncFileRange implements linux syscall sync_file_rage(2)
@@ -135,7 +135,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		err = file.Fsync(t, offset, fs.FileMaxOffset, fs.SyncData)
 	}
 
-	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 }
 
 // LINT.ThenChange(vfs2/sync.go)
