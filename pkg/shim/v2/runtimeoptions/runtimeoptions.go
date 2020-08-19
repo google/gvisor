@@ -16,12 +16,7 @@
 package runtimeoptions
 
 import (
-	proto "github.com/gogo/protobuf/proto"
 	pb "gvisor.dev/gvisor/pkg/shim/v2/runtimeoptions/api_go_proto"
 )
 
 type Options = pb.Options
-
-func init() {
-	proto.RegisterType((*Options)(nil), "cri.runtimeoptions.v1.Options")
-}

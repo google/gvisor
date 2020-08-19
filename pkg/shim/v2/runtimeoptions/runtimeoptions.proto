@@ -14,7 +14,7 @@
 
 syntax = "proto3";
 
-package runtimeoptions;
+package cri.runtimeoptions.v1;
 
 // This is a version of the runtimeoptions CRI API that is vendored.
 //
