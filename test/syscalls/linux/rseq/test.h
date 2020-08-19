@@ -20,22 +20,20 @@ namespace testing {
 
 // Test cases supported by rseq binary.
 
-inline constexpr char kRseqTestUnaligned[] = "unaligned";
-inline constexpr char kRseqTestRegister[] = "register";
-inline constexpr char kRseqTestDoubleRegister[] = "double-register";
-inline constexpr char kRseqTestRegisterUnregister[] = "register-unregister";
-inline constexpr char kRseqTestUnregisterDifferentPtr[] =
-    "unregister-different-ptr";
-inline constexpr char kRseqTestUnregisterDifferentSignature[] =
+constexpr char kRseqTestUnaligned[] = "unaligned";
+constexpr char kRseqTestRegister[] = "register";
+constexpr char kRseqTestDoubleRegister[] = "double-register";
+constexpr char kRseqTestRegisterUnregister[] = "register-unregister";
+constexpr char kRseqTestUnregisterDifferentPtr[] = "unregister-different-ptr";
+constexpr char kRseqTestUnregisterDifferentSignature[] =
     "unregister-different-signature";
-inline constexpr char kRseqTestCPU[] = "cpu";
-inline constexpr char kRseqTestAbort[] = "abort";
-inline constexpr char kRseqTestAbortBefore[] = "abort-before";
-inline constexpr char kRseqTestAbortSignature[] = "abort-signature";
-inline constexpr char kRseqTestAbortPreCommit[] = "abort-precommit";
-inline constexpr char kRseqTestAbortClearsCS[] = "abort-clears-cs";
-inline constexpr char kRseqTestInvalidAbortClearsCS[] =
-    "invalid-abort-clears-cs";
+constexpr char kRseqTestCPU[] = "cpu";
+constexpr char kRseqTestAbort[] = "abort";
+constexpr char kRseqTestAbortBefore[] = "abort-before";
+constexpr char kRseqTestAbortSignature[] = "abort-signature";
+constexpr char kRseqTestAbortPreCommit[] = "abort-precommit";
+constexpr char kRseqTestAbortClearsCS[] = "abort-clears-cs";
+constexpr char kRseqTestInvalidAbortClearsCS[] = "invalid-abort-clears-cs";
 
 }  // namespace testing
 }  // namespace gvisor
