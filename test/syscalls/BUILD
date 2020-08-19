@@ -251,6 +251,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:ip6tables_test",
+)
+
+syscall_test(
     size = "large",
     shard_count = 5,
     test = "//test/syscalls/linux:itimer_test",
