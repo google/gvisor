@@ -949,6 +949,9 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr us
 			if outLen < linux.SizeOfIPTGetinfo {
 				return nil, syserr.ErrInvalidArgument
 			}
+			if s.family != linux.AF_INET {
+				return nil, syserr.ErrInvalidArgument
+			}
 
 			stack := inet.StackFromContext(t)
 			if stack == nil {
@@ -964,12 +967,15 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr us
 			if outLen < linux.SizeOfIPTGetEntries {
 				return nil, syserr.ErrInvalidArgument
 			}
+			if s.family != linux.AF_INET {
+				return nil, syserr.ErrInvalidArgument
+			}
 
 			stack := inet.StackFromContext(t)
 			if stack == nil {
 				return nil, syserr.ErrNoDevice
 			}
-			entries, err := netfilter.GetEntries(t, stack.(*Stack).Stack, outPtr, outLen)
+			entries, err := netfilter.GetEntries4(t, stack.(*Stack).Stack, outPtr, outLen)
 			if err != nil {
 				return nil, err
 			}
@@ -1650,10 +1656,13 @@ func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVa
 		return nil
 	}
 
-	if s.skType == linux.SOCK_RAW && level == linux.IPPROTO_IP {
+	if s.skType == linux.SOCK_RAW && level == linux.SOL_IP {
 		switch name {
 		case linux.IPT_SO_SET_REPLACE:
 			if len(optVal) < linux.SizeOfIPTReplace {
+				return syserr.ErrInvalidArgument
+			}
+			if s.family != linux.AF_INET {
 				return syserr.ErrInvalidArgument
 			}
 
