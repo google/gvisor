@@ -18,6 +18,7 @@ package fuse
 import (
 	"math"
 	"strconv"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -60,6 +61,7 @@ type filesystemOptions struct {
 
 	// maxRead is the max number of bytes to read.
 	// specified as "max_read" in fs parameters.
+	// If not specified by user, use math.MaxUint32 as default value.
 	maxRead uint32
 }
 
@@ -255,10 +257,18 @@ func (fs *filesystem) newInode(nodeID uint64, attr linux.FUSEAttr) *kernfs.Dentr
 	i := &inode{fs: fs, NodeID: nodeID}
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
 	i.InodeAttrs.Init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
+	// TODO(gvisor.dev/issue/1193): This should be handled in Init,
+	// unfortunately we need it for this implementation now.
+	atomic.StoreUint64(&i.size, attr.Size)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.dentry.Init(i)
 
 	return &i.dentry
+}
+
+// Ino overrides the Ino() from InodeAttrs.
+func (i *inode) Ino() uint64 {
+	return i.NodeID
 }
 
 // Open implements kernfs.Inode.Open.
@@ -409,6 +419,16 @@ func (i *inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fil
 	return child.VFSDentry(), nil
 }
 
+// getFUSEAttr returns a linux.FUSEAttr of this inode stored in local cache.
+// TODO(gvisor.dev/issue/3679): Add support for other fields.
+func (i *inode) getFUSEAttr() linux.FUSEAttr {
+	return linux.FUSEAttr{
+		Ino:  i.NodeID,
+		Size: atomic.LoadUint64(&i.size),
+		Mode: uint32(i.Mode()),
+	}
+}
+
 // statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx. The
 // opts.Sync attribute is ignored since the synchronization is handled by the
 // FUSE server.
@@ -462,47 +482,92 @@ func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
 	return stat
 }
 
-// Stat implements kernfs.Inode.Stat.
-func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
-	fusefs := fs.Impl().(*filesystem)
-	conn := fusefs.conn
-	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
+// getAttr get the attribute of this inode by issuing a FUSE_GETATTR request
+// or read from local cache.
+// It updates the corresponding attributes if necessary.
+func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.FUSEAttr, error) {
+	attributeVersion := atomic.LoadUint64(&i.fs.conn.attributeVersion)
+
+	// TODO(gvisor.dev/issue/3679): send the request only if
+	// - local cache is invalid for the requested fields (as specified in the opts.Mask)
+	// - forced update
+	// - i.attributeTime expired
+	// If local cache is still valid, return local cache.
+	// Currently we always send a request,
+	// and we always set the metadata with the new result,
+	// unless attributeVersion has changed.
+
+	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		log.Warningf("couldn't get kernel task from context")
-		return linux.Statx{}, syserror.EINVAL
+		return linux.FUSEAttr{}, syserror.EINVAL
 	}
+
+	creds := auth.CredentialsFromContext(ctx)
 
 	var in linux.FUSEGetAttrIn
 	// We don't set any attribute in the request, because in VFS2 fstat(2) will
 	// finally be translated into vfs.FilesystemImpl.StatAt() (see
 	// pkg/sentry/syscalls/linux/vfs2/stat.go), resulting in the same flow
 	// as stat(2). Thus GetAttrFlags and Fh variable will never be used in VFS2.
-	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.Ino(), linux.FUSE_GETATTR, &in)
+	req, err := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_GETATTR, &in)
 	if err != nil {
-		return linux.Statx{}, err
+		return linux.FUSEAttr{}, err
 	}
 
-	res, err := conn.Call(task, req)
+	res, err := i.fs.conn.Call(task, req)
 	if err != nil {
-		return linux.Statx{}, err
+		return linux.FUSEAttr{}, err
 	}
 	if err := res.Error(); err != nil {
-		return linux.Statx{}, err
+		return linux.FUSEAttr{}, err
 	}
 
 	var out linux.FUSEGetAttrOut
 	if err := res.UnmarshalPayload(&out); err != nil {
-		return linux.Statx{}, err
+		return linux.FUSEAttr{}, err
 	}
 
-	// Set all metadata into kernfs.InodeAttrs.
+	// Local version is newer, return the local one.
+	// Skip the update.
+	if attributeVersion != 0 && atomic.LoadUint64(&i.attributeVersion) > attributeVersion {
+		return i.getFUSEAttr(), nil
+	}
+
+	// Set the metadata of kernfs.InodeAttrs.
 	if err := i.SetStat(ctx, fs, creds, vfs.SetStatOptions{
-		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, fusefs.devMinor),
+		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, i.fs.devMinor),
 	}); err != nil {
+		return linux.FUSEAttr{}, err
+	}
+
+	// Set the size if no error (after SetStat() check).
+	// TODO(gvisor.dev/issue/1193): This should be handled in SetStat,
+	// unfortunately we need it for this implementation now.
+	atomic.StoreUint64(&i.size, out.Attr.Size)
+
+	return out.Attr, nil
+}
+
+// renewAttr attempts to update the attributes for internal purposes
+// by calling getAttr with a pre-specified mask.
+// Used by read, write, lseek.
+func (i *inode) renewAttr(ctx context.Context) error {
+	// Never need atime for internal purposes.
+	_, err := i.getAttr(ctx, i.fs.VFSFilesystem(), vfs.StatOptions{
+		Mask: linux.STATX_BASIC_STATS &^ linux.STATX_ATIME,
+	})
+	return err
+}
+
+// Stat implements kernfs.Inode.Stat.
+func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	attr, err := i.getAttr(ctx, fs, opts)
+	if err != nil {
 		return linux.Statx{}, err
 	}
 
-	return statFromFUSEAttr(out.Attr, opts.Mask, fusefs.devMinor), nil
+	return statFromFUSEAttr(attr, opts.Mask, i.fs.devMinor), nil
 }
 
 // fileDescription implements vfs.FileDescriptionImpl for fuse.
