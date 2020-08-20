@@ -15,18 +15,18 @@
 package fsgofer
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
-func utimensat(dirFd int, name string, times [2]syscall.Timespec, flags int) error {
+func utimensat(dirFd int, name string, times [2]unix.Timespec, flags int) error {
 	// utimensat(2) doesn't accept empty name, instead name must be nil to make it
 	// operate directly on 'dirFd' unlike other *at syscalls.
 	var namePtr unsafe.Pointer
 	if name != "" {
-		nameBytes, err := syscall.BytePtrFromString(name)
+		nameBytes, err := unix.BytePtrFromString(name)
 		if err != nil {
 			return err
 		}
@@ -35,8 +35,8 @@ func utimensat(dirFd int, name string, times [2]syscall.Timespec, flags int) err
 
 	timesPtr := unsafe.Pointer(&times[0])
 
-	if _, _, errno := syscall.Syscall6(
-		syscall.SYS_UTIMENSAT,
+	if _, _, errno := unix.Syscall6(
+		unix.SYS_UTIMENSAT,
 		uintptr(dirFd),
 		uintptr(namePtr),
 		uintptr(timesPtr),
@@ -52,7 +52,7 @@ func utimensat(dirFd int, name string, times [2]syscall.Timespec, flags int) err
 func renameat(oldDirFD int, oldName string, newDirFD int, newName string) error {
 	var oldNamePtr unsafe.Pointer
 	if oldName != "" {
-		nameBytes, err := syscall.BytePtrFromString(oldName)
+		nameBytes, err := unix.BytePtrFromString(oldName)
 		if err != nil {
 			return err
 		}
@@ -60,15 +60,15 @@ func renameat(oldDirFD int, oldName string, newDirFD int, newName string) error 
 	}
 	var newNamePtr unsafe.Pointer
 	if newName != "" {
-		nameBytes, err := syscall.BytePtrFromString(newName)
+		nameBytes, err := unix.BytePtrFromString(newName)
 		if err != nil {
 			return err
 		}
 		newNamePtr = unsafe.Pointer(nameBytes)
 	}
 
-	if _, _, errno := syscall.Syscall6(
-		syscall.SYS_RENAMEAT,
+	if _, _, errno := unix.Syscall6(
+		unix.SYS_RENAMEAT,
 		uintptr(oldDirFD),
 		uintptr(oldNamePtr),
 		uintptr(newDirFD),
