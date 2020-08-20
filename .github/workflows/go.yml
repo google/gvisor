@@ -49,7 +49,12 @@ jobs:
         key: ${{ runner.os }}-bazel-${{ hashFiles('WORKSPACE') }}
         restore-keys: |
           ${{ runner.os }}-bazel-
+      # Create gopath to merge the changes. The first execution will create
+      # symlinks to the cache, e.g. bazel-bin. Once the cache is setup, delete
+      # old gopath files that may exist from previous runs (and could contain
+      # files that are now deleted). Then run gopath again for good.
     - run: |
+        make build TARGETS="//:gopath"
         rm -rf bazel-bin/gopath
         make build TARGETS="//:gopath"
     - run: tools/go_branch.sh
