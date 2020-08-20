@@ -345,6 +345,11 @@ func (r *Response) Error() error {
 	return error(sysErrNo)
 }
 
+// DataLen returns the size of the response without the header.
+func (r *Response) DataLen() uint32 {
+	return r.hdr.Len - uint32(r.hdr.SizeBytes())
+}
+
 // UnmarshalPayload unmarshals the response data into m.
 func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 	hdrLen := r.hdr.SizeBytes()
