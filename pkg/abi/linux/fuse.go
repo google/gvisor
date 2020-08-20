@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
@@ -260,6 +261,63 @@ type FUSEInitOut struct {
 	MapAlignment uint16
 
 	_ [8]uint32
+}
+
+// FUSEInitRes is a variable-length wrapper of FUSEInitOut. The FUSE server may
+// implement older version of FUSE protocol, which contains a FUSEInitOut with
+// less attributes.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSEInitRes struct {
+	marshal.StubMarshallable
+
+	// InitOut contains the response from the FUSE server.
+	InitOut FUSEInitOut
+
+	// Len is the total length of bytes of the response.
+	Len uint32
+}
+
+// UnMarshalBytes deserializes src to the InitOut attribute in a FUSEInitRes.
+func (r *FUSEInitRes) UnmarshalBytes(src []byte) {
+	out := &r.InitOut
+
+	// Introduced before FUSE kernel version 7.13.
+	out.Major = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	src = src[4:]
+	out.Minor = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	src = src[4:]
+	out.MaxReadahead = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	src = src[4:]
+	out.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	src = src[4:]
+	out.MaxBackground = uint16(usermem.ByteOrder.Uint16(src[:2]))
+	src = src[2:]
+	out.CongestionThreshold = uint16(usermem.ByteOrder.Uint16(src[:2]))
+	src = src[2:]
+	out.MaxWrite = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	src = src[4:]
+
+	// Introduced in FUSE kernel version 7.23.
+	if len(src) >= 4 {
+		out.TimeGran = uint32(usermem.ByteOrder.Uint32(src[:4]))
+		src = src[4:]
+	}
+	// Introduced in FUSE kernel version 7.28.
+	if len(src) >= 2 {
+		out.MaxPages = uint16(usermem.ByteOrder.Uint16(src[:2]))
+		src = src[2:]
+	}
+	// Introduced in FUSE kernel version 7.31.
+	if len(src) >= 2 {
+		out.MapAlignment = uint16(usermem.ByteOrder.Uint16(src[:2]))
+		src = src[2:]
+	}
+}
+
+// SizeBytes is the size of the payload of the FUSE_INIT response.
+func (r *FUSEInitRes) SizeBytes() int {
+	return int(r.Len)
 }
 
 // FUSEGetAttrIn is the request sent by the kernel to the daemon,
