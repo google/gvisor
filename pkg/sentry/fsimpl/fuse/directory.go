@@ -87,7 +87,7 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 	}
 
 	for _, fuseDirent := range out.Dirents {
-		nextOff := int64(fuseDirent.Meta.Off) + 1
+		nextOff := int64(fuseDirent.Meta.Off)
 		dirent := vfs.Dirent{
 			Name:    fuseDirent.Name,
 			Type:    uint8(fuseDirent.Meta.Type),
