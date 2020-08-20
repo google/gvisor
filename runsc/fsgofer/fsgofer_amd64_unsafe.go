@@ -17,25 +17,25 @@
 package fsgofer
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
-func statAt(dirFd int, name string) (syscall.Stat_t, error) {
-	nameBytes, err := syscall.BytePtrFromString(name)
+func statAt(dirFd int, name string) (unix.Stat_t, error) {
+	nameBytes, err := unix.BytePtrFromString(name)
 	if err != nil {
-		return syscall.Stat_t{}, err
+		return unix.Stat_t{}, err
 	}
 	namePtr := unsafe.Pointer(nameBytes)
 
-	var stat syscall.Stat_t
+	var stat unix.Stat_t
 	statPtr := unsafe.Pointer(&stat)
 
-	if _, _, errno := syscall.Syscall6(
-		syscall.SYS_NEWFSTATAT,
+	if _, _, errno := unix.Syscall6(
+		unix.SYS_NEWFSTATAT,
 		uintptr(dirFd),
 		uintptr(namePtr),
 		uintptr(statPtr),
@@ -43,7 +43,7 @@ func statAt(dirFd int, name string) (syscall.Stat_t, error) {
 		0,
 		0); errno != 0 {
 
-		return syscall.Stat_t{}, syserr.FromHost(errno).ToError()
+		return unix.Stat_t{}, syserr.FromHost(errno).ToError()
 	}
 	return stat, nil
 }
