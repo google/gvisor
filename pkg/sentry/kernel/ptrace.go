@@ -224,8 +224,9 @@ func (s *ptraceStop) Killable() bool {
 // beginPtraceStopLocked does not signal t's tracer or wake it if it is
 // waiting.
 //
-// Preconditions: The TaskSet mutex must be locked. The caller must be running
-// on the task goroutine.
+// Preconditions:
+// * The TaskSet mutex must be locked.
+// * The caller must be running on the task goroutine.
 func (t *Task) beginPtraceStopLocked() bool {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
@@ -270,8 +271,9 @@ func (t *Task) ptraceTrapLocked(code int32) {
 // ptraceStop, temporarily preventing it from being removed by a concurrent
 // Task.Kill, and returns true. Otherwise it returns false.
 //
-// Preconditions: The TaskSet mutex must be locked. The caller must be running
-// on the task goroutine of t's tracer.
+// Preconditions:
+// * The TaskSet mutex must be locked.
+// * The caller must be running on the task goroutine of t's tracer.
 func (t *Task) ptraceFreeze() bool {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
@@ -301,8 +303,9 @@ func (t *Task) ptraceUnfreeze() {
 	t.ptraceUnfreezeLocked()
 }
 
-// Preconditions: t must be in a frozen ptraceStop. t's signal mutex must be
-// locked.
+// Preconditions:
+// * t must be in a frozen ptraceStop.
+// * t's signal mutex must be locked.
 func (t *Task) ptraceUnfreezeLocked() {
 	// Do this even if the task has been killed to ensure a panic if t.stop is
 	// nil or not a ptraceStop.
@@ -497,8 +500,9 @@ func (t *Task) forgetTracerLocked() {
 // ptraceSignalLocked is called after signal dequeueing to check if t should
 // enter ptrace signal-delivery-stop.
 //
-// Preconditions: The signal mutex must be locked. The caller must be running
-// on the task goroutine.
+// Preconditions:
+// * The signal mutex must be locked.
+// * The caller must be running on the task goroutine.
 func (t *Task) ptraceSignalLocked(info *arch.SignalInfo) bool {
 	if linux.Signal(info.Signo) == linux.SIGKILL {
 		return false
@@ -828,8 +832,9 @@ func (t *Task) ptraceInterrupt(target *Task) error {
 	return nil
 }
 
-// Preconditions: The TaskSet mutex must be locked for writing. t must have a
-// tracer.
+// Preconditions:
+// * The TaskSet mutex must be locked for writing.
+// * t must have a tracer.
 func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
 	const valid = uintptr(linux.PTRACE_O_EXITKILL |
 		linux.PTRACE_O_TRACESYSGOOD |

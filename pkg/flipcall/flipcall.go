@@ -179,8 +179,10 @@ const (
 
 // Connect blocks until the peer Endpoint has called Endpoint.RecvFirst().
 //
-// Preconditions: ep is a client Endpoint. ep.Connect(), ep.RecvFirst(),
-// ep.SendRecv(), and ep.SendLast() have never been called.
+// Preconditions:
+// * ep is a client Endpoint.
+// * ep.Connect(), ep.RecvFirst(), ep.SendRecv(), and ep.SendLast() have never
+//   been called.
 func (ep *Endpoint) Connect() error {
 	err := ep.ctrlConnect()
 	if err == nil {
@@ -192,8 +194,9 @@ func (ep *Endpoint) Connect() error {
 // RecvFirst blocks until the peer Endpoint calls Endpoint.SendRecv(), then
 // returns the datagram length specified by that call.
 //
-// Preconditions: ep is a server Endpoint. ep.SendRecv(), ep.RecvFirst(), and
-// ep.SendLast() have never been called.
+// Preconditions:
+// * ep is a server Endpoint.
+// * ep.SendRecv(), ep.RecvFirst(), and ep.SendLast() have never been called.
 func (ep *Endpoint) RecvFirst() (uint32, error) {
 	if err := ep.ctrlWaitFirst(); err != nil {
 		return 0, err
@@ -211,10 +214,12 @@ func (ep *Endpoint) RecvFirst() (uint32, error) {
 // datagram length, then blocks until the peer Endpoint calls
 // Endpoint.SendRecv() or Endpoint.SendLast().
 //
-// Preconditions: dataLen <= ep.DataCap(). No previous call to ep.SendRecv() or
-// ep.RecvFirst() has returned an error. ep.SendLast() has never been called.
-// If ep is a client Endpoint, ep.Connect() has previously been called and
-// returned nil.
+// Preconditions:
+// * dataLen <= ep.DataCap().
+// * No previous call to ep.SendRecv() or ep.RecvFirst() has returned an error.
+// * ep.SendLast() has never been called.
+// * If ep is a client Endpoint, ep.Connect() has previously been called and
+//   returned nil.
 func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
 	if dataLen > ep.dataCap {
 		panic(fmt.Sprintf("attempting to send packet with datagram length %d (maximum %d)", dataLen, ep.dataCap))
@@ -240,10 +245,12 @@ func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
 // SendLast causes the peer Endpoint's call to Endpoint.SendRecv() or
 // Endpoint.RecvFirst() to return with the given datagram length.
 //
-// Preconditions: dataLen <= ep.DataCap(). No previous call to ep.SendRecv() or
-// ep.RecvFirst() has returned an error. ep.SendLast() has never been called.
-// If ep is a client Endpoint, ep.Connect() has previously been called and
-// returned nil.
+// Preconditions:
+// * dataLen <= ep.DataCap().
+// * No previous call to ep.SendRecv() or ep.RecvFirst() has returned an error.
+// * ep.SendLast() has never been called.
+// * If ep is a client Endpoint, ep.Connect() has previously been called and
+//   returned nil.
 func (ep *Endpoint) SendLast(dataLen uint32) error {
 	if dataLen > ep.dataCap {
 		panic(fmt.Sprintf("attempting to send packet with datagram length %d (maximum %d)", dataLen, ep.dataCap))
