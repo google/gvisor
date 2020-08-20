@@ -64,6 +64,8 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    # Produce too many logs in the debug mode.
+    debug = False,
     shard_count = 50,
     # Takes too long for TSAN. Since this is kind of a stress test that doesn't
     # involve much concurrency, TSAN's usefulness here is limited anyway.
