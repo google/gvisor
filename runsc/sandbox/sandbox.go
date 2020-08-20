@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/cgroup"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -116,7 +117,7 @@ type Args struct {
 
 // New creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
-func New(conf *boot.Config, args *Args) (*Sandbox, error) {
+func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	s := &Sandbox{ID: args.ID, Cgroup: args.Cgroup}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
@@ -180,7 +181,7 @@ func (s *Sandbox) CreateContainer(cid string) error {
 }
 
 // StartRoot starts running the root container process inside the sandbox.
-func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
+func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 	log.Debugf("Start root sandbox %q, PID: %d", s.ID, s.Pid)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -203,7 +204,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 }
 
 // StartContainer starts running a non-root container inside the sandbox.
-func (s *Sandbox) StartContainer(spec *specs.Spec, conf *boot.Config, cid string, goferFiles []*os.File) error {
+func (s *Sandbox) StartContainer(spec *specs.Spec, conf *config.Config, cid string, goferFiles []*os.File) error {
 	for _, f := range goferFiles {
 		defer f.Close()
 	}
@@ -232,7 +233,7 @@ func (s *Sandbox) StartContainer(spec *specs.Spec, conf *boot.Config, cid string
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, filename string) error {
+func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *config.Config, filename string) error {
 	log.Debugf("Restore sandbox %q", s.ID)
 
 	rf, err := os.Open(filename)
@@ -344,7 +345,7 @@ func (s *Sandbox) connError(err error) error {
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncFile *os.File) error {
+func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
 	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
@@ -555,10 +556,10 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 	// Joins the network namespace if network is enabled. the sandbox talks
 	// directly to the host network, which may have been configured in the
 	// namespace.
-	if ns, ok := specutils.GetNS(specs.NetworkNamespace, args.Spec); ok && conf.Network != boot.NetworkNone {
+	if ns, ok := specutils.GetNS(specs.NetworkNamespace, args.Spec); ok && conf.Network != config.NetworkNone {
 		log.Infof("Sandbox will be started in the container's network namespace: %+v", ns)
 		nss = append(nss, ns)
-	} else if conf.Network == boot.NetworkHost {
+	} else if conf.Network == config.NetworkHost {
 		log.Infof("Sandbox will be started in the host network namespace")
 	} else {
 		log.Infof("Sandbox will be started in new network namespace")
@@ -568,7 +569,7 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 	// User namespace depends on the network type. Host network requires to run
 	// inside the user namespace specified in the spec or the current namespace
 	// if none is configured.
-	if conf.Network == boot.NetworkHost {
+	if conf.Network == config.NetworkHost {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)
@@ -1179,7 +1180,7 @@ func deviceFileForPlatform(name string) (*os.File, error) {
 
 // checkBinaryPermissions verifies that the required binary bits are set on
 // the runsc executable.
-func checkBinaryPermissions(conf *boot.Config) error {
+func checkBinaryPermissions(conf *config.Config) error {
 	// All platforms need the other exe bit
 	neededBits := os.FileMode(0001)
 	if conf.Platform == platforms.Ptrace {

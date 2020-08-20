@@ -41,8 +41,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -250,7 +250,7 @@ func readOutputNum(file string, position int) (int, error) {
 
 // run starts the sandbox and waits for it to exit, checking that the
 // application succeeded.
-func run(spec *specs.Spec, conf *boot.Config) error {
+func run(spec *specs.Spec, conf *config.Config) error {
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		return fmt.Errorf("error setting up container: %v", err)
@@ -289,9 +289,9 @@ var (
 )
 
 // configs generates different configurations to run tests.
-func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
+func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
 	// Always load the default config.
-	cs := make(map[string]*boot.Config)
+	cs := make(map[string]*config.Config)
 	for _, o := range opts {
 		switch o {
 		case overlay:
@@ -308,7 +308,7 @@ func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
 			cs["kvm"] = c
 		case nonExclusiveFS:
 			c := testutil.TestConfig(t)
-			c.FileAccess = boot.FileAccessShared
+			c.FileAccess = config.FileAccessShared
 			cs["non-exclusive"] = c
 		default:
 			panic(fmt.Sprintf("unknown config option %v", o))
@@ -317,7 +317,7 @@ func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
 	return cs
 }
 
-func configsWithVFS2(t *testing.T, opts ...configOption) map[string]*boot.Config {
+func configsWithVFS2(t *testing.T, opts ...configOption) map[string]*config.Config {
 	vfs1 := configs(t, opts...)
 
 	var optsVFS2 []configOption

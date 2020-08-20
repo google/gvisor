@@ -12,7 +12,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/sync",
-        "//runsc/boot",
+        "//runsc/config",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",

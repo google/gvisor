@@ -21,7 +21,7 @@ import (
 	"syscall"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -70,7 +70,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	id := f.Arg(0)
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
