@@ -39,7 +39,9 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 //
 // stepLocked is loosely analogous to fs/namei.c:walk_component().
 //
-// Preconditions: filesystem.mu must be locked. !rp.Done().
+// Preconditions:
+// * filesystem.mu must be locked.
+// * !rp.Done().
 func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, error) {
 	dir, ok := d.inode.impl.(*directory)
 	if !ok {
@@ -97,7 +99,9 @@ afterSymlink:
 // walkParentDirLocked is loosely analogous to Linux's
 // fs/namei.c:path_parentat().
 //
-// Preconditions: filesystem.mu must be locked. !rp.Done().
+// Preconditions:
+// * filesystem.mu must be locked.
+// * !rp.Done().
 func walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*directory, error) {
 	for !rp.Final() {
 		next, err := stepLocked(ctx, rp, d)
@@ -139,8 +143,9 @@ func resolveLocked(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) 
 // doCreateAt is loosely analogous to a conjunction of Linux's
 // fs/namei.c:filename_create() and done_path_create().
 //
-// Preconditions: !rp.Done(). For the final path component in rp,
-// !rp.ShouldFollowSymlink().
+// Preconditions:
+// * !rp.Done().
+// * For the final path component in rp, !rp.ShouldFollowSymlink().
 func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, create func(parentDir *directory, name string) error) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()

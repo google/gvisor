@@ -46,6 +46,15 @@ protected.
 Each field or variable protected by a mutex should state as such in a comment on
 the field or variable declaration.
 
+### Function comments
+
+Functions with special entry conditions (e.g., a lock must be held) should state
+these conditions in a `Preconditions:` comment block. One condition per line;
+multiple conditions are specified with a bullet (`*`).
+
+Functions with notable exit conditions (e.g., a `Done` function must eventually
+be called by the caller) can similarly have a `Postconditions:` block.
+
 ### Unused returns
 
 Unused returns should be explicitly ignored with underscores. If there is a

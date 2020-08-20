@@ -217,8 +217,9 @@ func (mt *mountTable) Insert(mount *Mount) {
 
 // insertSeqed inserts the given mount into mt.
 //
-// Preconditions: mt.seq must be in a writer critical section. mt must not
-// already contain a Mount with the same mount point and parent.
+// Preconditions:
+// * mt.seq must be in a writer critical section.
+// * mt must not already contain a Mount with the same mount point and parent.
 func (mt *mountTable) insertSeqed(mount *Mount) {
 	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
 
@@ -269,9 +270,11 @@ func (mt *mountTable) insertSeqed(mount *Mount) {
 	atomic.StorePointer(&mt.slots, newSlots)
 }
 
-// Preconditions: There are no concurrent mutators of the table (slots, cap).
-// If the table is visible to readers, then mt.seq must be in a writer critical
-// section. cap must be a power of 2.
+// Preconditions:
+// * There are no concurrent mutators of the table (slots, cap).
+// * If the table is visible to readers, then mt.seq must be in a writer
+//   critical section.
+// * cap must be a power of 2.
 func mtInsertLocked(slots unsafe.Pointer, cap uintptr, value unsafe.Pointer, hash uintptr) {
 	mask := cap - 1
 	off := (hash & mask) * mountSlotBytes
@@ -313,8 +316,9 @@ func (mt *mountTable) Remove(mount *Mount) {
 
 // removeSeqed removes the given mount from mt.
 //
-// Preconditions: mt.seq must be in a writer critical section. mt must contain
-// mount.
+// Preconditions:
+// * mt.seq must be in a writer critical section.
+// * mt must contain mount.
 func (mt *mountTable) removeSeqed(mount *Mount) {
 	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
 	tcap := uintptr(1) << (mt.size & mtSizeOrderMask)
