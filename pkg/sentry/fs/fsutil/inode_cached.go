@@ -684,7 +684,9 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 // maybeGrowFile grows the file's size if data has been written past the old
 // size.
 //
-// Preconditions: rw.c.attrMu and rw.c.dataMu bust be locked.
+// Preconditions:
+// * rw.c.attrMu must be locked.
+// * rw.c.dataMu must be locked.
 func (rw *inodeReadWriter) maybeGrowFile() {
 	// If the write ends beyond the file's previous size, it causes the
 	// file to grow.

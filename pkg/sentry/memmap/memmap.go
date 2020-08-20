@@ -28,9 +28,9 @@ import (
 //
 // See mm/mm.go for Mappable's place in the lock order.
 //
-// Preconditions: For all Mappable methods, usermem.AddrRanges and
-// MappableRanges must be non-empty (Length() != 0), and usermem.Addrs and
-// Mappable offsets must be page-aligned.
+// All Mappable methods have the following preconditions:
+// * usermem.AddrRanges and MappableRanges must be non-empty (Length() != 0).
+// * usermem.Addrs and Mappable offsets must be page-aligned.
 type Mappable interface {
 	// AddMapping notifies the Mappable of a mapping from addresses ar in ms to
 	// offsets [offset, offset+ar.Length()) in this Mappable.
@@ -48,8 +48,10 @@ type Mappable interface {
 	// addresses ar in ms to offsets [offset, offset+ar.Length()) in this
 	// Mappable.
 	//
-	// Preconditions: offset+ar.Length() does not overflow. The removed mapping
-	// must exist. writable must match the corresponding call to AddMapping.
+	// Preconditions:
+	// * offset+ar.Length() does not overflow.
+	// * The removed mapping must exist. writable must match the
+	//   corresponding call to AddMapping.
 	RemoveMapping(ctx context.Context, ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool)
 
 	// CopyMapping notifies the Mappable of an attempt to copy a mapping in ms
@@ -60,9 +62,10 @@ type Mappable interface {
 	// CopyMapping is only called when a mapping is copied within a given
 	// MappingSpace; it is analogous to Linux's vm_operations_struct::mremap.
 	//
-	// Preconditions: offset+srcAR.Length() and offset+dstAR.Length() do not
-	// overflow. The mapping at srcAR must exist. writable must match the
-	// corresponding call to AddMapping.
+	// Preconditions:
+	// * offset+srcAR.Length() and offset+dstAR.Length() do not overflow.
+	// * The mapping at srcAR must exist. writable must match the
+	//   corresponding call to AddMapping.
 	CopyMapping(ctx context.Context, ms MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error
 
 	// Translate returns the Mappable's current mappings for at least the range
@@ -77,11 +80,14 @@ type Mappable interface {
 	// reference is held on all pages in a File that may be the result
 	// of a valid Translation.
 	//
-	// Preconditions: required.Length() > 0. optional.IsSupersetOf(required).
-	// required and optional must be page-aligned. The caller must have
-	// established a mapping for all of the queried offsets via a previous call
-	// to AddMapping. The caller is responsible for ensuring that calls to
-	// Translate synchronize with invalidation.
+	// Preconditions:
+	// * required.Length() > 0.
+	// * optional.IsSupersetOf(required).
+	// * required and optional must be page-aligned.
+	// * The caller must have established a mapping for all of the queried
+	//   offsets via a previous call to AddMapping.
+	// * The caller is responsible for ensuring that calls to Translate
+	//   synchronize with invalidation.
 	//
 	// Postconditions: See CheckTranslateResult.
 	Translate(ctx context.Context, required, optional MappableRange, at usermem.AccessType) ([]Translation, error)
@@ -118,7 +124,7 @@ func (t Translation) FileRange() FileRange {
 // CheckTranslateResult returns an error if (ts, terr) does not satisfy all
 // postconditions for Mappable.Translate(required, optional, at).
 //
-// Preconditions: As for Mappable.Translate.
+// Preconditions: Same as Mappable.Translate.
 func CheckTranslateResult(required, optional MappableRange, at usermem.AccessType, ts []Translation, terr error) error {
 	// Verify that the inputs to Mappable.Translate were valid.
 	if !required.WellFormed() || required.Length() <= 0 {
@@ -214,7 +220,9 @@ type MappingSpace interface {
 	// Invalidate must not take any locks preceding mm.MemoryManager.activeMu
 	// in the lock order.
 	//
-	// Preconditions: ar.Length() != 0. ar must be page-aligned.
+	// Preconditions:
+	// * ar.Length() != 0.
+	// * ar must be page-aligned.
 	Invalidate(ar usermem.AddrRange, opts InvalidateOpts)
 }
 
@@ -375,16 +383,20 @@ type File interface {
 
 	// IncRef increments the reference count on all pages in fr.
 	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
-	// 0. At least one reference must be held on all pages in fr. (The File
-	// interface does not provide a way to acquire an initial reference;
-	// implementors may define mechanisms for doing so.)
+	// Preconditions:
+	// * fr.Start and fr.End must be page-aligned.
+	// * fr.Length() > 0.
+	// * At least one reference must be held on all pages in fr. (The File
+	//   interface does not provide a way to acquire an initial reference;
+	//   implementors may define mechanisms for doing so.)
 	IncRef(fr FileRange)
 
 	// DecRef decrements the reference count on all pages in fr.
 	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
-	// 0. At least one reference must be held on all pages in fr.
+	// Preconditions:
+	// * fr.Start and fr.End must be page-aligned.
+	// * fr.Length() > 0.
+	// * At least one reference must be held on all pages in fr.
 	DecRef(fr FileRange)
 
 	// MapInternal returns a mapping of the given file offsets in the invoking
@@ -392,8 +404,9 @@ type File interface {
 	//
 	// Note that fr.Start and fr.End need not be page-aligned.
 	//
-	// Preconditions: fr.Length() > 0. At least one reference must be held on
-	// all pages in fr.
+	// Preconditions:
+	// * fr.Length() > 0.
+	// * At least one reference must be held on all pages in fr.
 	//
 	// Postconditions: The returned mapping is valid as long as at least one
 	// reference is held on the mapped pages.

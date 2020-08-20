@@ -215,8 +215,8 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 // path and argv.
 //
 // Preconditions:
-//  * The Task MemoryManager is empty.
-//  * Load is called on the Task goroutine.
+// * The Task MemoryManager is empty.
+// * Load is called on the Task goroutine.
 func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
 	// Load the executable itself.
 	loaded, ac, file, newArgv, err := loadExecutable(ctx, args)

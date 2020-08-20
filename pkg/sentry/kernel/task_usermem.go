@@ -143,8 +143,9 @@ func (t *Task) CopyInVector(addr usermem.Addr, maxElemSize, maxTotalSize int) ([
 // CopyOutIovecs converts src to an array of struct iovecs and copies it to the
 // memory mapped at addr.
 //
-// Preconditions: As for usermem.IO.CopyOut. The caller must be running on the
-// task goroutine. t's AddressSpace must be active.
+// Preconditions: Same as usermem.IO.CopyOut, plus:
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) CopyOutIovecs(addr usermem.Addr, src usermem.AddrRangeSeq) error {
 	switch t.Arch().Width() {
 	case 8:
@@ -191,8 +192,9 @@ func (t *Task) CopyOutIovecs(addr usermem.Addr, src usermem.AddrRangeSeq) error 
 // combined length of all AddrRanges would otherwise exceed this amount, ranges
 // beyond MAX_RW_COUNT are silently truncated.
 //
-// Preconditions: As for usermem.IO.CopyIn. The caller must be running on the
-// task goroutine. t's AddressSpace must be active.
+// Preconditions: Same as usermem.IO.CopyIn, plus:
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRangeSeq, error) {
 	if numIovecs == 0 {
 		return usermem.AddrRangeSeq{}, nil
@@ -284,7 +286,7 @@ func (t *Task) SingleIOSequence(addr usermem.Addr, length int, opts usermem.IOOp
 //
 // IovecsIOSequence is analogous to Linux's lib/iov_iter.c:import_iovec().
 //
-// Preconditions: As for Task.CopyInIovecs.
+// Preconditions: Same as Task.CopyInIovecs.
 func (t *Task) IovecsIOSequence(addr usermem.Addr, iovcnt int, opts usermem.IOOpts) (usermem.IOSequence, error) {
 	if iovcnt < 0 || iovcnt > linux.UIO_MAXIOV {
 		return usermem.IOSequence{}, syserror.EINVAL

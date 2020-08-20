@@ -173,8 +173,10 @@ func (t *Task) OldRSeqCPUAddr() usermem.Addr {
 // SetOldRSeqCPUAddr replaces the address that old rseq will keep updated with
 // t's CPU number.
 //
-// Preconditions: t.RSeqAvailable() == true. The caller must be running on the
-// task goroutine. t's AddressSpace must be active.
+// Preconditions:
+// * t.RSeqAvailable() == true.
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) SetOldRSeqCPUAddr(addr usermem.Addr) error {
 	t.oldRSeqCPUAddr = addr
 
@@ -189,8 +191,9 @@ func (t *Task) SetOldRSeqCPUAddr(addr usermem.Addr) error {
 	return nil
 }
 
-// Preconditions: The caller must be running on the task goroutine. t's
-// AddressSpace must be active.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) rseqUpdateCPU() error {
 	if t.rseqAddr == 0 && t.oldRSeqCPUAddr == 0 {
 		t.rseqCPU = -1
@@ -209,8 +212,9 @@ func (t *Task) rseqUpdateCPU() error {
 	return oerr
 }
 
-// Preconditions: The caller must be running on the task goroutine. t's
-// AddressSpace must be active.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) oldRSeqCopyOutCPU() error {
 	if t.oldRSeqCPUAddr == 0 {
 		return nil
@@ -222,8 +226,9 @@ func (t *Task) oldRSeqCopyOutCPU() error {
 	return err
 }
 
-// Preconditions: The caller must be running on the task goroutine. t's
-// AddressSpace must be active.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) rseqCopyOutCPU() error {
 	if t.rseqAddr == 0 {
 		return nil
@@ -240,8 +245,9 @@ func (t *Task) rseqCopyOutCPU() error {
 	return err
 }
 
-// Preconditions: The caller must be running on the task goroutine. t's
-// AddressSpace must be active.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) rseqClearCPU() error {
 	buf := t.CopyScratchBuffer(8)
 	// CPUIDStart and CPUID are the first two fields in linux.RSeq.
@@ -269,8 +275,9 @@ func (t *Task) rseqClearCPU() error {
 //
 // See kernel/rseq.c:rseq_ip_fixup for reference.
 //
-// Preconditions: The caller must be running on the task goroutine. t's
-// AddressSpace must be active.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * t's AddressSpace must be active.
 func (t *Task) rseqAddrInterrupt() {
 	if t.rseqAddr == 0 {
 		return

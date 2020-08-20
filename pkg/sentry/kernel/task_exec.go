@@ -237,9 +237,10 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 // promoteLocked makes t the leader of its thread group. If t is already the
 // thread group leader, promoteLocked is a no-op.
 //
-// Preconditions: All other tasks in t's thread group, including the existing
-// leader (if it is not t), have reached TaskExitZombie. The TaskSet mutex must
-// be locked for writing.
+// Preconditions:
+// * All other tasks in t's thread group, including the existing leader (if it
+//   is not t), have reached TaskExitZombie.
+// * The TaskSet mutex must be locked for writing.
 func (t *Task) promoteLocked() {
 	oldLeader := t.tg.leader
 	if t == oldLeader {

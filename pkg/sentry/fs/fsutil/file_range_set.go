@@ -70,7 +70,9 @@ func (seg FileRangeIterator) FileRange() memmap.FileRange {
 
 // FileRangeOf returns the FileRange mapped by mr.
 //
-// Preconditions: seg.Range().IsSupersetOf(mr). mr.Length() != 0.
+// Preconditions:
+// * seg.Range().IsSupersetOf(mr).
+// * mr.Length() != 0.
 func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) memmap.FileRange {
 	frstart := seg.Value() + (mr.Start - seg.Start())
 	return memmap.FileRange{frstart, frstart + mr.Length()}
@@ -88,8 +90,10 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) memmap.FileRan
 // outside of optional. It returns a non-nil error if any error occurs, even
 // if the error only affects offsets in optional, but not in required.
 //
-// Preconditions: required.Length() > 0. optional.IsSupersetOf(required).
-// required and optional must be page-aligned.
+// Preconditions:
+// * required.Length() > 0.
+// * optional.IsSupersetOf(required).
+// * required and optional must be page-aligned.
 func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, mf *pgalloc.MemoryFile, kind usage.MemoryKind, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) error {
 	gap := frs.LowerBoundGap(required.Start)
 	for gap.Ok() && gap.Start() < required.End {
