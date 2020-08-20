@@ -245,14 +245,19 @@ type AddressSpace interface {
 	// physical memory) to the mapping. The precommit flag is advisory and
 	// implementations may choose to ignore it.
 	//
-	// Preconditions: addr and fr must be page-aligned. fr.Length() > 0.
-	// at.Any() == true. At least one reference must be held on all pages in
-	// fr, and must continue to be held as long as pages are mapped.
+	// Preconditions:
+	// * addr and fr must be page-aligned.
+	// * fr.Length() > 0.
+	// * at.Any() == true.
+	// * At least one reference must be held on all pages in fr, and must
+	//   continue to be held as long as pages are mapped.
 	MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error
 
 	// Unmap unmaps the given range.
 	//
-	// Preconditions: addr is page-aligned. length > 0.
+	// Preconditions:
+	// * addr is page-aligned.
+	// * length > 0.
 	Unmap(addr usermem.Addr, length uint64)
 
 	// Release releases this address space. After releasing, a new AddressSpace

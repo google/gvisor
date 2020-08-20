@@ -371,8 +371,9 @@ type FileDescriptionImpl interface {
 	//
 	// - If opts.Flags specifies unsupported options, PRead returns EOPNOTSUPP.
 	//
-	// Preconditions: The FileDescription was opened for reading.
-	// FileDescriptionOptions.DenyPRead == false.
+	// Preconditions:
+	// * The FileDescription was opened for reading.
+	// * FileDescriptionOptions.DenyPRead == false.
 	PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error)
 
 	// Read is similar to PRead, but does not specify an offset.
@@ -403,8 +404,9 @@ type FileDescriptionImpl interface {
 	// - If opts.Flags specifies unsupported options, PWrite returns
 	// EOPNOTSUPP.
 	//
-	// Preconditions: The FileDescription was opened for writing.
-	// FileDescriptionOptions.DenyPWrite == false.
+	// Preconditions:
+	// * The FileDescription was opened for writing.
+	// * FileDescriptionOptions.DenyPWrite == false.
 	PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error)
 
 	// Write is similar to PWrite, but does not specify an offset, which is

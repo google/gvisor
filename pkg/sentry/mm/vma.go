@@ -27,8 +27,9 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// Preconditions: mm.mappingMu must be locked for writing. opts must be valid
-// as defined by the checks in MMap.
+// Preconditions:
+// * mm.mappingMu must be locked for writing.
+// * opts must be valid as defined by the checks in MMap.
 func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOpts) (vmaIterator, usermem.AddrRange, error) {
 	if opts.MaxPerms != opts.MaxPerms.Effective() {
 		panic(fmt.Sprintf("Non-effective MaxPerms %s cannot be enforced", opts.MaxPerms))
@@ -260,8 +261,9 @@ func (mm *MemoryManager) mlockedBytesRangeLocked(ar usermem.AddrRange) uint64 {
 //
 // - An error that is non-nil if vmas exist for only a subset of ar.
 //
-// Preconditions: mm.mappingMu must be locked for reading; it may be
-// temporarily unlocked. ar.Length() != 0.
+// Preconditions:
+// * mm.mappingMu must be locked for reading; it may be temporarily unlocked.
+// * ar.Length() != 0.
 func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) (vmaIterator, vmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 {
@@ -342,8 +344,10 @@ const guardBytes = 256 * usermem.PageSize
 // unmapLocked unmaps all addresses in ar and returns the resulting gap in
 // mm.vmas.
 //
-// Preconditions: mm.mappingMu must be locked for writing. ar.Length() != 0.
-// ar must be page-aligned.
+// Preconditions:
+// * mm.mappingMu must be locked for writing.
+// * ar.Length() != 0.
+// * ar must be page-aligned.
 func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
@@ -361,8 +365,10 @@ func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) 
 // gap in mm.vmas. It does not remove pmas or AddressSpace mappings; clients
 // must do so before calling removeVMAsLocked.
 //
-// Preconditions: mm.mappingMu must be locked for writing. ar.Length() != 0. ar
-// must be page-aligned.
+// Preconditions:
+// * mm.mappingMu must be locked for writing.
+// * ar.Length() != 0.
+// * ar must be page-aligned.
 func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
@@ -467,7 +473,9 @@ func (vmaSetFunctions) Split(ar usermem.AddrRange, v vma, split usermem.Addr) (v
 	return v, v2
 }
 
-// Preconditions: vseg.ValuePtr().mappable != nil. vseg.Range().Contains(addr).
+// Preconditions:
+// * vseg.ValuePtr().mappable != nil.
+// * vseg.Range().Contains(addr).
 func (vseg vmaIterator) mappableOffsetAt(addr usermem.Addr) uint64 {
 	if checkInvariants {
 		if !vseg.Ok() {
@@ -491,8 +499,10 @@ func (vseg vmaIterator) mappableRange() memmap.MappableRange {
 	return vseg.mappableRangeOf(vseg.Range())
 }
 
-// Preconditions: vseg.ValuePtr().mappable != nil.
-// vseg.Range().IsSupersetOf(ar). ar.Length() != 0.
+// Preconditions:
+// * vseg.ValuePtr().mappable != nil.
+// * vseg.Range().IsSupersetOf(ar).
+// * ar.Length() != 0.
 func (vseg vmaIterator) mappableRangeOf(ar usermem.AddrRange) memmap.MappableRange {
 	if checkInvariants {
 		if !vseg.Ok() {
@@ -514,8 +524,10 @@ func (vseg vmaIterator) mappableRangeOf(ar usermem.AddrRange) memmap.MappableRan
 	return memmap.MappableRange{vma.off + uint64(ar.Start-vstart), vma.off + uint64(ar.End-vstart)}
 }
 
-// Preconditions: vseg.ValuePtr().mappable != nil.
-// vseg.mappableRange().IsSupersetOf(mr). mr.Length() != 0.
+// Preconditions:
+// * vseg.ValuePtr().mappable != nil.
+// * vseg.mappableRange().IsSupersetOf(mr).
+// * mr.Length() != 0.
 func (vseg vmaIterator) addrRangeOf(mr memmap.MappableRange) usermem.AddrRange {
 	if checkInvariants {
 		if !vseg.Ok() {
@@ -540,7 +552,9 @@ func (vseg vmaIterator) addrRangeOf(mr memmap.MappableRange) usermem.AddrRange {
 // seekNextLowerBound returns mm.vmas.LowerBoundSegment(addr), but does so by
 // scanning linearly forward from vseg.
 //
-// Preconditions: mm.mappingMu must be locked. addr >= vseg.Start().
+// Preconditions:
+// * mm.mappingMu must be locked.
+// * addr >= vseg.Start().
 func (vseg vmaIterator) seekNextLowerBound(addr usermem.Addr) vmaIterator {
 	if checkInvariants {
 		if !vseg.Ok() {

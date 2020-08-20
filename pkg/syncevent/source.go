@@ -19,9 +19,11 @@ type Source interface {
 	// SubscribeEvents causes the Source to notify the given Receiver of the
 	// given subset of events.
 	//
-	// Preconditions: r != nil. The ReceiverCallback for r must not take locks
-	// that are ordered prior to the Source; for example, it cannot call any
-	// Source methods.
+	// Preconditions:
+	// * r != nil.
+	// * The ReceiverCallback for r must not take locks that are ordered
+	//   prior to the Source; for example, it cannot call any Source
+	//   methods.
 	SubscribeEvents(r *Receiver, filter Set) SubscriptionID
 
 	// UnsubscribeEvents causes the Source to stop notifying the Receiver
