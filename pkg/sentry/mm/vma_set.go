@@ -347,7 +347,9 @@ func (s *vmaSet) InsertWithoutMerging(gap vmaGapIterator, r __generics_imported0
 // and returns an iterator to the inserted segment. All existing iterators
 // (including gap, but not including the returned iterator) are invalidated.
 //
-// Preconditions: r.Start >= gap.Start(); r.End <= gap.End().
+// Preconditions:
+// * r.Start >= gap.Start().
+// * r.End <= gap.End().
 func (s *vmaSet) InsertWithoutMergingUnchecked(gap vmaGapIterator, r __generics_imported0.AddrRange, val vma) vmaIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
 	splitMaxGap := vmatrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
@@ -1101,12 +1103,10 @@ func (seg vmaIterator) End() __generics_imported0.Addr {
 // does not invalidate any iterators.
 //
 // Preconditions:
-//
-// - r.Length() > 0.
-//
-// - The new range must not overlap an existing one: If seg.NextSegment().Ok(),
-// then r.end <= seg.NextSegment().Start(); if seg.PrevSegment().Ok(), then
-// r.start >= seg.PrevSegment().End().
+// * r.Length() > 0.
+// * The new range must not overlap an existing one:
+//   * If seg.NextSegment().Ok(), then r.end <= seg.NextSegment().Start().
+//   * If seg.PrevSegment().Ok(), then r.start >= seg.PrevSegment().End().
 func (seg vmaIterator) SetRangeUnchecked(r __generics_imported0.AddrRange) {
 	seg.node.keys[seg.index] = r
 }
@@ -1131,8 +1131,9 @@ func (seg vmaIterator) SetRange(r __generics_imported0.AddrRange) {
 // SetStartUnchecked mutates the iterated segment's start. This operation does
 // not invalidate any iterators.
 //
-// Preconditions: The new start must be valid: start < seg.End(); if
-// seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
+// Preconditions: The new start must be valid:
+// * start < seg.End()
+// * If seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
 func (seg vmaIterator) SetStartUnchecked(start __generics_imported0.Addr) {
 	seg.node.keys[seg.index].Start = start
 }
@@ -1154,8 +1155,9 @@ func (seg vmaIterator) SetStart(start __generics_imported0.Addr) {
 // SetEndUnchecked mutates the iterated segment's end. This operation does not
 // invalidate any iterators.
 //
-// Preconditions: The new end must be valid: end > seg.Start(); if
-// seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
+// Preconditions: The new end must be valid:
+// * end > seg.Start().
+// * If seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
 func (seg vmaIterator) SetEndUnchecked(end __generics_imported0.Addr) {
 	seg.node.keys[seg.index].End = end
 }
@@ -1575,9 +1577,11 @@ func (s *vmaSet) ExportSortedSlices() *vmaSegmentDataSlices {
 
 // ImportSortedSlice initializes the given set from the given slice.
 //
-// Preconditions: s must be empty. sds must represent a valid set (the segments
-// in sds must have valid lengths that do not overlap). The segments in sds
-// must be sorted in ascending key order.
+// Preconditions:
+// * s must be empty.
+// * sds must represent a valid set (the segments in sds must have valid
+//   lengths that do not overlap).
+// * The segments in sds must be sorted in ascending key order.
 func (s *vmaSet) ImportSortedSlices(sds *vmaSegmentDataSlices) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)

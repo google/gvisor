@@ -347,7 +347,9 @@ func (s *FileRangeSet) InsertWithoutMerging(gap FileRangeGapIterator, r __generi
 // and returns an iterator to the inserted segment. All existing iterators
 // (including gap, but not including the returned iterator) are invalidated.
 //
-// Preconditions: r.Start >= gap.Start(); r.End <= gap.End().
+// Preconditions:
+// * r.Start >= gap.Start().
+// * r.End <= gap.End().
 func (s *FileRangeSet) InsertWithoutMergingUnchecked(gap FileRangeGapIterator, r __generics_imported0.MappableRange, val uint64) FileRangeIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
 	splitMaxGap := FileRangetrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
@@ -1101,12 +1103,10 @@ func (seg FileRangeIterator) End() uint64 {
 // does not invalidate any iterators.
 //
 // Preconditions:
-//
-// - r.Length() > 0.
-//
-// - The new range must not overlap an existing one: If seg.NextSegment().Ok(),
-// then r.end <= seg.NextSegment().Start(); if seg.PrevSegment().Ok(), then
-// r.start >= seg.PrevSegment().End().
+// * r.Length() > 0.
+// * The new range must not overlap an existing one:
+//   * If seg.NextSegment().Ok(), then r.end <= seg.NextSegment().Start().
+//   * If seg.PrevSegment().Ok(), then r.start >= seg.PrevSegment().End().
 func (seg FileRangeIterator) SetRangeUnchecked(r __generics_imported0.MappableRange) {
 	seg.node.keys[seg.index] = r
 }
@@ -1131,8 +1131,9 @@ func (seg FileRangeIterator) SetRange(r __generics_imported0.MappableRange) {
 // SetStartUnchecked mutates the iterated segment's start. This operation does
 // not invalidate any iterators.
 //
-// Preconditions: The new start must be valid: start < seg.End(); if
-// seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
+// Preconditions: The new start must be valid:
+// * start < seg.End()
+// * If seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
 func (seg FileRangeIterator) SetStartUnchecked(start uint64) {
 	seg.node.keys[seg.index].Start = start
 }
@@ -1154,8 +1155,9 @@ func (seg FileRangeIterator) SetStart(start uint64) {
 // SetEndUnchecked mutates the iterated segment's end. This operation does not
 // invalidate any iterators.
 //
-// Preconditions: The new end must be valid: end > seg.Start(); if
-// seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
+// Preconditions: The new end must be valid:
+// * end > seg.Start().
+// * If seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
 func (seg FileRangeIterator) SetEndUnchecked(end uint64) {
 	seg.node.keys[seg.index].End = end
 }
@@ -1575,9 +1577,11 @@ func (s *FileRangeSet) ExportSortedSlices() *FileRangeSegmentDataSlices {
 
 // ImportSortedSlice initializes the given set from the given slice.
 //
-// Preconditions: s must be empty. sds must represent a valid set (the segments
-// in sds must have valid lengths that do not overlap). The segments in sds
-// must be sorted in ascending key order.
+// Preconditions:
+// * s must be empty.
+// * sds must represent a valid set (the segments in sds must have valid
+//   lengths that do not overlap).
+// * The segments in sds must be sorted in ascending key order.
 func (s *FileRangeSet) ImportSortedSlices(sds *FileRangeSegmentDataSlices) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)

@@ -115,9 +115,12 @@ func putDentrySlice(ds *[]*dentry) {
 // Dentries which may become cached as a result of the traversal are appended
 // to *ds.
 //
-// Preconditions: fs.renameMu must be locked. d.dirMu must be locked.
-// !rp.Done(). If !d.cachedMetadataAuthoritative(), then d's cached metadata
-// must be up to date.
+// Preconditions:
+// * fs.renameMu must be locked.
+// * d.dirMu must be locked.
+// * !rp.Done().
+// * If !d.cachedMetadataAuthoritative(), then d's cached metadata must be up
+//   to date.
 //
 // Postconditions: The returned dentry's cached metadata is up to date.
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, error) {
@@ -185,8 +188,11 @@ afterSymlink:
 // getChildLocked returns a dentry representing the child of parent with the
 // given name. If no such child exists, getChildLocked returns (nil, nil).
 //
-// Preconditions: fs.renameMu must be locked. parent.dirMu must be locked.
-// parent.isDir(). name is not "." or "..".
+// Preconditions:
+// * fs.renameMu must be locked.
+// * parent.dirMu must be locked.
+// * parent.isDir().
+// * name is not "." or "..".
 //
 // Postconditions: If getChildLocked returns a non-nil dentry, its cached
 // metadata is up to date.
@@ -206,7 +212,8 @@ func (fs *filesystem) getChildLocked(ctx context.Context, vfsObj *vfs.VirtualFil
 	return fs.revalidateChildLocked(ctx, vfsObj, parent, name, child, ds)
 }
 
-// Preconditions: As for getChildLocked. !parent.isSynthetic().
+// Preconditions: Same as getChildLocked, plus:
+// * !parent.isSynthetic().
 func (fs *filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *dentry, name string, child *dentry, ds **[]*dentry) (*dentry, error) {
 	if child != nil {
 		// Need to lock child.metadataMu because we might be updating child
@@ -279,9 +286,11 @@ func (fs *filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 // rp.Start().Impl().(*dentry)). It does not check that the returned directory
 // is searchable by the provider of rp.
 //
-// Preconditions: fs.renameMu must be locked. !rp.Done(). If
-// !d.cachedMetadataAuthoritative(), then d's cached metadata must be up to
-// date.
+// Preconditions:
+// * fs.renameMu must be locked.
+// * !rp.Done().
+// * If !d.cachedMetadataAuthoritative(), then d's cached metadata must be up
+//   to date.
 func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
 	for !rp.Final() {
 		d.dirMu.Lock()
@@ -328,8 +337,9 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 // createInRemoteDir (if the parent directory is a real remote directory) or
 // createInSyntheticDir (if the parent directory is synthetic) to do so.
 //
-// Preconditions: !rp.Done(). For the final path component in rp,
-// !rp.ShouldFollowSymlink().
+// Preconditions:
+// * !rp.Done().
+// * For the final path component in rp, !rp.ShouldFollowSymlink().
 func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) error, createInSyntheticDir func(parent *dentry, name string) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
@@ -1087,8 +1097,10 @@ retry:
 	return &fd.vfsfd, nil
 }
 
-// Preconditions: d.fs.renameMu must be locked. d.dirMu must be locked.
-// !d.isSynthetic().
+// Preconditions:
+// * d.fs.renameMu must be locked.
+// * d.dirMu must be locked.
+// * !d.isSynthetic().
 func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, ds **[]*dentry) (*vfs.FileDescription, error) {
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err

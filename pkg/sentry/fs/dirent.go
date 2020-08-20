@@ -413,9 +413,9 @@ func (d *Dirent) descendantOf(p *Dirent) bool {
 // Inode.Lookup, otherwise walk will keep d.mu locked.
 //
 // Preconditions:
-// - renameMu must be held for reading.
-// - d.mu must be held.
-// - name must must not contain "/"s.
+// * renameMu must be held for reading.
+// * d.mu must be held.
+// * name must must not contain "/"s.
 func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnlock bool) (*Dirent, error) {
 	if !IsDir(d.Inode.StableAttr) {
 		return nil, syscall.ENOTDIR
@@ -577,9 +577,9 @@ func (d *Dirent) Walk(ctx context.Context, root *Dirent, name string) (*Dirent, 
 // exists returns true if name exists in relation to d.
 //
 // Preconditions:
-// - renameMu must be held for reading.
-// - d.mu must be held.
-// - name must must not contain "/"s.
+// * renameMu must be held for reading.
+// * d.mu must be held.
+// * name must must not contain "/"s.
 func (d *Dirent) exists(ctx context.Context, root *Dirent, name string) bool {
 	child, err := d.walk(ctx, root, name, false /* may unlock */)
 	if err != nil {

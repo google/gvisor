@@ -343,7 +343,9 @@ func (s *evictableRangeSet) InsertWithoutMerging(gap evictableRangeGapIterator, 
 // and returns an iterator to the inserted segment. All existing iterators
 // (including gap, but not including the returned iterator) are invalidated.
 //
-// Preconditions: r.Start >= gap.Start(); r.End <= gap.End().
+// Preconditions:
+// * r.Start >= gap.Start().
+// * r.End <= gap.End().
 func (s *evictableRangeSet) InsertWithoutMergingUnchecked(gap evictableRangeGapIterator, r EvictableRange, val evictableRangeSetValue) evictableRangeIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
 	splitMaxGap := evictableRangetrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
@@ -1097,12 +1099,10 @@ func (seg evictableRangeIterator) End() uint64 {
 // does not invalidate any iterators.
 //
 // Preconditions:
-//
-// - r.Length() > 0.
-//
-// - The new range must not overlap an existing one: If seg.NextSegment().Ok(),
-// then r.end <= seg.NextSegment().Start(); if seg.PrevSegment().Ok(), then
-// r.start >= seg.PrevSegment().End().
+// * r.Length() > 0.
+// * The new range must not overlap an existing one:
+//   * If seg.NextSegment().Ok(), then r.end <= seg.NextSegment().Start().
+//   * If seg.PrevSegment().Ok(), then r.start >= seg.PrevSegment().End().
 func (seg evictableRangeIterator) SetRangeUnchecked(r EvictableRange) {
 	seg.node.keys[seg.index] = r
 }
@@ -1127,8 +1127,9 @@ func (seg evictableRangeIterator) SetRange(r EvictableRange) {
 // SetStartUnchecked mutates the iterated segment's start. This operation does
 // not invalidate any iterators.
 //
-// Preconditions: The new start must be valid: start < seg.End(); if
-// seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
+// Preconditions: The new start must be valid:
+// * start < seg.End()
+// * If seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
 func (seg evictableRangeIterator) SetStartUnchecked(start uint64) {
 	seg.node.keys[seg.index].Start = start
 }
@@ -1150,8 +1151,9 @@ func (seg evictableRangeIterator) SetStart(start uint64) {
 // SetEndUnchecked mutates the iterated segment's end. This operation does not
 // invalidate any iterators.
 //
-// Preconditions: The new end must be valid: end > seg.Start(); if
-// seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
+// Preconditions: The new end must be valid:
+// * end > seg.Start().
+// * If seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
 func (seg evictableRangeIterator) SetEndUnchecked(end uint64) {
 	seg.node.keys[seg.index].End = end
 }
@@ -1571,9 +1573,11 @@ func (s *evictableRangeSet) ExportSortedSlices() *evictableRangeSegmentDataSlice
 
 // ImportSortedSlice initializes the given set from the given slice.
 //
-// Preconditions: s must be empty. sds must represent a valid set (the segments
-// in sds must have valid lengths that do not overlap). The segments in sds
-// must be sorted in ascending key order.
+// Preconditions:
+// * s must be empty.
+// * sds must represent a valid set (the segments in sds must have valid
+//   lengths that do not overlap).
+// * The segments in sds must be sorted in ascending key order.
 func (s *evictableRangeSet) ImportSortedSlices(sds *evictableRangeSegmentDataSlices) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)

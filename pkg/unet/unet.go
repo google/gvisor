@@ -522,7 +522,7 @@ func (s *ServerSocket) Listen() error {
 // This is always blocking.
 //
 // Preconditions:
-//  * ServerSocket is listening (Listen called).
+// * ServerSocket is listening (Listen called).
 func (s *ServerSocket) Accept() (*Socket, error) {
 	fd, ok := s.socket.enterFD()
 	if !ok {

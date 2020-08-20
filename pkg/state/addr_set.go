@@ -343,7 +343,9 @@ func (s *addrSet) InsertWithoutMerging(gap addrGapIterator, r addrRange, val *ob
 // and returns an iterator to the inserted segment. All existing iterators
 // (including gap, but not including the returned iterator) are invalidated.
 //
-// Preconditions: r.Start >= gap.Start(); r.End <= gap.End().
+// Preconditions:
+// * r.Start >= gap.Start().
+// * r.End <= gap.End().
 func (s *addrSet) InsertWithoutMergingUnchecked(gap addrGapIterator, r addrRange, val *objectEncodeState) addrIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
 	splitMaxGap := addrtrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
@@ -1097,12 +1099,10 @@ func (seg addrIterator) End() uintptr {
 // does not invalidate any iterators.
 //
 // Preconditions:
-//
-// - r.Length() > 0.
-//
-// - The new range must not overlap an existing one: If seg.NextSegment().Ok(),
-// then r.end <= seg.NextSegment().Start(); if seg.PrevSegment().Ok(), then
-// r.start >= seg.PrevSegment().End().
+// * r.Length() > 0.
+// * The new range must not overlap an existing one:
+//   * If seg.NextSegment().Ok(), then r.end <= seg.NextSegment().Start().
+//   * If seg.PrevSegment().Ok(), then r.start >= seg.PrevSegment().End().
 func (seg addrIterator) SetRangeUnchecked(r addrRange) {
 	seg.node.keys[seg.index] = r
 }
@@ -1127,8 +1127,9 @@ func (seg addrIterator) SetRange(r addrRange) {
 // SetStartUnchecked mutates the iterated segment's start. This operation does
 // not invalidate any iterators.
 //
-// Preconditions: The new start must be valid: start < seg.End(); if
-// seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
+// Preconditions: The new start must be valid:
+// * start < seg.End()
+// * If seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
 func (seg addrIterator) SetStartUnchecked(start uintptr) {
 	seg.node.keys[seg.index].Start = start
 }
@@ -1150,8 +1151,9 @@ func (seg addrIterator) SetStart(start uintptr) {
 // SetEndUnchecked mutates the iterated segment's end. This operation does not
 // invalidate any iterators.
 //
-// Preconditions: The new end must be valid: end > seg.Start(); if
-// seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
+// Preconditions: The new end must be valid:
+// * end > seg.Start().
+// * If seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
 func (seg addrIterator) SetEndUnchecked(end uintptr) {
 	seg.node.keys[seg.index].End = end
 }
@@ -1571,9 +1573,11 @@ func (s *addrSet) ExportSortedSlices() *addrSegmentDataSlices {
 
 // ImportSortedSlice initializes the given set from the given slice.
 //
-// Preconditions: s must be empty. sds must represent a valid set (the segments
-// in sds must have valid lengths that do not overlap). The segments in sds
-// must be sorted in ascending key order.
+// Preconditions:
+// * s must be empty.
+// * sds must represent a valid set (the segments in sds must have valid
+//   lengths that do not overlap).
+// * The segments in sds must be sorted in ascending key order.
 func (s *addrSet) ImportSortedSlices(sds *addrSegmentDataSlices) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)
