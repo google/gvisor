@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -49,23 +50,23 @@ import (
 //
 // Run the following container to test it:
 //  docker run -di --runtime=runsc -p 8080:80 -v $PWD:/usr/local/apache2/htdocs/ httpd:2.4
-func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Config) error {
+func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *config.Config) error {
 	log.Infof("Setting up network")
 
 	switch conf.Network {
-	case boot.NetworkNone:
+	case config.NetworkNone:
 		log.Infof("Network is disabled, create loopback interface only")
 		if err := createDefaultLoopbackInterface(conn); err != nil {
 			return fmt.Errorf("creating default loopback interface: %v", err)
 		}
-	case boot.NetworkSandbox:
+	case config.NetworkSandbox:
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
 		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.HardwareGSO, conf.SoftwareGSO, conf.TXChecksumOffload, conf.RXChecksumOffload, conf.NumNetworkChannels, conf.QDisc); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
-	case boot.NetworkHost:
+	case config.NetworkHost:
 		// Nothing to do here.
 	default:
 		return fmt.Errorf("invalid network type: %d", conf.Network)
@@ -115,7 +116,7 @@ func isRootNS() (bool, error) {
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareGSO bool, softwareGSO bool, txChecksumOffload bool, rxChecksumOffload bool, numNetworkChannels int, qDisc boot.QueueingDiscipline) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareGSO bool, softwareGSO bool, txChecksumOffload bool, rxChecksumOffload bool, numNetworkChannels int, qDisc config.QueueingDiscipline) error {
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {

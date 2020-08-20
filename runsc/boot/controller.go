@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -220,7 +221,7 @@ type StartArgs struct {
 	Spec *specs.Spec
 
 	// Config is the runsc-specific configuration for the sandbox.
-	Conf *Config
+	Conf *config.Config
 
 	// CID is the ID of the container to start.
 	CID string

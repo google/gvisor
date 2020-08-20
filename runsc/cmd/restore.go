@@ -20,7 +20,7 @@ import (
 	"syscall"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -77,7 +77,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 	}
 
 	id := f.Arg(0)
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
 	if conf.Rootless {
