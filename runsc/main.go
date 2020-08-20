@@ -32,8 +32,8 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -174,21 +174,21 @@ func main() {
 		cmd.Fatalf("%v", err)
 	}
 
-	fsAccess, err := boot.MakeFileAccessType(*fileAccess)
+	fsAccess, err := config.MakeFileAccessType(*fileAccess)
 	if err != nil {
 		cmd.Fatalf("%v", err)
 	}
 
-	if fsAccess == boot.FileAccessShared && *overlay {
+	if fsAccess == config.FileAccessShared && *overlay {
 		cmd.Fatalf("overlay flag is incompatible with shared file access")
 	}
 
-	netType, err := boot.MakeNetworkType(*network)
+	netType, err := config.MakeNetworkType(*network)
 	if err != nil {
 		cmd.Fatalf("%v", err)
 	}
 
-	wa, err := boot.MakeWatchdogAction(*watchdogAction)
+	wa, err := config.MakeWatchdogAction(*watchdogAction)
 	if err != nil {
 		cmd.Fatalf("%v", err)
 	}
@@ -197,12 +197,12 @@ func main() {
 		cmd.Fatalf("num_network_channels must be > 0, got: %d", *numNetworkChannels)
 	}
 
-	refsLeakMode, err := boot.MakeRefsLeakMode(*referenceLeakMode)
+	refsLeakMode, err := config.MakeRefsLeakMode(*referenceLeakMode)
 	if err != nil {
 		cmd.Fatalf("%v", err)
 	}
 
-	queueingDiscipline, err := boot.MakeQueueingDiscipline(*qDisc)
+	queueingDiscipline, err := config.MakeQueueingDiscipline(*qDisc)
 	if err != nil {
 		cmd.Fatalf("%s", err)
 	}
@@ -212,7 +212,7 @@ func main() {
 	refs.SetLeakMode(refsLeakMode)
 
 	// Create a new Config from the flags.
-	conf := &boot.Config{
+	conf := &config.Config{
 		RootDir:            *rootDir,
 		Debug:              *debug,
 		LogFilename:        *logFilename,

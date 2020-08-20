@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package boot
+// Package config provides basic infrastructure to set configuration settings
+// for runsc. The configuration is set by flags to the command line. They can
+// also propagate to a different process using the same flags.
+package config
 
 import (
 	"fmt"
@@ -141,6 +144,44 @@ func refsLeakModeToString(mode refs.LeakMode) string {
 	}
 }
 
+// QueueingDiscipline is used to specify the kind of Queueing Discipline to
+// apply for a give FDBasedLink.
+type QueueingDiscipline int
+
+const (
+	// QDiscNone disables any queueing for the underlying FD.
+	QDiscNone QueueingDiscipline = iota
+
+	// QDiscFIFO applies a simple fifo based queue to the underlying
+	// FD.
+	QDiscFIFO
+)
+
+// MakeQueueingDiscipline if possible the equivalent QueuingDiscipline for s
+// else returns an error.
+func MakeQueueingDiscipline(s string) (QueueingDiscipline, error) {
+	switch s {
+	case "none":
+		return QDiscNone, nil
+	case "fifo":
+		return QDiscFIFO, nil
+	default:
+		return 0, fmt.Errorf("unsupported qdisc specified: %q", s)
+	}
+}
+
+// String implements fmt.Stringer.
+func (q QueueingDiscipline) String() string {
+	switch q {
+	case QDiscNone:
+		return "none"
+	case QDiscFIFO:
+		return "fifo"
+	default:
+		panic(fmt.Sprintf("Invalid queueing discipline: %d", q))
+	}
+}
+
 // Config holds configuration that is not part of the runtime spec.
 type Config struct {
 	// RootDir is the runtime root directory.
@@ -253,6 +294,18 @@ type Config struct {
 	// representing the "same" file.
 	OverlayfsStaleRead bool
 
+	// CPUNumFromQuota sets CPU number count to available CPU quota, using
+	// least integer value greater than or equal to quota.
+	//
+	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
+	CPUNumFromQuota bool
+
+	// Enables VFS2 (not plumbled through yet).
+	VFS2 bool
+
+	// Enables FUSE usage (not plumbled through yet).
+	FUSE bool
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
@@ -265,18 +318,6 @@ type Config struct {
 	// multiple tests are run in parallel, since there is no way to pass
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string
-
-	// CPUNumFromQuota sets CPU number count to available CPU quota, using
-	// least integer value greater than or equal to quota.
-	//
-	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
-	CPUNumFromQuota bool
-
-	// Enables VFS2 (not plumbled through yet).
-	VFS2 bool
-
-	// Enables FUSE usage (not plumbled through yet).
-	FUSE bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -316,20 +357,19 @@ func (c *Config) ToFlags() []string {
 	if c.CPUNumFromQuota {
 		f = append(f, "--cpu-num-from-quota")
 	}
+	if c.VFS2 {
+		f = append(f, "--vfs2=true")
+	}
+	if c.FUSE {
+		f = append(f, "--fuse=true")
+	}
+
 	// Only include these if set since it is never to be used by users.
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		f = append(f, "--TESTONLY-unsafe-nonroot=true")
 	}
 	if len(c.TestOnlyTestNameEnv) != 0 {
 		f = append(f, "--TESTONLY-test-name-env="+c.TestOnlyTestNameEnv)
-	}
-
-	if c.VFS2 {
-		f = append(f, "--vfs2=true")
-	}
-
-	if c.FUSE {
-		f = append(f, "--fuse=true")
 	}
 
 	return f
