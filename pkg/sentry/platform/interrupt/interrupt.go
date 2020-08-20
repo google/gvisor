@@ -54,8 +54,9 @@ type Forwarder struct {
 // }
 // defer f.Disable()
 //
-// Preconditions: r must not be nil. f must not already be forwarding
-// interrupts to a Receiver.
+// Preconditions:
+// * r must not be nil.
+// * f must not already be forwarding interrupts to a Receiver.
 func (f *Forwarder) Enable(r Receiver) bool {
 	if r == nil {
 		panic("nil Receiver")

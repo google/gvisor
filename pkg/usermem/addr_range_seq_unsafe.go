@@ -81,8 +81,10 @@ func AddrRangeSeqFromSlice(slice []AddrRange) AddrRangeSeq {
 	return addrRangeSeqFromSliceLimited(slice, limit)
 }
 
-// Preconditions: The combined length of all AddrRanges in slice <= limit.
-// limit >= 0. If len(slice) != 0, then limit > 0.
+// Preconditions:
+// * The combined length of all AddrRanges in slice <= limit.
+// * limit >= 0.
+// * If len(slice) != 0, then limit > 0.
 func addrRangeSeqFromSliceLimited(slice []AddrRange, limit int64) AddrRangeSeq {
 	switch len(slice) {
 	case 0:

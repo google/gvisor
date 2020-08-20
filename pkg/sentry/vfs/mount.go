@@ -369,8 +369,9 @@ type umountRecursiveOptions struct {
 //
 // umountRecursiveLocked is analogous to Linux's fs/namespace.c:umount_tree().
 //
-// Preconditions: vfs.mountMu must be locked. vfs.mounts.seq must be in a
-// writer critical section.
+// Preconditions:
+// * vfs.mountMu must be locked.
+// * vfs.mounts.seq must be in a writer critical section.
 func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecursiveOptions, vdsToDecRef []VirtualDentry, mountsToDecRef []*Mount) ([]VirtualDentry, []*Mount) {
 	if !mnt.umounted {
 		mnt.umounted = true
@@ -399,9 +400,11 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 // connectLocked makes vd the mount parent/point for mnt. It consumes
 // references held by vd.
 //
-// Preconditions: vfs.mountMu must be locked. vfs.mounts.seq must be in a
-// writer critical section. d.mu must be locked. mnt.parent() == nil, i.e. mnt
-// must not already be connected.
+// Preconditions:
+// * vfs.mountMu must be locked.
+// * vfs.mounts.seq must be in a writer critical section.
+// * d.mu must be locked.
+// * mnt.parent() == nil, i.e. mnt must not already be connected.
 func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns *MountNamespace) {
 	if checkInvariants {
 		if mnt.parent() != nil {
@@ -429,8 +432,10 @@ func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns 
 // disconnectLocked makes vd have no mount parent/point and returns its old
 // mount parent/point with a reference held.
 //
-// Preconditions: vfs.mountMu must be locked. vfs.mounts.seq must be in a
-// writer critical section. mnt.parent() != nil.
+// Preconditions:
+// * vfs.mountMu must be locked.
+// * vfs.mounts.seq must be in a writer critical section.
+// * mnt.parent() != nil.
 func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 	vd := mnt.loadKey()
 	if checkInvariants {
@@ -576,8 +581,9 @@ retryFirst:
 // mnt. It takes a reference on the returned VirtualDentry. If no such mount
 // point exists (i.e. mnt is a root mount), getMountpointAt returns (nil, nil).
 //
-// Preconditions: References are held on mnt and root. vfsroot is not (mnt,
-// mnt.root).
+// Preconditions:
+// * References are held on mnt and root.
+// * vfsroot is not (mnt, mnt.root).
 func (vfs *VirtualFilesystem) getMountpointAt(ctx context.Context, mnt *Mount, vfsroot VirtualDentry) VirtualDentry {
 	// The first mount is special-cased:
 	//
