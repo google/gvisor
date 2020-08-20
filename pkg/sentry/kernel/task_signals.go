@@ -319,8 +319,9 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 
 // Sigtimedwait implements the semantics of sigtimedwait(2).
 //
-// Preconditions: The caller must be running on the task goroutine. t.exitState
-// < TaskExitZombie.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * t.exitState < TaskExitZombie.
 func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*arch.SignalInfo, error) {
 	// set is the set of signals we're interested in; invert it to get the set
 	// of signals to block.
@@ -584,8 +585,9 @@ func (t *Task) SignalMask() linux.SignalSet {
 
 // SetSignalMask sets t's signal mask.
 //
-// Preconditions: SetSignalMask can only be called by the task goroutine.
-// t.exitState < TaskExitZombie.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * t.exitState < TaskExitZombie.
 func (t *Task) SetSignalMask(mask linux.SignalSet) {
 	// By precondition, t prevents t.tg from completing an execve and mutating
 	// t.tg.signalHandlers, so we can skip the TaskSet mutex.
@@ -631,7 +633,7 @@ func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
 // SetSavedSignalMask sets the saved signal mask (see Task.savedSignalMask's
 // comment).
 //
-// Preconditions: SetSavedSignalMask can only be called by the task goroutine.
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetSavedSignalMask(mask linux.SignalSet) {
 	t.savedSignalMask = mask
 	t.haveSavedSignalMask = true

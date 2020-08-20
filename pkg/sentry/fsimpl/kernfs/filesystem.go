@@ -32,7 +32,9 @@ import (
 //
 // stepExistingLocked is loosely analogous to fs/namei.c:walk_component().
 //
-// Preconditions: Filesystem.mu must be locked for at least reading. !rp.Done().
+// Preconditions:
+// * Filesystem.mu must be locked for at least reading.
+// * !rp.Done().
 //
 // Postcondition: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, mayFollowSymlinks bool) (*vfs.Dentry, error) {
@@ -107,8 +109,11 @@ afterSymlink:
 // or vfs.ResolvingPath.ResolveChild(name) returns childVFSD (which may be
 // nil) to verify that the returned child (or lack thereof) is correct.
 //
-// Preconditions: Filesystem.mu must be locked for at least reading.
-// parent.dirMu must be locked. parent.isDir(). name is not "." or "..".
+// Preconditions:
+// * Filesystem.mu must be locked for at least reading.
+// * parent.dirMu must be locked.
+// * parent.isDir().
+// * name is not "." or "..".
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *Dentry, name string, child *Dentry) (*Dentry, error) {
@@ -171,7 +176,9 @@ func (fs *Filesystem) walkExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 // walkParentDirLocked is loosely analogous to Linux's
 // fs/namei.c:path_parentat().
 //
-// Preconditions: Filesystem.mu must be locked for at least reading. !rp.Done().
+// Preconditions:
+// * Filesystem.mu must be locked for at least reading.
+// * !rp.Done().
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, Inode, error) {
@@ -193,8 +200,10 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 // checkCreateLocked checks that a file named rp.Component() may be created in
 // directory parentVFSD, then returns rp.Component().
 //
-// Preconditions: Filesystem.mu must be locked for at least reading. parentInode
-// == parentVFSD.Impl().(*Dentry).Inode. isDir(parentInode) == true.
+// Preconditions:
+// * Filesystem.mu must be locked for at least reading.
+// * parentInode == parentVFSD.Impl().(*Dentry).Inode.
+// * isDir(parentInode) == true.
 func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parentVFSD *vfs.Dentry, parentInode Inode) (string, error) {
 	if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return "", err

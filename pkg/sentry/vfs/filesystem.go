@@ -212,8 +212,9 @@ type FilesystemImpl interface {
 	// ENOENT. Equivalently, if vd represents a file with a link count of 0 not
 	// created by open(O_TMPFILE) without O_EXCL, LinkAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If LinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -231,8 +232,9 @@ type FilesystemImpl interface {
 	// - If the directory in which the new directory would be created has been
 	// removed by RmdirAt or RenameAt, MkdirAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If MkdirAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -253,8 +255,9 @@ type FilesystemImpl interface {
 	// - If the directory in which the file would be created has been removed
 	// by RmdirAt or RenameAt, MknodAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If MknodAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -345,11 +348,12 @@ type FilesystemImpl interface {
 	// - If renaming would replace a non-empty directory, RenameAt returns
 	// ENOTEMPTY.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink(). oldParentVD.Dentry() was obtained from a
-	// previous call to
-	// oldParentVD.Mount().Filesystem().Impl().GetParentDentryAt(). oldName is
-	// not "." or "..".
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	// * oldParentVD.Dentry() was obtained from a previous call to
+	//   oldParentVD.Mount().Filesystem().Impl().GetParentDentryAt().
+	// * oldName is not "." or "..".
 	//
 	// Postconditions: If RenameAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -372,8 +376,9 @@ type FilesystemImpl interface {
 	// - If the file at rp exists but is not a directory, RmdirAt returns
 	// ENOTDIR.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If RmdirAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -410,8 +415,9 @@ type FilesystemImpl interface {
 	// - If the directory in which the symbolic link would be created has been
 	// removed by RmdirAt or RenameAt, SymlinkAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If SymlinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -431,8 +437,9 @@ type FilesystemImpl interface {
 	//
 	// - If the file at rp exists but is a directory, UnlinkAt returns EISDIR.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If UnlinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().

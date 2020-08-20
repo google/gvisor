@@ -315,8 +315,8 @@ func (it *IPTables) startReaper(interval time.Duration) {
 // should not go forward.
 //
 // Preconditions:
-// - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// - pkt.NetworkHeader is not nil.
+// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// * pkt.NetworkHeader is not nil.
 //
 // NOTE: unlike the Check API the returned map contains packets that should be
 // dropped.
@@ -341,8 +341,8 @@ func (it *IPTables) CheckPackets(hook Hook, pkts PacketBufferList, gso *GSO, r *
 }
 
 // Preconditions:
-// - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// - pkt.NetworkHeader is not nil.
+// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// * pkt.NetworkHeader is not nil.
 func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, address tcpip.Address, nicName string) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
@@ -388,8 +388,8 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 }
 
 // Preconditions:
-// - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// - pkt.NetworkHeader is not nil.
+// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// * pkt.NetworkHeader is not nil.
 func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, address tcpip.Address, nicName string) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 

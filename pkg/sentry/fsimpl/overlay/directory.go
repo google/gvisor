@@ -29,7 +29,9 @@ func (d *dentry) isDir() bool {
 	return atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR
 }
 
-// Preconditions: d.dirMu must be locked. d.isDir().
+// Preconditions:
+// * d.dirMu must be locked.
+// * d.isDir().
 func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string]bool, error) {
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	var readdirErr error

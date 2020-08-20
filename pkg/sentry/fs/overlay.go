@@ -86,13 +86,12 @@ func isXattrOverlay(name string) bool {
 // NewOverlayRoot produces the root of an overlay.
 //
 // Preconditions:
-//
-// - upper and lower must be non-nil.
-// - upper must not be an overlay.
-// - lower should not expose character devices, pipes, or sockets, because
+// * upper and lower must be non-nil.
+// * upper must not be an overlay.
+// * lower should not expose character devices, pipes, or sockets, because
 //   copying up these types of files is not supported.
-// - lower must not require that file objects be revalidated.
-// - lower must not have dynamic file/directory content.
+// * lower must not require that file objects be revalidated.
+// * lower must not have dynamic file/directory content.
 func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags MountSourceFlags) (*Inode, error) {
 	if !IsDir(upper.StableAttr) {
 		return nil, fmt.Errorf("upper Inode is a %v, not a directory", upper.StableAttr.Type)
@@ -117,12 +116,11 @@ func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags Mount
 // NewOverlayRootFile produces the root of an overlay that points to a file.
 //
 // Preconditions:
-//
-// - lower must be non-nil.
-// - lower should not expose character devices, pipes, or sockets, because
+// * lower must be non-nil.
+// * lower should not expose character devices, pipes, or sockets, because
 //   copying up these types of files is not supported. Neither it can be a dir.
-// - lower must not require that file objects be revalidated.
-// - lower must not have dynamic file/directory content.
+// * lower must not require that file objects be revalidated.
+// * lower must not have dynamic file/directory content.
 func NewOverlayRootFile(ctx context.Context, upperMS *MountSource, lower *Inode, flags MountSourceFlags) (*Inode, error) {
 	if !IsRegular(lower.StableAttr) {
 		return nil, fmt.Errorf("lower Inode is not a regular file")

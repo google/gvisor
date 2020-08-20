@@ -402,8 +402,7 @@ type loadedELF struct {
 //
 // It does not load the ELF interpreter, or return any auxv entries.
 //
-// Preconditions:
-//  * f is an ELF file
+// Preconditions: f is an ELF file.
 func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, info elfInfo, sharedLoadOffset usermem.Addr) (loadedELF, error) {
 	first := true
 	var start, end usermem.Addr
@@ -571,8 +570,8 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 // It does not load the ELF interpreter, or return any auxv entries.
 //
 // Preconditions:
-//  * f is an ELF file
-//  * f is the first ELF loaded into m
+// * f is an ELF file.
+// * f is the first ELF loaded into m.
 func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureSet, f fsbridge.File) (loadedELF, arch.Context, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
@@ -609,8 +608,7 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureS
 //
 // It does not return any auxv entries.
 //
-// Preconditions:
-//  * f is an ELF file
+// Preconditions: f is an ELF file.
 func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, initial loadedELF) (loadedELF, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
@@ -640,8 +638,7 @@ func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.Fil
 // If loadELF returns ErrSwitchFile it should be called again with the returned
 // path and argv.
 //
-// Preconditions:
-//  * args.File is an ELF file
+// Preconditions: args.File is an ELF file.
 func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error) {
 	bin, ac, err := loadInitialELF(ctx, args.MemoryManager, args.Features, args.File)
 	if err != nil {
