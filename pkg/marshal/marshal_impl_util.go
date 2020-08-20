@@ -44,7 +44,7 @@ func (StubMarshallable) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements Marshallable.UnmarshalBytes.
 func (StubMarshallable) UnmarshalBytes(src []byte) {
-	panic("Please implement your own UnMarshalBytes function")
+	panic("Please implement your own UnmarshalBytes function")
 }
 
 // Packed implements Marshallable.Packed.
