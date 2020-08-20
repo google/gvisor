@@ -330,7 +330,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 //
 // Preconditions: !rp.Done(). For the final path component in rp,
 // !rp.ShouldFollowSymlink().
-func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string) error, createInSyntheticDir func(parent *dentry, name string) error) error {
+func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) error, createInSyntheticDir func(parent *dentry, name string) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
@@ -399,7 +399,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		// RPC will fail with EEXIST like we would have. If the RPC succeeds, and a
 		// stale dentry exists, the dentry will fail revalidation next time it's
 		// used.
-		if err := createInRemoteDir(parent, name); err != nil {
+		if err := createInRemoteDir(parent, name, &ds); err != nil {
 			return err
 		}
 		ev := linux.IN_CREATE
@@ -414,7 +414,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	// No cached dentry exists; however, there might still be an existing file
 	// at name. As above, we attempt the file creation RPC anyway.
-	if err := createInRemoteDir(parent, name); err != nil {
+	if err := createInRemoteDir(parent, name, &ds); err != nil {
 		return err
 	}
 	if child, ok := parent.children[name]; ok && child == nil {
@@ -721,7 +721,7 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string) error {
+	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, _ **[]*dentry) error {
 		if rp.Mount() != vd.Mount() {
 			return syserror.EXDEV
 		}
@@ -754,7 +754,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	creds := rp.Credentials()
-	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string) error {
+	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, _ **[]*dentry) error {
 		if _, err := parent.file.mkdir(ctx, name, (p9.FileMode)(opts.Mode), (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID)); err != nil {
 			if !opts.ForSyntheticMountpoint || err == syserror.EEXIST {
 				return err
@@ -789,34 +789,49 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string) error {
+	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		creds := rp.Credentials()
 		_, err := parent.file.mknod(ctx, name, (p9.FileMode)(opts.Mode), opts.DevMajor, opts.DevMinor, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
-		// If the gofer does not allow creating a socket or pipe, create a
-		// synthetic one, i.e. one that is kept entirely in memory.
-		if err == syserror.EPERM {
-			switch opts.Mode.FileType() {
-			case linux.S_IFSOCK:
-				parent.createSyntheticChildLocked(&createSyntheticOpts{
-					name:     name,
-					mode:     opts.Mode,
-					kuid:     creds.EffectiveKUID,
-					kgid:     creds.EffectiveKGID,
-					endpoint: opts.Endpoint,
-				})
-				return nil
-			case linux.S_IFIFO:
-				parent.createSyntheticChildLocked(&createSyntheticOpts{
-					name: name,
-					mode: opts.Mode,
-					kuid: creds.EffectiveKUID,
-					kgid: creds.EffectiveKGID,
-					pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize),
-				})
-				return nil
-			}
+		if err != syserror.EPERM {
+			return err
 		}
-		return err
+
+		// EPERM means that gofer does not allow creating a socket or pipe. Fallback
+		// to creating a synthetic one, i.e. one that is kept entirely in memory.
+
+		// Check that we're not overriding an existing file with a synthetic one.
+		_, err = fs.stepLocked(ctx, rp, parent, true, ds)
+		switch {
+		case err == nil:
+			// Step succeeded, another file exists.
+			return syserror.EEXIST
+		case err != syserror.ENOENT:
+			// Unexpected error.
+			return err
+		}
+
+		switch opts.Mode.FileType() {
+		case linux.S_IFSOCK:
+			parent.createSyntheticChildLocked(&createSyntheticOpts{
+				name:     name,
+				mode:     opts.Mode,
+				kuid:     creds.EffectiveKUID,
+				kgid:     creds.EffectiveKGID,
+				endpoint: opts.Endpoint,
+			})
+			return nil
+		case linux.S_IFIFO:
+			parent.createSyntheticChildLocked(&createSyntheticOpts{
+				name: name,
+				mode: opts.Mode,
+				kuid: creds.EffectiveKUID,
+				kgid: creds.EffectiveKGID,
+				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize),
+			})
+			return nil
+		}
+		// Retain error from gofer if synthetic file cannot be created internally.
+		return syserror.EPERM
 	}, nil)
 }
 
@@ -1452,7 +1467,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string) error {
+	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, _ **[]*dentry) error {
 		creds := rp.Credentials()
 		_, err := parent.file.symlink(ctx, target, name, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
 		return err
