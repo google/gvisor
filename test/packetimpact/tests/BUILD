@@ -61,6 +61,17 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
+    name = "udp_any_addr_bindtodevice_recv_unicast_broadcast",
+    srcs = ["udp_any_addr_bindtodevice_recv_unicast_broadcast_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
     name = "udp_icmp_error_propagation",
     srcs = ["udp_icmp_error_propagation_test.go"],
     deps = [
