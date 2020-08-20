@@ -41,5 +41,7 @@ go_test(
         "reassembler_test.go",
     ],
     library = ":fragmentation",
-    deps = ["//pkg/tcpip/buffer"],
+    deps = [
+        "//pkg/tcpip/buffer",
+    ],
 )
