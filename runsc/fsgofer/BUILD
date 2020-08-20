@@ -32,5 +32,6 @@ go_test(
         "//pkg/log",
         "//pkg/p9",
         "//pkg/test/testutil",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
