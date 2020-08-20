@@ -1418,7 +1418,9 @@ func (d *dentry) userXattrSupported() bool {
 	return filetype == linux.ModeRegular || filetype == linux.ModeDirectory
 }
 
-// Preconditions: !d.isSynthetic(). d.isRegularFile() || d.isDir().
+// Preconditions:
+// * !d.isSynthetic().
+// * d.isRegularFile() || d.isDir().
 func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool) error {
 	// O_TRUNC unconditionally requires us to obtain a new handle (opened with
 	// O_TRUNC).

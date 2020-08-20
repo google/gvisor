@@ -107,8 +107,7 @@ func copyUp(ctx context.Context, d *Dirent) error {
 // leave the upper filesystem filled with any number of parent directories
 // but the upper filesystem will never be in an inconsistent state.
 //
-// Preconditions:
-// - d.Inode.overlay is non-nil.
+// Preconditions: d.Inode.overlay is non-nil.
 func copyUpLockedForRename(ctx context.Context, d *Dirent) error {
 	for {
 		// Did we race with another copy up or does there
@@ -183,12 +182,12 @@ func doCopyUp(ctx context.Context, d *Dirent) error {
 // Returns a generic error on failure.
 //
 // Preconditions:
-// - parent.Inode.overlay.upper must be non-nil.
-// - next.Inode.overlay.copyMu must be locked writable.
-// - next.Inode.overlay.lower must be non-nil.
-// - next.Inode.overlay.lower.StableAttr.Type must be RegularFile, Directory,
+// * parent.Inode.overlay.upper must be non-nil.
+// * next.Inode.overlay.copyMu must be locked writable.
+// * next.Inode.overlay.lower must be non-nil.
+// * next.Inode.overlay.lower.StableAttr.Type must be RegularFile, Directory,
 //   or Symlink.
-// - upper filesystem must support setting file ownership and timestamps.
+// * upper filesystem must support setting file ownership and timestamps.
 func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	// Extract the attributes of the file we wish to copy.
 	attrs, err := next.Inode.overlay.lower.UnstableAttr(ctx)

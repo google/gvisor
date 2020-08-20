@@ -572,7 +572,9 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 // reapTupleLocked tries to remove tuple and its reply from the table. It
 // returns whether the tuple's connection has timed out.
 //
-// Preconditions: ct.mu is locked for reading and bucket is locked.
+// Preconditions:
+// * ct.mu is locked for reading.
+// * bucket is locked.
 func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bucket int, now time.Time) bool {
 	if !tuple.conn.timedOut(now) {
 		return false

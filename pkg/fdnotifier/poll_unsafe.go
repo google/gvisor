@@ -65,8 +65,7 @@ func NonBlockingPoll(fd int32, mask waiter.EventMask) waiter.EventMask {
 
 // epollWait performs a blocking wait on epfd.
 //
-// Preconditions:
-//  * len(events) > 0
+// Preconditions: len(events) > 0
 func epollWait(epfd int, events []syscall.EpollEvent, msec int) (int, error) {
 	if len(events) == 0 {
 		panic("Empty events passed to EpollWait")

@@ -177,7 +177,7 @@ func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr 
 // AddMapping adds the given mapping and returns the set of MappableRanges that
 // previously had no mappings.
 //
-// Preconditions: As for Mappable.AddMapping.
+// Preconditions: Same as Mappable.AddMapping.
 func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) []MappableRange {
 	mr := MappableRange{offset, offset + uint64(ar.Length())}
 	var mapped []MappableRange
@@ -204,7 +204,7 @@ func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset ui
 // RemoveMapping removes the given mapping and returns the set of
 // MappableRanges that now have no mappings.
 //
-// Preconditions: As for Mappable.RemoveMapping.
+// Preconditions: Same as Mappable.RemoveMapping.
 func (s *MappingSet) RemoveMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) []MappableRange {
 	mr := MappableRange{offset, offset + uint64(ar.Length())}
 	var unmapped []MappableRange

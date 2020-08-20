@@ -106,8 +106,8 @@ type customUint64Metric struct {
 // after Initialized.
 //
 // Preconditions:
-//  * name must be globally unique.
-//  * Initialize/Disable have not been called.
+// * name must be globally unique.
+// * Initialize/Disable have not been called.
 func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func() uint64) error {
 	if initialized {
 		return ErrInitializationDone
@@ -221,7 +221,7 @@ var (
 // EmitMetricUpdate is thread-safe.
 //
 // Preconditions:
-//  * Initialize has been called.
+// * Initialize has been called.
 func EmitMetricUpdate() {
 	emitMu.Lock()
 	defer emitMu.Unlock()

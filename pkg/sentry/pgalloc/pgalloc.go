@@ -507,7 +507,9 @@ func findAvailableRange(usage *usageSet, fileSize int64, length, alignment uint6
 // nearest page. If this is shorter than length bytes due to an error returned
 // by r.ReadToBlocks(), it returns that error.
 //
-// Preconditions: length > 0. length must be page-aligned.
+// Preconditions:
+// * length > 0.
+// * length must be page-aligned.
 func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r safemem.Reader) (memmap.FileRange, error) {
 	fr, err := f.Allocate(length, kind)
 	if err != nil {
@@ -1167,8 +1169,10 @@ func (f *MemoryFile) startEvictionsLocked() bool {
 	return startedAny
 }
 
-// Preconditions: info == f.evictable[user]. !info.evicting. f.mu must be
-// locked.
+// Preconditions:
+// * info == f.evictable[user].
+// * !info.evicting.
+// * f.mu must be locked.
 func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info *evictableMemoryUserInfo) {
 	info.evicting = true
 	f.evictionWG.Add(1)
