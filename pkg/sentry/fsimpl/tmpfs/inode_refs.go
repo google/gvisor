@@ -1,11 +1,11 @@
 package tmpfs
 
 import (
-	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
-	"runtime"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/log"
+	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
+	"runtime"
 )
 
 // ownerType is used to customize logging. Note that we use a pointer to T so
