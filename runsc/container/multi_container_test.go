@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -60,7 +61,7 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 	return specs, ids
 }
 
-func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
+func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
 	if len(conf.RootDir) == 0 {
 		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
 	}

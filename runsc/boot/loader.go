@@ -67,6 +67,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	_ "gvisor.dev/gvisor/runsc/boot/platforms" // register all platforms.
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 
 	// Include supported socket providers.
@@ -79,7 +80,7 @@ import (
 )
 
 type containerInfo struct {
-	conf *Config
+	conf *config.Config
 
 	// spec is the base configuration for the root container.
 	spec *specs.Spec
@@ -165,7 +166,7 @@ type Args struct {
 	// Spec is the sandbox specification.
 	Spec *specs.Spec
 	// Conf is the system configuration.
-	Conf *Config
+	Conf *config.Config
 	// ControllerFD is the FD to the URPC controller. The Loader takes ownership
 	// of this FD and may close it at any time.
 	ControllerFD int
@@ -471,7 +472,7 @@ func (l *Loader) Destroy() {
 	}
 }
 
-func createPlatform(conf *Config, deviceFile *os.File) (platform.Platform, error) {
+func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform, error) {
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %v: %v", conf.Platform, err))
@@ -504,7 +505,7 @@ func (l *Loader) installSeccompFilters() error {
 	} else {
 		opts := filter.Options{
 			Platform:      l.k.Platform,
-			HostNetwork:   l.root.conf.Network == NetworkHost,
+			HostNetwork:   l.root.conf.Network == config.NetworkHost,
 			ProfileEnable: l.root.conf.ProfileEnable,
 			ControllerFD:  l.ctrl.srv.FD(),
 		}
@@ -531,7 +532,7 @@ func (l *Loader) Run() error {
 }
 
 func (l *Loader) run() error {
-	if l.root.conf.Network == NetworkHost {
+	if l.root.conf.Network == config.NetworkHost {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
@@ -629,7 +630,7 @@ func (l *Loader) createContainer(cid string) error {
 // startContainer starts a child container. It returns the thread group ID of
 // the newly created process. Caller owns 'files' and may close them after
 // this method returns.
-func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, files []*os.File) error {
+func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid string, files []*os.File) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -1017,17 +1018,17 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newRootNetworkNamespace(conf *Config, clock tcpip.Clock, uniqueID stack.UniqueID) (*inet.Namespace, error) {
+func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID stack.UniqueID) (*inet.Namespace, error) {
 	// Create an empty network stack because the network namespace may be empty at
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
 	// Run().
 	switch conf.Network {
-	case NetworkHost:
+	case config.NetworkHost:
 		// No network namespacing support for hostinet yet, hence creator is nil.
 		return inet.NewRootNamespace(hostinet.NewStack(), nil), nil
 
-	case NetworkNone, NetworkSandbox:
+	case config.NetworkNone, config.NetworkSandbox:
 		s, err := newEmptySandboxNetworkStack(clock, uniqueID)
 		if err != nil {
 			return nil, err

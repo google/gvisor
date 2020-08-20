@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 func TestPodMountHintsHappy(t *testing.T) {
@@ -196,7 +197,7 @@ func TestGetMountAccessType(t *testing.T) {
 	for _, tst := range []struct {
 		name        string
 		annotations map[string]string
-		want        FileAccessType
+		want        config.FileAccessType
 	}{
 		{
 			name: "container=exclusive",
@@ -205,7 +206,7 @@ func TestGetMountAccessType(t *testing.T) {
 				MountPrefix + "mount1.type":   "bind",
 				MountPrefix + "mount1.share":  "container",
 			},
-			want: FileAccessExclusive,
+			want: config.FileAccessExclusive,
 		},
 		{
 			name: "pod=shared",
@@ -214,7 +215,7 @@ func TestGetMountAccessType(t *testing.T) {
 				MountPrefix + "mount1.type":   "bind",
 				MountPrefix + "mount1.share":  "pod",
 			},
-			want: FileAccessShared,
+			want: config.FileAccessShared,
 		},
 		{
 			name: "shared=shared",
@@ -223,7 +224,7 @@ func TestGetMountAccessType(t *testing.T) {
 				MountPrefix + "mount1.type":   "bind",
 				MountPrefix + "mount1.share":  "shared",
 			},
-			want: FileAccessShared,
+			want: config.FileAccessShared,
 		},
 		{
 			name: "default=shared",
@@ -232,7 +233,7 @@ func TestGetMountAccessType(t *testing.T) {
 				MountPrefix + "mount1.type":   "bind",
 				MountPrefix + "mount1.share":  "container",
 			},
-			want: FileAccessShared,
+			want: config.FileAccessShared,
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {

@@ -25,7 +25,7 @@ import (
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -82,7 +82,7 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute.
 func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	var c *container.Container
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 
 	if d.pid == 0 {
 		// No pid, container ID must have been provided.
