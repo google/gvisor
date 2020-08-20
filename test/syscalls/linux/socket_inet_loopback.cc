@@ -2573,6 +2573,44 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReservedReuseAddr) {
       SyscallSucceeds());
 }
 
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       MultipleBindsAllowedNoListeningReuseAddr) {
+  const auto& param = GetParam();
+  // UDP sockets are allowed to bind/listen on the port w/ SO_REUSEADDR, for TCP
+  // this is only permitted if there is no other listening socket.
+  SKIP_IF(param.type != SOCK_STREAM);
+  // Bind the v4 loopback on a v4 socket.
+  const TestAddress& test_addr = V4Loopback();
+  sockaddr_storage bound_addr = test_addr.addr;
+  FileDescriptor bound_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+  ASSERT_THAT(setsockopt(bound_fd.get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                   test_addr.addr_len),
+              SyscallSucceeds());
+  // Get the port that we bound.
+  socklen_t bound_addr_len = test_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                  &bound_addr_len),
+      SyscallSucceeds());
+
+  // Now create a socket and bind it to the same port, this should
+  // succeed since there is no listening socket for the same port.
+  FileDescriptor second_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+  ASSERT_THAT(setsockopt(second_fd.get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(second_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                   test_addr.addr_len),
+              SyscallSucceeds());
+}
+
 TEST_P(SocketMultiProtocolInetLoopbackTest, PortReuseTwoSockets) {
   auto const& param = GetParam();
   TestAddress const& test_addr = V4Loopback();

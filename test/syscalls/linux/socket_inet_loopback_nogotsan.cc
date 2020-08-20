@@ -168,6 +168,71 @@ INSTANTIATE_TEST_SUITE_P(
         TestParam{V6Loopback(), V6Loopback()}),
     DescribeTestParam);
 
+struct ProtocolTestParam {
+  std::string description;
+  int type;
+};
+
+std::string DescribeProtocolTestParam(
+    ::testing::TestParamInfo<ProtocolTestParam> const& info) {
+  return info.param.description;
+}
+
+using SocketMultiProtocolInetLoopbackTest =
+    ::testing::TestWithParam<ProtocolTestParam>;
+
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       BindAvoidsListeningPortsReuseAddr_NoRandomSave) {
+  const auto& param = GetParam();
+  // UDP sockets are allowed to bind/listen on the port w/ SO_REUSEADDR, for TCP
+  // this is only permitted if there is no other listening socket.
+  SKIP_IF(param.type != SOCK_STREAM);
+
+  DisableSave ds;  // Too many syscalls.
+
+  // A map of port to file descriptor binding the port.
+  std::map<uint16_t, FileDescriptor> listen_sockets;
+
+  // Exhaust all ephemeral ports.
+  while (true) {
+    // Bind the v4 loopback on a v4 socket.
+    TestAddress const& test_addr = V4Loopback();
+    sockaddr_storage bound_addr = test_addr.addr;
+    FileDescriptor bound_fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+    ASSERT_THAT(setsockopt(bound_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+
+    int ret = bind(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                   test_addr.addr_len);
+    if (ret != 0) {
+      ASSERT_EQ(errno, EADDRINUSE);
+      break;
+    }
+    // Get the port that we bound.
+    socklen_t bound_addr_len = test_addr.addr_len;
+    ASSERT_THAT(
+        getsockname(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                    &bound_addr_len),
+        SyscallSucceeds());
+    uint16_t port = reinterpret_cast<sockaddr_in*>(&bound_addr)->sin_port;
+
+    // Newly bound port should not already be in use by a listening socket.
+    ASSERT_EQ(listen_sockets.find(port), listen_sockets.end());
+    auto fd = bound_fd.get();
+    listen_sockets.insert(std::make_pair(port, std::move(bound_fd)));
+    ASSERT_THAT(listen(fd, SOMAXCONN), SyscallSucceeds());
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllFamilies, SocketMultiProtocolInetLoopbackTest,
+    ::testing::Values(ProtocolTestParam{"TCP", SOCK_STREAM},
+                      ProtocolTestParam{"UDP", SOCK_DGRAM}),
+    DescribeProtocolTestParam);
+
 }  // namespace
 
 }  // namespace testing
