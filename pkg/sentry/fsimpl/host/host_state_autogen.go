@@ -6,13 +6,59 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *ConnectedEndpointRefs) StateTypeName() string {
+	return "pkg/sentry/fsimpl/host.ConnectedEndpointRefs"
+}
+
+func (x *ConnectedEndpointRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *ConnectedEndpointRefs) beforeSave() {}
+
+func (x *ConnectedEndpointRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *ConnectedEndpointRefs) afterLoad() {}
+
+func (x *ConnectedEndpointRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
+func (x *inodeRefs) StateTypeName() string {
+	return "pkg/sentry/fsimpl/host.inodeRefs"
+}
+
+func (x *inodeRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *inodeRefs) beforeSave() {}
+
+func (x *inodeRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *inodeRefs) afterLoad() {}
+
+func (x *inodeRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
 func (x *ConnectedEndpoint) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.ConnectedEndpoint"
 }
 
 func (x *ConnectedEndpoint) StateFields() []string {
 	return []string{
-		"ref",
+		"ConnectedEndpointRefs",
 		"fd",
 		"addr",
 		"stype",
@@ -23,7 +69,7 @@ func (x *ConnectedEndpoint) beforeSave() {}
 
 func (x *ConnectedEndpoint) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.ref)
+	m.Save(0, &x.ConnectedEndpointRefs)
 	m.Save(1, &x.fd)
 	m.Save(2, &x.addr)
 	m.Save(3, &x.stype)
@@ -32,12 +78,14 @@ func (x *ConnectedEndpoint) StateSave(m state.Sink) {
 func (x *ConnectedEndpoint) afterLoad() {}
 
 func (x *ConnectedEndpoint) StateLoad(m state.Source) {
-	m.Load(0, &x.ref)
+	m.Load(0, &x.ConnectedEndpointRefs)
 	m.Load(1, &x.fd)
 	m.Load(2, &x.addr)
 	m.Load(3, &x.stype)
 }
 
 func init() {
+	state.Register((*ConnectedEndpointRefs)(nil))
+	state.Register((*inodeRefs)(nil))
 	state.Register((*ConnectedEndpoint)(nil))
 }
