@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 )
 
@@ -45,10 +46,10 @@ func init() {
 	}
 }
 
-func testConfig() *Config {
-	return &Config{
+func testConfig() *config.Config {
+	return &config.Config{
 		RootDir:        "unused_root_dir",
-		Network:        NetworkNone,
+		Network:        config.NetworkNone,
 		DisableSeccomp: true,
 		Platform:       "ptrace",
 	}
