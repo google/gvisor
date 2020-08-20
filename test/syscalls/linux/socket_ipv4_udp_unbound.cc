@@ -2121,7 +2121,7 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
               SyscallSucceedsWithValue(kMessageSize));
 }
 
-// Check that connect returns EADDRNOTAVAIL when out of local ephemeral ports.
+// Check that connect returns EAGAIN when out of local ephemeral ports.
 // We disable S/R because this test creates a large number of sockets.
 TEST_P(IPv4UDPUnboundSocketTest, UDPConnectPortExhaustion_NoRandomSave) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -2150,6 +2150,29 @@ TEST_P(IPv4UDPUnboundSocketTest, UDPConnectPortExhaustion_NoRandomSave) {
       continue;
     }
     ASSERT_THAT(ret, SyscallFailsWithErrno(EAGAIN));
+    break;
+  }
+}
+
+// Check that bind returns EADDRINUSE when out of local ephemeral ports.
+// We disable S/R because this test creates a large number of sockets.
+TEST_P(IPv4UDPUnboundSocketTest, UDPBindPortExhaustion_NoRandomSave) {
+  auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  constexpr int kClients = 65536;
+  auto addr = V4Loopback();
+  // Disable cooperative S/R as we are making too many syscalls.
+  DisableSave ds;
+  std::vector<std::unique_ptr<FileDescriptor>> sockets;
+  for (int i = 0; i < kClients; i++) {
+    auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+    int ret =
+        bind(s->get(), reinterpret_cast<sockaddr*>(&addr.addr), addr.addr_len);
+    if (ret == 0) {
+      sockets.push_back(std::move(s));
+      continue;
+    }
+    ASSERT_THAT(ret, SyscallFailsWithErrno(EADDRINUSE));
     break;
   }
 }
