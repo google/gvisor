@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
@@ -59,8 +58,7 @@ func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transpor
 //
 // +stateify savable
 type ConnectedEndpoint struct {
-	// ref keeps track of references to a ConnectedEndpoint.
-	ref refs.AtomicRefCount
+	ConnectedEndpointRefs
 
 	// mu protects fd below.
 	mu sync.RWMutex `state:"nosave"`
@@ -132,9 +130,9 @@ func NewConnectedEndpoint(ctx context.Context, hostFD int, addr string, saveable
 		return nil, err
 	}
 
-	// AtomicRefCounters start off with a single reference. We need two.
-	e.ref.IncRef()
-	e.ref.EnableLeakCheck("host.ConnectedEndpoint")
+	// ConnectedEndpointRefs start off with a single reference. We need two.
+	e.IncRef()
+	e.EnableLeakCheck()
 	return &e, nil
 }
 
@@ -318,7 +316,7 @@ func (c *ConnectedEndpoint) destroyLocked() {
 // Release implements transport.ConnectedEndpoint.Release and
 // transport.Receiver.Release.
 func (c *ConnectedEndpoint) Release(ctx context.Context) {
-	c.ref.DecRefWithDestructor(ctx, func(context.Context) {
+	c.DecRef(func() {
 		c.mu.Lock()
 		c.destroyLocked()
 		c.mu.Unlock()
@@ -348,7 +346,7 @@ func (e *SCMConnectedEndpoint) Init() error {
 // Release implements transport.ConnectedEndpoint.Release and
 // transport.Receiver.Release.
 func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
-	e.ref.DecRefWithDestructor(ctx, func(context.Context) {
+	e.DecRef(func() {
 		e.mu.Lock()
 		if err := syscall.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", err)
@@ -378,8 +376,8 @@ func NewSCMEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr s
 		return nil, err
 	}
 
-	// AtomicRefCounters start off with a single reference. We need two.
-	e.ref.IncRef()
-	e.ref.EnableLeakCheck("host.SCMConnectedEndpoint")
+	// ConnectedEndpointRefs start off with a single reference. We need two.
+	e.IncRef()
+	e.EnableLeakCheck()
 	return &e, nil
 }
