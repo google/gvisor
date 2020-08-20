@@ -803,7 +803,20 @@ func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	}
 
 	// Issue the bind request to the endpoint.
-	return syserr.TranslateNetstackError(s.Endpoint.Bind(addr))
+	err := s.Endpoint.Bind(addr)
+	if err == tcpip.ErrNoPortAvailable {
+		// Bind always returns EADDRINUSE irrespective of if the specified port was
+		// already bound or if an ephemeral port was requested but none were
+		// available.
+		//
+		// tcpip.ErrNoPortAvailable is mapped to EAGAIN in syserr package because
+		// UDP connect returns EAGAIN on ephemeral port exhaustion.
+		//
+		// TCP connect returns EADDRNOTAVAIL on ephemeral port exhaustion.
+		err = tcpip.ErrPortInUse
+	}
+
+	return syserr.TranslateNetstackError(err)
 }
 
 // Listen implements the linux syscall listen(2) for sockets backed by
