@@ -415,18 +415,20 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		}
 		var ready bool
 		var err error
-		pkt.Data, ready, err = e.protocol.fragmentation.Process(
+		proto := h.Protocol()
+		pkt.Data, _, ready, err = e.protocol.fragmentation.Process(
 			// As per RFC 791 section 2.3, the identification value is unique
 			// for a source-destination pair and protocol.
 			fragmentation.FragmentID{
 				Source:      h.SourceAddress(),
 				Destination: h.DestinationAddress(),
 				ID:          uint32(h.ID()),
-				Protocol:    h.Protocol(),
+				Protocol:    proto,
 			},
 			h.FragmentOffset(),
 			last,
 			h.More(),
+			proto,
 			pkt.Data,
 		)
 		if err != nil {

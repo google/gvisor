@@ -120,29 +120,36 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 }
 
 // Process processes an incoming fragment belonging to an ID and returns a
-// complete packet when all the packets belonging to that ID have been received.
+// complete packet and its protocol number when all the packets belonging to
+// that ID have been received.
 //
 // [first, last] is the range of the fragment bytes.
 //
 // first must be a multiple of the block size f is configured with. The size
 // of the fragment data must be a multiple of the block size, unless there are
 // no fragments following this fragment (more set to false).
-func (f *Fragmentation) Process(id FragmentID, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, error) {
+//
+// proto is the protocol number marked in the fragment being processed. It has
+// to be given here outside of the FragmentID struct because IPv6 should not use
+// the protocol to identify a fragment.
+func (f *Fragmentation) Process(
+	id FragmentID, first, last uint16, more bool, proto uint8, vv buffer.VectorisedView) (
+	buffer.VectorisedView, uint8, bool, error) {
 	if first > last {
-		return buffer.VectorisedView{}, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
+		return buffer.VectorisedView{}, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
 	}
 
 	if first%f.blockSize != 0 {
-		return buffer.VectorisedView{}, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
+		return buffer.VectorisedView{}, 0, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
 	}
 
 	fragmentSize := last - first + 1
 	if more && fragmentSize%f.blockSize != 0 {
-		return buffer.VectorisedView{}, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
+		return buffer.VectorisedView{}, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
 	}
 
 	if l := vv.Size(); l < int(fragmentSize) {
-		return buffer.VectorisedView{}, false, fmt.Errorf("got fragment size=%d bytes less than the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
+		return buffer.VectorisedView{}, 0, false, fmt.Errorf("got fragment size=%d bytes less than the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
 	}
 	vv.CapLength(int(fragmentSize))
 
@@ -160,14 +167,14 @@ func (f *Fragmentation) Process(id FragmentID, first, last uint16, more bool, vv
 	}
 	f.mu.Unlock()
 
-	res, done, consumed, err := r.process(first, last, more, vv)
+	res, firstFragmentProto, done, consumed, err := r.process(first, last, more, proto, vv)
 	if err != nil {
 		// We probably got an invalid sequence of fragments. Just
 		// discard the reassembler and move on.
 		f.mu.Lock()
 		f.release(r)
 		f.mu.Unlock()
-		return buffer.VectorisedView{}, false, fmt.Errorf("fragmentation processing error: %v", err)
+		return buffer.VectorisedView{}, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
 	}
 	f.mu.Lock()
 	f.size += consumed
@@ -186,7 +193,7 @@ func (f *Fragmentation) Process(id FragmentID, first, last uint16, more bool, vv
 		}
 	}
 	f.mu.Unlock()
-	return res, done, nil
+	return res, firstFragmentProto, done, nil
 }
 
 func (f *Fragmentation) release(r *reassembler) {
