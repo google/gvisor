@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -133,7 +134,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
 	debug.SetTraceback("system")
 
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 
 	if b.attached {
 		// Ensure this process is killed after parent process terminates when

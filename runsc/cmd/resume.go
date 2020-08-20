@@ -18,7 +18,7 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -54,7 +54,7 @@ func (r *Resume) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	}
 
 	id := f.Arg(0)
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 
 	cont, err := container.Load(conf.RootDir, id)
 	if err != nil {

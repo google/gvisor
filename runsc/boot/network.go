@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 var (
@@ -78,44 +79,6 @@ type DefaultRoute struct {
 	Name  string
 }
 
-// QueueingDiscipline is used to specify the kind of Queueing Discipline to
-// apply for a give FDBasedLink.
-type QueueingDiscipline int
-
-const (
-	// QDiscNone disables any queueing for the underlying FD.
-	QDiscNone QueueingDiscipline = iota
-
-	// QDiscFIFO applies a simple fifo based queue to the underlying
-	// FD.
-	QDiscFIFO
-)
-
-// MakeQueueingDiscipline if possible the equivalent QueuingDiscipline for s
-// else returns an error.
-func MakeQueueingDiscipline(s string) (QueueingDiscipline, error) {
-	switch s {
-	case "none":
-		return QDiscNone, nil
-	case "fifo":
-		return QDiscFIFO, nil
-	default:
-		return 0, fmt.Errorf("unsupported qdisc specified: %q", s)
-	}
-}
-
-// String implements fmt.Stringer.
-func (q QueueingDiscipline) String() string {
-	switch q {
-	case QDiscNone:
-		return "none"
-	case QDiscFIFO:
-		return "fifo"
-	default:
-		panic(fmt.Sprintf("Invalid queueing discipline: %d", q))
-	}
-}
-
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
 	Name               string
@@ -127,7 +90,7 @@ type FDBasedLink struct {
 	TXChecksumOffload  bool
 	RXChecksumOffload  bool
 	LinkAddress        net.HardwareAddr
-	QDisc              QueueingDiscipline
+	QDisc              config.QueueingDiscipline
 
 	// NumChannels controls how many underlying FD's are to be used to
 	// create this endpoint.
@@ -247,8 +210,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		switch link.QDisc {
-		case QDiscNone:
-		case QDiscFIFO:
+		case config.QDiscNone:
+		case config.QDiscFIFO:
 			log.Infof("Enabling FIFO QDisc on %q", link.Name)
 			linkEP = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
 		}
