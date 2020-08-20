@@ -18,7 +18,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 func TestNotFound(t *testing.T) {
@@ -27,7 +27,7 @@ func TestNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error creating dir: %v", err)
 	}
-	conf := &boot.Config{RootDir: dir}
+	conf := &config.Config{RootDir: dir}
 
 	d := Delete{}
 	if err := d.execute(ids, conf); err == nil {

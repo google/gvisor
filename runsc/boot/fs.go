@@ -48,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -66,7 +67,7 @@ const (
 // tmpfs has some extra supported options that we must pass through.
 var tmpfsAllowedData = []string{"mode", "uid", "gid"}
 
-func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
+func addOverlay(ctx context.Context, conf *config.Config, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
 	// Upper layer uses the same flags as lower, but it must be read-write.
 	upperFlags := lowerFlags
 	upperFlags.ReadOnly = false
@@ -156,7 +157,7 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 }
 
 // p9MountData creates a slice of p9 mount data.
-func p9MountData(fd int, fa FileAccessType, vfs2 bool) []string {
+func p9MountData(fd int, fa config.FileAccessType, vfs2 bool) []string {
 	opts := []string{
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
@@ -167,7 +168,7 @@ func p9MountData(fd int, fa FileAccessType, vfs2 bool) []string {
 		// enablement.
 		opts = append(opts, "privateunixsocket=true")
 	}
-	if fa == FileAccessShared {
+	if fa == config.FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
 	}
 	return opts
@@ -281,7 +282,7 @@ func subtargets(root string, mnts []specs.Mount) []string {
 	return targets
 }
 
-func setupContainerFS(ctx context.Context, conf *Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
+func setupContainerFS(ctx context.Context, conf *config.Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
 	if conf.VFS2 {
 		return setupContainerVFS2(ctx, conf, mntr, procArgs)
 	}
@@ -468,11 +469,11 @@ func (m *mountHint) checkCompatible(mount specs.Mount) error {
 	return nil
 }
 
-func (m *mountHint) fileAccessType() FileAccessType {
+func (m *mountHint) fileAccessType() config.FileAccessType {
 	if m.share == container {
-		return FileAccessExclusive
+		return config.FileAccessExclusive
 	}
-	return FileAccessShared
+	return config.FileAccessShared
 }
 
 func filterUnsupportedOptions(mount specs.Mount) []string {
@@ -576,7 +577,7 @@ func newContainerMounter(spec *specs.Spec, goferFDs []int, k *kernel.Kernel, hin
 // processHints processes annotations that container hints about how volumes
 // should be mounted (e.g. a volume shared between containers). It must be
 // called for the root container only.
-func (c *containerMounter) processHints(conf *Config, creds *auth.Credentials) error {
+func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credentials) error {
 	if conf.VFS2 {
 		return c.processHintsVFS2(conf, creds)
 	}
@@ -600,7 +601,7 @@ func (c *containerMounter) processHints(conf *Config, creds *auth.Credentials) e
 // setupFS is used to set up the file system for all containers. This is the
 // main entry point method, with most of the other being internal only. It
 // returns the mount namespace that is created for the container.
-func (c *containerMounter) setupFS(conf *Config, procArgs *kernel.CreateProcessArgs) (*fs.MountNamespace, error) {
+func (c *containerMounter) setupFS(conf *config.Config, procArgs *kernel.CreateProcessArgs) (*fs.MountNamespace, error) {
 	log.Infof("Configuring container's file system")
 
 	// Create context with root credentials to mount the filesystem (the current
@@ -626,7 +627,7 @@ func (c *containerMounter) setupFS(conf *Config, procArgs *kernel.CreateProcessA
 	return mns, nil
 }
 
-func (c *containerMounter) createMountNamespace(ctx context.Context, conf *Config) (*fs.MountNamespace, error) {
+func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config) (*fs.MountNamespace, error) {
 	rootInode, err := c.createRootMount(ctx, conf)
 	if err != nil {
 		return nil, fmt.Errorf("creating filesystem for container: %v", err)
@@ -638,7 +639,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *Confi
 	return mns, nil
 }
 
-func (c *containerMounter) mountSubmounts(ctx context.Context, conf *Config, mns *fs.MountNamespace) error {
+func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Config, mns *fs.MountNamespace) error {
 	root := mns.Root()
 	defer root.DecRef(ctx)
 
@@ -674,7 +675,7 @@ func (c *containerMounter) checkDispenser() error {
 
 // mountSharedMaster mounts the master of a volume that is shared among
 // containers in a pod. It returns the root mount's inode.
-func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *Config, hint *mountHint) (*fs.Inode, error) {
+func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.Config, hint *mountHint) (*fs.Inode, error) {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
 	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, hint.mount)
@@ -714,7 +715,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *Config, 
 }
 
 // createRootMount creates the root filesystem.
-func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*fs.Inode, error) {
+func (c *containerMounter) createRootMount(ctx context.Context, conf *config.Config) (*fs.Inode, error) {
 	// First construct the filesystem from the spec.Root.
 	mf := fs.MountSourceFlags{ReadOnly: c.root.Readonly || conf.Overlay}
 
@@ -759,7 +760,7 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (string, []string, bool, error) {
+func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m specs.Mount) (string, []string, bool, error) {
 	var (
 		fsName     string
 		opts       []string
@@ -793,19 +794,19 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 	return fsName, opts, useOverlay, nil
 }
 
-func (c *containerMounter) getMountAccessType(mount specs.Mount) FileAccessType {
+func (c *containerMounter) getMountAccessType(mount specs.Mount) config.FileAccessType {
 	if hint := c.hints.findMount(mount); hint != nil {
 		return hint.fileAccessType()
 	}
 	// Non-root bind mounts are always shared if no hints were provided.
-	return FileAccessShared
+	return config.FileAccessShared
 }
 
 // mountSubmount mounts volumes inside the container's root. Because mounts may
 // be readonly, a lower ramfs overlay is added to create the mount point dir.
 // Another overlay is added with tmpfs on top if Config.Overlay is true.
 // 'm.Destination' must be an absolute path with '..' and symlinks resolved.
-func (c *containerMounter) mountSubmount(ctx context.Context, conf *Config, mns *fs.MountNamespace, root *fs.Dirent, m specs.Mount) error {
+func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Config, mns *fs.MountNamespace, root *fs.Dirent, m specs.Mount) error {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
 	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, m)
@@ -904,7 +905,7 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.Moun
 
 // addRestoreMount adds a mount to the MountSources map used for restoring a
 // checkpointed container.
-func (c *containerMounter) addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount) error {
+func (c *containerMounter) addRestoreMount(conf *config.Config, renv *fs.RestoreEnvironment, m specs.Mount) error {
 	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, m)
 	if err != nil {
 		return err
@@ -929,7 +930,7 @@ func (c *containerMounter) addRestoreMount(conf *Config, renv *fs.RestoreEnviron
 
 // createRestoreEnvironment builds a fs.RestoreEnvironment called renv by adding
 // the mounts to the environment.
-func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEnvironment, error) {
+func (c *containerMounter) createRestoreEnvironment(conf *config.Config) (*fs.RestoreEnvironment, error) {
 	renv := &fs.RestoreEnvironment{
 		MountSources: make(map[string][]fs.MountArgs),
 	}
@@ -984,7 +985,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEn
 //
 // Note that when there are submounts inside of '/tmp', directories for the
 // mount points must be present, making '/tmp' not empty anymore.
-func (c *containerMounter) mountTmp(ctx context.Context, conf *Config, mns *fs.MountNamespace, root *fs.Dirent) error {
+func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, mns *fs.MountNamespace, root *fs.Dirent) error {
 	for _, m := range c.mounts {
 		if filepath.Clean(m.Destination) == "/tmp" {
 			log.Debugf("Explict %q mount found, skipping internal tmpfs, mount: %+v", "/tmp", m)

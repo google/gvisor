@@ -52,8 +52,8 @@ func init() {
 	}
 }
 
-func configTestName(config *Config) string {
-	if config.ROMount {
+func configTestName(conf *Config) string {
+	if conf.ROMount {
 		return "ROMount"
 	}
 	return "RWMount"

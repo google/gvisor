@@ -25,14 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 // TestSharedVolume checks that modifications to a volume mount are propagated
 // into and out of the sandbox.
 func TestSharedVolume(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.FileAccess = boot.FileAccessShared
+	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of
 	// the filesystem.
@@ -189,7 +189,7 @@ func checkFile(c *Container, filename string, want []byte) error {
 // is reflected inside.
 func TestSharedVolumeFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.FileAccess = boot.FileAccessShared
+	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of
 	// the filesystem.
