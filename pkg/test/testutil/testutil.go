@@ -243,12 +243,15 @@ func writeSpec(dir string, spec *specs.Spec) error {
 	return ioutil.WriteFile(filepath.Join(dir, "config.json"), b, 0755)
 }
 
+// idRandomSrc is a pseudo random generator used to in RandomID.
+var idRandomSrc = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 // RandomID returns 20 random bytes following the given prefix.
 func RandomID(prefix string) string {
 	// Read 20 random bytes.
 	b := make([]byte, 20)
 	// "[Read] always returns len(p) and a nil error." --godoc
-	if _, err := rand.Read(b); err != nil {
+	if _, err := idRandomSrc.Read(b); err != nil {
 		panic("rand.Read failed: " + err.Error())
 	}
 	if prefix != "" {
