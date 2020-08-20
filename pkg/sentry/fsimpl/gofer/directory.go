@@ -82,7 +82,7 @@ type createSyntheticOpts struct {
 // Preconditions: d.dirMu must be locked. d.isDir(). d does not already contain
 // a child with the given name.
 func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
-	d2 := &dentry{
+	child := &dentry{
 		refs:      1, // held by d
 		fs:        d.fs,
 		ino:       d.fs.nextSyntheticIno(),
@@ -97,16 +97,16 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	case linux.S_IFDIR:
 		// Nothing else needs to be done.
 	case linux.S_IFSOCK:
-		d2.endpoint = opts.endpoint
+		child.endpoint = opts.endpoint
 	case linux.S_IFIFO:
-		d2.pipe = opts.pipe
+		child.pipe = opts.pipe
 	default:
 		panic(fmt.Sprintf("failed to create synthetic file of unrecognized type: %v", opts.mode.FileType()))
 	}
-	d2.pf.dentry = d2
-	d2.vfsd.Init(d2)
+	child.pf.dentry = child
+	child.vfsd.Init(child)
 
-	d.cacheNewChildLocked(d2, opts.name)
+	d.cacheNewChildLocked(child, opts.name)
 	d.syntheticChildren++
 }
 
