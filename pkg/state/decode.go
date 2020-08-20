@@ -584,10 +584,12 @@ func (ds *decodeState) Load(obj reflect.Value) {
 	})
 
 	// Create the root object.
-	ds.objectsByID = append(ds.objectsByID, &objectDecodeState{
+	rootOds := &objectDecodeState{
 		id:  1,
 		obj: obj,
-	})
+	}
+	ds.objectsByID = append(ds.objectsByID, rootOds)
+	ds.pending.PushBack(rootOds)
 
 	// Read the number of objects.
 	lastID, object, err := ReadHeader(ds.r)
