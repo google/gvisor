@@ -400,7 +400,11 @@ func (s *PortManager) isPortAvailableLocked(networks []tcpip.NetworkProtocolNumb
 // reserved by another endpoint. If port is zero, ReservePort will search for
 // an unreserved ephemeral port and reserve it, returning its value in the
 // "port" return value.
-func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID, dest tcpip.FullAddress) (reservedPort uint16, err *tcpip.Error) {
+//
+// An optional testPort closure can be passed in which if provided will be used
+// to test if the picked port can be used. The function should return true if
+// the port is safe to use, false otherwise.
+func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID, dest tcpip.FullAddress, testPort func(port uint16) bool) (reservedPort uint16, err *tcpip.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -412,12 +416,23 @@ func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transp
 		if !s.reserveSpecificPort(networks, transport, addr, port, flags, bindToDevice, dst) {
 			return 0, tcpip.ErrPortInUse
 		}
+		if testPort != nil && !testPort(port) {
+			s.releasePortLocked(networks, transport, addr, port, flags.Bits(), bindToDevice, dst)
+			return 0, tcpip.ErrPortInUse
+		}
 		return port, nil
 	}
 
 	// A port wasn't specified, so try to find one.
 	return s.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
-		return s.reserveSpecificPort(networks, transport, addr, p, flags, bindToDevice, dst), nil
+		if !s.reserveSpecificPort(networks, transport, addr, p, flags, bindToDevice, dst) {
+			return false, nil
+		}
+		if testPort != nil && !testPort(p) {
+			s.releasePortLocked(networks, transport, addr, p, flags.Bits(), bindToDevice, dst)
+			return false, nil
+		}
+		return true, nil
 	})
 }
 
