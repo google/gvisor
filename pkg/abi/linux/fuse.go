@@ -359,7 +359,12 @@ type FUSELookupIn struct {
 
 // MarshalUnsafe serializes r.name to the dst buffer.
 func (r *FUSELookupIn) MarshalUnsafe(buf []byte) {
-	copy(buf, []byte(r.Name))
+	copy(buf, r.Name)
+}
+
+// MarshalBytes serializes r.name to the dst buffer.
+func (r *FUSELookupIn) MarshalBytes(buf []byte) {
+	copy(buf, r.Name)
 }
 
 // SizeBytes is the size of the memory representation of FUSELookupIn.
@@ -491,6 +496,12 @@ func (r *FUSEMknodIn) MarshalUnsafe(buf []byte) {
 	copy(buf[r.MknodMeta.SizeBytes():], r.Name)
 }
 
+// MarshalBytes serializes r.MknodMeta and r.Name to the dst buffer.
+func (r *FUSEMknodIn) MarshalBytes(buf []byte) {
+	r.MknodMeta.MarshalBytes(buf[:r.MknodMeta.SizeBytes()])
+	copy(buf[r.MknodMeta.SizeBytes():], r.Name)
+}
+
 // SizeBytes is the size of the memory representation of FUSEMknodIn.
 // 1 extra byte for null-terminated string.
 func (r *FUSEMknodIn) SizeBytes() int {
@@ -518,6 +529,13 @@ func (r *FUSESymLinkIn) MarshalUnsafe(buf []byte) {
 	copy(buf[len(r.Name)+1:], r.Target)
 }
 
+// MarshalBytes serializes r.Name and r.Target to the dst buffer.
+// Left null-termination at end of r.Name and r.Target.
+func (r *FUSESymLinkIn) MarshalBytes(buf []byte) {
+	copy(buf, r.Name)
+	copy(buf[len(r.Name)+1:], r.Target)
+}
+
 // SizeBytes is the size of the memory representation of FUSESymLinkIn.
 // 2 extra bytes for null-terminated string.
 func (r *FUSESymLinkIn) SizeBytes() int {
@@ -529,6 +547,9 @@ type FUSEEmptyIn struct{ marshal.StubMarshallable }
 
 // MarshalUnsafe do nothing for marshal.
 func (r *FUSEEmptyIn) MarshalUnsafe(buf []byte) {}
+
+// MarshalBytes do nothing for marshal.
+func (r *FUSEEmptyIn) MarshalBytes(buf []byte) {}
 
 // SizeBytes is 0 for empty request.
 func (r *FUSEEmptyIn) SizeBytes() int {
@@ -567,6 +588,12 @@ func (r *FUSEMkdirIn) MarshalUnsafe(buf []byte) {
 	copy(buf[r.MkdirMeta.SizeBytes():], r.Name)
 }
 
+// MarshalBytes serializes r.MkdirMeta and r.Name to the dst buffer.
+func (r *FUSEMkdirIn) MarshalBytes(buf []byte) {
+	r.MkdirMeta.MarshalBytes(buf[:r.MkdirMeta.SizeBytes()])
+	copy(buf[r.MkdirMeta.SizeBytes():], r.Name)
+}
+
 // SizeBytes is the size of the memory representation of FUSEMkdirIn.
 // 1 extra byte for null-terminated Name string.
 func (r *FUSEMkdirIn) SizeBytes() int {
@@ -589,6 +616,11 @@ func (r *FUSERmDirIn) MarshalUnsafe(buf []byte) {
 	copy(buf, r.Name)
 }
 
+// MarshalBytes serializes r.name to the dst buffer.
+func (r *FUSERmDirIn) MarshalBytes(buf []byte) {
+	copy(buf, r.Name)
+}
+
 // SizeBytes is the size of the memory representation of FUSERmDirIn.
 func (r *FUSERmDirIn) SizeBytes() int {
 	return len(r.Name) + 1
@@ -596,6 +628,11 @@ func (r *FUSERmDirIn) SizeBytes() int {
 
 // UnmarshalUnsafe deserializes r.name from the src buffer.
 func (r *FUSERmDirIn) UnmarshalUnsafe(src []byte) {
+	r.Name = string(src)
+}
+
+// UnmarshalBytes deserializes r.name from the src buffer.
+func (r *FUSERmDirIn) UnmarshalBytes(src []byte) {
 	r.Name = string(src)
 }
 
@@ -649,6 +686,14 @@ func (r *FUSEDirents) MarshalUnsafe(dst []byte) {
 	}
 }
 
+// MarshalBytes serializes FUSEDirents to the dst buffer.
+func (r *FUSEDirents) MarshalBytes(dst []byte) {
+	for _, dirent := range r.Dirents {
+		dirent.MarshalBytes(dst)
+		dst = dst[dirent.SizeBytes():]
+	}
+}
+
 // SizeBytes is the size of the memory representation of FUSEDirents.
 func (r *FUSEDirents) SizeBytes() int {
 	var sizeBytes int
@@ -683,6 +728,30 @@ func (r *FUSEDirents) UnmarshalUnsafe(src []byte) {
 	}
 }
 
+// UnmarshalBytes deserializes FUSEDirents from the src buffer.
+func (r *FUSEDirents) UnmarshalBytes(src []byte) {
+	for {
+		if len(src) <= (*FUSEDirentMeta)(nil).SizeBytes() {
+			break
+		}
+
+		// Its unclear how many dirents there are in src. Each dirent is dynamically
+		// sized and so we can't make assumptions about how many dirents we can allocate.
+		if r.Dirents == nil {
+			r.Dirents = make([]*FUSEDirent, 0)
+		}
+
+		// We have to allocate a struct for each dirent - there must be a better way
+		// to do this. Linux allocates 1 page to store all the dirents and then
+		// simply reads them from the page.
+		var dirent FUSEDirent
+		dirent.UnmarshalBytes(src)
+		r.Dirents = append(r.Dirents, &dirent)
+
+		src = src[dirent.SizeBytes():]
+	}
+}
+
 // MarshalUnsafe serializes FUSEDirent to the dst buffer.
 func (r *FUSEDirent) MarshalUnsafe(dst []byte) {
 	r.Meta.MarshalUnsafe(dst)
@@ -690,6 +759,15 @@ func (r *FUSEDirent) MarshalUnsafe(dst []byte) {
 
 	name := primitive.ByteSlice(r.Name)
 	name.MarshalUnsafe(dst)
+}
+
+// MarshalBytes serializes FUSEDirent to the dst buffer.
+func (r *FUSEDirent) MarshalBytes(dst []byte) {
+	r.Meta.MarshalBytes(dst)
+	dst = dst[r.Meta.SizeBytes():]
+
+	name := primitive.ByteSlice(r.Name)
+	name.MarshalBytes(dst)
 }
 
 // SizeBytes is the size of the memory representation of FUSEDirent.
@@ -716,5 +794,22 @@ func (r *FUSEDirent) UnmarshalUnsafe(src []byte) {
 	buf := make([]byte, r.Meta.NameLen)
 	name := primitive.ByteSlice(buf)
 	name.UnmarshalUnsafe(src[:r.Meta.NameLen])
+	r.Name = string(name)
+}
+
+// UnmarshalBytes deserializes FUSEDirent from the src buffer.
+func (r *FUSEDirent) UnmarshalBytes(src []byte) {
+	r.Meta.UnmarshalBytes(src)
+	src = src[r.Meta.SizeBytes():]
+
+	if r.Meta.NameLen > FUSE_NAME_MAX {
+		// The name is too long and therefore invalid. We don't
+		// need to unmarshal the name since it'll be thrown away.
+		return
+	}
+
+	buf := make([]byte, r.Meta.NameLen)
+	name := primitive.ByteSlice(buf)
+	name.UnmarshalBytes(src[:r.Meta.NameLen])
 	r.Name = string(name)
 }
