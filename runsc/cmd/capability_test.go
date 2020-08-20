@@ -24,7 +24,7 @@ import (
 	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -88,7 +88,7 @@ func TestCapabilities(t *testing.T) {
 	conf := testutil.TestConfig(t)
 
 	// Use --network=host to make sandbox use spec's capabilities.
-	conf.Network = boot.NetworkHost
+	conf.Network = config.NetworkHost
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {

@@ -30,7 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 	"gvisor.dev/gvisor/runsc/fsgofer/filter"
@@ -107,7 +107,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("reading spec: %v", err)
 	}
 
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 
 	if g.setUpRoot {
 		if err := setupRootFS(spec, conf); err != nil {
@@ -263,7 +263,7 @@ func isReadonlyMount(opts []string) bool {
 	return false
 }
 
-func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
+func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
 	if err := syscall.Mount("", "/", "", syscall.MS_SLAVE|syscall.MS_REC, ""); err != nil {
@@ -346,7 +346,7 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 // setupMounts binds mount all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
-func setupMounts(conf *boot.Config, mounts []specs.Mount, root string) error {
+func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 	for _, m := range mounts {
 		if m.Type != "bind" || !specutils.IsSupportedDevMount(m) {
 			continue
@@ -385,7 +385,7 @@ func setupMounts(conf *boot.Config, mounts []specs.Mount, root string) error {
 // Otherwise, it may follow symlinks to locations that would be overwritten
 // with another mount point and return the wrong location. In short, make sure
 // setupMounts() has been called before.
-func resolveMounts(conf *boot.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
+func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
 		if m.Type != "bind" || !specutils.IsSupportedDevMount(m) {
@@ -467,7 +467,7 @@ func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, erro
 }
 
 // adjustMountOptions adds 'overlayfs_stale_read' if mounting over overlayfs.
-func adjustMountOptions(conf *boot.Config, path string, opts []string) ([]string, error) {
+func adjustMountOptions(conf *config.Config, path string, opts []string) ([]string, error) {
 	rv := make([]string, len(opts))
 	copy(rv, opts)
 

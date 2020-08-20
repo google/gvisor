@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 func registerFilesystems(k *kernel.Kernel) error {
@@ -133,7 +134,7 @@ func registerFilesystems(k *kernel.Kernel) error {
 	return nil
 }
 
-func setupContainerVFS2(ctx context.Context, conf *Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
+func setupContainerVFS2(ctx context.Context, conf *config.Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
 	mns, err := mntr.setupVFS2(ctx, conf, procArgs)
 	if err != nil {
 		return fmt.Errorf("failed to setupFS: %w", err)
@@ -149,7 +150,7 @@ func setupContainerVFS2(ctx context.Context, conf *Config, mntr *containerMounte
 	return nil
 }
 
-func (c *containerMounter) setupVFS2(ctx context.Context, conf *Config, procArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
+func (c *containerMounter) setupVFS2(ctx context.Context, conf *config.Config, procArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
 	log.Infof("Configuring container's file system with VFS2")
 
 	// Create context with root credentials to mount the filesystem (the current
@@ -175,7 +176,7 @@ func (c *containerMounter) setupVFS2(ctx context.Context, conf *Config, procArgs
 	return mns, nil
 }
 
-func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
+func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
 	opts := p9MountData(fd, conf.FileAccess, true /* vfs2 */)
 
@@ -196,7 +197,7 @@ func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *C
 	return mns, nil
 }
 
-func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
+func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
 	mounts, err := c.prepareMountsVFS2()
 	if err != nil {
 		return err
@@ -256,7 +257,7 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 	return mounts, nil
 }
 
-func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) error {
+func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) error {
 	root := mns.Root()
 	defer root.DecRef(ctx)
 	target := &vfs.PathOperation{
@@ -285,7 +286,7 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, 
 
 // getMountNameAndOptionsVFS2 retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m *mountAndFD) (string, *vfs.MountOptions, error) {
+func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mountAndFD) (string, *vfs.MountOptions, error) {
 	fsName := m.Type
 	var data []string
 
@@ -383,7 +384,7 @@ func (c *containerMounter) makeSyntheticMount(ctx context.Context, currentPath s
 //
 // Note that when there are submounts inside of '/tmp', directories for the
 // mount points must be present, making '/tmp' not empty anymore.
-func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
+func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
 	for _, m := range c.mounts {
 		// m.Destination has been cleaned, so it's to use equality here.
 		if m.Destination == "/tmp" {
@@ -448,7 +449,7 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *Config, creds
 // processHintsVFS2 processes annotations that container hints about how volumes
 // should be mounted (e.g. a volume shared between containers). It must be
 // called for the root container only.
-func (c *containerMounter) processHintsVFS2(conf *Config, creds *auth.Credentials) error {
+func (c *containerMounter) processHintsVFS2(conf *config.Config, creds *auth.Credentials) error {
 	ctx := c.k.SupervisorContext()
 	for _, hint := range c.hints.mounts {
 		// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
@@ -469,7 +470,7 @@ func (c *containerMounter) processHintsVFS2(conf *Config, creds *auth.Credential
 
 // mountSharedMasterVFS2 mounts the master of a volume that is shared among
 // containers in a pod.
-func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *Config, hint *mountHint, creds *auth.Credentials) (*vfs.Mount, error) {
+func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *config.Config, hint *mountHint, creds *auth.Credentials) (*vfs.Mount, error) {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
 	mntFD := &mountAndFD{Mount: hint.mount}
@@ -485,7 +486,7 @@ func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *Conf
 
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
-func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount specs.Mount, source *mountHint) error {
+func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount specs.Mount, source *mountHint) error {
 	if err := source.checkCompatible(mount); err != nil {
 		return err
 	}
