@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/refs"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
@@ -40,6 +39,44 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+func newInode(fs *filesystem, hostFD int, fileType linux.FileMode, isTTY bool) (*inode, error) {
+	// Determine if hostFD is seekable. If not, this syscall will return ESPIPE
+	// (see fs/read_write.c:llseek), e.g. for pipes, sockets, and some character
+	// devices.
+	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
+	seekable := err != syserror.ESPIPE
+
+	i := &inode{
+		hostFD:     hostFD,
+		ino:        fs.NextIno(),
+		isTTY:      isTTY,
+		wouldBlock: wouldBlock(uint32(fileType)),
+		seekable:   seekable,
+		// NOTE(b/38213152): Technically, some obscure char devices can be memory
+		// mapped, but we only allow regular files.
+		canMap: fileType == linux.S_IFREG,
+	}
+	i.pf.inode = i
+	i.refs.EnableLeakCheck()
+
+	// Non-seekable files can't be memory mapped, assert this.
+	if !i.seekable && i.canMap {
+		panic("files that can return EWOULDBLOCK (sockets, pipes, etc.) cannot be memory mapped")
+	}
+
+	// If the hostFD would block, we must set it to non-blocking and handle
+	// blocking behavior in the sentry.
+	if i.wouldBlock {
+		if err := syscall.SetNonblock(i.hostFD, true); err != nil {
+			return nil, err
+		}
+		if err := fdnotifier.AddFD(int32(i.hostFD), &i.queue); err != nil {
+			return nil, err
+		}
+	}
+	return i, nil
+}
 
 // NewFDOptions contains options to NewFD.
 type NewFDOptions struct {
@@ -76,44 +113,11 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		flags = uint32(flagsInt)
 	}
 
-	fileMode := linux.FileMode(s.Mode)
-	fileType := fileMode.FileType()
-
-	// Determine if hostFD is seekable. If not, this syscall will return ESPIPE
-	// (see fs/read_write.c:llseek), e.g. for pipes, sockets, and some character
-	// devices.
-	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
-	seekable := err != syserror.ESPIPE
-
-	i := &inode{
-		hostFD:     hostFD,
-		ino:        fs.NextIno(),
-		isTTY:      opts.IsTTY,
-		wouldBlock: wouldBlock(uint32(fileType)),
-		seekable:   seekable,
-		// NOTE(b/38213152): Technically, some obscure char devices can be memory
-		// mapped, but we only allow regular files.
-		canMap: fileType == linux.S_IFREG,
-	}
-	i.pf.inode = i
-
-	// Non-seekable files can't be memory mapped, assert this.
-	if !i.seekable && i.canMap {
-		panic("files that can return EWOULDBLOCK (sockets, pipes, etc.) cannot be memory mapped")
-	}
-
-	// If the hostFD would block, we must set it to non-blocking and handle
-	// blocking behavior in the sentry.
-	if i.wouldBlock {
-		if err := syscall.SetNonblock(i.hostFD, true); err != nil {
-			return nil, err
-		}
-		if err := fdnotifier.AddFD(int32(i.hostFD), &i.queue); err != nil {
-			return nil, err
-		}
-	}
-
 	d := &kernfs.Dentry{}
+	i, err := newInode(fs, hostFD, linux.FileMode(s.Mode).FileType(), opts.IsTTY)
+	if err != nil {
+		return nil, err
+	}
 	d.Init(i)
 
 	// i.open will take a reference on d.
@@ -188,7 +192,7 @@ type inode struct {
 	locks vfs.FileLocks
 
 	// When the reference count reaches zero, the host fd is closed.
-	refs.AtomicRefCount
+	refs inodeRefs
 
 	// hostFD contains the host fd that this file was originally created from,
 	// which must be available at time of restore.
@@ -430,9 +434,19 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	return nil
 }
 
+// IncRef implements kernfs.Inode.
+func (i *inode) IncRef() {
+	i.refs.IncRef()
+}
+
+// TryIncRef implements kernfs.Inode.
+func (i *inode) TryIncRef() bool {
+	return i.refs.TryIncRef()
+}
+
 // DecRef implements kernfs.Inode.
 func (i *inode) DecRef(ctx context.Context) {
-	i.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
+	i.refs.DecRef(func() {
 		if i.wouldBlock {
 			fdnotifier.RemoveFD(int32(i.hostFD))
 		}
