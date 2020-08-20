@@ -36,6 +36,7 @@ package vfs
 
 import (
 	"fmt"
+	"path"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -780,6 +781,38 @@ func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 		fs.DecRef(ctx)
 	}
 	return retErr
+}
+
+// MkdirAllAt recursively creates non-existent directories on the given path
+// (including the last component).
+func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string, root VirtualDentry, creds *auth.Credentials, mkdirOpts *MkdirOptions) error {
+	pop := &PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(currentPath),
+	}
+	stat, err := vfs.StatAt(ctx, creds, pop, &StatOptions{Mask: linux.STATX_TYPE})
+	switch err {
+	case nil:
+		if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeDirectory {
+			return syserror.ENOTDIR
+		}
+		// Directory already exists.
+		return nil
+	case syserror.ENOENT:
+		// Expected, we will create the dir.
+	default:
+		return fmt.Errorf("stat failed for %q during directory creation: %w", currentPath, err)
+	}
+
+	// Recurse to ensure parent is created and then create the final directory.
+	if err := vfs.MkdirAllAt(ctx, path.Dir(currentPath), root, creds, mkdirOpts); err != nil {
+		return err
+	}
+	if err := vfs.MkdirAt(ctx, creds, pop, mkdirOpts); err != nil {
+		return fmt.Errorf("failed to create directory %q: %w", currentPath, err)
+	}
+	return nil
 }
 
 // A VirtualDentry represents a node in a VFS tree, by combining a Dentry
