@@ -20,6 +20,14 @@ import (
 
 func TestLoadHooks(t *testing.T) {
 	runTestCases(t, false, "load-hooks", []interface{}{
+		// Root object being a struct.
+		afterLoadStruct{v: 1},
+		valueLoadStruct{v: 1},
+		genericContainer{v: &afterLoadStruct{v: 1}},
+		genericContainer{v: &valueLoadStruct{v: 1}},
+		sliceContainer{v: []interface{}{&afterLoadStruct{v: 1}}},
+		sliceContainer{v: []interface{}{&valueLoadStruct{v: 1}}},
+		// Root object being a pointer.
 		&afterLoadStruct{v: 1},
 		&valueLoadStruct{v: 1},
 		&genericContainer{v: &afterLoadStruct{v: 1}},
