@@ -62,7 +62,8 @@ def _syscall_test(
         overlay = False,
         add_uds_tree = False,
         vfs2 = False,
-        fuse = False):
+        fuse = False,
+        debug = True):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
 
@@ -111,6 +112,8 @@ def _syscall_test(
         "--add-uds-tree=" + str(add_uds_tree),
         "--vfs2=" + str(vfs2),
         "--fuse=" + str(fuse),
+        "--strace=" + str(debug),
+        "--debug=" + str(debug),
     ]
 
     # Call the rule above.
@@ -134,6 +137,7 @@ def syscall_test(
         add_hostinet = False,
         vfs2 = True,
         fuse = False,
+        debug = True,
         tags = None):
     """syscall_test is a macro that will create targets for all platforms.
 
