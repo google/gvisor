@@ -205,14 +205,33 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.
 	for i := range mounts {
 		submount := &mounts[i]
 		log.Debugf("Mounting %q to %q, type: %s, options: %s", submount.Source, submount.Destination, submount.Type, submount.Options)
+		var (
+			mnt *vfs.Mount
+			err error
+		)
+
 		if hint := c.hints.findMount(submount.Mount); hint != nil && hint.isSupported() {
-			if err := c.mountSharedSubmountVFS2(ctx, conf, mns, creds, submount.Mount, hint); err != nil {
+			mnt, err = c.mountSharedSubmountVFS2(ctx, conf, mns, creds, submount.Mount, hint)
+			if err != nil {
 				return fmt.Errorf("mount shared mount %q to %q: %v", hint.name, submount.Destination, err)
 			}
 		} else {
-			if err := c.mountSubmountVFS2(ctx, conf, mns, creds, submount); err != nil {
+			mnt, err = c.mountSubmountVFS2(ctx, conf, mns, creds, submount)
+			if err != nil {
 				return fmt.Errorf("mount submount %q: %w", submount.Destination, err)
 			}
+		}
+
+		if mnt != nil && mnt.ReadOnly() {
+			// Switch to ReadWrite while we setup submounts.
+			if err := c.k.VFS().SetMountReadOnly(mnt, false); err != nil {
+				return fmt.Errorf("failed to set mount at %q readwrite: %v", submount.Destination, err)
+			}
+			defer func() {
+				if err := c.k.VFS().SetMountReadOnly(mnt, true); err != nil {
+					panic(fmt.Sprintf("failed to restore mount at %q back to readonly: %v", submount.Destination, err))
+				}
+			}()
 		}
 	}
 
@@ -256,7 +275,7 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 	return mounts, nil
 }
 
-func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) error {
+func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) (*vfs.Mount, error) {
 	root := mns.Root()
 	defer root.DecRef(ctx)
 	target := &vfs.PathOperation{
@@ -266,21 +285,22 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.C
 	}
 	fsName, opts, err := c.getMountNameAndOptionsVFS2(conf, submount)
 	if err != nil {
-		return fmt.Errorf("mountOptions failed: %w", err)
+		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
 	if len(fsName) == 0 {
 		// Filesystem is not supported (e.g. cgroup), just skip it.
-		return nil
+		return nil, nil
 	}
 
 	if err := c.k.VFS().MkdirAllAt(ctx, submount.Destination, root, creds, &vfs.MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}); err != nil {
-		return err
+		return nil, err
 	}
-	if err := c.k.VFS().MountAt(ctx, creds, "", target, fsName, opts); err != nil {
-		return fmt.Errorf("failed to mount %q (type: %s): %w, opts: %v", submount.Destination, submount.Type, err, opts)
+	mnt, err := c.k.VFS().MountAt(ctx, creds, "", target, fsName, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount %q (type: %s): %w, opts: %v", submount.Destination, submount.Type, err, opts)
 	}
 	log.Infof("Mounted %q to %q type: %s, internal-options: %q", submount.Source, submount.Destination, submount.Type, opts.GetFilesystemOptions.Data)
-	return nil
+	return mnt, nil
 }
 
 // getMountNameAndOptionsVFS2 retrieves the fsName, opts, and useOverlay values
@@ -407,7 +427,8 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 			// another user. This is normally done for /tmp.
 			Options: []string{"mode=01777"},
 		}
-		return c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{Mount: tmpMount})
+		_, err := c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{Mount: tmpMount})
+		return err
 
 	case syserror.ENOTDIR:
 		// Not a dir?! Let it be.
@@ -458,25 +479,25 @@ func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *conf
 
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
-func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount specs.Mount, source *mountHint) error {
+func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount specs.Mount, source *mountHint) (*vfs.Mount, error) {
 	if err := source.checkCompatible(mount); err != nil {
-		return err
+		return nil, err
 	}
 
 	_, opts, err := c.getMountNameAndOptionsVFS2(conf, &mountAndFD{Mount: mount})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	newMnt, err := c.k.VFS().NewDisconnectedMount(source.vfsMount.Filesystem(), source.vfsMount.Root(), opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer newMnt.DecRef(ctx)
 
 	root := mns.Root()
 	defer root.DecRef(ctx)
 	if err := c.k.VFS().MkdirAllAt(ctx, mount.Destination, root, creds, &vfs.MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}); err != nil {
-		return err
+		return nil, err
 	}
 
 	target := &vfs.PathOperation{
@@ -485,8 +506,8 @@ func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *co
 		Path:  fspath.Parse(mount.Destination),
 	}
 	if err := c.k.VFS().ConnectMountAt(ctx, creds, newMnt, target); err != nil {
-		return err
+		return nil, err
 	}
 	log.Infof("Mounted %q type shared bind to %q", mount.Destination, source.name)
-	return nil
+	return newMnt, nil
 }
