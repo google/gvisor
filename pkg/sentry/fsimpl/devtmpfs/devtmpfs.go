@@ -18,6 +18,7 @@ package devtmpfs
 
 import (
 	"fmt"
+	"path"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -150,13 +151,11 @@ func (a *Accessor) CreateDeviceFile(ctx context.Context, pathname string, kind v
 
 	// Create any parent directories. See
 	// devtmpfs.c:handle_create()=>path_create().
-	for it := fspath.Parse(pathname).Begin; it.NextOk(); it = it.Next() {
-		pop := a.pathOperationAt(it.String())
-		if err := a.vfsObj.MkdirAt(actx, a.creds, pop, &vfs.MkdirOptions{
-			Mode: 0755,
-		}); err != nil {
-			return fmt.Errorf("failed to create directory %q: %v", it.String(), err)
-		}
+	parent := path.Dir(pathname)
+	if err := a.vfsObj.MkdirAllAt(ctx, parent, a.root, a.creds, &vfs.MkdirOptions{
+		Mode: 0755,
+	}); err != nil {
+		return fmt.Errorf("failed to create device parent directory %q: %v", parent, err)
 	}
 
 	// NOTE: Linux's devtmpfs refuses to automatically delete files it didn't

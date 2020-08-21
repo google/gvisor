@@ -24,6 +24,7 @@ go_test(
     library = ":devtmpfs",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fspath",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/tmpfs",
