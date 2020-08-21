@@ -185,7 +185,9 @@ func (i *rootInode) masterClose(t *Terminal) {
 
 // Open implements kernfs.Inode.Open.
 func (i *rootInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts)
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
+		SeekEnd: kernfs.SeekEndStaticEntries,
+	})
 	if err != nil {
 		return nil, err
 	}
