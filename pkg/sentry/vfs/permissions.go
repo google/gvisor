@@ -271,7 +271,7 @@ func HasCapabilityOnFile(creds *auth.Credentials, cp linux.Capability, kuid auth
 // operation must not proceed. Otherwise it returns the max length allowed to
 // without violating the limit.
 func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
-	fileSizeLimit := limits.FromContext(ctx).Get(limits.FileSize).Cur
+	fileSizeLimit := limits.FromContextOrDie(ctx).Get(limits.FileSize).Cur
 	if fileSizeLimit > math.MaxInt64 {
 		return size, nil
 	}
