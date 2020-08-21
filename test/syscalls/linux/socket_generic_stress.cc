@@ -30,6 +30,9 @@ namespace testing {
 using ConnectStressTest = SocketPairTest;
 
 TEST_P(ConnectStressTest, Reset65kTimes) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   for (int i = 0; i < 1 << 16; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -68,6 +71,9 @@ INSTANTIATE_TEST_SUITE_P(
 using PersistentListenerConnectStressTest = SocketPairTest;
 
 TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseFirst) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   for (int i = 0; i < 1 << 16; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
@@ -87,6 +93,9 @@ TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseFirst) {
 }
 
 TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseSecond) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   for (int i = 0; i < 1 << 16; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_RDWR), SyscallSucceeds());
@@ -106,6 +115,9 @@ TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseSecond) {
 }
 
 TEST_P(PersistentListenerConnectStressTest, 65kTimesClose) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   for (int i = 0; i < 1 << 16; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   }
