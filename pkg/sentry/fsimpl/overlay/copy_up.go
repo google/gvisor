@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -39,6 +40,10 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 	if d.isCopiedUp() {
 		return nil
 	}
+
+	// Attach our credentials to the context, as some VFS operations use
+	// credentials from context rather an take an explicit creds parameter.
+	ctx = auth.ContextWithCredentials(ctx, d.fs.creds)
 
 	ftype := atomic.LoadUint32(&d.mode) & linux.S_IFMT
 	switch ftype {
