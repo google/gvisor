@@ -668,6 +668,13 @@ syscall_test(
 )
 
 syscall_test(
+    size = "medium",
+    # Takes too long under gotsan to run.
+    tags = ["nogotsan"],
+    test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_nogotsan_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:socket_ip_unbound_test",
 )
 
