@@ -91,6 +91,7 @@ func (x *StaticDirectory) StateFields() []string {
 		"InodeNoDynamicLookup",
 		"OrderedChildren",
 		"locks",
+		"fdOpts",
 	}
 }
 
@@ -104,6 +105,7 @@ func (x *StaticDirectory) StateSave(m state.Sink) {
 	m.Save(3, &x.InodeNoDynamicLookup)
 	m.Save(4, &x.OrderedChildren)
 	m.Save(5, &x.locks)
+	m.Save(6, &x.fdOpts)
 }
 
 func (x *StaticDirectory) afterLoad() {}
@@ -115,6 +117,7 @@ func (x *StaticDirectory) StateLoad(m state.Source) {
 	m.Load(3, &x.InodeNoDynamicLookup)
 	m.Load(4, &x.OrderedChildren)
 	m.Load(5, &x.locks)
+	m.Load(6, &x.fdOpts)
 }
 
 func (x *slotList) StateTypeName() string {
