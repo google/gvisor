@@ -109,8 +109,8 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	}
 	defer target.Release(t)
-
-	return 0, nil, t.Kernel().VFS().MountAt(t, creds, source, &target.pop, fsType, &opts)
+	_, err = t.Kernel().VFS().MountAt(t, creds, source, &target.pop, fsType, &opts)
+	return 0, nil, err
 }
 
 // Umount2 implements Linux syscall umount2(2).
