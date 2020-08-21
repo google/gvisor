@@ -144,27 +144,7 @@ func (t *TestContext) MemoryFile() *pgalloc.MemoryFile {
 // RootContext returns a Context that may be used in tests that need root
 // credentials. Uses ptrace as the platform.Platform.
 func RootContext(tb testing.TB) context.Context {
-	return WithCreds(Context(tb), auth.NewRootCredentials(auth.NewRootUserNamespace()))
-}
-
-// WithCreds returns a copy of ctx carrying creds.
-func WithCreds(ctx context.Context, creds *auth.Credentials) context.Context {
-	return &authContext{ctx, creds}
-}
-
-type authContext struct {
-	context.Context
-	creds *auth.Credentials
-}
-
-// Value implements context.Context.
-func (ac *authContext) Value(key interface{}) interface{} {
-	switch key {
-	case auth.CtxCredentials:
-		return ac.creds
-	default:
-		return ac.Context.Value(key)
-	}
+	return auth.ContextWithCredentials(Context(tb), auth.NewRootCredentials(auth.NewRootUserNamespace()))
 }
 
 // WithLimitSet returns a copy of ctx carrying l.
