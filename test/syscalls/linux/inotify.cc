@@ -1371,9 +1371,10 @@ TEST(Inotify, HardlinksReuseSameWatch) {
   // that now and drain the resulting events.
   file1_fd.reset();
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
-  ASSERT_THAT(events,
-              Are({Event(IN_CLOSE_WRITE, root_wd, Basename(file1.path())),
-                   Event(IN_CLOSE_WRITE, file1_wd)}));
+  ASSERT_THAT(
+      events,
+      AreUnordered({Event(IN_CLOSE_WRITE, root_wd, Basename(file1.path())),
+                    Event(IN_CLOSE_WRITE, file1_wd)}));
 
   // Try removing the link and let's see what events show up. Note that after
   // this, we still have a link to the file so the watch shouldn't be
@@ -1381,8 +1382,9 @@ TEST(Inotify, HardlinksReuseSameWatch) {
   const std::string link1_path = link1.reset();
 
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
-  ASSERT_THAT(events, Are({Event(IN_ATTRIB, link1_wd),
-                           Event(IN_DELETE, root_wd, Basename(link1_path))}));
+  ASSERT_THAT(events,
+              AreUnordered({Event(IN_ATTRIB, link1_wd),
+                            Event(IN_DELETE, root_wd, Basename(link1_path))}));
 
   // Now remove the other link. Since this is the last link to the file, the
   // watch should be automatically removed.
@@ -1934,14 +1936,22 @@ TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
   ASSERT_THAT(write(fd.get(), &val, sizeof(val)), SyscallSucceeds());
   std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  EXPECT_THAT(events, Are({
-                          Event(IN_ATTRIB, file_wd),
-                          Event(IN_DELETE, dir_wd, Basename(file.path())),
-                          Event(IN_ACCESS, dir_wd, Basename(file.path())),
-                          Event(IN_ACCESS, file_wd),
-                          Event(IN_MODIFY, dir_wd, Basename(file.path())),
-                          Event(IN_MODIFY, file_wd),
-                      }));
+  EXPECT_THAT(events, AnyOf(Are({
+                                Event(IN_ATTRIB, file_wd),
+                                Event(IN_DELETE, dir_wd, Basename(file.path())),
+                                Event(IN_ACCESS, dir_wd, Basename(file.path())),
+                                Event(IN_ACCESS, file_wd),
+                                Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                                Event(IN_MODIFY, file_wd),
+                            }),
+                            Are({
+                                Event(IN_DELETE, dir_wd, Basename(file.path())),
+                                Event(IN_ATTRIB, file_wd),
+                                Event(IN_ACCESS, dir_wd, Basename(file.path())),
+                                Event(IN_ACCESS, file_wd),
+                                Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                                Event(IN_MODIFY, file_wd),
+                            })));
 
   fd.reset();
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
@@ -1984,7 +1994,7 @@ TEST(Inotify, ExcludeUnlink_NoRandomSave) {
   ASSERT_THAT(read(fd.get(), &val, sizeof(val)), SyscallSucceeds());
   std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  EXPECT_THAT(events, Are({
+  EXPECT_THAT(events, AreUnordered({
                           Event(IN_ATTRIB, file_wd),
                           Event(IN_DELETE, dir_wd, Basename(file.path())),
                       }));
@@ -2127,12 +2137,18 @@ TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
   ASSERT_THAT(ftruncate(fd.get(), 12345), SyscallSucceeds());
   std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  EXPECT_THAT(events, Are({
-                          Event(IN_ATTRIB, file_wd),
-                          Event(IN_DELETE, dir_wd, Basename(file.path())),
-                          Event(IN_MODIFY, dir_wd, Basename(file.path())),
-                          Event(IN_MODIFY, file_wd),
-                      }));
+  EXPECT_THAT(events, AnyOf(Are({
+                                Event(IN_ATTRIB, file_wd),
+                                Event(IN_DELETE, dir_wd, Basename(file.path())),
+                                Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                                Event(IN_MODIFY, file_wd),
+                            }),
+                            Are({
+                                Event(IN_DELETE, dir_wd, Basename(file.path())),
+                                Event(IN_ATTRIB, file_wd),
+                                Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                                Event(IN_MODIFY, file_wd),
+                            })));
 
   const struct timeval times[2] = {{1, 0}, {2, 0}};
   ASSERT_THAT(futimes(fd.get(), times), SyscallSucceeds());
