@@ -2739,6 +2739,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_ipv4_udp_unbound_loopback_nogotsan_test",
+    testonly = 1,
+    srcs = [
+        "socket_ipv4_udp_unbound_loopback_nogotsan.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_test_util",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/memory",
+    ],
+)
+
+cc_binary(
     name = "socket_ip_unbound_test",
     testonly = 1,
     srcs = [
