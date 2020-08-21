@@ -263,16 +263,20 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 }
 
 // MountAt creates and mounts a Filesystem configured by the given arguments.
-func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentials, source string, target *PathOperation, fsTypeName string, opts *MountOptions) error {
+// The VirtualFilesystem will hold a reference to the Mount until it is unmounted.
+//
+// This method returns the mounted Mount without a reference, for convenience
+// during VFS setup when there is no chance of racing with unmount.
+func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentials, source string, target *PathOperation, fsTypeName string, opts *MountOptions) (*Mount, error) {
 	mnt, err := vfs.MountDisconnected(ctx, creds, source, fsTypeName, opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer mnt.DecRef(ctx)
 	if err := vfs.ConnectMountAt(ctx, creds, mnt, target); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return mnt, nil
 }
 
 // UmountAt removes the Mount at the given path.
@@ -655,6 +659,13 @@ retryFirst:
 		d = point
 	}
 	return VirtualDentry{mnt, d}
+}
+
+// SetMountReadOnly sets the mount as ReadOnly.
+func (vfs *VirtualFilesystem) SetMountReadOnly(mnt *Mount, ro bool) error {
+	vfs.mountMu.Lock()
+	defer vfs.mountMu.Unlock()
+	return mnt.setReadOnlyLocked(ro)
 }
 
 // CheckBeginWrite increments the counter of in-progress write operations on
