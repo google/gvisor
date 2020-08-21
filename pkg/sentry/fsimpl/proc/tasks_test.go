@@ -132,7 +132,7 @@ func setup(t *testing.T) *testutil.System {
 			},
 		},
 	}
-	if err := k.VFS().MountAt(ctx, creds, "", pop, Name, mntOpts); err != nil {
+	if _, err := k.VFS().MountAt(ctx, creds, "", pop, Name, mntOpts); err != nil {
 		t.Fatalf("MountAt(/proc): %v", err)
 	}
 	return testutil.NewSystem(ctx, t, k.VFS(), mntns)

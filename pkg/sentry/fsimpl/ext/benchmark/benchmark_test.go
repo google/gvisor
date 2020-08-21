@@ -90,7 +90,7 @@ func mount(b *testing.B, imagePath string, vfsfs *vfs.VirtualFilesystem, pop *vf
 	ctx := contexttest.Context(b)
 	creds := auth.CredentialsFromContext(ctx)
 
-	if err := vfsfs.MountAt(ctx, creds, imagePath, pop, "extfs", &vfs.MountOptions{
+	if _, err := vfsfs.MountAt(ctx, creds, imagePath, pop, "extfs", &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
 			InternalData: int(f.Fd()),
 		},
