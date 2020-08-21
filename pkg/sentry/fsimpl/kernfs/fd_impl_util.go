@@ -15,7 +15,7 @@
 package kernfs
 
 import (
-	"math"
+	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -28,9 +28,25 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// SeekEndConfig describes the SEEK_END behaviour for FDs.
+type SeekEndConfig int
+
+// Constants related to SEEK_END behaviour for FDs.
+const (
+	// Consider the end of the file to be after the final static entry. This is
+	// the default option.
+	SeekEndStaticEntries = iota
+	// Consider the end of the file to be at offset 0.
+	SeekEndZero
+)
+
+// GenericDirectoryFDOptions contains configuration for a GenericDirectoryFD.
+type GenericDirectoryFDOptions struct {
+	SeekEnd SeekEndConfig
+}
+
 // GenericDirectoryFD implements vfs.FileDescriptionImpl for a generic directory
-// inode that uses OrderChildren to track child nodes. GenericDirectoryFD is not
-// compatible with dynamic directories.
+// inode that uses OrderChildren to track child nodes.
 //
 // Note that GenericDirectoryFD holds a lock over OrderedChildren while calling
 // IterDirents callback. The IterDirents callback therefore cannot hash or
@@ -45,6 +61,9 @@ type GenericDirectoryFD struct {
 	vfs.DirectoryFileDescriptionDefaultImpl
 	vfs.LockFD
 
+	// Immutable.
+	seekEnd SeekEndConfig
+
 	vfsfd    vfs.FileDescription
 	children *OrderedChildren
 
@@ -57,9 +76,9 @@ type GenericDirectoryFD struct {
 
 // NewGenericDirectoryFD creates a new GenericDirectoryFD and returns its
 // dentry.
-func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions) (*GenericDirectoryFD, error) {
+func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions, fdOpts GenericDirectoryFDOptions) (*GenericDirectoryFD, error) {
 	fd := &GenericDirectoryFD{}
-	if err := fd.Init(children, locks, opts); err != nil {
+	if err := fd.Init(children, locks, opts, fdOpts); err != nil {
 		return nil, err
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
@@ -71,12 +90,13 @@ func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildre
 // Init initializes a GenericDirectoryFD. Use it when overriding
 // GenericDirectoryFD. Caller must call fd.VFSFileDescription.Init() with the
 // correct implementation.
-func (fd *GenericDirectoryFD) Init(children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions) error {
+func (fd *GenericDirectoryFD) Init(children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions, fdOpts GenericDirectoryFDOptions) error {
 	if vfs.AccessTypesForOpenFlags(opts)&vfs.MayWrite != 0 {
 		// Can't open directories for writing.
 		return syserror.EISDIR
 	}
 	fd.LockFD.Init(locks)
+	fd.seekEnd = fdOpts.SeekEnd
 	fd.children = children
 	return nil
 }
@@ -209,9 +229,17 @@ func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int
 	case linux.SEEK_CUR:
 		offset += fd.off
 	case linux.SEEK_END:
-		// TODO(gvisor.dev/issue/1193): This can prevent new files from showing up
-		// if they are added after SEEK_END.
-		offset = math.MaxInt64
+		switch fd.seekEnd {
+		case SeekEndStaticEntries:
+			fd.children.mu.RLock()
+			offset += int64(len(fd.children.set))
+			offset += 2 // '.' and '..' aren't tracked in children.
+			fd.children.mu.RUnlock()
+		case SeekEndZero:
+			// No-op: offset += 0.
+		default:
+			panic(fmt.Sprintf("Invalid GenericDirectoryFD.seekEnd = %v", fd.seekEnd))
+		}
 	default:
 		return 0, syserror.EINVAL
 	}

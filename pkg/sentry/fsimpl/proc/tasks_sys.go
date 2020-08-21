@@ -39,14 +39,14 @@ const (
 
 // newSysDir returns the dentry corresponding to /proc/sys directory.
 func (fs *filesystem) newSysDir(root *auth.Credentials, k *kernel.Kernel) *kernfs.Dentry {
-	return kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
-		"kernel": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+	return newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+		"kernel": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
 			"hostname": fs.newDentry(root, fs.NextIno(), 0444, &hostnameData{}),
 			"shmall":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMALL)),
 			"shmmax":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMMAX)),
 			"shmmni":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMMNI)),
 		}),
-		"vm": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+		"vm": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
 			"mmap_min_addr":     fs.newDentry(root, fs.NextIno(), 0444, &mmapMinAddrData{k: k}),
 			"overcommit_memory": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0\n")),
 		}),
@@ -62,7 +62,7 @@ func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) *ke
 	// network namespace of the calling process.
 	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
 		contents = map[string]*kernfs.Dentry{
-			"ipv4": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+			"ipv4": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
 				"tcp_recovery": fs.newDentry(root, fs.NextIno(), 0644, &tcpRecoveryData{stack: stack}),
 				"tcp_rmem":     fs.newDentry(root, fs.NextIno(), 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
 				"tcp_sack":     fs.newDentry(root, fs.NextIno(), 0644, &tcpSackData{stack: stack}),
@@ -109,7 +109,7 @@ func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) *ke
 				"tcp_syn_retries":           fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("3")),
 				"tcp_timestamps":            fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
 			}),
-			"core": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+			"core": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
 				"default_qdisc": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("pfifo_fast")),
 				"message_burst": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("10")),
 				"message_cost":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("5")),
@@ -123,7 +123,7 @@ func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) *ke
 		}
 	}
 
-	return kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, contents)
+	return newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, contents)
 }
 
 // mmapMinAddrData implements vfs.DynamicBytesSource for
