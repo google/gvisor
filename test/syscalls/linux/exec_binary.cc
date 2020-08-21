@@ -1042,6 +1042,13 @@ class ElfInterpreterStaticTest
 
 // Statically linked ELF with a statically linked ELF interpreter.
 TEST_P(ElfInterpreterStaticTest, Test) {
+  // TODO(gvisor.dev/issue/3721): Test has been observed to segfault on 5.X
+  // kernels.
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(version.major > 4);
+  }
+
   const std::vector<char> segment_suffix = std::get<0>(GetParam());
   const int expected_errno = std::get<1>(GetParam());
 
