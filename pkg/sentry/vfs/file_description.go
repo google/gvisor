@@ -847,3 +847,31 @@ func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) FileAsyn
 	}
 	return fd.asyncHandler
 }
+
+// FileReadWriteSeeker is a helper struct to pass a FileDescription as
+// io.Reader/io.Writer/io.ReadSeeker/etc.
+type FileReadWriteSeeker struct {
+	Fd    *FileDescription
+	Ctx   context.Context
+	ROpts ReadOptions
+	WOpts WriteOptions
+}
+
+// Read implements io.ReadWriteSeeker.Read.
+func (f *FileReadWriteSeeker) Read(p []byte) (int, error) {
+	dst := usermem.BytesIOSequence(p)
+	ret, err := f.Fd.Read(f.Ctx, dst, f.ROpts)
+	return int(ret), err
+}
+
+// Seek implements io.ReadWriteSeeker.Seek.
+func (f *FileReadWriteSeeker) Seek(offset int64, whence int) (int64, error) {
+	return f.Fd.Seek(f.Ctx, offset, int32(whence))
+}
+
+// Write implements io.ReadWriteSeeker.Write.
+func (f *FileReadWriteSeeker) Write(p []byte) (int, error) {
+	buf := usermem.BytesIOSequence(p)
+	ret, err := f.Fd.Write(f.Ctx, buf, f.WOpts)
+	return int(ret), err
+}
