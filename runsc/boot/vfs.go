@@ -292,7 +292,7 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.C
 		return nil, nil
 	}
 
-	if err := c.k.VFS().MkdirAllAt(ctx, submount.Destination, root, creds, &vfs.MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}); err != nil {
+	if err := c.k.VFS().MakeSyntheticMountpoint(ctx, submount.Destination, root, creds); err != nil {
 		return nil, err
 	}
 	mnt, err := c.k.VFS().MountAt(ctx, creds, "", target, fsName, opts)
@@ -496,7 +496,7 @@ func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *co
 
 	root := mns.Root()
 	defer root.DecRef(ctx)
-	if err := c.k.VFS().MkdirAllAt(ctx, mount.Destination, root, creds, &vfs.MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}); err != nil {
+	if err := c.k.VFS().MakeSyntheticMountpoint(ctx, mount.Destination, root, creds); err != nil {
 		return nil, err
 	}
 
