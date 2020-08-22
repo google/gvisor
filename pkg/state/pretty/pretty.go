@@ -148,7 +148,6 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 			element, ok := format(graph, depth+1, *x.Field(i), html)
 			allZero = allZero && !ok
 			items = append(items, fmt.Sprintf("\t%d: %s,", i, element))
-			i++
 		}
 		items = append(items, "}")
 		return strings.Join(items, tabs), !allZero
