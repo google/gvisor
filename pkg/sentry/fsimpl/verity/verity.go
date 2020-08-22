@@ -26,6 +26,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -36,10 +37,16 @@ import (
 // Name is the default filesystem name.
 const Name = "verity"
 
-// testOnlyDebugging allows verity file system to return error instead of
-// crashing the application when a malicious action is detected. This should
-// only be set for tests.
-var testOnlyDebugging bool
+// merklePrefix is the prefix of the Merkle tree files. For example, the Merkle
+// tree file for "/foo" is "/.merkle.verity.foo".
+const merklePrefix = ".merkle.verity."
+
+// noCrashOnVerificationFailure indicates whether the sandbox should panic
+// whenever verification fails. If true, an error is returned instead of
+// panicking. This should only be set for tests.
+// TOOD(b/165661693): Decide whether to panic or return error based on this
+// flag.
+var noCrashOnVerificationFailure bool
 
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
@@ -93,10 +100,10 @@ type InternalFilesystemOptions struct {
 	// system wrapped by verity file system.
 	LowerGetFSOptions vfs.GetFilesystemOptions
 
-	// TestOnlyDebugging allows verity file system to return error instead
-	// of crashing the application when a malicious action is detected. This
-	// should only be set for tests.
-	TestOnlyDebugging bool
+	// NoCrashOnVerificationFailure indicates whether the sandbox should
+	// panic whenever verification fails. If true, an error is returned
+	// instead of panicking. This should only be set for tests.
+	NoCrashOnVerificationFailure bool
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -106,8 +113,109 @@ func (FilesystemType) Name() string {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	//TODO(b/159261227): Implement GetFilesystem.
-	return nil, nil, nil
+	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
+	if !ok {
+		ctx.Warningf("verity.FilesystemType.GetFilesystem: missing verity configs")
+		return nil, nil, syserror.EINVAL
+	}
+	noCrashOnVerificationFailure = iopts.NoCrashOnVerificationFailure
+
+	// Mount the lower file system. The lower file system is wrapped inside
+	// verity, and should not be exposed or connected.
+	mopts := &vfs.MountOptions{
+		GetFilesystemOptions: iopts.LowerGetFSOptions,
+	}
+	mnt, err := vfsObj.MountDisconnected(ctx, creds, "", iopts.LowerName, mopts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fs := &filesystem{
+		creds:              creds.Fork(),
+		lowerMount:         mnt,
+		allowRuntimeEnable: iopts.AllowRuntimeEnable,
+	}
+	fs.vfsfs.Init(vfsObj, &fstype, fs)
+
+	// Construct the root dentry.
+	d := fs.newDentry()
+	d.refs = 1
+	lowerVD := vfs.MakeVirtualDentry(mnt, mnt.Root())
+	lowerVD.IncRef()
+	d.lowerVD = lowerVD
+
+	rootMerkleName := merklePrefix + iopts.RootMerkleFileName
+
+	lowerMerkleVD, err := vfsObj.GetDentryAt(ctx, fs.creds, &vfs.PathOperation{
+		Root:  lowerVD,
+		Start: lowerVD,
+		Path:  fspath.Parse(rootMerkleName),
+	}, &vfs.GetDentryOptions{})
+
+	// If runtime enable is allowed, the root merkle tree may be absent. We
+	// should create the tree file.
+	if err == syserror.ENOENT && fs.allowRuntimeEnable {
+		lowerMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
+			Root:  lowerVD,
+			Start: lowerVD,
+			Path:  fspath.Parse(rootMerkleName),
+		}, &vfs.OpenOptions{
+			Flags: linux.O_RDWR | linux.O_CREAT,
+			Mode:  0644,
+		})
+		if err != nil {
+			fs.vfsfs.DecRef(ctx)
+			d.DecRef(ctx)
+			return nil, nil, err
+		}
+		lowerMerkleFD.DecRef(ctx)
+		lowerMerkleVD, err = vfsObj.GetDentryAt(ctx, fs.creds, &vfs.PathOperation{
+			Root:  lowerVD,
+			Start: lowerVD,
+			Path:  fspath.Parse(rootMerkleName),
+		}, &vfs.GetDentryOptions{})
+		if err != nil {
+			fs.vfsfs.DecRef(ctx)
+			d.DecRef(ctx)
+			return nil, nil, err
+		}
+	} else if err != nil {
+		// Failed to get dentry for the root Merkle file. This indicates
+		// an attack that removed/renamed the root Merkle file, or it's
+		// never generated.
+		if noCrashOnVerificationFailure {
+			fs.vfsfs.DecRef(ctx)
+			d.DecRef(ctx)
+			return nil, nil, err
+		}
+		panic("Failed to find root Merkle file")
+	}
+	d.lowerMerkleVD = lowerMerkleVD
+
+	// Get metadata from the underlying file system.
+	const statMask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID
+	stat, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
+		Root:  lowerVD,
+		Start: lowerVD,
+	}, &vfs.StatOptions{
+		Mask: statMask,
+	})
+	if err != nil {
+		fs.vfsfs.DecRef(ctx)
+		d.DecRef(ctx)
+		return nil, nil, err
+	}
+
+	// TODO(b/162788573): Verify Metadata.
+	d.mode = uint32(stat.Mode)
+	d.uid = stat.UID
+	d.gid = stat.GID
+
+	d.rootHash = make([]byte, len(iopts.RootHash))
+	copy(d.rootHash, iopts.RootHash)
+	d.vfsd.Init(d)
+
+	return &fs.vfsfs, &d.vfsd, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
