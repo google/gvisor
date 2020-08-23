@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"path"
+	"runtime"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -26,6 +27,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -107,6 +110,7 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
 	}
+	mnt.enableLeakCheck()
 	return mnt
 }
 
@@ -504,6 +508,20 @@ func (mnt *Mount) DecRef(ctx context.Context) {
 		if vd.Ok() {
 			vd.DecRef(ctx)
 		}
+	}
+}
+
+func (mnt *Mount) finalize() {
+	n := atomic.LoadInt64(&mnt.refs) &^ math.MinInt64 // mask out MSB
+	if n != 0 {
+		log.Warningf("refs %p owned by vfs.Mount garbage collected with ref count of %d (want 0)", mnt, n)
+	}
+}
+
+// enableLeakCheck checks for reference leaks when mnt gets garbage collected.
+func (mnt *Mount) enableLeakCheck() {
+	if refs.GetLeakMode() != refs.NoLeakChecking {
+		runtime.SetFinalizer(mnt, (*Mount).finalize)
 	}
 }
 

@@ -34,6 +34,7 @@ package gofer
 
 import (
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -81,6 +83,11 @@ type filesystem struct {
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock ktime.Clock
+
+	// destroyed is 0 if the filesystem has not been destroyed (i.e.
+	// filesystem.Release() has not been called) and 1 if it has. destroyed is
+	// accessed using atomic memory operations.
+	destroyed uint32
 
 	// devMinor is the filesystem's minor device number. devMinor is immutable.
 	devMinor uint32
@@ -535,6 +542,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 	}
 
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	atomic.StoreUint32(&fs.destroyed, 1)
 }
 
 // dentry implements vfs.DentryImpl.
@@ -782,6 +790,7 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 	if mask.NLink {
 		d.nlink = uint32(attr.NLink)
 	}
+	d.enableLeakCheck()
 	d.vfsd.Init(d)
 
 	fs.syncMu.Lock()
@@ -1122,6 +1131,25 @@ func (d *dentry) DecRef(ctx context.Context) {
 func (d *dentry) decRefLocked() {
 	if refs := atomic.AddInt64(&d.refs, -1); refs < 0 {
 		panic("gofer.dentry.decRefLocked() called without holding a reference")
+	}
+}
+
+func (d *dentry) finalize() {
+	// Do not check d.refs if d.fs has been destroyed. When a gofer.filesystem is
+	// destroyed, the destructors of cached dentries are not called. Hence, a
+	// cached dentry with a nonzero refcount may be garbage collected if d.fs has
+	// been destroyed.
+	if atomic.LoadUint32(&d.fs.destroyed) == 0 {
+		if n := atomic.LoadInt64(&d.refs); n >= 0 {
+			log.Warningf("gofer.dentry %p garbage collected with ref count of %d (want -1)", d, n)
+		}
+	}
+}
+
+// enableLeakCheck checks for reference leaks when d gets garbage collected.
+func (d *dentry) enableLeakCheck() {
+	if refs.GetLeakMode() != refs.NoLeakChecking {
+		runtime.SetFinalizer(d, (*dentry).finalize)
 	}
 }
 

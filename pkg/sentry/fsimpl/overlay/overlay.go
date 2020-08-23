@@ -29,12 +29,15 @@
 package overlay
 
 import (
+	"runtime"
 	"strings"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -431,6 +434,7 @@ func (fs *filesystem) newDentry() *dentry {
 		fs: fs,
 	}
 	d.lowerVDs = d.inlineLowerVDs[:0]
+	d.enableLeakCheck()
 	d.vfsd.Init(d)
 	return d
 }
@@ -520,6 +524,19 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		} else if refs < 0 {
 			panic("overlay.dentry.DecRef() called without holding a reference")
 		}
+	}
+}
+
+func (d *dentry) finalize() {
+	if n := atomic.LoadInt64(&d.refs); n >= 0 {
+		log.Warningf("overlay.dentry %p garbage collected with ref count of %d (want -1)", d, n)
+	}
+}
+
+// enableLeakCheck checks for reference leaks when d gets garbage collected.
+func (d *dentry) enableLeakCheck() {
+	if refs.GetLeakMode() != refs.NoLeakChecking {
+		runtime.SetFinalizer(d, (*dentry).finalize)
 	}
 }
 

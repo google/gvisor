@@ -29,6 +29,8 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/log",
+        "//pkg/refs",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",

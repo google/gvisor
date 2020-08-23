@@ -68,7 +68,7 @@ func (r *Refs) finalize() {
 		note = "(Leak checker uninitialized): "
 	}
 	if n := r.ReadRefs(); n != 0 {
-		log.Warningf("%sRefs %p owned by %T garbage collected with ref count of %d (want 0)", note, r, ownerType, n)
+		log.Warningf("%s%T with Refs object %p garbage collected with ref count of %d (want 0)", note, ownerType, r, n)
 	}
 }
 
