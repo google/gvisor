@@ -87,12 +87,18 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_overlay = True,
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:chown_test",
-    use_tmpfs = True,  # chwon tests require gofer to be running as root.
+    use_tmpfs = True,  # chown tests require gofer to be running as root.
 )
 
 syscall_test(
     add_overlay = True,
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:chroot_test",
 )
 
@@ -249,6 +255,9 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:iptables_test",
 )
 
@@ -263,11 +272,17 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:kill_test",
 )
 
 syscall_test(
     add_overlay = True,
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:link_test",
     use_tmpfs = True,  # gofer needs CAP_DAC_READ_SEARCH to use AT_EMPTY_PATH with linkat(2)
 )
@@ -311,6 +326,9 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:mount_test",
 )
 
@@ -382,6 +400,9 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:prctl_setuid_test",
 )
 
@@ -445,6 +466,9 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:pty_root_test",
 )
 
@@ -459,6 +483,9 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:raw_socket_hdrincl_test",
 )
 
@@ -467,6 +494,9 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:raw_socket_test",
 )
 
@@ -499,6 +529,9 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:rlimits_test",
 )
 
@@ -805,6 +838,9 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:sticky_test",
 )
 
@@ -891,6 +927,9 @@ syscall_test(
 )
 
 syscall_test(
+    tags = [
+        "root",  # This test needs to also be run as root.
+    ],
     test = "//test/syscalls/linux:uname_test",
 )
 

@@ -35,6 +35,10 @@ DOCKER_SOCKET := /var/run/docker.sock
 # Bazel flags.
 BAZEL := bazel $(STARTUP_OPTIONS)
 OPTIONS += --color=no --curses=no
+TEST_OPTIONS := --test_output=errors --keep_going --verbose_failures=true
+# Print all output of root syscall tests, as what's skipped is important.
+ROOT_TEST_OPTIONS := --spawn_strategy=local --test_output=all
+
 
 # Basic options.
 UID := $(shell id -u ${USER})
@@ -47,17 +51,16 @@ FULL_DOCKER_RUN_OPTIONS += --init
 FULL_DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE):$(BAZEL_CACHE)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(GCLOUD_CONFIG):$(GCLOUD_CONFIG)"
 FULL_DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
-FULL_DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
-FULL_DOCKER_EXEC_OPTIONS += --interactive
+DOCKER_EXEC_OPTIONS := --interactive
 ifeq (true,$(shell [[ -t 0 ]] && echo true))
-FULL_DOCKER_EXEC_OPTIONS += --tty
+DOCKER_EXEC_OPTIONS += --tty
 endif
 
 # Add docker passthrough options.
 ifneq ($(DOCKER_PRIVILEGED),)
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
 FULL_DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
-FULL_DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
+DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
 DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
 ifneq ($(GID),$(DOCKER_GROUP))
 USERADD_OPTIONS += --groups $(DOCKER_GROUP)
@@ -65,6 +68,9 @@ GROUPADD_DOCKER += groupadd --gid $(DOCKER_GROUP) --non-unique docker-$(HASH) &&
 FULL_DOCKER_RUN_OPTIONS += --group-add $(DOCKER_GROUP)
 endif
 endif
+
+FULL_DOCKER_EXEC_OPTIONS := $(DOCKER_EXEC_OPTIONS) --user $(UID):$(GID)
+ROOT_DOCKER_EXEC_OPTIONS := $(DOCKER_EXEC_OPTIONS) --user 0:0
 
 # Add KVM passthrough options.
 ifneq (,$(wildcard /dev/kvm))
@@ -170,9 +176,12 @@ sudo: bazel-server
 	@$(call build_paths,sudo -E {} $(ARGS))
 .PHONY: sudo
 
-test: OPTIONS += --test_output=errors --keep_going --verbose_failures=true
 test: bazel-server
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) test $(OPTIONS) $(TARGETS)
+	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) test $(TEST_OPTIONS) $(OPTIONS) $(TARGETS)
+.PHONY: test
+
+root-test: bazel-server
+	@docker exec $(ROOT_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) test $(TEST_OPTIONS) $(ROOT_TEST_OPTIONS) $(OPTIONS) $(TARGETS)
 .PHONY: test
 
 query:

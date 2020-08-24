@@ -217,6 +217,11 @@ root-tests: load-basic-images
 	@$(call submake,sudo TARGETS="//test/root:root_test" ARGS="-test.v")
 .PHONY: root-tests
 
+syscall-root-tests:
+	@$(call submake,install-test-runtime)
+	@$(call submake,root-test OPTIONS="--test_tag_filters root test/syscalls/...")
+.PHONY: syscall-root-tests
+
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd install-test-runtime
 	@CONTAINERD_VERSION=$* $(MAKE) sudo TARGETS="tools/installers:containerd"
