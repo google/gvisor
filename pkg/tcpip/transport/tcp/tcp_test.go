@@ -5296,8 +5296,8 @@ func TestListenNoAcceptNonUnicastV4(t *testing.T) {
 // TestListenNoAcceptMulticastBroadcastV6 makes sure that TCP segments with a
 // non unicast IPv6 address are not accepted.
 func TestListenNoAcceptNonUnicastV6(t *testing.T) {
-	multicastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01")
-	otherMulticastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02")
+	multicastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01")
+	otherMulticastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02")
 
 	tests := []struct {
 		name    string

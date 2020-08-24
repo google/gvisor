@@ -15,11 +15,8 @@
 package stack
 
 import (
-	"fmt"
 	"math/rand"
 	"reflect"
-	"sort"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -28,13 +25,21 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-var ipv4BroadcastAddr = tcpip.ProtocolAddress{
-	Protocol: header.IPv4ProtocolNumber,
-	AddressWithPrefix: tcpip.AddressWithPrefix{
-		Address:   header.IPv4Broadcast,
-		PrefixLen: 8 * header.IPv4AddressSize,
-	},
+// NetworkInterface is an interface that can be used by a NetworkEndpoint
+type NetworkInterface interface {
+	// ID returns the NetworkInterface's ID.
+	ID() tcpip.NICID
+
+	// IsLoopback returns true if the NetworkInterface is a loopback interface.
+	IsLoopback() bool
+
+	// Name returns the name of the interface.
+	//
+	// May return an empty string if the NIC is not configured with a name.
+	Name() string
 }
+
+var _ NetworkInterface = (*NIC)(nil)
 
 // NIC represents a "network interface card" to which the networking stack is
 // attached.
@@ -54,13 +59,9 @@ type NIC struct {
 		enabled     bool
 		spoofing    bool
 		promiscuous bool
-		primary     map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint
-		endpoints   map[NetworkEndpointID]*referencedNetworkEndpoint
-		mcastJoins  map[NetworkEndpointID]uint32
 		// packetEPs is protected by mu, but the contained PacketEndpoint
 		// values are not.
 		packetEPs map[tcpip.NetworkProtocolNumber][]PacketEndpoint
-		ndp       ndpState
 	}
 }
 
@@ -122,19 +123,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		stats:            makeNICStats(),
 		networkEndpoints: make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
 	}
-	nic.mu.primary = make(map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint)
-	nic.mu.endpoints = make(map[NetworkEndpointID]*referencedNetworkEndpoint)
-	nic.mu.mcastJoins = make(map[NetworkEndpointID]uint32)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber][]PacketEndpoint)
-	nic.mu.ndp = ndpState{
-		nic:            nic,
-		configs:        stack.ndpConfigs,
-		dad:            make(map[tcpip.Address]dadState),
-		defaultRouters: make(map[tcpip.Address]defaultRouterState),
-		onLinkPrefixes: make(map[tcpip.Subnet]onLinkPrefixState),
-		slaacPrefixes:  make(map[tcpip.Subnet]slaacPrefixState),
-	}
-	nic.mu.ndp.initializeTempAddrState()
 
 	// Check for Neighbor Unreachability Detection support.
 	var nud NUDHandler
@@ -162,7 +151,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = nil
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, stack, nud, nic, ep, stack)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic, ep, stack)
 	}
 
 	nic.linkEP.Attach(nic)
@@ -210,32 +199,8 @@ func (n *NIC) disableLocked() *tcpip.Error {
 	// again, and applications may not know that the underlying NIC was ever
 	// disabled.
 
-	if _, ok := n.stack.networkProtocols[header.IPv6ProtocolNumber]; ok {
-		n.mu.ndp.stopSolicitingRouters()
-		n.mu.ndp.cleanupState(false /* hostOnly */)
-
-		// Stop DAD for all the unicast IPv6 endpoints that are in the
-		// permanentTentative state.
-		for _, r := range n.mu.endpoints {
-			if addr := r.address(); r.getKind() == permanentTentative && header.IsV6UnicastAddress(addr) {
-				n.mu.ndp.stopDuplicateAddressDetection(addr)
-			}
-		}
-
-		// The NIC may have already left the multicast group.
-		if err := n.leaveGroupLocked(header.IPv6AllNodesMulticastAddress, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
-			return err
-		}
-	}
-
-	if _, ok := n.stack.networkProtocols[header.IPv4ProtocolNumber]; ok {
-		// The NIC may have already left the multicast group.
-		if err := n.leaveGroupLocked(header.IPv4AllSystems, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
-			return err
-		}
-
-		// The address may have already been removed.
-		if err := n.removePermanentAddressLocked(ipv4BroadcastAddr.AddressWithPrefix.Address); err != nil && err != tcpip.ErrBadLocalAddress {
+	for _, ep := range n.networkEndpoints {
+		if err := ep.Disable(); err != nil {
 			return err
 		}
 	}
@@ -267,78 +232,10 @@ func (n *NIC) enable() *tcpip.Error {
 
 	n.mu.enabled = true
 
-	// Create an endpoint to receive broadcast packets on this interface.
-	if _, ok := n.stack.networkProtocols[header.IPv4ProtocolNumber]; ok {
-		if _, err := n.addAddressLocked(ipv4BroadcastAddr, NeverPrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
+	for _, ep := range n.networkEndpoints {
+		if err := ep.Enable(); err != nil {
 			return err
 		}
-
-		// As per RFC 1122 section 3.3.7, all hosts should join the all-hosts
-		// multicast group. Note, the IANA calls the all-hosts multicast group the
-		// all-systems multicast group.
-		if err := n.joinGroupLocked(header.IPv4ProtocolNumber, header.IPv4AllSystems); err != nil {
-			return err
-		}
-	}
-
-	// Join the IPv6 All-Nodes Multicast group if the stack is configured to
-	// use IPv6. This is required to ensure that this node properly receives
-	// and responds to the various NDP messages that are destined to the
-	// all-nodes multicast address. An example is the Neighbor Advertisement
-	// when we perform Duplicate Address Detection, or Router Advertisement
-	// when we do Router Discovery. See RFC 4862, section 5.4.2 and RFC 4861
-	// section 4.2 for more information.
-	//
-	// Also auto-generate an IPv6 link-local address based on the NIC's
-	// link address if it is configured to do so. Note, each interface is
-	// required to have IPv6 link-local unicast address, as per RFC 4291
-	// section 2.1.
-	_, ok := n.stack.networkProtocols[header.IPv6ProtocolNumber]
-	if !ok {
-		return nil
-	}
-
-	// Join the All-Nodes multicast group before starting DAD as responses to DAD
-	// (NDP NS) messages may be sent to the All-Nodes multicast group if the
-	// source address of the NDP NS is the unspecified address, as per RFC 4861
-	// section 7.2.4.
-	if err := n.joinGroupLocked(header.IPv6ProtocolNumber, header.IPv6AllNodesMulticastAddress); err != nil {
-		return err
-	}
-
-	// Perform DAD on the all the unicast IPv6 endpoints that are in the permanent
-	// state.
-	//
-	// Addresses may have aleady completed DAD but in the time since the NIC was
-	// last enabled, other devices may have acquired the same addresses.
-	for _, r := range n.mu.endpoints {
-		addr := r.address()
-		if k := r.getKind(); (k != permanent && k != permanentTentative) || !header.IsV6UnicastAddress(addr) {
-			continue
-		}
-
-		r.setKind(permanentTentative)
-		if err := n.mu.ndp.startDuplicateAddressDetection(addr, r); err != nil {
-			return err
-		}
-	}
-
-	// Do not auto-generate an IPv6 link-local address for loopback devices.
-	if n.stack.autoGenIPv6LinkLocal && !n.isLoopback() {
-		// The valid and preferred lifetime is infinite for the auto-generated
-		// link-local address.
-		n.mu.ndp.doSLAAC(header.IPv6LinkLocalPrefix.Subnet(), header.NDPInfiniteLifetime, header.NDPInfiniteLifetime)
-	}
-
-	// If we are operating as a router, then do not solicit routers since we
-	// won't process the RAs anyways.
-	//
-	// Routers do not process Router Advertisements (RA) the same way a host
-	// does. That is, routers do not learn from RAs (e.g. on-link prefixes
-	// and default routers). Therefore, soliciting RAs from other routers on
-	// a link is unnecessary for routers.
-	if !n.stack.forwarding {
-		n.mu.ndp.startSolicitingRouters()
 	}
 
 	return nil
@@ -358,24 +255,22 @@ func (n *NIC) remove() *tcpip.Error {
 	var err *tcpip.Error
 
 	// Forcefully leave multicast groups.
-	for nid := range n.mu.mcastJoins {
-		if tempErr := n.leaveGroupLocked(nid.LocalAddress, true /* force */); tempErr != nil && err == nil {
-			err = tempErr
-		}
-	}
-
-	// Remove permanent and permanentTentative addresses, so no packet goes out.
-	for nid, ref := range n.mu.endpoints {
-		switch ref.getKind() {
-		case permanentTentative, permanent:
-			if tempErr := n.removePermanentAddressLocked(nid.LocalAddress); tempErr != nil && err == nil {
+	for _, ep := range n.networkEndpoints {
+		gep, ok := ep.(GroupAddressableEndpoint)
+		if ok {
+			// Let ep.close handle this
+			if tempErr := gep.LeaveAllGroups(); tempErr != nil && err == nil {
 				err = tempErr
 			}
 		}
-	}
 
-	// Release any resources the network endpoint may hold.
-	for _, ep := range n.networkEndpoints {
+		// Remove permanent and permanentTentative addresses, so no packet goes out.
+		// Release any resources the network endpoint may hold.
+		// Let ep.Close handle this.
+		if tempErr := ep.RemoveAllAddresses(); tempErr != nil && err == nil {
+			err = tempErr
+		}
+
 		ep.Close()
 	}
 
@@ -383,30 +278,6 @@ func (n *NIC) remove() *tcpip.Error {
 	n.linkEP.Attach(nil)
 
 	return err
-}
-
-// becomeIPv6Router transitions n into an IPv6 router.
-//
-// When transitioning into an IPv6 router, host-only state (NDP discovered
-// routers, discovered on-link prefixes, and auto-generated addresses) will
-// be cleaned up/invalidated and NDP router solicitations will be stopped.
-func (n *NIC) becomeIPv6Router() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	n.mu.ndp.cleanupState(true /* hostOnly */)
-	n.mu.ndp.stopSolicitingRouters()
-}
-
-// becomeIPv6Host transitions n into an IPv6 host.
-//
-// When transitioning into an IPv6 host, NDP router solicitations will be
-// started.
-func (n *NIC) becomeIPv6Host() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	n.mu.ndp.startSolicitingRouters()
 }
 
 // setPromiscuousMode enables or disables promiscuous mode.
@@ -423,7 +294,8 @@ func (n *NIC) isPromiscuousMode() bool {
 	return rv
 }
 
-func (n *NIC) isLoopback() bool {
+// IsLoopback implements NetworkInterface.
+func (n *NIC) IsLoopback() bool {
 	return n.linkEP.Capabilities()&CapabilityLoopback != 0
 }
 
@@ -441,187 +313,73 @@ func (n *NIC) setSpoofing(enable bool) {
 // If an IPv6 primary endpoint is requested, Source Address Selection (as
 // defined by RFC 6724 section 5) will be performed.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) *referencedNetworkEndpoint {
-	if protocol == header.IPv6ProtocolNumber && len(remoteAddr) != 0 {
-		return n.primaryIPv6Endpoint(remoteAddr)
-	}
-
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	var deprecatedEndpoint *referencedNetworkEndpoint
-	for _, r := range n.mu.primary[protocol] {
-		if !r.isValidForOutgoingRLocked() {
-			continue
-		}
-
-		if !r.deprecated {
-			if r.tryIncRef() {
-				// r is not deprecated, so return it immediately.
-				//
-				// If we kept track of a deprecated endpoint, decrement its reference
-				// count since it was incremented when we decided to keep track of it.
-				if deprecatedEndpoint != nil {
-					deprecatedEndpoint.decRefLocked()
-					deprecatedEndpoint = nil
-				}
-
-				return r
-			}
-		} else if deprecatedEndpoint == nil && r.tryIncRef() {
-			// We prefer an endpoint that is not deprecated, but we keep track of r in
-			// case n doesn't have any non-deprecated endpoints.
-			//
-			// If we end up finding a more preferred endpoint, r's reference count
-			// will be decremented when such an endpoint is found.
-			deprecatedEndpoint = r
-		}
-	}
-
-	// n doesn't have any valid non-deprecated endpoints, so return
-	// deprecatedEndpoint (which may be nil if n doesn't have any valid deprecated
-	// endpoints either).
-	return deprecatedEndpoint
+	return n.primaryEndpointRLocked(protocol, remoteAddr)
 }
 
-// ipv6AddrCandidate is an IPv6 candidate for Source Address Selection (RFC
-// 6724 section 5).
-type ipv6AddrCandidate struct {
-	ref   *referencedNetworkEndpoint
-	scope header.IPv6AddressScope
-}
-
-// primaryIPv6Endpoint returns an IPv6 endpoint following Source Address
-// Selection (RFC 6724 section 5).
+// primaryEndpointRLocked is like primaryEndpoint but without the locking
+// requirements.
 //
-// Note, only rules 1-3 and 7 are followed.
-//
-// remoteAddr must be a valid IPv6 address.
-func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEndpoint {
-	n.mu.RLock()
-	ref := n.primaryIPv6EndpointRLocked(remoteAddr)
-	n.mu.RUnlock()
-	return ref
-}
-
-// primaryIPv6EndpointLocked returns an IPv6 endpoint following Source Address
-// Selection (RFC 6724 section 5).
-//
-// Note, only rules 1-3 and 7 are followed.
-//
-// remoteAddr must be a valid IPv6 address.
-//
-// n.mu MUST be read locked.
-func (n *NIC) primaryIPv6EndpointRLocked(remoteAddr tcpip.Address) *referencedNetworkEndpoint {
-	primaryAddrs := n.mu.primary[header.IPv6ProtocolNumber]
-
-	if len(primaryAddrs) == 0 {
+// n.mu MUST be rad locked.
+func (n *NIC) primaryEndpointRLocked(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) *referencedNetworkEndpoint {
+	ep, ok := n.networkEndpoints[protocol]
+	if !ok {
 		return nil
 	}
 
-	// Create a candidate set of available addresses we can potentially use as a
-	// source address.
-	cs := make([]ipv6AddrCandidate, 0, len(primaryAddrs))
-	for _, r := range primaryAddrs {
-		// If r is not valid for outgoing connections, it is not a valid endpoint.
-		if !r.isValidForOutgoingRLocked() {
-			continue
-		}
-
-		addr := r.address()
-		scope, err := header.ScopeForIPv6Address(addr)
-		if err != nil {
-			// Should never happen as we got r from the primary IPv6 endpoint list and
-			// ScopeForIPv6Address only returns an error if addr is not an IPv6
-			// address.
-			panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", addr, err))
-		}
-
-		cs = append(cs, ipv6AddrCandidate{
-			ref:   r,
-			scope: scope,
-		})
+	nep := ep.PrimaryEndpoint(remoteAddr, n.mu.spoofing)
+	if nep == nil {
+		return nil
 	}
 
-	remoteScope, err := header.ScopeForIPv6Address(remoteAddr)
-	if err != nil {
-		// primaryIPv6Endpoint should never be called with an invalid IPv6 address.
-		panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", remoteAddr, err))
-	}
-
-	// Sort the addresses as per RFC 6724 section 5 rules 1-3.
-	//
-	// TODO(b/146021396): Implement rules 4-8 of RFC 6724 section 5.
-	sort.Slice(cs, func(i, j int) bool {
-		sa := cs[i]
-		sb := cs[j]
-
-		// Prefer same address as per RFC 6724 section 5 rule 1.
-		if sa.ref.address() == remoteAddr {
-			return true
-		}
-		if sb.ref.address() == remoteAddr {
-			return false
-		}
-
-		// Prefer appropriate scope as per RFC 6724 section 5 rule 2.
-		if sa.scope < sb.scope {
-			return sa.scope >= remoteScope
-		} else if sb.scope < sa.scope {
-			return sb.scope < remoteScope
-		}
-
-		// Avoid deprecated addresses as per RFC 6724 section 5 rule 3.
-		if saDep, sbDep := sa.ref.deprecated, sb.ref.deprecated; saDep != sbDep {
-			// If sa is not deprecated, it is preferred over sb.
-			return sbDep
-		}
-
-		// Prefer temporary addresses as per RFC 6724 section 5 rule 7.
-		if saTemp, sbTemp := sa.ref.configType == slaacTemp, sb.ref.configType == slaacTemp; saTemp != sbTemp {
-			return saTemp
-		}
-
-		// sa and sb are equal, return the endpoint that is closest to the front of
-		// the primary endpoint list.
-		return i < j
-	})
-
-	// Return the most preferred address that can have its reference count
-	// incremented.
-	for _, c := range cs {
-		if r := c.ref; r.tryIncRef() {
-			return r
-		}
-	}
-
-	return nil
+	return n.nepToRef(protocol, ep, nep)
 }
 
 // hasPermanentAddrLocked returns true if n has a permanent (including currently
 // tentative) address, addr.
 func (n *NIC) hasPermanentAddrLocked(addr tcpip.Address) bool {
-	ref, ok := n.mu.endpoints[NetworkEndpointID{addr}]
-
-	if !ok {
-		return false
+	for _, ep := range n.networkEndpoints {
+		if ep.HasAddress(addr) {
+			return true
+		}
 	}
-
-	kind := ref.getKind()
-
-	return kind == permanent || kind == permanentTentative
+	return false
 }
 
 type getRefBehaviour int
 
 const (
+	none getRefBehaviour = iota
+
 	// spoofing indicates that the NIC's spoofing flag should be observed when
 	// getting a NIC's referenced network endpoint.
-	spoofing getRefBehaviour = iota
+	spoofing
 
 	// promiscuous indicates that the NIC's promiscuous flag should be observed
 	// when getting a NIC's referenced network endpoint.
 	promiscuous
 )
+
+func (n *NIC) nepToRef(p tcpip.NetworkProtocolNumber, ep NetworkEndpoint, nep AddressEndpoint) *referencedNetworkEndpoint {
+	ref := &referencedNetworkEndpoint{
+		ep:       ep,
+		nep:      nep,
+		protocol: p,
+		nic:      n,
+	}
+
+	// Set up cache if link address resolution exists for this protocol.
+	if n.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
+		if linkRes, ok := n.stack.linkAddrResolvers[p]; ok {
+			ref.linkCache = n.stack
+			ref.linkRes = linkRes
+		}
+	}
+
+	return ref
+}
 
 func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *referencedNetworkEndpoint {
 	return n.getRefOrCreateTemp(protocol, dst, CanBePrimaryEndpoint, promiscuous)
@@ -642,8 +400,7 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 // If the address is the IPv4 broadcast address for an endpoint's network, that
 // endpoint will be returned.
 func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior, tempRef getRefBehaviour) *referencedNetworkEndpoint {
-	n.mu.RLock()
-
+	n.mu.Lock()
 	var spoofingOrPromiscuous bool
 	switch tempRef {
 	case spoofing:
@@ -652,77 +409,9 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 		spoofingOrPromiscuous = n.mu.promiscuous
 	}
 
-	if ref, ok := n.mu.endpoints[NetworkEndpointID{address}]; ok {
-		// An endpoint with this id exists, check if it can be used and return it.
-		if !ref.isAssignedRLocked(spoofingOrPromiscuous) {
-			n.mu.RUnlock()
-			return nil
-		}
-
-		if ref.tryIncRef() {
-			n.mu.RUnlock()
-			return ref
-		}
-	}
-
-	// Check if address is a broadcast address for the endpoint's network.
-	//
-	// Only IPv4 has a notion of broadcast addresses.
-	if protocol == header.IPv4ProtocolNumber {
-		if ref := n.getRefForBroadcastRLocked(address); ref != nil {
-			n.mu.RUnlock()
-			return ref
-		}
-	}
-
-	// A usable reference was not found, create a temporary one if requested by
-	// the caller or if the IPv4 address is found in the NIC's subnets and the NIC
-	// is a loopback interface.
-	createTempEP := spoofingOrPromiscuous
-	if !createTempEP && n.isLoopback() && protocol == header.IPv4ProtocolNumber {
-		for _, r := range n.mu.endpoints {
-			addr := r.addrWithPrefix()
-			subnet := addr.Subnet()
-			if subnet.Contains(address) {
-				createTempEP = true
-				break
-			}
-		}
-	}
-	n.mu.RUnlock()
-
-	if !createTempEP {
-		return nil
-	}
-
-	// Try again with the lock in exclusive mode. If we still can't get the
-	// endpoint, create a new "temporary" endpoint. It will only exist while
-	// there's a route through it.
-	n.mu.Lock()
-	ref := n.getRefOrCreateTempLocked(protocol, address, peb)
+	ref := n.getRefOrCreateTempLocked(protocol, address, spoofingOrPromiscuous, peb)
 	n.mu.Unlock()
 	return ref
-}
-
-// getRefForBroadcastLocked returns an endpoint where address is the IPv4
-// broadcast address for the endpoint's network.
-//
-// n.mu MUST be read locked.
-func (n *NIC) getRefForBroadcastRLocked(address tcpip.Address) *referencedNetworkEndpoint {
-	for _, ref := range n.mu.endpoints {
-		// Only IPv4 has a notion of broadcast addresses.
-		if ref.protocol != header.IPv4ProtocolNumber {
-			continue
-		}
-
-		addr := ref.addrWithPrefix()
-		subnet := addr.Subnet()
-		if subnet.IsBroadcast(address) && ref.tryIncRef() {
-			return ref
-		}
-	}
-
-	return nil
 }
 
 /// getRefOrCreateTempLocked returns an existing endpoint for address or creates
@@ -732,41 +421,23 @@ func (n *NIC) getRefForBroadcastRLocked(address tcpip.Address) *referencedNetwor
 // endpoint will be returned.
 //
 // n.mu must be write locked.
-func (n *NIC) getRefOrCreateTempLocked(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior) *referencedNetworkEndpoint {
-	if ref, ok := n.mu.endpoints[NetworkEndpointID{address}]; ok {
-		// No need to check the type as we are ok with expired endpoints at this
-		// point.
-		if ref.tryIncRef() {
-			return ref
+func (n *NIC) getRefOrCreateTempLocked(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, createTemp bool, peb PrimaryEndpointBehavior) *referencedNetworkEndpoint {
+	if protocol == 0 {
+		for p, ep := range n.networkEndpoints {
+			if nep := ep.GetAssignedEndpoint(address, false /* allowAnyInSubnet */, createTemp, peb); nep != nil {
+				return n.nepToRef(p, ep, nep)
+			}
 		}
-		// tryIncRef failing means the endpoint is scheduled to be removed once the
-		// lock is released. Remove it here so we can create a new (temporary) one.
-		// The removal logic waiting for the lock handles this case.
-		n.removeEndpointLocked(ref)
-	}
-
-	// Check if address is a broadcast address for an endpoint's network.
-	//
-	// Only IPv4 has a notion of broadcast addresses.
-	if protocol == header.IPv4ProtocolNumber {
-		if ref := n.getRefForBroadcastRLocked(address); ref != nil {
-			return ref
+	} else {
+		ep, ok := n.networkEndpoints[protocol]
+		if ok {
+			if nep := ep.GetAssignedEndpoint(address, false /* allowAnyInSubnet */, createTemp, peb); nep != nil {
+				return n.nepToRef(protocol, ep, nep)
+			}
 		}
 	}
 
-	// Add a new temporary endpoint.
-	netProto, ok := n.stack.networkProtocols[protocol]
-	if !ok {
-		return nil
-	}
-	ref, _ := n.addAddressLocked(tcpip.ProtocolAddress{
-		Protocol: protocol,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   address,
-			PrefixLen: netProto.DefaultPrefixLen(),
-		},
-	}, peb, temporary, static, false)
-	return ref
+	return nil
 }
 
 // addAddressLocked adds a new protocolAddress to n.
@@ -774,114 +445,22 @@ func (n *NIC) getRefOrCreateTempLocked(protocol tcpip.NetworkProtocolNumber, add
 // If n already has the address in a non-permanent state, and the kind given is
 // permanent, that address will be promoted in place and its properties set to
 // the properties provided. Otherwise, it returns tcpip.ErrDuplicateAddress.
-func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
-	// TODO(b/141022673): Validate IP addresses before adding them.
-
-	// Sanity check.
-	id := NetworkEndpointID{LocalAddress: protocolAddress.AddressWithPrefix.Address}
-	if ref, ok := n.mu.endpoints[id]; ok {
-		// Endpoint already exists.
-		if kind != permanent {
-			return nil, tcpip.ErrDuplicateAddress
-		}
-		switch ref.getKind() {
-		case permanentTentative, permanent:
-			// The NIC already have a permanent endpoint with that address.
-			return nil, tcpip.ErrDuplicateAddress
-		case permanentExpired, temporary:
-			// Promote the endpoint to become permanent and respect the new peb,
-			// configType and deprecated status.
-			if ref.tryIncRef() {
-				// TODO(b/147748385): Perform Duplicate Address Detection when promoting
-				// an IPv6 endpoint to permanent.
-				ref.setKind(permanent)
-				ref.deprecated = deprecated
-				ref.configType = configType
-
-				refs := n.mu.primary[ref.protocol]
-				for i, r := range refs {
-					if r == ref {
-						switch peb {
-						case CanBePrimaryEndpoint:
-							return ref, nil
-						case FirstPrimaryEndpoint:
-							if i == 0 {
-								return ref, nil
-							}
-							n.mu.primary[r.protocol] = append(refs[:i], refs[i+1:]...)
-						case NeverPrimaryEndpoint:
-							n.mu.primary[r.protocol] = append(refs[:i], refs[i+1:]...)
-							return ref, nil
-						}
-					}
-				}
-
-				n.insertPrimaryEndpointLocked(ref, peb)
-
-				return ref, nil
-			}
-			// tryIncRef failing means the endpoint is scheduled to be removed once
-			// the lock is released. Remove it here so we can create a new
-			// (permanent) one. The removal logic waiting for the lock handles this
-			// case.
-			n.removeEndpointLocked(ref)
-		}
-	}
-
+func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind AddressKind, configType AddressConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
 	ep, ok := n.networkEndpoints[protocolAddress.Protocol]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol
 	}
 
-	isIPv6Unicast := protocolAddress.Protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
-
-	// If the address is an IPv6 address and it is a permanent address,
-	// mark it as tentative so it goes through the DAD process if the NIC is
-	// enabled. If the NIC is not enabled, DAD will be started when the NIC is
-	// enabled.
-	if isIPv6Unicast && kind == permanent {
-		kind = permanentTentative
+	nep, err := ep.AddAddress(protocolAddress.AddressWithPrefix, AddAddressOptions{
+		Deprecated: deprecated,
+		ConfigType: AddressConfigType(configType),
+		Kind:       AddressKind(kind),
+		PEB:        peb,
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	ref := &referencedNetworkEndpoint{
-		refs:       1,
-		addr:       protocolAddress.AddressWithPrefix,
-		ep:         ep,
-		nic:        n,
-		protocol:   protocolAddress.Protocol,
-		kind:       kind,
-		configType: configType,
-		deprecated: deprecated,
-	}
-
-	// Set up resolver if link address resolution exists for this protocol.
-	if n.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
-		if linkRes, ok := n.stack.linkAddrResolvers[protocolAddress.Protocol]; ok {
-			ref.linkCache = n.stack
-			ref.linkRes = linkRes
-		}
-	}
-
-	// If we are adding an IPv6 unicast address, join the solicited-node
-	// multicast address.
-	if isIPv6Unicast {
-		snmc := header.SolicitedNodeAddr(protocolAddress.AddressWithPrefix.Address)
-		if err := n.joinGroupLocked(protocolAddress.Protocol, snmc); err != nil {
-			return nil, err
-		}
-	}
-
-	n.mu.endpoints[id] = ref
-
-	n.insertPrimaryEndpointLocked(ref, peb)
-
-	// If we are adding a tentative IPv6 address, start DAD if the NIC is enabled.
-	if isIPv6Unicast && kind == permanentTentative && n.mu.enabled {
-		if err := n.mu.ndp.startDuplicateAddressDetection(protocolAddress.AddressWithPrefix.Address, ref); err != nil {
-			return nil, err
-		}
-	}
-
+	ref := n.nepToRef(protocolAddress.Protocol, ep, nep)
 	return ref, nil
 }
 
@@ -890,7 +469,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 func (n *NIC) AddAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	// Add the endpoint.
 	n.mu.Lock()
-	_, err := n.addAddressLocked(protocolAddress, peb, permanent, static, false /* deprecated */)
+	_, err := n.addAddressLocked(protocolAddress, peb, Permanent, AddressConfigStatic, false /* deprecated */)
 	n.mu.Unlock()
 
 	return err
@@ -902,19 +481,11 @@ func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	addrs := make([]tcpip.ProtocolAddress, 0, len(n.mu.endpoints))
-	for _, ref := range n.mu.endpoints {
-		// Don't include tentative, expired or temporary endpoints to
-		// avoid confusion and prevent the caller from using those.
-		switch ref.getKind() {
-		case permanentExpired, temporary:
-			continue
+	var addrs []tcpip.ProtocolAddress
+	for p, ep := range n.networkEndpoints {
+		for _, a := range ep.AllAddresses() {
+			addrs = append(addrs, tcpip.ProtocolAddress{Protocol: p, AddressWithPrefix: a})
 		}
-
-		addrs = append(addrs, tcpip.ProtocolAddress{
-			Protocol:          ref.protocol,
-			AddressWithPrefix: ref.addrWithPrefix(),
-		})
 	}
 	return addrs
 }
@@ -925,20 +496,9 @@ func (n *NIC) PrimaryAddresses() []tcpip.ProtocolAddress {
 	defer n.mu.RUnlock()
 
 	var addrs []tcpip.ProtocolAddress
-	for proto, list := range n.mu.primary {
-		for _, ref := range list {
-			// Don't include tentative, expired or tempory endpoints
-			// to avoid confusion and prevent the caller from using
-			// those.
-			switch ref.getKind() {
-			case permanentTentative, permanentExpired, temporary:
-				continue
-			}
-
-			addrs = append(addrs, tcpip.ProtocolAddress{
-				Protocol:          proto,
-				AddressWithPrefix: ref.addrWithPrefix(),
-			})
+	for p, ep := range n.networkEndpoints {
+		for _, a := range ep.PrimaryAddresses() {
+			addrs = append(addrs, tcpip.ProtocolAddress{Protocol: p, AddressWithPrefix: a})
 		}
 	}
 	return addrs
@@ -950,140 +510,38 @@ func (n *NIC) PrimaryAddresses() []tcpip.ProtocolAddress {
 // address exists. If no non-deprecated address exists, the first deprecated
 // address will be returned.
 func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWithPrefix {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	list, ok := n.mu.primary[proto]
-	if !ok {
+	ref := n.primaryEndpoint(proto, "")
+	if ref == nil {
 		return tcpip.AddressWithPrefix{}
 	}
-
-	var deprecatedEndpoint *referencedNetworkEndpoint
-	for _, ref := range list {
-		// Don't include tentative, expired or tempory endpoints to avoid confusion
-		// and prevent the caller from using those.
-		switch ref.getKind() {
-		case permanentTentative, permanentExpired, temporary:
-			continue
-		}
-
-		if !ref.deprecated {
-			return ref.addrWithPrefix()
-		}
-
-		if deprecatedEndpoint == nil {
-			deprecatedEndpoint = ref
-		}
-	}
-
-	if deprecatedEndpoint != nil {
-		return deprecatedEndpoint.addrWithPrefix()
-	}
-
-	return tcpip.AddressWithPrefix{}
-}
-
-// insertPrimaryEndpointLocked adds r to n's primary endpoint list as required
-// by peb.
-//
-// n MUST be locked.
-func (n *NIC) insertPrimaryEndpointLocked(r *referencedNetworkEndpoint, peb PrimaryEndpointBehavior) {
-	switch peb {
-	case CanBePrimaryEndpoint:
-		n.mu.primary[r.protocol] = append(n.mu.primary[r.protocol], r)
-	case FirstPrimaryEndpoint:
-		n.mu.primary[r.protocol] = append([]*referencedNetworkEndpoint{r}, n.mu.primary[r.protocol]...)
-	}
-}
-
-func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
-	id := NetworkEndpointID{LocalAddress: r.address()}
-
-	// Nothing to do if the reference has already been replaced with a different
-	// one. This happens in the case where 1) this endpoint's ref count hit zero
-	// and was waiting (on the lock) to be removed and 2) the same address was
-	// re-added in the meantime by removing this endpoint from the list and
-	// adding a new one.
-	if n.mu.endpoints[id] != r {
-		return
-	}
-
-	if r.getKind() == permanent {
-		panic("Reference count dropped to zero before being removed")
-	}
-
-	delete(n.mu.endpoints, id)
-	refs := n.mu.primary[r.protocol]
-	for i, ref := range refs {
-		if ref == r {
-			n.mu.primary[r.protocol] = append(refs[:i], refs[i+1:]...)
-			refs[len(refs)-1] = nil
-			break
-		}
-	}
-}
-
-func (n *NIC) removeEndpoint(r *referencedNetworkEndpoint) {
-	n.mu.Lock()
-	n.removeEndpointLocked(r)
-	n.mu.Unlock()
+	addr := ref.addrWithPrefix()
+	ref.decRef()
+	return addr
 }
 
 func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
-	r, ok := n.mu.endpoints[NetworkEndpointID{addr}]
-	if !ok {
-		return tcpip.ErrBadLocalAddress
-	}
+	for p, ep := range n.networkEndpoints {
+		nep := ep.GetEndpoint(addr)
+		if nep == nil {
+			continue
+		}
 
-	kind := r.getKind()
-	if kind != permanent && kind != permanentTentative {
-		return tcpip.ErrBadLocalAddress
-	}
+		addrWithPrefix := nep.AddressWithPrefix()
+		if addrWithPrefix.Address != addr {
+			continue
+		}
 
-	switch r.protocol {
-	case header.IPv6ProtocolNumber:
-		return n.removePermanentIPv6EndpointLocked(r, true /* allowSLAACInvalidation */)
-	default:
-		r.expireLocked()
+		kind := nep.GetKind()
+		if kind != Permanent && kind != PermanentTentative {
+			return tcpip.ErrBadLocalAddress
+		}
+
+		ref := n.nepToRef(p, ep, nep)
+		ref.expireLocked()
 		return nil
 	}
-}
 
-func (n *NIC) removePermanentIPv6EndpointLocked(r *referencedNetworkEndpoint, allowSLAACInvalidation bool) *tcpip.Error {
-	addr := r.addrWithPrefix()
-
-	isIPv6Unicast := header.IsV6UnicastAddress(addr.Address)
-
-	if isIPv6Unicast {
-		n.mu.ndp.stopDuplicateAddressDetection(addr.Address)
-
-		// If we are removing an address generated via SLAAC, cleanup
-		// its SLAAC resources and notify the integrator.
-		switch r.configType {
-		case slaac:
-			n.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
-		case slaacTemp:
-			n.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
-		}
-	}
-
-	r.expireLocked()
-
-	// At this point the endpoint is deleted.
-
-	// If we are removing an IPv6 unicast address, leave the solicited-node
-	// multicast address.
-	//
-	// We ignore the tcpip.ErrBadLocalAddress error because the solicited-node
-	// multicast group may be left by user action.
-	if isIPv6Unicast {
-		snmc := header.SolicitedNodeAddr(addr.Address)
-		if err := n.leaveGroupLocked(snmc, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
-			return err
-		}
-	}
-
-	return nil
+	return tcpip.ErrBadLocalAddress
 }
 
 // RemoveAddress removes an address from n.
@@ -1156,34 +614,27 @@ func (n *NIC) joinGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.A
 	// as an MLD packet's source address must be a link-local address as
 	// outlined in RFC 3810 section 5.
 
-	id := NetworkEndpointID{addr}
-	joins := n.mu.mcastJoins[id]
-	if joins == 0 {
-		netProto, ok := n.stack.networkProtocols[protocol]
-		if !ok {
-			return tcpip.ErrUnknownProtocol
-		}
-		if _, err := n.addAddressLocked(tcpip.ProtocolAddress{
-			Protocol: protocol,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   addr,
-				PrefixLen: netProto.DefaultPrefixLen(),
-			},
-		}, NeverPrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
-			return err
-		}
+	ep, ok := n.networkEndpoints[protocol]
+	if !ok {
+		return tcpip.ErrNotSupported
 	}
-	n.mu.mcastJoins[id] = joins + 1
-	return nil
+
+	gep, ok := ep.(GroupAddressableEndpoint)
+	if !ok {
+		return tcpip.ErrNotSupported
+	}
+
+	_, err := gep.JoinGroup(addr)
+	return err
 }
 
 // leaveGroup decrements the count for the given multicast address, and when it
 // reaches zero removes the endpoint for this address.
-func (n *NIC) leaveGroup(addr tcpip.Address) *tcpip.Error {
+func (n *NIC) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) *tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	return n.leaveGroupLocked(addr, false /* force */)
+	return n.leaveGroupLocked(protocol, addr, false /* force */)
 }
 
 // leaveGroupLocked decrements the count for the given multicast address, and
@@ -1192,32 +643,38 @@ func (n *NIC) leaveGroup(addr tcpip.Address) *tcpip.Error {
 //
 // If force is true, then the count for the multicast addres is ignored and the
 // endpoint will be removed immediately.
-func (n *NIC) leaveGroupLocked(addr tcpip.Address, force bool) *tcpip.Error {
-	id := NetworkEndpointID{addr}
-	joins, ok := n.mu.mcastJoins[id]
+func (n *NIC) leaveGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, force bool) *tcpip.Error {
+	ep, ok := n.networkEndpoints[protocol]
 	if !ok {
-		// There are no joins with this address on this NIC.
-		return tcpip.ErrBadLocalAddress
+		return tcpip.ErrNotSupported
 	}
 
-	joins--
-	if force || joins == 0 {
-		// There are no outstanding joins or we are forced to leave, clean up.
-		delete(n.mu.mcastJoins, id)
-		return n.removePermanentAddressLocked(addr)
+	gep, ok := ep.(GroupAddressableEndpoint)
+	if !ok {
+		return tcpip.ErrNotSupported
 	}
 
-	n.mu.mcastJoins[id] = joins
+	if _, err := gep.LeaveGroup(addr, force); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // isInGroup returns true if n has joined the multicast group addr.
 func (n *NIC) isInGroup(addr tcpip.Address) bool {
-	n.mu.RLock()
-	joins := n.mu.mcastJoins[NetworkEndpointID{addr}]
-	n.mu.RUnlock()
+	for _, ep := range n.networkEndpoints {
+		gep, ok := ep.(GroupAddressableEndpoint)
+		if !ok {
+			continue
+		}
 
-	return joins != 0
+		if gep.IsInGroup(addr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, localLinkAddr, remotelinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, pkt *PacketBuffer) {
@@ -1293,7 +750,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 	src, dst := netProto.ParseAddresses(pkt.NetworkHeader().View())
 
-	if n.stack.handleLocal && !n.isLoopback() && n.getRef(protocol, src) != nil {
+	if n.stack.handleLocal && !n.IsLoopback() && n.getRef(protocol, src) != nil {
 		// The source address is one of our own, so we never should have gotten a
 		// packet like this unless handleLocal is false. Loopback also calls this
 		// function even though the packets didn't come from the physical interface
@@ -1304,7 +761,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 	// TODO(gvisor.dev/issue/170): Not supporting iptables for IPv6 yet.
 	// Loopback traffic skips the prerouting chain.
-	if protocol == header.IPv4ProtocolNumber && !n.isLoopback() {
+	if protocol == header.IPv4ProtocolNumber && !n.IsLoopback() {
 		// iptables filtering.
 		ipt := n.stack.IPTables()
 		address := n.primaryAddress(protocol)
@@ -1333,8 +790,8 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		// Found a NIC.
 		n := r.ref.nic
 		n.mu.RLock()
-		ref, ok := n.mu.endpoints[NetworkEndpointID{dst}]
-		ok = ok && ref.isValidForOutgoingRLocked() && ref.tryIncRef()
+		ref := n.getRefOrCreateTempLocked(protocol, dst, false, NeverPrimaryEndpoint)
+		ok := ref != nil && ref.isValidForOutgoingRLocked()
 		n.mu.RUnlock()
 		if ok {
 			r.LocalLinkAddress = n.linkEP.LinkAddress()
@@ -1508,12 +965,12 @@ func (n *NIC) DeliverTransportControlPacket(local, remote tcpip.Address, net tcp
 	}
 }
 
-// ID returns the identifier of n.
+// ID implements NetworkInterface.
 func (n *NIC) ID() tcpip.NICID {
 	return n.id
 }
 
-// Name returns the name of n.
+// Name implements NetworkInterface.
 func (n *NIC) Name() string {
 	return n.name
 }
@@ -1526,74 +983,6 @@ func (n *NIC) Stack() *Stack {
 // LinkEndpoint returns the link endpoint of n.
 func (n *NIC) LinkEndpoint() LinkEndpoint {
 	return n.linkEP
-}
-
-// isAddrTentative returns true if addr is tentative on n.
-//
-// Note that if addr is not associated with n, then this function will return
-// false. It will only return true if the address is associated with the NIC
-// AND it is tentative.
-func (n *NIC) isAddrTentative(addr tcpip.Address) bool {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	ref, ok := n.mu.endpoints[NetworkEndpointID{addr}]
-	if !ok {
-		return false
-	}
-
-	return ref.getKind() == permanentTentative
-}
-
-// dupTentativeAddrDetected attempts to inform n that a tentative addr is a
-// duplicate on a link.
-//
-// dupTentativeAddrDetected will remove the tentative address if it exists. If
-// the address was generated via SLAAC, an attempt will be made to generate a
-// new address.
-func (n *NIC) dupTentativeAddrDetected(addr tcpip.Address) *tcpip.Error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	ref, ok := n.mu.endpoints[NetworkEndpointID{addr}]
-	if !ok {
-		return tcpip.ErrBadAddress
-	}
-
-	if ref.getKind() != permanentTentative {
-		return tcpip.ErrInvalidEndpointState
-	}
-
-	// If the address is a SLAAC address, do not invalidate its SLAAC prefix as a
-	// new address will be generated for it.
-	if err := n.removePermanentIPv6EndpointLocked(ref, false /* allowSLAACInvalidation */); err != nil {
-		return err
-	}
-
-	prefix := ref.addrWithPrefix().Subnet()
-
-	switch ref.configType {
-	case slaac:
-		n.mu.ndp.regenerateSLAACAddr(prefix)
-	case slaacTemp:
-		// Do not reset the generation attempts counter for the prefix as the
-		// temporary address is being regenerated in response to a DAD conflict.
-		n.mu.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
-	}
-
-	return nil
-}
-
-// setNDPConfigs sets the NDP configurations for n.
-//
-// Note, if c contains invalid NDP configuration values, it will be fixed to
-// use default values for the erroneous values.
-func (n *NIC) setNDPConfigs(c NDPConfigurations) {
-	c.validate()
-
-	n.mu.Lock()
-	n.mu.ndp.configs = c
-	n.mu.Unlock()
 }
 
 // NUDConfigs gets the NUD configurations for n.
@@ -1616,49 +1005,6 @@ func (n *NIC) setNUDConfigs(c NUDConfigurations) *tcpip.Error {
 	n.neigh.setConfig(c)
 	return nil
 }
-
-// handleNDPRA handles an NDP Router Advertisement message that arrived on n.
-func (n *NIC) handleNDPRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	n.mu.ndp.handleRA(ip, ra)
-}
-
-type networkEndpointKind int32
-
-const (
-	// A permanentTentative endpoint is a permanent address that is not yet
-	// considered to be fully bound to an interface in the traditional
-	// sense. That is, the address is associated with a NIC, but packets
-	// destined to the address MUST NOT be accepted and MUST be silently
-	// dropped, and the address MUST NOT be used as a source address for
-	// outgoing packets. For IPv6, addresses will be of this kind until
-	// NDP's Duplicate Address Detection has resolved, or be deleted if
-	// the process results in detecting a duplicate address.
-	permanentTentative networkEndpointKind = iota
-
-	// A permanent endpoint is created by adding a permanent address (vs. a
-	// temporary one) to the NIC. Its reference count is biased by 1 to avoid
-	// removal when no route holds a reference to it. It is removed by explicitly
-	// removing the permanent address from the NIC.
-	permanent
-
-	// An expired permanent endpoint is a permanent endpoint that had its address
-	// removed from the NIC, and it is waiting to be removed once no more routes
-	// hold a reference to it. This is achieved by decreasing its reference count
-	// by 1. If its address is re-added before the endpoint is removed, its type
-	// changes back to permanent and its reference count increases by 1 again.
-	permanentExpired
-
-	// A temporary endpoint is created for spoofing outgoing packets, or when in
-	// promiscuous mode and accepting incoming packets that don't match any
-	// permanent endpoint. Its reference count is not biased by 1 and the
-	// endpoint is removed immediately when no more route holds a reference to
-	// it. A temporary endpoint can be promoted to permanent if its address
-	// is added permanently.
-	temporary
-)
 
 func (n *NIC) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) *tcpip.Error {
 	n.mu.Lock()
@@ -1690,27 +1036,9 @@ func (n *NIC) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 	}
 }
 
-type networkEndpointConfigType int32
-
-const (
-	// A statically configured endpoint is an address that was added by
-	// some user-specified action (adding an explicit address, joining a
-	// multicast group).
-	static networkEndpointConfigType = iota
-
-	// A SLAAC configured endpoint is an IPv6 endpoint that was added by
-	// SLAAC as per RFC 4862 section 5.5.3.
-	slaac
-
-	// A temporary SLAAC configured endpoint is an IPv6 endpoint that was added by
-	// SLAAC as per RFC 4941. Temporary SLAAC addresses are short-lived and are
-	// not expected to be valid (or preferred) forever; hence the term temporary.
-	slaacTemp
-)
-
 type referencedNetworkEndpoint struct {
 	ep       NetworkEndpoint
-	addr     tcpip.AddressWithPrefix
+	nep      AddressEndpoint
 	nic      *NIC
 	protocol tcpip.NetworkProtocolNumber
 
@@ -1721,39 +1049,22 @@ type referencedNetworkEndpoint struct {
 	// linkRes is set if link address resolution is enabled for this protocol.
 	// Set to nil otherwise.
 	linkRes LinkAddressResolver
-
-	// refs is counting references held for this endpoint. When refs hits zero it
-	// triggers the automatic removal of the endpoint from the NIC.
-	refs int32
-
-	// networkEndpointKind must only be accessed using {get,set}Kind().
-	kind networkEndpointKind
-
-	// configType is the method that was used to configure this endpoint.
-	// This must never change except during endpoint creation and promotion to
-	// permanent.
-	configType networkEndpointConfigType
-
-	// deprecated indicates whether or not the endpoint should be considered
-	// deprecated. That is, when deprecated is true, other endpoints that are not
-	// deprecated should be preferred.
-	deprecated bool
 }
 
 func (r *referencedNetworkEndpoint) address() tcpip.Address {
-	return r.addr.Address
+	return r.nep.AddressWithPrefix().Address
 }
 
 func (r *referencedNetworkEndpoint) addrWithPrefix() tcpip.AddressWithPrefix {
-	return r.addr
+	return r.nep.AddressWithPrefix()
 }
 
-func (r *referencedNetworkEndpoint) getKind() networkEndpointKind {
-	return networkEndpointKind(atomic.LoadInt32((*int32)(&r.kind)))
+func (r *referencedNetworkEndpoint) getKind() AddressKind {
+	return r.nep.GetKind()
 }
 
-func (r *referencedNetworkEndpoint) setKind(kind networkEndpointKind) {
-	atomic.StoreInt32((*int32)(&r.kind), int32(kind))
+func (r *referencedNetworkEndpoint) setKind(kind AddressKind) {
+	r.nep.SetKind(kind)
 }
 
 // isValidForOutgoing returns true if the endpoint can be used to send out a
@@ -1780,60 +1091,39 @@ func (r *referencedNetworkEndpoint) isValidForOutgoingRLocked() bool {
 //
 // r.nic.mu must be read locked.
 func (r *referencedNetworkEndpoint) isAssignedRLocked(spoofingOrPromiscuous bool) bool {
-	switch r.getKind() {
-	case permanentTentative:
-		return false
-	case permanentExpired:
-		return spoofingOrPromiscuous
-	default:
-		return true
-	}
+	return r.nep.IsAssigned(spoofingOrPromiscuous)
 }
 
 // expireLocked decrements the reference count and marks the permanent endpoint
 // as expired.
 func (r *referencedNetworkEndpoint) expireLocked() {
-	r.setKind(permanentExpired)
-	r.decRefLocked()
+	_ = r.ep.RemoveAddress(r.address())
 }
 
 // decRef decrements the ref count and cleans up the endpoint once it reaches
 // zero.
 func (r *referencedNetworkEndpoint) decRef() {
-	if atomic.AddInt32(&r.refs, -1) == 0 {
-		r.nic.removeEndpoint(r)
-	}
+	_ = r.nep.DecRef()
 }
 
 // decRefLocked is the same as decRef but assumes that the NIC.mu mutex is
 // locked.
 func (r *referencedNetworkEndpoint) decRefLocked() {
-	if atomic.AddInt32(&r.refs, -1) == 0 {
-		r.nic.removeEndpointLocked(r)
-	}
+	_ = r.nep.DecRef()
 }
 
 // incRef increments the ref count. It must only be called when the caller is
 // known to be holding a reference to the endpoint, otherwise tryIncRef should
 // be used.
 func (r *referencedNetworkEndpoint) incRef() {
-	atomic.AddInt32(&r.refs, 1)
+	_ = r.tryIncRef()
 }
 
 // tryIncRef attempts to increment the ref count from n to n+1, but only if n is
 // not zero. That is, it will increment the count if the endpoint is still
 // alive, and do nothing if it has already been clean up.
 func (r *referencedNetworkEndpoint) tryIncRef() bool {
-	for {
-		v := atomic.LoadInt32(&r.refs)
-		if v == 0 {
-			return false
-		}
-
-		if atomic.CompareAndSwapInt32(&r.refs, v, v+1) {
-			return true
-		}
-	}
+	return r.nep.IncRef()
 }
 
 // stack returns the Stack instance that owns the underlying endpoint.

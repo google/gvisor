@@ -366,38 +366,6 @@ func (u *uniqueIDGenerator) UniqueID() uint64 {
 	return atomic.AddUint64((*uint64)(u), 1)
 }
 
-// NICNameFromID is a function that returns a stable name for the specified NIC,
-// even if different NIC IDs are used to refer to the same NIC in different
-// program runs. It is used when generating opaque interface identifiers (IIDs).
-// If the NIC was created with a name, it will be passed to NICNameFromID.
-//
-// NICNameFromID SHOULD return unique NIC names so unique opaque IIDs are
-// generated for the same prefix on differnt NICs.
-type NICNameFromID func(tcpip.NICID, string) string
-
-// OpaqueInterfaceIdentifierOptions holds the options related to the generation
-// of opaque interface indentifiers (IIDs) as defined by RFC 7217.
-type OpaqueInterfaceIdentifierOptions struct {
-	// NICNameFromID is a function that returns a stable name for a specified NIC,
-	// even if the NIC ID changes over time.
-	//
-	// Must be specified to generate the opaque IID.
-	NICNameFromID NICNameFromID
-
-	// SecretKey is a pseudo-random number used as the secret key when generating
-	// opaque IIDs as defined by RFC 7217. The key SHOULD be at least
-	// header.OpaqueIIDSecretKeyMinBytes bytes and MUST follow minimum randomness
-	// requirements for security as outlined by RFC 4086. SecretKey MUST NOT
-	// change between program runs, unless explicitly changed.
-	//
-	// OpaqueInterfaceIdentifierOptions takes ownership of SecretKey. SecretKey
-	// MUST NOT be modified after Stack is created.
-	//
-	// May be nil, but a nil value is highly discouraged to maintain
-	// some level of randomness between nodes.
-	SecretKey []byte
-}
-
 // Stack is a networking stack, with all supported protocols, NICs, and route
 // table.
 type Stack struct {
@@ -455,9 +423,6 @@ type Stack struct {
 	// TODO(gvisor.dev/issue/940): S/R this field.
 	seed uint32
 
-	// ndpConfigs is the default NDP configurations used by interfaces.
-	ndpConfigs NDPConfigurations
-
 	// nudConfigs is the default NUD configurations used by interfaces.
 	nudConfigs NUDConfigurations
 
@@ -465,29 +430,12 @@ type Stack struct {
 	// by the NIC's neighborCache instead of linkAddrCache.
 	useNeighborCache bool
 
-	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
-	// to auto-generate an IPv6 link-local address for newly enabled non-loopback
-	// NICs. See the AutoGenIPv6LinkLocal field of Options for more details.
-	autoGenIPv6LinkLocal bool
-
-	// ndpDisp is the NDP event dispatcher that is used to send the netstack
-	// integrator NDP related events.
-	ndpDisp NDPDispatcher
-
 	// nudDisp is the NUD event dispatcher that is used to send the netstack
 	// integrator NUD related events.
 	nudDisp NUDDispatcher
 
 	// uniqueIDGenerator is a generator of unique identifiers.
 	uniqueIDGenerator UniqueID
-
-	// opaqueIIDOpts hold the options for generating opaque interface identifiers
-	// (IIDs) as outlined by RFC 7217.
-	opaqueIIDOpts OpaqueInterfaceIdentifierOptions
-
-	// tempIIDSeed is used to seed the initial temporary interface identifier
-	// history value used to generate IIDs for temporary SLAAC addresses.
-	tempIIDSeed []byte
 
 	// forwarder holds the packets that wait for their link-address resolutions
 	// to complete, and forwards them when each resolution is done.
@@ -535,13 +483,6 @@ type Options struct {
 	// UniqueID is an optional generator of unique identifiers.
 	UniqueID UniqueID
 
-	// NDPConfigs is the default NDP configurations used by interfaces.
-	//
-	// By default, NDPConfigs will have a zero value for its
-	// DupAddrDetectTransmits field, implying that DAD will not be performed
-	// before assigning an address to a NIC.
-	NDPConfigs NDPConfigurations
-
 	// NUDConfigs is the default NUD configurations used by interfaces.
 	NUDConfigs NUDConfigurations
 
@@ -552,24 +493,6 @@ type Options struct {
 	// and ClearNeighbors.
 	UseNeighborCache bool
 
-	// AutoGenIPv6LinkLocal determines whether or not the stack will attempt to
-	// auto-generate an IPv6 link-local address for newly enabled non-loopback
-	// NICs.
-	//
-	// Note, setting this to true does not mean that a link-local address
-	// will be assigned right away, or at all. If Duplicate Address Detection
-	// is enabled, an address will only be assigned if it successfully resolves.
-	// If it fails, no further attempt will be made to auto-generate an IPv6
-	// link-local address.
-	//
-	// The generated link-local address will follow RFC 4291 Appendix A
-	// guidelines.
-	AutoGenIPv6LinkLocal bool
-
-	// NDPDisp is the NDP event dispatcher that an integrator can provide to
-	// receive NDP related events.
-	NDPDisp NDPDispatcher
-
 	// NUDDisp is the NUD event dispatcher that an integrator can provide to
 	// receive NUD related events.
 	NUDDisp NUDDispatcher
@@ -578,31 +501,12 @@ type Options struct {
 	// this is non-nil.
 	RawFactory RawFactory
 
-	// OpaqueIIDOpts hold the options for generating opaque interface
-	// identifiers (IIDs) as outlined by RFC 7217.
-	OpaqueIIDOpts OpaqueInterfaceIdentifierOptions
-
 	// RandSource is an optional source to use to generate random
 	// numbers. If omitted it defaults to a Source seeded by the data
 	// returned by rand.Read().
 	//
 	// RandSource must be thread-safe.
 	RandSource mathrand.Source
-
-	// TempIIDSeed is used to seed the initial temporary interface identifier
-	// history value used to generate IIDs for temporary SLAAC addresses.
-	//
-	// Temporary SLAAC adresses are short-lived addresses which are unpredictable
-	// and random from the perspective of other nodes on the network. It is
-	// recommended that the seed be a random byte buffer of at least
-	// header.IIDSize bytes to make sure that temporary SLAAC addresses are
-	// sufficiently random. It should follow minimum randomness requirements for
-	// security as outlined by RFC 4086.
-	//
-	// Note: using a nil value, the same seed across netstack program runs, or a
-	// seed that is too small would reduce randomness and increase predictability,
-	// defeating the purpose of temporary SLAAC addresses.
-	TempIIDSeed []byte
 }
 
 // TransportEndpointInfo holds useful information about a transport endpoint
@@ -705,36 +609,28 @@ func New(opts Options) *Stack {
 		randSrc = &lockedRandomSource{src: mathrand.NewSource(generateRandInt64())}
 	}
 
-	// Make sure opts.NDPConfigs contains valid values only.
-	opts.NDPConfigs.validate()
-
 	opts.NUDConfigs.resetInvalidFields()
 
 	s := &Stack{
-		transportProtocols:   make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
-		networkProtocols:     make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
-		linkAddrResolvers:    make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
-		nics:                 make(map[tcpip.NICID]*NIC),
-		cleanupEndpoints:     make(map[TransportEndpoint]struct{}),
-		linkAddrCache:        newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
-		PortManager:          ports.NewPortManager(),
-		clock:                clock,
-		stats:                opts.Stats.FillIn(),
-		handleLocal:          opts.HandleLocal,
-		tables:               DefaultTables(),
-		icmpRateLimiter:      NewICMPRateLimiter(),
-		seed:                 generateRandUint32(),
-		ndpConfigs:           opts.NDPConfigs,
-		nudConfigs:           opts.NUDConfigs,
-		useNeighborCache:     opts.UseNeighborCache,
-		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
-		uniqueIDGenerator:    opts.UniqueID,
-		ndpDisp:              opts.NDPDisp,
-		nudDisp:              opts.NUDDisp,
-		opaqueIIDOpts:        opts.OpaqueIIDOpts,
-		tempIIDSeed:          opts.TempIIDSeed,
-		forwarder:            newForwardQueue(),
-		randomGenerator:      mathrand.New(randSrc),
+		transportProtocols: make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
+		networkProtocols:   make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
+		linkAddrResolvers:  make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
+		nics:               make(map[tcpip.NICID]*NIC),
+		cleanupEndpoints:   make(map[TransportEndpoint]struct{}),
+		linkAddrCache:      newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
+		PortManager:        ports.NewPortManager(),
+		clock:              clock,
+		stats:              opts.Stats.FillIn(),
+		handleLocal:        opts.HandleLocal,
+		tables:             DefaultTables(),
+		icmpRateLimiter:    NewICMPRateLimiter(),
+		seed:               generateRandUint32(),
+		nudConfigs:         opts.NUDConfigs,
+		useNeighborCache:   opts.UseNeighborCache,
+		uniqueIDGenerator:  opts.UniqueID,
+		nudDisp:            opts.NUDDisp,
+		forwarder:          newForwardQueue(),
+		randomGenerator:    mathrand.New(randSrc),
 		sendBufferSize: SendBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultBufferSize,
@@ -886,14 +782,18 @@ func (s *Stack) SetForwarding(enable bool) {
 		return
 	}
 
-	if enable {
-		for _, nic := range s.nics {
-			nic.becomeIPv6Router()
+	for _, nic := range s.nics {
+		ep, ok := nic.networkEndpoints[header.IPv6ProtocolNumber]
+		if !ok {
+			continue
 		}
-	} else {
-		for _, nic := range s.nics {
-			nic.becomeIPv6Host()
+
+		fep, ok := ep.(ForwardingNetworkEndpoint)
+		if !ok {
+			continue
 		}
+
+		fep.SetForwarding(enable)
 	}
 }
 
@@ -997,10 +897,10 @@ type NICOptions struct {
 // LinkEndpoint.Attach will be called to bind ep with a NetworkDispatcher.
 func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *tcpip.Error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Make sure id is unique.
 	if _, ok := s.nics[id]; ok {
+		s.mu.Unlock()
 		return tcpip.ErrDuplicateNICID
 	}
 
@@ -1008,6 +908,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 	if opts.Name != "" {
 		for _, n := range s.nics {
 			if n.Name() == opts.Name {
+				s.mu.Unlock()
 				return tcpip.ErrDuplicateNICID
 			}
 		}
@@ -1015,6 +916,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 
 	n := newNIC(s, id, opts.Name, ep, opts.Context)
 	s.nics[id] = n
+	s.mu.Unlock()
 	if !opts.Disabled {
 		return n.enable()
 	}
@@ -1044,9 +946,9 @@ func (s *Stack) GetNICByName(name string) (*NIC, bool) {
 // delivering packets to it.
 func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	nic, ok := s.nics[id]
+	s.mu.RUnlock()
+
 	if !ok {
 		return tcpip.ErrUnknownNICID
 	}
@@ -1057,9 +959,9 @@ func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 // DisableNIC disables the given NIC.
 func (s *Stack) DisableNIC(id tcpip.NICID) *tcpip.Error {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	nic, ok := s.nics[id]
+	s.mu.RUnlock()
+
 	if !ok {
 		return tcpip.ErrUnknownNICID
 	}
@@ -1157,7 +1059,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 			Up:          true, // Netstack interfaces are always up.
 			Running:     nic.enabled(),
 			Promiscuous: nic.isPromiscuousMode(),
-			Loopback:    nic.isLoopback(),
+			Loopback:    nic.IsLoopback(),
 		}
 		nics[id] = NICInfo{
 			Name:              nic.name,
@@ -1291,7 +1193,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok && nic.enabled() {
 			if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
-				return makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback()), nil
+				return makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.IsLoopback(), multicastLoop && !nic.IsLoopback()), nil
 			}
 		}
 	} else {
@@ -1307,7 +1209,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 						remoteAddr = ref.address()
 					}
 
-					r := makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback())
+					r := makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.IsLoopback(), multicastLoop && !nic.IsLoopback())
 					r.directedBroadcast = route.Destination.IsBroadcast(remoteAddr)
 
 					if len(route.Gateway) > 0 {
@@ -1838,7 +1740,7 @@ func (s *Stack) LeaveGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NIC
 	defer s.mu.RUnlock()
 
 	if nic, ok := s.nics[nicID]; ok {
-		return nic.leaveGroup(multicastAddr)
+		return nic.leaveGroup(protocol, multicastAddr)
 	}
 	return tcpip.ErrUnknownNICID
 }
@@ -1890,53 +1792,18 @@ func (s *Stack) AllowICMPMessage() bool {
 	return s.icmpRateLimiter.Allow()
 }
 
-// IsAddrTentative returns true if addr is tentative on the NIC with ID id.
-//
-// Note that if addr is not associated with a NIC with id ID, then this
-// function will return false. It will only return true if the address is
-// associated with the NIC AND it is tentative.
-func (s *Stack) IsAddrTentative(id tcpip.NICID, addr tcpip.Address) (bool, *tcpip.Error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic, ok := s.nics[id]
-	if !ok {
-		return false, tcpip.ErrUnknownNICID
-	}
-
-	return nic.isAddrTentative(addr), nil
-}
-
-// DupTentativeAddrDetected attempts to inform the NIC with ID id that a
-// tentative addr on it is a duplicate on a link.
-func (s *Stack) DupTentativeAddrDetected(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
+// GetNetworkEndpoint returns the NetworkEndpoint with the specified protocol
+// number installed on the specified NIC.
+func (s *Stack) GetNetworkEndpoint(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber) (NetworkEndpoint, *tcpip.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	nic, ok := s.nics[id]
+	nic, ok := s.nics[nicID]
 	if !ok {
-		return tcpip.ErrUnknownNICID
+		return nil, tcpip.ErrUnknownNICID
 	}
 
-	return nic.dupTentativeAddrDetected(addr)
-}
-
-// SetNDPConfigurations sets the per-interface NDP configurations on the NIC
-// with ID id to c.
-//
-// Note, if c contains invalid NDP configuration values, it will be fixed to
-// use default values for the erroneous values.
-func (s *Stack) SetNDPConfigurations(id tcpip.NICID, c NDPConfigurations) *tcpip.Error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	nic, ok := s.nics[id]
-	if !ok {
-		return tcpip.ErrUnknownNICID
-	}
-
-	nic.setNDPConfigs(c)
-	return nil
+	return nic.networkEndpoints[header.IPv6ProtocolNumber], nil
 }
 
 // NUDConfigurations gets the per-interface NUD configurations.
@@ -1966,22 +1833,6 @@ func (s *Stack) SetNUDConfigurations(id tcpip.NICID, c NUDConfigurations) *tcpip
 	}
 
 	return nic.setNUDConfigs(c)
-}
-
-// HandleNDPRA provides a NIC with ID id a validated NDP Router Advertisement
-// message that it needs to handle.
-func (s *Stack) HandleNDPRA(id tcpip.NICID, ip tcpip.Address, ra header.NDPRouterAdvert) *tcpip.Error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	nic, ok := s.nics[id]
-	if !ok {
-		return tcpip.ErrUnknownNICID
-	}
-
-	nic.handleNDPRA(ip, ra)
-
-	return nil
 }
 
 // Seed returns a 32 bit value that can be used as a seed value for port
@@ -2025,16 +1876,14 @@ func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, addres
 	defer s.mu.RUnlock()
 
 	for _, nic := range s.nics {
-		id := NetworkEndpointID{address}
-
-		if ref, ok := nic.mu.endpoints[id]; ok {
-			nic.mu.RLock()
-			defer nic.mu.RUnlock()
-
-			// An endpoint with this id exists, check if it can be
-			// used and return it.
-			return ref.ep, nil
+		ref := nic.getRefOrCreateTemp(netProto, address, NeverPrimaryEndpoint, none)
+		if ref == nil {
+			continue
 		}
+
+		ep := ref.ep
+		ref.decRef()
+		return ep, nil
 	}
 	return nil, tcpip.ErrBadAddress
 }
@@ -2050,4 +1899,9 @@ func (s *Stack) FindNICNameFromID(id tcpip.NICID) string {
 	}
 
 	return nic.Name()
+}
+
+// NewJob returns a new tcpip.Job using the stack's clock.
+func (s *Stack) NewJob(l sync.Locker, f func()) *tcpip.Job {
+	return tcpip.NewJob(s.clock, l, f)
 }

@@ -42,11 +42,21 @@ const (
 
 // endpoint implements stack.NetworkEndpoint.
 type endpoint struct {
+	stack.AddressableEndpoint
+
 	protocol      *protocol
 	nicID         tcpip.NICID
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	nud           stack.NUDHandler
+}
+
+func (*endpoint) Enable() *tcpip.Error {
+	return nil
+}
+
+func (*endpoint) Disable() *tcpip.Error {
+	return nil
 }
 
 // DefaultTTL is unused for ARP. It implements stack.NetworkEndpoint.
@@ -168,13 +178,14 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
 }
 
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
 	return &endpoint{
-		protocol:      p,
-		nicID:         nicID,
-		linkEP:        sender,
-		linkAddrCache: linkAddrCache,
-		nud:           nud,
+		AddressableEndpoint: stack.NewAddressableEndpoint(),
+		protocol:            p,
+		nicID:               nic.ID(),
+		linkEP:              sender,
+		linkAddrCache:       linkAddrCache,
+		nud:                 nud,
 	}
 }
 
