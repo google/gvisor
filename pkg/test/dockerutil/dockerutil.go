@@ -60,7 +60,6 @@ var (
 	// enabled for each run.
 	pprofBlock = flag.Bool("pprof-block", false, "enables block profiling with runsc debug")
 	pprofCPU   = flag.Bool("pprof-cpu", false, "enables CPU profiling with runsc debug")
-	pprofGo    = flag.Bool("pprof-go", false, "enables goroutine profiling with runsc debug")
 	pprofHeap  = flag.Bool("pprof-heap", false, "enables heap profiling with runsc debug")
 	pprofMutex = flag.Bool("pprof-mutex", false, "enables mutex profiling with runsc debug")
 )
