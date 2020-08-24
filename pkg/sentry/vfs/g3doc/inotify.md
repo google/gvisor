@@ -28,9 +28,9 @@ The set of all watches held on a single file (i.e., the watch target) is stored
 in vfs.Watches. Each watch will belong to a different inotify instance (an
 instance can only have one watch on any watch target). The watches are stored in
 a map indexed by their vfs.Inotify owner’s id. Hard links and file descriptions
-to a single file will all share the same vfs.Watches. Activity on the target
-causes its vfs.Watches to generate notifications on its watches’ inotify
-instances.
+to a single file will all share the same vfs.Watches (with the exception of the
+gofer filesystem, described in a later section). Activity on the target causes
+its vfs.Watches to generate notifications on its watches’ inotify instances.
 
 ### vfs.Watch
 
@@ -103,12 +103,12 @@ inotify:
     unopened p9 file (and possibly an open FID), through which the Sentry
     interacts with the gofer.
     *   *Solution:* Because there is no inode structure stored in the sandbox,
-        inotify watches must be held on the dentry. This would be an issue in
-        the presence of hard links, where multiple dentries would need to share
-        the same set of watches, but in VFS2, we do not support the internal
-        creation of hard links on gofer fs. As a result, we make the assumption
-        that every dentry corresponds to a unique inode. However, the next point
-        raises an issue with this assumption:
+        inotify watches must be held on the dentry. For the purposes of inotify,
+        we assume that every dentry corresponds to a unique inode, which may
+        cause unexpected behavior in the presence of hard links, where multiple
+        dentries should share the same set of watches. Indeed, it is impossible
+        for us to be absolutely sure whether dentries correspond to the same
+        file or not, due to the following point:
 *   **The Sentry cannot always be aware of hard links on the remote
     filesystem.** There is no way for us to confirm whether two files on the
     remote filesystem are actually links to the same inode. QIDs and inodes are
