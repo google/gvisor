@@ -703,6 +703,13 @@ type dentry struct {
 	locks vfs.FileLocks
 
 	// Inotify watches for this dentry.
+	//
+	// Note that inotify may behave unexpectedly in the presence of hard links,
+	// because dentries corresponding to the same file have separate inotify
+	// watches when they should share the same set. This is the case because it is
+	// impossible for us to know for sure whether two dentries correspond to the
+	// same underlying file (see the gofer filesystem section fo vfs/inotify.md for
+	// a more in-depth discussion on this matter).
 	watches vfs.Watches
 }
 
