@@ -14,7 +14,7 @@
 
 // +build linux,amd64 linux,arm64
 // +build go1.12
-// +build !go1.16
+// +build !go1.17
 
 // Check go:linkname function signatures when updating Go version.
 
