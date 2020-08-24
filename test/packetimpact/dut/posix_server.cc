@@ -28,6 +28,7 @@
 
 #include "include/grpcpp/security/server_credentials.h"
 #include "include/grpcpp/server_builder.h"
+#include "include/grpcpp/server_context.h"
 #include "test/packetimpact/proto/posix_server.grpc.pb.h"
 #include "test/packetimpact/proto/posix_server.pb.h"
 
@@ -108,7 +109,7 @@
 }
 
 class PosixImpl final : public posix_server::Posix::Service {
-  ::grpc::Status Accept(grpc_impl::ServerContext *context,
+  ::grpc::Status Accept(grpc::ServerContext *context,
                         const ::posix_server::AcceptRequest *request,
                         ::posix_server::AcceptResponse *response) override {
     sockaddr_storage addr;
@@ -119,7 +120,7 @@ class PosixImpl final : public posix_server::Posix::Service {
     return sockaddr_to_proto(addr, addrlen, response->mutable_addr());
   }
 
-  ::grpc::Status Bind(grpc_impl::ServerContext *context,
+  ::grpc::Status Bind(grpc::ServerContext *context,
                       const ::posix_server::BindRequest *request,
                       ::posix_server::BindResponse *response) override {
     if (!request->has_addr()) {
@@ -140,7 +141,7 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Close(grpc_impl::ServerContext *context,
+  ::grpc::Status Close(grpc::ServerContext *context,
                        const ::posix_server::CloseRequest *request,
                        ::posix_server::CloseResponse *response) override {
     response->set_ret(close(request->fd()));
@@ -148,7 +149,7 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Connect(grpc_impl::ServerContext *context,
+  ::grpc::Status Connect(grpc::ServerContext *context,
                          const ::posix_server::ConnectRequest *request,
                          ::posix_server::ConnectResponse *response) override {
     if (!request->has_addr()) {
@@ -168,7 +169,7 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Fcntl(grpc_impl::ServerContext *context,
+  ::grpc::Status Fcntl(grpc::ServerContext *context,
                        const ::posix_server::FcntlRequest *request,
                        ::posix_server::FcntlResponse *response) override {
     response->set_ret(::fcntl(request->fd(), request->cmd(), request->arg()));
@@ -177,7 +178,7 @@ class PosixImpl final : public posix_server::Posix::Service {
   }
 
   ::grpc::Status GetSockName(
-      grpc_impl::ServerContext *context,
+      grpc::ServerContext *context,
       const ::posix_server::GetSockNameRequest *request,
       ::posix_server::GetSockNameResponse *response) override {
     sockaddr_storage addr;
@@ -189,7 +190,7 @@ class PosixImpl final : public posix_server::Posix::Service {
   }
 
   ::grpc::Status GetSockOpt(
-      grpc_impl::ServerContext *context,
+      grpc::ServerContext *context,
       const ::posix_server::GetSockOptRequest *request,
       ::posix_server::GetSockOptResponse *response) override {
     switch (request->type()) {
@@ -230,7 +231,7 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Listen(grpc_impl::ServerContext *context,
+  ::grpc::Status Listen(grpc::ServerContext *context,
                         const ::posix_server::ListenRequest *request,
                         ::posix_server::ListenResponse *response) override {
     response->set_ret(listen(request->sockfd(), request->backlog()));
@@ -269,7 +270,7 @@ class PosixImpl final : public posix_server::Posix::Service {
   }
 
   ::grpc::Status SetSockOpt(
-      grpc_impl::ServerContext *context,
+      grpc::ServerContext *context,
       const ::posix_server::SetSockOptRequest *request,
       ::posix_server::SetSockOptResponse *response) override {
     switch (request->optval().val_case()) {
@@ -302,7 +303,7 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Socket(grpc_impl::ServerContext *context,
+  ::grpc::Status Socket(grpc::ServerContext *context,
                         const ::posix_server::SocketRequest *request,
                         ::posix_server::SocketResponse *response) override {
     response->set_fd(
