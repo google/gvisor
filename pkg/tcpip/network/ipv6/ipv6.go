@@ -22,8 +22,10 @@ package ipv6
 
 import (
 	"fmt"
+	"sort"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -44,14 +46,53 @@ const (
 	DefaultTTL = 64
 )
 
+var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
+var _ stack.AddressableEndpoint = (*endpoint)(nil)
+var _ stack.NetworkEndpoint = (*endpoint)(nil)
+
 type endpoint struct {
-	nicID         tcpip.NICID
+	nic           stack.NetworkInterface
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	nud           stack.NUDHandler
 	dispatcher    stack.TransportDispatcher
 	protocol      *protocol
 	stack         *stack.Stack
+
+	mu struct {
+		sync.RWMutex
+		ep  stack.AddressableEndpoint
+		gep stack.GroupAddressableEndpoint
+	}
+}
+
+// Enable implements stack.NetworkEndpoint.
+func (e *endpoint) Enable() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Join the All-Nodes multicast group before starting DAD as responses to DAD
+	// (NDP NS) messages may be sent to the All-Nodes multicast group if the
+	// source address of the NDP NS is the unspecified address, as per RFC 4861
+	// section 7.2.4.
+	if _, err := e.mu.gep.JoinGroup(header.IPv6AllNodesMulticastAddress); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Disable implements stack.NetworkEndpoint.
+func (e *endpoint) Disable() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// The NIC may have already left the multicast group.
+	if _, err := e.mu.gep.LeaveGroup(header.IPv6AllNodesMulticastAddress, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
+		return err
+	}
+
+	return nil
 }
 
 // DefaultTTL is the default hop limit for this endpoint.
@@ -67,10 +108,10 @@ func (e *endpoint) MTU() uint32 {
 
 // NICID returns the ID of the NIC this endpoint belongs to.
 func (e *endpoint) NICID() tcpip.NICID {
-	return e.nicID
+	return e.nic.ID()
 }
 
-// Capabilities implements stack.NetworkEndpoint.Capabilities.
+// Capabilities implements stack.NetworkEndpoint.
 func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return e.linkEP.Capabilities()
 }
@@ -426,6 +467,253 @@ func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return e.protocol.Number()
 }
 
+// AddAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AddAddress(addr tcpip.AddressWithPrefix, opts stack.AddAddressOptions) (stack.AddressEndpoint, *tcpip.Error) {
+	// TODO: add checks here after making sure b/140943433 won't happen.
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	nep, err := e.mu.ep.AddAddress(addr, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if !header.IsV6UnicastAddress(addr.Address) {
+		return nep, nil
+	}
+
+	snmc := header.SolicitedNodeAddr(addr.Address)
+	if _, err := e.mu.gep.JoinGroup(snmc); err != nil {
+		return nil, err
+	}
+
+	return nep, nil
+}
+
+// RemoveAddress implements stack.AddressableEndpoint.
+func (e *endpoint) RemoveAddress(addr tcpip.Address) *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.removeAddressLocked(addr)
+}
+
+func (e *endpoint) removeAddressLocked(addr tcpip.Address) *tcpip.Error {
+	if err := e.mu.ep.RemoveAddress(addr); err != nil {
+		return err
+	}
+
+	if !header.IsV6UnicastAddress(addr) {
+		return nil
+	}
+
+	snmc := header.SolicitedNodeAddr(addr)
+	if _, err := e.mu.gep.LeaveGroup(snmc, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
+		return err
+	}
+
+	return nil
+}
+
+// HasAddress implements stack.AddressableEndpoint.
+func (e *endpoint) HasAddress(addr tcpip.Address) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.ep.HasAddress(addr)
+}
+
+// PrimaryEndpoints implements stack.AddressableEndpoint.
+func (e *endpoint) PrimaryEndpoints() []stack.AddressEndpoint {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.ep.PrimaryEndpoints()
+}
+
+// AllEndpoints implements stack.AddressableEndpoint.
+func (e *endpoint) AllEndpoints() []stack.AddressEndpoint {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.ep.AllEndpoints()
+}
+
+// GetEndpoint implements stack.AddressableEndpoint.
+func (e *endpoint) GetEndpoint(localAddr tcpip.Address) stack.AddressEndpoint {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.ep.GetEndpoint(localAddr)
+}
+
+// GetAssignedEndpoint implements stack.AddressableEndpoint.
+func (e *endpoint) GetAssignedEndpoint(localAddr tcpip.Address, allowAnyInSubnet, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.ep.GetAssignedEndpoint(localAddr, allowAnyInSubnet, allowTemp, tempPEB)
+}
+
+// PrimaryEndpoint implements stack.AddressableEndpoint.
+func (e *endpoint) PrimaryEndpoint(remoteAddr tcpip.Address, spoofingOrPromiscuous bool) stack.AddressEndpoint {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	// ipv6AddrCandidate is an IPv6 candidate for Source Address Selection (RFC
+	// 6724 section 5).
+	type ipv6AddrCandidate struct {
+		ref   stack.AddressEndpoint
+		scope header.IPv6AddressScope
+	}
+
+	if len(remoteAddr) == 0 {
+		return e.mu.ep.PrimaryEndpoint(remoteAddr, spoofingOrPromiscuous)
+	}
+
+	primaryAddrs := e.mu.ep.PrimaryEndpoints()
+
+	if len(primaryAddrs) == 0 {
+		return nil
+	}
+
+	// Create a candidate set of available addresses we can potentially use as a
+	// source address.
+	cs := make([]ipv6AddrCandidate, 0, len(primaryAddrs))
+	for _, r := range primaryAddrs {
+		// If r is not valid for outgoing connections, it is not a valid endpoint.
+		if !r.IsAssigned(spoofingOrPromiscuous) {
+			continue
+		}
+
+		addr := r.AddressWithPrefix().Address
+		scope, err := header.ScopeForIPv6Address(addr)
+		if err != nil {
+			// Should never happen as we got r from the primary IPv6 endpoint list and
+			// ScopeForIPv6Address only returns an error if addr is not an IPv6
+			// address.
+			panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", addr, err))
+		}
+
+		cs = append(cs, ipv6AddrCandidate{
+			ref:   r,
+			scope: scope,
+		})
+	}
+
+	remoteScope, err := header.ScopeForIPv6Address(remoteAddr)
+	if err != nil {
+		// primaryIPv6Endpoint should never be called with an invalid IPv6 address.
+		panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", remoteAddr, err))
+	}
+
+	// Sort the addresses as per RFC 6724 section 5 rules 1-3.
+	//
+	// TODO(b/146021396): Implement rules 4-8 of RFC 6724 section 5.
+	sort.Slice(cs, func(i, j int) bool {
+		sa := cs[i]
+		sb := cs[j]
+
+		// Prefer same address as per RFC 6724 section 5 rule 1.
+		if sa.ref.AddressWithPrefix().Address == remoteAddr {
+			return true
+		}
+		if sb.ref.AddressWithPrefix().Address == remoteAddr {
+			return false
+		}
+
+		// Prefer appropriate scope as per RFC 6724 section 5 rule 2.
+		if sa.scope < sb.scope {
+			return sa.scope >= remoteScope
+		} else if sb.scope < sa.scope {
+			return sb.scope < remoteScope
+		}
+
+		// Avoid deprecated addresses as per RFC 6724 section 5 rule 3.
+		if saDep, sbDep := sa.ref.Deprecated(), sb.ref.Deprecated(); saDep != sbDep {
+			// If sa is not deprecated, it is preferred over sb.
+			return sbDep
+		}
+
+		// Prefer temporary addresses as per RFC 6724 section 5 rule 7.
+		if saTemp, sbTemp := sa.ref.ConfigType() == stack.AddressConfigSlaacTemp, sb.ref.ConfigType() == stack.AddressConfigSlaacTemp; saTemp != sbTemp {
+			return saTemp
+		}
+
+		// sa and sb are equal, return the endpoint that is closest to the front of
+		// the primary endpoint list.
+		return i < j
+	})
+
+	// Return the most preferred address that can have its reference count
+	// incremented.
+	for _, c := range cs {
+		if r := c.ref; r.IncRef() {
+			return r
+		}
+	}
+
+	return nil
+}
+
+// PrimaryAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) PrimaryAddresses() []tcpip.AddressWithPrefix {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.ep.PrimaryAddresses()
+}
+
+// AllAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) AllAddresses() []tcpip.AddressWithPrefix {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.ep.AllAddresses()
+}
+
+// RemoveAllAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) RemoveAllAddresses() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	var err *tcpip.Error
+	for _, r := range e.mu.ep.AllEndpoints() {
+		switch r.GetKind() {
+		case stack.PermanentTentative, stack.Permanent:
+			if tempErr := e.removeAddressLocked(r.AddressWithPrefix().Address); tempErr != nil && err == nil {
+				err = tempErr
+			}
+		}
+	}
+	return err
+}
+
+// JoinGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) JoinGroup(addr tcpip.Address) (bool, *tcpip.Error) {
+	if !header.IsV6MulticastAddress(addr) {
+		return false, tcpip.ErrBadAddress
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.gep.JoinGroup(addr)
+}
+
+// LeaveGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) LeaveGroup(addr tcpip.Address, force bool) (bool, *tcpip.Error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.gep.LeaveGroup(addr, force)
+}
+
+// IsInGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.gep.IsInGroup(addr)
+}
+
+// LeaveAllGroups implements stack.GroupAddressableEndpoint.
+func (e *endpoint) LeaveAllGroups() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.gep.LeaveAllGroups()
+}
+
 type protocol struct {
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful and it must be accessed
@@ -456,9 +744,9 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 }
 
 // NewEndpoint creates a new ipv6 endpoint.
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
-	return &endpoint{
-		nicID:         nicID,
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+	e := &endpoint{
+		nic:           nic,
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		nud:           nud,
@@ -466,6 +754,9 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddres
 		protocol:      p,
 		stack:         st,
 	}
+	e.mu.ep = stack.NewAddressableEndpointWithLock(&e.mu)
+	e.mu.gep = stack.NewGroupAddressableEndpoint(e.mu.ep)
+	return e
 }
 
 // SetOption implements NetworkProtocol.SetOption.

@@ -54,9 +54,11 @@ go_template_instance(
 go_library(
     name = "stack",
     srcs = [
+        "addressable_endpoint.go",
         "conntrack.go",
         "dhcpv6configurationfromndpra_string.go",
         "forwarder.go",
+        "group_addressable_endpoint.go",
         "headertype_string.go",
         "icmp_rate_limit.go",
         "iptables.go",

@@ -604,7 +604,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		return tcpip.ErrAddressFamilyNotSupported
 	}
 
-	if ref.getKind() != permanentTentative {
+	if ref.getKind() != PermanentTentative {
 		// The endpoint should be marked as tentative since we are starting DAD.
 		panic(fmt.Sprintf("ndpdad: addr %s is not tentative on NIC(%d)", addr, ndp.nic.ID()))
 	}
@@ -623,7 +623,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 
 	remaining := ndp.configs.DupAddrDetectTransmits
 	if remaining == 0 {
-		ref.setKind(permanent)
+		ref.setKind(Permanent)
 
 		// Consider DAD to have resolved even if no DAD messages were actually
 		// transmitted.
@@ -652,7 +652,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 			return
 		}
 
-		if ref.getKind() != permanentTentative {
+		if ref.getKind() != PermanentTentative {
 			// The endpoint should still be marked as tentative since we are still
 			// performing DAD on it.
 			panic(fmt.Sprintf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.nic.ID()))
@@ -663,7 +663,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		var err *tcpip.Error
 		if !dadDone {
 			// Use the unspecified address as the source address when performing DAD.
-			ref := ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint)
+			ref := ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, true /* createTemp */, NeverPrimaryEndpoint)
 
 			// Do not hold the lock when sending packets which may be a long running
 			// task or may block link address resolution. We know this is safe
@@ -684,7 +684,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 
 		if dadDone {
 			// DAD has resolved.
-			ref.setKind(permanent)
+			ref.setKind(Permanent)
 		} else if err == nil {
 			// DAD is not done and we had no errors when sending the last NDP NS,
 			// schedule the next DAD timer.
@@ -704,7 +704,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 
 		// If DAD resolved for a stable SLAAC address, attempt generation of a
 		// temporary SLAAC address.
-		if dadDone && ref.configType == slaac {
+		if dadDone && ref.configType() == AddressConfigSlaac {
 			// Reset the generation attempts counter as we are starting the generation
 			// of a new address for the SLAAC prefix.
 			ndp.regenerateTempSLAACAddr(ref.addrWithPrefix().Subnet(), true /* resetGenAttempts */)
@@ -1189,7 +1189,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	}
 
 	// If the address is assigned (DAD resolved), generate a temporary address.
-	if state.stableAddr.ref.getKind() == permanent {
+	if state.stableAddr.ref.getKind() == Permanent {
 		// Reset the generation attempts counter as we are starting the generation
 		// of a new address for the SLAAC prefix.
 		ndp.generateTempSLAACAddr(prefix, &state, true /* resetGenAttempts */)
@@ -1201,7 +1201,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 // addSLAACAddr adds a SLAAC address to the NIC.
 //
 // The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) addSLAACAddr(addr tcpip.AddressWithPrefix, configType networkEndpointConfigType, deprecated bool) *referencedNetworkEndpoint {
+func (ndp *ndpState) addSLAACAddr(addr tcpip.AddressWithPrefix, configType AddressConfigType, deprecated bool) *referencedNetworkEndpoint {
 	// Inform the integrator that we have a new SLAAC address.
 	ndpDisp := ndp.nic.stack.ndpDisp
 	if ndpDisp == nil {
@@ -1218,7 +1218,7 @@ func (ndp *ndpState) addSLAACAddr(addr tcpip.AddressWithPrefix, configType netwo
 		AddressWithPrefix: addr,
 	}
 
-	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, permanent, configType, deprecated)
+	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, Permanent, configType, deprecated)
 	if err != nil {
 		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", protocolAddr, err))
 	}
@@ -1298,7 +1298,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 		state.stableAddr.localGenerationFailures++
 	}
 
-	if ref := ndp.addSLAACAddr(generatedAddr, slaac, time.Since(state.preferredUntil) >= 0 /* deprecated */); ref != nil {
+	if ref := ndp.addSLAACAddr(generatedAddr, AddressConfigSlaac, time.Since(state.preferredUntil) >= 0 /* deprecated */); ref != nil {
 		state.stableAddr.ref = ref
 		state.generationAttempts++
 		return true
@@ -1410,7 +1410,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	// As per RFC RFC 4941 section 3.3 step 5, we MUST NOT create a temporary
 	// address with a zero preferred lifetime. The checks above ensure this
 	// so we know the address is not deprecated.
-	ref := ndp.addSLAACAddr(generatedAddr, slaacTemp, false /* deprecated */)
+	ref := ndp.addSLAACAddr(generatedAddr, AddressConfigSlaacTemp, false /* deprecated */)
 	if ref == nil {
 		return false
 	}
@@ -1503,7 +1503,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 	if deprecated {
 		ndp.deprecateSLAACAddress(prefixState.stableAddr.ref)
 	} else {
-		prefixState.stableAddr.ref.deprecated = false
+		prefixState.stableAddr.ref.setDeprecated(false)
 	}
 
 	// If prefix was preferred for some finite lifetime before, cancel the
@@ -1565,7 +1565,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 
 	// If DAD is not yet complete on the stable address, there is no need to do
 	// work with temporary addresses.
-	if prefixState.stableAddr.ref.getKind() != permanent {
+	if prefixState.stableAddr.ref.getKind() != Permanent {
 		return
 	}
 
@@ -1610,7 +1610,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 		if newPreferredLifetime <= 0 {
 			ndp.deprecateSLAACAddress(tempAddrState.ref)
 		} else {
-			tempAddrState.ref.deprecated = false
+			tempAddrState.ref.setDeprecated(false)
 			tempAddrState.deprecationJob.Schedule(newPreferredLifetime)
 		}
 
@@ -1654,11 +1654,11 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 //
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) deprecateSLAACAddress(ref *referencedNetworkEndpoint) {
-	if ref.deprecated {
+	if ref.deprecated() {
 		return
 	}
 
-	ref.deprecated = true
+	ref.setDeprecated(true)
 	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressDeprecated(ndp.nic.ID(), ref.addrWithPrefix())
 	}
@@ -1861,9 +1861,9 @@ func (ndp *ndpState) startSolicitingRouters() {
 		// As per RFC 4861 section 4.1, the source of the RS is an address assigned
 		// to the sending interface, or the unspecified address if no address is
 		// assigned to the sending interface.
-		ref := ndp.nic.primaryIPv6EndpointRLocked(header.IPv6AllRoutersMulticastAddress)
+		ref := ndp.nic.primaryEndpointRLocked(header.IPv6ProtocolNumber, header.IPv6AllRoutersMulticastAddress)
 		if ref == nil {
-			ref = ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint)
+			ref = ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, true /* createTemp */, NeverPrimaryEndpoint)
 		}
 		ndp.nic.mu.Unlock()
 

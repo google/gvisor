@@ -68,10 +68,20 @@ const (
 // use the first three: destination address, source address, and transport
 // protocol. They're all one byte fields to simplify parsing.
 type fakeNetworkEndpoint struct {
+	stack.AddressableEndpoint
+
 	nicID      tcpip.NICID
 	proto      *fakeNetworkProtocol
 	dispatcher stack.TransportDispatcher
 	ep         stack.LinkEndpoint
+}
+
+func (*fakeNetworkEndpoint) Enable() *tcpip.Error {
+	return nil
+}
+
+func (*fakeNetworkEndpoint) Disable() *tcpip.Error {
+	return nil
 }
 
 func (f *fakeNetworkEndpoint) MTU() uint32 {
@@ -197,12 +207,13 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
-func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
+func (f *fakeNetworkProtocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
 	return &fakeNetworkEndpoint{
-		nicID:      nicID,
-		proto:      f,
-		dispatcher: dispatcher,
-		ep:         ep,
+		AddressableEndpoint: stack.NewAddressableEndpoint(),
+		nicID:               nic.ID(),
+		proto:               f,
+		dispatcher:          dispatcher,
+		ep:                  ep,
 	}
 }
 

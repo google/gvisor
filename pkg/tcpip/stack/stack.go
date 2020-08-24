@@ -1157,7 +1157,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 			Up:          true, // Netstack interfaces are always up.
 			Running:     nic.enabled(),
 			Promiscuous: nic.isPromiscuousMode(),
-			Loopback:    nic.isLoopback(),
+			Loopback:    nic.IsLoopback(),
 		}
 		nics[id] = NICInfo{
 			Name:              nic.name,
@@ -1291,7 +1291,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok && nic.enabled() {
 			if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
-				return makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback()), nil
+				return makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.IsLoopback(), multicastLoop && !nic.IsLoopback()), nil
 			}
 		}
 	} else {
@@ -1307,7 +1307,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 						remoteAddr = ref.address()
 					}
 
-					r := makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback())
+					r := makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.IsLoopback(), multicastLoop && !nic.IsLoopback())
 					r.directedBroadcast = route.Destination.IsBroadcast(remoteAddr)
 
 					if len(route.Gateway) > 0 {
@@ -1838,7 +1838,7 @@ func (s *Stack) LeaveGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NIC
 	defer s.mu.RUnlock()
 
 	if nic, ok := s.nics[nicID]; ok {
-		return nic.leaveGroup(multicastAddr)
+		return nic.leaveGroup(protocol, multicastAddr)
 	}
 	return tcpip.ErrUnknownNICID
 }
@@ -2025,16 +2025,14 @@ func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, addres
 	defer s.mu.RUnlock()
 
 	for _, nic := range s.nics {
-		id := NetworkEndpointID{address}
-
-		if ref, ok := nic.mu.endpoints[id]; ok {
-			nic.mu.RLock()
-			defer nic.mu.RUnlock()
-
-			// An endpoint with this id exists, check if it can be
-			// used and return it.
-			return ref.ep, nil
+		ref := nic.getRefOrCreateTemp(netProto, address, NeverPrimaryEndpoint, none)
+		if ref == nil {
+			continue
 		}
+
+		ep := ref.ep
+		ref.decRef()
+		return ep, nil
 	}
 	return nil, tcpip.ErrBadAddress
 }
