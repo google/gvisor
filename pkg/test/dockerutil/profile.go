@@ -63,7 +63,7 @@ type Pprof struct {
 
 // MakePprofFromFlags makes a Pprof profile from flags.
 func MakePprofFromFlags(c *Container) *Pprof {
-	if !(*pprofBlock || *pprofCPU || *pprofGo || *pprofHeap || *pprofMutex) {
+	if !(*pprofBlock || *pprofCPU || *pprofHeap || *pprofMutex) {
 		return nil
 	}
 	return &Pprof{
