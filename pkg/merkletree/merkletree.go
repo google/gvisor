@@ -45,12 +45,25 @@ type Layout struct {
 
 // InitLayout initializes and returns a new Layout object describing the structure
 // of a tree. dataSize specifies the size of input data in bytes.
-func InitLayout(dataSize int64) Layout {
+func InitLayout(dataSize int64, dataAndTreeInSameFile bool) Layout {
 	layout := Layout{
 		blockSize: usermem.PageSize,
 		// TODO(b/156980949): Allow config other hash methods (SHA384/SHA512).
 		digestSize: sha256DigestSize,
 	}
+
+	// treeStart is the offset (in bytes) of the first level of the tree in
+	// the file. If data and tree are in different files, treeStart should
+	// be zero. If data is in the same file as the tree, treeStart points
+	// to the block after the last data block (which may be zero-padded).
+	var treeStart int64
+	if dataAndTreeInSameFile {
+		treeStart = dataSize
+		if dataSize%layout.blockSize != 0 {
+			treeStart += layout.blockSize - dataSize%layout.blockSize
+		}
+	}
+
 	numBlocks := (dataSize + layout.blockSize - 1) / layout.blockSize
 	level := 0
 	offset := int64(0)
@@ -60,14 +73,15 @@ func InitLayout(dataSize int64) Layout {
 	// contain the hashes of the data blocks, while level numLevels - 1 is
 	// the root.
 	for numBlocks > 1 {
-		layout.levelOffset = append(layout.levelOffset, offset*layout.blockSize)
+		layout.levelOffset = append(layout.levelOffset, treeStart+offset*layout.blockSize)
 		// Round numBlocks up to fill up a block.
 		numBlocks += (layout.hashesPerBlock() - numBlocks%layout.hashesPerBlock()) % layout.hashesPerBlock()
 		offset += numBlocks / layout.hashesPerBlock()
 		numBlocks = numBlocks / layout.hashesPerBlock()
 		level++
 	}
-	layout.levelOffset = append(layout.levelOffset, offset*layout.blockSize)
+	layout.levelOffset = append(layout.levelOffset, treeStart+offset*layout.blockSize)
+
 	return layout
 }
 
@@ -107,10 +121,43 @@ func (layout Layout) blockOffset(level int, index int64) int64 {
 // written to treeWriter. The treeReader should be able to read the tree after
 // it has been written. That is, treeWriter and treeReader should point to the
 // same underlying data but have separate cursors.
-func Generate(data io.Reader, dataSize int64, treeReader io.Reader, treeWriter io.Writer) ([]byte, error) {
-	layout := InitLayout(dataSize)
+// Generate will modify the cursor for data, but always restores it to its
+// original position upon exit. The cursor for tree is modified and not
+// restored.
+func Generate(data io.ReadSeeker, dataSize int64, treeReader io.ReadSeeker, treeWriter io.WriteSeeker, dataAndTreeInSameFile bool) ([]byte, error) {
+	layout := InitLayout(dataSize, dataAndTreeInSameFile)
 
 	numBlocks := (dataSize + layout.blockSize - 1) / layout.blockSize
+
+	// If the data is in the same file as the tree, zero pad the last data
+	// block.
+	bytesInLastBlock := dataSize % layout.blockSize
+	if dataAndTreeInSameFile && bytesInLastBlock != 0 {
+		zeroBuf := make([]byte, layout.blockSize-bytesInLastBlock)
+		if _, err := treeWriter.Seek(0, io.SeekEnd); err != nil && err != io.EOF {
+			return nil, err
+		}
+		if _, err := treeWriter.Write(zeroBuf); err != nil {
+			return nil, err
+		}
+	}
+
+	// Store the current offset, so we can set it back once verification
+	// finishes.
+	origOffset, err := data.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, err
+	}
+	defer data.Seek(origOffset, io.SeekStart)
+
+	// Read from the beginning of both data and treeReader.
+	if _, err := data.Seek(0, io.SeekStart); err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	if _, err := treeReader.Seek(0, io.SeekStart); err != nil && err != io.EOF {
+		return nil, err
+	}
 
 	var root []byte
 	for level := 0; level < layout.numLevels(); level++ {
@@ -172,11 +219,11 @@ func Generate(data io.Reader, dataSize int64, treeReader io.Reader, treeWriter i
 // Verify will modify the cursor for data, but always restores it to its
 // original position upon exit. The cursor for tree is modified and not
 // restored.
-func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset int64, readSize int64, expectedRoot []byte) error {
+func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset int64, readSize int64, expectedRoot []byte, dataAndTreeInSameFile bool) error {
 	if readSize <= 0 {
 		return fmt.Errorf("Unexpected read size: %d", readSize)
 	}
-	layout := InitLayout(int64(dataSize))
+	layout := InitLayout(int64(dataSize), dataAndTreeInSameFile)
 
 	// Calculate the index of blocks that includes the target range in input
 	// data.
