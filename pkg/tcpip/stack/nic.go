@@ -666,8 +666,19 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	}
 
 	// A usable reference was not found, create a temporary one if requested by
-	// the caller or if the address is found in the NIC's subnets.
+	// the caller or if the address is found in the NIC's subnets and the NIC is
+	// a loopback interface.
 	createTempEP := spoofingOrPromiscuous
+	if !createTempEP && n.isLoopback() {
+		for _, r := range n.mu.endpoints {
+			addr := r.addrWithPrefix()
+			subnet := addr.Subnet()
+			if subnet.Contains(address) {
+				createTempEP = true
+				break
+			}
+		}
+	}
 	n.mu.RUnlock()
 
 	if !createTempEP {
