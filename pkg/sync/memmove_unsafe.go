@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file.
 
 // +build go1.12
-// +build !go1.16
+// +build !go1.17
 
 // Check go:linkname function signatures when updating Go version.
 
