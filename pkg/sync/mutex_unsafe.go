@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file.
 
 // +build go1.13
-// +build !go1.16
+// +build !go1.17
 
 // When updating the build constraint (above), check that syncMutex matches the
 // standard library sync.Mutex definition.
