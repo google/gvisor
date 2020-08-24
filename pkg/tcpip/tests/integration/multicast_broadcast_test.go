@@ -430,7 +430,7 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 				}
 			} else {
 				if err != tcpip.ErrWouldBlock {
-					t.Fatalf("got Read(nil) = (%x, _, %v), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
+					t.Fatalf("got Read(nil) = (%x, _, %s), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
 				}
 			}
 		})
