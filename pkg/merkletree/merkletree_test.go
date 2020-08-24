@@ -27,80 +27,58 @@ import (
 
 func TestLayout(t *testing.T) {
 	testCases := []struct {
-		dataSize            int64
-		expectedLevelOffset []int64
+		dataSize              int64
+		dataAndTreeInSameFile bool
+		expectedLevelOffset   []int64
 	}{
 		{
-			dataSize:            100,
-			expectedLevelOffset: []int64{0},
+			dataSize:              100,
+			dataAndTreeInSameFile: false,
+			expectedLevelOffset:   []int64{0},
 		},
 		{
-			dataSize:            1000000,
-			expectedLevelOffset: []int64{0, 2 * usermem.PageSize, 3 * usermem.PageSize},
+			dataSize:              100,
+			dataAndTreeInSameFile: true,
+			expectedLevelOffset:   []int64{usermem.PageSize},
 		},
 		{
-			dataSize:            4096 * int64(usermem.PageSize),
-			expectedLevelOffset: []int64{0, 32 * usermem.PageSize, 33 * usermem.PageSize},
+			dataSize:              1000000,
+			dataAndTreeInSameFile: false,
+			expectedLevelOffset:   []int64{0, 2 * usermem.PageSize, 3 * usermem.PageSize},
+		},
+		{
+			dataSize:              1000000,
+			dataAndTreeInSameFile: true,
+			expectedLevelOffset:   []int64{245 * usermem.PageSize, 247 * usermem.PageSize, 248 * usermem.PageSize},
+		},
+		{
+			dataSize:              4096 * int64(usermem.PageSize),
+			dataAndTreeInSameFile: false,
+			expectedLevelOffset:   []int64{0, 32 * usermem.PageSize, 33 * usermem.PageSize},
+		},
+		{
+			dataSize:              4096 * int64(usermem.PageSize),
+			dataAndTreeInSameFile: true,
+			expectedLevelOffset:   []int64{4096 * usermem.PageSize, 4128 * usermem.PageSize, 4129 * usermem.PageSize},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%d", tc.dataSize), func(t *testing.T) {
-			p := InitLayout(tc.dataSize)
-			if p.blockSize != int64(usermem.PageSize) {
-				t.Errorf("got blockSize %d, want %d", p.blockSize, usermem.PageSize)
+			l := InitLayout(tc.dataSize, tc.dataAndTreeInSameFile)
+			if l.blockSize != int64(usermem.PageSize) {
+				t.Errorf("got blockSize %d, want %d", l.blockSize, usermem.PageSize)
 			}
-			if p.digestSize != sha256DigestSize {
-				t.Errorf("got digestSize %d, want %d", p.digestSize, sha256DigestSize)
+			if l.digestSize != sha256DigestSize {
+				t.Errorf("got digestSize %d, want %d", l.digestSize, sha256DigestSize)
 			}
-			if p.numLevels() != len(tc.expectedLevelOffset) {
-				t.Errorf("got levels %d, want %d", p.numLevels(), len(tc.expectedLevelOffset))
+			if l.numLevels() != len(tc.expectedLevelOffset) {
+				t.Errorf("got levels %d, want %d", l.numLevels(), len(tc.expectedLevelOffset))
 			}
-			for i := 0; i < p.numLevels() && i < len(tc.expectedLevelOffset); i++ {
-				if p.levelOffset[i] != tc.expectedLevelOffset[i] {
-					t.Errorf("got levelStart[%d] %d, want %d", i, p.levelOffset[i], tc.expectedLevelOffset[i])
+			for i := 0; i < l.numLevels() && i < len(tc.expectedLevelOffset); i++ {
+				if l.levelOffset[i] != tc.expectedLevelOffset[i] {
+					t.Errorf("got levelStart[%d] %d, want %d", i, l.levelOffset[i], tc.expectedLevelOffset[i])
 				}
-			}
-		})
-	}
-}
-
-func TestGenerate(t *testing.T) {
-	// The input data has size dataSize. It starts with the data in startWith,
-	// and all other bytes are zeroes.
-	testCases := []struct {
-		data         []byte
-		expectedRoot []byte
-	}{
-		{
-			data:         bytes.Repeat([]byte{0}, usermem.PageSize),
-			expectedRoot: []byte{173, 127, 172, 178, 88, 111, 198, 233, 102, 192, 4, 215, 209, 209, 107, 2, 79, 88, 5, 255, 124, 180, 124, 122, 133, 218, 189, 139, 72, 137, 44, 167},
-		},
-		{
-			data:         bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
-			expectedRoot: []byte{62, 93, 40, 92, 161, 241, 30, 223, 202, 99, 39, 2, 132, 113, 240, 139, 117, 99, 79, 243, 54, 18, 100, 184, 141, 121, 238, 46, 149, 202, 203, 132},
-		},
-		{
-			data:         []byte{'a'},
-			expectedRoot: []byte{52, 75, 204, 142, 172, 129, 37, 14, 145, 137, 103, 203, 11, 162, 209, 205, 30, 169, 213, 72, 20, 28, 243, 24, 242, 2, 92, 43, 169, 59, 110, 210},
-		},
-		{
-			data:         bytes.Repeat([]byte{'a'}, usermem.PageSize),
-			expectedRoot: []byte{201, 62, 238, 45, 13, 176, 47, 16, 172, 199, 70, 13, 149, 118, 225, 34, 220, 248, 205, 83, 196, 191, 141, 252, 174, 27, 62, 116, 235, 207, 255, 90},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%d:%v", len(tc.data), tc.data[0]), func(t *testing.T) {
-			var tree bytes.Buffer
-
-			root, err := Generate(bytes.NewBuffer(tc.data), int64(len(tc.data)), &tree, &tree)
-			if err != nil {
-				t.Fatalf("Generate failed: %v", err)
-			}
-
-			if !bytes.Equal(root, tc.expectedRoot) {
-				t.Errorf("Unexpected root")
 			}
 		})
 	}
@@ -149,6 +127,57 @@ func (brw *bytesReadWriter) Seek(offset int64, whence int) (int64, error) {
 	}
 	brw.readPos = int(off)
 	return off, nil
+}
+
+func TestGenerate(t *testing.T) {
+	// The input data has size dataSize. It starts with the data in startWith,
+	// and all other bytes are zeroes.
+	testCases := []struct {
+		data         []byte
+		expectedRoot []byte
+	}{
+		{
+			data:         bytes.Repeat([]byte{0}, usermem.PageSize),
+			expectedRoot: []byte{173, 127, 172, 178, 88, 111, 198, 233, 102, 192, 4, 215, 209, 209, 107, 2, 79, 88, 5, 255, 124, 180, 124, 122, 133, 218, 189, 139, 72, 137, 44, 167},
+		},
+		{
+			data:         bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
+			expectedRoot: []byte{62, 93, 40, 92, 161, 241, 30, 223, 202, 99, 39, 2, 132, 113, 240, 139, 117, 99, 79, 243, 54, 18, 100, 184, 141, 121, 238, 46, 149, 202, 203, 132},
+		},
+		{
+			data:         []byte{'a'},
+			expectedRoot: []byte{52, 75, 204, 142, 172, 129, 37, 14, 145, 137, 103, 203, 11, 162, 209, 205, 30, 169, 213, 72, 20, 28, 243, 24, 242, 2, 92, 43, 169, 59, 110, 210},
+		},
+		{
+			data:         bytes.Repeat([]byte{'a'}, usermem.PageSize),
+			expectedRoot: []byte{201, 62, 238, 45, 13, 176, 47, 16, 172, 199, 70, 13, 149, 118, 225, 34, 220, 248, 205, 83, 196, 191, 141, 252, 174, 27, 62, 116, 235, 207, 255, 90},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%d:%v", len(tc.data), tc.data[0]), func(t *testing.T) {
+			for _, dataAndTreeInSameFile := range []bool{false, true} {
+				var tree bytesReadWriter
+				var root []byte
+				var err error
+				if dataAndTreeInSameFile {
+					tree.Write(tc.data)
+					root, err = Generate(&tree, int64(len(tc.data)), &tree, &tree, dataAndTreeInSameFile)
+				} else {
+					root, err = Generate(&bytesReadWriter{
+						bytes: tc.data,
+					}, int64(len(tc.data)), &tree, &tree, dataAndTreeInSameFile)
+				}
+				if err != nil {
+					t.Fatalf("got err: %v, want nil", err)
+				}
+
+				if !bytes.Equal(root, tc.expectedRoot) {
+					t.Errorf("got root: %v, want %v", root, tc.expectedRoot)
+				}
+			}
+		})
+	}
 }
 
 func TestVerify(t *testing.T) {
@@ -284,26 +313,37 @@ func TestVerify(t *testing.T) {
 			data := make([]byte, tc.dataSize)
 			// Generate random bytes in data.
 			rand.Read(data)
-			var tree bytesReadWriter
 
-			root, err := Generate(bytes.NewBuffer(data), int64(tc.dataSize), &tree, &tree)
-			if err != nil {
-				t.Fatalf("Generate failed: %v", err)
-			}
+			for _, dataAndTreeInSameFile := range []bool{false, true} {
+				var tree bytesReadWriter
+				var root []byte
+				var err error
+				if dataAndTreeInSameFile {
+					tree.Write(data)
+					root, err = Generate(&tree, int64(len(data)), &tree, &tree, dataAndTreeInSameFile)
+				} else {
+					root, err = Generate(&bytesReadWriter{
+						bytes: data,
+					}, int64(tc.dataSize), &tree, &tree, false /* dataAndTreeInSameFile */)
+				}
+				if err != nil {
+					t.Fatalf("Generate failed: %v", err)
+				}
 
-			// Flip a bit in data and checks Verify results.
-			var buf bytes.Buffer
-			data[tc.modifyByte] ^= 1
-			if tc.shouldSucceed {
-				if err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root); err != nil && err != io.EOF {
-					t.Errorf("Verification failed when expected to succeed: %v", err)
-				}
-				if int64(buf.Len()) != tc.verifySize || !bytes.Equal(data[tc.verifyStart:tc.verifyStart+tc.verifySize], buf.Bytes()) {
-					t.Errorf("Incorrect output from Verify")
-				}
-			} else {
-				if err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root); err == nil {
-					t.Errorf("Verification succeeded when expected to fail")
+				// Flip a bit in data and checks Verify results.
+				var buf bytes.Buffer
+				data[tc.modifyByte] ^= 1
+				if tc.shouldSucceed {
+					if err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile); err != nil && err != io.EOF {
+						t.Errorf("Verification failed when expected to succeed: %v", err)
+					}
+					if int64(buf.Len()) != tc.verifySize || !bytes.Equal(data[tc.verifyStart:tc.verifyStart+tc.verifySize], buf.Bytes()) {
+						t.Errorf("Incorrect output from Verify")
+					}
+				} else {
+					if err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile); err == nil {
+						t.Errorf("Verification succeeded when expected to fail")
+					}
 				}
 			}
 		})
@@ -318,36 +358,47 @@ func TestVerifyRandom(t *testing.T) {
 	data := make([]byte, dataSize)
 	// Generate random bytes in data.
 	rand.Read(data)
-	var tree bytesReadWriter
 
-	root, err := Generate(bytes.NewBuffer(data), int64(dataSize), &tree, &tree)
-	if err != nil {
-		t.Fatalf("Generate failed: %v", err)
-	}
+	for _, dataAndTreeInSameFile := range []bool{false, true} {
+		var tree bytesReadWriter
+		var root []byte
+		var err error
+		if dataAndTreeInSameFile {
+			tree.Write(data)
+			root, err = Generate(&tree, int64(len(data)), &tree, &tree, dataAndTreeInSameFile)
+		} else {
+			root, err = Generate(&bytesReadWriter{
+				bytes: data,
+			}, int64(dataSize), &tree, &tree, dataAndTreeInSameFile)
+		}
+		if err != nil {
+			t.Fatalf("Generate failed: %v", err)
+		}
 
-	// Pick a random portion of data.
-	start := rand.Int63n(dataSize - 1)
-	size := rand.Int63n(dataSize) + 1
+		// Pick a random portion of data.
+		start := rand.Int63n(dataSize - 1)
+		size := rand.Int63n(dataSize) + 1
 
-	var buf bytes.Buffer
-	// Checks that the random portion of data from the original data is
-	// verified successfully.
-	if err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root); err != nil && err != io.EOF {
-		t.Errorf("Verification failed for correct data: %v", err)
-	}
-	if size > dataSize-start {
-		size = dataSize - start
-	}
-	if int64(buf.Len()) != size || !bytes.Equal(data[start:start+size], buf.Bytes()) {
-		t.Errorf("Incorrect output from Verify")
-	}
+		var buf bytes.Buffer
+		// Checks that the random portion of data from the original data is
+		// verified successfully.
+		if err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile); err != nil && err != io.EOF {
+			t.Errorf("Verification failed for correct data: %v", err)
+		}
+		if size > dataSize-start {
+			size = dataSize - start
+		}
+		if int64(buf.Len()) != size || !bytes.Equal(data[start:start+size], buf.Bytes()) {
+			t.Errorf("Incorrect output from Verify")
+		}
 
-	buf.Reset()
-	// Flip a random bit in randPortion, and check that verification fails.
-	randBytePos := rand.Int63n(size)
-	data[start+randBytePos] ^= 1
+		buf.Reset()
+		// Flip a random bit in randPortion, and check that verification fails.
+		randBytePos := rand.Int63n(size)
+		data[start+randBytePos] ^= 1
 
-	if err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root); err == nil {
-		t.Errorf("Verification succeeded for modified data")
+		if err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile); err == nil {
+			t.Errorf("Verification succeeded for modified data")
+		}
 	}
 }
