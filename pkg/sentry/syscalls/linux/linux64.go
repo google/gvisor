@@ -305,9 +305,9 @@ var AMD64 = &kernel.SyscallTable{
 		250: syscalls.Error("keyctl", syserror.EACCES, "Not available to user.", nil),
 		251: syscalls.CapError("ioprio_set", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
 		252: syscalls.CapError("ioprio_get", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
-		253: syscalls.PartiallySupported("inotify_init", InotifyInit, "inotify events are only available inside the sandbox.", nil),
-		254: syscalls.PartiallySupported("inotify_add_watch", InotifyAddWatch, "inotify events are only available inside the sandbox.", nil),
-		255: syscalls.PartiallySupported("inotify_rm_watch", InotifyRmWatch, "inotify events are only available inside the sandbox.", nil),
+		253: syscalls.PartiallySupported("inotify_init", InotifyInit, "Inotify events are only available inside the sandbox. Hard links are treated as different watch targets in gofer fs.", nil),
+		254: syscalls.PartiallySupported("inotify_add_watch", InotifyAddWatch, "Inotify events are only available inside the sandbox. Hard links are treated as different watch targets in gofer fs.", nil),
+		255: syscalls.PartiallySupported("inotify_rm_watch", InotifyRmWatch, "Inotify events are only available inside the sandbox. Hard links are treated as different watch targets in gofer fs.", nil),
 		256: syscalls.CapError("migrate_pages", linux.CAP_SYS_NICE, "", nil),
 		257: syscalls.Supported("openat", Openat),
 		258: syscalls.Supported("mkdirat", Mkdirat),
@@ -346,7 +346,7 @@ var AMD64 = &kernel.SyscallTable{
 		291: syscalls.Supported("epoll_create1", EpollCreate1),
 		292: syscalls.Supported("dup3", Dup3),
 		293: syscalls.Supported("pipe2", Pipe2),
-		294: syscalls.Supported("inotify_init1", InotifyInit1),
+		294: syscalls.PartiallySupported("inotify_init1", InotifyInit1, "Inotify events are only available inside the sandbox. Hard links are treated as different watch targets in gofer fs.", nil),
 		295: syscalls.Supported("preadv", Preadv),
 		296: syscalls.Supported("pwritev", Pwritev),
 		297: syscalls.Supported("rt_tgsigqueueinfo", RtTgsigqueueinfo),
@@ -454,9 +454,9 @@ var ARM64 = &kernel.SyscallTable{
 		23:  syscalls.Supported("dup", Dup),
 		24:  syscalls.Supported("dup3", Dup3),
 		25:  syscalls.PartiallySupported("fcntl", Fcntl, "Not all options are supported.", nil),
-		26:  syscalls.Supported("inotify_init1", InotifyInit1),
-		27:  syscalls.PartiallySupported("inotify_add_watch", InotifyAddWatch, "inotify events are only available inside the sandbox.", nil),
-		28:  syscalls.PartiallySupported("inotify_rm_watch", InotifyRmWatch, "inotify events are only available inside the sandbox.", nil),
+		26:  syscalls.PartiallySupported("inotify_init1", InotifyInit1, "Inotify events are only available inside the sandbox. Hard links are treated as different watch targets in gofer fs.", nil),
+		27:  syscalls.PartiallySupported("inotify_add_watch", InotifyAddWatch, "Inotify events are only available inside the sandbox. Hard links are treated as different watch targets in gofer fs.", nil),
+		28:  syscalls.PartiallySupported("inotify_rm_watch", InotifyRmWatch, "Inotify events are only available inside the sandbox. Hard links are treated as different watch targets in gofer fs.", nil),
 		29:  syscalls.PartiallySupported("ioctl", Ioctl, "Only a few ioctls are implemented for backing devices and file systems.", nil),
 		30:  syscalls.CapError("ioprio_set", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
 		31:  syscalls.CapError("ioprio_get", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
