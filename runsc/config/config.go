@@ -300,10 +300,10 @@ type Config struct {
 	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
 	CPUNumFromQuota bool
 
-	// Enables VFS2 (not plumbled through yet).
+	// Enables VFS2 (not plumbed through yet).
 	VFS2 bool
 
-	// Enables FUSE usage (not plumbled through yet).
+	// Enables FUSE usage (not plumbed through yet).
 	FUSE bool
 
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
@@ -353,6 +353,8 @@ func (c *Config) ToFlags() []string {
 		"--tx-checksum-offload=" + strconv.FormatBool(c.TXChecksumOffload),
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
 		"--qdisc=" + c.QDisc.String(),
+		"--vfs2=" + strconv.FormatBool(c.VFS2),
+		"--fuse=" + strconv.FormatBool(c.FUSE),
 	}
 	if c.CPUNumFromQuota {
 		f = append(f, "--cpu-num-from-quota")
