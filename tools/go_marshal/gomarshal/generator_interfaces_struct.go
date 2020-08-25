@@ -400,13 +400,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 
 	g.emit("// WriteTo implements io.WriterTo.WriteTo.\n")
 	g.recordUsedImport("io")
-	g.emit("func (%s *%s) WriteTo(w io.Writer) (int64, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) WriteTo(writer io.Writer) (int64, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
 			g.emit("buf := make([]byte, %s.SizeBytes())\n", g.r)
 			g.emit("%s.MarshalBytes(buf)\n", g.r)
-			g.emit("length, err := w.Write(buf)\n")
+			g.emit("length, err := writer.Write(buf)\n")
 			g.emit("return int64(length), err\n")
 		}
 		if thisPacked {
@@ -421,7 +421,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			// Fast serialization.
 			g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-			g.emit("length, err := w.Write(buf)\n")
+			g.emit("length, err := writer.Write(buf)\n")
 			g.emitKeepAlive(g.r)
 			g.emit("return int64(length), err\n")
 		} else {
