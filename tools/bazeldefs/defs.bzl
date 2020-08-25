@@ -87,13 +87,14 @@ def cc_binary(name, static = False, **kwargs):
         **kwargs
     )
 
-def go_binary(name, static = False, pure = False, **kwargs):
+def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
     """Build a go binary.
 
     Args:
         name: name of the target.
         static: build a static binary.
         pure: build without cgo.
+        x_defs: additional definitions.
         **kwargs: rest of the arguments are passed to _go_binary.
     """
     if static:
@@ -102,6 +103,7 @@ def go_binary(name, static = False, pure = False, **kwargs):
         kwargs["pure"] = "on"
     _go_binary(
         name = name,
+        x_defs = x_defs,
         **kwargs
     )
 
@@ -150,6 +152,11 @@ def go_rule(rule, implementation, **kwargs):
     attrs["_stdlib"] = attr.label(default = "@io_bazel_rules_go//:stdlib")
     toolchains = kwargs.get("toolchains", []) + ["@io_bazel_rules_go//go:toolchain"]
     return rule(implementation, attrs = attrs, toolchains = toolchains, **kwargs)
+
+def go_test_library(target):
+    if hasattr(target.attr, "embed") and len(target.attr.embed) > 0:
+        return target.attr.embed[0]
+    return None
 
 def go_context(ctx):
     go_ctx = _go_context(ctx)

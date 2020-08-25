@@ -32,27 +32,27 @@ func kernelVersion() (int, int, error) {
 		return 0, 0, err
 	}
 
-	var r string
+	var sb strings.Builder
 	for _, b := range u.Release {
 		if b == 0 {
 			break
 		}
-		r += string(b)
+		sb.WriteByte(byte(b))
 	}
 
-	s := strings.Split(r, ".")
+	s := strings.Split(sb.String(), ".")
 	if len(s) < 2 {
-		return 0, 0, fmt.Errorf("kernel release missing major and minor component: %s", r)
+		return 0, 0, fmt.Errorf("kernel release missing major and minor component: %s", sb.String())
 	}
 
 	major, err := strconv.Atoi(s[0])
 	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing major version %q in %q: %v", s[0], r, err)
+		return 0, 0, fmt.Errorf("error parsing major version %q in %q: %w", s[0], sb.String(), err)
 	}
 
 	minor, err := strconv.Atoi(s[1])
 	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing minor version %q in %q: %v", s[1], r, err)
+		return 0, 0, fmt.Errorf("error parsing minor version %q in %q: %w", s[1], sb.String(), err)
 	}
 
 	return major, minor, nil
