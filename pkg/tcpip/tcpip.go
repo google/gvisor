@@ -1029,7 +1029,10 @@ func (r Route) String() string {
 // TransportProtocolNumber is the number of a transport protocol.
 type TransportProtocolNumber uint32
 
-// NetworkProtocolNumber is the number of a network protocol.
+// NetworkProtocolNumber is the EtherType of a network protocol in an Ethernet
+// frame.
+//
+// See: https://www.iana.org/assignments/ieee-802-numbers/ieee-802-numbers.xhtml
 type NetworkProtocolNumber uint32
 
 // A StatCounter keeps track of a statistic.
