@@ -403,18 +403,35 @@ func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.Netw
 }
 
 // injectPacket creates a packet of the given flow and with the given payload,
-// and injects it into the link endpoint.
-func (c *testContext) injectPacket(flow testFlow, payload []byte) {
+// and injects it into the link endpoint. If badChecksum is true, the packet has
+// a bad checksum in the UDP header.
+func (c *testContext) injectPacket(flow testFlow, payload []byte, badChecksum bool) {
 	c.t.Helper()
 
 	h := flow.header4Tuple(incoming)
 	if flow.isV4() {
 		buf := c.buildV4Packet(payload, &h)
+		if badChecksum {
+			// Invalidate the UDP header checksum field, taking care to avoid
+			// overflow to zero, which would disable checksum validation.
+			for u := header.UDP(buf[header.IPv4MinimumSize:]); ; {
+				u.SetChecksum(u.Checksum() + 1)
+				if u.Checksum() != 0 {
+					break
+				}
+			}
+		}
 		c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buf.ToVectorisedView(),
 		}))
 	} else {
 		buf := c.buildV6Packet(payload, &h)
+		if badChecksum {
+			// Invalidate the UDP header checksum field (Unlike IPv4, zero is
+			// a valid checksum value for IPv6 so no need to avoid it).
+			u := header.UDP(buf[header.IPv6MinimumSize:])
+			u.SetChecksum(u.Checksum() + 1)
+		}
 		c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buf.ToVectorisedView(),
 		}))
@@ -569,7 +586,7 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	c.t.Helper()
 
 	payload := newPayload()
-	c.injectPacket(flow, payload)
+	c.injectPacket(flow, payload, false)
 
 	// Try to receive the data.
 	we, ch := waiter.NewChannelEntry(nil)
@@ -925,7 +942,7 @@ func TestReadFromMulticastStats(t *testing.T) {
 			}
 
 			payload := newPayload()
-			c.injectPacket(flow, payload)
+			c.injectPacket(flow, payload, false)
 
 			var want uint64 = 0
 			if flow.isReverseMulticast() {
@@ -1727,21 +1744,33 @@ func TestV4UnknownDestination(t *testing.T) {
 		// so that the final generated IPv4 packet is larger than
 		// header.IPv4MinimumProcessableDatagramSize.
 		largePayload bool
+		// badChecksum if true, will set an invalid checksum in the
+		// header.
+		badChecksum bool
 	}{
-		{unicastV4, true, false},
-		{unicastV4, true, true},
-		{multicastV4, false, false},
-		{multicastV4, false, true},
-		{broadcast, false, false},
-		{broadcast, false, true},
+		{unicastV4, true, false, false},
+		{unicastV4, true, true, false},
+		{unicastV4, false, false, true},
+		{unicastV4, false, true, true},
+		{multicastV4, false, false, false},
+		{multicastV4, false, true, false},
+		{broadcast, false, false, false},
+		{broadcast, false, true, false},
 	}
+	checksumErrors := uint64(0)
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t", tc.flow, tc.icmpRequired, tc.largePayload), func(t *testing.T) {
+		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t badChecksum:%t", tc.flow, tc.icmpRequired, tc.largePayload, tc.badChecksum), func(t *testing.T) {
 			payload := newPayload()
 			if tc.largePayload {
 				payload = newMinPayload(576)
 			}
-			c.injectPacket(tc.flow, payload)
+			c.injectPacket(tc.flow, payload, tc.badChecksum)
+			if tc.badChecksum {
+				checksumErrors++
+				if got, want := c.s.Stats().UDP.ChecksumErrors.Value(), checksumErrors; got != want {
+					t.Fatalf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+				}
+			}
 			if !tc.icmpRequired {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
@@ -1806,19 +1835,31 @@ func TestV6UnknownDestination(t *testing.T) {
 		// largePayload if true will result in a payload large enough to
 		// create an IPv6 packet > header.IPv6MinimumMTU bytes.
 		largePayload bool
+		// badChecksum if true, will set an invalid checksum in the
+		// header.
+		badChecksum bool
 	}{
-		{unicastV6, true, false},
-		{unicastV6, true, true},
-		{multicastV6, false, false},
-		{multicastV6, false, true},
+		{unicastV6, true, false, false},
+		{unicastV6, true, true, false},
+		{unicastV6, false, false, true},
+		{unicastV6, false, true, true},
+		{multicastV6, false, false, false},
+		{multicastV6, false, true, false},
 	}
+	checksumErrors := uint64(0)
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t", tc.flow, tc.icmpRequired, tc.largePayload), func(t *testing.T) {
+		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t badChecksum:%t", tc.flow, tc.icmpRequired, tc.largePayload, tc.badChecksum), func(t *testing.T) {
 			payload := newPayload()
 			if tc.largePayload {
 				payload = newMinPayload(1280)
 			}
-			c.injectPacket(tc.flow, payload)
+			c.injectPacket(tc.flow, payload, tc.badChecksum)
+			if tc.badChecksum {
+				checksumErrors++
+				if got, want := c.s.Stats().UDP.ChecksumErrors.Value(), checksumErrors; got != want {
+					t.Fatalf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+				}
+			}
 			if !tc.icmpRequired {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
@@ -1953,74 +1994,29 @@ func TestShortHeader(t *testing.T) {
 	}
 }
 
-// TestIncrementChecksumErrorsV4 verifies if a checksum error is detected,
+// TestBadChecksumErrors verifies if a checksum error is detected,
 // global and endpoint stats are incremented.
-func TestIncrementChecksumErrorsV4(t *testing.T) {
-	c := newDualTestContext(t, defaultMTU)
-	defer c.cleanup()
+func TestBadChecksumErrors(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, unicastV6} {
+		c := newDualTestContext(t, defaultMTU)
+		defer c.cleanup()
 
-	c.createEndpoint(ipv4.ProtocolNumber)
-	// Bind to wildcard.
-	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %s", err)
-	}
-
-	payload := newPayload()
-	h := unicastV4.header4Tuple(incoming)
-	buf := c.buildV4Packet(payload, &h)
-
-	// Invalidate the UDP header checksum field, taking care to avoid
-	// overflow to zero, which would disable checksum validation.
-	for u := header.UDP(buf[header.IPv4MinimumSize:]); ; {
-		u.SetChecksum(u.Checksum() + 1)
-		if u.Checksum() != 0 {
-			break
+		c.createEndpoint(flow.sockProto())
+		// Bind to wildcard.
+		if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+			c.t.Fatalf("Bind failed: %s", err)
 		}
-	}
 
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
-	}))
+		payload := newPayload()
+		c.injectPacket(flow, payload, true /* badChecksum */)
 
-	const want = 1
-	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
-		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
-	}
-	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
-		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
-	}
-}
-
-// TestIncrementChecksumErrorsV6 verifies if a checksum error is detected,
-// global and endpoint stats are incremented.
-func TestIncrementChecksumErrorsV6(t *testing.T) {
-	c := newDualTestContext(t, defaultMTU)
-	defer c.cleanup()
-
-	c.createEndpoint(ipv6.ProtocolNumber)
-	// Bind to wildcard.
-	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %s", err)
-	}
-
-	payload := newPayload()
-	h := unicastV6.header4Tuple(incoming)
-	buf := c.buildV6Packet(payload, &h)
-
-	// Invalidate the UDP header checksum field.
-	u := header.UDP(buf[header.IPv6MinimumSize:])
-	u.SetChecksum(u.Checksum() + 1)
-
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
-	}))
-
-	const want = 1
-	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
-		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
-	}
-	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
-		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+		const want = 1
+		if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+			t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+		}
+		if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+			t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+		}
 	}
 }
 
