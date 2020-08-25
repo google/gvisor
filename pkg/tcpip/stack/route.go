@@ -51,10 +51,6 @@ type Route struct {
 	// addressEndpoint is the local address this route is associated with.
 	addressEndpoint AssignableAddressEndpoint
 
-	// linkCache is set if link address resolution is enabled for this protocol on
-	// the route's NIC.
-	linkCache LinkAddressCache
-
 	// linkRes is set if link address resolution is enabled for this protocol on
 	// the route's NIC.
 	linkRes LinkAddressResolver
@@ -85,7 +81,6 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 	if r.nic.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
 		if linkRes, ok := r.nic.stack.linkAddrResolvers[r.NetProto]; ok {
 			r.linkRes = linkRes
-			r.linkCache = r.nic.stack
 		}
 	}
 
@@ -164,14 +159,7 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 			return ch, err
 		}
 		r.RemoteLinkAddress = entry.LinkAddr
-		return nil, nil
 	}
-
-	linkAddr, ch, err := r.linkCache.GetLinkAddress(r.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
-	if err != nil {
-		return ch, err
-	}
-	r.RemoteLinkAddress = linkAddr
 	return nil, nil
 }
 
@@ -184,10 +172,7 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 
 	if neigh := r.nic.neigh; neigh != nil {
 		neigh.removeWaker(nextAddr, waker)
-		return
 	}
-
-	r.linkCache.RemoveWaker(r.nic.ID(), nextAddr, waker)
 }
 
 // IsResolutionRequired returns true if Resolve() must be called to resolve
@@ -195,10 +180,7 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 //
 // The NIC r uses must not be locked.
 func (r *Route) IsResolutionRequired() bool {
-	if r.nic.neigh != nil {
-		return r.nic.isValidForOutgoing(r.addressEndpoint) && r.linkRes != nil && r.RemoteLinkAddress == ""
-	}
-	return r.nic.isValidForOutgoing(r.addressEndpoint) && r.linkCache != nil && r.RemoteLinkAddress == ""
+	return r.nic.isValidForOutgoing(r.addressEndpoint) && r.linkRes != nil && r.RemoteLinkAddress == ""
 }
 
 // WritePacket writes the packet through the given route.
@@ -312,7 +294,6 @@ func (r *Route) ReverseRoute(src tcpip.Address, dst tcpip.Address) Route {
 		Loop:              r.Loop,
 		addressEndpoint:   r.addressEndpoint,
 		nic:               r.nic,
-		linkCache:         r.linkCache,
 		linkRes:           r.linkRes,
 	}
 }

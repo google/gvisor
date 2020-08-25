@@ -49,9 +49,8 @@ type endpoint struct {
 	// Must be accessed using atomic operations.
 	enabled uint32
 
-	nic           stack.NetworkInterface
-	linkAddrCache stack.LinkAddressCache
-	nud           stack.NUDHandler
+	nic stack.NetworkInterface
+	nud stack.NUDHandler
 }
 
 func (e *endpoint) Enable() *tcpip.Error {
@@ -136,23 +135,13 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	case header.ARPRequest:
 		localAddr := tcpip.Address(h.ProtocolAddressTarget())
 
-		if e.nud == nil {
-			if e.linkAddrCache.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
-				return // we have no useful answer, ignore the request
-			}
-
-			addr := tcpip.Address(h.ProtocolAddressSender())
-			linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
-		} else {
-			if r.Stack().CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
-				return // we have no useful answer, ignore the request
-			}
-
-			remoteAddr := tcpip.Address(h.ProtocolAddressSender())
-			remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
-			e.nud.HandleProbe(remoteAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
+		if r.Stack().CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+			return // we have no useful answer, ignore the request
 		}
+
+		remoteAddr := tcpip.Address(h.ProtocolAddressSender())
+		remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
+		e.nud.HandleProbe(remoteAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
 
 		respPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.ARPSize,
@@ -186,11 +175,6 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		addr := tcpip.Address(h.ProtocolAddressSender())
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
-		if e.nud == nil {
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
-			return
-		}
-
 		// The solicited, override, and isRouter flags are not available for ARP;
 		// they are only available for IPv6 Neighbor Advertisements.
 		e.nud.HandleConfirmation(addr, linkAddr, stack.ReachabilityConfirmationFlags{
@@ -220,12 +204,11 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
 }
 
-func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &endpoint{
-		protocol:      p,
-		nic:           nic,
-		linkAddrCache: linkAddrCache,
-		nud:           nud,
+		protocol: p,
+		nic:      nic,
+		nud:      nud,
 	}
 	e.AddressableEndpointState.Init(e)
 	return e

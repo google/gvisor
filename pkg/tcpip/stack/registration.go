@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -587,7 +586,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nic NetworkInterface, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher) NetworkEndpoint
+	NewEndpoint(nic NetworkInterface, nud NUDHandler, dispatcher TransportDispatcher) NetworkEndpoint
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -785,30 +784,6 @@ type LinkAddressResolver interface {
 	// LinkAddressProtocol returns the network protocol of the
 	// addresses this resolver can resolve.
 	LinkAddressProtocol() tcpip.NetworkProtocolNumber
-}
-
-// A LinkAddressCache caches link addresses.
-type LinkAddressCache interface {
-	// CheckLocalAddress determines if the given local address exists, and if it
-	// does not exist.
-	CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID
-
-	// AddLinkAddress adds a link address to the cache.
-	AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
-
-	// GetLinkAddress looks up the cache to translate address to link address (e.g. IP -> MAC).
-	// If the LinkEndpoint requests address resolution and there is a LinkAddressResolver
-	// registered with the network protocol, the cache attempts to resolve the address
-	// and returns ErrWouldBlock. Waker is notified when address resolution is
-	// complete (success or not).
-	//
-	// If address resolution is required, ErrNoLinkAddress and a notification channel is
-	// returned for the top level caller to block. Channel is closed once address resolution
-	// is complete (success or not).
-	GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
-
-	// RemoveWaker removes a waker that has been added in GetLinkAddress().
-	RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
 }
 
 // RawFactory produces endpoints for writing various types of raw packets.

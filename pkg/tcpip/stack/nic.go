@@ -20,7 +20,6 @@ import (
 	"reflect"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -104,7 +103,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 
 	// Check for Neighbor Unreachability Detection support.
 	var nud NUDHandler
-	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 && stack.useNeighborCache {
+	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 {
 		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
 		nic.neigh = &neighborCache{
 			nic:   nic,
@@ -128,7 +127,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = nil
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, nud, nic)
 	}
 
 	nic.LinkEndpoint.Attach(nic)
@@ -457,14 +456,6 @@ func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {
 	}
 
 	return n.neigh.entries(), nil
-}
-
-func (n *NIC) removeWaker(addr tcpip.Address, w *sleep.Waker) {
-	if n.neigh == nil {
-		return
-	}
-
-	n.neigh.removeWaker(addr, w)
 }
 
 func (n *NIC) addStaticNeighbor(addr tcpip.Address, linkAddress tcpip.LinkAddress) *tcpip.Error {

@@ -463,7 +463,7 @@ func TestEnableWhenNICDisabled(t *testing.T) {
 
 			// We pass nil for all parameters except the NetworkInterface and Stack
 			// since Enable only depends on these.
-			ep := p.NewEndpoint(&nic, nil, nil, nil)
+			ep := p.NewEndpoint(&nic, nil, nil)
 
 			// The endpoint should initially be disabled, regardless the NIC's enabled
 			// status.
@@ -524,7 +524,7 @@ func TestIPv4Send(t *testing.T) {
 			v4: true,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, nil)
+	ep := proto.NewEndpoint(&nic, nil, nil)
 	defer ep.Close()
 
 	// Allocate and initialize the payload view.
@@ -567,7 +567,7 @@ func TestIPv4Receive(t *testing.T) {
 			v4: true,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+	ep := proto.NewEndpoint(&nic, nil, &nic.testObject)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -647,7 +647,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 					t: t,
 				},
 			}
-			ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+			ep := proto.NewEndpoint(&nic, nil, &nic.testObject)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -724,7 +724,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 			v4: true,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+	ep := proto.NewEndpoint(&nic, nil, &nic.testObject)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -814,7 +814,7 @@ func TestIPv6Send(t *testing.T) {
 			t: t,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, nil)
+	ep := proto.NewEndpoint(&nic, nil, nil)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -860,7 +860,7 @@ func TestIPv6Receive(t *testing.T) {
 			t: t,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+	ep := proto.NewEndpoint(&nic, nil, &nic.testObject)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -948,7 +948,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 					t: t,
 				},
 			}
-			ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+			ep := proto.NewEndpoint(&nic, nil, &nic.testObject)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {

@@ -286,10 +286,8 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		} else if unspecifiedSource {
 			received.Invalid.Increment()
 			return
-		} else if e.nud != nil {
-			e.nud.HandleProbe(r.RemoteAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		} else {
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), r.RemoteAddress, sourceLinkAddr)
+			e.nud.HandleProbe(r.RemoteAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 
 		// As per RFC 4861 section 7.1.1:
@@ -440,20 +438,13 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			return
 		}
 
-		// If the NA message has the target link layer option, update the link
-		// address cache with the link address for the target of the message.
-		if e.nud == nil {
-			if len(targetLinkAddr) != 0 {
-				e.linkAddrCache.AddLinkAddress(e.nic.ID(), targetAddr, targetLinkAddr)
-			}
-			return
+		if e.nud != nil {
+			e.nud.HandleConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
+				Solicited: na.SolicitedFlag(),
+				Override:  na.OverrideFlag(),
+				IsRouter:  na.RouterFlag(),
+			})
 		}
-
-		e.nud.HandleConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
-			Solicited: na.SolicitedFlag(),
-			Override:  na.OverrideFlag(),
-			IsRouter:  na.RouterFlag(),
-		})
 
 	case header.ICMPv6EchoRequest:
 		received.EchoRequest.Increment()
@@ -555,11 +546,9 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 				return
 			}
 
-			if e.nud != nil {
-				// A RS with a specified source IP address modifies the NUD state
-				// machine in the same way a reachability probe would.
-				e.nud.HandleProbe(r.RemoteAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
-			}
+			// A RS with a specified source IP address modifies the NUD state
+			// machine in the same way a reachability probe would.
+			e.nud.HandleProbe(r.RemoteAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 
 	case header.ICMPv6RouterAdvert:
@@ -607,7 +596,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 
 		// If the RA has the source link layer option, update the link address
 		// cache with the link address for the advertised router.
-		if len(sourceLinkAddr) != 0 && e.nud != nil {
+		if len(sourceLinkAddr) != 0 {
 			e.nud.HandleProbe(routerAddr, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 
