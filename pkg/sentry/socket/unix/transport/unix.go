@@ -942,7 +942,7 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch opt.(type) {
-	case tcpip.ErrorOption:
+	case tcpip.ErrorOption, *tcpip.LingerOption:
 		return nil
 
 	default:
