@@ -263,6 +263,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:kcov_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:kill_test",
 )
 
