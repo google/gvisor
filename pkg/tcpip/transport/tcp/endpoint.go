@@ -1775,15 +1775,24 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 	case tcpip.TCPLingerTimeoutOption:
 		e.LockUser()
-		if v < 0 {
+
+		switch {
+		case v < 0:
 			// Same as effectively disabling TCPLinger timeout.
-			v = 0
+			v = -1
+		case v == 0:
+			// Same as the stack default.
+			var stackLingerTimeout tcpip.TCPLingerTimeoutOption
+			if err := e.stack.TransportProtocolOption(ProtocolNumber, &stackLingerTimeout); err != nil {
+				panic(fmt.Sprintf("e.stack.TransportProtocolOption(%d, %+v) = %v", ProtocolNumber, &stackLingerTimeout, err))
+			}
+			v = stackLingerTimeout
+		case v > tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout):
+			// Cap it to Stack's default TCP_LINGER2 timeout.
+			v = tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout)
+		default:
 		}
-		// Cap it to MaxTCPLingerTimeout.
-		stkTCPLingerTimeout := tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout)
-		if v > stkTCPLingerTimeout {
-			v = stkTCPLingerTimeout
-		}
+
 		e.tcpLingerTimeout = time.Duration(v)
 		e.UnlockUser()
 
