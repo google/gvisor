@@ -55,6 +55,7 @@ go_library(
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",
+        "//tools/go_marshal/primitive",
     ],
 )
 
