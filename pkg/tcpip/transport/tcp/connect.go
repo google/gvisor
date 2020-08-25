@@ -924,18 +924,7 @@ func (e *endpoint) handleWrite() *tcpip.Error {
 
 	first := e.sndQueue.Front()
 	if first != nil {
-		lastSeg := e.snd.writeList.Back()
 		e.snd.writeList.PushBackList(&e.sndQueue)
-		if lastSeg == nil {
-			lastSeg = e.snd.writeList.Front()
-		} else {
-			lastSeg = lastSeg.segEntry.Next()
-		}
-		// Add new segments to rcList, as rcList and writeList should
-		// be consistent.
-		for seg := lastSeg; seg != nil; seg = seg.segEntry.Next() {
-			e.snd.rcList.PushBack(seg)
-		}
 		e.sndBufInQueue = 0
 	}
 
