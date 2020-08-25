@@ -64,8 +64,8 @@ trap cleanup EXIT
 # is not found. This isn't actually a failure for us, because we don't require
 # the public (this may be stored separately). The second import will succeed
 # because, in reality, the first import succeeded and it's a no-op.
-gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}" || \
-  gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}"
+gpg --no-default-keyring --keyring "${keyring}" --secret-keyring "${keyring}" --import "${private_key}" || \
+  gpg --no-default-keyring --keyring "${keyring}" --secret-keyring "${keyring}" --import "${private_key}"
 
 # Copy the packages into the root.
 for pkg in "$@"; do
