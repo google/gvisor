@@ -47,14 +47,14 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	// The machine to hold Redis and the Ruby Server.
 	serverMachine, err := h.GetMachine()
 	if err != nil {
-		b.Fatal("failed to get machine with: %v", err)
+		b.Fatalf("failed to get machine with: %v", err)
 	}
 	defer serverMachine.CleanUp()
 
 	// The machine to run 'hey'.
 	clientMachine, err := h.GetMachine()
 	if err != nil {
-		b.Fatal("failed to get machine with: %v", err)
+		b.Fatalf("failed to get machine with: %v", err)
 	}
 	defer clientMachine.CleanUp()
 	ctx := context.Background()

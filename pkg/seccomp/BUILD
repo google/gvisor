@@ -10,6 +10,7 @@ go_binary(
         "seccomp_test_victim_amd64.go",
         "seccomp_test_victim_arm64.go",
     ],
+    nogo = False,
     deps = [":seccomp"],
 )
 
