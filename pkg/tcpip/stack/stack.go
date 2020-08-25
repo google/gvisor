@@ -248,7 +248,7 @@ type RcvBufAutoTuneParams struct {
 	// was started.
 	MeasureTime time.Time
 
-	// CopiedBytes is the number of bytes copied to userspace since
+	// CopiedBytes is the number of bytes copied to user space since
 	// this measure began.
 	CopiedBytes int
 
@@ -461,6 +461,10 @@ type Stack struct {
 	// nudConfigs is the default NUD configurations used by interfaces.
 	nudConfigs NUDConfigurations
 
+	// useNeighborCache indicates whether ARP and NDP packets should be handled
+	// by the NIC's neighborCache instead of linkAddrCache.
+	useNeighborCache bool
+
 	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
 	// to auto-generate an IPv6 link-local address for newly enabled non-loopback
 	// NICs. See the AutoGenIPv6LinkLocal field of Options for more details.
@@ -540,6 +544,13 @@ type Options struct {
 
 	// NUDConfigs is the default NUD configurations used by interfaces.
 	NUDConfigs NUDConfigurations
+
+	// UseNeighborCache indicates whether ARP and NDP packets should be handled
+	// by the Neighbor Unreachability Detection (NUD) state machine. This flag
+	// also enables the APIs for inspecting and modifying the neighbor table via
+	// NUDDispatcher and the following Stack methods: Neighbors, RemoveNeighbor,
+	// and ClearNeighbors.
+	UseNeighborCache bool
 
 	// AutoGenIPv6LinkLocal determines whether or not the stack will attempt to
 	// auto-generate an IPv6 link-local address for newly enabled non-loopback
@@ -715,6 +726,7 @@ func New(opts Options) *Stack {
 		seed:                 generateRandUint32(),
 		ndpConfigs:           opts.NDPConfigs,
 		nudConfigs:           opts.NUDConfigs,
+		useNeighborCache:     opts.UseNeighborCache,
 		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 		uniqueIDGenerator:    opts.UniqueID,
 		ndpDisp:              opts.NDPDisp,
@@ -1209,8 +1221,8 @@ func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tc
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic := s.nics[id]
-	if nic == nil {
+	nic, ok := s.nics[id]
+	if !ok {
 		return tcpip.ErrUnknownNICID
 	}
 
@@ -1335,8 +1347,8 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 
 	// If a NIC is specified, we try to find the address there only.
 	if nicID != 0 {
-		nic := s.nics[nicID]
-		if nic == nil {
+		nic, ok := s.nics[nicID]
+		if !ok {
 			return 0
 		}
 
@@ -1367,8 +1379,8 @@ func (s *Stack) SetPromiscuousMode(nicID tcpip.NICID, enable bool) *tcpip.Error 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic := s.nics[nicID]
-	if nic == nil {
+	nic, ok := s.nics[nicID]
+	if !ok {
 		return tcpip.ErrUnknownNICID
 	}
 
@@ -1383,8 +1395,8 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic := s.nics[nicID]
-	if nic == nil {
+	nic, ok := s.nics[nicID]
+	if !ok {
 		return tcpip.ErrUnknownNICID
 	}
 
@@ -1416,8 +1428,33 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.linkEP, waker)
 }
 
-// RemoveWaker implements LinkAddressCache.RemoveWaker.
+// Neighbors returns all IP to MAC address associations.
+func (s *Stack) Neighbors(nicID tcpip.NICID) ([]NeighborEntry, *tcpip.Error) {
+	s.mu.RLock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+
+	if !ok {
+		return nil, tcpip.ErrUnknownNICID
+	}
+
+	return nic.neighbors()
+}
+
+// RemoveWaker removes a waker that has been added when link resolution for
+// addr was requested.
 func (s *Stack) RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker) {
+	if s.useNeighborCache {
+		s.mu.RLock()
+		nic, ok := s.nics[nicID]
+		s.mu.RUnlock()
+
+		if ok {
+			nic.removeWaker(addr, waker)
+		}
+		return
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1425,6 +1462,47 @@ func (s *Stack) RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.
 		fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 		s.linkAddrCache.removeWaker(fullAddr, waker)
 	}
+}
+
+// AddStaticNeighbor statically associates an IP address to a MAC address.
+func (s *Stack) AddStaticNeighbor(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress) *tcpip.Error {
+	s.mu.RLock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	return nic.addStaticNeighbor(addr, linkAddr)
+}
+
+// RemoveNeighbor removes an IP to MAC address association previously created
+// either automically or by AddStaticNeighbor. Returns ErrBadAddress if there
+// is no association with the provided address.
+func (s *Stack) RemoveNeighbor(nicID tcpip.NICID, addr tcpip.Address) *tcpip.Error {
+	s.mu.RLock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	return nic.removeNeighbor(addr)
+}
+
+// ClearNeighbors removes all IP to MAC address associations.
+func (s *Stack) ClearNeighbors(nicID tcpip.NICID) *tcpip.Error {
+	s.mu.RLock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	return nic.clearNeighbors()
 }
 
 // RegisterTransportEndpoint registers the given endpoint with the stack
@@ -1961,7 +2039,7 @@ func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, addres
 	return nil, tcpip.ErrBadAddress
 }
 
-// FindNICNameFromID returns the name of the nic for the given NICID.
+// FindNICNameFromID returns the name of the NIC for the given NICID.
 func (s *Stack) FindNICNameFromID(id tcpip.NICID) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -298,7 +298,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nicID tcpip.NICID, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) NetworkEndpoint
+	NewEndpoint(nicID tcpip.NICID, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) NetworkEndpoint
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -488,7 +488,7 @@ type LinkAddressResolver interface {
 	ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool)
 
 	// LinkAddressProtocol returns the network protocol of the
-	// addresses this this resolver can resolve.
+	// addresses this resolver can resolve.
 	LinkAddressProtocol() tcpip.NetworkProtocolNumber
 }
 
