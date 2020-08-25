@@ -125,6 +125,7 @@ def packetimpact_go_test(name, size = "small", pure = True, expect_native_failur
         name = testbench_binary,
         size = size,
         pure = pure,
+        nogo = False,  # FIXME(gvisor.dev/issue/3374): Not working with all build systems.
         tags = [
             "local",
             "manual",

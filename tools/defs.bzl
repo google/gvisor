@@ -27,7 +27,6 @@ gbenchmark = _gbenchmark
 gazelle = _gazelle
 go_embed_data = _go_embed_data
 go_path = _go_path
-go_test = _go_test
 gtest = _gtest
 grpcpp = _grpcpp
 loopback = _loopback
@@ -45,17 +44,35 @@ vdso_linker_option = _vdso_linker_option
 default_platform = _default_platform
 platforms = _platforms
 
-def go_binary(name, **kwargs):
+def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **kwargs):
     """Wraps the standard go_binary.
 
     Args:
       name: the rule name.
+      nogo: enable nogo analysis.
+      pure: build a pure Go (no CGo) binary.
+      static: build a static binary.
+      x_defs: additional linker definitions.
       **kwargs: standard go_binary arguments.
     """
     _go_binary(
         name = name,
+        pure = pure,
+        static = static,
+        x_defs = x_defs,
         **kwargs
     )
+    if nogo:
+        # Note that the nogo rule applies only for go_library and go_test
+        # targets, therefore we construct a library from the binary sources.
+        _go_library(
+            name = name + "_nogo_library",
+            **kwargs
+        )
+        nogo_test(
+            name = name + "_nogo",
+            deps = [":" + name + "_nogo_library"],
+        )
 
 def calculate_sets(srcs):
     """Calculates special Go sets for templates.
@@ -119,6 +136,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
       stateify: whether statify is enabled (default: true).
       marshal: whether marshal is enabled (default: false).
       marshal_debug: whether the gomarshal tools emits debugging output (default: false).
+      nogo: enable nogo analysis.
       **kwargs: standard go_library arguments.
     """
     all_srcs = srcs
@@ -201,6 +219,24 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
                 deps = marshal_test_deps,
                 **kwargs
             )
+
+def go_test(name, nogo = True, **kwargs):
+    """Wraps the standard go_test.
+
+    Args:
+      name: the rule name.
+      nogo: enable nogo analysis.
+      **kwargs: standard go_test arguments.
+    """
+    _go_test(
+        name = name,
+        **kwargs
+    )
+    if nogo:
+        nogo_test(
+            name = name + "_nogo",
+            deps = [":" + name],
+        )
 
 def proto_library(name, srcs, deps = None, has_services = 0, **kwargs):
     """Wraps the standard proto_library.
