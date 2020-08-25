@@ -16,6 +16,8 @@
 package tmpfs
 
 import (
+	"math"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -32,9 +34,15 @@ import (
 var fsInfo = fs.Info{
 	Type: linux.TMPFS_MAGIC,
 
+	// tmpfs currently does not support configurable size limits. In Linux,
+	// such a tmpfs mount will return f_blocks == f_bfree == f_bavail == 0 from
+	// statfs(2). However, many applications treat this as having a size limit
+	// of 0. To work around this, claim to have a very large but non-zero size,
+	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
+	// applications may also handle incorrectly).
 	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
-	TotalBlocks: 0,
-	FreeBlocks:  0,
+	TotalBlocks: math.MaxInt64 / usermem.PageSize,
+	FreeBlocks:  math.MaxInt64 / usermem.PageSize,
 }
 
 // rename implements fs.InodeOperations.Rename for tmpfs nodes.
