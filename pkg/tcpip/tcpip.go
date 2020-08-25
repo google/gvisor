@@ -1192,6 +1192,10 @@ type ICMPv6ReceivedPacketStats struct {
 	// Invalid is the total number of ICMPv6 packets received that the
 	// transport layer could not parse.
 	Invalid *StatCounter
+
+	// RouterOnlyPacketsDroppedByHost is the total number of ICMPv6 packets
+	// dropped due to being router-specific packets.
+	RouterOnlyPacketsDroppedByHost *StatCounter
 }
 
 // ICMPStats collects ICMP-specific stats (both v4 and v6).
