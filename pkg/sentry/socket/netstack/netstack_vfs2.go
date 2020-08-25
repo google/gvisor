@@ -21,10 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
-	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
-	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -233,48 +231,7 @@ func (s *SocketVFS2) GetSockOpt(t *kernel.Task, level, name int, outPtr usermem.
 		return &val, nil
 	}
 
-	if s.skType == linux.SOCK_RAW && level == linux.IPPROTO_IP {
-		switch name {
-		case linux.IPT_SO_GET_INFO:
-			if outLen < linux.SizeOfIPTGetinfo {
-				return nil, syserr.ErrInvalidArgument
-			}
-			if s.family != linux.AF_INET {
-				return nil, syserr.ErrInvalidArgument
-			}
-
-			stack := inet.StackFromContext(t)
-			if stack == nil {
-				return nil, syserr.ErrNoDevice
-			}
-			info, err := netfilter.GetInfo(t, stack.(*Stack).Stack, outPtr)
-			if err != nil {
-				return nil, err
-			}
-			return &info, nil
-
-		case linux.IPT_SO_GET_ENTRIES:
-			if outLen < linux.SizeOfIPTGetEntries {
-				return nil, syserr.ErrInvalidArgument
-			}
-			if s.family != linux.AF_INET {
-				return nil, syserr.ErrInvalidArgument
-			}
-
-			stack := inet.StackFromContext(t)
-			if stack == nil {
-				return nil, syserr.ErrNoDevice
-			}
-			entries, err := netfilter.GetEntries4(t, stack.(*Stack).Stack, outPtr, outLen)
-			if err != nil {
-				return nil, err
-			}
-			return &entries, nil
-
-		}
-	}
-
-	return GetSockOpt(t, s, s.Endpoint, s.family, s.skType, level, name, outLen)
+	return GetSockOpt(t, s, s.Endpoint, s.family, s.skType, level, name, outPtr, outLen)
 }
 
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
@@ -302,29 +259,6 @@ func (s *SocketVFS2) SetSockOpt(t *kernel.Task, level int, name int, optVal []by
 		defer s.readMu.Unlock()
 		s.sockOptInq = usermem.ByteOrder.Uint32(optVal) != 0
 		return nil
-	}
-
-	if s.skType == linux.SOCK_RAW && level == linux.SOL_IP {
-		switch name {
-		case linux.IPT_SO_SET_REPLACE:
-			if len(optVal) < linux.SizeOfIPTReplace {
-				return syserr.ErrInvalidArgument
-			}
-			if s.family != linux.AF_INET {
-				return syserr.ErrInvalidArgument
-			}
-
-			stack := inet.StackFromContext(t)
-			if stack == nil {
-				return syserr.ErrNoDevice
-			}
-			// Stack must be a netstack stack.
-			return netfilter.SetEntries(stack.(*Stack).Stack, optVal)
-
-		case linux.IPT_SO_SET_ADD_COUNTERS:
-			// TODO(gvisor.dev/issue/170): Counter support.
-			return nil
-		}
 	}
 
 	return SetSockOpt(t, s, s.Endpoint, level, name, optVal)
