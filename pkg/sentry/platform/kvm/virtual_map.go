@@ -34,7 +34,7 @@ type virtualRegion struct {
 }
 
 // mapsLine matches a single line from /proc/PID/maps.
-var mapsLine = regexp.MustCompile("([0-9a-f]+)-([0-9a-f]+) ([r-][w-][x-][sp]) ([0-9a-f]+) [0-9a-f]{2}:[0-9a-f]{2,} [0-9]+\\s+(.*)")
+var mapsLine = regexp.MustCompile("([0-9a-f]+)-([0-9a-f]+) ([r-][w-][x-][sp]) ([0-9a-f]+) [0-9a-f]{2,3}:[0-9a-f]{2,} [0-9]+\\s+(.*)")
 
 // excludeRegion returns true if these regions should be excluded from the
 // physical map. Virtual regions need to be excluded if get_user_pages will
