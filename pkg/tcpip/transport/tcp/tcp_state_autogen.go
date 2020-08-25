@@ -535,8 +535,7 @@ func (x *segment) StateTypeName() string {
 
 func (x *segment) StateFields() []string {
 	return []string{
-		"segEntry",
-		"rackSegEntry",
+		"segmentEntry",
 		"refCnt",
 		"data",
 		"hdr",
@@ -561,50 +560,48 @@ func (x *segment) beforeSave() {}
 func (x *segment) StateSave(m state.Sink) {
 	x.beforeSave()
 	var data buffer.VectorisedView = x.saveData()
-	m.SaveValue(3, data)
+	m.SaveValue(2, data)
 	var options []byte = x.saveOptions()
-	m.SaveValue(13, options)
+	m.SaveValue(12, options)
 	var rcvdTime unixTime = x.saveRcvdTime()
-	m.SaveValue(15, rcvdTime)
+	m.SaveValue(14, rcvdTime)
 	var xmitTime unixTime = x.saveXmitTime()
-	m.SaveValue(16, xmitTime)
-	m.Save(0, &x.segEntry)
-	m.Save(1, &x.rackSegEntry)
-	m.Save(2, &x.refCnt)
-	m.Save(4, &x.hdr)
-	m.Save(5, &x.viewToDeliver)
-	m.Save(6, &x.sequenceNumber)
-	m.Save(7, &x.ackNumber)
-	m.Save(8, &x.flags)
-	m.Save(9, &x.window)
-	m.Save(10, &x.csum)
-	m.Save(11, &x.csumValid)
-	m.Save(12, &x.parsedOptions)
-	m.Save(14, &x.hasNewSACKInfo)
-	m.Save(17, &x.xmitCount)
+	m.SaveValue(15, xmitTime)
+	m.Save(0, &x.segmentEntry)
+	m.Save(1, &x.refCnt)
+	m.Save(3, &x.hdr)
+	m.Save(4, &x.viewToDeliver)
+	m.Save(5, &x.sequenceNumber)
+	m.Save(6, &x.ackNumber)
+	m.Save(7, &x.flags)
+	m.Save(8, &x.window)
+	m.Save(9, &x.csum)
+	m.Save(10, &x.csumValid)
+	m.Save(11, &x.parsedOptions)
+	m.Save(13, &x.hasNewSACKInfo)
+	m.Save(16, &x.xmitCount)
 }
 
 func (x *segment) afterLoad() {}
 
 func (x *segment) StateLoad(m state.Source) {
-	m.Load(0, &x.segEntry)
-	m.Load(1, &x.rackSegEntry)
-	m.Load(2, &x.refCnt)
-	m.Load(4, &x.hdr)
-	m.Load(5, &x.viewToDeliver)
-	m.Load(6, &x.sequenceNumber)
-	m.Load(7, &x.ackNumber)
-	m.Load(8, &x.flags)
-	m.Load(9, &x.window)
-	m.Load(10, &x.csum)
-	m.Load(11, &x.csumValid)
-	m.Load(12, &x.parsedOptions)
-	m.Load(14, &x.hasNewSACKInfo)
-	m.Load(17, &x.xmitCount)
-	m.LoadValue(3, new(buffer.VectorisedView), func(y interface{}) { x.loadData(y.(buffer.VectorisedView)) })
-	m.LoadValue(13, new([]byte), func(y interface{}) { x.loadOptions(y.([]byte)) })
-	m.LoadValue(15, new(unixTime), func(y interface{}) { x.loadRcvdTime(y.(unixTime)) })
-	m.LoadValue(16, new(unixTime), func(y interface{}) { x.loadXmitTime(y.(unixTime)) })
+	m.Load(0, &x.segmentEntry)
+	m.Load(1, &x.refCnt)
+	m.Load(3, &x.hdr)
+	m.Load(4, &x.viewToDeliver)
+	m.Load(5, &x.sequenceNumber)
+	m.Load(6, &x.ackNumber)
+	m.Load(7, &x.flags)
+	m.Load(8, &x.window)
+	m.Load(9, &x.csum)
+	m.Load(10, &x.csumValid)
+	m.Load(11, &x.parsedOptions)
+	m.Load(13, &x.hasNewSACKInfo)
+	m.Load(16, &x.xmitCount)
+	m.LoadValue(2, new(buffer.VectorisedView), func(y interface{}) { x.loadData(y.(buffer.VectorisedView)) })
+	m.LoadValue(12, new([]byte), func(y interface{}) { x.loadOptions(y.([]byte)) })
+	m.LoadValue(14, new(unixTime), func(y interface{}) { x.loadRcvdTime(y.(unixTime)) })
+	m.LoadValue(15, new(unixTime), func(y interface{}) { x.loadXmitTime(y.(unixTime)) })
 }
 
 func (x *segmentQueue) StateTypeName() string {
@@ -659,7 +656,6 @@ func (x *sender) StateFields() []string {
 		"closed",
 		"writeNext",
 		"writeList",
-		"rcList",
 		"rtt",
 		"rto",
 		"minRTO",
@@ -699,19 +695,18 @@ func (x *sender) StateSave(m state.Sink) {
 	m.Save(14, &x.closed)
 	m.Save(15, &x.writeNext)
 	m.Save(16, &x.writeList)
-	m.Save(17, &x.rcList)
-	m.Save(18, &x.rtt)
-	m.Save(19, &x.rto)
-	m.Save(20, &x.minRTO)
-	m.Save(21, &x.maxRTO)
-	m.Save(22, &x.maxRetries)
-	m.Save(23, &x.maxPayloadSize)
-	m.Save(24, &x.gso)
-	m.Save(25, &x.sndWndScale)
-	m.Save(26, &x.maxSentAck)
-	m.Save(27, &x.state)
-	m.Save(28, &x.cc)
-	m.Save(29, &x.rc)
+	m.Save(17, &x.rtt)
+	m.Save(18, &x.rto)
+	m.Save(19, &x.minRTO)
+	m.Save(20, &x.maxRTO)
+	m.Save(21, &x.maxRetries)
+	m.Save(22, &x.maxPayloadSize)
+	m.Save(23, &x.gso)
+	m.Save(24, &x.sndWndScale)
+	m.Save(25, &x.maxSentAck)
+	m.Save(26, &x.state)
+	m.Save(27, &x.cc)
+	m.Save(28, &x.rc)
 }
 
 func (x *sender) StateLoad(m state.Source) {
@@ -729,19 +724,18 @@ func (x *sender) StateLoad(m state.Source) {
 	m.Load(14, &x.closed)
 	m.Load(15, &x.writeNext)
 	m.Load(16, &x.writeList)
-	m.Load(17, &x.rcList)
-	m.Load(18, &x.rtt)
-	m.Load(19, &x.rto)
-	m.Load(20, &x.minRTO)
-	m.Load(21, &x.maxRTO)
-	m.Load(22, &x.maxRetries)
-	m.Load(23, &x.maxPayloadSize)
-	m.Load(24, &x.gso)
-	m.Load(25, &x.sndWndScale)
-	m.Load(26, &x.maxSentAck)
-	m.Load(27, &x.state)
-	m.Load(28, &x.cc)
-	m.Load(29, &x.rc)
+	m.Load(17, &x.rtt)
+	m.Load(18, &x.rto)
+	m.Load(19, &x.minRTO)
+	m.Load(20, &x.maxRTO)
+	m.Load(21, &x.maxRetries)
+	m.Load(22, &x.maxPayloadSize)
+	m.Load(23, &x.gso)
+	m.Load(24, &x.sndWndScale)
+	m.Load(25, &x.maxSentAck)
+	m.Load(26, &x.state)
+	m.Load(27, &x.cc)
+	m.Load(28, &x.rc)
 	m.LoadValue(1, new(unixTime), func(y interface{}) { x.loadLastSendTime(y.(unixTime)) })
 	m.LoadValue(12, new(unixTime), func(y interface{}) { x.loadRttMeasureTime(y.(unixTime)) })
 	m.LoadValue(13, new(unixTime), func(y interface{}) { x.loadFirstRetransmittedSegXmitTime(y.(unixTime)) })
@@ -893,58 +887,6 @@ func (x *endpointEntry) StateLoad(m state.Source) {
 	m.Load(1, &x.prev)
 }
 
-func (x *rackSegmentList) StateTypeName() string {
-	return "pkg/tcpip/transport/tcp.rackSegmentList"
-}
-
-func (x *rackSegmentList) StateFields() []string {
-	return []string{
-		"head",
-		"tail",
-	}
-}
-
-func (x *rackSegmentList) beforeSave() {}
-
-func (x *rackSegmentList) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
-}
-
-func (x *rackSegmentList) afterLoad() {}
-
-func (x *rackSegmentList) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
-}
-
-func (x *rackSegmentEntry) StateTypeName() string {
-	return "pkg/tcpip/transport/tcp.rackSegmentEntry"
-}
-
-func (x *rackSegmentEntry) StateFields() []string {
-	return []string{
-		"next",
-		"prev",
-	}
-}
-
-func (x *rackSegmentEntry) beforeSave() {}
-
-func (x *rackSegmentEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
-}
-
-func (x *rackSegmentEntry) afterLoad() {}
-
-func (x *rackSegmentEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
-}
-
 func (x *segmentList) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.segmentList"
 }
@@ -1016,8 +958,6 @@ func init() {
 	state.Register((*unixTime)(nil))
 	state.Register((*endpointList)(nil))
 	state.Register((*endpointEntry)(nil))
-	state.Register((*rackSegmentList)(nil))
-	state.Register((*rackSegmentEntry)(nil))
 	state.Register((*segmentList)(nil))
 	state.Register((*segmentEntry)(nil))
 }
