@@ -23,6 +23,8 @@ const (
 )
 
 // Winsize is struct winsize, defined in uapi/asm-generic/termios.h.
+//
+// +marshal
 type Winsize struct {
 	Row    uint16
 	Col    uint16
@@ -31,6 +33,8 @@ type Winsize struct {
 }
 
 // Termios is struct termios, defined in uapi/asm-generic/termbits.h.
+//
+// +marshal
 type Termios struct {
 	InputFlags        uint32
 	OutputFlags       uint32

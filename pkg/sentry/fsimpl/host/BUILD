@@ -72,6 +72,7 @@ go_library(
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",
+        "//tools/go_marshal/primitive",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
