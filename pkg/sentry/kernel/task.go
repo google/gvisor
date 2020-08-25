@@ -574,6 +574,11 @@ type Task struct {
 	//
 	// startTime is protected by mu.
 	startTime ktime.Time
+
+	// kcov is the kcov instance providing code coverage owned by this task.
+	//
+	// kcov is exclusive to the task goroutine.
+	kcov *Kcov
 }
 
 func (t *Task) savePtraceTracer() *Task {
@@ -902,4 +907,17 @@ func (t *Task) UID() uint32 {
 // TODO(gvisor.dev/issue/170): This method is not namespaced yet.
 func (t *Task) GID() uint32 {
 	return uint32(t.Credentials().EffectiveKGID)
+}
+
+// SetKcov sets the kcov instance associated with t.
+func (t *Task) SetKcov(k *Kcov) {
+	t.kcov = k
+}
+
+// ResetKcov clears the kcov instance associated with t.
+func (t *Task) ResetKcov() {
+	if t.kcov != nil {
+		t.kcov.Reset()
+		t.kcov = nil
+	}
 }
