@@ -983,53 +983,12 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr us
 		return &val, nil
 	}
 
-	if s.skType == linux.SOCK_RAW && level == linux.IPPROTO_IP {
-		switch name {
-		case linux.IPT_SO_GET_INFO:
-			if outLen < linux.SizeOfIPTGetinfo {
-				return nil, syserr.ErrInvalidArgument
-			}
-			if s.family != linux.AF_INET {
-				return nil, syserr.ErrInvalidArgument
-			}
-
-			stack := inet.StackFromContext(t)
-			if stack == nil {
-				return nil, syserr.ErrNoDevice
-			}
-			info, err := netfilter.GetInfo(t, stack.(*Stack).Stack, outPtr)
-			if err != nil {
-				return nil, err
-			}
-			return &info, nil
-
-		case linux.IPT_SO_GET_ENTRIES:
-			if outLen < linux.SizeOfIPTGetEntries {
-				return nil, syserr.ErrInvalidArgument
-			}
-			if s.family != linux.AF_INET {
-				return nil, syserr.ErrInvalidArgument
-			}
-
-			stack := inet.StackFromContext(t)
-			if stack == nil {
-				return nil, syserr.ErrNoDevice
-			}
-			entries, err := netfilter.GetEntries4(t, stack.(*Stack).Stack, outPtr, outLen)
-			if err != nil {
-				return nil, err
-			}
-			return &entries, nil
-
-		}
-	}
-
-	return GetSockOpt(t, s, s.Endpoint, s.family, s.skType, level, name, outLen)
+	return GetSockOpt(t, s, s.Endpoint, s.family, s.skType, level, name, outPtr, outLen)
 }
 
 // GetSockOpt can be used to implement the linux syscall getsockopt(2) for
 // sockets backed by a commonEndpoint.
-func GetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, family int, skType linux.SockType, level, name, outLen int) (marshal.Marshallable, *syserr.Error) {
+func GetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, family int, skType linux.SockType, level, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	switch level {
 	case linux.SOL_SOCKET:
 		return getSockOptSocket(t, s, ep, family, skType, name, outLen)
@@ -1041,7 +1000,7 @@ func GetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, family in
 		return getSockOptIPv6(t, ep, name, outLen)
 
 	case linux.SOL_IP:
-		return getSockOptIP(t, ep, name, outLen, family)
+		return getSockOptIP(t, s, ep, name, outPtr, outLen, family)
 
 	case linux.SOL_UDP,
 		linux.SOL_ICMPV6,
@@ -1560,7 +1519,7 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (marsha
 }
 
 // getSockOptIP implements GetSockOpt when level is SOL_IP.
-func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family int) (marshal.Marshallable, *syserr.Error) {
+func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, outPtr usermem.Addr, outLen int, family int) (marshal.Marshallable, *syserr.Error) {
 	switch name {
 	case linux.IP_TTL:
 		if outLen < sizeOfInt32 {
@@ -1676,6 +1635,46 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family in
 		a, _ := ConvertAddress(linux.AF_INET, tcpip.FullAddress(v))
 		return a.(*linux.SockAddrInet), nil
 
+	case linux.IPT_SO_GET_INFO:
+		if outLen < linux.SizeOfIPTGetinfo {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		// Only valid for raw IPv4 sockets.
+		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
+			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		stack := inet.StackFromContext(t)
+		if stack == nil {
+			return nil, syserr.ErrNoDevice
+		}
+		info, err := netfilter.GetInfo(t, stack.(*Stack).Stack, outPtr)
+		if err != nil {
+			return nil, err
+		}
+		return &info, nil
+
+	case linux.IPT_SO_GET_ENTRIES:
+		if outLen < linux.SizeOfIPTGetEntries {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		// Only valid for raw IPv4 sockets.
+		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
+			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		stack := inet.StackFromContext(t)
+		if stack == nil {
+			return nil, syserr.ErrNoDevice
+		}
+		entries, err := netfilter.GetEntries4(t, stack.(*Stack).Stack, outPtr, outLen)
+		if err != nil {
+			return nil, err
+		}
+		return &entries, nil
+
 	default:
 		emitUnimplementedEventIP(t, name)
 	}
@@ -1709,29 +1708,6 @@ func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVa
 		return nil
 	}
 
-	if s.skType == linux.SOCK_RAW && level == linux.SOL_IP {
-		switch name {
-		case linux.IPT_SO_SET_REPLACE:
-			if len(optVal) < linux.SizeOfIPTReplace {
-				return syserr.ErrInvalidArgument
-			}
-			if s.family != linux.AF_INET {
-				return syserr.ErrInvalidArgument
-			}
-
-			stack := inet.StackFromContext(t)
-			if stack == nil {
-				return syserr.ErrNoDevice
-			}
-			// Stack must be a netstack stack.
-			return netfilter.SetEntries(stack.(*Stack).Stack, optVal)
-
-		case linux.IPT_SO_SET_ADD_COUNTERS:
-			// TODO(gvisor.dev/issue/170): Counter support.
-			return nil
-		}
-	}
-
 	return SetSockOpt(t, s, s.Endpoint, level, name, optVal)
 }
 
@@ -1749,7 +1725,7 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 		return setSockOptIPv6(t, ep, name, optVal)
 
 	case linux.SOL_IP:
-		return setSockOptIP(t, ep, name, optVal)
+		return setSockOptIP(t, s, ep, name, optVal)
 
 	case linux.SOL_UDP,
 		linux.SOL_ICMPV6,
@@ -2160,7 +2136,7 @@ func parseIntOrChar(buf []byte) (int32, *syserr.Error) {
 }
 
 // setSockOptIP implements SetSockOpt when level is SOL_IP.
-func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
+func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
 	case linux.IP_MULTICAST_TTL:
 		v, err := parseIntOrChar(optVal)
@@ -2279,6 +2255,27 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 			return err
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.IPHdrIncludedOption, v != 0))
+
+	case linux.IPT_SO_SET_REPLACE:
+		if len(optVal) < linux.SizeOfIPTReplace {
+			return syserr.ErrInvalidArgument
+		}
+
+		// Only valid for raw IPv4 sockets.
+		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
+			return syserr.ErrProtocolNotAvailable
+		}
+
+		stack := inet.StackFromContext(t)
+		if stack == nil {
+			return syserr.ErrNoDevice
+		}
+		// Stack must be a netstack stack.
+		return netfilter.SetEntries(stack.(*Stack).Stack, optVal)
+
+	case linux.IPT_SO_SET_ADD_COUNTERS:
+		// TODO(gvisor.dev/issue/170): Counter support.
+		return nil
 
 	case linux.IP_ADD_SOURCE_MEMBERSHIP,
 		linux.IP_BIND_ADDRESS_NO_PORT,
