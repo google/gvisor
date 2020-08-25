@@ -48,6 +48,7 @@ type endpoint struct {
 	nicID         tcpip.NICID
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
+	nud           stack.NUDHandler
 	dispatcher    stack.TransportDispatcher
 	protocol      *protocol
 	stack         *stack.Stack
@@ -455,11 +456,12 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 }
 
 // NewEndpoint creates a new ipv6 endpoint.
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
 	return &endpoint{
 		nicID:         nicID,
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
+		nud:           nud,
 		dispatcher:    dispatcher,
 		protocol:      p,
 		stack:         st,
