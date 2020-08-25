@@ -94,7 +94,7 @@ func (s *sigSetWithSize) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *sigSetWithSize) WriteTo(w io.Writer) (int64, error) {
+func (s *sigSetWithSize) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -102,7 +102,7 @@ func (s *sigSetWithSize) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
