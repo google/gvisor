@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -73,7 +74,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}),
 		"firmware": fs.newDir(creds, defaultSysDirMode, nil),
 		"fs":       fs.newDir(creds, defaultSysDirMode, nil),
-		"kernel":   fs.newDir(creds, defaultSysDirMode, nil),
+		"kernel":   kernelDir(ctx, fs, creds),
 		"module":   fs.newDir(creds, defaultSysDirMode, nil),
 		"power":    fs.newDir(creds, defaultSysDirMode, nil),
 	})
@@ -90,6 +91,21 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) *kernf
 	}
 	for i := uint(0); i < maxCPUCores; i++ {
 		children[fmt.Sprintf("cpu%d", i)] = fs.newDir(creds, linux.FileMode(0555), nil)
+	}
+	return fs.newDir(creds, defaultSysDirMode, children)
+}
+
+func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) *kernfs.Dentry {
+	// If kcov is available, set up /sys/kernel/debug/kcov. Technically, debugfs
+	// should be mounted at debug/, but for our purposes, it is sufficient to
+	// keep it in sys.
+	var children map[string]*kernfs.Dentry
+	if coverage.KcovAvailable() {
+		children = map[string]*kernfs.Dentry{
+			"debug": fs.newDir(creds, linux.FileMode(0700), map[string]*kernfs.Dentry{
+				"kcov": fs.newKcovFile(ctx, creds),
+			}),
+		}
 	}
 	return fs.newDir(creds, defaultSysDirMode, children)
 }

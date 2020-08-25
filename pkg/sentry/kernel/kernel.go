@@ -248,7 +248,7 @@ type Kernel struct {
 	// SpecialOpts contains special kernel options.
 	SpecialOpts
 
-	// VFS keeps the filesystem state used across the kernel.
+	// vfs keeps the filesystem state used across the kernel.
 	vfs vfs.VirtualFilesystem
 
 	// hostMount is the Mount used for file descriptors that were imported
