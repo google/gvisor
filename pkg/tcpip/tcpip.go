@@ -978,6 +978,15 @@ const (
 	TCPTimeWaitReuseLoopbackOnly
 )
 
+// LingerOption is used by SetSockOpt/GetSockOpt to set/get the
+// duration for which a socket lingers before returning from Close.
+//
+// +stateify savable
+type LingerOption struct {
+	Enabled bool
+	Timeout time.Duration
+}
+
 // IPPacketInfo is the message structure for IP_PKTINFO.
 //
 // +stateify savable
