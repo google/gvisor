@@ -73,7 +73,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 			if bm.tmpfs {
 				if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
 					"cp", "-r", workdir, "/tmp/."); err != nil {
-					b.Fatal("failed to copy directory: %v %s", err, out)
+					b.Fatalf("failed to copy directory: %v (%s)", err, out)
 				}
 				workdir = "/tmp" + workdir
 			}

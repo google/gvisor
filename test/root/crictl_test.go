@@ -418,7 +418,7 @@ func setup(t *testing.T, version string) (*criutil.Crictl, func(), error) {
 		// care about the docker runtime name.
 		config = v2Template
 	default:
-		t.Fatalf("unknown version: %d", version)
+		t.Fatalf("unknown version: %s", version)
 	}
 	t.Logf("Using config: %s", config)
 

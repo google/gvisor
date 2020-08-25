@@ -21,4 +21,5 @@ go_test(
     size = "small",
     srcs = ["github_test.go"],
     library = ":github",
+    nogo = False,
 )
