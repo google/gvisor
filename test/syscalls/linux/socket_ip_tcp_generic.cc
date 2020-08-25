@@ -819,18 +819,37 @@ TEST_P(TCPSocketPairTest, TCPLingerTimeoutDefault) {
   EXPECT_EQ(get, kDefaultTCPLingerTimeout);
 }
 
-TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutZeroOrLess) {
+TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutLessThanZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kNegative = -1234;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
+                         &kNegative, sizeof(kNegative)),
+              SyscallSucceedsWithValue(0));
+  int get = INT_MAX;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, -1);
+}
+
+TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutZero) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   constexpr int kZero = 0;
   EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &kZero,
                          sizeof(kZero)),
               SyscallSucceedsWithValue(0));
-
-  constexpr int kNegative = -1234;
-  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
-                         &kNegative, sizeof(kNegative)),
-              SyscallSucceedsWithValue(0));
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_THAT(get,
+              AnyOf(Eq(kMaxTCPLingerTimeout), Eq(kOldMaxTCPLingerTimeout)));
 }
 
 TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveMax) {
