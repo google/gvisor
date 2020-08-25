@@ -148,6 +148,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 	if task == nil {
 		return 0, syserror.ENOTTY
 	}
+	cc := task.AsCopyContextWithOpts(usermem.IOOpts{AddressSpaceActive: true})
 
 	// Ignore arg[0]. This is the real FD:
 	fd := t.inode.hostFD
@@ -158,7 +159,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		if err != nil {
 			return 0, err
 		}
-		_, err = termios.CopyOut(task, args[2].Pointer())
+		_, err = termios.CopyOut(cc, args[2].Pointer())
 		return 0, err
 
 	case linux.TCSETS, linux.TCSETSW, linux.TCSETSF:
@@ -170,7 +171,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		}
 
 		var termios linux.Termios
-		if _, err := termios.CopyIn(task, args[2].Pointer()); err != nil {
+		if _, err := termios.CopyIn(cc, args[2].Pointer()); err != nil {
 			return 0, err
 		}
 		err := ioctlSetTermios(fd, ioctl, &termios)
@@ -195,7 +196,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 
 		// Map the ProcessGroup into a ProcessGroupID in the task's PID namespace.
 		pgID := primitive.Int32(pidns.IDOfProcessGroup(t.fgProcessGroup))
-		_, err := pgID.CopyOut(task, args[2].Pointer())
+		_, err := pgID.CopyOut(cc, args[2].Pointer())
 		return 0, err
 
 	case linux.TIOCSPGRP:
@@ -222,7 +223,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		}
 
 		var pgIDP primitive.Int32
-		if _, err := pgIDP.CopyIn(task, args[2].Pointer()); err != nil {
+		if _, err := pgIDP.CopyIn(cc, args[2].Pointer()); err != nil {
 			return 0, err
 		}
 		pgID := kernel.ProcessGroupID(pgIDP)
@@ -254,7 +255,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		if err != nil {
 			return 0, err
 		}
-		_, err = winsize.CopyOut(task, args[2].Pointer())
+		_, err = winsize.CopyOut(cc, args[2].Pointer())
 		return 0, err
 
 	case linux.TIOCSWINSZ:
@@ -265,7 +266,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		// set the winsize.
 
 		var winsize linux.Winsize
-		if _, err := winsize.CopyIn(task, args[2].Pointer()); err != nil {
+		if _, err := winsize.CopyIn(cc, args[2].Pointer()); err != nil {
 			return 0, err
 		}
 		err := ioctlSetWinsize(fd, &winsize)
