@@ -56,10 +56,16 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 	if !fd.vfsfd.IsWritable() {
 		return nil
 	}
-	// Skip flushing if writes may be buffered by the client, since (as with
-	// the VFS1 client) we don't flush buffered writes on close anyway.
+	// Skip flushing if there are client-buffered writes, since (as with the
+	// VFS1 client) we don't flush buffered writes on close anyway.
 	d := fd.dentry()
-	if d.fs.opts.interop == InteropModeExclusive {
+	if d.fs.opts.interop != InteropModeExclusive {
+		return nil
+	}
+	d.dataMu.RLock()
+	haveDirtyPages := !d.dirty.IsEmpty()
+	d.dataMu.RUnlock()
+	if haveDirtyPages {
 		return nil
 	}
 	d.handleMu.RLock()
