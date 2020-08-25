@@ -30,13 +30,12 @@ import (
 //
 // +stateify savable
 type segment struct {
-	segEntry     segmentEntry
-	rackSegEntry rackSegmentEntry
-	refCnt       int32
-	id           stack.TransportEndpointID `state:"manual"`
-	route        stack.Route               `state:"manual"`
-	data         buffer.VectorisedView     `state:".(buffer.VectorisedView)"`
-	hdr          header.TCP
+	segmentEntry
+	refCnt int32
+	id     stack.TransportEndpointID `state:"manual"`
+	route  stack.Route               `state:"manual"`
+	data   buffer.VectorisedView     `state:".(buffer.VectorisedView)"`
+	hdr    header.TCP
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
 	views [8]buffer.View `state:"nosave"`
@@ -61,16 +60,6 @@ type segment struct {
 	xmitTime  time.Time `state:".(unixTime)"`
 	xmitCount uint32
 }
-
-// segmentMapper is the ElementMapper for the writeList.
-type segmentMapper struct{}
-
-func (segmentMapper) linkerFor(seg *segment) *segmentEntry { return &seg.segEntry }
-
-// rackSegmentMapper is the ElementMapper for the rcList.
-type rackSegmentMapper struct{}
-
-func (rackSegmentMapper) linkerFor(seg *segment) *rackSegmentEntry { return &seg.rackSegEntry }
 
 func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
 	s := &segment{
