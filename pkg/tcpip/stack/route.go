@@ -141,6 +141,16 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		}
 		nextAddr = r.RemoteAddress
 	}
+
+	if r.ref.nic.neigh != nil {
+		entry, ch, err := r.ref.nic.neigh.entry(nextAddr, r.LocalAddress, r.ref.linkRes, waker)
+		if err != nil {
+			return ch, err
+		}
+		r.RemoteLinkAddress = entry.LinkAddr
+		return nil, nil
+	}
+
 	linkAddr, ch, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
 	if err != nil {
 		return ch, err
@@ -155,6 +165,12 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 	if nextAddr == "" {
 		nextAddr = r.RemoteAddress
 	}
+
+	if r.ref.nic.neigh != nil {
+		r.ref.nic.neigh.removeWaker(nextAddr, waker)
+		return
+	}
+
 	r.ref.linkCache.RemoveWaker(r.ref.nic.ID(), nextAddr, waker)
 }
 
@@ -163,6 +179,9 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 //
 // The NIC r uses must not be locked.
 func (r *Route) IsResolutionRequired() bool {
+	if r.ref.nic.neigh != nil {
+		return r.ref.isValidForOutgoing() && r.ref.linkRes != nil && r.RemoteLinkAddress == ""
+	}
 	return r.ref.isValidForOutgoing() && r.ref.linkCache != nil && r.RemoteLinkAddress == ""
 }
 
