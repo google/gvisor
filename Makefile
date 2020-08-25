@@ -114,7 +114,7 @@ runsc: ## Builds the runsc binary.
 .PHONY: runsc
 
 debian: ## Builds the debian packages.
-	@$(call submake,build OPTIONS="-c opt" TARGETS="//runsc:runsc-debian")
+	@$(call submake,build OPTIONS="-c opt" TARGETS="//debian:debian")
 .PHONY: debian
 
 smoke-tests: ## Runs a simple smoke test after build runsc.
@@ -301,8 +301,10 @@ $(RELEASE_KEY):
 release: $(RELEASE_KEY) ## Builds a release.
 	@mkdir -p $(RELEASE_ROOT)
 	@T=$$(mktemp -d /tmp/release.XXXXXX); \
-	  $(call submake,copy TARGETS="runsc" DESTINATION=$$T) && \
-	  $(call submake,copy TARGETS="runsc:runsc-debian" DESTINATION=$$T) && \
+	  $(call submake,copy TARGETS="//runsc:runsc" DESTINATION=$$T) && \
+	  $(call submake,copy TARGETS="//shim/v1:gvisor-containerd-shim" DESTINATION=$$T) && \
+	  $(call submake,copy TARGETS="//shim/v2:containerd-shim-runsc-v1" DESTINATION=$$T) && \
+	  $(call submake,copy TARGETS="//debian:debian" DESTINATION=$$T) && \
 	  NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$T/*; \
 	rc=$$?; rm -rf $$T; exit $$rc
 .PHONY: release
