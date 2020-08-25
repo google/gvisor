@@ -84,12 +84,12 @@ func BenchmarkRedis(b *testing.B) {
 
 			ip, err := serverMachine.IPAddress()
 			if err != nil {
-				b.Fatal("failed to get IP from server: %v", err)
+				b.Fatalf("failed to get IP from server: %v", err)
 			}
 
 			serverPort, err := server.FindPort(ctx, port)
 			if err != nil {
-				b.Fatal("failed to get IP from server: %v", err)
+				b.Fatalf("failed to get IP from server: %v", err)
 			}
 
 			if err = harness.WaitUntilServing(ctx, clientMachine, ip, serverPort); err != nil {
