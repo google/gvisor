@@ -201,6 +201,25 @@ func (fs *filesystem) Release(ctx context.Context) {
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 }
 
+// immutable
+var globalStatfs = linux.Statfs{
+	Type:         linux.TMPFS_MAGIC,
+	BlockSize:    usermem.PageSize,
+	FragmentSize: usermem.PageSize,
+	NameLength:   linux.NAME_MAX,
+
+	// tmpfs currently does not support configurable size limits. In Linux,
+	// such a tmpfs mount will return f_blocks == f_bfree == f_bavail == 0 from
+	// statfs(2). However, many applications treat this as having a size limit
+	// of 0. To work around this, claim to have a very large but non-zero size,
+	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
+	// applications may also handle incorrectly).
+	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
+	Blocks:          math.MaxInt64 / usermem.PageSize,
+	BlocksFree:      math.MaxInt64 / usermem.PageSize,
+	BlocksAvailable: math.MaxInt64 / usermem.PageSize,
+}
+
 // dentry implements vfs.DentryImpl.
 type dentry struct {
 	vfsd vfs.Dentry
@@ -696,6 +715,11 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
 	}
 	return nil
+}
+
+// StatFS implements vfs.FileDescriptionImpl.StatFS.
+func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
+	return globalStatfs, nil
 }
 
 // Listxattr implements vfs.FileDescriptionImpl.Listxattr.
