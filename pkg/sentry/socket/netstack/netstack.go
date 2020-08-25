@@ -1409,8 +1409,12 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (marshal
 		if err := ep.GetSockOpt(&v); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-
-		lingerTimeout := primitive.Int32(time.Duration(v) / time.Second)
+		var lingerTimeout primitive.Int32
+		if v >= 0 {
+			lingerTimeout = primitive.Int32(time.Duration(v) / time.Second)
+		} else {
+			lingerTimeout = -1
+		}
 		return &lingerTimeout, nil
 
 	case linux.TCP_DEFER_ACCEPT:
@@ -1967,7 +1971,7 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 			return syserr.ErrInvalidArgument
 		}
 
-		v := usermem.ByteOrder.Uint32(optVal)
+		v := int32(usermem.ByteOrder.Uint32(optVal))
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.TCPLingerTimeoutOption(time.Second * time.Duration(v))))
 
 	case linux.TCP_DEFER_ACCEPT:
