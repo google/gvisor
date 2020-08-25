@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Sync implements vfs.FilesystemImpl.Sync.
@@ -706,16 +705,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 	if _, err := resolveLocked(ctx, rp); err != nil {
 		return linux.Statfs{}, err
 	}
-	statfs := linux.Statfs{
-		Type:         linux.TMPFS_MAGIC,
-		BlockSize:    usermem.PageSize,
-		FragmentSize: usermem.PageSize,
-		NameLength:   linux.NAME_MAX,
-		// TODO(b/29637826): Allow configuring a tmpfs size and enforce it.
-		Blocks:     0,
-		BlocksFree: 0,
-	}
-	return statfs, nil
+	return globalStatfs, nil
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
