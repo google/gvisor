@@ -88,7 +88,12 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		r.Stack().Stats().UDP.MalformedPacketsReceived.Increment()
 		return true
 	}
-	// TODO(b/129426613): only send an ICMP message if UDP checksum is valid.
+
+	if !verifyChecksum(r, hdr, pkt) {
+		// Checksum Error.
+		r.Stack().Stats().UDP.ChecksumErrors.Increment()
+		return true
+	}
 
 	// Only send ICMP error if the address is not a multicast/broadcast
 	// v4/v6 address or the source is not the unspecified address.
