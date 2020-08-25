@@ -52,6 +52,20 @@ func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	mnt.EndWrite()
 }
 
+// Preconditions: d.metadataMu is locked. d.cachedMetadataAuthoritative() == true.
+func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
+	if mnt.Flags.NoATime || mnt.ReadOnly() {
+		return
+	}
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return
+	}
+	now := d.fs.clock.Now().Nanoseconds()
+	atomic.StoreInt64(&d.atime, now)
+	atomic.StoreUint32(&d.atimeDirty, 1)
+	mnt.EndWrite()
+}
+
 // Preconditions:
 // * d.cachedMetadataAuthoritative() == true.
 // * The caller has successfully called vfs.Mount.CheckBeginWrite().
