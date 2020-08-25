@@ -136,12 +136,12 @@ func (s *SignalAct) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *SignalAct) WriteTo(w io.Writer) (int64, error) {
+func (s *SignalAct) WriteTo(writer io.Writer) (int64, error) {
     if !s.Mask.Packed() {
         // Type SignalAct doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -152,7 +152,7 @@ func (s *SignalAct) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
@@ -245,7 +245,7 @@ func (s *SignalStack) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *SignalStack) WriteTo(w io.Writer) (int64, error) {
+func (s *SignalStack) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -253,7 +253,7 @@ func (s *SignalStack) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
@@ -355,7 +355,7 @@ func (s *SignalInfo) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *SignalInfo) WriteTo(w io.Writer) (int64, error) {
+func (s *SignalInfo) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -363,7 +363,7 @@ func (s *SignalInfo) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)

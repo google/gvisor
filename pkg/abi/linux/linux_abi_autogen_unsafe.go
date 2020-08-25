@@ -167,7 +167,7 @@ func (s *Statx) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Statx) UnmarshalUnsafe(src []byte) {
-    if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
+    if s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         // Type Statx doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -178,7 +178,7 @@ func (s *Statx) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (s *Statx) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() {
+    if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         s.MarshalBytes(buf) // escapes: fallback.
@@ -208,7 +208,7 @@ func (s *Statx) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (s *Statx) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() {
+    if !s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         length, err := task.CopyInBytes(addr, buf) // escapes: okay.
@@ -233,12 +233,12 @@ func (s *Statx) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *Statx) WriteTo(w io.Writer) (int64, error) {
+func (s *Statx) WriteTo(writer io.Writer) (int64, error) {
     if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -249,7 +249,7 @@ func (s *Statx) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
@@ -384,7 +384,7 @@ func (s *Statfs) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *Statfs) WriteTo(w io.Writer) (int64, error) {
+func (s *Statfs) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -392,7 +392,7 @@ func (s *Statfs) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
@@ -708,12 +708,12 @@ func (f *FUSEHeaderIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error)
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEHeaderIn) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEHeaderIn) WriteTo(writer io.Writer) (int64, error) {
     if !f.Opcode.Packed() && f.Unique.Packed() {
         // Type FUSEHeaderIn doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, f.SizeBytes())
         f.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -724,7 +724,7 @@ func (f *FUSEHeaderIn) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -841,12 +841,12 @@ func (f *FUSEHeaderOut) CopyIn(task marshal.Task, addr usermem.Addr) (int, error
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEHeaderOut) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEHeaderOut) WriteTo(writer io.Writer) (int64, error) {
     if !f.Unique.Packed() {
         // Type FUSEHeaderOut doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, f.SizeBytes())
         f.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -857,7 +857,7 @@ func (f *FUSEHeaderOut) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -962,7 +962,7 @@ func (f *FUSEWriteIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEWriteIn) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEWriteIn) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -970,7 +970,7 @@ func (f *FUSEWriteIn) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -1063,7 +1063,7 @@ func (f *FUSEInitIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEInitIn) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEInitIn) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1071,7 +1071,7 @@ func (f *FUSEInitIn) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -1193,7 +1193,7 @@ func (f *FUSEInitOut) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEInitOut) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEInitOut) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1201,7 +1201,7 @@ func (f *FUSEInitOut) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -1290,7 +1290,7 @@ func (f *FUSEGetAttrIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEGetAttrIn) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEGetAttrIn) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1298,7 +1298,7 @@ func (f *FUSEGetAttrIn) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -1439,7 +1439,7 @@ func (f *FUSEAttr) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEAttr) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEAttr) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1447,7 +1447,7 @@ func (f *FUSEAttr) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -1568,12 +1568,12 @@ func (f *FUSEGetAttrOut) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEGetAttrOut) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEGetAttrOut) WriteTo(writer io.Writer) (int64, error) {
     if !f.Attr.Packed() {
         // Type FUSEGetAttrOut doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, f.SizeBytes())
         f.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -1584,7 +1584,7 @@ func (f *FUSEGetAttrOut) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f)
@@ -1673,7 +1673,7 @@ func (r *RobustListHead) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (r *RobustListHead) WriteTo(w io.Writer) (int64, error) {
+func (r *RobustListHead) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1681,7 +1681,7 @@ func (r *RobustListHead) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = r.SizeBytes()
     hdr.Cap = r.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
     runtime.KeepAlive(r)
@@ -1865,7 +1865,7 @@ func (i *IFReq) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IFReq) WriteTo(w io.Writer) (int64, error) {
+func (i *IFReq) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1873,7 +1873,7 @@ func (i *IFReq) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -1963,7 +1963,7 @@ func (i *IFConf) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IFConf) WriteTo(w io.Writer) (int64, error) {
+func (i *IFConf) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1971,7 +1971,7 @@ func (i *IFConf) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -2035,7 +2035,7 @@ func (i *IPTEntry) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTEntry) UnmarshalUnsafe(src []byte) {
-    if i.IP.Packed() && i.Counters.Packed() {
+    if i.Counters.Packed() && i.IP.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         // Type IPTEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -2101,12 +2101,12 @@ func (i *IPTEntry) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IPTEntry) WriteTo(w io.Writer) (int64, error) {
+func (i *IPTEntry) WriteTo(writer io.Writer) (int64, error) {
     if !i.IP.Packed() && i.Counters.Packed() {
         // Type IPTEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -2117,7 +2117,7 @@ func (i *IPTEntry) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -2213,7 +2213,7 @@ func (i *IPTIP) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IPTIP) MarshalUnsafe(dst []byte) {
-    if i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
+    if i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(i))
     } else {
         // Type IPTIP doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -2234,7 +2234,7 @@ func (i *IPTIP) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IPTIP) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() {
+    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -2289,12 +2289,12 @@ func (i *IPTIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IPTIP) WriteTo(w io.Writer) (int64, error) {
+func (i *IPTIP) WriteTo(writer io.Writer) (int64, error) {
     if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -2305,7 +2305,7 @@ func (i *IPTIP) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -2390,7 +2390,7 @@ func (x *XTCounters) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (x *XTCounters) WriteTo(w io.Writer) (int64, error) {
+func (x *XTCounters) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -2398,7 +2398,7 @@ func (x *XTCounters) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = x.SizeBytes()
     hdr.Cap = x.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that x
     // must live until the use above.
     runtime.KeepAlive(x)
@@ -2537,12 +2537,12 @@ func (i *IPTGetinfo) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IPTGetinfo) WriteTo(w io.Writer) (int64, error) {
+func (i *IPTGetinfo) WriteTo(writer io.Writer) (int64, error) {
     if !i.Name.Packed() {
         // Type IPTGetinfo doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -2553,7 +2553,7 @@ func (i *IPTGetinfo) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -2671,12 +2671,12 @@ func (i *IPTGetEntries) CopyIn(task marshal.Task, addr usermem.Addr) (int, error
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IPTGetEntries) WriteTo(w io.Writer) (int64, error) {
+func (i *IPTGetEntries) WriteTo(writer io.Writer) (int64, error) {
     if !i.Name.Packed() {
         // Type IPTGetEntries doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -2687,7 +2687,7 @@ func (i *IPTGetEntries) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -2929,12 +2929,12 @@ func (i *IP6TReplace) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IP6TReplace) WriteTo(w io.Writer) (int64, error) {
+func (i *IP6TReplace) WriteTo(writer io.Writer) (int64, error) {
     if !i.Name.Packed() {
         // Type IP6TReplace doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -2945,7 +2945,7 @@ func (i *IP6TReplace) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -3004,7 +3004,7 @@ func (i *IP6TEntry) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IP6TEntry) MarshalUnsafe(dst []byte) {
-    if i.Counters.Packed() && i.IPv6.Packed() {
+    if i.IPv6.Packed() && i.Counters.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(i))
     } else {
         // Type IP6TEntry doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -3014,7 +3014,7 @@ func (i *IP6TEntry) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IP6TEntry) UnmarshalUnsafe(src []byte) {
-    if i.Counters.Packed() && i.IPv6.Packed() {
+    if i.IPv6.Packed() && i.Counters.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         // Type IP6TEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -3025,7 +3025,7 @@ func (i *IP6TEntry) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IP6TEntry) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !i.IPv6.Packed() && i.Counters.Packed() {
+    if !i.Counters.Packed() && i.IPv6.Packed() {
         // Type IP6TEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -3080,12 +3080,12 @@ func (i *IP6TEntry) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IP6TEntry) WriteTo(w io.Writer) (int64, error) {
+func (i *IP6TEntry) WriteTo(writer io.Writer) (int64, error) {
     if !i.IPv6.Packed() && i.Counters.Packed() {
         // Type IP6TEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -3096,7 +3096,7 @@ func (i *IP6TEntry) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -3201,7 +3201,7 @@ func (i *IP6TIP) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IP6TIP) MarshalUnsafe(dst []byte) {
-    if i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
+    if i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(i))
     } else {
         // Type IP6TIP doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -3211,7 +3211,7 @@ func (i *IP6TIP) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IP6TIP) UnmarshalUnsafe(src []byte) {
-    if i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
+    if i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         // Type IP6TIP doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -3222,7 +3222,7 @@ func (i *IP6TIP) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IP6TIP) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() {
+    if !i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
         // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -3277,12 +3277,12 @@ func (i *IP6TIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IP6TIP) WriteTo(w io.Writer) (int64, error) {
+func (i *IP6TIP) WriteTo(writer io.Writer) (int64, error) {
     if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -3293,7 +3293,7 @@ func (i *IP6TIP) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i)
@@ -3390,7 +3390,7 @@ func (r *RSeqCriticalSection) CopyIn(task marshal.Task, addr usermem.Addr) (int,
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (r *RSeqCriticalSection) WriteTo(w io.Writer) (int64, error) {
+func (r *RSeqCriticalSection) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -3398,7 +3398,7 @@ func (r *RSeqCriticalSection) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = r.SizeBytes()
     hdr.Cap = r.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
     runtime.KeepAlive(r)
@@ -3704,12 +3704,12 @@ func (s *SockAddrInet) CopyIn(task marshal.Task, addr usermem.Addr) (int, error)
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *SockAddrInet) WriteTo(w io.Writer) (int64, error) {
+func (s *SockAddrInet) WriteTo(writer io.Writer) (int64, error) {
     if !s.Addr.Packed() {
         // Type SockAddrInet doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
-        length, err := w.Write(buf)
+        length, err := writer.Write(buf)
         return int64(length), err
     }
 
@@ -3720,7 +3720,7 @@ func (s *SockAddrInet) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
@@ -3900,7 +3900,7 @@ func (l *Linger) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (l *Linger) WriteTo(w io.Writer) (int64, error) {
+func (l *Linger) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -3908,7 +3908,7 @@ func (l *Linger) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = l.SizeBytes()
     hdr.Cap = l.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that l
     // must live until the use above.
     runtime.KeepAlive(l)
@@ -4169,7 +4169,7 @@ func (t *TCPInfo) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (t *TCPInfo) WriteTo(w io.Writer) (int64, error) {
+func (t *TCPInfo) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4177,7 +4177,7 @@ func (t *TCPInfo) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t)
@@ -4266,7 +4266,7 @@ func (c *ControlMessageCredentials) CopyIn(task marshal.Task, addr usermem.Addr)
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (c *ControlMessageCredentials) WriteTo(w io.Writer) (int64, error) {
+func (c *ControlMessageCredentials) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4274,7 +4274,7 @@ func (c *ControlMessageCredentials) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = c.SizeBytes()
     hdr.Cap = c.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
     runtime.KeepAlive(c)
@@ -4359,7 +4359,7 @@ func (t *Timespec) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (t *Timespec) WriteTo(w io.Writer) (int64, error) {
+func (t *Timespec) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4367,7 +4367,7 @@ func (t *Timespec) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t)
@@ -4452,7 +4452,7 @@ func (t *Timeval) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (t *Timeval) WriteTo(w io.Writer) (int64, error) {
+func (t *Timeval) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4460,7 +4460,7 @@ func (t *Timeval) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t)
@@ -4549,7 +4549,7 @@ func (s *StatxTimestamp) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *StatxTimestamp) WriteTo(w io.Writer) (int64, error) {
+func (s *StatxTimestamp) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4557,7 +4557,7 @@ func (s *StatxTimestamp) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
@@ -4642,7 +4642,7 @@ func (u *Utime) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (u *Utime) WriteTo(w io.Writer) (int64, error) {
+func (u *Utime) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4650,7 +4650,7 @@ func (u *Utime) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = u.SizeBytes()
     hdr.Cap = u.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
     runtime.KeepAlive(u)
