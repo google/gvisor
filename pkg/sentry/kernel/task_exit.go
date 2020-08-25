@@ -239,6 +239,8 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.traceExitEvent()
 	lastExiter := t.exitThreadGroup()
 
+	t.ResetKcov()
+
 	// If the task has a cleartid, and the thread group wasn't killed by a
 	// signal, handle that before releasing the MM.
 	if t.cleartid != 0 {
