@@ -448,5 +448,35 @@ TEST_P(UDPSocketPairTest, TClassRecvMismatch) {
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
+// Test the SO_LINGER option can be set/get on udp socket.
+TEST_P(UDPSocketPairTest, SoLingerFail) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int level = SOL_SOCKET;
+  int type = SO_LINGER;
+
+  struct linger sl;
+  sl.l_onoff = 1;
+  sl.l_linger = 5;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), level, type, &sl, sizeof(sl)),
+              SyscallSucceedsWithValue(0));
+
+  struct linger got_linger = {};
+  socklen_t length = sizeof(sl);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), level, type, &got_linger, &length),
+      SyscallSucceedsWithValue(0));
+
+  ASSERT_EQ(length, sizeof(got_linger));
+  // Linux returns the values which are set in the SetSockOpt for SO_LINGER.
+  // In gVisor, we do not store the linger values for UDP as SO_LINGER for UDP
+  // is a no-op.
+  if (IsRunningOnGvisor()) {
+    struct linger want_linger = {};
+    EXPECT_EQ(0, memcmp(&want_linger, &got_linger, length));
+  } else {
+    EXPECT_EQ(0, memcmp(&sl, &got_linger, length));
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor
