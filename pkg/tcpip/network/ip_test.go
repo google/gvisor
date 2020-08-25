@@ -250,7 +250,7 @@ func buildDummyStack(t *testing.T) *stack.Stack {
 func TestIPv4Send(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep := proto.NewEndpoint(nicID, nil, nil, &o, buildDummyStack(t))
+	ep := proto.NewEndpoint(nicID, nil, nil, nil, &o, buildDummyStack(t))
 	defer ep.Close()
 
 	// Allocate and initialize the payload view.
@@ -287,7 +287,7 @@ func TestIPv4Send(t *testing.T) {
 func TestIPv4Receive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+	ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, buildDummyStack(t))
 	defer ep.Close()
 
 	totalLen := header.IPv4MinimumSize + 30
@@ -357,7 +357,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv4.NewProtocol()
-			ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+			ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, buildDummyStack(t))
 			defer ep.Close()
 
 			const dataOffset = header.IPv4MinimumSize*2 + header.ICMPv4MinimumSize
@@ -418,7 +418,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 func TestIPv4FragmentationReceive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+	ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, buildDummyStack(t))
 	defer ep.Close()
 
 	totalLen := header.IPv4MinimumSize + 24
@@ -495,7 +495,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 func TestIPv6Send(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep := proto.NewEndpoint(nicID, nil, &o, channel.New(0, 1280, ""), buildDummyStack(t))
+	ep := proto.NewEndpoint(nicID, nil, nil, &o, channel.New(0, 1280, ""), buildDummyStack(t))
 	defer ep.Close()
 
 	// Allocate and initialize the payload view.
@@ -532,7 +532,7 @@ func TestIPv6Send(t *testing.T) {
 func TestIPv6Receive(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+	ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, buildDummyStack(t))
 	defer ep.Close()
 
 	totalLen := header.IPv6MinimumSize + 30
@@ -611,7 +611,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv6.NewProtocol()
-			ep := proto.NewEndpoint(nicID, nil, &o, nil, buildDummyStack(t))
+			ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, buildDummyStack(t))
 			defer ep.Close()
 
 			dataOffset := header.IPv6MinimumSize*2 + header.ICMPv6MinimumSize

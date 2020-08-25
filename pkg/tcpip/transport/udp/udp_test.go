@@ -1469,7 +1469,7 @@ func TestTTL(t *testing.T) {
 				} else {
 					p = ipv6.NewProtocol()
 				}
-				ep := p.NewEndpoint(0, nil, nil, nil, stack.New(stack.Options{
+				ep := p.NewEndpoint(0, nil, nil, nil, nil, stack.New(stack.Options{
 					NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 					TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 				}))
@@ -1502,7 +1502,7 @@ func TestSetTTL(t *testing.T) {
 					} else {
 						p = ipv6.NewProtocol()
 					}
-					ep := p.NewEndpoint(0, nil, nil, nil, stack.New(stack.Options{
+					ep := p.NewEndpoint(0, nil, nil, nil, nil, stack.New(stack.Options{
 						NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 						TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 					}))
