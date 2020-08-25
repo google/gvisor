@@ -10,6 +10,6 @@ pkg_tar(
     mode = "0644",
     package_dir = "/etc/containerd",
     visibility = [
-        "//runsc:__pkg__",
+        "//visibility:public",
     ],
 )
