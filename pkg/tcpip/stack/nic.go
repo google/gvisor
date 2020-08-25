@@ -21,6 +21,7 @@ import (
 	"sort"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -135,6 +136,16 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	}
 	nic.mu.ndp.initializeTempAddrState()
 
+	// Check for Neighbor Unreachability Detection support.
+	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 && stack.useNeighborCache {
+		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
+		nic.neigh = &neighborCache{
+			nic:   nic,
+			state: NewNUDState(stack.nudConfigs, rng),
+			cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
+		}
+	}
+
 	// Register supported packet endpoint protocols.
 	for _, netProto := range header.Ethertypes {
 		nic.mu.packetEPs[netProto] = []PacketEndpoint{}
@@ -142,17 +153,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = nil
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, stack, nic, ep, stack)
-	}
-
-	// Check for Neighbor Unreachability Detection support.
-	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 {
-		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
-		nic.neigh = &neighborCache{
-			nic:   nic,
-			state: NewNUDState(stack.nudConfigs, rng),
-			cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
-		}
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, stack, nic.neigh, nic, ep, stack)
 	}
 
 	nic.linkEP.Attach(nic)
@@ -431,7 +432,7 @@ func (n *NIC) setSpoofing(enable bool) {
 // If an IPv6 primary endpoint is requested, Source Address Selection (as
 // defined by RFC 6724 section 5) will be performed.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) *referencedNetworkEndpoint {
-	if protocol == header.IPv6ProtocolNumber && remoteAddr != "" {
+	if protocol == header.IPv6ProtocolNumber && len(remoteAddr) != 0 {
 		return n.primaryIPv6Endpoint(remoteAddr)
 	}
 
@@ -818,10 +819,23 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 		}
 	}
 
-	ep, ok := n.networkEndpoints[protocolAddress.Protocol]
+	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol
 	}
+
+	var nud NUDHandler
+	if n.neigh != nil {
+		// An interface value that holds a nil concrete value is itself non-nil.
+		// For this reason, n.neigh cannot be passed directly to NewEndpoint so
+		// NetworkEndpoints don't confuse it for non-nil.
+		//
+		// See https://golang.org/doc/faq#nil_error for more information.
+		nud = n.neigh
+	}
+
+	// Create the new network endpoint.
+	ep := netProto.NewEndpoint(n.id, n.stack, nud, n, n.linkEP, n.stack)
 
 	isIPv6Unicast := protocolAddress.Protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
 
@@ -844,10 +858,11 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 		deprecated: deprecated,
 	}
 
-	// Set up cache if link address resolution exists for this protocol.
+	// Set up resolver if link address resolution exists for this protocol.
 	if n.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
-		if _, ok := n.stack.linkAddrResolvers[protocolAddress.Protocol]; ok {
+		if linkRes, ok := n.stack.linkAddrResolvers[protocolAddress.Protocol]; ok {
 			ref.linkCache = n.stack
+			ref.linkRes = linkRes
 		}
 	}
 
@@ -1080,6 +1095,51 @@ func (n *NIC) RemoveAddress(addr tcpip.Address) *tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.removePermanentAddressLocked(addr)
+}
+
+func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {
+	if n.neigh == nil {
+		return nil, tcpip.ErrNotSupported
+	}
+
+	return n.neigh.entries(), nil
+}
+
+func (n *NIC) removeWaker(addr tcpip.Address, w *sleep.Waker) {
+	if n.neigh == nil {
+		return
+	}
+
+	n.neigh.removeWaker(addr, w)
+}
+
+func (n *NIC) addStaticNeighbor(addr tcpip.Address, linkAddress tcpip.LinkAddress) *tcpip.Error {
+	if n.neigh == nil {
+		return tcpip.ErrNotSupported
+	}
+
+	n.neigh.addStaticEntry(addr, linkAddress)
+	return nil
+}
+
+func (n *NIC) removeNeighbor(addr tcpip.Address) *tcpip.Error {
+	if n.neigh == nil {
+		return tcpip.ErrNotSupported
+	}
+
+	if !n.neigh.removeEntry(addr) {
+		return tcpip.ErrBadAddress
+	}
+	return nil
+}
+
+func (n *NIC) clearNeighbors() *tcpip.Error {
+	if n.neigh == nil {
+		return tcpip.ErrNotSupported
+	}
+
+	n.neigh.clear()
+	return nil
 }
 
 // joinGroup adds a new endpoint for the given multicast address, if none
@@ -1661,6 +1721,10 @@ type referencedNetworkEndpoint struct {
 	// linkCache is set if link address resolution is enabled for this
 	// protocol. Set to nil otherwise.
 	linkCache LinkAddressCache
+
+	// linkRes is set if link address resolution is enabled for this protocol.
+	// Set to nil otherwise.
+	linkRes LinkAddressResolver
 
 	// refs is counting references held for this endpoint. When refs hits zero it
 	// triggers the automatic removal of the endpoint from the NIC.
