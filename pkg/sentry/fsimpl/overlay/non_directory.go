@@ -121,7 +121,6 @@ func (fd *nonDirectoryFD) OnClose(ctx context.Context) error {
 		fd.cachedFlags = statusFlags
 	}
 	wrappedFD := fd.cachedFD
-	defer wrappedFD.IncRef()
 	fd.mu.Unlock()
 	return wrappedFD.OnClose(ctx)
 }
