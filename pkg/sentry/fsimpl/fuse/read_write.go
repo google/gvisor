@@ -16,6 +16,7 @@ package fuse
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"sync/atomic"
 
@@ -111,9 +112,9 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 
 	defer fs.ReadCallback(ctx, fd, off, size, sizeRead, attributeVersion)
 
-	// No bytes returned; perhaps user tries to read beyond EOF.
+	// No bytes returned: offset >= EOF
 	if len(outs) == 0 {
-		return []byte{}, 0, nil
+		return []byte{}, 0, io.EOF
 	}
 
 	// Finished with one reply.
