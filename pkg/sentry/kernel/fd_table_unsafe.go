@@ -31,6 +31,8 @@ type descriptorTable struct {
 }
 
 // init initializes the table.
+//
+// TODO(gvisor.dev/1486): Enable leak check for FDTable.
 func (f *FDTable) init() {
 	var slice []unsafe.Pointer // Empty slice.
 	atomic.StorePointer(&f.slice, unsafe.Pointer(&slice))

@@ -1,12 +1,25 @@
 load("//tools:defs.bzl", "go_library")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
+
+go_template_instance(
+    name = "shm_refs",
+    out = "shm_refs.go",
+    package = "shm",
+    prefix = "Shm",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "Shm",
+    },
+)
 
 go_library(
     name = "shm",
     srcs = [
         "device.go",
         "shm.go",
+        "shm_refs.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
