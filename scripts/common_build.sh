@@ -109,8 +109,9 @@ function collect_logs() {
 }
 
 function find_branch_name() {
-  git branch --show-current \
+  (git branch --show-current \
     || git rev-parse HEAD \
     || bazel info workspace \
-    | xargs basename
+    | xargs basename) \
+    | tr '/' '-'
 }
