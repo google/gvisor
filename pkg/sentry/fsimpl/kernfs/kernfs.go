@@ -57,7 +57,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -161,9 +160,9 @@ const (
 //
 // Must be initialized by Init prior to first use.
 type Dentry struct {
-	vfsd vfs.Dentry
+	DentryRefs
 
-	refs.AtomicRefCount
+	vfsd vfs.Dentry
 
 	// flags caches useful information about the dentry from the inode. See the
 	// dflags* consts above. Must be accessed by atomic ops.
@@ -194,6 +193,7 @@ func (d *Dentry) Init(inode Inode) {
 	if ftype == linux.ModeSymlink {
 		d.flags |= dflagsIsSymlink
 	}
+	d.EnableLeakCheck()
 }
 
 // VFSDentry returns the generic vfs dentry for this kernfs dentry.
@@ -213,16 +213,14 @@ func (d *Dentry) isSymlink() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *Dentry) DecRef(ctx context.Context) {
-	d.AtomicRefCount.DecRefWithDestructor(ctx, d.destroy)
-}
-
-// Precondition: Dentry must be removed from VFS' dentry cache.
-func (d *Dentry) destroy(ctx context.Context) {
-	d.inode.DecRef(ctx) // IncRef from Init.
-	d.inode = nil
-	if d.parent != nil {
-		d.parent.DecRef(ctx) // IncRef from Dentry.InsertChild.
-	}
+	// Before the destructor is called, Dentry must be removed from VFS' dentry cache.
+	d.DentryRefs.DecRef(func() {
+		d.inode.DecRef(ctx) // IncRef from Init.
+		d.inode = nil
+		if d.parent != nil {
+			d.parent.DecRef(ctx) // IncRef from Dentry.InsertChild.
+		}
+	})
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.

@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -135,6 +134,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 
 		// 2. Creating a new NIC.
 		id := tcpip.NICID(s.UniqueID())
+		// TODO(gvisor.dev/1486): enable leak check for tunEndpoint.
 		endpoint := &tunEndpoint{
 			Endpoint: channel.New(defaultDevOutQueueLen, defaultDevMtu, ""),
 			stack:    s,
@@ -331,9 +331,8 @@ func (d *Device) WriteNotify() {
 // It is ref-counted as multiple opening files can attach to the same NIC.
 // The last owner is responsible for deleting the NIC.
 type tunEndpoint struct {
+	tunEndpointRefs
 	*channel.Endpoint
-
-	refs.AtomicRefCount
 
 	stack *stack.Stack
 	nicID tcpip.NICID
@@ -341,9 +340,9 @@ type tunEndpoint struct {
 	isTap bool
 }
 
-// DecRef decrements refcount of e, removes NIC if refcount goes to 0.
+// DecRef decrements refcount of e, removing NIC if it reaches 0.
 func (e *tunEndpoint) DecRef(ctx context.Context) {
-	e.DecRefWithDestructor(ctx, func(context.Context) {
+	e.tunEndpointRefs.DecRef(func() {
 		e.stack.RemoveNIC(e.nicID)
 	})
 }
