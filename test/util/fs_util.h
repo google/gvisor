@@ -17,6 +17,7 @@
 
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -177,6 +178,11 @@ std::string CleanPath(absl::string_view path);
 
 // Returns the full path to the executable of the given pid or a PosixError.
 PosixErrorOr<std::string> ProcessExePath(int pid);
+
+#ifndef __fuchsia__
+// IsTmpfs returns true if the file at path is backed by tmpfs.
+PosixErrorOr<bool> IsTmpfs(const std::string& path);
+#endif  // __fucshia__
 
 namespace internal {
 // Not part of the public API.
