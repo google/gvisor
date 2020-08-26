@@ -66,7 +66,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -74,7 +73,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
-	"gvisor.dev/gvisor/tools/nogo/data"
+	"gvisor.dev/gvisor/tools/nogo/dump"
 )
 
 const (
@@ -256,15 +255,14 @@ func (ec *EscapeCount) Record(reason EscapeReason) bool {
 // used only to remove false positives for escape analysis. The call will be
 // elided if escape analysis is able to put the object on the heap exclusively.
 func loadObjdump() (map[LinePosition]string, error) {
-	f, err := os.Open(data.Objdump)
+	cmd, out, err := dump.Command()
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
 	// Build the map.
 	m := make(map[LinePosition]string)
-	r := bufio.NewReader(f)
+	r := bufio.NewReader(out)
 	var (
 		lastField string
 		lastPos   LinePosition
@@ -327,6 +325,11 @@ func loadObjdump() (map[LinePosition]string, error) {
 		if err == io.EOF {
 			break
 		}
+	}
+
+	// Wait for the dump to finish.
+	if err := cmd.Wait(); err != nil {
+		return nil, err
 	}
 
 	return m, nil
@@ -411,12 +414,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				if x.Pkg == nil {
 					// Can't resolve the package.
 					return escapes(unknownPackage, "no package", inst, ec)
-				}
-
-				// Atomic functions are instrinics. We can
-				// assume that they don't escape.
-				if x.Pkg.Pkg.Name() == "atomic" {
-					return nil
 				}
 
 				// Is this a local function? If yes, call the

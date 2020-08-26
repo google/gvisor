@@ -147,7 +147,7 @@ def go_rule(rule, implementation, **kwargs):
     Returns:
         The result of invoking the rule.
     """
-    attrs = kwargs.pop("attrs", [])
+    attrs = kwargs.pop("attrs", dict())
     attrs["_go_context_data"] = attr.label(default = "@io_bazel_rules_go//:go_context_data")
     attrs["_stdlib"] = attr.label(default = "@io_bazel_rules_go//:stdlib")
     toolchains = kwargs.get("toolchains", []) + ["@io_bazel_rules_go//go:toolchain"]
@@ -158,12 +158,17 @@ def go_test_library(target):
         return target.attr.embed[0]
     return None
 
-def go_context(ctx):
+def go_context(ctx, std = False):
+    # We don't change anything for the standard library analysis. All Go files
+    # are available in all instances. Note that this includes the standard
+    # library sources, which are analyzed by nogo.
     go_ctx = _go_context(ctx)
     return struct(
         go = go_ctx.go,
         env = go_ctx.env,
-        runfiles = depset([go_ctx.go] + go_ctx.sdk.tools + go_ctx.stdlib.libs),
+        nogo_args = [],
+        stdlib_srcs = go_ctx.sdk.srcs,
+        runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs + go_ctx.sdk.tools + go_ctx.stdlib.libs),
         goos = go_ctx.sdk.goos,
         goarch = go_ctx.sdk.goarch,
         tags = go_ctx.tags,
