@@ -154,12 +154,12 @@ func (s *Statx) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *Statx) Packed() bool {
-    return s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed()
+    return s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Statx) MarshalUnsafe(dst []byte) {
-    if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
+    if s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         // Type Statx doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -169,7 +169,7 @@ func (s *Statx) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Statx) UnmarshalUnsafe(src []byte) {
-    if s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() {
+    if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         // Type Statx doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -197,7 +197,7 @@ func (s *Statx) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -210,7 +210,7 @@ func (s *Statx) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (s *Statx) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() {
+    if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         length, err := task.CopyInBytes(addr, buf) // escapes: okay.
@@ -230,7 +230,7 @@ func (s *Statx) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -254,7 +254,7 @@ func (s *Statx) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -358,7 +358,7 @@ func (s *Statfs) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int,
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -381,7 +381,7 @@ func (s *Statfs) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -397,7 +397,7 @@ func (s *Statfs) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -447,7 +447,7 @@ func (f *FUSEOpcode) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -470,7 +470,7 @@ func (f *FUSEOpcode) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -486,7 +486,7 @@ func (f *FUSEOpcode) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -536,7 +536,7 @@ func (f *FUSEOpID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -559,7 +559,7 @@ func (f *FUSEOpID) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -575,7 +575,7 @@ func (f *FUSEOpID) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -672,7 +672,7 @@ func (f *FUSEHeaderIn) CopyOutN(task marshal.Task, addr usermem.Addr, limit int)
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -705,13 +705,13 @@ func (f *FUSEHeaderIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error)
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (f *FUSEHeaderIn) WriteTo(writer io.Writer) (int64, error) {
-    if !f.Opcode.Packed() && f.Unique.Packed() {
+    if !f.Unique.Packed() && f.Opcode.Packed() {
         // Type FUSEHeaderIn doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, f.SizeBytes())
         f.MarshalBytes(buf)
@@ -729,7 +729,7 @@ func (f *FUSEHeaderIn) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -805,7 +805,7 @@ func (f *FUSEHeaderOut) CopyOutN(task marshal.Task, addr usermem.Addr, limit int
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -838,7 +838,7 @@ func (f *FUSEHeaderOut) CopyIn(task marshal.Task, addr usermem.Addr) (int, error
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -862,7 +862,7 @@ func (f *FUSEHeaderOut) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -936,7 +936,7 @@ func (f *FUSEWriteIn) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -959,7 +959,7 @@ func (f *FUSEWriteIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) 
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -975,7 +975,7 @@ func (f *FUSEWriteIn) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1037,7 +1037,7 @@ func (f *FUSEInitIn) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1060,7 +1060,7 @@ func (f *FUSEInitIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1076,7 +1076,7 @@ func (f *FUSEInitIn) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1167,7 +1167,7 @@ func (f *FUSEInitOut) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1190,7 +1190,7 @@ func (f *FUSEInitOut) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) 
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1206,7 +1206,7 @@ func (f *FUSEInitOut) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1264,7 +1264,7 @@ func (f *FUSEGetAttrIn) CopyOutN(task marshal.Task, addr usermem.Addr, limit int
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1287,7 +1287,7 @@ func (f *FUSEGetAttrIn) CopyIn(task marshal.Task, addr usermem.Addr) (int, error
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1303,7 +1303,7 @@ func (f *FUSEGetAttrIn) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1413,7 +1413,7 @@ func (f *FUSEAttr) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1436,7 +1436,7 @@ func (f *FUSEAttr) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1452,7 +1452,7 @@ func (f *FUSEAttr) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1532,7 +1532,7 @@ func (f *FUSEGetAttrOut) CopyOutN(task marshal.Task, addr usermem.Addr, limit in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1565,7 +1565,7 @@ func (f *FUSEGetAttrOut) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1589,7 +1589,7 @@ func (f *FUSEGetAttrOut) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
-    runtime.KeepAlive(f)
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1647,7 +1647,7 @@ func (r *RobustListHead) CopyOutN(task marshal.Task, addr usermem.Addr, limit in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(r)
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1670,7 +1670,7 @@ func (r *RobustListHead) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(r)
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1686,7 +1686,7 @@ func (r *RobustListHead) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(r)
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1736,7 +1736,7 @@ func (n *NumaPolicy) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that n
     // must live until the use above.
-    runtime.KeepAlive(n)
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1759,7 +1759,7 @@ func (n *NumaPolicy) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that n
     // must live until the use above.
-    runtime.KeepAlive(n)
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1775,7 +1775,7 @@ func (n *NumaPolicy) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that n
     // must live until the use above.
-    runtime.KeepAlive(n)
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1839,7 +1839,7 @@ func (i *IFReq) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1862,7 +1862,7 @@ func (i *IFReq) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1878,7 +1878,7 @@ func (i *IFReq) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1937,7 +1937,7 @@ func (i *IFConf) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int,
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1960,7 +1960,7 @@ func (i *IFConf) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1976,7 +1976,7 @@ func (i *IFConf) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -2065,7 +2065,7 @@ func (i *IPTEntry) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2098,7 +2098,7 @@ func (i *IPTEntry) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2122,7 +2122,7 @@ func (i *IPTEntry) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -2225,7 +2225,7 @@ func (i *IPTIP) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTIP) UnmarshalUnsafe(src []byte) {
-    if i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
+    if i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         // Type IPTIP doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -2236,7 +2236,7 @@ func (i *IPTIP) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IPTIP) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
+    if !i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -2253,7 +2253,7 @@ func (i *IPTIP) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2266,7 +2266,7 @@ func (i *IPTIP) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (i *IPTIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
+    if !i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         length, err := task.CopyInBytes(addr, buf) // escapes: okay.
@@ -2286,13 +2286,13 @@ func (i *IPTIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (i *IPTIP) WriteTo(writer io.Writer) (int64, error) {
-    if !i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
+    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
@@ -2310,7 +2310,7 @@ func (i *IPTIP) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -2364,7 +2364,7 @@ func (x *XTCounters) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that x
     // must live until the use above.
-    runtime.KeepAlive(x)
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2387,7 +2387,7 @@ func (x *XTCounters) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that x
     // must live until the use above.
-    runtime.KeepAlive(x)
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2403,7 +2403,7 @@ func (x *XTCounters) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that x
     // must live until the use above.
-    runtime.KeepAlive(x)
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -2501,7 +2501,7 @@ func (i *IPTGetinfo) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2534,7 +2534,7 @@ func (i *IPTGetinfo) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2558,7 +2558,7 @@ func (i *IPTGetinfo) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -2635,7 +2635,7 @@ func (i *IPTGetEntries) CopyOutN(task marshal.Task, addr usermem.Addr, limit int
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2668,7 +2668,7 @@ func (i *IPTGetEntries) CopyIn(task marshal.Task, addr usermem.Addr) (int, error
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2692,7 +2692,7 @@ func (i *IPTGetEntries) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -2748,7 +2748,7 @@ func (t *TableName) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (i
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2771,7 +2771,7 @@ func (t *TableName) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2787,7 +2787,7 @@ func (t *TableName) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -2893,7 +2893,7 @@ func (i *IP6TReplace) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2926,7 +2926,7 @@ func (i *IP6TReplace) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) 
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -2950,7 +2950,7 @@ func (i *IP6TReplace) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3044,7 +3044,7 @@ func (i *IP6TEntry) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (i
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3077,7 +3077,7 @@ func (i *IP6TEntry) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3101,7 +3101,7 @@ func (i *IP6TEntry) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3198,7 +3198,7 @@ func (i *IP6TIP) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (i *IP6TIP) Packed() bool {
-    return i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed()
+    return i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -3224,7 +3224,7 @@ func (i *IP6TIP) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IP6TIP) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() {
+    if !i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
         // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -3241,7 +3241,7 @@ func (i *IP6TIP) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int,
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3254,7 +3254,7 @@ func (i *IP6TIP) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (i *IP6TIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() {
+    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IP6TIP doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         length, err := task.CopyInBytes(addr, buf) // escapes: okay.
@@ -3274,7 +3274,7 @@ func (i *IP6TIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3298,7 +3298,7 @@ func (i *IP6TIP) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3364,7 +3364,7 @@ func (r *RSeqCriticalSection) CopyOutN(task marshal.Task, addr usermem.Addr, lim
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(r)
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3387,7 +3387,7 @@ func (r *RSeqCriticalSection) CopyIn(task marshal.Task, addr usermem.Addr) (int,
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(r)
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3403,7 +3403,7 @@ func (r *RSeqCriticalSection) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(r)
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3453,7 +3453,7 @@ func (s *SignalSet) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (i
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3476,7 +3476,7 @@ func (s *SignalSet) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3492,7 +3492,7 @@ func (s *SignalSet) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3548,7 +3548,7 @@ func (i *InetAddr) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3571,7 +3571,7 @@ func (i *InetAddr) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3587,7 +3587,7 @@ func (i *InetAddr) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3668,7 +3668,7 @@ func (s *SockAddrInet) CopyOutN(task marshal.Task, addr usermem.Addr, limit int)
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3701,7 +3701,7 @@ func (s *SockAddrInet) CopyIn(task marshal.Task, addr usermem.Addr) (int, error)
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3725,7 +3725,7 @@ func (s *SockAddrInet) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3781,7 +3781,7 @@ func (i *Inet6Addr) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (i
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3804,7 +3804,7 @@ func (i *Inet6Addr) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3820,7 +3820,7 @@ func (i *Inet6Addr) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -3874,7 +3874,7 @@ func (l *Linger) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int,
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that l
     // must live until the use above.
-    runtime.KeepAlive(l)
+    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3897,7 +3897,7 @@ func (l *Linger) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that l
     // must live until the use above.
-    runtime.KeepAlive(l)
+    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -3913,7 +3913,7 @@ func (l *Linger) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that l
     // must live until the use above.
-    runtime.KeepAlive(l)
+    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4143,7 +4143,7 @@ func (t *TCPInfo) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4166,7 +4166,7 @@ func (t *TCPInfo) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4182,7 +4182,7 @@ func (t *TCPInfo) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4240,7 +4240,7 @@ func (c *ControlMessageCredentials) CopyOutN(task marshal.Task, addr usermem.Add
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
-    runtime.KeepAlive(c)
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4263,7 +4263,7 @@ func (c *ControlMessageCredentials) CopyIn(task marshal.Task, addr usermem.Addr)
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
-    runtime.KeepAlive(c)
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4279,7 +4279,7 @@ func (c *ControlMessageCredentials) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
-    runtime.KeepAlive(c)
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4333,7 +4333,7 @@ func (t *Timespec) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4356,7 +4356,7 @@ func (t *Timespec) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4372,7 +4372,7 @@ func (t *Timespec) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4426,7 +4426,7 @@ func (t *Timeval) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4449,7 +4449,7 @@ func (t *Timeval) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4465,7 +4465,7 @@ func (t *Timeval) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4523,7 +4523,7 @@ func (s *StatxTimestamp) CopyOutN(task marshal.Task, addr usermem.Addr, limit in
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4546,7 +4546,7 @@ func (s *StatxTimestamp) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4562,7 +4562,7 @@ func (s *StatxTimestamp) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
-    runtime.KeepAlive(s)
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4616,7 +4616,7 @@ func (u *Utime) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4639,7 +4639,7 @@ func (u *Utime) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4655,7 +4655,7 @@ func (u *Utime) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4717,7 +4717,7 @@ func (w *Winsize) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that w
     // must live until the use above.
-    runtime.KeepAlive(w)
+    runtime.KeepAlive(w) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4740,7 +4740,7 @@ func (w *Winsize) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that w
     // must live until the use above.
-    runtime.KeepAlive(w)
+    runtime.KeepAlive(w) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4756,7 +4756,7 @@ func (w *Winsize) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that w
     // must live until the use above.
-    runtime.KeepAlive(w)
+    runtime.KeepAlive(w) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -4831,7 +4831,7 @@ func (t *Termios) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4854,7 +4854,7 @@ func (t *Termios) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -4870,7 +4870,7 @@ func (t *Termios) WriteTo(writer io.Writer) (int64, error) {
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
-    runtime.KeepAlive(t)
+    runtime.KeepAlive(t) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 

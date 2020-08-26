@@ -43,9 +43,6 @@ type machine struct {
 	// kernel is the set of global structures.
 	kernel ring0.Kernel
 
-	// mappingCache is used for mapPhysical.
-	mappingCache sync.Map
-
 	// mu protects vCPUs.
 	mu sync.RWMutex
 
@@ -62,6 +59,12 @@ type machine struct {
 
 	// maxVCPUs is the maximum number of vCPUs supported by the machine.
 	maxVCPUs int
+
+	// maxSlots is the maximum number of memory slots supported by the machine.
+	maxSlots int
+
+	// usedSlots is the set of used physical addresses (sorted).
+	usedSlots []uintptr
 
 	// nextID is the next vCPU ID.
 	nextID uint32
@@ -184,6 +187,7 @@ func newMachine(vm int) (*machine, error) {
 		PageTables: pagetables.New(newAllocator()),
 	})
 
+	// Pull the maximum vCPUs.
 	maxVCPUs, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
 	if errno != 0 {
 		m.maxVCPUs = _KVM_NR_VCPUS
@@ -191,10 +195,18 @@ func newMachine(vm int) (*machine, error) {
 		m.maxVCPUs = int(maxVCPUs)
 	}
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
-
-	// Create the vCPUs map/slices.
 	m.vCPUsByTID = make(map[uint64]*vCPU)
 	m.vCPUsByID = make([]*vCPU, m.maxVCPUs)
+
+	// Pull the maximum slots.
+	maxSlots, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
+	if errno != 0 {
+		m.maxSlots = _KVM_NR_MEMSLOTS
+	} else {
+		m.maxSlots = int(maxSlots)
+	}
+	log.Debugf("The maximum number of slots is %d.", m.maxSlots)
+	m.usedSlots = make([]uintptr, m.maxSlots)
 
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
@@ -272,6 +284,20 @@ func newMachine(vm int) (*machine, error) {
 	return m, nil
 }
 
+// hasSlot returns true iff the given address is mapped.
+//
+// This must be done via a linear scan.
+//
+//go:nosplit
+func (m *machine) hasSlot(physical uintptr) bool {
+	for i := 0; i < len(m.usedSlots); i++ {
+		if p := atomic.LoadUintptr(&m.usedSlots[i]); p == physical {
+			return true
+		}
+	}
+	return false
+}
+
 // mapPhysical checks for the mapping of a physical range, and installs one if
 // not available. This attempts to be efficient for calls in the hot path.
 //
@@ -286,8 +312,8 @@ func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalReg
 			panic("mapPhysical on unknown physical address")
 		}
 
-		if _, ok := m.mappingCache.LoadOrStore(physicalStart, true); !ok {
-			// Not present in the cache; requires setting the slot.
+		// Is this already mapped? Check the usedSlots.
+		if !m.hasSlot(physicalStart) {
 			if _, ok := handleBluepillFault(m, physical, phyRegions, flags); !ok {
 				panic("handleBluepillFault failed")
 			}
