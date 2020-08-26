@@ -33,6 +33,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -60,6 +61,57 @@ func TestHelloWorld(t *testing.T) {
 	// Check the output.
 	if !strings.Contains(out, "Hello world!") {
 		t.Fatalf("docker didn't say hello: got %s", out)
+	}
+}
+
+// Test that the FUSE container is set up and being used properly.
+func TestFUSEInContainer(t *testing.T) {
+	if usingFUSE, err := dockerutil.UsingFUSE(); err != nil {
+		t.Fatalf("failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !usingFUSE {
+		t.Skip("FUSE not being used.")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	tmpDir := "/tmpDir/"
+	// Run the basic container.
+	err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image:      "basic/fuse",
+		Privileged: true,
+		CapAdd:     []string{"CAP_SYS_ADMIN"},
+
+		// Mount a tmpfs directory for benchmark.
+		Mounts: []mount.Mount{
+			{
+				Type:     mount.TypeTmpfs,
+				Target:   tmpDir,
+				ReadOnly: false,
+			},
+		},
+	}, "sleep", "1000")
+	if err != nil {
+		t.Fatalf("docker spawn failed: %v", err)
+	}
+
+	out, err := d.Exec(ctx, dockerutil.ExecOpts{
+		Privileged: true,
+	}, "/bin/sh", "-c", "ls")
+	if err != nil {
+		t.Fatalf("docker exec failed: %v, message %s", err, out)
+	}
+	if !strings.Contains(out, "server-bin") {
+		t.Fatalf("docker didn't find server binary: got %s", out)
+	}
+
+	// Run the server.
+	out, err = d.Exec(ctx, dockerutil.ExecOpts{
+		Privileged: true,
+	}, "/bin/sh", "-c", "./server-bin mountpoint")
+	if err != nil {
+		t.Fatalf("docker exec failed: %v, message %s", err, out)
 	}
 }
 

@@ -121,6 +121,26 @@ func UsingVFS2() (bool, error) {
 	return false, nil
 }
 
+// UsingFUSE returns true if the 'runtime' has the fuse flag set.
+func UsingFUSE() (bool, error) {
+	rMap, err := runtimeMap()
+	if err != nil {
+		return false, err
+	}
+
+	list, ok := rMap["runtimeArgs"].([]interface{})
+	if !ok {
+		return false, fmt.Errorf("unexpected format: %v", rMap)
+	}
+
+	for _, element := range list {
+		if element == "--fuse" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func runtimeMap() (map[string]interface{}, error) {
 	// Read the configuration data; the file must exist.
 	configBytes, err := ioutil.ReadFile(*config)
