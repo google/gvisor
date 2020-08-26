@@ -136,6 +136,11 @@ func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container
 	}
 }
 
+// Runtime returns the runtime of the container.
+func (c *Container) Runtime() string {
+	return c.runtime
+}
+
 // AddProfile adds a profile to this container.
 func (c *Container) AddProfile(p Profile) {
 	c.profiles = append(c.profiles, p)
@@ -540,4 +545,9 @@ func (c *Container) CleanUp(ctx context.Context) {
 	}
 	// Forget all mounts.
 	c.mounts = nil
+}
+
+// CopyErr returns the error that happened during copy.
+func (c *Container) CopyErr() error {
+	return c.copyErr
 }
