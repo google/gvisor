@@ -97,11 +97,13 @@ TEST(BadSocketPairArgs, ValidateErrForBadCallsToSocketPair) {
   ASSERT_THAT(socketpair(AF_INET6, 0, 0, fd),
               SyscallFailsWithErrno(ESOCKTNOSUPPORT));
 
-  // Invalid AF will return ENOAFSUPPORT.
+  // Invalid AF will return ENOAFSUPPORT or EPERM.
   ASSERT_THAT(socketpair(AF_MAX, 0, 0, fd),
-              SyscallFailsWithErrno(EAFNOSUPPORT));
+              ::testing::AnyOf(SyscallFailsWithErrno(EAFNOSUPPORT),
+                               SyscallFailsWithErrno(EPERM)));
   ASSERT_THAT(socketpair(8675309, 0, 0, fd),
-              SyscallFailsWithErrno(EAFNOSUPPORT));
+              ::testing::AnyOf(SyscallFailsWithErrno(EAFNOSUPPORT),
+                               SyscallFailsWithErrno(EPERM)));
 }
 
 enum class Operation {
@@ -116,7 +118,8 @@ std::string OperationToString(Operation operation) {
       return "Bind";
     case Operation::Connect:
       return "Connect";
-    case Operation::SendTo:
+    // Operation::SendTo is the default.
+    default:
       return "SendTo";
   }
 }
