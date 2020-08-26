@@ -49,6 +49,7 @@ pseudo-tty/test-tty-wrap.js,b/162801321,
 pummel/test-heapdump-http2.js,,Flaky
 pummel/test-net-pingpong.js,,
 pummel/test-vm-memleak.js,b/162799436,
+pummel/test-watch-file.js,,Flaky - Timeout
 sequential/test-child-process-pass-fd.js,b/63926391,Flaky
 sequential/test-https-connect-localport.js,,Flaky - EADDRINUSE
 sequential/test-net-bytes-per-incoming-chunk-overhead.js,,flaky - timeout
