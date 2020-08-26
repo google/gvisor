@@ -16,7 +16,6 @@ package transport
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -28,7 +27,7 @@ import (
 //
 // +stateify savable
 type queue struct {
-	refs.AtomicRefCount
+	queueRefs
 
 	ReaderQueue *waiter.Queue
 	WriterQueue *waiter.Queue
@@ -68,11 +67,13 @@ func (q *queue) Reset(ctx context.Context) {
 	q.mu.Unlock()
 }
 
-// DecRef implements RefCounter.DecRef with destructor q.Reset.
+// DecRef implements RefCounter.DecRef.
 func (q *queue) DecRef(ctx context.Context) {
-	q.DecRefWithDestructor(ctx, q.Reset)
-	// We don't need to notify after resetting because no one cares about
-	// this queue after all references have been dropped.
+	q.queueRefs.DecRef(func() {
+		// We don't need to notify after resetting because no one cares about
+		// this queue after all references have been dropped.
+		q.Reset(ctx)
+	})
 }
 
 // IsReadable determines if q is currently readable.

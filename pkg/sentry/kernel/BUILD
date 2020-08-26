@@ -74,6 +74,50 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "fd_table_refs",
+    out = "fd_table_refs.go",
+    package = "kernel",
+    prefix = "FDTable",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "FDTable",
+    },
+)
+
+go_template_instance(
+    name = "fs_context_refs",
+    out = "fs_context_refs.go",
+    package = "kernel",
+    prefix = "FSContext",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "FSContext",
+    },
+)
+
+go_template_instance(
+    name = "process_group_refs",
+    out = "process_group_refs.go",
+    package = "kernel",
+    prefix = "ProcessGroup",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "ProcessGroup",
+    },
+)
+
+go_template_instance(
+    name = "session_refs",
+    out = "session_refs.go",
+    package = "kernel",
+    prefix = "Session",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "Session",
+    },
+)
+
 proto_library(
     name = "uncaught_signal",
     srcs = ["uncaught_signal.proto"],
@@ -88,8 +132,10 @@ go_library(
         "aio.go",
         "context.go",
         "fd_table.go",
+        "fd_table_refs.go",
         "fd_table_unsafe.go",
         "fs_context.go",
+        "fs_context_refs.go",
         "ipc_namespace.go",
         "kcov.go",
         "kcov_unsafe.go",
@@ -101,6 +147,7 @@ go_library(
         "pending_signals_state.go",
         "posixtimer.go",
         "process_group_list.go",
+        "process_group_refs.go",
         "ptrace.go",
         "ptrace_amd64.go",
         "ptrace_arm64.go",
@@ -108,6 +155,7 @@ go_library(
         "seccomp.go",
         "seqatomic_taskgoroutineschedinfo_unsafe.go",
         "session_list.go",
+        "session_refs.go",
         "sessions.go",
         "signal.go",
         "signal_handlers.go",

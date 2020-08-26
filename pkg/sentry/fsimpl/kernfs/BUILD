@@ -26,9 +26,54 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "dentry_refs",
+    out = "dentry_refs.go",
+    package = "kernfs",
+    prefix = "Dentry",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "Dentry",
+    },
+)
+
+go_template_instance(
+    name = "static_directory_refs",
+    out = "static_directory_refs.go",
+    package = "kernfs",
+    prefix = "StaticDirectory",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "StaticDirectory",
+    },
+)
+
+go_template_instance(
+    name = "dir_refs",
+    out = "dir_refs.go",
+    package = "kernfs_test",
+    prefix = "dir",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "dir",
+    },
+)
+
+go_template_instance(
+    name = "readonly_dir_refs",
+    out = "readonly_dir_refs.go",
+    package = "kernfs_test",
+    prefix = "readonlyDir",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "readonlyDir",
+    },
+)
+
 go_library(
     name = "kernfs",
     srcs = [
+        "dentry_refs.go",
         "dynamic_bytes_file.go",
         "fd_impl_util.go",
         "filesystem.go",
@@ -36,6 +81,7 @@ go_library(
         "inode_impl_util.go",
         "kernfs.go",
         "slot_list.go",
+        "static_directory_refs.go",
         "symlink.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -59,11 +105,17 @@ go_library(
 go_test(
     name = "kernfs_test",
     size = "small",
-    srcs = ["kernfs_test.go"],
+    srcs = [
+        "dir_refs.go",
+        "kernfs_test.go",
+        "readonly_dir_refs.go",
+    ],
     deps = [
         ":kernfs",
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/log",
+        "//pkg/refs",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel/auth",

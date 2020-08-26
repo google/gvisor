@@ -15,6 +15,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "queue_refs",
+    out = "queue_refs.go",
+    package = "transport",
+    prefix = "queue",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "queue",
+    },
+)
+
 go_library(
     name = "transport",
     srcs = [
@@ -22,6 +33,7 @@ go_library(
         "connectioned_state.go",
         "connectionless.go",
         "queue.go",
+        "queue_refs.go",
         "transport_message_list.go",
         "unix.go",
     ],
