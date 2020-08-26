@@ -28,6 +28,7 @@
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -36,6 +37,8 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+using ::gvisor::testing::IsTmpfs;
 
 class XattrTest : public FileTest {};
 
@@ -602,6 +605,77 @@ TEST_F(XattrTest, XattrWithFD) {
   EXPECT_STREQ(list, name);
 
   EXPECT_THAT(fremovexattr(fd.get(), name), SyscallSucceeds());
+}
+
+TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
+  // Trusted namespace not supported in VFS1.
+  SKIP_IF(IsRunningWithVFS1());
+
+  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+
+  // Setting/Getting in the trusted namespace requires CAP_SYS_ADMIN.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const char* path = test_file_name_.c_str();
+  const char name[] = "trusted.test";
+
+  // Set.
+  char val = 'a';
+  size_t size = sizeof(val);
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
+
+  // Get.
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallSucceedsWithValue(size));
+  EXPECT_EQ(val, got);
+
+  // List.
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  // Remove.
+  EXPECT_THAT(removexattr(path, name), SyscallSucceeds());
+
+  // Get should now return ENODATA.
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
+  // Trusted namespace not supported in VFS1.
+  SKIP_IF(IsRunningWithVFS1());
+
+  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+
+  // Drop CAP_SYS_ADMIN if we have it.
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
+    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
+  }
+
+  const char* path = test_file_name_.c_str();
+  const char name[] = "trusted.test";
+
+  // Set fails.
+  char val = 'a';
+  size_t size = sizeof(val);
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
+              SyscallFailsWithErrno(EPERM));
+
+  // Get fails.
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+
+  // List still works, but returns no items.
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)), SyscallSucceedsWithValue(0));
+
+  // Remove fails.
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
 }
 
 }  // namespace
