@@ -435,8 +435,10 @@ TEST_P(UDPSocketPairTest, TOSRecvMismatch) {
 
 // Test that an IPv4 socket does not support the IPv6 TClass option.
 TEST_P(UDPSocketPairTest, TClassRecvMismatch) {
-  // This should only test AF_INET sockets for the mismatch behavior.
-  SKIP_IF(GetParam().domain != AF_INET);
+  // This should only test AF_INET6 sockets for the mismatch behavior.
+  SKIP_IF(GetParam().domain != AF_INET6);
+  // IPV6_RECVTCLASS is only valid for SOCK_DGRAM and SOCK_RAW.
+  SKIP_IF(GetParam().type != SOCK_DGRAM | GetParam().type != SOCK_RAW);
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
