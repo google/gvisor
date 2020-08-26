@@ -23,16 +23,20 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/mount"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/test/runner/gtest"
@@ -40,17 +44,19 @@ import (
 )
 
 var (
-	debug      = flag.Bool("debug", false, "enable debug logs")
-	strace     = flag.Bool("strace", false, "enable strace logs")
-	platform   = flag.String("platform", "ptrace", "platform to run on")
-	network    = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
-	useTmpfs   = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
-	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
-	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
-	vfs2       = flag.Bool("vfs2", false, "enable VFS2")
-	fuse       = flag.Bool("fuse", false, "enable FUSE")
-	parallel   = flag.Bool("parallel", false, "run tests in parallel")
-	runscPath  = flag.String("runsc", "", "path to runsc binary")
+	debug        = flag.Bool("debug", false, "enable debug logs")
+	strace       = flag.Bool("strace", false, "enable strace logs")
+	platform     = flag.String("platform", "ptrace", "platform to run on")
+	network      = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
+	useTmpfs     = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
+	useImage     = flag.String("use-image", "", "container image to use for test. Path relative to //images")
+	setupCommand = flag.String("setup-command", "", "command to run before running the test to set up container environment")
+	fileAccess   = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
+	overlay      = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
+	vfs2         = flag.Bool("vfs2", false, "enable VFS2")
+	fuse         = flag.Bool("fuse", false, "enable FUSE")
+	parallel     = flag.Bool("parallel", false, "run tests in parallel")
+	runscPath    = flag.String("runsc", "", "path to runsc binary")
 
 	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
 )
@@ -313,8 +319,92 @@ func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 	return cleanup, nil
 }
 
+func runTestCaseInContainer(testBin string, tc gtest.TestCase, image string, t *testing.T) {
+	if usingFUSE, err := dockerutil.UsingFUSE(); err != nil {
+		t.Fatalf("failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !usingFUSE {
+		t.Skip("FUSE not being used.")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Run the basic container.
+	tmpDir := "/tmpDir"
+	testBinDir := "/testDir"
+	opts := dockerutil.RunOpts{
+		Image:      image,
+		Privileged: true,
+		CapAdd:     []string{"CAP_SYS_ADMIN"},
+
+		// Mount a tmpfs directory to use when benchmarking.
+		Mounts: []mount.Mount{
+			{
+				Type:     mount.TypeTmpfs,
+				Target:   tmpDir,
+				ReadOnly: false,
+			},
+		},
+		Env: []string{
+			fmt.Sprintf("TEST_TMPDIR=%s", tmpDir),
+			fmt.Sprintf("TEST_FUSEPRE=%s", "/fus/mountpoint"),
+		},
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd run failed: %v", err)
+	}
+
+	wdPathToTestBin := strings.TrimPrefix(testBin, wd)
+	containerTestBin := path.Join(testBinDir, path.Base(wdPathToTestBin))
+	d.CopyFiles(&opts, testBinDir, wdPathToTestBin)
+	if err := d.CopyErr(); err != nil {
+		t.Fatalf("Copy failed %v", err)
+	}
+
+	err = d.Spawn(ctx, opts, "sleep", "1000")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Run the server setup command.
+	if *setupCommand != "" {
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{
+			Privileged: true,
+		}, "/bin/sh", "-c", *setupCommand)
+		if err != nil {
+			t.Fatalf("docker exec failed: %v with output %v", err, out)
+		}
+	}
+
+	cmd := "chmod +x " + containerTestBin
+	out, err := d.Exec(ctx, dockerutil.ExecOpts{
+		Privileged: true,
+	}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v with output %v", err, out)
+	}
+
+	cmd = containerTestBin + " " + strings.Join(tc.Args(), " ")
+	out, err = d.Exec(ctx, dockerutil.ExecOpts{
+		Privileged: true,
+	}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v with output %v", err, out)
+	}
+
+	fmt.Print(out)
+	return
+}
+
 // runsTestCaseRunsc runs the test case in runsc.
 func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
+	if *useImage != "" {
+		runTestCaseInContainer(testBin, tc, *useImage, t)
+		return
+	}
+
 	// Run a new container with the test executable and filter for the
 	// given test suite and name.
 	spec := testutil.NewSpecWithArgs(append([]string{testBin}, tc.Args()...)...)
