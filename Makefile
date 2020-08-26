@@ -341,6 +341,10 @@ RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 
+ifeq (,$(RUNTIME_NAME))
+RUNTIME_NAME := $(RUNTIME)
+endif
+
 dev: ## Installs a set of local runtimes. Requires sudo.
 	@$(call submake,refresh ARGS="--net-raw")
 	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)" ARGS="--net-raw")

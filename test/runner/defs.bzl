@@ -57,6 +57,8 @@ def _syscall_test(
         platform,
         use_tmpfs,
         tags,
+        use_image = "",
+        setup_command = "",
         network = "none",
         file_access = "exclusive",
         overlay = False,
@@ -79,6 +81,8 @@ def _syscall_test(
             name += "_fuse"
     if network != "none":
         name += "_" + network + "net"
+    if use_image != "":
+        name += "_container"
 
     # Apply all tags.
     if tags == None:
@@ -107,6 +111,8 @@ def _syscall_test(
         "--platform=" + platform,
         "--network=" + network,
         "--use-tmpfs=" + str(use_tmpfs),
+        "--use-image=" + use_image,
+        "--setup-command=" + setup_command,
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-uds-tree=" + str(add_uds_tree),
@@ -132,6 +138,8 @@ def syscall_test(
         shard_count = 5,
         size = "small",
         use_tmpfs = False,
+        use_image = "",
+        setup_command = "",
         add_overlay = False,
         add_uds_tree = False,
         add_hostinet = False,
@@ -146,6 +154,8 @@ def syscall_test(
       shard_count: shards for defined tests.
       size: the defined test size.
       use_tmpfs: use tmpfs in the defined tests.
+      use_image: use specified docker image in the defined tests.
+      setup_command: command to set up the docker container. Should be used when ise_image is.
       add_overlay: add an overlay test.
       add_uds_tree: add a UDS test.
       add_hostinet: add a hostinet test.
@@ -178,8 +188,26 @@ def syscall_test(
         vfs2 = True,
         fuse = fuse,
     )
+
+    if use_image != "":
+        # Run the test in the container specified.
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            use_image = use_image,
+            setup_command = setup_command,
+            add_uds_tree = add_uds_tree,
+            tags = platforms[default_platform] + vfs2_tags,
+            vfs2 = True,
+            fuse = True,
+        )
+
     if fuse:
         # Only generate *_vfs2_fuse target if fuse parameter is enabled.
+        # The rest of the targets don't support FUSE as of yet.
         return
 
     _syscall_test(
