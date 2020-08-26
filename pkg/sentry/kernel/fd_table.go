@@ -23,7 +23,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -78,7 +77,8 @@ type descriptor struct {
 //
 // +stateify savable
 type FDTable struct {
-	refs.AtomicRefCount
+	FDTableRefs
+
 	k *Kernel
 
 	// mu protects below.
@@ -176,16 +176,15 @@ func (k *Kernel) NewFDTable() *FDTable {
 	return f
 }
 
-// destroy removes all of the file descriptors from the map.
-func (f *FDTable) destroy(ctx context.Context) {
-	f.RemoveIf(ctx, func(*fs.File, *vfs.FileDescription, FDFlags) bool {
-		return true
-	})
-}
-
-// DecRef implements RefCounter.DecRef with destructor f.destroy.
+// DecRef implements RefCounter.DecRef.
+//
+// If f reaches zero references, all of its file descriptors are removed.
 func (f *FDTable) DecRef(ctx context.Context) {
-	f.DecRefWithDestructor(ctx, f.destroy)
+	f.FDTableRefs.DecRef(func() {
+		f.RemoveIf(ctx, func(*fs.File, *vfs.FileDescription, FDFlags) bool {
+			return true
+		})
+	})
 }
 
 // Size returns the number of file descriptor slots currently allocated.

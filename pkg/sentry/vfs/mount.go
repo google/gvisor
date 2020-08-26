@@ -128,15 +128,13 @@ func (mnt *Mount) Options() MountOptions {
 //
 // +stateify savable
 type MountNamespace struct {
+	MountNamespaceRefs
+
 	// Owner is the usernamespace that owns this mount namespace.
 	Owner *auth.UserNamespace
 
 	// root is the MountNamespace's root mount. root is immutable.
 	root *Mount
-
-	// refs is the reference count. refs is accessed using atomic memory
-	// operations.
-	refs int64
 
 	// mountpoints maps all Dentries which are mount points in this namespace
 	// to the number of Mounts for which they are mount points. mountpoints is
@@ -168,9 +166,9 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 	}
 	mntns := &MountNamespace{
 		Owner:       creds.UserNamespace,
-		refs:        1,
 		mountpoints: make(map[*Dentry]uint32),
 	}
+	mntns.EnableLeakCheck()
 	mntns.root = newMount(vfs, fs, root, mntns, &MountOptions{})
 	return mntns, nil
 }
@@ -509,17 +507,10 @@ func (mnt *Mount) DecRef(ctx context.Context) {
 	}
 }
 
-// IncRef increments mntns' reference count.
-func (mntns *MountNamespace) IncRef() {
-	if atomic.AddInt64(&mntns.refs, 1) <= 1 {
-		panic("MountNamespace.IncRef() called without holding a reference")
-	}
-}
-
 // DecRef decrements mntns' reference count.
 func (mntns *MountNamespace) DecRef(ctx context.Context) {
 	vfs := mntns.root.fs.VirtualFilesystem()
-	if refs := atomic.AddInt64(&mntns.refs, -1); refs == 0 {
+	mntns.MountNamespaceRefs.DecRef(func() {
 		vfs.mountMu.Lock()
 		vfs.mounts.seq.BeginWrite()
 		vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(mntns.root, &umountRecursiveOptions{
@@ -533,9 +524,7 @@ func (mntns *MountNamespace) DecRef(ctx context.Context) {
 		for _, mnt := range mountsToDecRef {
 			mnt.DecRef(ctx)
 		}
-	} else if refs < 0 {
-		panic("MountNamespace.DecRef() called without holding a reference")
-	}
+	})
 }
 
 // getMountAt returns the last Mount in the stack mounted at (mnt, d). It takes

@@ -15,6 +15,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "inode_refs",
+    out = "inode_refs.go",
+    package = "fuse",
+    prefix = "inode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "inode",
+    },
+)
+
 go_library(
     name = "fuse",
     srcs = [
@@ -22,6 +33,7 @@ go_library(
         "dev.go",
         "fusefs.go",
         "init.go",
+        "inode_refs.go",
         "register.go",
         "request_list.go",
     ],
@@ -30,6 +42,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/log",
+        "//pkg/refs",
         "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",
