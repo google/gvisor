@@ -14,12 +14,10 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/magic.h>
 #include <linux/memfd.h>
 #include <linux/unistd.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <sys/statfs.h>
 #include <sys/syscall.h>
 
 #include <vector>
@@ -53,6 +51,7 @@ namespace {
 #define F_SEAL_GROW 0x0004
 #define F_SEAL_WRITE 0x0008
 
+using ::gvisor::testing::IsTmpfs;
 using ::testing::StartsWith;
 
 const std::string kMemfdName = "some-memfd";
@@ -442,20 +441,6 @@ TEST(MemfdTest, SealsAreInodeLevelProperties) {
   EXPECT_THAT(ftruncate(memfd.get(), kPageSize), SyscallFailsWithErrno(EPERM));
   EXPECT_THAT(ftruncate(memfd2.get(), kPageSize), SyscallFailsWithErrno(EPERM));
   EXPECT_THAT(ftruncate(memfd3.get(), kPageSize), SyscallFailsWithErrno(EPERM));
-}
-
-PosixErrorOr<bool> IsTmpfs(const std::string& path) {
-  struct statfs stat;
-  if (statfs(path.c_str(), &stat)) {
-    if (errno == ENOENT) {
-      // Nothing at path, don't raise this as an error. Instead, just report no
-      // tmpfs at path.
-      return false;
-    }
-    return PosixError(errno,
-                      absl::StrFormat("statfs(\"%s\", %#p)", path, &stat));
-  }
-  return stat.f_type == TMPFS_MAGIC;
 }
 
 // Tmpfs files also support seals, but are created with F_SEAL_SEAL.
