@@ -56,6 +56,7 @@ const (
 
 // KVM capability options.
 const (
+	_KVM_CAP_MAX_MEMSLOTS          = 0x0a
 	_KVM_CAP_MAX_VCPUS             = 0x42
 	_KVM_CAP_ARM_VM_IPA_SIZE       = 0xa5
 	_KVM_CAP_VCPU_EVENTS           = 0x29
@@ -64,6 +65,7 @@ const (
 
 // KVM limits.
 const (
+	_KVM_NR_MEMSLOTS      = 0x100
 	_KVM_NR_VCPUS         = 0xff
 	_KVM_NR_INTERRUPTS    = 0x100
 	_KVM_NR_CPUID_ENTRIES = 0x100

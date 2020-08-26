@@ -1,6 +1,17 @@
 load("//tools:defs.bzl", "bzl_library", "go_library")
+load("//tools/nogo:defs.bzl", "nogo_dump_tool", "nogo_stdlib")
 
 package(licenses = ["notice"])
+
+nogo_dump_tool(
+    name = "dump_tool",
+    visibility = ["//visibility:public"],
+)
+
+nogo_stdlib(
+    name = "stdlib",
+    visibility = ["//visibility:public"],
+)
 
 go_library(
     name = "nogo",
@@ -16,7 +27,7 @@ go_library(
     deps = [
         "//tools/checkescape",
         "//tools/checkunsafe",
-        "//tools/nogo/data",
+        "//tools/nogo/dump",
         "@org_golang_x_tools//go/analysis:go_tool_library",
         "@org_golang_x_tools//go/analysis/internal/facts:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/asmdecl:go_tool_library",

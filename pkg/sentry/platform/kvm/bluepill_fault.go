@@ -98,6 +98,10 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 	}
 	errno := m.setMemoryRegion(int(slot), physicalStart, length, virtualStart, flags)
 	if errno == 0 {
+		// Store the physical address in the slot. This is used to
+		// avoid calls to handleBluepillFault in the future (see
+		// machine.mapPhysical).
+		atomic.StoreUintptr(&m.usedSlots[slot], physical)
 		// Successfully added region; we can increment nextSlot and
 		// allow another set to proceed here.
 		atomic.StoreUint32(&m.nextSlot, slot+1)
