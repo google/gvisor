@@ -69,7 +69,7 @@ func (i *Int8) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, e
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -92,7 +92,7 @@ func (i *Int8) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -108,7 +108,7 @@ func (i *Int8) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -134,7 +134,7 @@ func CopyInt8SliceIn(task marshal.Task, addr usermem.Addr, dst []int8) (int, err
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -160,7 +160,7 @@ func CopyInt8SliceOut(task marshal.Task, addr usermem.Addr, src []int8) (int, er
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -178,7 +178,7 @@ func MarshalUnsafeInt8Slice(src []Int8, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -196,7 +196,7 @@ func UnmarshalUnsafeInt8Slice(dst []Int8, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -246,7 +246,7 @@ func (u *Uint8) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -269,7 +269,7 @@ func (u *Uint8) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -285,7 +285,7 @@ func (u *Uint8) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -311,7 +311,7 @@ func CopyUint8SliceIn(task marshal.Task, addr usermem.Addr, dst []uint8) (int, e
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -337,7 +337,7 @@ func CopyUint8SliceOut(task marshal.Task, addr usermem.Addr, src []uint8) (int, 
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -355,7 +355,7 @@ func MarshalUnsafeUint8Slice(src []Uint8, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -373,7 +373,7 @@ func UnmarshalUnsafeUint8Slice(dst []Uint8, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -423,7 +423,7 @@ func (i *Int16) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -446,7 +446,7 @@ func (i *Int16) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -462,7 +462,7 @@ func (i *Int16) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -488,7 +488,7 @@ func CopyInt16SliceIn(task marshal.Task, addr usermem.Addr, dst []int16) (int, e
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -514,7 +514,7 @@ func CopyInt16SliceOut(task marshal.Task, addr usermem.Addr, src []int16) (int, 
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -532,7 +532,7 @@ func MarshalUnsafeInt16Slice(src []Int16, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -550,7 +550,7 @@ func UnmarshalUnsafeInt16Slice(dst []Int16, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -600,7 +600,7 @@ func (u *Uint16) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int,
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -623,7 +623,7 @@ func (u *Uint16) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -639,7 +639,7 @@ func (u *Uint16) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -665,7 +665,7 @@ func CopyUint16SliceIn(task marshal.Task, addr usermem.Addr, dst []uint16) (int,
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -691,7 +691,7 @@ func CopyUint16SliceOut(task marshal.Task, addr usermem.Addr, src []uint16) (int
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -709,7 +709,7 @@ func MarshalUnsafeUint16Slice(src []Uint16, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -727,7 +727,7 @@ func UnmarshalUnsafeUint16Slice(dst []Uint16, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -777,7 +777,7 @@ func (i *Int32) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -800,7 +800,7 @@ func (i *Int32) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -816,7 +816,7 @@ func (i *Int32) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -842,7 +842,7 @@ func CopyInt32SliceIn(task marshal.Task, addr usermem.Addr, dst []int32) (int, e
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -868,7 +868,7 @@ func CopyInt32SliceOut(task marshal.Task, addr usermem.Addr, src []int32) (int, 
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -886,7 +886,7 @@ func MarshalUnsafeInt32Slice(src []Int32, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -904,7 +904,7 @@ func UnmarshalUnsafeInt32Slice(dst []Int32, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -954,7 +954,7 @@ func (u *Uint32) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int,
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -977,7 +977,7 @@ func (u *Uint32) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -993,7 +993,7 @@ func (u *Uint32) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1019,7 +1019,7 @@ func CopyUint32SliceIn(task marshal.Task, addr usermem.Addr, dst []uint32) (int,
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1045,7 +1045,7 @@ func CopyUint32SliceOut(task marshal.Task, addr usermem.Addr, src []uint32) (int
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1063,7 +1063,7 @@ func MarshalUnsafeUint32Slice(src []Uint32, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1081,7 +1081,7 @@ func UnmarshalUnsafeUint32Slice(dst []Uint32, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1131,7 +1131,7 @@ func (i *Int64) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, 
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1154,7 +1154,7 @@ func (i *Int64) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1170,7 +1170,7 @@ func (i *Int64) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(i)
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1196,7 +1196,7 @@ func CopyInt64SliceIn(task marshal.Task, addr usermem.Addr, dst []int64) (int, e
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1222,7 +1222,7 @@ func CopyInt64SliceOut(task marshal.Task, addr usermem.Addr, src []int64) (int, 
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1240,7 +1240,7 @@ func MarshalUnsafeInt64Slice(src []Int64, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1258,7 +1258,7 @@ func UnmarshalUnsafeInt64Slice(dst []Int64, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1308,7 +1308,7 @@ func (u *Uint64) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int,
     length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1331,7 +1331,7 @@ func (u *Uint64) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1347,7 +1347,7 @@ func (u *Uint64) WriteTo(w io.Writer) (int64, error) {
     length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(u)
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -1373,7 +1373,7 @@ func CopyUint64SliceIn(task marshal.Task, addr usermem.Addr, dst []uint64) (int,
     length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1399,7 +1399,7 @@ func CopyUint64SliceOut(task marshal.Task, addr usermem.Addr, src []uint64) (int
     length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1417,7 +1417,7 @@ func MarshalUnsafeUint64Slice(src []Uint64, dst []byte) (int, error) {
     length, err := safecopy.CopyIn(dst[:(size*count)], val)
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
-    runtime.KeepAlive(src)
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -1435,7 +1435,7 @@ func UnmarshalUnsafeUint64Slice(dst []Uint64, src []byte) (int, error) {
     length, err := safecopy.CopyOut(val, src[:(size*count)])
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
-    runtime.KeepAlive(dst)
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
 }
 
