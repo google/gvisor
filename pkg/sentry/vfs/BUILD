@@ -27,6 +27,39 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "file_description_refs",
+    out = "file_description_refs.go",
+    package = "vfs",
+    prefix = "FileDescription",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "FileDescription",
+    },
+)
+
+go_template_instance(
+    name = "mount_namespace_refs",
+    out = "mount_namespace_refs.go",
+    package = "vfs",
+    prefix = "MountNamespace",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "MountNamespace",
+    },
+)
+
+go_template_instance(
+    name = "filesystem_refs",
+    out = "filesystem_refs.go",
+    package = "vfs",
+    prefix = "Filesystem",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "Filesystem",
+    },
+)
+
 go_library(
     name = "vfs",
     srcs = [
@@ -40,12 +73,15 @@ go_library(
         "event_list.go",
         "file_description.go",
         "file_description_impl_util.go",
+        "file_description_refs.go",
         "filesystem.go",
         "filesystem_impl_util.go",
+        "filesystem_refs.go",
         "filesystem_type.go",
         "inotify.go",
         "lock.go",
         "mount.go",
+        "mount_namespace_refs.go",
         "mount_unsafe.go",
         "options.go",
         "pathname.go",
@@ -63,6 +99,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/gohacks",
         "//pkg/log",
+        "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs",

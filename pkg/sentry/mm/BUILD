@@ -73,12 +73,35 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "aio_mappable_refs",
+    out = "aio_mappable_refs.go",
+    package = "mm",
+    prefix = "aioMappable",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "aioMappable",
+    },
+)
+
+go_template_instance(
+    name = "special_mappable_refs",
+    out = "special_mappable_refs.go",
+    package = "mm",
+    prefix = "SpecialMappable",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "SpecialMappable",
+    },
+)
+
 go_library(
     name = "mm",
     srcs = [
         "address_space.go",
         "aio_context.go",
         "aio_context_state.go",
+        "aio_mappable_refs.go",
         "debug.go",
         "file_refcount_set.go",
         "io.go",
@@ -92,6 +115,7 @@ go_library(
         "save_restore.go",
         "shm.go",
         "special_mappable.go",
+        "special_mappable_refs.go",
         "syscalls.go",
         "vma.go",
         "vma_set.go",

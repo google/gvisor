@@ -11,7 +11,7 @@ go_template(
     types = [
         "T",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
         "//pkg/refs",

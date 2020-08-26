@@ -39,7 +39,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -252,7 +251,7 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.Fi
 		creatorPID:    pid,
 		changeTime:    ktime.NowFromContext(ctx),
 	}
-	shm.EnableLeakCheck("kernel.Shm")
+	shm.EnableLeakCheck()
 
 	// Find the next available ID.
 	for id := r.lastIDUsed + 1; id != r.lastIDUsed; id++ {
@@ -337,14 +336,14 @@ func (r *Registry) remove(s *Shm) {
 //
 // +stateify savable
 type Shm struct {
-	// AtomicRefCount tracks the number of references to this segment.
+	// ShmRefs tracks the number of references to this segment.
 	//
 	// A segment holds a reference to itself until it is marked for
 	// destruction.
 	//
 	// In addition to direct users, the MemoryManager will hold references
 	// via MappingIdentity.
-	refs.AtomicRefCount
+	ShmRefs
 
 	mfp pgalloc.MemoryFileProvider
 
@@ -428,11 +427,14 @@ func (s *Shm) InodeID() uint64 {
 	return uint64(s.ID)
 }
 
-// DecRef overrides refs.RefCount.DecRef with a destructor.
+// DecRef drops a reference on s.
 //
 // Precondition: Caller must not hold s.mu.
 func (s *Shm) DecRef(ctx context.Context) {
-	s.DecRefWithDestructor(ctx, s.destroy)
+	s.ShmRefs.DecRef(func() {
+		s.mfp.MemoryFile().DecRef(s.fr)
+		s.registry.remove(s)
+	})
 }
 
 // Msync implements memmap.MappingIdentity.Msync. Msync is a no-op for shm
@@ -640,11 +642,6 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 
 	s.changeTime = ktime.NowFromContext(ctx)
 	return nil
-}
-
-func (s *Shm) destroy(context.Context) {
-	s.mfp.MemoryFile().DecRef(s.fr)
-	s.registry.remove(s)
 }
 
 // MarkDestroyed marks a segment for destruction. The segment is actually

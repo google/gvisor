@@ -15,8 +15,6 @@
 package vfs
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -34,9 +32,7 @@ import (
 //
 // +stateify savable
 type Filesystem struct {
-	// refs is the reference count. refs is accessed using atomic memory
-	// operations.
-	refs int64
+	FilesystemRefs
 
 	// vfs is the VirtualFilesystem that uses this Filesystem. vfs is
 	// immutable.
@@ -52,7 +48,7 @@ type Filesystem struct {
 
 // Init must be called before first use of fs.
 func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, fsType FilesystemType, impl FilesystemImpl) {
-	fs.refs = 1
+	fs.EnableLeakCheck()
 	fs.vfs = vfsObj
 	fs.fsType = fsType
 	fs.impl = impl
@@ -76,39 +72,14 @@ func (fs *Filesystem) Impl() FilesystemImpl {
 	return fs.impl
 }
 
-// IncRef increments fs' reference count.
-func (fs *Filesystem) IncRef() {
-	if atomic.AddInt64(&fs.refs, 1) <= 1 {
-		panic("Filesystem.IncRef() called without holding a reference")
-	}
-}
-
-// TryIncRef increments fs' reference count and returns true. If fs' reference
-// count is zero, TryIncRef does nothing and returns false.
-//
-// TryIncRef does not require that a reference is held on fs.
-func (fs *Filesystem) TryIncRef() bool {
-	for {
-		refs := atomic.LoadInt64(&fs.refs)
-		if refs <= 0 {
-			return false
-		}
-		if atomic.CompareAndSwapInt64(&fs.refs, refs, refs+1) {
-			return true
-		}
-	}
-}
-
 // DecRef decrements fs' reference count.
 func (fs *Filesystem) DecRef(ctx context.Context) {
-	if refs := atomic.AddInt64(&fs.refs, -1); refs == 0 {
+	fs.FilesystemRefs.DecRef(func() {
 		fs.vfs.filesystemsMu.Lock()
 		delete(fs.vfs.filesystems, fs)
 		fs.vfs.filesystemsMu.Unlock()
 		fs.impl.Release(ctx)
-	} else if refs < 0 {
-		panic("Filesystem.decRef() called without holding a reference")
-	}
+	})
 }
 
 // FilesystemImpl contains implementation details for a Filesystem.

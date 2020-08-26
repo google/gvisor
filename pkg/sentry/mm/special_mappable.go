@@ -16,7 +16,6 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -31,7 +30,7 @@ import (
 //
 // +stateify savable
 type SpecialMappable struct {
-	refs.AtomicRefCount
+	SpecialMappableRefs
 
 	mfp  pgalloc.MemoryFileProvider
 	fr   memmap.FileRange
@@ -45,13 +44,13 @@ type SpecialMappable struct {
 // Preconditions: fr.Length() != 0.
 func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *SpecialMappable {
 	m := SpecialMappable{mfp: mfp, fr: fr, name: name}
-	m.EnableLeakCheck("mm.SpecialMappable")
+	m.EnableLeakCheck()
 	return &m
 }
 
 // DecRef implements refs.RefCounter.DecRef.
 func (m *SpecialMappable) DecRef(ctx context.Context) {
-	m.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
+	m.SpecialMappableRefs.DecRef(func() {
 		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }

@@ -198,6 +198,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // inode implements kernfs.Inode.
 type inode struct {
+	inodeRefs
 	kernfs.InodeAttrs
 	kernfs.InodeNoDynamicLookup
 	kernfs.InodeNotSymlink
@@ -213,6 +214,7 @@ func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *ke
 	i := &inode{}
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	i.EnableLeakCheck()
 	i.dentry.Init(i)
 
 	return &i.dentry
@@ -323,4 +325,9 @@ func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptio
 	}
 
 	return statFromFUSEAttr(out.Attr, opts.Mask, fusefs.devMinor), nil
+}
+
+// DecRef implements kernfs.Inode.
+func (i *inode) DecRef(context.Context) {
+	i.inodeRefs.DecRef(i.Destroy)
 }
