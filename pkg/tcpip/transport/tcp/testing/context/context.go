@@ -257,6 +257,11 @@ func (c *Context) GetPacket() []byte {
 		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
 	}
 
+	// Just check that the outgoing packet has a valid Transport Protocol number.
+	if p.Pkt.TransportProtocolNumber != tcp.ProtocolNumber {
+		c.t.Fatalf("got p.Pkt.TransportProtocolNumber = %d, want = %d", p.Pkt.TransportProtocolNumber, tcp.ProtocolNumber)
+	}
+
 	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
 	b := vv.ToView()
 
@@ -282,6 +287,11 @@ func (c *Context) GetPacketNonBlocking() []byte {
 
 	if p.Proto != ipv4.ProtocolNumber {
 		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	}
+
+	// Just check that the outgoing packet has a valid Transport Protocol number.
+	if p.Pkt.TransportProtocolNumber != tcp.ProtocolNumber {
+		c.t.Fatalf("got p.Pkt.TransportProtocolNumber = %d, want = %d", p.Pkt.TransportProtocolNumber, tcp.ProtocolNumber)
 	}
 
 	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
@@ -322,6 +332,9 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, 
 		Data: buf.ToVectorisedView(),
 	})
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
+	if pkt.TransportProtocolNumber != header.ICMPv4ProtocolNumber {
+		c.t.Errorf("ICMPv4: got pkt.TransportProtocolNumber = %d, want = %d", pkt.TransportProtocolNumber, header.ICMPv4ProtocolNumber)
+	}
 }
 
 // BuildSegment builds a TCP segment based on the given Headers and payload.
@@ -379,6 +392,9 @@ func (c *Context) SendSegment(s buffer.VectorisedView) {
 		Data: s,
 	})
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
+	if pkt.TransportProtocolNumber != tcp.ProtocolNumber {
+		c.t.Errorf("TCP Handler did not set pkt.TransportProtocolNumber")
+	}
 }
 
 // SendPacket builds and sends a TCP segment(with the provided payload & TCP
@@ -388,6 +404,9 @@ func (c *Context) SendPacket(payload []byte, h *Headers) {
 		Data: c.BuildSegment(payload, h),
 	})
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
+	if pkt.TransportProtocolNumber != tcp.ProtocolNumber {
+		c.t.Errorf("TCP Handler did not set pkt.TransportProtocolNumber")
+	}
 }
 
 // SendPacketWithAddrs builds and sends a TCP segment(with the provided payload
@@ -398,6 +417,9 @@ func (c *Context) SendPacketWithAddrs(payload []byte, h *Headers, src, dst tcpip
 		Data: c.BuildSegmentWithAddrs(payload, h, src, dst),
 	})
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
+	if pkt.TransportProtocolNumber != tcp.ProtocolNumber {
+		c.t.Errorf("TCP Handler did not set pkt.TransportProtocolNumber")
+	}
 }
 
 // SendAck sends an ACK packet.
@@ -573,6 +595,9 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 		Data: buf.ToVectorisedView(),
 	})
 	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
+	if pkt.TransportProtocolNumber != tcp.ProtocolNumber {
+		c.t.Errorf("TCP Handler did not set pkt.TransportProtocolNumber")
+	}
 }
 
 // CreateConnected creates a connected TCP endpoint.

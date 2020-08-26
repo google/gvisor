@@ -430,6 +430,7 @@ func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8, owner tcpi
 	pkt.Owner = owner
 
 	icmpv4 := header.ICMPv4(pkt.TransportHeader().Push(header.ICMPv4MinimumSize))
+	pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 	copy(icmpv4, data)
 	// Set the ident to the user-specified port. Sequence number should
 	// already be set by the user.
@@ -462,6 +463,7 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 	})
 
 	icmpv6 := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6MinimumSize))
+	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 	copy(icmpv6, data)
 	// Set the ident. Sequence number is provided by the user.
 	icmpv6.SetIdent(ident)

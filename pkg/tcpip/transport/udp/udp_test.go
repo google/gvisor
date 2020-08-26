@@ -388,6 +388,11 @@ func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.Netw
 		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
 	}
 
+	if p.Pkt.TransportProtocolNumber != header.UDPProtocolNumber {
+		c.t.Errorf("p.Pkt.TransportProtocolNumber; got = %d, wanted = %d",
+			p.Pkt.TransportProtocolNumber, header.UDPProtocolNumber)
+	}
+
 	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
 	b := vv.ToView()
 
@@ -1937,6 +1942,60 @@ func TestIncrementMalformedPacketsReceived(t *testing.T) {
 	}
 	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.MalformedPacketsReceived.Value(); got != want {
 		t.Errorf("got EP Stats.ReceiveErrors.MalformedPacketsReceived stats = %d, want = %d", got, want)
+	}
+}
+
+// TestStoredTransportProtocolNumber verifies that while the packet is being
+// processed the tranport protocol number is stored into the PacketBuffer.
+func TestStoredTransportProtocolNumber(t *testing.T) {
+	testCases := []struct {
+		name  string
+		proto tcpip.NetworkProtocolNumber
+		flow  testFlow
+	}{
+		{
+			name:  "IPv6",
+			proto: header.IPv6ProtocolNumber,
+			flow:  unicastV6,
+		},
+		{
+			name:  "IPv4",
+			proto: header.IPv4ProtocolNumber,
+			flow:  unicastV4,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpoint(testCase.proto)
+			// Bind to wildcard.
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				c.t.Fatalf("Bind to port %d failed: %s", stackPort, err)
+			}
+
+			payload := newPayload()
+			h := testCase.flow.header4Tuple(incoming)
+			var buf buffer.View
+			switch testCase.proto {
+			case header.IPv6ProtocolNumber:
+				buf = c.buildV6Packet(payload, &h)
+			case header.IPv4ProtocolNumber:
+				buf = c.buildV4Packet(payload, &h)
+			default:
+				c.t.Fatalf("Unexpected Protocol %d", testCase.proto)
+			}
+
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Data: buf.ToVectorisedView()})
+			c.linkEP.InjectInbound(testCase.proto, pkt)
+			// While it was away in the stack getting processed the transport protocol
+			// number should have been stored into the packet buffer.
+			if pkt.TransportProtocolNumber != udp.ProtocolNumber {
+				c.t.Errorf("got pkt.TransportProtocolNumber = %d, want = %d", pkt.TransportProtocolNumber, udp.ProtocolNumber)
+			}
+		})
 	}
 }
 

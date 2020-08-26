@@ -131,7 +131,10 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
 			Data:               dataVV,
 		})
-
+		// TODO(#3810) When adding protocol numbers into the header information
+		// we will have to change this code to handle the ICMP header no longer
+		// being in the data buffer.
+		replyPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 		// Send out the reply packet.
 		sent := stats.ICMP.V4PacketsSent
 		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{

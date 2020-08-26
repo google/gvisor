@@ -1285,6 +1285,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		return
 	}
 	if hasTransportHdr {
+		pkt.TransportProtocolNumber = transProtoNum
 		// Parse the transport header if present.
 		if state, ok := n.stack.transportProtocols[transProtoNum]; ok {
 			state.proto.Parse(pkt)

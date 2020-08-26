@@ -85,6 +85,12 @@ type PacketBuffer struct {
 	// numbers in registration APIs that take a PacketBuffer.
 	NetworkProtocolNumber tcpip.NetworkProtocolNumber
 
+	// TransportProtocol is only valid if TransportHeader() returns a valid
+	// view.
+	// TODO(gvisor.dev/issue/3810) This and the network protocol number should
+	// be moved into the headerinfo.
+	TransportProtocolNumber tcpip.TransportProtocolNumber
+
 	// Hash is the transport layer hash of this packet. A value of zero
 	// indicates no valid hash has been set.
 	Hash uint32
@@ -234,16 +240,17 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v buffer.View, consum
 // underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk := &PacketBuffer{
-		PacketBufferEntry:     pk.PacketBufferEntry,
-		Data:                  pk.Data.Clone(nil),
-		headers:               pk.headers,
-		header:                pk.header,
-		Hash:                  pk.Hash,
-		Owner:                 pk.Owner,
-		EgressRoute:           pk.EgressRoute,
-		GSOOptions:            pk.GSOOptions,
-		NetworkProtocolNumber: pk.NetworkProtocolNumber,
-		NatDone:               pk.NatDone,
+		PacketBufferEntry:       pk.PacketBufferEntry,
+		Data:                    pk.Data.Clone(nil),
+		headers:                 pk.headers,
+		header:                  pk.header,
+		Hash:                    pk.Hash,
+		Owner:                   pk.Owner,
+		EgressRoute:             pk.EgressRoute,
+		GSOOptions:              pk.GSOOptions,
+		NetworkProtocolNumber:   pk.NetworkProtocolNumber,
+		NatDone:                 pk.NatDone,
+		TransportProtocolNumber: pk.TransportProtocolNumber,
 	}
 	return newPk
 }
