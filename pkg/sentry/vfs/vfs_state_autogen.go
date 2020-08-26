@@ -188,13 +188,36 @@ func (x *eventEntry) StateLoad(m state.Source) {
 	m.Load(1, &x.prev)
 }
 
+func (x *FileDescriptionRefs) StateTypeName() string {
+	return "pkg/sentry/vfs.FileDescriptionRefs"
+}
+
+func (x *FileDescriptionRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *FileDescriptionRefs) beforeSave() {}
+
+func (x *FileDescriptionRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *FileDescriptionRefs) afterLoad() {}
+
+func (x *FileDescriptionRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
 func (x *Filesystem) StateTypeName() string {
 	return "pkg/sentry/vfs.Filesystem"
 }
 
 func (x *Filesystem) StateFields() []string {
 	return []string{
-		"refs",
+		"FilesystemRefs",
 		"vfs",
 		"fsType",
 		"impl",
@@ -205,7 +228,7 @@ func (x *Filesystem) beforeSave() {}
 
 func (x *Filesystem) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.refs)
+	m.Save(0, &x.FilesystemRefs)
 	m.Save(1, &x.vfs)
 	m.Save(2, &x.fsType)
 	m.Save(3, &x.impl)
@@ -214,10 +237,33 @@ func (x *Filesystem) StateSave(m state.Sink) {
 func (x *Filesystem) afterLoad() {}
 
 func (x *Filesystem) StateLoad(m state.Source) {
-	m.Load(0, &x.refs)
+	m.Load(0, &x.FilesystemRefs)
 	m.Load(1, &x.vfs)
 	m.Load(2, &x.fsType)
 	m.Load(3, &x.impl)
+}
+
+func (x *FilesystemRefs) StateTypeName() string {
+	return "pkg/sentry/vfs.FilesystemRefs"
+}
+
+func (x *FilesystemRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *FilesystemRefs) beforeSave() {}
+
+func (x *FilesystemRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *FilesystemRefs) afterLoad() {}
+
+func (x *FilesystemRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
 }
 
 func (x *registeredFilesystemType) StateTypeName() string {
@@ -448,9 +494,9 @@ func (x *MountNamespace) StateTypeName() string {
 
 func (x *MountNamespace) StateFields() []string {
 	return []string{
+		"MountNamespaceRefs",
 		"Owner",
 		"root",
-		"refs",
 		"mountpoints",
 	}
 }
@@ -459,19 +505,42 @@ func (x *MountNamespace) beforeSave() {}
 
 func (x *MountNamespace) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.Owner)
-	m.Save(1, &x.root)
-	m.Save(2, &x.refs)
+	m.Save(0, &x.MountNamespaceRefs)
+	m.Save(1, &x.Owner)
+	m.Save(2, &x.root)
 	m.Save(3, &x.mountpoints)
 }
 
 func (x *MountNamespace) afterLoad() {}
 
 func (x *MountNamespace) StateLoad(m state.Source) {
-	m.Load(0, &x.Owner)
-	m.Load(1, &x.root)
-	m.Load(2, &x.refs)
+	m.Load(0, &x.MountNamespaceRefs)
+	m.Load(1, &x.Owner)
+	m.Load(2, &x.root)
 	m.Load(3, &x.mountpoints)
+}
+
+func (x *MountNamespaceRefs) StateTypeName() string {
+	return "pkg/sentry/vfs.MountNamespaceRefs"
+}
+
+func (x *MountNamespaceRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *MountNamespaceRefs) beforeSave() {}
+
+func (x *MountNamespaceRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *MountNamespaceRefs) afterLoad() {}
+
+func (x *MountNamespaceRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
 }
 
 func (x *VirtualFilesystem) StateTypeName() string {
@@ -555,7 +624,9 @@ func init() {
 	state.Register((*epollInterestEntry)(nil))
 	state.Register((*eventList)(nil))
 	state.Register((*eventEntry)(nil))
+	state.Register((*FileDescriptionRefs)(nil))
 	state.Register((*Filesystem)(nil))
+	state.Register((*FilesystemRefs)(nil))
 	state.Register((*registeredFilesystemType)(nil))
 	state.Register((*Inotify)(nil))
 	state.Register((*Watches)(nil))
@@ -563,6 +634,7 @@ func init() {
 	state.Register((*Event)(nil))
 	state.Register((*Mount)(nil))
 	state.Register((*MountNamespace)(nil))
+	state.Register((*MountNamespaceRefs)(nil))
 	state.Register((*VirtualFilesystem)(nil))
 	state.Register((*VirtualDentry)(nil))
 }

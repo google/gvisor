@@ -38,9 +38,7 @@ import (
 //
 // FileDescription is analogous to Linux's struct file.
 type FileDescription struct {
-	// refs is the reference count. refs is accessed using atomic memory
-	// operations.
-	refs int64
+	FileDescriptionRefs
 
 	// flagsMu protects statusFlags and asyncHandler below.
 	flagsMu sync.Mutex
@@ -131,7 +129,7 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mou
 		}
 	}
 
-	fd.refs = 1
+	fd.EnableLeakCheck()
 
 	// Remove "file creation flags" to mirror the behavior from file.f_flags in
 	// fs/open.c:do_dentry_open.
@@ -149,30 +147,9 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mou
 	return nil
 }
 
-// IncRef increments fd's reference count.
-func (fd *FileDescription) IncRef() {
-	atomic.AddInt64(&fd.refs, 1)
-}
-
-// TryIncRef increments fd's reference count and returns true. If fd's
-// reference count is already zero, TryIncRef does nothing and returns false.
-//
-// TryIncRef does not require that a reference is held on fd.
-func (fd *FileDescription) TryIncRef() bool {
-	for {
-		refs := atomic.LoadInt64(&fd.refs)
-		if refs <= 0 {
-			return false
-		}
-		if atomic.CompareAndSwapInt64(&fd.refs, refs, refs+1) {
-			return true
-		}
-	}
-}
-
 // DecRef decrements fd's reference count.
 func (fd *FileDescription) DecRef(ctx context.Context) {
-	if refs := atomic.AddInt64(&fd.refs, -1); refs == 0 {
+	fd.FileDescriptionRefs.DecRef(func() {
 		// Unregister fd from all epoll instances.
 		fd.epollMu.Lock()
 		epolls := fd.epolls
@@ -208,15 +185,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		}
 		fd.asyncHandler = nil
 		fd.flagsMu.Unlock()
-	} else if refs < 0 {
-		panic("FileDescription.DecRef() called without holding a reference")
-	}
-}
-
-// Refs returns the current number of references. The returned count
-// is inherently racy and is unsafe to use without external synchronization.
-func (fd *FileDescription) Refs() int64 {
-	return atomic.LoadInt64(&fd.refs)
+	})
 }
 
 // Mount returns the mount on which fd was opened. It does not take a reference

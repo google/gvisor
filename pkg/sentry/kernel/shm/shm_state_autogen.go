@@ -47,7 +47,7 @@ func (x *Shm) StateTypeName() string {
 
 func (x *Shm) StateFields() []string {
 	return []string{
-		"AtomicRefCount",
+		"ShmRefs",
 		"mfp",
 		"registry",
 		"ID",
@@ -71,7 +71,7 @@ func (x *Shm) beforeSave() {}
 
 func (x *Shm) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.AtomicRefCount)
+	m.Save(0, &x.ShmRefs)
 	m.Save(1, &x.mfp)
 	m.Save(2, &x.registry)
 	m.Save(3, &x.ID)
@@ -93,7 +93,7 @@ func (x *Shm) StateSave(m state.Sink) {
 func (x *Shm) afterLoad() {}
 
 func (x *Shm) StateLoad(m state.Source) {
-	m.Load(0, &x.AtomicRefCount)
+	m.Load(0, &x.ShmRefs)
 	m.Load(1, &x.mfp)
 	m.Load(2, &x.registry)
 	m.Load(3, &x.ID)
@@ -112,7 +112,31 @@ func (x *Shm) StateLoad(m state.Source) {
 	m.Load(16, &x.pendingDestruction)
 }
 
+func (x *ShmRefs) StateTypeName() string {
+	return "pkg/sentry/kernel/shm.ShmRefs"
+}
+
+func (x *ShmRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *ShmRefs) beforeSave() {}
+
+func (x *ShmRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *ShmRefs) afterLoad() {}
+
+func (x *ShmRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
 func init() {
 	state.Register((*Registry)(nil))
 	state.Register((*Shm)(nil))
+	state.Register((*ShmRefs)(nil))
 }

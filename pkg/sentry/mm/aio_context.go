@@ -17,7 +17,6 @@ package mm
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -239,7 +238,7 @@ func (ctx *AIOContext) Drain() {
 //
 // +stateify savable
 type aioMappable struct {
-	refs.AtomicRefCount
+	aioMappableRefs
 
 	mfp pgalloc.MemoryFileProvider
 	fr  memmap.FileRange
@@ -253,13 +252,13 @@ func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
 		return nil, err
 	}
 	m := aioMappable{mfp: mfp, fr: fr}
-	m.EnableLeakCheck("mm.aioMappable")
+	m.EnableLeakCheck()
 	return &m, nil
 }
 
 // DecRef implements refs.RefCounter.DecRef.
 func (m *aioMappable) DecRef(ctx context.Context) {
-	m.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
+	m.aioMappableRefs.DecRef(func() {
 		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }

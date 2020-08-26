@@ -36,6 +36,30 @@ func (x *Device) StateLoad(m state.Source) {
 	m.Load(3, &x.flags)
 }
 
+func (x *tunEndpointRefs) StateTypeName() string {
+	return "pkg/tcpip/link/tun.tunEndpointRefs"
+}
+
+func (x *tunEndpointRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *tunEndpointRefs) beforeSave() {}
+
+func (x *tunEndpointRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *tunEndpointRefs) afterLoad() {}
+
+func (x *tunEndpointRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
 func init() {
 	state.Register((*Device)(nil))
+	state.Register((*tunEndpointRefs)(nil))
 }

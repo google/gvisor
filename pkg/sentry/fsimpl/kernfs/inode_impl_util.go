@@ -20,7 +20,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -344,8 +343,6 @@ type OrderedChildrenOptions struct {
 //
 // Must be initialize with Init before first use.
 type OrderedChildren struct {
-	refs.AtomicRefCount
-
 	// Can children be modified by user syscalls? It set to false, interface
 	// methods that would modify the children return EPERM. Immutable.
 	writable bool
@@ -361,14 +358,14 @@ func (o *OrderedChildren) Init(opts OrderedChildrenOptions) {
 	o.set = make(map[string]*slot)
 }
 
-// DecRef implements Inode.DecRef.
-func (o *OrderedChildren) DecRef(ctx context.Context) {
-	o.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
-		o.mu.Lock()
-		defer o.mu.Unlock()
-		o.order.Reset()
-		o.set = nil
-	})
+// Destroy clears the children stored in o. It should be called by structs
+// embedding OrderedChildren upon destruction, i.e. when their reference count
+// reaches zero.
+func (o *OrderedChildren) Destroy() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.order.Reset()
+	o.set = nil
 }
 
 // Populate inserts children into this OrderedChildren, and d's dentry
@@ -549,6 +546,7 @@ func (InodeSymlink) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.D
 //
 // +stateify savable
 type StaticDirectory struct {
+	StaticDirectoryRefs
 	InodeNotSymlink
 	InodeDirectoryNoNewChildren
 	InodeAttrs
@@ -594,9 +592,14 @@ func (s *StaticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd 
 	return fd.VFSFileDescription(), nil
 }
 
-// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*StaticDirectory) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
+}
+
+// DecRef implements kernfs.Inode.
+func (s *StaticDirectory) DecRef(context.Context) {
+	s.StaticDirectoryRefs.DecRef(s.Destroy)
 }
 
 // AlwaysValid partially implements kernfs.inodeDynamicLookup.
