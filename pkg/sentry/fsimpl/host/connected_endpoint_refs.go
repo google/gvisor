@@ -1,6 +1,7 @@
 package host
 
 import (
+	"fmt"
 	"runtime"
 	"sync/atomic"
 
@@ -17,6 +18,11 @@ var ConnectedEndpointownerType *ConnectedEndpoint
 //
 // Note that the number of references is actually refCount + 1 so that a default
 // zero-value Refs object contains one reference.
+//
+// TODO(gvisor.dev/issue/1486): Store stack traces when leak check is enabled in
+// a map with 16-bit hashes, and store the hash in the top 16 bits of refCount.
+// This will allow us to add stack trace information to the leak messages
+// without growing the size of Refs.
 //
 // +stateify savable
 type ConnectedEndpointRefs struct {
@@ -62,7 +68,7 @@ func (r *ConnectedEndpointRefs) ReadRefs() int64 {
 //go:nosplit
 func (r *ConnectedEndpointRefs) IncRef() {
 	if v := atomic.AddInt64(&r.refCount, 1); v <= 0 {
-		panic("Incrementing non-positive ref count")
+		panic(fmt.Sprintf("Incrementing non-positive ref count %p owned by %T", r, ConnectedEndpointownerType))
 	}
 }
 
@@ -101,7 +107,7 @@ func (r *ConnectedEndpointRefs) TryIncRef() bool {
 func (r *ConnectedEndpointRefs) DecRef(destroy func()) {
 	switch v := atomic.AddInt64(&r.refCount, -1); {
 	case v < -1:
-		panic("Decrementing non-positive ref count")
+		panic(fmt.Sprintf("Decrementing non-positive ref count %p, owned by %T", r, ConnectedEndpointownerType))
 
 	case v == -1:
 

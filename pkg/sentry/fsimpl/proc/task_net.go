@@ -262,7 +262,7 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// For now, we always redact this pointer.
 		fmt.Fprintf(buf, "%#016p: %08X %08X %08X %04X %02X %8d",
 			(*unix.SocketOperations)(nil), // Num, pointer to kernel socket struct.
-			s.Refs()-1,                    // RefCount, don't count our own ref.
+			s.ReadRefs()-1,                // RefCount, don't count our own ref.
 			0,                             // Protocol, always 0 for UDS.
 			sockFlags,                     // Flags.
 			sops.Endpoint().Type(),        // Type.
@@ -430,7 +430,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 
 		// Field: refcount. Don't count the ref we obtain while deferencing
 		// the weakref to this socket.
-		fmt.Fprintf(buf, "%d ", s.Refs()-1)
+		fmt.Fprintf(buf, "%d ", s.ReadRefs()-1)
 
 		// Field: Socket struct address. Redacted due to the same reason as
 		// the 'Num' field in /proc/net/unix, see netUnix.ReadSeqFileData.
@@ -589,7 +589,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		// Field: ref; reference count on the socket inode. Don't count the ref
 		// we obtain while deferencing the weakref to this socket.
-		fmt.Fprintf(buf, "%d ", s.Refs()-1)
+		fmt.Fprintf(buf, "%d ", s.ReadRefs()-1)
 
 		// Field: Socket struct address. Redacted due to the same reason as
 		// the 'Num' field in /proc/net/unix, see netUnix.ReadSeqFileData.

@@ -120,6 +120,29 @@ func (x *queue) StateLoad(m state.Source) {
 	m.Load(4, &x.transformer)
 }
 
+func (x *rootInodeRefs) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.rootInodeRefs"
+}
+
+func (x *rootInodeRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *rootInodeRefs) beforeSave() {}
+
+func (x *rootInodeRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *rootInodeRefs) afterLoad() {}
+
+func (x *rootInodeRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
 func (x *Terminal) StateTypeName() string {
 	return "pkg/sentry/fsimpl/devpts.Terminal"
 }
@@ -157,5 +180,6 @@ func init() {
 	state.Register((*outputQueueTransformer)(nil))
 	state.Register((*inputQueueTransformer)(nil))
 	state.Register((*queue)(nil))
+	state.Register((*rootInodeRefs)(nil))
 	state.Register((*Terminal)(nil))
 }

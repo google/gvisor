@@ -71,7 +71,7 @@ func (x *queue) StateTypeName() string {
 
 func (x *queue) StateFields() []string {
 	return []string{
-		"AtomicRefCount",
+		"queueRefs",
 		"ReaderQueue",
 		"WriterQueue",
 		"closed",
@@ -86,7 +86,7 @@ func (x *queue) beforeSave() {}
 
 func (x *queue) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.AtomicRefCount)
+	m.Save(0, &x.queueRefs)
 	m.Save(1, &x.ReaderQueue)
 	m.Save(2, &x.WriterQueue)
 	m.Save(3, &x.closed)
@@ -99,7 +99,7 @@ func (x *queue) StateSave(m state.Sink) {
 func (x *queue) afterLoad() {}
 
 func (x *queue) StateLoad(m state.Source) {
-	m.Load(0, &x.AtomicRefCount)
+	m.Load(0, &x.queueRefs)
 	m.Load(1, &x.ReaderQueue)
 	m.Load(2, &x.WriterQueue)
 	m.Load(3, &x.closed)
@@ -107,6 +107,29 @@ func (x *queue) StateLoad(m state.Source) {
 	m.Load(5, &x.used)
 	m.Load(6, &x.limit)
 	m.Load(7, &x.dataList)
+}
+
+func (x *queueRefs) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.queueRefs"
+}
+
+func (x *queueRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *queueRefs) beforeSave() {}
+
+func (x *queueRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *queueRefs) afterLoad() {}
+
+func (x *queueRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
 }
 
 func (x *messageList) StateTypeName() string {
@@ -339,6 +362,7 @@ func init() {
 	state.Register((*connectionedEndpoint)(nil))
 	state.Register((*connectionlessEndpoint)(nil))
 	state.Register((*queue)(nil))
+	state.Register((*queueRefs)(nil))
 	state.Register((*messageList)(nil))
 	state.Register((*messageEntry)(nil))
 	state.Register((*ControlMessages)(nil))

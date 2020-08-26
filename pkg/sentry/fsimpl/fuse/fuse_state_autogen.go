@@ -99,6 +99,29 @@ func (x *futureResponse) StateLoad(m state.Source) {
 	m.Load(3, &x.data)
 }
 
+func (x *inodeRefs) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.inodeRefs"
+}
+
+func (x *inodeRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *inodeRefs) beforeSave() {}
+
+func (x *inodeRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *inodeRefs) afterLoad() {}
+
+func (x *inodeRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
 func (x *requestList) StateTypeName() string {
 	return "pkg/sentry/fsimpl/fuse.requestList"
 }
@@ -155,6 +178,7 @@ func init() {
 	state.Register((*Request)(nil))
 	state.Register((*Response)(nil))
 	state.Register((*futureResponse)(nil))
+	state.Register((*inodeRefs)(nil))
 	state.Register((*requestList)(nil))
 	state.Register((*requestEntry)(nil))
 }

@@ -92,7 +92,7 @@ func (x *aioMappable) StateTypeName() string {
 
 func (x *aioMappable) StateFields() []string {
 	return []string{
-		"AtomicRefCount",
+		"aioMappableRefs",
 		"mfp",
 		"fr",
 	}
@@ -102,7 +102,7 @@ func (x *aioMappable) beforeSave() {}
 
 func (x *aioMappable) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.AtomicRefCount)
+	m.Save(0, &x.aioMappableRefs)
 	m.Save(1, &x.mfp)
 	m.Save(2, &x.fr)
 }
@@ -110,9 +110,32 @@ func (x *aioMappable) StateSave(m state.Sink) {
 func (x *aioMappable) afterLoad() {}
 
 func (x *aioMappable) StateLoad(m state.Source) {
-	m.Load(0, &x.AtomicRefCount)
+	m.Load(0, &x.aioMappableRefs)
 	m.Load(1, &x.mfp)
 	m.Load(2, &x.fr)
+}
+
+func (x *aioMappableRefs) StateTypeName() string {
+	return "pkg/sentry/mm.aioMappableRefs"
+}
+
+func (x *aioMappableRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *aioMappableRefs) beforeSave() {}
+
+func (x *aioMappableRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *aioMappableRefs) afterLoad() {}
+
+func (x *aioMappableRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
 }
 
 func (x *fileRefcountSet) StateTypeName() string {
@@ -565,7 +588,7 @@ func (x *SpecialMappable) StateTypeName() string {
 
 func (x *SpecialMappable) StateFields() []string {
 	return []string{
-		"AtomicRefCount",
+		"SpecialMappableRefs",
 		"mfp",
 		"fr",
 		"name",
@@ -576,7 +599,7 @@ func (x *SpecialMappable) beforeSave() {}
 
 func (x *SpecialMappable) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.AtomicRefCount)
+	m.Save(0, &x.SpecialMappableRefs)
 	m.Save(1, &x.mfp)
 	m.Save(2, &x.fr)
 	m.Save(3, &x.name)
@@ -585,10 +608,33 @@ func (x *SpecialMappable) StateSave(m state.Sink) {
 func (x *SpecialMappable) afterLoad() {}
 
 func (x *SpecialMappable) StateLoad(m state.Source) {
-	m.Load(0, &x.AtomicRefCount)
+	m.Load(0, &x.SpecialMappableRefs)
 	m.Load(1, &x.mfp)
 	m.Load(2, &x.fr)
 	m.Load(3, &x.name)
+}
+
+func (x *SpecialMappableRefs) StateTypeName() string {
+	return "pkg/sentry/mm.SpecialMappableRefs"
+}
+
+func (x *SpecialMappableRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *SpecialMappableRefs) beforeSave() {}
+
+func (x *SpecialMappableRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *SpecialMappableRefs) afterLoad() {}
+
+func (x *SpecialMappableRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
 }
 
 func (x *vmaSet) StateTypeName() string {
@@ -693,6 +739,7 @@ func init() {
 	state.Register((*ioResult)(nil))
 	state.Register((*AIOContext)(nil))
 	state.Register((*aioMappable)(nil))
+	state.Register((*aioMappableRefs)(nil))
 	state.Register((*fileRefcountSet)(nil))
 	state.Register((*fileRefcountnode)(nil))
 	state.Register((*fileRefcountSegmentDataSlices)(nil))
@@ -706,6 +753,7 @@ func init() {
 	state.Register((*pmanode)(nil))
 	state.Register((*pmaSegmentDataSlices)(nil))
 	state.Register((*SpecialMappable)(nil))
+	state.Register((*SpecialMappableRefs)(nil))
 	state.Register((*vmaSet)(nil))
 	state.Register((*vmanode)(nil))
 	state.Register((*vmaSegmentDataSlices)(nil))

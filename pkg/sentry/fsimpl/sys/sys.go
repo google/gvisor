@@ -118,6 +118,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // dir implements kernfs.Inode.
 type dir struct {
+	dirRefs
 	kernfs.InodeAttrs
 	kernfs.InodeNoDynamicLookup
 	kernfs.InodeNotSymlink
@@ -133,6 +134,7 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 	d := &dir{}
 	d.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	d.EnableLeakCheck()
 	d.dentry.Init(d)
 
 	d.IncLinks(d.OrderedChildren.Populate(&d.dentry, contents))
@@ -140,7 +142,7 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 	return &d.dentry
 }
 
-// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
@@ -154,6 +156,11 @@ func (d *dir) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry,
 		return nil, err
 	}
 	return fd.VFSFileDescription(), nil
+}
+
+// DecRef implements kernfs.Inode.DecRef.
+func (d *dir) DecRef(context.Context) {
+	d.dirRefs.DecRef(d.Destroy)
 }
 
 // cpuFile implements kernfs.Inode.
