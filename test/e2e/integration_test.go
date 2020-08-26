@@ -168,10 +168,10 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 
 	// TODO(gvisor.dev/issue/3373): Remove after implementing.
-	if usingVFS2, err := dockerutil.UsingVFS2(); usingVFS2 {
-		t.Skip("CheckpointRestore not implemented in VFS2.")
-	} else if err != nil {
+	if usingVFS2, err := dockerutil.UsingVFS2(); err != nil {
 		t.Fatalf("failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if usingVFS2 {
+		t.Skip("CheckpointRestore not implemented in VFS2.")
 	}
 
 	ctx := context.Background()
