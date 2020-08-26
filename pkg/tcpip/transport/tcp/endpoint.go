@@ -1736,10 +1736,10 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 }
 
 // SetSockOpt sets a socket option.
-func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+func (e *endpoint) SetSockOpt(opt tcpip.SocketOption) *tcpip.Error {
 	switch v := opt.(type) {
-	case tcpip.BindToDeviceOption:
-		id := tcpip.NICID(v)
+	case *tcpip.BindToDeviceOption:
+		id := tcpip.NICID(*v)
 		if id != 0 && !e.stack.HasNIC(id) {
 			return tcpip.ErrUnknownDevice
 		}
@@ -1747,27 +1747,27 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.bindToDevice = id
 		e.UnlockUser()
 
-	case tcpip.KeepaliveIdleOption:
+	case *tcpip.KeepaliveIdleOption:
 		e.keepalive.Lock()
-		e.keepalive.idle = time.Duration(v)
+		e.keepalive.idle = time.Duration(*v)
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 
-	case tcpip.KeepaliveIntervalOption:
+	case *tcpip.KeepaliveIntervalOption:
 		e.keepalive.Lock()
-		e.keepalive.interval = time.Duration(v)
+		e.keepalive.interval = time.Duration(*v)
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 
-	case tcpip.OutOfBandInlineOption:
+	case *tcpip.OutOfBandInlineOption:
 		// We don't currently support disabling this option.
 
-	case tcpip.TCPUserTimeoutOption:
+	case *tcpip.TCPUserTimeoutOption:
 		e.LockUser()
-		e.userTimeout = time.Duration(v)
+		e.userTimeout = time.Duration(*v)
 		e.UnlockUser()
 
-	case tcpip.CongestionControlOption:
+	case *tcpip.CongestionControlOption:
 		// Query the available cc algorithms in the stack and
 		// validate that the specified algorithm is actually
 		// supported in the stack.
@@ -1777,10 +1777,10 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		availCC := strings.Split(string(avail), " ")
 		for _, cc := range availCC {
-			if v == tcpip.CongestionControlOption(cc) {
+			if *v == tcpip.CongestionControlOption(cc) {
 				e.LockUser()
 				state := e.EndpointState()
-				e.cc = v
+				e.cc = *v
 				switch state {
 				case StateEstablished:
 					if e.EndpointState() == state {
@@ -1796,43 +1796,43 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		// control algorithm is specified.
 		return tcpip.ErrNoSuchFile
 
-	case tcpip.TCPLingerTimeoutOption:
+	case *tcpip.TCPLingerTimeoutOption:
 		e.LockUser()
 
 		switch {
-		case v < 0:
+		case *v < 0:
 			// Same as effectively disabling TCPLinger timeout.
-			v = -1
-		case v == 0:
+			*v = -1
+		case *v == 0:
 			// Same as the stack default.
 			var stackLingerTimeout tcpip.TCPLingerTimeoutOption
 			if err := e.stack.TransportProtocolOption(ProtocolNumber, &stackLingerTimeout); err != nil {
 				panic(fmt.Sprintf("e.stack.TransportProtocolOption(%d, %+v) = %v", ProtocolNumber, &stackLingerTimeout, err))
 			}
-			v = stackLingerTimeout
-		case v > tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout):
+			*v = stackLingerTimeout
+		case *v > tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout):
 			// Cap it to Stack's default TCP_LINGER2 timeout.
-			v = tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout)
+			*v = tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout)
 		default:
 		}
 
-		e.tcpLingerTimeout = time.Duration(v)
+		e.tcpLingerTimeout = time.Duration(*v)
 		e.UnlockUser()
 
-	case tcpip.TCPDeferAcceptOption:
+	case *tcpip.TCPDeferAcceptOption:
 		e.LockUser()
-		if time.Duration(v) > MaxRTO {
-			v = tcpip.TCPDeferAcceptOption(MaxRTO)
+		if time.Duration(*v) > MaxRTO {
+			*v = tcpip.TCPDeferAcceptOption(MaxRTO)
 		}
-		e.deferAccept = time.Duration(v)
+		e.deferAccept = time.Duration(*v)
 		e.UnlockUser()
 
-	case tcpip.SocketDetachFilterOption:
+	case *tcpip.SocketDetachFilterOption:
 		return nil
 
-	case tcpip.LingerOption:
+	case *tcpip.LingerOption:
 		e.LockUser()
-		e.linger = v
+		e.linger = *v
 		e.UnlockUser()
 
 	default:
@@ -1993,10 +1993,10 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
+func (e *endpoint) GetSockOpt(opt tcpip.SocketOption) *tcpip.Error {
 	switch o := opt.(type) {
-	case tcpip.ErrorOption:
-		return e.takeLastError()
+	case *tcpip.ErrorOption:
+		o.Err = e.takeLastError()
 
 	case *tcpip.BindToDeviceOption:
 		e.LockUser()

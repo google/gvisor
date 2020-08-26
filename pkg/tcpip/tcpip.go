@@ -578,8 +578,8 @@ type Endpoint interface {
 	// if waiter.EventIn is set, the endpoint is immediately readable.
 	Readiness(mask waiter.EventMask) waiter.EventMask
 
-	// SetSockOpt sets a socket option. opt should be one of the *Option types.
-	SetSockOpt(opt interface{}) *Error
+	// SetSockOpt sets a socket option.
+	SetSockOpt(opt SocketOption) *Error
 
 	// SetSockOptBool sets a socket option, for simple cases where a value
 	// has the bool type.
@@ -589,9 +589,8 @@ type Endpoint interface {
 	// has the int type.
 	SetSockOptInt(opt SockOptInt, v int) *Error
 
-	// GetSockOpt gets a socket option. opt should be a pointer to one of the
-	// *Option types.
-	GetSockOpt(opt interface{}) *Error
+	// GetSockOpt gets a socket option.
+	GetSockOpt(opt SocketOption) *Error
 
 	// GetSockOptBool gets a socket option for simple cases where a return
 	// value has the bool type.
@@ -839,13 +838,24 @@ const (
 	PMTUDiscoveryProbe
 )
 
-// ErrorOption is used in GetSockOpt to specify that the last error reported by
-// the endpoint should be cleared and returned.
-type ErrorOption struct{}
+// SocketOption is a marker interface for socket options.
+type SocketOption interface {
+	isSocketOption()
+}
+
+// ErrorOption holds the last error reported by the endpoint.
+type ErrorOption struct {
+	// Err is the last error reported by the endpoint.
+	Err *Error
+}
+
+func (*ErrorOption) isSocketOption() {}
 
 // BindToDeviceOption is used by SetSockOpt/GetSockOpt to specify that sockets
 // should bind only on a specific NIC.
 type BindToDeviceOption NICID
+
+func (*BindToDeviceOption) isSocketOption() {}
 
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
 //
@@ -855,40 +865,58 @@ type TCPInfoOption struct {
 	RTTVar time.Duration
 }
 
+func (*TCPInfoOption) isSocketOption() {}
+
 // KeepaliveIdleOption is used by SetSockOpt/GetSockOpt to specify the time a
 // connection must remain idle before the first TCP keepalive packet is sent.
 // Once this time is reached, KeepaliveIntervalOption is used instead.
 type KeepaliveIdleOption time.Duration
 
+func (*KeepaliveIdleOption) isSocketOption() {}
+
 // KeepaliveIntervalOption is used by SetSockOpt/GetSockOpt to specify the
 // interval between sending TCP keepalive packets.
 type KeepaliveIntervalOption time.Duration
+
+func (*KeepaliveIntervalOption) isSocketOption() {}
 
 // TCPUserTimeoutOption is used by SetSockOpt/GetSockOpt to specify a user
 // specified timeout for a given TCP connection.
 // See: RFC5482 for details.
 type TCPUserTimeoutOption time.Duration
 
+func (*TCPUserTimeoutOption) isSocketOption() {}
+
 // CongestionControlOption is used by SetSockOpt/GetSockOpt to set/get
 // the current congestion control algorithm.
 type CongestionControlOption string
+
+func (*CongestionControlOption) isSocketOption() {}
 
 // AvailableCongestionControlOption is used to query the supported congestion
 // control algorithms.
 type AvailableCongestionControlOption string
 
+func (*AvailableCongestionControlOption) isSocketOption() {}
+
 // ModerateReceiveBufferOption is used by buffer moderation.
 type ModerateReceiveBufferOption bool
+
+func (*ModerateReceiveBufferOption) isSocketOption() {}
 
 // TCPLingerTimeoutOption is used by SetSockOpt/GetSockOpt to set/get the
 // maximum duration for which a socket lingers in the TCP_FIN_WAIT_2 state
 // before being marked closed.
 type TCPLingerTimeoutOption time.Duration
 
+func (*TCPLingerTimeoutOption) isSocketOption() {}
+
 // TCPTimeWaitTimeoutOption is used by SetSockOpt/GetSockOpt to set/get the
 // maximum duration for which a socket lingers in the TIME_WAIT state
 // before being marked closed.
 type TCPTimeWaitTimeoutOption time.Duration
+
+func (*TCPTimeWaitTimeoutOption) isSocketOption() {}
 
 // TCPDeferAcceptOption is used by SetSockOpt/GetSockOpt to allow a
 // accept to return a completed connection only when there is data to be
@@ -896,26 +924,38 @@ type TCPTimeWaitTimeoutOption time.Duration
 // for a handshake till the specified timeout until a segment with data arrives.
 type TCPDeferAcceptOption time.Duration
 
+func (*TCPDeferAcceptOption) isSocketOption() {}
+
 // TCPMinRTOOption is use by SetSockOpt/GetSockOpt to allow overriding
 // default MinRTO used by the Stack.
 type TCPMinRTOOption time.Duration
+
+func (*TCPMinRTOOption) isSocketOption() {}
 
 // TCPMaxRTOOption is use by SetSockOpt/GetSockOpt to allow overriding
 // default MaxRTO used by the Stack.
 type TCPMaxRTOOption time.Duration
 
+func (*TCPMaxRTOOption) isSocketOption() {}
+
 // TCPMaxRetriesOption is used by SetSockOpt/GetSockOpt to set/get the
 // maximum number of retransmits after which we time out the connection.
 type TCPMaxRetriesOption uint64
+
+func (*TCPMaxRetriesOption) isSocketOption() {}
 
 // TCPSynRcvdCountThresholdOption is used by SetSockOpt/GetSockOpt to specify
 // the number of endpoints that can be in SYN-RCVD state before the stack
 // switches to using SYN cookies.
 type TCPSynRcvdCountThresholdOption uint64
 
+func (*TCPSynRcvdCountThresholdOption) isSocketOption() {}
+
 // TCPSynRetriesOption is used by SetSockOpt/GetSockOpt to specify stack-wide
 // default for number of times SYN is retransmitted before aborting a connect.
 type TCPSynRetriesOption uint8
+
+func (*TCPSynRetriesOption) isSocketOption() {}
 
 // MulticastInterfaceOption is used by SetSockOpt/GetSockOpt to specify a
 // default interface for multicast.
@@ -923,6 +963,8 @@ type MulticastInterfaceOption struct {
 	NIC           NICID
 	InterfaceAddr Address
 }
+
+func (*MulticastInterfaceOption) isSocketOption() {}
 
 // MembershipOption is used by SetSockOpt/GetSockOpt as an argument to
 // AddMembershipOption and RemoveMembershipOption.
@@ -932,36 +974,52 @@ type MembershipOption struct {
 	MulticastAddr Address
 }
 
+func (*MembershipOption) isSocketOption() {}
+
 // AddMembershipOption is used by SetSockOpt/GetSockOpt to join a multicast
 // group identified by the given multicast address, on the interface matching
 // the given interface address.
 type AddMembershipOption MembershipOption
+
+func (*AddMembershipOption) isSocketOption() {}
 
 // RemoveMembershipOption is used by SetSockOpt/GetSockOpt to leave a multicast
 // group identified by the given multicast address, on the interface matching
 // the given interface address.
 type RemoveMembershipOption MembershipOption
 
+func (*RemoveMembershipOption) isSocketOption() {}
+
 // OutOfBandInlineOption is used by SetSockOpt/GetSockOpt to specify whether
 // TCP out-of-band data is delivered along with the normal in-band data.
 type OutOfBandInlineOption int
+
+func (*OutOfBandInlineOption) isSocketOption() {}
 
 // DefaultTTLOption is used by stack.(*Stack).NetworkProtocolOption to specify
 // a default TTL.
 type DefaultTTLOption uint8
 
+func (*DefaultTTLOption) isSocketOption() {}
+
 // SocketDetachFilterOption is used by SetSockOpt to detach a previously attached
 // classic BPF filter on a given endpoint.
 type SocketDetachFilterOption int
+
+func (*SocketDetachFilterOption) isSocketOption() {}
 
 // OriginalDestinationOption is used to get the original destination address
 // and port of a redirected packet.
 type OriginalDestinationOption FullAddress
 
+func (*OriginalDestinationOption) isSocketOption() {}
+
 // TCPTimeWaitReuseOption is used stack.(*Stack).TransportProtocolOption to
 // specify if the stack can reuse the port bound by an endpoint in TIME-WAIT for
 // new connections when it is safe from protocol viewpoint.
 type TCPTimeWaitReuseOption uint8
+
+func (*TCPTimeWaitReuseOption) isSocketOption() {}
 
 const (
 	// TCPTimeWaitReuseDisabled indicates reuse of port bound by endponts in TIME-WAIT cannot
@@ -986,6 +1044,8 @@ type LingerOption struct {
 	Enabled bool
 	Timeout time.Duration
 }
+
+func (*LingerOption) isSocketOption() {}
 
 // IPPacketInfo is the message structure for IP_PKTINFO.
 //

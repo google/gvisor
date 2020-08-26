@@ -510,9 +510,9 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // SetSockOpt implements tcpip.Endpoint.SetSockOpt.
-func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+func (e *endpoint) SetSockOpt(opt tcpip.SocketOption) *tcpip.Error {
 	switch opt.(type) {
-	case tcpip.SocketDetachFilterOption:
+	case *tcpip.SocketDetachFilterOption:
 		return nil
 
 	default:
@@ -577,11 +577,10 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
+func (e *endpoint) GetSockOpt(opt tcpip.SocketOption) *tcpip.Error {
 	switch opt.(type) {
-	case tcpip.ErrorOption:
+	case *tcpip.ErrorOption:
 		return nil
-
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}

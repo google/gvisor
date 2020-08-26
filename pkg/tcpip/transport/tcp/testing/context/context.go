@@ -638,8 +638,11 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 	// Wait for connection to be established.
 	select {
 	case <-notifyCh:
-		if err := c.EP.GetSockOpt(tcpip.ErrorOption{}); err != nil {
-			c.t.Fatalf("Unexpected error when connecting: %v", err)
+		var errOpt tcpip.ErrorOption
+		if err := c.EP.GetSockOpt(&errOpt); err != nil {
+			c.t.Fatalf("c.EP.GetSockOpt(&%T): %s", errOpt, err)
+		} else if errOpt.Err != nil {
+			c.t.Fatalf("unexpected error when connecting: %s", errOpt.Err)
 		}
 	case <-time.After(1 * time.Second):
 		c.t.Fatalf("Timed out waiting for connection")
@@ -882,9 +885,11 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 	// Wait for connection to be established.
 	select {
 	case <-notifyCh:
-		err = c.EP.GetSockOpt(tcpip.ErrorOption{})
-		if err != nil {
-			c.t.Fatalf("Unexpected error when connecting: %v", err)
+		var errOpt tcpip.ErrorOption
+		if err := c.EP.GetSockOpt(&errOpt); err != nil {
+			c.t.Fatalf("c.EP.GetSockOpt(&%T): %s", errOpt, err)
+		} else if errOpt.Err != nil {
+			c.t.Fatalf("unexpected error when connecting: %s", errOpt.Err)
 		}
 	case <-time.After(1 * time.Second):
 		c.t.Fatalf("Timed out waiting for connection")

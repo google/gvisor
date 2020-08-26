@@ -178,18 +178,21 @@ func main() {
 	// Issue connect request and wait for it to complete.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&waitEntry, waiter.EventOut)
-	terr := ep.Connect(remote)
-	if terr == tcpip.ErrConnectStarted {
+	if err := ep.Connect(remote); err == tcpip.ErrConnectStarted {
 		fmt.Println("Connect is pending...")
 		<-notifyCh
-		terr = ep.GetSockOpt(tcpip.ErrorOption{})
+		var errOpt tcpip.ErrorOption
+		if err := ep.GetSockOpt(&errOpt); err != nil {
+			wq.EventUnregister(&waitEntry)
+			log.Fatalf("ep.GetSockOpt(&%T): %s", errOpt, err)
+		} else if errOpt.Err != nil {
+			log.Fatalf("error connecting: %s", errOpt.Err)
+		}
+	} else if err != nil {
+		wq.EventUnregister(&waitEntry)
+		log.Fatalf("Connect(%#v): %s", remote, err)
 	}
 	wq.EventUnregister(&waitEntry)
-
-	if terr != nil {
-		log.Fatal("Unable to connect: ", terr)
-	}
-
 	fmt.Println("Connected")
 
 	// Start the writer in its own goroutine.
