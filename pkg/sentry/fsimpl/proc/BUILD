@@ -1,18 +1,79 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
+
+go_template_instance(
+    name = "fd_dir_inode_refs",
+    out = "fd_dir_inode_refs.go",
+    package = "proc",
+    prefix = "fdDirInode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "fdDirInode",
+    },
+)
+
+go_template_instance(
+    name = "fd_info_dir_inode_refs",
+    out = "fd_info_dir_inode_refs.go",
+    package = "proc",
+    prefix = "fdInfoDirInode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "fdInfoDirInode",
+    },
+)
+
+go_template_instance(
+    name = "subtasks_inode_refs",
+    out = "subtasks_inode_refs.go",
+    package = "proc",
+    prefix = "subtasksInode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "subtasksInode",
+    },
+)
+
+go_template_instance(
+    name = "task_inode_refs",
+    out = "task_inode_refs.go",
+    package = "proc",
+    prefix = "taskInode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "taskInode",
+    },
+)
+
+go_template_instance(
+    name = "tasks_inode_refs",
+    out = "tasks_inode_refs.go",
+    package = "proc",
+    prefix = "tasksInode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "tasksInode",
+    },
+)
 
 go_library(
     name = "proc",
     srcs = [
+        "fd_dir_inode_refs.go",
+        "fd_info_dir_inode_refs.go",
         "filesystem.go",
         "subtasks.go",
+        "subtasks_inode_refs.go",
         "task.go",
         "task_fds.go",
         "task_files.go",
+        "task_inode_refs.go",
         "task_net.go",
         "tasks.go",
         "tasks_files.go",
+        "tasks_inode_refs.go",
         "tasks_sys.go",
     ],
     visibility = ["//pkg/sentry:internal"],

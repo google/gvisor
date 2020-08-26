@@ -32,6 +32,7 @@ import (
 //
 // +stateify savable
 type taskInode struct {
+	taskInodeRefs
 	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNoDynamicLookup
@@ -84,6 +85,7 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 	taskInode := &taskInode{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
 	taskInode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	taskInode.EnableLeakCheck()
 
 	inode := &taskOwnedInode{Inode: taskInode, owner: task}
 	dentry := &kernfs.Dentry{}
@@ -119,6 +121,11 @@ func (*taskInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, v
 	return syserror.EPERM
 }
 
+// DecRef implements kernfs.Inode.
+func (i *taskInode) DecRef(context.Context) {
+	i.taskInodeRefs.DecRef(i.Destroy)
+}
+
 // taskOwnedInode implements kernfs.Inode and overrides inode owner with task
 // effective user and group.
 type taskOwnedInode struct {
@@ -147,6 +154,7 @@ func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.
 	dir.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndZero,
 	})
+	dir.EnableLeakCheck()
 
 	inode := &taskOwnedInode{Inode: dir, owner: task}
 	d := &kernfs.Dentry{}

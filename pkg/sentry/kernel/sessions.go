@@ -16,8 +16,6 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -32,7 +30,7 @@ type ProcessGroupID ThreadID
 //
 // +stateify savable
 type Session struct {
-	refs refs.AtomicRefCount
+	SessionRefs
 
 	// leader is the originator of the Session.
 	//
@@ -62,16 +60,11 @@ type Session struct {
 	sessionEntry
 }
 
-// incRef grabs a reference.
-func (s *Session) incRef() {
-	s.refs.IncRef()
-}
-
-// decRef drops a reference.
+// DecRef drops a reference.
 //
 // Precondition: callers must hold TaskSet.mu for writing.
-func (s *Session) decRef() {
-	s.refs.DecRefWithDestructor(nil, func(context.Context) {
+func (s *Session) DecRef() {
+	s.SessionRefs.DecRef(func() {
 		// Remove translations from the leader.
 		for ns := s.leader.pidns; ns != nil; ns = ns.parent {
 			id := ns.sids[s]
@@ -88,7 +81,7 @@ func (s *Session) decRef() {
 //
 // +stateify savable
 type ProcessGroup struct {
-	refs refs.AtomicRefCount // not exported.
+	refs ProcessGroupRefs
 
 	// originator is the originator of the group.
 	//
@@ -163,7 +156,7 @@ func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 	}
 
 	alive := true
-	pg.refs.DecRefWithDestructor(nil, func(context.Context) {
+	pg.refs.DecRef(func() {
 		alive = false // don't bother with handleOrphan.
 
 		// Remove translations from the originator.
@@ -175,7 +168,7 @@ func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 
 		// Remove the list of process groups.
 		pg.session.processGroups.Remove(pg)
-		pg.session.decRef()
+		pg.session.DecRef()
 	})
 	if alive {
 		pg.handleOrphan()
@@ -302,7 +295,7 @@ func (tg *ThreadGroup) createSession() error {
 		id:     SessionID(id),
 		leader: tg,
 	}
-	s.refs.EnableLeakCheck("kernel.Session")
+	s.EnableLeakCheck()
 
 	// Create a new ProcessGroup, belonging to that Session.
 	// This also has a single reference (assigned below).
@@ -316,7 +309,7 @@ func (tg *ThreadGroup) createSession() error {
 		session:    s,
 		ancestors:  0,
 	}
-	pg.refs.EnableLeakCheck("kernel.ProcessGroup")
+	pg.refs.EnableLeakCheck()
 
 	// Tie them and return the result.
 	s.processGroups.PushBack(pg)
@@ -396,13 +389,13 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	//
 	// We manually adjust the ancestors if the parent is in the same
 	// session.
-	tg.processGroup.session.incRef()
+	tg.processGroup.session.IncRef()
 	pg := ProcessGroup{
 		id:         ProcessGroupID(id),
 		originator: tg,
 		session:    tg.processGroup.session,
 	}
-	pg.refs.EnableLeakCheck("kernel.ProcessGroup")
+	pg.refs.EnableLeakCheck()
 
 	if tg.leader.parent != nil && tg.leader.parent.tg.processGroup.session == pg.session {
 		pg.ancestors++
