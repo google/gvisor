@@ -218,8 +218,8 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte) (stack.Target, erro
 			return nil, fmt.Errorf("netfilter.SetEntries: optVal has insufficient size for redirect target %d", len(optVal))
 		}
 
-		if filter.Protocol != header.TCPProtocolNumber && filter.Protocol != header.UDPProtocolNumber {
-			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+		if p := filter.Protocol; p != header.TCPProtocolNumber && p != header.UDPProtocolNumber {
+			return nil, fmt.Errorf("netfilter.SetEntries: bad proto %d", p)
 		}
 
 		var redirectTarget linux.XTRedirectTarget
@@ -232,7 +232,7 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte) (stack.Target, erro
 
 		// RangeSize should be 1.
 		if nfRange.RangeSize != 1 {
-			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+			return nil, fmt.Errorf("netfilter.SetEntries: bad rangesize %d", nfRange.RangeSize)
 		}
 
 		// TODO(gvisor.dev/issue/170): Check if the flags are valid.
@@ -240,7 +240,7 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte) (stack.Target, erro
 		// For now, redirect target only supports destination port change.
 		// Port range and IP range are not supported yet.
 		if nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED == 0 {
-			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid range flags %d", nfRange.RangeIPV4.Flags)
 		}
 		target.RangeProtoSpecified = true
 
@@ -249,7 +249,7 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte) (stack.Target, erro
 
 		// TODO(gvisor.dev/issue/170): Port range is not supported yet.
 		if nfRange.RangeIPV4.MinPort != nfRange.RangeIPV4.MaxPort {
-			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+			return nil, fmt.Errorf("netfilter.SetEntries: minport != maxport (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
 		}
 
 		// Convert port from big endian to little endian.

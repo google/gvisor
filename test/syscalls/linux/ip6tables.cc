@@ -34,6 +34,54 @@ constexpr size_t kEmptyStandardEntrySize =
 constexpr size_t kEmptyErrorEntrySize =
     sizeof(struct ip6t_entry) + sizeof(struct xt_error_target);
 
+TEST(IP6TablesBasic, FailSockoptNonRaw) {
+  // Even if the user has CAP_NET_RAW, they shouldn't be able to use the
+  // ip6tables sockopts with a non-raw socket.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET6, SOCK_DGRAM, 0), SyscallSucceeds());
+
+  struct ipt_getinfo info = {};
+  snprintf(info.name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
+  socklen_t info_size = sizeof(info);
+  EXPECT_THAT(getsockopt(sock, SOL_IPV6, IP6T_SO_GET_INFO, &info, &info_size),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+
+  EXPECT_THAT(close(sock), SyscallSucceeds());
+}
+
+TEST(IP6TablesBasic, GetInfoErrorPrecedence) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET6, SOCK_DGRAM, 0), SyscallSucceeds());
+
+  // When using the wrong type of socket and a too-short optlen, we should get
+  // EINVAL.
+  struct ipt_getinfo info = {};
+  snprintf(info.name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
+  socklen_t info_size = sizeof(info) - 1;
+  EXPECT_THAT(getsockopt(sock, SOL_IPV6, IP6T_SO_GET_INFO, &info, &info_size),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(IP6TablesBasic, GetEntriesErrorPrecedence) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET6, SOCK_DGRAM, 0), SyscallSucceeds());
+
+  // When using the wrong type of socket and a too-short optlen, we should get
+  // EINVAL.
+  struct ip6t_get_entries entries = {};
+  socklen_t entries_size = sizeof(struct ip6t_get_entries) - 1;
+  snprintf(entries.name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
+  EXPECT_THAT(
+      getsockopt(sock, SOL_IPV6, IP6T_SO_GET_ENTRIES, &entries, &entries_size),
+      SyscallFailsWithErrno(EINVAL));
+}
+
 // This tests the initial state of a machine with empty ip6tables via
 // getsockopt(IP6T_SO_GET_INFO). We don't have a guarantee that the iptables are
 // empty when running in native, but we can test that gVisor has the same

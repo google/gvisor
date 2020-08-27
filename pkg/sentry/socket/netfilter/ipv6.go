@@ -27,38 +27,38 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// emptyIPv4Filter is for comparison with a rule's filters to determine whether
+// emptyIPv6Filter is for comparison with a rule's filters to determine whether
 // it is also empty. It is immutable.
-var emptyIPv4Filter = stack.IPHeaderFilter{
-	Dst:     "\x00\x00\x00\x00",
-	DstMask: "\x00\x00\x00\x00",
-	Src:     "\x00\x00\x00\x00",
-	SrcMask: "\x00\x00\x00\x00",
+var emptyIPv6Filter = stack.IPHeaderFilter{
+	Dst:     "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+	DstMask: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+	Src:     "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+	SrcMask: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
-// convertNetstackToBinary4 converts the iptables as stored in netstack to the
+// convertNetstackToBinary6 converts the ip6tables as stored in netstack to the
 // format expected by the iptables tool. Linux stores each table as a binary
 // blob that can only be traversed by parsing a little data, reading some
 // offsets, jumping to those offsets, parsing again, etc.
-func convertNetstackToBinary4(stk *stack.Stack, tablename linux.TableName) (linux.KernelIPTGetEntries, linux.IPTGetinfo, error) {
+func convertNetstackToBinary6(stk *stack.Stack, tablename linux.TableName) (linux.KernelIP6TGetEntries, linux.IPTGetinfo, error) {
 	// The table name has to fit in the struct.
 	if linux.XT_TABLE_MAXNAMELEN < len(tablename) {
-		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("table name %q too long", tablename)
+		return linux.KernelIP6TGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("table name %q too long", tablename)
 	}
 
-	table, ok := stk.IPTables().GetTable(tablename.String(), false)
+	table, ok := stk.IPTables().GetTable(tablename.String(), true)
 	if !ok {
-		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q", tablename)
+		return linux.KernelIP6TGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q", tablename)
 	}
 
-	// Setup the info struct.
-	entries, info := getEntries4(table, tablename)
+	// Setup the info struct, which is the same in IPv4 and IPv6.
+	entries, info := getEntries6(table, tablename)
 	return entries, info, nil
 }
 
-func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTGetEntries, linux.IPTGetinfo) {
+func getEntries6(table stack.Table, tablename linux.TableName) (linux.KernelIP6TGetEntries, linux.IPTGetinfo) {
 	var info linux.IPTGetinfo
-	var entries linux.KernelIPTGetEntries
+	var entries linux.KernelIP6TGetEntries
 	copy(info.Name[:], tablename[:])
 	copy(entries.Name[:], info.Name[:])
 	info.ValidHooks = table.ValidHooks()
@@ -68,29 +68,32 @@ func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTG
 
 		setHooksAndUnderflow(&info, table, entries.Size, ruleIdx)
 		// Each rule corresponds to an entry.
-		entry := linux.KernelIPTEntry{
-			Entry: linux.IPTEntry{
-				IP: linux.IPTIP{
+		entry := linux.KernelIP6TEntry{
+			Entry: linux.IP6TEntry{
+				IPv6: linux.IP6TIP{
 					Protocol: uint16(rule.Filter.Protocol),
 				},
-				NextOffset:   linux.SizeOfIPTEntry,
-				TargetOffset: linux.SizeOfIPTEntry,
+				NextOffset:   linux.SizeOfIP6TEntry,
+				TargetOffset: linux.SizeOfIP6TEntry,
 			},
 		}
-		copy(entry.Entry.IP.Dst[:], rule.Filter.Dst)
-		copy(entry.Entry.IP.DstMask[:], rule.Filter.DstMask)
-		copy(entry.Entry.IP.Src[:], rule.Filter.Src)
-		copy(entry.Entry.IP.SrcMask[:], rule.Filter.SrcMask)
-		copy(entry.Entry.IP.OutputInterface[:], rule.Filter.OutputInterface)
-		copy(entry.Entry.IP.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
+		copy(entry.Entry.IPv6.Dst[:], rule.Filter.Dst)
+		copy(entry.Entry.IPv6.DstMask[:], rule.Filter.DstMask)
+		copy(entry.Entry.IPv6.Src[:], rule.Filter.Src)
+		copy(entry.Entry.IPv6.SrcMask[:], rule.Filter.SrcMask)
+		copy(entry.Entry.IPv6.OutputInterface[:], rule.Filter.OutputInterface)
+		copy(entry.Entry.IPv6.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
 		if rule.Filter.DstInvert {
-			entry.Entry.IP.InverseFlags |= linux.IPT_INV_DSTIP
+			entry.Entry.IPv6.InverseFlags |= linux.IP6T_INV_DSTIP
 		}
 		if rule.Filter.SrcInvert {
-			entry.Entry.IP.InverseFlags |= linux.IPT_INV_SRCIP
+			entry.Entry.IPv6.InverseFlags |= linux.IP6T_INV_SRCIP
 		}
 		if rule.Filter.OutputInterfaceInvert {
-			entry.Entry.IP.InverseFlags |= linux.IPT_INV_VIA_OUT
+			entry.Entry.IPv6.InverseFlags |= linux.IP6T_INV_VIA_OUT
+		}
+		if rule.Filter.CheckProtocol {
+			entry.Entry.IPv6.Flags |= linux.IP6T_F_PROTO
 		}
 
 		for _, matcher := range rule.Matchers {
@@ -126,7 +129,7 @@ func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTG
 	return entries, info
 }
 
-func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, *syserr.Error) {
+func modifyEntries6(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, *syserr.Error) {
 	nflog("set entries: setting entries in table %q", replace.Name.String())
 
 	// Convert input into a list of rules and their offsets.
@@ -137,24 +140,24 @@ func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 		nflog("set entries: processing entry at offset %d", offset)
 
 		// Get the struct ipt_entry.
-		if len(optVal) < linux.SizeOfIPTEntry {
+		if len(optVal) < linux.SizeOfIP6TEntry {
 			nflog("optVal has insufficient size for entry %d", len(optVal))
 			return nil, syserr.ErrInvalidArgument
 		}
-		var entry linux.IPTEntry
-		buf := optVal[:linux.SizeOfIPTEntry]
+		var entry linux.IP6TEntry
+		buf := optVal[:linux.SizeOfIP6TEntry]
 		binary.Unmarshal(buf, usermem.ByteOrder, &entry)
 		initialOptValLen := len(optVal)
-		optVal = optVal[linux.SizeOfIPTEntry:]
+		optVal = optVal[linux.SizeOfIP6TEntry:]
 
-		if entry.TargetOffset < linux.SizeOfIPTEntry {
+		if entry.TargetOffset < linux.SizeOfIP6TEntry {
 			nflog("entry has too-small target offset %d", entry.TargetOffset)
 			return nil, syserr.ErrInvalidArgument
 		}
 
 		// TODO(gvisor.dev/issue/170): We should support more IPTIP
 		// filtering fields.
-		filter, err := filterFromIPTIP(entry.IP)
+		filter, err := filterFromIP6TIP(entry.IPv6)
 		if err != nil {
 			nflog("bad iptip: %v", err)
 			return nil, syserr.ErrInvalidArgument
@@ -163,7 +166,7 @@ func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 		// TODO(gvisor.dev/issue/170): Matchers and targets can specify
 		// that they only work for certain protocols, hooks, tables.
 		// Get matchers.
-		matchersSize := entry.TargetOffset - linux.SizeOfIPTEntry
+		matchersSize := entry.TargetOffset - linux.SizeOfIP6TEntry
 		if len(optVal) < int(matchersSize) {
 			nflog("entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
 			return nil, syserr.ErrInvalidArgument
@@ -204,14 +207,14 @@ func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 	return offsets, nil
 }
 
-func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
-	if containsUnsupportedFields4(iptip) {
+func filterFromIP6TIP(iptip linux.IP6TIP) (stack.IPHeaderFilter, error) {
+	if containsUnsupportedFields6(iptip) {
 		return stack.IPHeaderFilter{}, fmt.Errorf("unsupported fields in struct iptip: %+v", iptip)
 	}
-	if len(iptip.Dst) != header.IPv4AddressSize || len(iptip.DstMask) != header.IPv4AddressSize {
+	if len(iptip.Dst) != header.IPv6AddressSize || len(iptip.DstMask) != header.IPv6AddressSize {
 		return stack.IPHeaderFilter{}, fmt.Errorf("incorrect length of destination (%d) and/or destination mask (%d) fields", len(iptip.Dst), len(iptip.DstMask))
 	}
-	if len(iptip.Src) != header.IPv4AddressSize || len(iptip.SrcMask) != header.IPv4AddressSize {
+	if len(iptip.Src) != header.IPv6AddressSize || len(iptip.SrcMask) != header.IPv6AddressSize {
 		return stack.IPHeaderFilter{}, fmt.Errorf("incorrect length of source (%d) and/or source mask (%d) fields", len(iptip.Src), len(iptip.SrcMask))
 	}
 
@@ -229,21 +232,21 @@ func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
 
 	return stack.IPHeaderFilter{
 		Protocol: tcpip.TransportProtocolNumber(iptip.Protocol),
-		// A Protocol value of 0 indicates all protocols match.
-		CheckProtocol:         iptip.Protocol != 0,
+		// In ip6tables a flag controls whether to check the protocol.
+		CheckProtocol:         iptip.Flags&linux.IP6T_F_PROTO != 0,
 		Dst:                   tcpip.Address(iptip.Dst[:]),
 		DstMask:               tcpip.Address(iptip.DstMask[:]),
-		DstInvert:             iptip.InverseFlags&linux.IPT_INV_DSTIP != 0,
+		DstInvert:             iptip.InverseFlags&linux.IP6T_INV_DSTIP != 0,
 		Src:                   tcpip.Address(iptip.Src[:]),
 		SrcMask:               tcpip.Address(iptip.SrcMask[:]),
-		SrcInvert:             iptip.InverseFlags&linux.IPT_INV_SRCIP != 0,
+		SrcInvert:             iptip.InverseFlags&linux.IP6T_INV_SRCIP != 0,
 		OutputInterface:       ifname,
 		OutputInterfaceMask:   ifnameMask,
-		OutputInterfaceInvert: iptip.InverseFlags&linux.IPT_INV_VIA_OUT != 0,
+		OutputInterfaceInvert: iptip.InverseFlags&linux.IP6T_INV_VIA_OUT != 0,
 	}, nil
 }
 
-func containsUnsupportedFields4(iptip linux.IPTIP) bool {
+func containsUnsupportedFields6(iptip linux.IP6TIP) bool {
 	// The following features are supported:
 	// - Protocol
 	// - Dst and DstMask
@@ -251,10 +254,12 @@ func containsUnsupportedFields4(iptip linux.IPTIP) bool {
 	// - The inverse destination IP check flag
 	// - OutputInterface, OutputInterfaceMask and its inverse.
 	var emptyInterface = [linux.IFNAMSIZ]byte{}
+	flagMask := uint8(linux.IP6T_F_PROTO)
 	// Disable any supported inverse flags.
-	inverseMask := uint8(linux.IPT_INV_DSTIP) | uint8(linux.IPT_INV_SRCIP) | uint8(linux.IPT_INV_VIA_OUT)
+	inverseMask := uint8(linux.IP6T_INV_DSTIP) | uint8(linux.IP6T_INV_SRCIP) | uint8(linux.IP6T_INV_VIA_OUT)
 	return iptip.InputInterface != emptyInterface ||
 		iptip.InputInterfaceMask != emptyInterface ||
-		iptip.Flags != 0 ||
-		iptip.InverseFlags&^inverseMask != 0
+		iptip.Flags&^flagMask != 0 ||
+		iptip.InverseFlags&^inverseMask != 0 ||
+		iptip.TOS != 0
 }

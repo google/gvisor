@@ -42,14 +42,19 @@ func nflog(format string, args ...interface{}) {
 }
 
 // GetInfo returns information about iptables.
-func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
+func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, ipv6 bool) (linux.IPTGetinfo, *syserr.Error) {
 	// Read in the struct and table name.
 	var info linux.IPTGetinfo
 	if _, err := info.CopyIn(t, outPtr); err != nil {
 		return linux.IPTGetinfo{}, syserr.FromError(err)
 	}
 
-	_, info, err := convertNetstackToBinary(stack, info.Name)
+	var err error
+	if ipv6 {
+		_, info, err = convertNetstackToBinary6(stack, info.Name)
+	} else {
+		_, info, err = convertNetstackToBinary4(stack, info.Name)
+	}
 	if err != nil {
 		nflog("couldn't convert iptables: %v", err)
 		return linux.IPTGetinfo{}, syserr.ErrInvalidArgument
@@ -59,9 +64,9 @@ func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPT
 	return info, nil
 }
 
-// GetEntries4 returns netstack's iptables rules encoded for the iptables tool.
+// GetEntries4 returns netstack's iptables rules.
 func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
-	// Read in the ABI struct.
+	// Read in the struct and table name.
 	var userEntries linux.IPTGetEntries
 	if _, err := userEntries.CopyIn(t, outPtr); err != nil {
 		nflog("couldn't copy in entries %q", userEntries.Name)
@@ -70,7 +75,7 @@ func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen
 
 	// Convert netstack's iptables rules to something that the iptables
 	// tool can understand.
-	entries, _, err := convertNetstackToBinary(stack, userEntries.Name)
+	entries, _, err := convertNetstackToBinary4(stack, userEntries.Name)
 	if err != nil {
 		nflog("couldn't read entries: %v", err)
 		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
@@ -83,28 +88,29 @@ func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen
 	return entries, nil
 }
 
-// convertNetstackToBinary converts the iptables as stored in netstack to the
-// format expected by the iptables tool. Linux stores each table as a binary
-// blob that can only be traversed by parsing a bit, reading some offsets,
-// jumping to those offsets, parsing again, etc.
-func convertNetstackToBinary(stk *stack.Stack, tablename linux.TableName) (linux.KernelIPTGetEntries, linux.IPTGetinfo, error) {
-	// The table name has to fit in the struct.
-	if linux.XT_TABLE_MAXNAMELEN < len(tablename) {
-		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("table name %q too long", tablename)
+// GetEntries6 returns netstack's ip6tables rules.
+func GetEntries6(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIP6TGetEntries, *syserr.Error) {
+	// Read in the struct and table name. IPv4 and IPv6 utilize structs
+	// with the same layout.
+	var userEntries linux.IPTGetEntries
+	if _, err := userEntries.CopyIn(t, outPtr); err != nil {
+		nflog("couldn't copy in entries %q", userEntries.Name)
+		return linux.KernelIP6TGetEntries{}, syserr.FromError(err)
 	}
 
-	table, ok := stk.IPTables().GetTable(tablename.String())
-	if !ok {
-		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q", tablename)
+	// Convert netstack's iptables rules to something that the iptables
+	// tool can understand.
+	entries, _, err := convertNetstackToBinary6(stack, userEntries.Name)
+	if err != nil {
+		nflog("couldn't read entries: %v", err)
+		return linux.KernelIP6TGetEntries{}, syserr.ErrInvalidArgument
+	}
+	if binary.Size(entries) > uintptr(outLen) {
+		nflog("insufficient GetEntries output size: %d", uintptr(outLen))
+		return linux.KernelIP6TGetEntries{}, syserr.ErrInvalidArgument
 	}
 
-	// Setup the info struct.
-	var info linux.IPTGetinfo
-	info.ValidHooks = table.ValidHooks()
-	copy(info.Name[:], tablename[:])
-
-	entries := getEntries4(table, &info)
-	return entries, info, nil
+	return entries, nil
 }
 
 // setHooksAndUnderflow checks whether the rule at ruleIdx is a hook entrypoint
@@ -128,7 +134,7 @@ func setHooksAndUnderflow(info *linux.IPTGetinfo, table stack.Table, offset uint
 
 // SetEntries sets iptables rules for a single table. See
 // net/ipv4/netfilter/ip_tables.c:translate_table for reference.
-func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
+func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	var replace linux.IPTReplace
 	replaceBuf := optVal[:linux.SizeOfIPTReplace]
 	optVal = optVal[linux.SizeOfIPTReplace:]
@@ -146,7 +152,13 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 
-	offsets, err := modifyEntries4(stk, optVal, &replace, &table)
+	var err *syserr.Error
+	var offsets map[uint32]int
+	if ipv6 {
+		offsets, err = modifyEntries6(stk, optVal, &replace, &table)
+	} else {
+		offsets, err = modifyEntries4(stk, optVal, &replace, &table)
+	}
 	if err != nil {
 		return err
 	}
@@ -163,7 +175,7 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 					table.BuiltinChains[hk] = ruleIdx
 				}
 				if offset == replace.Underflow[hook] {
-					if !validUnderflow(table.Rules[ruleIdx]) {
+					if !validUnderflow(table.Rules[ruleIdx], ipv6) {
 						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP", ruleIdx)
 						return syserr.ErrInvalidArgument
 					}
@@ -228,7 +240,7 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 			if ruleIdx == stack.HookUnset {
 				continue
 			}
-			if !isUnconditionalAccept(table.Rules[ruleIdx]) {
+			if !isUnconditionalAccept(table.Rules[ruleIdx], ipv6) {
 				nflog("hook %d is unsupported.", hook)
 				return syserr.ErrInvalidArgument
 			}
@@ -240,7 +252,8 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	// - There are no chains without an unconditional final rule.
 	// - There are no chains without an unconditional underflow rule.
 
-	return syserr.TranslateNetstackError(stk.IPTables().ReplaceTable(replace.Name.String(), table))
+	return syserr.TranslateNetstackError(stk.IPTables().ReplaceTable(replace.Name.String(), table, ipv6))
+
 }
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
@@ -286,11 +299,11 @@ func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher,
 	return matchers, nil
 }
 
-func validUnderflow(rule stack.Rule) bool {
+func validUnderflow(rule stack.Rule, ipv6 bool) bool {
 	if len(rule.Matchers) != 0 {
 		return false
 	}
-	if rule.Filter != emptyIPv4Filter {
+	if (ipv6 && rule.Filter != emptyIPv6Filter) || (!ipv6 && rule.Filter != emptyIPv4Filter) {
 		return false
 	}
 	switch rule.Target.(type) {
@@ -301,8 +314,8 @@ func validUnderflow(rule stack.Rule) bool {
 	}
 }
 
-func isUnconditionalAccept(rule stack.Rule) bool {
-	if !validUnderflow(rule) {
+func isUnconditionalAccept(rule stack.Rule, ipv6 bool) bool {
+	if !validUnderflow(rule, ipv6) {
 		return false
 	}
 	_, ok := rule.Target.(stack.AcceptTarget)
