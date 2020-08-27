@@ -133,6 +133,91 @@ TEST_F(WriteTest, WriteExceedsRLimit) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
+TEST_F(WriteTest, WriteIncrementOffset) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor f =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+  int fd = f.get();
+
+  EXPECT_THAT(WriteBytes(fd, 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(0));
+
+  const int bytes_total = 1024;
+
+  EXPECT_THAT(WriteBytes(fd, bytes_total),
+              SyscallSucceedsWithValue(bytes_total));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(bytes_total));
+}
+
+TEST_F(WriteTest, WriteIncrementOffsetSeek) {
+  const std::string data = "hello world\n";
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), data, TempPath::kDefaultFileMode));
+  FileDescriptor f =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+  int fd = f.get();
+
+  const int seek_offset = data.size() / 2;
+  ASSERT_THAT(lseek(fd, seek_offset, SEEK_SET),
+              SyscallSucceedsWithValue(seek_offset));
+
+  const int write_bytes = 512;
+  EXPECT_THAT(WriteBytes(fd, write_bytes),
+              SyscallSucceedsWithValue(write_bytes));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR),
+              SyscallSucceedsWithValue(seek_offset + write_bytes));
+}
+
+TEST_F(WriteTest, WriteIncrementOffsetAppend) {
+  const std::string data = "hello world\n";
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), data, TempPath::kDefaultFileMode));
+  FileDescriptor f = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(tmpfile.path().c_str(), O_WRONLY | O_APPEND));
+  int fd = f.get();
+
+  EXPECT_THAT(WriteBytes(fd, 1024), SyscallSucceedsWithValue(1024));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR),
+              SyscallSucceedsWithValue(data.size() + 1024));
+}
+
+TEST_F(WriteTest, WriteIncrementOffsetEOF) {
+  const std::string data = "hello world\n";
+  const TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), data, TempPath::kDefaultFileMode));
+  FileDescriptor f =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+  int fd = f.get();
+
+  EXPECT_THAT(lseek(fd, 0, SEEK_END), SyscallSucceedsWithValue(data.size()));
+
+  EXPECT_THAT(WriteBytes(fd, 1024), SyscallSucceedsWithValue(1024));
+  EXPECT_THAT(lseek(fd, 0, SEEK_END),
+              SyscallSucceedsWithValue(data.size() + 1024));
+}
+
+TEST_F(WriteTest, PwriteNoChangeOffset) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor f =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+  int fd = f.get();
+
+  const std::string data = "hello world\n";
+
+  EXPECT_THAT(pwrite(fd, data.data(), data.size(), 0),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(0));
+
+  const int bytes_total = 1024;
+  ASSERT_THAT(WriteBytes(fd, bytes_total),
+              SyscallSucceedsWithValue(bytes_total));
+  ASSERT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(bytes_total));
+
+  EXPECT_THAT(pwrite(fd, data.data(), data.size(), bytes_total),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(bytes_total));
+}
+
 }  // namespace
 
 }  // namespace testing
