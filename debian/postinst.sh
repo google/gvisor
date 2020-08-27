@@ -21,7 +21,7 @@ fi
 # Update docker configuration.
 if [ -f /etc/docker/daemon.json ]; then
   runsc install
-  if systemctl status docker 2>/dev/null; then
+  if systemctl is-active -q docker; then
     systemctl restart docker || echo "unable to restart docker; you must do so manually." >&2
   fi
 fi
