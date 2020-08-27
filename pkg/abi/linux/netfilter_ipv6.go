@@ -290,6 +290,19 @@ type IP6TIP struct {
 
 const SizeOfIP6TIP = 136
 
+// Flags in IP6TIP.Flags. Corresponding constants are in
+// include/uapi/linux/netfilter_ipv6/ip6_tables.h.
+const (
+	// Whether to check the Protocol field.
+	IP6T_F_PROTO = 0x01
+	// Whether to match the TOS field.
+	IP6T_F_TOS = 0x02
+	// Indicates that the jump target is an aboslute GOTO, not an offset.
+	IP6T_F_GOTO = 0x04
+	// Enables all flags.
+	IP6T_F_MASK = 0x07
+)
+
 // Flags in IP6TIP.InverseFlags. Corresponding constants are in
 // include/uapi/linux/netfilter_ipv6/ip6_tables.h.
 const (
