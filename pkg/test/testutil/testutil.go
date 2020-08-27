@@ -138,20 +138,23 @@ func TestConfig(t *testing.T) *config.Config {
 	if dir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
 		logDir = dir + "/"
 	}
-	return &config.Config{
-		Debug:              true,
-		DebugLog:           path.Join(logDir, "runsc.log."+t.Name()+".%TIMESTAMP%.%COMMAND%"),
-		LogFormat:          "text",
-		DebugLogFormat:     "text",
-		LogPackets:         true,
-		Network:            config.NetworkNone,
-		Strace:             true,
-		Platform:           "ptrace",
-		FileAccess:         config.FileAccessExclusive,
-		NumNetworkChannels: 1,
 
-		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
+	// Only register flags if config is being used. Otherwise anyone that uses
+	// testutil will get flags registered and they may conflict.
+	config.RegisterFlags()
+
+	conf, err := config.NewFromFlags()
+	if err != nil {
+		panic(err)
 	}
+	// Change test defaults.
+	conf.Debug = true
+	conf.DebugLog = path.Join(logDir, "runsc.log."+t.Name()+".%TIMESTAMP%.%COMMAND%")
+	conf.LogPackets = true
+	conf.Network = config.NetworkNone
+	conf.Strace = true
+	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
+	return conf
 }
 
 // NewSpecWithArgs creates a simple spec with the given args suitable for use

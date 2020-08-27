@@ -21,13 +21,19 @@ import (
 type FlagSet = flag.FlagSet
 
 var (
-	NewFlagSet  = flag.NewFlagSet
-	String      = flag.String
 	Bool        = flag.Bool
-	Int         = flag.Int
-	Uint        = flag.Uint
 	CommandLine = flag.CommandLine
+	Int         = flag.Int
+	NewFlagSet  = flag.NewFlagSet
 	Parse       = flag.Parse
+	String      = flag.String
+	Uint        = flag.Uint
+	Var         = flag.Var
 )
 
 const ContinueOnError = flag.ContinueOnError
+
+// Get returns the flag's underlying object.
+func Get(v flag.Value) interface{} {
+	return v.(flag.Getter).Get()
+}

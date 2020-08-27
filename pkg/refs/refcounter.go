@@ -234,6 +234,39 @@ const (
 	LeaksLogTraces
 )
 
+// Set implements flag.Value.
+func (l *LeakMode) Set(v string) error {
+	switch v {
+	case "disabled":
+		*l = NoLeakChecking
+	case "log-names":
+		*l = LeaksLogWarning
+	case "log-traces":
+		*l = LeaksLogTraces
+	default:
+		return fmt.Errorf("invalid ref leak mode %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (l *LeakMode) Get() interface{} {
+	return *l
+}
+
+// String implements flag.Value.
+func (l *LeakMode) String() string {
+	switch *l {
+	case NoLeakChecking:
+		return "disabled"
+	case LeaksLogWarning:
+		return "log-names"
+	case LeaksLogTraces:
+		return "log-traces"
+	}
+	panic(fmt.Sprintf("invalid ref leak mode %q", *l))
+}
+
 // leakMode stores the current mode for the reference leak checker.
 //
 // Values must be one of the LeakMode values.
