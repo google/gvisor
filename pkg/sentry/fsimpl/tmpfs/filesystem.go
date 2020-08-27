@@ -783,6 +783,9 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	}
 	switch impl := d.inode.impl.(type) {
 	case *socketFile:
+		if impl.ep == nil {
+			return nil, syserror.ECONNREFUSED
+		}
 		return impl.ep, nil
 	default:
 		return nil, syserror.ECONNREFUSED
