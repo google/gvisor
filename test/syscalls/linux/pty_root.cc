@@ -48,12 +48,12 @@ TEST(JobControlRootTest, StealTTY) {
     ASSERT_THAT(setsid(), SyscallSucceeds());
   }
 
-  FileDescriptor master =
+  FileDescriptor main =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
-  FileDescriptor slave = ASSERT_NO_ERRNO_AND_VALUE(OpenSlave(master));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main));
 
-  // Make slave the controlling terminal.
-  ASSERT_THAT(ioctl(slave.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  // Make replica the controlling terminal.
+  ASSERT_THAT(ioctl(replica.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   // Fork, join a new session, and try to steal the parent's controlling
   // terminal, which should succeed when we have CAP_SYS_ADMIN and pass an arg
@@ -62,9 +62,9 @@ TEST(JobControlRootTest, StealTTY) {
   if (!child) {
     ASSERT_THAT(setsid(), SyscallSucceeds());
     // We shouldn't be able to steal the terminal with the wrong arg value.
-    TEST_PCHECK(ioctl(slave.get(), TIOCSCTTY, 0));
+    TEST_PCHECK(ioctl(replica.get(), TIOCSCTTY, 0));
     // We should be able to steal it if we are true root.
-    TEST_PCHECK(true_root == !ioctl(slave.get(), TIOCSCTTY, 1));
+    TEST_PCHECK(true_root == !ioctl(replica.get(), TIOCSCTTY, 1));
     _exit(0);
   }
 
