@@ -21,11 +21,11 @@
 namespace gvisor {
 namespace testing {
 
-// Opens the slave end of the passed master as R/W and nonblocking.
-PosixErrorOr<FileDescriptor> OpenSlave(const FileDescriptor& master);
+// Opens the replica end of the passed main as R/W and nonblocking.
+PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& main);
 
-// Get the number of the slave end of the master.
-PosixErrorOr<int> SlaveID(const FileDescriptor& master);
+// Get the number of the replica end of the main.
+PosixErrorOr<int> ReplicaID(const FileDescriptor& main);
 
 }  // namespace testing
 }  // namespace gvisor
