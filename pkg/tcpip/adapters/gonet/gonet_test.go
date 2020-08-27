@@ -104,7 +104,7 @@ func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, *tcpip.Er
 	err = ep.Connect(addr)
 	if err == tcpip.ErrConnectStarted {
 		<-ch
-		err = ep.GetSockOpt(tcpip.ErrorOption{})
+		err = ep.LastError()
 	}
 	if err != nil {
 		return nil, err
