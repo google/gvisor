@@ -165,7 +165,11 @@ func EmptyNATTable() Table {
 }
 
 // GetTable returns a table by name.
-func (it *IPTables) GetTable(name string) (Table, bool) {
+func (it *IPTables) GetTable(name string, ipv6 bool) (Table, bool) {
+	// TODO(gvisor.dev/issue/3549): Enable IPv6.
+	if ipv6 {
+		return Table{}, false
+	}
 	id, ok := nameToID[name]
 	if !ok {
 		return Table{}, false
@@ -176,7 +180,11 @@ func (it *IPTables) GetTable(name string) (Table, bool) {
 }
 
 // ReplaceTable replaces or inserts table by name.
-func (it *IPTables) ReplaceTable(name string, table Table) *tcpip.Error {
+func (it *IPTables) ReplaceTable(name string, table Table, ipv6 bool) *tcpip.Error {
+	// TODO(gvisor.dev/issue/3549): Enable IPv6.
+	if ipv6 {
+		return tcpip.ErrInvalidOptionValue
+	}
 	id, ok := nameToID[name]
 	if !ok {
 		return tcpip.ErrInvalidOptionValue

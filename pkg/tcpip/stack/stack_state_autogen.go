@@ -288,6 +288,7 @@ func (x *IPHeaderFilter) StateTypeName() string {
 func (x *IPHeaderFilter) StateFields() []string {
 	return []string{
 		"Protocol",
+		"CheckProtocol",
 		"Dst",
 		"DstMask",
 		"DstInvert",
@@ -305,30 +306,32 @@ func (x *IPHeaderFilter) beforeSave() {}
 func (x *IPHeaderFilter) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.Protocol)
-	m.Save(1, &x.Dst)
-	m.Save(2, &x.DstMask)
-	m.Save(3, &x.DstInvert)
-	m.Save(4, &x.Src)
-	m.Save(5, &x.SrcMask)
-	m.Save(6, &x.SrcInvert)
-	m.Save(7, &x.OutputInterface)
-	m.Save(8, &x.OutputInterfaceMask)
-	m.Save(9, &x.OutputInterfaceInvert)
+	m.Save(1, &x.CheckProtocol)
+	m.Save(2, &x.Dst)
+	m.Save(3, &x.DstMask)
+	m.Save(4, &x.DstInvert)
+	m.Save(5, &x.Src)
+	m.Save(6, &x.SrcMask)
+	m.Save(7, &x.SrcInvert)
+	m.Save(8, &x.OutputInterface)
+	m.Save(9, &x.OutputInterfaceMask)
+	m.Save(10, &x.OutputInterfaceInvert)
 }
 
 func (x *IPHeaderFilter) afterLoad() {}
 
 func (x *IPHeaderFilter) StateLoad(m state.Source) {
 	m.Load(0, &x.Protocol)
-	m.Load(1, &x.Dst)
-	m.Load(2, &x.DstMask)
-	m.Load(3, &x.DstInvert)
-	m.Load(4, &x.Src)
-	m.Load(5, &x.SrcMask)
-	m.Load(6, &x.SrcInvert)
-	m.Load(7, &x.OutputInterface)
-	m.Load(8, &x.OutputInterfaceMask)
-	m.Load(9, &x.OutputInterfaceInvert)
+	m.Load(1, &x.CheckProtocol)
+	m.Load(2, &x.Dst)
+	m.Load(3, &x.DstMask)
+	m.Load(4, &x.DstInvert)
+	m.Load(5, &x.Src)
+	m.Load(6, &x.SrcMask)
+	m.Load(7, &x.SrcInvert)
+	m.Load(8, &x.OutputInterface)
+	m.Load(9, &x.OutputInterfaceMask)
+	m.Load(10, &x.OutputInterfaceInvert)
 }
 
 func (x *linkAddrEntryList) StateTypeName() string {
