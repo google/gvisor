@@ -1512,7 +1512,9 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 				path:   opts.Addr,
 			}, nil
 		}
-		return d.endpoint, nil
+		if d.endpoint != nil {
+			return d.endpoint, nil
+		}
 	}
 	return nil, syserror.ECONNREFUSED
 }
