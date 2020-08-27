@@ -539,7 +539,7 @@ func TestBindToDeviceOption(t *testing.T) {
 
 	opts := stack.NICOptions{Name: "my_device"}
 	if err := s.CreateNICWithOptions(321, loopback.New(), opts); err != nil {
-		t.Errorf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
+		t.Errorf("CreateNICWithOptions(_, _, %+v) failed: %s", opts, err)
 	}
 
 	// nicIDPtr is used instead of taking the address of NICID literals, which is
@@ -563,16 +563,15 @@ func TestBindToDeviceOption(t *testing.T) {
 		t.Run(testAction.name, func(t *testing.T) {
 			if testAction.setBindToDevice != nil {
 				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
-				if gotErr, wantErr := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; gotErr != wantErr {
-					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, gotErr, wantErr)
+				if gotErr, wantErr := ep.SetSockOpt(&bindToDevice), testAction.setBindToDeviceError; gotErr != wantErr {
+					t.Errorf("got SetSockOpt(&%T(%d)) = %s, want = %s", bindToDevice, bindToDevice, gotErr, wantErr)
 				}
 			}
 			bindToDevice := tcpip.BindToDeviceOption(88888)
 			if err := ep.GetSockOpt(&bindToDevice); err != nil {
-				t.Errorf("GetSockOpt got %v, want %v", err, nil)
-			}
-			if got, want := bindToDevice, testAction.getBindToDevice; got != want {
-				t.Errorf("bindToDevice got %d, want %d", got, want)
+				t.Errorf("GetSockOpt(&%T): %s", bindToDevice, err)
+			} else if bindToDevice != testAction.getBindToDevice {
+				t.Errorf("got bindToDevice = %d, want = %d", bindToDevice, testAction.getBindToDevice)
 			}
 		})
 	}
@@ -628,12 +627,12 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	// Check the peer address.
 	h := flow.header4Tuple(incoming)
 	if addr.Addr != h.srcAddr.Addr {
-		c.t.Fatalf("unexpected remote address: got %s, want %v", addr.Addr, h.srcAddr)
+		c.t.Fatalf("got address = %s, want = %s", addr.Addr, h.srcAddr.Addr)
 	}
 
 	// Check the payload.
 	if !bytes.Equal(payload, v) {
-		c.t.Fatalf("bad payload: got %x, want %x", v, payload)
+		c.t.Fatalf("got payload = %x, want = %x", v, payload)
 	}
 
 	// Run any checkers against the ControlMessages.
@@ -694,7 +693,7 @@ func TestBindReservedPort(t *testing.T) {
 		}
 		defer ep.Close()
 		if got, want := ep.Bind(addr), tcpip.ErrPortInUse; got != want {
-			t.Fatalf("got ep.Bind(...) = %v, want = %v", got, want)
+			t.Fatalf("got ep.Bind(...) = %s, want = %s", got, want)
 		}
 	}
 
@@ -707,7 +706,7 @@ func TestBindReservedPort(t *testing.T) {
 		// We can't bind ipv4-any on the port reserved by the connected endpoint
 		// above, since the endpoint is dual-stack.
 		if got, want := ep.Bind(tcpip.FullAddress{Port: addr.Port}), tcpip.ErrPortInUse; got != want {
-			t.Fatalf("got ep.Bind(...) = %v, want = %v", got, want)
+			t.Fatalf("got ep.Bind(...) = %s, want = %s", got, want)
 		}
 		// We can bind an ipv4 address on this port, though.
 		if err := ep.Bind(tcpip.FullAddress{Addr: stackAddr, Port: addr.Port}); err != nil {
@@ -830,7 +829,7 @@ func TestV4ReadSelfSource(t *testing.T) {
 			}
 
 			if _, _, err := c.ep.Read(nil); err != tt.wantErr {
-				t.Errorf("c.ep.Read() got error %v, want %v", err, tt.wantErr)
+				t.Errorf("got c.ep.Read(nil) = %s, want = %s", err, tt.wantErr)
 			}
 		})
 	}
@@ -871,8 +870,8 @@ func TestReadOnBoundToMulticast(t *testing.T) {
 
 			// Join multicast group.
 			ifoptSet := tcpip.AddMembershipOption{NIC: 1, MulticastAddr: mcastAddr}
-			if err := c.ep.SetSockOpt(ifoptSet); err != nil {
-				c.t.Fatal("SetSockOpt failed:", err)
+			if err := c.ep.SetSockOpt(&ifoptSet); err != nil {
+				c.t.Fatalf("SetSockOpt(&%#v): %s", ifoptSet, err)
 			}
 
 			// Check that we receive multicast packets but not unicast or broadcast
@@ -1403,8 +1402,8 @@ func TestReadIPPacketInfo(t *testing.T) {
 
 			if test.flow.isMulticast() {
 				ifoptSet := tcpip.AddMembershipOption{NIC: 1, MulticastAddr: test.flow.getMcastAddr()}
-				if err := c.ep.SetSockOpt(ifoptSet); err != nil {
-					c.t.Fatalf("SetSockOpt(%+v): %s:", ifoptSet, err)
+				if err := c.ep.SetSockOpt(&ifoptSet); err != nil {
+					c.t.Fatalf("SetSockOpt(&%#v): %s:", ifoptSet, err)
 				}
 			}
 
@@ -1547,7 +1546,7 @@ func TestSetTOS(t *testing.T) {
 			}
 			// Test for expected default value.
 			if v != 0 {
-				c.t.Errorf("got GetSockOpt(IPv4TOSOption) = 0x%x, want = 0x%x", v, 0)
+				c.t.Errorf("got GetSockOptInt(IPv4TOSOption) = 0x%x, want = 0x%x", v, 0)
 			}
 
 			if err := c.ep.SetSockOptInt(tcpip.IPv4TOSOption, tos); err != nil {
@@ -1708,19 +1707,17 @@ func TestMulticastInterfaceOption(t *testing.T) {
 								}
 							}
 
-							if err := c.ep.SetSockOpt(ifoptSet); err != nil {
-								c.t.Fatalf("SetSockOpt failed: %s", err)
+							if err := c.ep.SetSockOpt(&ifoptSet); err != nil {
+								c.t.Fatalf("SetSockOpt(&%#v): %s", ifoptSet, err)
 							}
 
 							// Verify multicast interface addr and NIC were set correctly.
 							// Note that NIC must be 1 since this is our outgoing interface.
-							ifoptWant := tcpip.MulticastInterfaceOption{NIC: 1, InterfaceAddr: ifoptSet.InterfaceAddr}
 							var ifoptGot tcpip.MulticastInterfaceOption
 							if err := c.ep.GetSockOpt(&ifoptGot); err != nil {
-								c.t.Fatalf("GetSockOpt failed: %s", err)
-							}
-							if ifoptGot != ifoptWant {
-								c.t.Errorf("got GetSockOpt() = %#v, want = %#v", ifoptGot, ifoptWant)
+								c.t.Fatalf("GetSockOpt(&%T): %s", ifoptGot, err)
+							} else if ifoptWant := (tcpip.MulticastInterfaceOption{NIC: 1, InterfaceAddr: ifoptSet.InterfaceAddr}); ifoptGot != ifoptWant {
+								c.t.Errorf("got multicast interface option = %#v, want = %#v", ifoptGot, ifoptWant)
 							}
 						})
 					}
