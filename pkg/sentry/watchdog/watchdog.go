@@ -96,15 +96,33 @@ const (
 	Panic
 )
 
-// String returns Action's string representation.
-func (a Action) String() string {
-	switch a {
-	case LogWarning:
-		return "LogWarning"
-	case Panic:
-		return "Panic"
+// Set implements flag.Value.
+func (a *Action) Set(v string) error {
+	switch v {
+	case "log", "logwarning":
+		*a = LogWarning
+	case "panic":
+		*a = Panic
 	default:
-		panic(fmt.Sprintf("Invalid action: %d", a))
+		return fmt.Errorf("invalid watchdog action %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (a *Action) Get() interface{} {
+	return *a
+}
+
+// String returns Action's string representation.
+func (a *Action) String() string {
+	switch *a {
+	case LogWarning:
+		return "logWarning"
+	case Panic:
+		return "panic"
+	default:
+		panic(fmt.Sprintf("Invalid watchdog action: %d", *a))
 	}
 }
 
