@@ -383,7 +383,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 			// Write all of the bytes that we read. This may need
 			// multiple write calls to complete.
-			wbuf := buf[:n]
+			wbuf := buf[:readN]
 			for len(wbuf) > 0 {
 				var writeN int64
 				writeN, err = outFile.Write(t, usermem.BytesIOSequence(wbuf), vfs.WriteOptions{})
