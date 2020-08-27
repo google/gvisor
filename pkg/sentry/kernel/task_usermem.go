@@ -301,3 +301,30 @@ func (t *Task) IovecsIOSequence(addr usermem.Addr, iovcnt int, opts usermem.IOOp
 		Opts:  opts,
 	}, nil
 }
+
+// CopyContextWithOpts wraps a task to allow copying memory to and from the
+// task memory with user specified usermem.IOOpts.
+type CopyContextWithOpts struct {
+	*Task
+	opts usermem.IOOpts
+}
+
+// AsCopyContextWithOpts wraps the task and returns it as CopyContextWithOpts.
+func (t *Task) AsCopyContextWithOpts(opts usermem.IOOpts) *CopyContextWithOpts {
+	return &CopyContextWithOpts{t, opts}
+}
+
+// CopyInString copies a string in from the task's memory.
+func (t *CopyContextWithOpts) CopyInString(addr usermem.Addr, maxLen int) (string, error) {
+	return usermem.CopyStringIn(t, t.MemoryManager(), addr, maxLen, t.opts)
+}
+
+// CopyInBytes copies task memory into dst from an IO context.
+func (t *CopyContextWithOpts) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
+	return t.MemoryManager().CopyIn(t, addr, dst, t.opts)
+}
+
+// CopyOutBytes copies src into task memoryfrom an IO context.
+func (t *CopyContextWithOpts) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
+	return t.MemoryManager().CopyOut(t, addr, src, t.opts)
+}
