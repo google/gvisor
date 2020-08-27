@@ -244,7 +244,7 @@ type inode struct {
 	// version of the inode.
 	version uint64
 
-	// link is result of following a symbolic link.
+	// link is symbolic link path.
 	link string
 }
 
@@ -277,7 +277,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	if !isDir && opts.Mode.IsDir() {
 		return nil, syserror.ENOTDIR
 	}
-	if opts.Flags&linux.O_LARGEFILE == 0 && i.size > linux.MAX_NON_LFS {
+	if opts.Flags&linux.O_LARGEFILE == 0 && atomic.LoadUint64(&i.size) > linux.MAX_NON_LFS {
 		return nil, syserror.EOVERFLOW
 	}
 
@@ -362,7 +362,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		i.fs.conn.mu.Lock()
 		i.fs.conn.attributeVersion++
 		i.attributeVersion = i.fs.conn.attributeVersion
-		i.size = 0
+		atomic.StoreUint64(&i.size, 0)
 		i.fs.conn.mu.Unlock()
 		i.attributeTime = 0
 	}
