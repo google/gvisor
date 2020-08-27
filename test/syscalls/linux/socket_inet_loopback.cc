@@ -97,13 +97,9 @@ TEST(BadSocketPairArgs, ValidateErrForBadCallsToSocketPair) {
   ASSERT_THAT(socketpair(AF_INET6, 0, 0, fd),
               SyscallFailsWithErrno(ESOCKTNOSUPPORT));
 
-  // Invalid AF will return ENOAFSUPPORT or EPERM.
-  ASSERT_THAT(socketpair(AF_MAX, 0, 0, fd),
-              ::testing::AnyOf(SyscallFailsWithErrno(EAFNOSUPPORT),
-                               SyscallFailsWithErrno(EPERM)));
-  ASSERT_THAT(socketpair(8675309, 0, 0, fd),
-              ::testing::AnyOf(SyscallFailsWithErrno(EAFNOSUPPORT),
-                               SyscallFailsWithErrno(EPERM)));
+  // Invalid AF will fail.
+  ASSERT_THAT(socketpair(AF_MAX, 0, 0, fd), SyscallFails());
+  ASSERT_THAT(socketpair(8675309, 0, 0, fd), SyscallFails());
 }
 
 enum class Operation {
