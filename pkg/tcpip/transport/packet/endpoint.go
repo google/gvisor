@@ -356,7 +356,7 @@ func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	}
 }
 
-func (ep *endpoint) takeLastError() *tcpip.Error {
+func (ep *endpoint) LastError() *tcpip.Error {
 	ep.lastErrorMu.Lock()
 	defer ep.lastErrorMu.Unlock()
 
@@ -366,11 +366,7 @@ func (ep *endpoint) takeLastError() *tcpip.Error {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (ep *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch opt.(type) {
-	case tcpip.ErrorOption:
-		return ep.takeLastError()
-	}
+func (*endpoint) GetSockOpt(interface{}) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 

@@ -415,14 +415,8 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch opt.(type) {
-	case tcpip.ErrorOption:
-		return nil
-
-	default:
-		return tcpip.ErrUnknownProtocolOption
-	}
+func (*endpoint) GetSockOpt(interface{}) *tcpip.Error {
+	return tcpip.ErrUnknownProtocolOption
 }
 
 func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8, owner tcpip.PacketOwner) *tcpip.Error {
@@ -836,3 +830,8 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 
 // Wait implements stack.TransportEndpoint.Wait.
 func (*endpoint) Wait() {}
+
+// LastError implements tcpip.Endpoint.LastError.
+func (*endpoint) LastError() *tcpip.Error {
+	return nil
+}
