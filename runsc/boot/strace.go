@@ -15,6 +15,8 @@
 package boot
 
 import (
+	"strings"
+
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	"gvisor.dev/gvisor/runsc/config"
 )
@@ -37,5 +39,5 @@ func enableStrace(conf *config.Config) error {
 		strace.EnableAll(strace.SinkTypeLog)
 		return nil
 	}
-	return strace.Enable(conf.StraceSyscalls, strace.SinkTypeLog)
+	return strace.Enable(strings.Split(conf.StraceSyscalls, ","), strace.SinkTypeLog)
 }

@@ -23,8 +23,6 @@ import (
 	"io/ioutil"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -41,58 +39,17 @@ import (
 var (
 	// Although these flags are not part of the OCI spec, they are used by
 	// Docker, and thus should not be changed.
-	rootDir     = flag.String("root", "", "root directory for storage of container state.")
-	logFilename = flag.String("log", "", "file path where internal debug information is written, default is stdout.")
-	logFormat   = flag.String("log-format", "text", "log format: text (default), json, or json-k8s.")
-	debug       = flag.Bool("debug", false, "enable debug logging.")
-	showVersion = flag.Bool("version", false, "show version and exit.")
 	// TODO(gvisor.dev/issue/193): support systemd cgroups
 	systemdCgroup = flag.Bool("systemd-cgroup", false, "Use systemd for cgroups. NOT SUPPORTED.")
+	showVersion   = flag.Bool("version", false, "show version and exit.")
 
 	// These flags are unique to runsc, and are used to configure parts of the
 	// system that are not covered by the runtime spec.
 
 	// Debugging flags.
-	debugLog        = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
-	panicLog        = flag.String("panic-log", "", "file path were panic reports and other Go's runtime messages are written.")
-	logPackets      = flag.Bool("log-packets", false, "enable network packet logging.")
-	logFD           = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
-	debugLogFD      = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
-	panicLogFD      = flag.Int("panic-log-fd", -1, "file descriptor to write Go's runtime messages.")
-	debugLogFormat  = flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
-	alsoLogToStderr = flag.Bool("alsologtostderr", false, "send log messages to stderr.")
-
-	// Debugging flags: strace related
-	strace         = flag.Bool("strace", false, "enable strace.")
-	straceSyscalls = flag.String("strace-syscalls", "", "comma-separated list of syscalls to trace. If --strace is true and this list is empty, then all syscalls will be traced.")
-	straceLogSize  = flag.Uint("strace-log-size", 1024, "default size (in bytes) to log data argument blobs.")
-
-	// Flags that control sandbox runtime behavior.
-	platformName       = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm.")
-	network            = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
-	hardwareGSO        = flag.Bool("gso", true, "enable hardware segmentation offload if it is supported by a network device.")
-	softwareGSO        = flag.Bool("software-gso", true, "enable software segmentation offload when hardware offload can't be enabled.")
-	txChecksumOffload  = flag.Bool("tx-checksum-offload", false, "enable TX checksum offload.")
-	rxChecksumOffload  = flag.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
-	qDisc              = flag.String("qdisc", "fifo", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
-	fileAccess         = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
-	fsGoferHostUDS     = flag.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
-	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
-	overlayfsStaleRead = flag.Bool("overlayfs-stale-read", true, "assume root mount is an overlay filesystem")
-	watchdogAction     = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
-	panicSignal        = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
-	profile            = flag.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
-	netRaw             = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-	numNetworkChannels = flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
-	rootless           = flag.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
-	referenceLeakMode  = flag.String("ref-leak-mode", "disabled", "sets reference leak check mode: disabled (default), log-names, log-traces.")
-	cpuNumFromQuota    = flag.Bool("cpu-num-from-quota", false, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
-	vfs2Enabled        = flag.Bool("vfs2", false, "TEST ONLY; use while VFSv2 is landing. This uses the new experimental VFS layer.")
-	fuseEnabled        = flag.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
-
-	// Test flags, not to be used outside tests, ever.
-	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
-	testOnlyTestNameEnv                        = flag.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
+	logFD      = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
+	debugLogFD = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	panicLogFD = flag.Int("panic-log-fd", -1, "file descriptor to write Go's runtime messages.")
 )
 
 func main() {
@@ -136,6 +93,8 @@ func main() {
 	subcommands.Register(new(cmd.Gofer), internalGroup)
 	subcommands.Register(new(cmd.Statefile), internalGroup)
 
+	config.RegisterFlags()
+
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
 
@@ -145,6 +104,12 @@ func main() {
 		fmt.Fprintf(os.Stdout, "runsc version %s\n", version)
 		fmt.Fprintf(os.Stdout, "spec: %s\n", specutils.Version)
 		os.Exit(0)
+	}
+
+	// Create a new Config from the flags.
+	conf, err := config.NewFromFlags()
+	if err != nil {
+		cmd.Fatalf(err.Error())
 	}
 
 	// TODO(gvisor.dev/issue/193): support systemd cgroups
@@ -157,103 +122,28 @@ func main() {
 	if *logFD > -1 {
 		errorLogger = os.NewFile(uintptr(*logFD), "error log file")
 
-	} else if *logFilename != "" {
+	} else if conf.LogFilename != "" {
 		// We must set O_APPEND and not O_TRUNC because Docker passes
 		// the same log file for all commands (and also parses these
 		// log files), so we can't destroy them on each command.
 		var err error
-		errorLogger, err = os.OpenFile(*logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		errorLogger, err = os.OpenFile(conf.LogFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
-			cmd.Fatalf("error opening log file %q: %v", *logFilename, err)
+			cmd.Fatalf("error opening log file %q: %v", conf.LogFilename, err)
 		}
 	}
 	cmd.ErrorLogger = errorLogger
 
-	platformType := *platformName
-	if _, err := platform.Lookup(platformType); err != nil {
+	if _, err := platform.Lookup(conf.Platform); err != nil {
 		cmd.Fatalf("%v", err)
-	}
-
-	fsAccess, err := config.MakeFileAccessType(*fileAccess)
-	if err != nil {
-		cmd.Fatalf("%v", err)
-	}
-
-	if fsAccess == config.FileAccessShared && *overlay {
-		cmd.Fatalf("overlay flag is incompatible with shared file access")
-	}
-
-	netType, err := config.MakeNetworkType(*network)
-	if err != nil {
-		cmd.Fatalf("%v", err)
-	}
-
-	wa, err := config.MakeWatchdogAction(*watchdogAction)
-	if err != nil {
-		cmd.Fatalf("%v", err)
-	}
-
-	if *numNetworkChannels <= 0 {
-		cmd.Fatalf("num_network_channels must be > 0, got: %d", *numNetworkChannels)
-	}
-
-	refsLeakMode, err := config.MakeRefsLeakMode(*referenceLeakMode)
-	if err != nil {
-		cmd.Fatalf("%v", err)
-	}
-
-	queueingDiscipline, err := config.MakeQueueingDiscipline(*qDisc)
-	if err != nil {
-		cmd.Fatalf("%s", err)
 	}
 
 	// Sets the reference leak check mode. Also set it in config below to
 	// propagate it to child processes.
-	refs.SetLeakMode(refsLeakMode)
-
-	// Create a new Config from the flags.
-	conf := &config.Config{
-		RootDir:            *rootDir,
-		Debug:              *debug,
-		LogFilename:        *logFilename,
-		LogFormat:          *logFormat,
-		DebugLog:           *debugLog,
-		PanicLog:           *panicLog,
-		DebugLogFormat:     *debugLogFormat,
-		FileAccess:         fsAccess,
-		FSGoferHostUDS:     *fsGoferHostUDS,
-		Overlay:            *overlay,
-		Network:            netType,
-		HardwareGSO:        *hardwareGSO,
-		SoftwareGSO:        *softwareGSO,
-		TXChecksumOffload:  *txChecksumOffload,
-		RXChecksumOffload:  *rxChecksumOffload,
-		LogPackets:         *logPackets,
-		Platform:           platformType,
-		Strace:             *strace,
-		StraceLogSize:      *straceLogSize,
-		WatchdogAction:     wa,
-		PanicSignal:        *panicSignal,
-		ProfileEnable:      *profile,
-		EnableRaw:          *netRaw,
-		NumNetworkChannels: *numNetworkChannels,
-		Rootless:           *rootless,
-		AlsoLogToStderr:    *alsoLogToStderr,
-		ReferenceLeakMode:  refsLeakMode,
-		OverlayfsStaleRead: *overlayfsStaleRead,
-		CPUNumFromQuota:    *cpuNumFromQuota,
-		VFS2:               *vfs2Enabled,
-		FUSE:               *fuseEnabled,
-		QDisc:              queueingDiscipline,
-		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
-		TestOnlyTestNameEnv:                        *testOnlyTestNameEnv,
-	}
-	if len(*straceSyscalls) != 0 {
-		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")
-	}
+	refs.SetLeakMode(conf.ReferenceLeak)
 
 	// Set up logging.
-	if *debug {
+	if conf.Debug {
 		log.SetLevel(log.Debug)
 	}
 
@@ -275,14 +165,14 @@ func main() {
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 
-		e = newEmitter(*debugLogFormat, f)
+		e = newEmitter(conf.DebugLogFormat, f)
 
-	} else if *debugLog != "" {
-		f, err := specutils.DebugLogFile(*debugLog, subcommand, "" /* name */)
+	} else if conf.DebugLog != "" {
+		f, err := specutils.DebugLogFile(conf.DebugLog, subcommand, "" /* name */)
 		if err != nil {
-			cmd.Fatalf("error opening debug log file in %q: %v", *debugLog, err)
+			cmd.Fatalf("error opening debug log file in %q: %v", conf.DebugLog, err)
 		}
-		e = newEmitter(*debugLogFormat, f)
+		e = newEmitter(conf.DebugLogFormat, f)
 
 	} else {
 		// Stderr is reserved for the application, just discard the logs if no debug
@@ -308,8 +198,8 @@ func main() {
 		if err := syscall.Dup3(fd, int(os.Stderr.Fd()), 0); err != nil {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", fd, err)
 		}
-	} else if *alsoLogToStderr {
-		e = &log.MultiEmitter{e, newEmitter(*debugLogFormat, os.Stderr)}
+	} else if conf.AlsoLogToStderr {
+		e = &log.MultiEmitter{e, newEmitter(conf.DebugLogFormat, os.Stderr)}
 	}
 
 	log.SetTarget(e)
@@ -328,7 +218,7 @@ func main() {
 	log.Infof("\t\tVFS2 enabled: %v", conf.VFS2)
 	log.Infof("***************************")
 
-	if *testOnlyAllowRunAsCurrentUserWithoutChroot {
+	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// SIGTERM is sent to all processes if a test exceeds its
 		// timeout and this case is handled by syscall_test_runner.
 		log.Warningf("Block the TERM signal. This is only safe in tests!")
@@ -363,12 +253,4 @@ func newEmitter(format string, logFile io.Writer) log.Emitter {
 	}
 	cmd.Fatalf("invalid log format %q, must be 'text', 'json', or 'json-k8s'", format)
 	panic("unreachable")
-}
-
-func init() {
-	// Set default root dir to something (hopefully) user-writeable.
-	*rootDir = "/var/run/runsc"
-	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
-		*rootDir = filepath.Join(runtimeDir, "runsc")
-	}
 }
