@@ -620,6 +620,9 @@ type Endpoint interface {
 
 	// SetOwner sets the task owner to the endpoint owner.
 	SetOwner(owner PacketOwner)
+
+	// LastError clears and returns the last error reported by the endpoint.
+	LastError() *Error
 }
 
 // LinkPacketInfo holds Link layer information for a received packet.
@@ -838,10 +841,6 @@ const (
 	// but ignore path MTU.
 	PMTUDiscoveryProbe
 )
-
-// ErrorOption is used in GetSockOpt to specify that the last error reported by
-// the endpoint should be cleared and returned.
-type ErrorOption struct{}
 
 // BindToDeviceOption is used by SetSockOpt/GetSockOpt to specify that sockets
 // should bind only on a specific NIC.

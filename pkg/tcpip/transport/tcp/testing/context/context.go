@@ -638,7 +638,7 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 	// Wait for connection to be established.
 	select {
 	case <-notifyCh:
-		if err := c.EP.GetSockOpt(tcpip.ErrorOption{}); err != nil {
+		if err := c.EP.LastError(); err != nil {
 			c.t.Fatalf("Unexpected error when connecting: %v", err)
 		}
 	case <-time.After(1 * time.Second):
@@ -882,8 +882,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 	// Wait for connection to be established.
 	select {
 	case <-notifyCh:
-		err = c.EP.GetSockOpt(tcpip.ErrorOption{})
-		if err != nil {
+		if err := c.EP.LastError(); err != nil {
 			c.t.Fatalf("Unexpected error when connecting: %v", err)
 		}
 	case <-time.After(1 * time.Second):

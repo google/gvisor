@@ -53,11 +53,11 @@ func (f *fakeTransportEndpoint) Info() tcpip.EndpointInfo {
 	return &f.TransportEndpointInfo
 }
 
-func (f *fakeTransportEndpoint) Stats() tcpip.EndpointStats {
+func (*fakeTransportEndpoint) Stats() tcpip.EndpointStats {
 	return nil
 }
 
-func (f *fakeTransportEndpoint) SetOwner(owner tcpip.PacketOwner) {}
+func (*fakeTransportEndpoint) SetOwner(owner tcpip.PacketOwner) {}
 
 func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
 	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
@@ -100,7 +100,7 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 	return int64(len(v)), nil, nil
 }
 
-func (f *fakeTransportEndpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
+func (*fakeTransportEndpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	return 0, tcpip.ControlMessages{}, nil
 }
 
@@ -131,10 +131,6 @@ func (*fakeTransportEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.E
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (*fakeTransportEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch opt.(type) {
-	case tcpip.ErrorOption:
-		return nil
-	}
 	return tcpip.ErrInvalidEndpointState
 }
 
@@ -169,7 +165,7 @@ func (f *fakeTransportEndpoint) UniqueID() uint64 {
 	return f.uniqueID
 }
 
-func (f *fakeTransportEndpoint) ConnectEndpoint(e tcpip.Endpoint) *tcpip.Error {
+func (*fakeTransportEndpoint) ConnectEndpoint(e tcpip.Endpoint) *tcpip.Error {
 	return nil
 }
 
@@ -239,19 +235,19 @@ func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, s
 	f.proto.controlCount++
 }
 
-func (f *fakeTransportEndpoint) State() uint32 {
+func (*fakeTransportEndpoint) State() uint32 {
 	return 0
 }
 
-func (f *fakeTransportEndpoint) ModerateRecvBuf(copied int) {}
+func (*fakeTransportEndpoint) ModerateRecvBuf(copied int) {}
 
-func (f *fakeTransportEndpoint) IPTables() (stack.IPTables, error) {
-	return stack.IPTables{}, nil
+func (*fakeTransportEndpoint) Resume(*stack.Stack) {}
+
+func (*fakeTransportEndpoint) Wait() {}
+
+func (*fakeTransportEndpoint) LastError() *tcpip.Error {
+	return nil
 }
-
-func (f *fakeTransportEndpoint) Resume(*stack.Stack) {}
-
-func (f *fakeTransportEndpoint) Wait() {}
 
 type fakeTransportGoodOption bool
 

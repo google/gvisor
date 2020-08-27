@@ -86,8 +86,7 @@ func testV4Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	// Wait for connection to be established.
 	select {
 	case <-ch:
-		err = c.EP.GetSockOpt(tcpip.ErrorOption{})
-		if err != nil {
+		if err := c.EP.LastError(); err != nil {
 			t.Fatalf("Unexpected error when connecting: %v", err)
 		}
 	case <-time.After(1 * time.Second):
@@ -194,8 +193,7 @@ func testV6Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	// Wait for connection to be established.
 	select {
 	case <-ch:
-		err = c.EP.GetSockOpt(tcpip.ErrorOption{})
-		if err != nil {
+		if err := c.EP.LastError(); err != nil {
 			t.Fatalf("Unexpected error when connecting: %v", err)
 		}
 	case <-time.After(1 * time.Second):
