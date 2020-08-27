@@ -105,7 +105,7 @@ func (*fakeTransportEndpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcp
 }
 
 // SetSockOpt sets a socket option. Currently not supported.
-func (*fakeTransportEndpoint) SetSockOpt(interface{}) *tcpip.Error {
+func (*fakeTransportEndpoint) SetSockOpt(tcpip.SettableSocketOption) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
@@ -130,7 +130,7 @@ func (*fakeTransportEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.E
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (*fakeTransportEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
+func (*fakeTransportEndpoint) GetSockOpt(tcpip.GettableSocketOption) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
