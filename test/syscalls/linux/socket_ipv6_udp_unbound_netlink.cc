@@ -26,7 +26,10 @@ namespace testing {
 // Checks that the loopback interface considers itself bound to all IPs in an
 // associated subnet.
 TEST_P(IPv6UDPUnboundSocketNetlinkTest, JoinSubnet) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // TODO(b/166440211): Only run this test on gvisor or remove if the loopback
+  // interface should not consider itself bound to all IPs in an IPv6 subnet.
+  SKIP_IF(!IsRunningOnGvisor() ||
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // Add an IP address to the loopback interface.
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
