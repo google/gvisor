@@ -155,6 +155,11 @@ type IPHeaderFilter struct {
 	// Protocol matches the transport protocol.
 	Protocol tcpip.TransportProtocolNumber
 
+	// CheckProtocol determines whether the Protocol field should be
+	// checked during matching.
+	// TODO(gvisor.dev/issue/3549): Check this field during matching.
+	CheckProtocol bool
+
 	// Dst matches the destination IP address.
 	Dst tcpip.Address
 
