@@ -244,19 +244,57 @@ func (fd *VFSPipeFD) SetPipeSize(size int64) (int64, error) {
 	return fd.pipe.SetFifoSize(size)
 }
 
-// IOSequence returns a useremm.IOSequence that reads up to count bytes from,
-// or writes up to count bytes to, fd.
-func (fd *VFSPipeFD) IOSequence(count int64) usermem.IOSequence {
-	return usermem.IOSequence{
+// SpliceToNonPipe performs a splice operation from fd to a non-pipe file.
+func (fd *VFSPipeFD) SpliceToNonPipe(ctx context.Context, out *vfs.FileDescription, off, count int64) (int64, error) {
+	fd.pipe.mu.Lock()
+	defer fd.pipe.mu.Unlock()
+
+	// Cap the sequence at number of bytes actually available.
+	v := fd.pipe.queuedLocked()
+	if v < count {
+		count = v
+	}
+	src := usermem.IOSequence{
 		IO:    fd,
 		Addrs: usermem.AddrRangeSeqOf(usermem.AddrRange{0, usermem.Addr(count)}),
 	}
+
+	var (
+		n   int64
+		err error
+	)
+	if off == -1 {
+		n, err = out.Write(ctx, src, vfs.WriteOptions{})
+	} else {
+		n, err = out.PWrite(ctx, src, off, vfs.WriteOptions{})
+	}
+	if n > 0 {
+		fd.pipe.view.TrimFront(n)
+	}
+	return n, err
 }
 
-// CopyIn implements usermem.IO.CopyIn.
+// SpliceFromNonPipe performs a splice operation from a non-pipe file to fd.
+func (fd *VFSPipeFD) SpliceFromNonPipe(ctx context.Context, in *vfs.FileDescription, off, count int64) (int64, error) {
+	fd.pipe.mu.Lock()
+	defer fd.pipe.mu.Unlock()
+
+	dst := usermem.IOSequence{
+		IO:    fd,
+		Addrs: usermem.AddrRangeSeqOf(usermem.AddrRange{0, usermem.Addr(count)}),
+	}
+
+	if off == -1 {
+		return in.Read(ctx, dst, vfs.ReadOptions{})
+	}
+	return in.PRead(ctx, dst, off, vfs.ReadOptions{})
+}
+
+// CopyIn implements usermem.IO.CopyIn. Note that it is the caller's
+// responsibility to trim fd.pipe.view after the read is completed.
 func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
 	origCount := int64(len(dst))
-	n, err := fd.pipe.read(ctx, readOps{
+	n, err := fd.pipe.readLocked(ctx, readOps{
 		left: func() int64 {
 			return int64(len(dst))
 		},
@@ -265,7 +303,6 @@ func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, 
 		},
 		read: func(view *buffer.View) (int64, error) {
 			n, err := view.ReadAt(dst, 0)
-			view.TrimFront(int64(n))
 			return int64(n), err
 		},
 	})
@@ -281,7 +318,7 @@ func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, 
 // CopyOut implements usermem.IO.CopyOut.
 func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr usermem.Addr, src []byte, opts usermem.IOOpts) (int, error) {
 	origCount := int64(len(src))
-	n, err := fd.pipe.write(ctx, writeOps{
+	n, err := fd.pipe.writeLocked(ctx, writeOps{
 		left: func() int64 {
 			return int64(len(src))
 		},
@@ -305,7 +342,7 @@ func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr usermem.Addr, src []byte,
 // ZeroOut implements usermem.IO.ZeroOut.
 func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr usermem.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
 	origCount := toZero
-	n, err := fd.pipe.write(ctx, writeOps{
+	n, err := fd.pipe.writeLocked(ctx, writeOps{
 		left: func() int64 {
 			return toZero
 		},
@@ -326,14 +363,15 @@ func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr usermem.Addr, toZero int6
 	return n, err
 }
 
-// CopyInTo implements usermem.IO.CopyInTo.
+// CopyInTo implements usermem.IO.CopyInTo. Note that it is the caller's
+// responsibility to trim fd.pipe.view after the read is completed.
 func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
 	count := ars.NumBytes()
 	if count == 0 {
 		return 0, nil
 	}
 	origCount := count
-	n, err := fd.pipe.read(ctx, readOps{
+	n, err := fd.pipe.readLocked(ctx, readOps{
 		left: func() int64 {
 			return count
 		},
@@ -342,7 +380,6 @@ func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq, dst
 		},
 		read: func(view *buffer.View) (int64, error) {
 			n, err := view.ReadToSafememWriter(dst, uint64(count))
-			view.TrimFront(int64(n))
 			return int64(n), err
 		},
 	})
@@ -362,7 +399,7 @@ func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars usermem.AddrRangeSeq, 
 		return 0, nil
 	}
 	origCount := count
-	n, err := fd.pipe.write(ctx, writeOps{
+	n, err := fd.pipe.writeLocked(ctx, writeOps{
 		left: func() int64 {
 			return count
 		},
