@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -101,6 +102,24 @@ TEST(MknodTest, UnimplementedTypesReturnError) {
   // These will fail on linux as well since we don't have CAP_MKNOD.
   ASSERT_THAT(mknod(path.c_str(), S_IFCHR, 0), SyscallFailsWithErrno(EPERM));
   ASSERT_THAT(mknod(path.c_str(), S_IFBLK, 0), SyscallFailsWithErrno(EPERM));
+}
+
+TEST(MknodTest, Socket) {
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+
+  SKIP_IF(IsRunningOnGvisor() && IsRunningWithVFS1());
+
+  ASSERT_THAT(mknod("./file0", S_IFSOCK | S_IRUSR | S_IWUSR, 0),
+              SyscallSucceeds());
+
+  int sk;
+  ASSERT_THAT(sk = socket(AF_UNIX, SOCK_SEQPACKET, 0), SyscallSucceeds());
+  FileDescriptor fd(sk);
+
+  struct sockaddr_un addr = {.sun_family = AF_UNIX};
+  absl::SNPrintF(addr.sun_path, sizeof(addr.sun_path), "./file0");
+  ASSERT_THAT(connect(sk, (struct sockaddr *)&addr, sizeof(addr)),
+              SyscallFailsWithErrno(ECONNREFUSED));
 }
 
 TEST(MknodTest, Fifo) {
