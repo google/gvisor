@@ -26,8 +26,10 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/context",
         "//pkg/log",
         "//pkg/safemem",
+        "//pkg/usermem",
     ],
 )
 
