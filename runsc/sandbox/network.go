@@ -69,7 +69,7 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *config.Con
 	case config.NetworkHost:
 		// Nothing to do here.
 	default:
-		return fmt.Errorf("invalid network type: %d", conf.Network)
+		return fmt.Errorf("invalid network type: %v", conf.Network)
 	}
 	return nil
 }
