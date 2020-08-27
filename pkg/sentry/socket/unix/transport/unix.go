@@ -199,6 +199,9 @@ type Endpoint interface {
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs.
 	State() uint32
+
+	// LastError implements tcpip.Endpoint.LastError.
+	LastError() *tcpip.Error
 }
 
 // A Credentialer is a socket or endpoint that supports the SO_PASSCRED socket
@@ -942,13 +945,18 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch opt.(type) {
-	case tcpip.ErrorOption, *tcpip.LingerOption:
+	case *tcpip.LingerOption:
 		return nil
 
 	default:
 		log.Warningf("Unsupported socket option: %T", opt)
 		return tcpip.ErrUnknownProtocolOption
 	}
+}
+
+// LastError implements Endpoint.LastError.
+func (*baseEndpoint) LastError() *tcpip.Error {
+	return nil
 }
 
 // Shutdown closes the read and/or write end of the endpoint connection to its

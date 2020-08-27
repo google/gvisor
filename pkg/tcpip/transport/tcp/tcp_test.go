@@ -74,8 +74,8 @@ func TestGiveUpConnect(t *testing.T) {
 
 	// Wait for ep to become writable.
 	<-notifyCh
-	if err := ep.GetSockOpt(tcpip.ErrorOption{}); err != tcpip.ErrAborted {
-		t.Fatalf("got ep.GetSockOpt(tcpip.ErrorOption{}) = %s, want = %s", err, tcpip.ErrAborted)
+	if err := ep.LastError(); err != tcpip.ErrAborted {
+		t.Fatalf("got ep.LastError() = %s, want = %s", err, tcpip.ErrAborted)
 	}
 
 	// Call Connect again to retreive the handshake failure status
@@ -3023,8 +3023,8 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 	// Wait for connection to be established.
 	select {
 	case <-ch:
-		if err := c.EP.GetSockOpt(tcpip.ErrorOption{}); err != nil {
-			t.Fatalf("GetSockOpt failed: %s", err)
+		if err := c.EP.LastError(); err != nil {
+			t.Fatalf("Connect failed: %s", err)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Timed out waiting for connection")
@@ -4411,7 +4411,7 @@ func TestSelfConnect(t *testing.T) {
 	}
 
 	<-notifyCh
-	if err := ep.GetSockOpt(tcpip.ErrorOption{}); err != nil {
+	if err := ep.LastError(); err != nil {
 		t.Fatalf("Connect failed: %s", err)
 	}
 

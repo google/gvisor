@@ -182,7 +182,7 @@ func main() {
 	if terr == tcpip.ErrConnectStarted {
 		fmt.Println("Connect is pending...")
 		<-notifyCh
-		terr = ep.GetSockOpt(tcpip.ErrorOption{})
+		terr = ep.LastError()
 	}
 	wq.EventUnregister(&waitEntry)
 

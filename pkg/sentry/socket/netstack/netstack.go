@@ -257,6 +257,9 @@ type commonEndpoint interface {
 	// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt and
 	// transport.Endpoint.GetSockOpt.
 	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
+
+	// LastError implements tcpip.Endpoint.LastError.
+	LastError() *tcpip.Error
 }
 
 // LINT.IfChange
@@ -1030,7 +1033,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 		}
 
 		// Get the last error and convert it.
-		err := ep.GetSockOpt(tcpip.ErrorOption{})
+		err := ep.LastError()
 		if err == nil {
 			optP := primitive.Int32(0)
 			return &optP, nil
