@@ -45,26 +45,7 @@ class StatTest : public FuseTest {
 TEST_F(StatTest, StatNormal) {
   // Set up fixture.
   mode_t expected_mode = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
-  struct timespec atime = {.tv_sec = 1595436289, .tv_nsec = 134150844};
-  struct timespec mtime = {.tv_sec = 1595436290, .tv_nsec = 134150845};
-  struct timespec ctime = {.tv_sec = 1595436291, .tv_nsec = 134150846};
-  struct fuse_attr attr = {
-      .ino = 1,
-      .size = 512,
-      .blocks = 4,
-      .atime = static_cast<uint64_t>(atime.tv_sec),
-      .mtime = static_cast<uint64_t>(mtime.tv_sec),
-      .ctime = static_cast<uint64_t>(ctime.tv_sec),
-      .atimensec = static_cast<uint32_t>(atime.tv_nsec),
-      .mtimensec = static_cast<uint32_t>(mtime.tv_nsec),
-      .ctimensec = static_cast<uint32_t>(ctime.tv_nsec),
-      .mode = expected_mode,
-      .nlink = 2,
-      .uid = 1234,
-      .gid = 4321,
-      .rdev = 12,
-      .blksize = 4096,
-  };
+  struct fuse_attr attr = DefaultFuseAttr(expected_mode, 1);
   struct fuse_out_header out_header = {
       .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_attr_out),
   };
@@ -89,9 +70,12 @@ TEST_F(StatTest, StatNormal) {
       .st_size = static_cast<off_t>(attr.size),
       .st_blksize = attr.blksize,
       .st_blocks = static_cast<blkcnt_t>(attr.blocks),
-      .st_atim = atime,
-      .st_mtim = mtime,
-      .st_ctim = ctime,
+      .st_atim = (struct timespec){.tv_sec = static_cast<int>(attr.atime),
+                                   .tv_nsec = attr.atimensec},
+      .st_mtim = (struct timespec){.tv_sec = static_cast<int>(attr.mtime),
+                                   .tv_nsec = attr.mtimensec},
+      .st_ctim = (struct timespec){.tv_sec = static_cast<int>(attr.ctime),
+                                   .tv_nsec = attr.ctimensec},
   };
   EXPECT_TRUE(StatsAreEqual(stat_buf, expected_stat));
 
