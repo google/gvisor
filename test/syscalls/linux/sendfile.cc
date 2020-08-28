@@ -533,6 +533,22 @@ TEST(SendFileTest, SendPipeWouldBlock) {
               SyscallFailsWithErrno(EWOULDBLOCK));
 }
 
+TEST(SendFileTest, SendPipeEOF) {
+  // Create and open an empty input file.
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Setup the output named pipe.
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, 123),
+              SyscallSucceedsWithValue(0));
+}
+
 TEST(SendFileTest, SendPipeBlocks) {
   // Create temp file.
   constexpr char kData[] =
