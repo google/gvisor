@@ -141,9 +141,14 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 				inOffset += n
 			}
 		default:
-			panic("not possible")
+			panic("at least one end of splice must be a pipe")
 		}
 
+		if n == 0 && err == io.EOF {
+			// We reached the end of the file. Eat the error and exit the loop.
+			err = nil
+			break
+		}
 		if n != 0 || err != syserror.ErrWouldBlock || nonBlock {
 			break
 		}
