@@ -28,6 +28,7 @@ type StaticSymlink struct {
 	InodeAttrs
 	InodeNoopRefCount
 	InodeSymlink
+	InodeNoStatFS
 
 	target string
 }

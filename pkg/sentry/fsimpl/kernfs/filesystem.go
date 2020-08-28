@@ -721,14 +721,13 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
 func (fs *Filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
-	_, _, err := fs.walkExistingLocked(ctx, rp)
+	_, inode, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return linux.Statfs{}, err
 	}
-	// TODO(gvisor.dev/issue/1193): actually implement statfs.
-	return linux.Statfs{}, syserror.ENOSYS
+	return inode.StatFS(ctx, fs.VFSFilesystem())
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.

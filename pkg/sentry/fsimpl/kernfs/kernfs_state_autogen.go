@@ -36,6 +36,7 @@ func (x *DynamicBytesFile) StateTypeName() string {
 func (x *DynamicBytesFile) StateFields() []string {
 	return []string{
 		"InodeAttrs",
+		"InodeNoStatFS",
 		"InodeNoopRefCount",
 		"InodeNotDirectory",
 		"InodeNotSymlink",
@@ -49,22 +50,24 @@ func (x *DynamicBytesFile) beforeSave() {}
 func (x *DynamicBytesFile) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.InodeAttrs)
-	m.Save(1, &x.InodeNoopRefCount)
-	m.Save(2, &x.InodeNotDirectory)
-	m.Save(3, &x.InodeNotSymlink)
-	m.Save(4, &x.locks)
-	m.Save(5, &x.data)
+	m.Save(1, &x.InodeNoStatFS)
+	m.Save(2, &x.InodeNoopRefCount)
+	m.Save(3, &x.InodeNotDirectory)
+	m.Save(4, &x.InodeNotSymlink)
+	m.Save(5, &x.locks)
+	m.Save(6, &x.data)
 }
 
 func (x *DynamicBytesFile) afterLoad() {}
 
 func (x *DynamicBytesFile) StateLoad(m state.Source) {
 	m.Load(0, &x.InodeAttrs)
-	m.Load(1, &x.InodeNoopRefCount)
-	m.Load(2, &x.InodeNotDirectory)
-	m.Load(3, &x.InodeNotSymlink)
-	m.Load(4, &x.locks)
-	m.Load(5, &x.data)
+	m.Load(1, &x.InodeNoStatFS)
+	m.Load(2, &x.InodeNoopRefCount)
+	m.Load(3, &x.InodeNotDirectory)
+	m.Load(4, &x.InodeNotSymlink)
+	m.Load(5, &x.locks)
+	m.Load(6, &x.data)
 }
 
 func (x *DynamicBytesFD) StateTypeName() string {
@@ -108,12 +111,13 @@ func (x *StaticDirectory) StateTypeName() string {
 
 func (x *StaticDirectory) StateFields() []string {
 	return []string{
-		"StaticDirectoryRefs",
-		"InodeNotSymlink",
-		"InodeDirectoryNoNewChildren",
 		"InodeAttrs",
+		"InodeDirectoryNoNewChildren",
 		"InodeNoDynamicLookup",
+		"InodeNoStatFS",
+		"InodeNotSymlink",
 		"OrderedChildren",
+		"StaticDirectoryRefs",
 		"locks",
 		"fdOpts",
 	}
@@ -123,27 +127,29 @@ func (x *StaticDirectory) beforeSave() {}
 
 func (x *StaticDirectory) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.StaticDirectoryRefs)
-	m.Save(1, &x.InodeNotSymlink)
-	m.Save(2, &x.InodeDirectoryNoNewChildren)
-	m.Save(3, &x.InodeAttrs)
-	m.Save(4, &x.InodeNoDynamicLookup)
+	m.Save(0, &x.InodeAttrs)
+	m.Save(1, &x.InodeDirectoryNoNewChildren)
+	m.Save(2, &x.InodeNoDynamicLookup)
+	m.Save(3, &x.InodeNoStatFS)
+	m.Save(4, &x.InodeNotSymlink)
 	m.Save(5, &x.OrderedChildren)
-	m.Save(6, &x.locks)
-	m.Save(7, &x.fdOpts)
+	m.Save(6, &x.StaticDirectoryRefs)
+	m.Save(7, &x.locks)
+	m.Save(8, &x.fdOpts)
 }
 
 func (x *StaticDirectory) afterLoad() {}
 
 func (x *StaticDirectory) StateLoad(m state.Source) {
-	m.Load(0, &x.StaticDirectoryRefs)
-	m.Load(1, &x.InodeNotSymlink)
-	m.Load(2, &x.InodeDirectoryNoNewChildren)
-	m.Load(3, &x.InodeAttrs)
-	m.Load(4, &x.InodeNoDynamicLookup)
+	m.Load(0, &x.InodeAttrs)
+	m.Load(1, &x.InodeDirectoryNoNewChildren)
+	m.Load(2, &x.InodeNoDynamicLookup)
+	m.Load(3, &x.InodeNoStatFS)
+	m.Load(4, &x.InodeNotSymlink)
 	m.Load(5, &x.OrderedChildren)
-	m.Load(6, &x.locks)
-	m.Load(7, &x.fdOpts)
+	m.Load(6, &x.StaticDirectoryRefs)
+	m.Load(7, &x.locks)
+	m.Load(8, &x.fdOpts)
 }
 
 func (x *slotList) StateTypeName() string {

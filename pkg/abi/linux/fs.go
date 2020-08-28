@@ -29,6 +29,7 @@ const (
 	SYSFS_MAGIC           = 0x62656572
 	TMPFS_MAGIC           = 0x01021994
 	V9FS_MAGIC            = 0x01021997
+	FUSE_SUPER_MAGIC      = 0x65735546
 )
 
 // Filesystem path limits, from uapi/linux/limits.h.

@@ -32,6 +32,7 @@ import (
 )
 
 type selfSymlink struct {
+	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
@@ -74,6 +75,7 @@ func (*selfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials,
 }
 
 type threadSelfSymlink struct {
+	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
