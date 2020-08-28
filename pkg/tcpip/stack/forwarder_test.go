@@ -154,17 +154,17 @@ func (f *fwdTestNetworkProtocol) NewEndpoint(nicID tcpip.NICID, _ LinkAddressCac
 	}
 }
 
-func (f *fwdTestNetworkProtocol) SetOption(option interface{}) *tcpip.Error {
+func (*fwdTestNetworkProtocol) SetOption(tcpip.SettableNetworkProtocolOption) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-func (f *fwdTestNetworkProtocol) Option(option interface{}) *tcpip.Error {
+func (*fwdTestNetworkProtocol) Option(tcpip.GettableNetworkProtocolOption) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-func (f *fwdTestNetworkProtocol) Close() {}
+func (*fwdTestNetworkProtocol) Close() {}
 
-func (f *fwdTestNetworkProtocol) Wait() {}
+func (*fwdTestNetworkProtocol) Wait() {}
 
 func (f *fwdTestNetworkProtocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkEP LinkEndpoint) *tcpip.Error {
 	if f.onLinkAddressResolved != nil {
@@ -182,7 +182,7 @@ func (f *fwdTestNetworkProtocol) ResolveStaticAddress(addr tcpip.Address) (tcpip
 	return "", false
 }
 
-func (f *fwdTestNetworkProtocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
+func (*fwdTestNetworkProtocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 	return fwdTestNetNumber
 }
 
