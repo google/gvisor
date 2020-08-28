@@ -785,7 +785,7 @@ func (s *Stack) UniqueID() uint64 {
 // options. This method returns an error if the protocol is not supported or
 // option is not supported by the protocol implementation or the provided value
 // is incorrect.
-func (s *Stack) SetNetworkProtocolOption(network tcpip.NetworkProtocolNumber, option interface{}) *tcpip.Error {
+func (s *Stack) SetNetworkProtocolOption(network tcpip.NetworkProtocolNumber, option tcpip.SettableNetworkProtocolOption) *tcpip.Error {
 	netProto, ok := s.networkProtocols[network]
 	if !ok {
 		return tcpip.ErrUnknownProtocol
@@ -802,7 +802,7 @@ func (s *Stack) SetNetworkProtocolOption(network tcpip.NetworkProtocolNumber, op
 // if err != nil {
 //   ...
 // }
-func (s *Stack) NetworkProtocolOption(network tcpip.NetworkProtocolNumber, option interface{}) *tcpip.Error {
+func (s *Stack) NetworkProtocolOption(network tcpip.NetworkProtocolNumber, option tcpip.GettableNetworkProtocolOption) *tcpip.Error {
 	netProto, ok := s.networkProtocols[network]
 	if !ok {
 		return tcpip.ErrUnknownProtocol
