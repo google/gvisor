@@ -23,13 +23,10 @@
 namespace gvisor {
 namespace testing {
 
-// Checks that the loopback interface considers itself bound to all IPs in an
-// associated subnet.
+// Checks that the loopback interface does not consider itself bound to all IPs
+// in an associated subnet.
 TEST_P(IPv6UDPUnboundSocketNetlinkTest, JoinSubnet) {
-  // TODO(b/166440211): Only run this test on gvisor or remove if the loopback
-  // interface should not consider itself bound to all IPs in an IPv6 subnet.
-  SKIP_IF(!IsRunningOnGvisor() ||
-          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // Add an IP address to the loopback interface.
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
@@ -38,25 +35,18 @@ TEST_P(IPv6UDPUnboundSocketNetlinkTest, JoinSubnet) {
   EXPECT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET6,
                                    /*prefixlen=*/64, &addr, sizeof(addr)));
 
-  // Send from an unassigned address but an address that is in the subnet
-  // associated with the loopback interface.
+  // Binding to an unassigned address but an address that is in the subnet
+  // associated with the loopback interface should fail.
   TestAddress sender_addr("V6NotAssignd1");
   sender_addr.addr.ss_family = AF_INET6;
   sender_addr.addr_len = sizeof(sockaddr_in6);
   EXPECT_EQ(1, inet_pton(AF_INET6, "2001:db8::2",
                          reinterpret_cast<sockaddr_in6*>(&sender_addr.addr)
                              ->sin6_addr.s6_addr));
-
-  // Send the packet to an unassigned address but an address that is in the
-  // subnet associated with the loopback interface.
-  TestAddress receiver_addr("V6NotAssigned2");
-  receiver_addr.addr.ss_family = AF_INET6;
-  receiver_addr.addr_len = sizeof(sockaddr_in6);
-  EXPECT_EQ(1, inet_pton(AF_INET6, "2001:db8::ffff:ffff:ffff:ffff",
-                         reinterpret_cast<sockaddr_in6*>(&receiver_addr.addr)
-                             ->sin6_addr.s6_addr));
-
-  TestSendRecv(sender_addr, receiver_addr);
+  auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  EXPECT_THAT(bind(sock->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
+                   sender_addr.addr_len),
+              SyscallFailsWithErrno(EADDRNOTAVAIL));
 }
 
 }  // namespace testing
