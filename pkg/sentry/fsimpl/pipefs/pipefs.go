@@ -143,12 +143,14 @@ func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.
 	return syserror.EPERM
 }
 
-// TODO(gvisor.dev/issue/1193): kernfs does not provide a way to implement
-// statfs, from which we should indicate PIPEFS_MAGIC.
-
 // Open implements kernfs.Inode.Open.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	return i.pipe.Open(ctx, rp.Mount(), vfsd, opts.Flags, &i.locks)
+}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.PIPEFS_MAGIC), nil
 }
 
 // NewConnectedPipeFDs returns a pair of FileDescriptions representing the read

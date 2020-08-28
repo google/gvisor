@@ -163,9 +163,16 @@ func (d *dir) DecRef(context.Context) {
 	d.dirRefs.DecRef(d.Destroy)
 }
 
+// StatFS implements kernfs.Inode.StatFS.
+func (d *dir) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.SYSFS_MAGIC), nil
+}
+
 // cpuFile implements kernfs.Inode.
 type cpuFile struct {
+	implStatFS
 	kernfs.DynamicBytesFile
+
 	maxCores uint
 }
 
@@ -181,4 +188,11 @@ func (fs *filesystem) newCPUFile(creds *auth.Credentials, maxCores uint, mode li
 	d := &kernfs.Dentry{}
 	d.Init(c)
 	return d
+}
+
+type implStatFS struct{}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.SYSFS_MAGIC), nil
 }

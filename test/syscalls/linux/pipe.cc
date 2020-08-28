@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <fcntl.h> /* Obtain O_* constant definitions */
+#include <linux/magic.h>
 #include <sys/ioctl.h>
+#include <sys/statfs.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -196,6 +198,16 @@ TEST_P(PipeTest, NonBlocking) {
   EXPECT_EQ(wbuf, rbuf);
   EXPECT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
               SyscallFailsWithErrno(EWOULDBLOCK));
+}
+
+TEST(PipeTest, StatFS) {
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  struct statfs st;
+  EXPECT_THAT(fstatfs(fds[0], &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_type, PIPEFS_MAGIC);
+  EXPECT_EQ(st.f_bsize, getpagesize());
+  EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 
 TEST(Pipe2Test, CloExec) {
