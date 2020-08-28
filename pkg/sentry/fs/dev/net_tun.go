@@ -89,12 +89,13 @@ func (fops *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io u
 	request := args[1].Uint()
 	data := args[2].Pointer()
 
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		panic("Ioctl should be called from a task context")
+	}
+
 	switch request {
 	case linux.TUNSETIFF:
-		t := kernel.TaskFromContext(ctx)
-		if t == nil {
-			panic("Ioctl should be called from a task context")
-		}
 		if !t.HasCapability(linux.CAP_NET_ADMIN) {
 			return 0, syserror.EPERM
 		}
@@ -104,9 +105,7 @@ func (fops *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io u
 		}
 
 		var req linux.IFReq
-		if _, err := usermem.CopyObjectIn(ctx, io, data, &req, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
+		if _, err := req.CopyIn(t, data); err != nil {
 			return 0, err
 		}
 		flags := usermem.ByteOrder.Uint16(req.Data[:])
@@ -122,9 +121,7 @@ func (fops *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io u
 		flags := fops.device.Flags() | linux.IFF_NOFILTER
 		usermem.ByteOrder.PutUint16(req.Data[:], flags)
 
-		_, err := usermem.CopyObjectOut(ctx, io, data, &req, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		_, err := req.CopyOut(t, data)
 		return 0, err
 
 	default:
