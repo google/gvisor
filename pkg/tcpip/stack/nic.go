@@ -676,10 +676,10 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	}
 
 	// A usable reference was not found, create a temporary one if requested by
-	// the caller or if the address is found in the NIC's subnets and the NIC is
-	// a loopback interface.
+	// the caller or if the IPv4 address is found in the NIC's subnets and the NIC
+	// is a loopback interface.
 	createTempEP := spoofingOrPromiscuous
-	if !createTempEP && n.isLoopback() {
+	if !createTempEP && n.isLoopback() && protocol == header.IPv4ProtocolNumber {
 		for _, r := range n.mu.endpoints {
 			addr := r.addrWithPrefix()
 			subnet := addr.Subnet()

@@ -2417,21 +2417,6 @@ cc_library(
 )
 
 cc_library(
-    name = "socket_ip_udp_unbound_netlink_test_utils",
-    testonly = 1,
-    srcs = [
-        "socket_ip_udp_unbound_netlink_util.cc",
-    ],
-    hdrs = [
-        "socket_ip_udp_unbound_netlink_util.h",
-    ],
-    deps = [
-        ":socket_test_util",
-    ],
-    alwayslink = 1,
-)
-
-cc_library(
     name = "socket_ipv4_udp_unbound_netlink_test_cases",
     testonly = 1,
     srcs = [
@@ -2441,8 +2426,8 @@ cc_library(
         "socket_ipv4_udp_unbound_netlink.h",
     ],
     deps = [
-        ":socket_ip_udp_unbound_netlink_test_utils",
         ":socket_netlink_route_util",
+        ":socket_test_util",
         "//test/util:capability_util",
         gtest,
     ],
@@ -2459,8 +2444,8 @@ cc_library(
         "socket_ipv6_udp_unbound_netlink.h",
     ],
     deps = [
-        ":socket_ip_udp_unbound_netlink_test_utils",
         ":socket_netlink_route_util",
+        ":socket_test_util",
         "//test/util:capability_util",
         gtest,
     ],
