@@ -31,12 +31,13 @@ import (
 //
 // +stateify savable
 type subtasksInode struct {
-	subtasksInodeRefs
-	kernfs.InodeNotSymlink
-	kernfs.InodeDirectoryNoNewChildren
-	kernfs.InodeAttrs
-	kernfs.OrderedChildren
+	implStatFS
 	kernfs.AlwaysValid
+	kernfs.InodeAttrs
+	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotSymlink
+	kernfs.OrderedChildren
+	subtasksInodeRefs
 
 	locks vfs.FileLocks
 
