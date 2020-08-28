@@ -104,6 +104,19 @@ TEST(IPTablesBasic, GetEntriesErrorPrecedence) {
       SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(IPTablesBasic, OriginalDstErrors) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET, SOCK_STREAM, 0), SyscallSucceeds());
+
+  // Sockets not affected by NAT should fail to find an original destination.
+  struct sockaddr_in addr = {};
+  socklen_t addr_len = sizeof(addr);
+  EXPECT_THAT(getsockopt(sock, SOL_IP, SO_ORIGINAL_DST, &addr, &addr_len),
+              SyscallFailsWithErrno(ENOTCONN));
+}
+
 // Fixture for iptables tests.
 class IPTablesTest : public ::testing::Test {
  protected:
