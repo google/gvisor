@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/magic.h>
 #include <sched.h>
 #include <signal.h>
 #include <stddef.h>
@@ -26,6 +27,7 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/utsname.h>
 #include <syscall.h>
 #include <unistd.h>
@@ -2157,6 +2159,18 @@ TEST(Proc, PidTidIOAccounting) {
 
   writer.Join();
   noop.Join();
+}
+
+TEST(Proc, Statfs) {
+  struct statfs st;
+  EXPECT_THAT(statfs("/proc", &st), SyscallSucceeds());
+  if (IsRunningWithVFS1()) {
+    EXPECT_EQ(st.f_type, ANON_INODE_FS_MAGIC);
+  } else {
+    EXPECT_EQ(st.f_type, PROC_SUPER_MAGIC);
+  }
+  EXPECT_EQ(st.f_bsize, getpagesize());
+  EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 
 }  // namespace

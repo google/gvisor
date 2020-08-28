@@ -111,12 +111,13 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // rootInode is the root directory inode for the devpts mounts.
 type rootInode struct {
-	rootInodeRefs
+	implStatFS
 	kernfs.AlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
+	rootInodeRefs
 
 	locks vfs.FileLocks
 
@@ -239,4 +240,11 @@ func (i *rootInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback,
 // DecRef implements kernfs.Inode.
 func (i *rootInode) DecRef(context.Context) {
 	i.rootInodeRefs.DecRef(i.Destroy)
+}
+
+type implStatFS struct{}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.DEVPTS_SUPER_MAGIC), nil
 }
