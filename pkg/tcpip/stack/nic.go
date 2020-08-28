@@ -137,6 +137,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	nic.mu.ndp.initializeTempAddrState()
 
 	// Check for Neighbor Unreachability Detection support.
+	var nud NUDHandler
 	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 && stack.useNeighborCache {
 		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
 		nic.neigh = &neighborCache{
@@ -144,16 +145,24 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 			state: NewNUDState(stack.nudConfigs, rng),
 			cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
 		}
+
+		// An interface value that holds a nil pointer but non-nil type is not the
+		// same as the nil interface. Because of this, nud must only be assignd if
+		// nic.neigh is non-nil since a nil reference to a neighborCache is not
+		// valid.
+		//
+		// See https://golang.org/doc/faq#nil_error for more information.
+		nud = nic.neigh
 	}
 
-	// Register supported packet endpoint protocols.
+	// Register supported packet and network endpoint protocols.
 	for _, netProto := range header.Ethertypes {
 		nic.mu.packetEPs[netProto] = []PacketEndpoint{}
 	}
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = nil
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, stack, nic.neigh, nic, ep, stack)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, stack, nud, nic, ep, stack)
 	}
 
 	nic.linkEP.Attach(nic)
@@ -819,23 +828,10 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 		}
 	}
 
-	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
+	ep, ok := n.networkEndpoints[protocolAddress.Protocol]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol
 	}
-
-	var nud NUDHandler
-	if n.neigh != nil {
-		// An interface value that holds a nil concrete value is itself non-nil.
-		// For this reason, n.neigh cannot be passed directly to NewEndpoint so
-		// NetworkEndpoints don't confuse it for non-nil.
-		//
-		// See https://golang.org/doc/faq#nil_error for more information.
-		nud = n.neigh
-	}
-
-	// Create the new network endpoint.
-	ep := netProto.NewEndpoint(n.id, n.stack, nud, n, n.linkEP, n.stack)
 
 	isIPv6Unicast := protocolAddress.Protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
 
