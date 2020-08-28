@@ -64,12 +64,13 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 	request := args[1].Uint()
 	data := args[2].Pointer()
 
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		panic("Ioctl should be called from a task context")
+	}
+
 	switch request {
 	case linux.TUNSETIFF:
-		t := kernel.TaskFromContext(ctx)
-		if t == nil {
-			panic("Ioctl should be called from a task context")
-		}
 		if !t.HasCapability(linux.CAP_NET_ADMIN) {
 			return 0, syserror.EPERM
 		}
@@ -79,9 +80,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 		}
 
 		var req linux.IFReq
-		if _, err := usermem.CopyObjectIn(ctx, uio, data, &req, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
+		if _, err := req.CopyIn(t, data); err != nil {
 			return 0, err
 		}
 		flags := usermem.ByteOrder.Uint16(req.Data[:])
@@ -97,9 +96,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 		flags := fd.device.Flags() | linux.IFF_NOFILTER
 		usermem.ByteOrder.PutUint16(req.Data[:], flags)
 
-		_, err := usermem.CopyObjectOut(ctx, uio, data, &req, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		_, err := req.CopyOut(t, data)
 		return 0, err
 
 	default:
