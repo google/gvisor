@@ -201,12 +201,12 @@ func (p *testIPv6Protocol) NewEndpoint(nicID tcpip.NICID, _ LinkAddressCache, _ 
 }
 
 // SetOption implements NetworkProtocol.SetOption.
-func (*testIPv6Protocol) SetOption(interface{}) *tcpip.Error {
+func (*testIPv6Protocol) SetOption(tcpip.SettableNetworkProtocolOption) *tcpip.Error {
 	return nil
 }
 
 // Option implements NetworkProtocol.Option.
-func (*testIPv6Protocol) Option(interface{}) *tcpip.Error {
+func (*testIPv6Protocol) Option(tcpip.GettableNetworkProtocolOption) *tcpip.Error {
 	return nil
 }
 
