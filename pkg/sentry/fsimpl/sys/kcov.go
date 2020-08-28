@@ -39,8 +39,9 @@ func (fs *filesystem) newKcovFile(ctx context.Context, creds *auth.Credentials) 
 type kcovInode struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
-	kernfs.InodeNotSymlink
 	kernfs.InodeNotDirectory
+	kernfs.InodeNotSymlink
+	implStatFS
 }
 
 func (i *kcovInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {

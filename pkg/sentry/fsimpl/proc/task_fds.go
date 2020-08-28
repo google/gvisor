@@ -100,13 +100,14 @@ func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, off
 //
 // +stateify savable
 type fdDirInode struct {
-	fdDirInodeRefs
-	kernfs.InodeNotSymlink
-	kernfs.InodeDirectoryNoNewChildren
-	kernfs.InodeAttrs
-	kernfs.OrderedChildren
-	kernfs.AlwaysValid
 	fdDir
+	fdDirInodeRefs
+	implStatFS
+	kernfs.AlwaysValid
+	kernfs.InodeAttrs
+	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotSymlink
+	kernfs.OrderedChildren
 }
 
 var _ kernfs.Inode = (*fdDirInode)(nil)
@@ -185,6 +186,7 @@ func (i *fdDirInode) DecRef(context.Context) {
 //
 // +stateify savable
 type fdSymlink struct {
+	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
@@ -233,13 +235,14 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 //
 // +stateify savable
 type fdInfoDirInode struct {
-	fdInfoDirInodeRefs
-	kernfs.InodeNotSymlink
-	kernfs.InodeDirectoryNoNewChildren
-	kernfs.InodeAttrs
-	kernfs.OrderedChildren
-	kernfs.AlwaysValid
 	fdDir
+	fdInfoDirInodeRefs
+	implStatFS
+	kernfs.AlwaysValid
+	kernfs.InodeAttrs
+	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotSymlink
+	kernfs.OrderedChildren
 }
 
 var _ kernfs.Inode = (*fdInfoDirInode)(nil)
