@@ -14,6 +14,7 @@
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -25,6 +26,9 @@
 
 namespace gvisor {
 namespace testing {
+
+// From linux/magic.h, but we can't depend on linux headers here.
+#define SOCKFS_MAGIC 0x534F434B
 
 TEST(SocketTest, UnixSocketPairProtocol) {
   int socks[2];
@@ -92,6 +96,19 @@ TEST(SocketTest, UnixSocketStat) {
     EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
     EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
   }
+}
+
+TEST(SocketTest, UnixSocketStatFS) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  FileDescriptor bound =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
+
+  struct statfs st;
+  EXPECT_THAT(fstatfs(bound.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_type, SOCKFS_MAGIC);
+  EXPECT_EQ(st.f_bsize, getpagesize());
+  EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 
 using SocketOpenTest = ::testing::TestWithParam<int>;

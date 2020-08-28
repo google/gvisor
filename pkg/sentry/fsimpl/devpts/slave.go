@@ -29,6 +29,7 @@ import (
 
 // slaveInode is the inode for the slave end of the Terminal.
 type slaveInode struct {
+	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory

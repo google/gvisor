@@ -37,12 +37,13 @@ const (
 //
 // +stateify savable
 type tasksInode struct {
-	tasksInodeRefs
-	kernfs.InodeNotSymlink
-	kernfs.InodeDirectoryNoNewChildren
-	kernfs.InodeAttrs
-	kernfs.OrderedChildren
+	implStatFS
 	kernfs.AlwaysValid
+	kernfs.InodeAttrs
+	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotSymlink
+	kernfs.OrderedChildren
+	tasksInodeRefs
 
 	locks vfs.FileLocks
 

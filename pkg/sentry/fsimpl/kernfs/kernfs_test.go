@@ -98,9 +98,10 @@ func (*attrs) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.S
 type readonlyDir struct {
 	readonlyDirRefs
 	attrs
-	kernfs.InodeNotSymlink
-	kernfs.InodeNoDynamicLookup
 	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNoDynamicLookup
+	kernfs.InodeNoStatFS
+	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks
@@ -137,9 +138,10 @@ func (d *readonlyDir) DecRef(context.Context) {
 type dir struct {
 	dirRefs
 	attrs
-	kernfs.InodeNotSymlink
 	kernfs.InodeNoDynamicLookup
+	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
+	kernfs.InodeNoStatFS
 
 	locks vfs.FileLocks
 
