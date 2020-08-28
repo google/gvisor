@@ -32,12 +32,13 @@ import (
 //
 // +stateify savable
 type taskInode struct {
-	taskInodeRefs
-	kernfs.InodeNotSymlink
+	implStatFS
+	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNoDynamicLookup
-	kernfs.InodeAttrs
+	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
+	taskInodeRefs
 
 	locks vfs.FileLocks
 

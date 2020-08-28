@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/magic.h>
 #include <sys/statfs.h>
 #include <unistd.h>
 
@@ -26,6 +27,10 @@ namespace testing {
 
 namespace {
 
+// From linux/magic.h. For some reason, not defined in the headers for some
+// build environments.
+#define OVERLAYFS_SUPER_MAGIC 0x794c7630
+
 TEST(StatfsTest, CannotStatBadPath) {
   auto temp_file = NewTempAbsPathInDir("/tmp");
 
@@ -38,19 +43,18 @@ TEST(StatfsTest, InternalTmpfs) {
 
   struct statfs st;
   EXPECT_THAT(statfs(temp_file.path().c_str(), &st), SyscallSucceeds());
+  // Note: We could be an overlay or goferfs on some configurations.
+  EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC ||
+              st.f_type == V9FS_MAGIC);
 }
 
 TEST(StatfsTest, InternalDevShm) {
   struct statfs st;
   EXPECT_THAT(statfs("/dev/shm", &st), SyscallSucceeds());
-}
-
-TEST(StatfsTest, NameLen) {
-  struct statfs st;
-  EXPECT_THAT(statfs("/dev/shm", &st), SyscallSucceeds());
 
   // This assumes that /dev/shm is tmpfs.
-  EXPECT_EQ(st.f_namelen, NAME_MAX);
+  // Note: We could be an overlay on some configurations.
+  EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC);
 }
 
 TEST(FstatfsTest, CannotStatBadFd) {

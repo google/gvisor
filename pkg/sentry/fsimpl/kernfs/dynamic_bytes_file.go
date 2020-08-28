@@ -35,6 +35,7 @@ import (
 // +stateify savable
 type DynamicBytesFile struct {
 	InodeAttrs
+	InodeNoStatFS
 	InodeNoopRefCount
 	InodeNotDirectory
 	InodeNotSymlink
