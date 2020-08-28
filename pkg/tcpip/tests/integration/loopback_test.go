@@ -110,50 +110,10 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 			expectRx:   true,
 		},
 		{
-			name:       "IPv6 bind to wildcard and send to assigned address",
-			addAddress: ipv6ProtocolAddress,
-			dstAddr:    ipv6Addr.Address,
-			expectRx:   true,
-		},
-		{
 			name:       "IPv6 bind to wildcard and send to other subnet-local address",
 			addAddress: ipv6ProtocolAddress,
 			dstAddr:    otherIPv6Address,
-			expectRx:   true,
-		},
-		{
-			name:       "IPv6 bind to wildcard send to other address",
-			addAddress: ipv6ProtocolAddress,
-			dstAddr:    remoteIPv6Addr,
 			expectRx:   false,
-		},
-		{
-			name:       "IPv6 bind to other subnet-local address and send to assigned address",
-			addAddress: ipv6ProtocolAddress,
-			bindAddr:   otherIPv6Address,
-			dstAddr:    ipv6Addr.Address,
-			expectRx:   false,
-		},
-		{
-			name:       "IPv6 bind and send to other subnet-local address",
-			addAddress: ipv6ProtocolAddress,
-			bindAddr:   otherIPv6Address,
-			dstAddr:    otherIPv6Address,
-			expectRx:   true,
-		},
-		{
-			name:       "IPv6 bind to assigned address and send to other subnet-local address",
-			addAddress: ipv6ProtocolAddress,
-			bindAddr:   ipv6Addr.Address,
-			dstAddr:    otherIPv6Address,
-			expectRx:   false,
-		},
-		{
-			name:       "IPv6 bind and send to assigned address",
-			addAddress: ipv6ProtocolAddress,
-			bindAddr:   ipv6Addr.Address,
-			dstAddr:    ipv6Addr.Address,
-			expectRx:   true,
 		},
 	}
 
