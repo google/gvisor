@@ -22,35 +22,39 @@
 namespace gvisor {
 namespace testing {
 
-// Create response body with specified mode and nodeID.
-fuse_entry_out DefaultEntryOut(mode_t mode, uint64_t node_id) {
+// Create a default FuseAttr struct with specified mode and inode.
+fuse_attr DefaultFuseAttr(mode_t mode, uint64_t inode) {
   const int time_sec = 1595436289;
   const int time_nsec = 134150844;
+  return (struct fuse_attr){
+      .ino = inode,
+      .size = 512,
+      .blocks = 4,
+      .atime = time_sec,
+      .mtime = time_sec,
+      .ctime = time_sec,
+      .atimensec = time_nsec,
+      .mtimensec = time_nsec,
+      .ctimensec = time_nsec,
+      .mode = mode,
+      .nlink = 2,
+      .uid = 1234,
+      .gid = 4321,
+      .rdev = 12,
+      .blksize = 4096,
+  };
+}
+
+// Create response body with specified mode and nodeID.
+fuse_entry_out DefaultEntryOut(mode_t mode, uint64_t node_id) {
   struct fuse_entry_out default_entry_out = {
       .nodeid = node_id,
       .generation = 0,
-      .entry_valid = time_sec,
-      .attr_valid = time_sec,
-      .entry_valid_nsec = time_nsec,
-      .attr_valid_nsec = time_nsec,
-      .attr =
-          (struct fuse_attr){
-              .ino = node_id,
-              .size = 512,
-              .blocks = 4,
-              .atime = time_sec,
-              .mtime = time_sec,
-              .ctime = time_sec,
-              .atimensec = time_nsec,
-              .mtimensec = time_nsec,
-              .ctimensec = time_nsec,
-              .mode = mode,
-              .nlink = 2,
-              .uid = 1234,
-              .gid = 4321,
-              .rdev = 12,
-              .blksize = 4096,
-          },
+      .entry_valid = 0,
+      .attr_valid = 0,
+      .entry_valid_nsec = 0,
+      .attr_valid_nsec = 0,
+      .attr = DefaultFuseAttr(mode, node_id),
   };
   return default_entry_out;
 };
