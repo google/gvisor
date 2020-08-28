@@ -298,6 +298,23 @@ TEST(SpliceTest, ToPipe) {
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), buf.size()), 0);
 }
 
+TEST(SpliceTest, ToPipeEOF) {
+  // Create and open an empty input file.
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor in_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Splice from the empty file to the pipe.
+  EXPECT_THAT(splice(in_fd.get(), nullptr, wfd.get(), nullptr, 123, 0),
+              SyscallSucceedsWithValue(0));
+}
+
 TEST(SpliceTest, ToPipeOffset) {
   // Open the input file.
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
