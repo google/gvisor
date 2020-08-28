@@ -217,12 +217,12 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 }
 
 // SetOption implements stack.NetworkProtocol.SetOption.
-func (*protocol) SetOption(option interface{}) *tcpip.Error {
+func (*protocol) SetOption(tcpip.SettableNetworkProtocolOption) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
 // Option implements stack.NetworkProtocol.Option.
-func (*protocol) Option(option interface{}) *tcpip.Error {
+func (*protocol) Option(tcpip.GettableNetworkProtocolOption) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 

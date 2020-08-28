@@ -469,10 +469,10 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddres
 }
 
 // SetOption implements NetworkProtocol.SetOption.
-func (p *protocol) SetOption(option interface{}) *tcpip.Error {
+func (p *protocol) SetOption(option tcpip.SettableNetworkProtocolOption) *tcpip.Error {
 	switch v := option.(type) {
-	case tcpip.DefaultTTLOption:
-		p.SetDefaultTTL(uint8(v))
+	case *tcpip.DefaultTTLOption:
+		p.SetDefaultTTL(uint8(*v))
 		return nil
 	default:
 		return tcpip.ErrUnknownProtocolOption
@@ -480,7 +480,7 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 }
 
 // Option implements NetworkProtocol.Option.
-func (p *protocol) Option(option interface{}) *tcpip.Error {
+func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) *tcpip.Error {
 	switch v := option.(type) {
 	case *tcpip.DefaultTTLOption:
 		*v = tcpip.DefaultTTLOption(p.DefaultTTL())
