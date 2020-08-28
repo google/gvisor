@@ -841,9 +841,25 @@ const (
 	PMTUDiscoveryProbe
 )
 
+// GettableNetworkProtocolOption is a marker interface for network protocol
+// options that may be queried.
+type GettableNetworkProtocolOption interface {
+	isGettableNetworkProtocolOption()
+}
+
+// SettableNetworkProtocolOption is a marker interface for network protocol
+// options that may be set.
+type SettableNetworkProtocolOption interface {
+	isSettableNetworkProtocolOption()
+}
+
 // DefaultTTLOption is used by stack.(*Stack).NetworkProtocolOption to specify
 // a default TTL.
 type DefaultTTLOption uint8
+
+func (*DefaultTTLOption) isGettableNetworkProtocolOption() {}
+
+func (*DefaultTTLOption) isSettableNetworkProtocolOption() {}
 
 // AvailableCongestionControlOption is used to query the supported congestion
 // control algorithms.
