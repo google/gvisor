@@ -15,13 +15,13 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV6_UDP_UNBOUND_NETLINK_UTIL_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV6_UDP_UNBOUND_NETLINK_UTIL_H_
 
-#include "test/syscalls/linux/socket_ip_udp_unbound_netlink_util.h"
+#include "test/syscalls/linux/socket_test_util.h"
 
 namespace gvisor {
 namespace testing {
 
 // Test fixture for tests that apply to IPv6 UDP sockets.
-using IPv6UDPUnboundSocketNetlinkTest = IPUDPUnboundSocketNetlinkTest;
+using IPv6UDPUnboundSocketNetlinkTest = SimpleSocketTest;
 
 }  // namespace testing
 }  // namespace gvisor
