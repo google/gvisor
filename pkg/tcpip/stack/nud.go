@@ -348,6 +348,16 @@ func calcMaxRandomFactor(minRandomFactor float32) float32 {
 	return defaultMaxRandomFactor
 }
 
+// NDPEndpoint is an NDP endpoint.
+//
+// This interface defines the minimum set of functions required by this package
+// from an implementation of NDP.
+type NDPEndpoint interface {
+	// InvalidateDefaultRouter invalidates a default router discovered through
+	// NDP.
+	InvalidateDefaultRouter(tcpip.Address)
+}
+
 // A Rand is a source of random numbers.
 type Rand interface {
 	// Float32 returns, as a float32, a pseudo-random number in [0.0,1.0).

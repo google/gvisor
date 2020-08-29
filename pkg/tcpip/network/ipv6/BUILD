@@ -5,11 +5,14 @@ package(licenses = ["notice"])
 go_library(
     name = "ipv6",
     srcs = [
+        "dhcpv6configurationfromndpra_string.go",
         "icmp.go",
         "ipv6.go",
+        "ndp.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
