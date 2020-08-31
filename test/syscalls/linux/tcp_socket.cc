@@ -13,9 +13,9 @@
 // limitations under the License.
 
 #include <fcntl.h>
-#ifndef __fuchsia__
+#ifdef __linux__
 #include <linux/filter.h>
-#endif  // __fuchsia__
+#endif  // __linux__
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -1586,7 +1586,7 @@ TEST_P(SimpleTcpSocketTest, SetTCPWindowClampAboveHalfMinRcvBuf) {
   }
 }
 
-#ifndef __fuchsia__
+#ifdef __linux__
 
 // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
 // gVisor currently silently ignores attaching a filter.
@@ -1620,6 +1620,8 @@ TEST_P(SimpleTcpSocketTest, SetSocketAttachDetachFilter) {
       SyscallSucceeds());
 }
 
+#endif  // __linux__
+
 TEST_P(SimpleTcpSocketTest, SetSocketDetachFilterNoInstalledFilter) {
   // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
   SKIP_IF(IsRunningOnGvisor());
@@ -1640,8 +1642,6 @@ TEST_P(SimpleTcpSocketTest, GetSocketDetachFilter) {
   ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
               SyscallFailsWithErrno(ENOPROTOOPT));
 }
-
-#endif  // __fuchsia__
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
