@@ -41,12 +41,29 @@ const Name = "verity"
 // tree file for "/foo" is "/.merkle.verity.foo".
 const merklePrefix = ".merkle.verity."
 
+// merkleoffsetInParentXattr is the extended attribute name specifying the
+// offset of child root hash in its parent's Merkle tree.
+const merkleOffsetInParentXattr = "user.merkle.offset"
+
+// merkleSizeXattr is the extended attribute name specifying the size of data
+// hashed by the corresponding Merkle tree. For a file, it's the size of the
+// whole file. For a directory, it's the size of all its children's root hashes.
+const merkleSizeXattr = "user.merkle.size"
+
+// sizeOfInt32 is the size in bytes for a 32 bit integer in extended attributes.
+const sizeOfInt32 = 4
+
 // noCrashOnVerificationFailure indicates whether the sandbox should panic
 // whenever verification fails. If true, an error is returned instead of
 // panicking. This should only be set for tests.
 // TOOD(b/165661693): Decide whether to panic or return error based on this
 // flag.
 var noCrashOnVerificationFailure bool
+
+// verityMu synchronizes enabling verity files, protects files or directories
+// from being enabled by different threads simultaneously. It also ensures that
+// verity does not access files that are being enabled.
+var verityMu sync.RWMutex
 
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
@@ -214,6 +231,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	d.rootHash = make([]byte, len(iopts.RootHash))
 	copy(d.rootHash, iopts.RootHash)
 	d.vfsd.Init(d)
+
+	fs.rootDentry = d
 
 	return &fs.vfsfs, &d.vfsd, nil
 }
