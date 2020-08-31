@@ -29,6 +29,12 @@ const (
 	sha256DigestSize = 32
 )
 
+// DigestSize returns the size (in bytes) of a digest.
+// TODO(b/156980949): Allow config other hash methods (SHA384/SHA512).
+func DigestSize() int {
+	return sha256DigestSize
+}
+
 // Layout defines the scale of a Merkle tree.
 type Layout struct {
 	// blockSize is the size of a data block to be hashed.
