@@ -13,9 +13,7 @@
 // limitations under the License.
 
 #include <linux/capability.h>
-#ifndef __fuchsia__
 #include <linux/filter.h>
-#endif  // __fuchsia__
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
@@ -815,8 +813,6 @@ void RawSocketTest::ReceiveBufFrom(int sock, char* recv_buf,
   ASSERT_NO_FATAL_FAILURE(RecvNoCmsg(sock, recv_buf, recv_buf_len));
 }
 
-#ifndef __fuchsia__
-
 TEST_P(RawSocketTest, SetSocketDetachFilterNoInstalledFilter) {
   // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
   if (IsRunningOnGvisor()) {
@@ -837,8 +833,6 @@ TEST_P(RawSocketTest, GetSocketDetachFilter) {
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
               SyscallFailsWithErrno(ENOPROTOOPT));
 }
-
-#endif  //  __fuchsia__
 
 // AF_INET6+SOCK_RAW+IPPROTO_RAW sockets can be created, but not written to.
 TEST(RawSocketTest, IPv6ProtoRaw) {
