@@ -1472,8 +1472,9 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			return err
 		}
 
-		if d.hostFD < 0 && openReadable && h.fd >= 0 {
-			// We have no existing FD; use the new FD for at least reading.
+		if d.hostFD < 0 && h.fd >= 0 && openReadable && (d.writeFile.isNil() || openWritable) {
+			// We have no existing FD, and the new FD meets the requirements
+			// for d.hostFD, so start using it.
 			d.hostFD = h.fd
 		} else if d.hostFD >= 0 && d.writeFile.isNil() && openWritable {
 			// We have an existing read-only FD, but the file has just been
