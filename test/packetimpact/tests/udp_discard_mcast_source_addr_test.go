@@ -53,6 +53,7 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 				t,
 				testbench.IPv4{SrcAddr: testbench.Address(tcpip.Address(mcastAddr.To4()))},
 				testbench.UDP{},
+				&testbench.Payload{Bytes: []byte("test payload")},
 			)
 
 			ret, payload, errno := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
@@ -76,14 +77,15 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV6(t *testing.T) {
 		net.IPv6interfacelocalallnodes,
 		net.IPv6linklocalallnodes,
 		net.IPv6linklocalallrouters,
-		net.ParseIP("fe01::42"),
-		net.ParseIP("fe02::4242"),
+		net.ParseIP("ff01::42"),
+		net.ParseIP("ff02::4242"),
 	} {
 		t.Run(fmt.Sprintf("srcaddr=%s", mcastAddr), func(t *testing.T) {
 			conn.SendIPv6(
 				t,
 				testbench.IPv6{SrcAddr: testbench.Address(tcpip.Address(mcastAddr.To16()))},
 				testbench.UDP{},
+				&testbench.Payload{Bytes: []byte("test payload")},
 			)
 			ret, payload, errno := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
 			if errno != syscall.EAGAIN || errno != syscall.EWOULDBLOCK {
