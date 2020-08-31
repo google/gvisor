@@ -26,12 +26,17 @@ import (
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
-func formatRef(x *wire.Ref, graph uint64, html bool) string {
+type printer struct {
+	html      bool
+	typeSpecs map[string]*wire.Type
+}
+
+func (p *printer) formatRef(x *wire.Ref, graph uint64) string {
 	baseRef := fmt.Sprintf("g%dr%d", graph, x.Root)
 	fullRef := baseRef
 	if len(x.Dots) > 0 {
 		// See wire.Ref; Type valid if Dots non-zero.
-		typ, _ := formatType(x.Type, graph, html)
+		typ, _ := p.formatType(x.Type, graph)
 		var buf strings.Builder
 		buf.WriteString("(*")
 		buf.WriteString(typ)
@@ -51,34 +56,40 @@ func formatRef(x *wire.Ref, graph uint64, html bool) string {
 		buf.WriteString(")")
 		fullRef = buf.String()
 	}
-	if html {
+	if p.html {
 		return fmt.Sprintf("<a href=\"#%s\">%s</a>", baseRef, fullRef)
 	}
 	return fullRef
 }
 
-func formatType(t wire.TypeSpec, graph uint64, html bool) (string, bool) {
+func (p *printer) formatType(t wire.TypeSpec, graph uint64) (string, bool) {
 	switch x := t.(type) {
 	case wire.TypeID:
-		base := fmt.Sprintf("g%dt%d", graph, x)
-		if html {
-			return fmt.Sprintf("<a href=\"#%s\">%s</a>", base, base), true
+		tag := fmt.Sprintf("g%dt%d", graph, x)
+		desc := tag
+		if spec, ok := p.typeSpecs[tag]; ok {
+			desc += fmt.Sprintf("=%s", spec.Name)
+		} else {
+			desc += "!missing-type-spec"
 		}
-		return fmt.Sprintf("%s", base), true
+		if p.html {
+			return fmt.Sprintf("<a href=\"#%s\">%s</a>", tag, desc), true
+		}
+		return desc, true
 	case wire.TypeSpecNil:
 		return "", false // Only nil type.
 	case *wire.TypeSpecPointer:
-		element, _ := formatType(x.Type, graph, html)
+		element, _ := p.formatType(x.Type, graph)
 		return fmt.Sprintf("(*%s)", element), true
 	case *wire.TypeSpecArray:
-		element, _ := formatType(x.Type, graph, html)
+		element, _ := p.formatType(x.Type, graph)
 		return fmt.Sprintf("[%d](%s)", x.Count, element), true
 	case *wire.TypeSpecSlice:
-		element, _ := formatType(x.Type, graph, html)
+		element, _ := p.formatType(x.Type, graph)
 		return fmt.Sprintf("([]%s)", element), true
 	case *wire.TypeSpecMap:
-		key, _ := formatType(x.Key, graph, html)
-		value, _ := formatType(x.Value, graph, html)
+		key, _ := p.formatType(x.Key, graph)
+		value, _ := p.formatType(x.Value, graph)
 		return fmt.Sprintf("(map[%s]%s)", key, value), true
 	default:
 		panic(fmt.Sprintf("unreachable: unknown type %T", t))
@@ -87,7 +98,7 @@ func formatType(t wire.TypeSpec, graph uint64, html bool) (string, bool) {
 
 // format formats a single object, for pretty-printing. It also returns whether
 // the value is a non-zero value.
-func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bool) {
+func (p *printer) format(graph uint64, depth int, encoded wire.Object) (string, bool) {
 	switch x := encoded.(type) {
 	case wire.Nil:
 		return "nil", false
@@ -98,7 +109,7 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 	case *wire.Complex128:
 		return fmt.Sprintf("%f+%fi", real(*x), imag(*x)), *x != 0.0
 	case *wire.Ref:
-		return formatRef(x, graph, html), x.Root != 0
+		return p.formatRef(x, graph), x.Root != 0
 	case *wire.Type:
 		tabs := "\n" + strings.Repeat("\t", depth)
 		items := make([]string, 0, len(x.Fields)+2)
@@ -109,7 +120,7 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 		items = append(items, "}")
 		return strings.Join(items, tabs), true // No zero value.
 	case *wire.Slice:
-		return fmt.Sprintf("%s{len:%d,cap:%d}", formatRef(&x.Ref, graph, html), x.Length, x.Capacity), x.Capacity != 0
+		return fmt.Sprintf("%s{len:%d,cap:%d}", p.formatRef(&x.Ref, graph), x.Length, x.Capacity), x.Capacity != 0
 	case *wire.Array:
 		if len(x.Contents) == 0 {
 			return "[]", false
@@ -119,7 +130,7 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 		items = append(items, "[")
 		tabs := "\n" + strings.Repeat("\t", depth)
 		for i := 0; i < len(x.Contents); i++ {
-			item, ok := format(graph, depth+1, x.Contents[i], html)
+			item, ok := p.format(graph, depth+1, x.Contents[i])
 			if !ok {
 				zeros = append(zeros, fmt.Sprintf("\t%s,", item))
 				continue
@@ -136,7 +147,9 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 		items = append(items, "]")
 		return strings.Join(items, tabs), len(zeros) < len(x.Contents)
 	case *wire.Struct:
-		typ, _ := formatType(x.TypeID, graph, html)
+		tag := fmt.Sprintf("g%dt%d", graph, x.TypeID)
+		spec, _ := p.typeSpecs[tag]
+		typ, _ := p.formatType(x.TypeID, graph)
 		if x.Fields() == 0 {
 			return fmt.Sprintf("struct[%s]{}", typ), false
 		}
@@ -145,9 +158,15 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 		tabs := "\n" + strings.Repeat("\t", depth)
 		allZero := true
 		for i := 0; i < x.Fields(); i++ {
-			element, ok := format(graph, depth+1, *x.Field(i), html)
+			var name string
+			if spec != nil && i < len(spec.Fields) {
+				name = spec.Fields[i]
+			} else {
+				name = fmt.Sprintf("%d", i)
+			}
+			element, ok := p.format(graph, depth+1, *x.Field(i))
 			allZero = allZero && !ok
-			items = append(items, fmt.Sprintf("\t%d: %s,", i, element))
+			items = append(items, fmt.Sprintf("\t%s: %s,", name, element))
 		}
 		items = append(items, "}")
 		return strings.Join(items, tabs), !allZero
@@ -159,15 +178,15 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 		items = append(items, "map{")
 		tabs := "\n" + strings.Repeat("\t", depth)
 		for i := 0; i < len(x.Keys); i++ {
-			key, _ := format(graph, depth+1, x.Keys[i], html)
-			value, _ := format(graph, depth+1, x.Values[i], html)
+			key, _ := p.format(graph, depth+1, x.Keys[i])
+			value, _ := p.format(graph, depth+1, x.Values[i])
 			items = append(items, fmt.Sprintf("\t%s: %s,", key, value))
 		}
 		items = append(items, "}")
 		return strings.Join(items, tabs), true
 	case *wire.Interface:
-		typ, typOk := formatType(x.Type, graph, html)
-		element, elementOk := format(graph, depth+1, x.Value, html)
+		typ, typOk := p.formatType(x.Type, graph)
+		element, elementOk := p.format(graph, depth+1, x.Value)
 		return fmt.Sprintf("interface[%s]{%s}", typ, element), typOk || elementOk
 	default:
 		// Must be a primitive; use reflection.
@@ -176,11 +195,11 @@ func format(graph uint64, depth int, encoded wire.Object, html bool) (string, bo
 }
 
 // printStream is the basic print implementation.
-func printStream(w io.Writer, r wire.Reader, html bool) (err error) {
+func (p *printer) printStream(w io.Writer, r wire.Reader) (err error) {
 	// current graph ID.
 	var graph uint64
 
-	if html {
+	if p.html {
 		fmt.Fprintf(w, "<pre>")
 		defer fmt.Fprintf(w, "</pre>")
 	}
@@ -194,6 +213,8 @@ func printStream(w io.Writer, r wire.Reader, html bool) (err error) {
 			panic(r) // Propagate.
 		}
 	}()
+
+	p.typeSpecs = make(map[string]*wire.Type)
 
 	for {
 		// Find the first object to begin generation.
@@ -222,18 +243,19 @@ func printStream(w io.Writer, r wire.Reader, html bool) (err error) {
 		// loop in decode.go. But we don't register type information,
 		// etc. and just print the raw structures.
 		var (
-			oid uint64 = 1
-			tid uint64 = 1
+			tid     uint64 = 1
+			objects []wire.Object
 		)
-		for oid <= length {
+		for oid := uint64(1); oid <= length; {
 			// Unmarshal the object.
 			encoded := wire.Load(r)
 
 			// Is this a type?
-			if _, ok := encoded.(*wire.Type); ok {
-				str, _ := format(graph, 0, encoded, html)
+			if typ, ok := encoded.(*wire.Type); ok {
+				str, _ := p.format(graph, 0, encoded)
 				tag := fmt.Sprintf("g%dt%d", graph, tid)
-				if html {
+				p.typeSpecs[tag] = typ
+				if p.html {
 					// See below.
 					tag = fmt.Sprintf("<a name=\"%s\">%s</a><a href=\"#%s\">&#9875;</a>", tag, tag, tag)
 				}
@@ -244,17 +266,24 @@ func printStream(w io.Writer, r wire.Reader, html bool) (err error) {
 				continue
 			}
 
+			// Otherwise, it is a node.
+			objects = append(objects, encoded)
+			oid++
+		}
+
+		for i, encoded := range objects {
+			// oid starts at 1.
+			oid := i + 1
 			// Format the node.
-			str, _ := format(graph, 0, encoded, html)
+			str, _ := p.format(graph, 0, encoded)
 			tag := fmt.Sprintf("g%dr%d", graph, oid)
-			if html {
+			if p.html {
 				// Create a little tag with an anchor next to it for linking.
 				tag = fmt.Sprintf("<a name=\"%s\">%s</a><a href=\"#%s\">&#9875;</a>", tag, tag, tag)
 			}
 			if _, err := fmt.Fprintf(w, "%s = %s\n", tag, str); err != nil {
 				return err
 			}
-			oid++
 		}
 	}
 
@@ -263,10 +292,10 @@ func printStream(w io.Writer, r wire.Reader, html bool) (err error) {
 
 // PrintText reads the stream from r and prints text to w.
 func PrintText(w io.Writer, r wire.Reader) error {
-	return printStream(w, r, false /* html */)
+	return (&printer{}).printStream(w, r)
 }
 
 // PrintHTML reads the stream from r and prints html to w.
 func PrintHTML(w io.Writer, r wire.Reader) error {
-	return printStream(w, r, true /* html */)
+	return (&printer{html: true}).printStream(w, r)
 }
