@@ -106,11 +106,14 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+
+	if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) {
+		cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUTS
+	}
 
 	if specutils.HasCapabilities(capability.CAP_NET_ADMIN) {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Cloneflags: syscall.CLONE_NEWNET,
-		}
+		cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNET
 	}
 
 	if err := cmd.Run(); err != nil {
