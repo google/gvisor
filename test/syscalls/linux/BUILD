@@ -22,6 +22,7 @@ exports_files(
         "socket_ipv4_tcp_unbound_external_networking_test.cc",
         "socket_ipv4_udp_unbound_external_networking_test.cc",
         "socket_ipv4_udp_unbound_loopback.cc",
+        "socket_ipv4_udp_unbound_loopback_nogotsan.cc",
         "tcp_socket.cc",
         "udp_bind.cc",
         "udp_socket.cc",
@@ -3666,15 +3667,12 @@ cc_binary(
     ],
 )
 
-cc_library(
-    name = "udp_socket_test_cases",
+cc_binary(
+    name = "udp_socket_test",
     testonly = 1,
-    srcs = [
-        "udp_socket_errqueue_test_case.cc",
-        "udp_socket_test_cases.cc",
-    ],
-    hdrs = ["udp_socket_test_cases.h"],
+    srcs = ["udp_socket.cc"],
     defines = select_system(),
+    linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
         ":socket_test_util",
@@ -3688,17 +3686,6 @@ cc_library(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
-    ],
-    alwayslink = 1,
-)
-
-cc_binary(
-    name = "udp_socket_test",
-    testonly = 1,
-    srcs = ["udp_socket.cc"],
-    linkstatic = 1,
-    deps = [
-        ":udp_socket_test_cases",
     ],
 )
 
