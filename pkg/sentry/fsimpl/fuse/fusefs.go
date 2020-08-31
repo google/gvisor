@@ -157,6 +157,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			log.Warningf("%s.GetFilesystem: invalid max_read: max_read=%s", fsType.Name(), maxReadStr)
 			return nil, nil, syserror.EINVAL
 		}
+		if maxRead < fuseMinMaxRead {
+			maxRead = fuseMinMaxRead
+		}
 		fsopts.maxRead = uint32(maxRead)
 	} else {
 		fsopts.maxRead = math.MaxUint32

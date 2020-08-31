@@ -137,7 +137,8 @@ class FuseTest : public ::testing::Test {
   // path, pretending there is an inode and avoid ENOENT when testing. If mode
   // is not given, it creates a regular file with mode 0600.
   void SetServerInodeLookup(const std::string& path,
-                            mode_t mode = S_IFREG | S_IRUSR | S_IWUSR);
+                            mode_t mode = S_IFREG | S_IRUSR | S_IWUSR,
+                            uint64_t size = 512);
 
   // Called by the testing thread to ask the FUSE server for its next received
   // FUSE request. Be sure to use the corresponding struct of iovec to receive
@@ -166,16 +167,16 @@ class FuseTest : public ::testing::Test {
  protected:
   TempPath mount_point_;
 
-  // Unmounts the mountpoint of the FUSE server.
-  void UnmountFuse();
-
- private:
   // Opens /dev/fuse and inherit the file descriptor for the FUSE server.
-  void MountFuse();
+  void MountFuse(const char* mountOpts = kMountOpts);
 
   // Creates a socketpair for communication and forks FUSE server.
   void SetUpFuseServer();
 
+  // Unmounts the mountpoint of the FUSE server.
+  void UnmountFuse();
+
+ private:
   // Sends a FuseTestCmd and gets a uint32_t data from the FUSE server.
   inline uint32_t GetServerData(uint32_t cmd);
 

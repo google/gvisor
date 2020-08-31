@@ -29,9 +29,10 @@ const (
 	// Follow the same behavior as unix fuse implementation.
 	fuseMaxTimeGranNs = 1000000000
 
-	// Minimum value for MaxWrite.
+	// Minimum value for MaxWrite and MaxRead.
 	// Follow the same behavior as unix fuse implementation.
 	fuseMinMaxWrite = 4096
+	fuseMinMaxRead  = 4096
 
 	// Temporary default value for max readahead, 128kb.
 	fuseDefaultMaxReadahead = 131072
