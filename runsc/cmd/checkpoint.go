@@ -118,7 +118,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		Fatalf("setting bundleDir")
 	}
 
-	spec, err := specutils.ReadSpec(bundleDir)
+	spec, err := specutils.ReadSpec(bundleDir, conf)
 	if err != nil {
 		Fatalf("reading spec: %v", err)
 	}

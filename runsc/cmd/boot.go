@@ -168,7 +168,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Get the spec from the specFD.
 	specFile := os.NewFile(uintptr(b.specFD), "spec file")
 	defer specFile.Close()
-	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile)
+	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
 	if err != nil {
 		Fatalf("reading spec: %v", err)
 	}

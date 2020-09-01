@@ -100,14 +100,14 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		return subcommands.ExitUsageError
 	}
 
+	conf := args[0].(*config.Config)
+
 	specFile := os.NewFile(uintptr(g.specFD), "spec file")
 	defer specFile.Close()
-	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile)
+	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile, conf)
 	if err != nil {
 		Fatalf("reading spec: %v", err)
 	}
-
-	conf := args[0].(*config.Config)
 
 	if g.setUpRoot {
 		if err := setupRootFS(spec, conf); err != nil {
