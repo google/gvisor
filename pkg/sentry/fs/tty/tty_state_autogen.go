@@ -15,7 +15,7 @@ func (x *dirInodeOperations) StateFields() []string {
 		"InodeSimpleAttributes",
 		"msrc",
 		"master",
-		"slaves",
+		"replicas",
 		"dentryMap",
 		"next",
 	}
@@ -28,7 +28,7 @@ func (x *dirInodeOperations) StateSave(m state.Sink) {
 	m.Save(0, &x.InodeSimpleAttributes)
 	m.Save(1, &x.msrc)
 	m.Save(2, &x.master)
-	m.Save(3, &x.slaves)
+	m.Save(3, &x.replicas)
 	m.Save(4, &x.dentryMap)
 	m.Save(5, &x.next)
 }
@@ -39,7 +39,7 @@ func (x *dirInodeOperations) StateLoad(m state.Source) {
 	m.Load(0, &x.InodeSimpleAttributes)
 	m.Load(1, &x.msrc)
 	m.Load(2, &x.master)
-	m.Load(3, &x.slaves)
+	m.Load(3, &x.replicas)
 	m.Load(4, &x.dentryMap)
 	m.Load(5, &x.next)
 }
@@ -129,8 +129,8 @@ func (x *lineDiscipline) StateSave(m state.Sink) {
 	if !state.IsZeroValue(&x.masterWaiter) {
 		state.Failf("masterWaiter is %#v, expected zero", &x.masterWaiter)
 	}
-	if !state.IsZeroValue(&x.slaveWaiter) {
-		state.Failf("slaveWaiter is %#v, expected zero", &x.slaveWaiter)
+	if !state.IsZeroValue(&x.replicaWaiter) {
+		state.Failf("replicaWaiter is %#v, expected zero", &x.replicaWaiter)
 	}
 	m.Save(0, &x.size)
 	m.Save(1, &x.inQueue)
@@ -274,11 +274,11 @@ func (x *queue) StateLoad(m state.Source) {
 	m.Load(4, &x.transformer)
 }
 
-func (x *slaveInodeOperations) StateTypeName() string {
-	return "pkg/sentry/fs/tty.slaveInodeOperations"
+func (x *replicaInodeOperations) StateTypeName() string {
+	return "pkg/sentry/fs/tty.replicaInodeOperations"
 }
 
-func (x *slaveInodeOperations) StateFields() []string {
+func (x *replicaInodeOperations) StateFields() []string {
 	return []string{
 		"SimpleFileInode",
 		"d",
@@ -286,43 +286,43 @@ func (x *slaveInodeOperations) StateFields() []string {
 	}
 }
 
-func (x *slaveInodeOperations) beforeSave() {}
+func (x *replicaInodeOperations) beforeSave() {}
 
-func (x *slaveInodeOperations) StateSave(m state.Sink) {
+func (x *replicaInodeOperations) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.SimpleFileInode)
 	m.Save(1, &x.d)
 	m.Save(2, &x.t)
 }
 
-func (x *slaveInodeOperations) afterLoad() {}
+func (x *replicaInodeOperations) afterLoad() {}
 
-func (x *slaveInodeOperations) StateLoad(m state.Source) {
+func (x *replicaInodeOperations) StateLoad(m state.Source) {
 	m.Load(0, &x.SimpleFileInode)
 	m.Load(1, &x.d)
 	m.Load(2, &x.t)
 }
 
-func (x *slaveFileOperations) StateTypeName() string {
-	return "pkg/sentry/fs/tty.slaveFileOperations"
+func (x *replicaFileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/tty.replicaFileOperations"
 }
 
-func (x *slaveFileOperations) StateFields() []string {
+func (x *replicaFileOperations) StateFields() []string {
 	return []string{
 		"si",
 	}
 }
 
-func (x *slaveFileOperations) beforeSave() {}
+func (x *replicaFileOperations) beforeSave() {}
 
-func (x *slaveFileOperations) StateSave(m state.Sink) {
+func (x *replicaFileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.si)
 }
 
-func (x *slaveFileOperations) afterLoad() {}
+func (x *replicaFileOperations) afterLoad() {}
 
-func (x *slaveFileOperations) StateLoad(m state.Source) {
+func (x *replicaFileOperations) StateLoad(m state.Source) {
 	m.Load(0, &x.si)
 }
 
@@ -337,7 +337,7 @@ func (x *Terminal) StateFields() []string {
 		"d",
 		"ld",
 		"masterKTTY",
-		"slaveKTTY",
+		"replicaKTTY",
 	}
 }
 
@@ -350,7 +350,7 @@ func (x *Terminal) StateSave(m state.Sink) {
 	m.Save(2, &x.d)
 	m.Save(3, &x.ld)
 	m.Save(4, &x.masterKTTY)
-	m.Save(5, &x.slaveKTTY)
+	m.Save(5, &x.replicaKTTY)
 }
 
 func (x *Terminal) afterLoad() {}
@@ -361,7 +361,7 @@ func (x *Terminal) StateLoad(m state.Source) {
 	m.Load(2, &x.d)
 	m.Load(3, &x.ld)
 	m.Load(4, &x.masterKTTY)
-	m.Load(5, &x.slaveKTTY)
+	m.Load(5, &x.replicaKTTY)
 }
 
 func init() {
@@ -375,7 +375,7 @@ func init() {
 	state.Register((*masterInodeOperations)(nil))
 	state.Register((*masterFileOperations)(nil))
 	state.Register((*queue)(nil))
-	state.Register((*slaveInodeOperations)(nil))
-	state.Register((*slaveFileOperations)(nil))
+	state.Register((*replicaInodeOperations)(nil))
+	state.Register((*replicaFileOperations)(nil))
 	state.Register((*Terminal)(nil))
 }
