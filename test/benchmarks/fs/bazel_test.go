@@ -62,7 +62,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 			container := machine.GetContainer(ctx, b)
 			defer container.CleanUp(ctx)
 
-			// Start a container and sleep by an order of b.N.
+			// Start a container and sleep.
 			if err := container.Spawn(ctx, dockerutil.RunOpts{
 				Image: image,
 			}, "sleep", fmt.Sprintf("%d", 1000000)); err != nil {
@@ -70,12 +70,13 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 			}
 
 			// If we are running on a tmpfs, copy to /tmp which is a tmpfs.
+			prefix := ""
 			if bm.tmpfs {
 				if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
 					"cp", "-r", workdir, "/tmp/."); err != nil {
 					b.Fatalf("failed to copy directory: %v (%s)", err, out)
 				}
-				workdir = "/tmp" + workdir
+				prefix = "/tmp"
 			}
 
 			// Restart profiles after the copy.
@@ -94,7 +95,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 				b.StartTimer()
 
 				got, err := container.Exec(ctx, dockerutil.ExecOpts{
-					WorkDir: workdir,
+					WorkDir: prefix + workdir,
 				}, "bazel", "build", "-c", "opt", target)
 				if err != nil {
 					b.Fatalf("build failed with: %v", err)
@@ -107,7 +108,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 				}
 				// Clean bazel in case we use b.N.
 				_, err = container.Exec(ctx, dockerutil.ExecOpts{
-					WorkDir: workdir,
+					WorkDir: prefix + workdir,
 				}, "bazel", "clean")
 				if err != nil {
 					b.Fatalf("build failed with: %v", err)
