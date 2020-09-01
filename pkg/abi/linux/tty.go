@@ -341,6 +341,7 @@ var DefaultSlaveTermios = KernelTermios{
 // include/uapi/asm-generic/termios.h.
 //
 // +stateify savable
+// +marshal
 type WindowSize struct {
 	Rows uint16
 	Cols uint16

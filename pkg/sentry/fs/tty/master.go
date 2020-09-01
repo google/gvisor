@@ -20,10 +20,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
 
 // LINT.IfChange
@@ -152,46 +154,51 @@ func (mf *masterFileOperations) Write(ctx context.Context, _ *fs.File, src userm
 
 // Ioctl implements fs.FileOperations.Ioctl.
 func (mf *masterFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		// ioctl(2) may only be called from a task goroutine.
+		return 0, syserror.ENOTTY
+	}
+
 	switch cmd := args[1].Uint(); cmd {
 	case linux.FIONREAD: // linux.FIONREAD == linux.TIOCINQ
 		// Get the number of bytes in the output queue read buffer.
-		return 0, mf.t.ld.outputQueueReadSize(ctx, io, args)
+		return 0, mf.t.ld.outputQueueReadSize(t, args)
 	case linux.TCGETS:
 		// N.B. TCGETS on the master actually returns the configuration
 		// of the slave end.
-		return mf.t.ld.getTermios(ctx, io, args)
+		return mf.t.ld.getTermios(t, args)
 	case linux.TCSETS:
 		// N.B. TCSETS on the master actually affects the configuration
 		// of the slave end.
-		return mf.t.ld.setTermios(ctx, io, args)
+		return mf.t.ld.setTermios(t, args)
 	case linux.TCSETSW:
 		// TODO(b/29356795): This should drain the output queue first.
-		return mf.t.ld.setTermios(ctx, io, args)
+		return mf.t.ld.setTermios(t, args)
 	case linux.TIOCGPTN:
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), uint32(mf.t.n), usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		nP := primitive.Uint32(mf.t.n)
+		_, err := nP.CopyOut(t, args[2].Pointer())
 		return 0, err
 	case linux.TIOCSPTLCK:
 		// TODO(b/29356795): Implement pty locking. For now just pretend we do.
 		return 0, nil
 	case linux.TIOCGWINSZ:
-		return 0, mf.t.ld.windowSize(ctx, io, args)
+		return 0, mf.t.ld.windowSize(t, args)
 	case linux.TIOCSWINSZ:
-		return 0, mf.t.ld.setWindowSize(ctx, io, args)
+		return 0, mf.t.ld.setWindowSize(t, args)
 	case linux.TIOCSCTTY:
 		// Make the given terminal the controlling terminal of the
 		// calling process.
-		return 0, mf.t.setControllingTTY(ctx, io, args, true /* isMaster */)
+		return 0, mf.t.setControllingTTY(ctx, args, true /* isMaster */)
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, mf.t.releaseControllingTTY(ctx, io, args, true /* isMaster */)
+		return 0, mf.t.releaseControllingTTY(ctx, args, true /* isMaster */)
 	case linux.TIOCGPGRP:
 		// Get the foreground process group.
-		return mf.t.foregroundProcessGroup(ctx, io, args, true /* isMaster */)
+		return mf.t.foregroundProcessGroup(ctx, args, true /* isMaster */)
 	case linux.TIOCSPGRP:
 		// Set the foreground process group.
-		return mf.t.setForegroundProcessGroup(ctx, io, args, true /* isMaster */)
+		return mf.t.setForegroundProcessGroup(ctx, args, true /* isMaster */)
 	default:
 		maybeEmitUnimplementedEvent(ctx, cmd)
 		return 0, syserror.ENOTTY
