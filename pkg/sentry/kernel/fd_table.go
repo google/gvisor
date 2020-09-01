@@ -112,7 +112,7 @@ func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 	ctx := context.Background()
 	f.init() // Initialize table.
 	for fd, d := range m {
-		f.setAll(fd, d.file, d.fileVFS2, d.flags)
+		f.setAll(ctx, fd, d.file, d.fileVFS2, d.flags)
 
 		// Note that we do _not_ need to acquire a extra table reference here. The
 		// table reference will already be accounted for in the file, so we drop the
@@ -127,7 +127,7 @@ func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 }
 
 // drop drops the table reference.
-func (f *FDTable) drop(file *fs.File) {
+func (f *FDTable) drop(ctx context.Context, file *fs.File) {
 	// Release locks.
 	file.Dirent.Inode.LockCtx.Posix.UnlockRegion(f, lock.LockRange{0, lock.LockEOF})
 
@@ -145,14 +145,13 @@ func (f *FDTable) drop(file *fs.File) {
 	d.InotifyEvent(ev, 0)
 
 	// Drop the table reference.
-	file.DecRef(context.Background())
+	file.DecRef(ctx)
 }
 
 // dropVFS2 drops the table reference.
-func (f *FDTable) dropVFS2(file *vfs.FileDescription) {
+func (f *FDTable) dropVFS2(ctx context.Context, file *vfs.FileDescription) {
 	// Release any POSIX lock possibly held by the FDTable. Range {0, 0} means the
 	// entire file.
-	ctx := context.Background()
 	err := file.UnlockPOSIX(ctx, f, 0, 0, linux.SEEK_SET)
 	if err != nil && err != syserror.ENOLCK {
 		panic(fmt.Sprintf("UnlockPOSIX failed: %v", err))
@@ -289,15 +288,15 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 	// Install all entries.
 	for i := fd; i < end && len(fds) < len(files); i++ {
 		if d, _, _ := f.get(i); d == nil {
-			f.set(i, files[len(fds)], flags) // Set the descriptor.
-			fds = append(fds, i)             // Record the file descriptor.
+			f.set(ctx, i, files[len(fds)], flags) // Set the descriptor.
+			fds = append(fds, i)                  // Record the file descriptor.
 		}
 	}
 
 	// Failure? Unwind existing FDs.
 	if len(fds) < len(files) {
 		for _, i := range fds {
-			f.set(i, nil, FDFlags{}) // Zap entry.
+			f.set(ctx, i, nil, FDFlags{}) // Zap entry.
 		}
 		return nil, syscall.EMFILE
 	}
@@ -344,15 +343,15 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 	// Install all entries.
 	for i := fd; i < end && len(fds) < len(files); i++ {
 		if d, _, _ := f.getVFS2(i); d == nil {
-			f.setVFS2(i, files[len(fds)], flags) // Set the descriptor.
-			fds = append(fds, i)                 // Record the file descriptor.
+			f.setVFS2(ctx, i, files[len(fds)], flags) // Set the descriptor.
+			fds = append(fds, i)                      // Record the file descriptor.
 		}
 	}
 
 	// Failure? Unwind existing FDs.
 	if len(fds) < len(files) {
 		for _, i := range fds {
-			f.setVFS2(i, nil, FDFlags{}) // Zap entry.
+			f.setVFS2(ctx, i, nil, FDFlags{}) // Zap entry.
 		}
 		return nil, syscall.EMFILE
 	}
@@ -397,7 +396,7 @@ func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDesc
 	}
 	for fd < end {
 		if d, _, _ := f.getVFS2(fd); d == nil {
-			f.setVFS2(fd, file, flags)
+			f.setVFS2(ctx, fd, file, flags)
 			if fd == f.next {
 				// Update next search start position.
 				f.next = fd + 1
@@ -439,14 +438,14 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *fs.File, fileVFS2
 	// Install the entry.
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.setAll(fd, file, fileVFS2, flags)
+	f.setAll(ctx, fd, file, fileVFS2, flags)
 	return nil
 }
 
 // SetFlags sets the flags for the given file descriptor.
 //
 // True is returned iff flags were changed.
-func (f *FDTable) SetFlags(fd int32, flags FDFlags) error {
+func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 	if fd < 0 {
 		// Don't accept negative FDs.
 		return syscall.EBADF
@@ -462,14 +461,14 @@ func (f *FDTable) SetFlags(fd int32, flags FDFlags) error {
 	}
 
 	// Update the flags.
-	f.set(fd, file, flags)
+	f.set(ctx, fd, file, flags)
 	return nil
 }
 
 // SetFlagsVFS2 sets the flags for the given file descriptor.
 //
 // True is returned iff flags were changed.
-func (f *FDTable) SetFlagsVFS2(fd int32, flags FDFlags) error {
+func (f *FDTable) SetFlagsVFS2(ctx context.Context, fd int32, flags FDFlags) error {
 	if fd < 0 {
 		// Don't accept negative FDs.
 		return syscall.EBADF
@@ -485,7 +484,7 @@ func (f *FDTable) SetFlagsVFS2(fd int32, flags FDFlags) error {
 	}
 
 	// Update the flags.
-	f.setVFS2(fd, file, flags)
+	f.setVFS2(ctx, fd, file, flags)
 	return nil
 }
 
@@ -584,9 +583,9 @@ func (f *FDTable) Fork(ctx context.Context) *FDTable {
 		// reference for the clone. We don't need anything else.
 		switch {
 		case file != nil:
-			clone.set(fd, file, flags)
+			clone.set(ctx, fd, file, flags)
 		case fileVFS2 != nil:
-			clone.setVFS2(fd, fileVFS2, flags)
+			clone.setVFS2(ctx, fd, fileVFS2, flags)
 		}
 	})
 	return clone
@@ -595,7 +594,7 @@ func (f *FDTable) Fork(ctx context.Context) *FDTable {
 // Remove removes an FD from and returns a non-file iff successful.
 //
 // N.B. Callers are required to use DecRef when they are done.
-func (f *FDTable) Remove(fd int32) (*fs.File, *vfs.FileDescription) {
+func (f *FDTable) Remove(ctx context.Context, fd int32) (*fs.File, *vfs.FileDescription) {
 	if fd < 0 {
 		return nil, nil
 	}
@@ -618,7 +617,7 @@ func (f *FDTable) Remove(fd int32) (*fs.File, *vfs.FileDescription) {
 		orig2.IncRef()
 	}
 	if orig != nil || orig2 != nil {
-		f.setAll(fd, nil, nil, FDFlags{}) // Zap entry.
+		f.setAll(ctx, fd, nil, nil, FDFlags{}) // Zap entry.
 	}
 	return orig, orig2
 }
@@ -630,7 +629,7 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*fs.File, *vfs.FileDes
 
 	f.forEach(ctx, func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 		if cond(file, fileVFS2, flags) {
-			f.set(fd, nil, FDFlags{}) // Clear from table.
+			f.set(ctx, fd, nil, FDFlags{}) // Clear from table.
 			// Update current available position.
 			if fd < f.next {
 				f.next = fd

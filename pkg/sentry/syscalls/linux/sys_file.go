@@ -601,12 +601,12 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Shared flags between file and socket.
 	switch request {
 	case linux.FIONCLEX:
-		t.FDTable().SetFlags(fd, kernel.FDFlags{
+		t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: false,
 		})
 		return 0, nil, nil
 	case linux.FIOCLEX:
-		t.FDTable().SetFlags(fd, kernel.FDFlags{
+		t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: true,
 		})
 		return 0, nil, nil
@@ -787,7 +787,7 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Note that Remove provides a reference on the file that we may use to
 	// flush. It is still active until we drop the final reference below
 	// (and other reference-holding operations complete).
-	file, _ := t.FDTable().Remove(fd)
+	file, _ := t.FDTable().Remove(t, fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -941,7 +941,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(flags.ToLinuxFDFlags()), nil, nil
 	case linux.F_SETFD:
 		flags := args[2].Uint()
-		err := t.FDTable().SetFlags(fd, kernel.FDFlags{
+		err := t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: flags&linux.FD_CLOEXEC != 0,
 		})
 		return 0, nil, err
@@ -1153,6 +1153,10 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	// Sure, whatever.
 	return 0, nil, nil
 }
+
+// LINT.ThenChange(vfs2/fd.go)
+
+// LINT.IfChange
 
 func mkdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode linux.FileMode) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)

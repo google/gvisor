@@ -48,7 +48,7 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 
 	if _, err := t.CopyOut(addr, fds); err != nil {
 		for _, fd := range fds {
-			if file, _ := t.FDTable().Remove(fd); file != nil {
+			if file, _ := t.FDTable().Remove(t, fd); file != nil {
 				file.DecRef(t)
 			}
 		}
