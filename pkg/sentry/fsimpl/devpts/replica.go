@@ -29,8 +29,8 @@ import (
 	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
 
-// slaveInode is the inode for the slave end of the Terminal.
-type slaveInode struct {
+// replicaInode is the inode for the replica end of the Terminal.
+type replicaInode struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
@@ -49,12 +49,12 @@ type slaveInode struct {
 	t *Terminal
 }
 
-var _ kernfs.Inode = (*slaveInode)(nil)
+var _ kernfs.Inode = (*replicaInode)(nil)
 
 // Open implements kernfs.Inode.Open.
-func (si *slaveInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (si *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	si.IncRef()
-	fd := &slaveFileDescription{
+	fd := &replicaFileDescription{
 		inode: si,
 	}
 	fd.LockFD.Init(&si.locks)
@@ -67,76 +67,76 @@ func (si *slaveInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs
 }
 
 // Valid implements kernfs.Inode.Valid.
-func (si *slaveInode) Valid(context.Context) bool {
-	// Return valid if the slave still exists.
+func (si *replicaInode) Valid(context.Context) bool {
+	// Return valid if the replica still exists.
 	si.root.mu.Lock()
 	defer si.root.mu.Unlock()
-	_, ok := si.root.slaves[si.t.n]
+	_, ok := si.root.replicas[si.t.n]
 	return ok
 }
 
 // Stat implements kernfs.Inode.Stat.
-func (si *slaveInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+func (si *replicaInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	statx, err := si.InodeAttrs.Stat(ctx, vfsfs, opts)
 	if err != nil {
 		return linux.Statx{}, err
 	}
 	statx.Blksize = 1024
-	statx.RdevMajor = linux.UNIX98_PTY_SLAVE_MAJOR
+	statx.RdevMajor = linux.UNIX98_PTY_REPLICA_MAJOR
 	statx.RdevMinor = si.t.n
 	return statx, nil
 }
 
 // SetStat implements kernfs.Inode.SetStat
-func (si *slaveInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+func (si *replicaInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
 		return syserror.EINVAL
 	}
 	return si.InodeAttrs.SetStat(ctx, vfsfs, creds, opts)
 }
 
-type slaveFileDescription struct {
+type replicaFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
 
-	inode *slaveInode
+	inode *replicaInode
 }
 
-var _ vfs.FileDescriptionImpl = (*slaveFileDescription)(nil)
+var _ vfs.FileDescriptionImpl = (*replicaFileDescription)(nil)
 
 // Release implements fs.FileOperations.Release.
-func (sfd *slaveFileDescription) Release(ctx context.Context) {
+func (sfd *replicaFileDescription) Release(ctx context.Context) {
 	sfd.inode.DecRef(ctx)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (sfd *slaveFileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	sfd.inode.t.ld.slaveWaiter.EventRegister(e, mask)
+func (sfd *replicaFileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+	sfd.inode.t.ld.replicaWaiter.EventRegister(e, mask)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (sfd *slaveFileDescription) EventUnregister(e *waiter.Entry) {
-	sfd.inode.t.ld.slaveWaiter.EventUnregister(e)
+func (sfd *replicaFileDescription) EventUnregister(e *waiter.Entry) {
+	sfd.inode.t.ld.replicaWaiter.EventUnregister(e)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
-func (sfd *slaveFileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return sfd.inode.t.ld.slaveReadiness()
+func (sfd *replicaFileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
+	return sfd.inode.t.ld.replicaReadiness()
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
-func (sfd *slaveFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
+func (sfd *replicaFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	return sfd.inode.t.ld.inputQueueRead(ctx, dst)
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
-func (sfd *slaveFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
+func (sfd *replicaFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
 	return sfd.inode.t.ld.outputQueueWrite(ctx, src)
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (sfd *slaveFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (sfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
@@ -182,24 +182,24 @@ func (sfd *slaveFileDescription) Ioctl(ctx context.Context, io usermem.IO, args 
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
-func (sfd *slaveFileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+func (sfd *replicaFileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
 	fs := sfd.vfsfd.VirtualDentry().Mount().Filesystem()
 	return sfd.inode.SetStat(ctx, fs, creds, opts)
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
-func (sfd *slaveFileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
+func (sfd *replicaFileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	fs := sfd.vfsfd.VirtualDentry().Mount().Filesystem()
 	return sfd.inode.Stat(ctx, fs, opts)
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (sfd *slaveFileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+func (sfd *replicaFileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
 	return sfd.Locks().LockPOSIX(ctx, &sfd.vfsfd, uid, t, start, length, whence, block)
 }
 
 // UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
-func (sfd *slaveFileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+func (sfd *replicaFileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
 	return sfd.Locks().UnlockPOSIX(ctx, &sfd.vfsfd, uid, start, length, whence)
 }

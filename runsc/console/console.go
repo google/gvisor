@@ -24,11 +24,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// NewWithSocket creates pty master/slave pair, sends the master FD over the given
-// socket, and returns the slave.
+// NewWithSocket creates pty master/replica pair, sends the master FD over the given
+// socket, and returns the replica.
 func NewWithSocket(socketPath string) (*os.File, error) {
-	// Create a new pty master and slave.
-	ptyMaster, ptySlave, err := pty.Open()
+	// Create a new pty master and replica.
+	ptyMaster, ptyReplica, err := pty.Open()
 	if err != nil {
 		return nil, fmt.Errorf("opening pty: %v", err)
 	}
@@ -37,18 +37,18 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 	// Get a connection to the socket path.
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
-		ptySlave.Close()
+		ptyReplica.Close()
 		return nil, fmt.Errorf("dialing socket %q: %v", socketPath, err)
 	}
 	defer conn.Close()
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
-		ptySlave.Close()
+		ptyReplica.Close()
 		return nil, fmt.Errorf("connection is not a UnixConn: %T", conn)
 	}
 	socket, err := uc.File()
 	if err != nil {
-		ptySlave.Close()
+		ptyReplica.Close()
 		return nil, fmt.Errorf("getting file for unix socket %v: %v", uc, err)
 	}
 	defer socket.Close()
@@ -56,8 +56,8 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 	// Send the master FD over the connection.
 	msg := unix.UnixRights(int(ptyMaster.Fd()))
 	if err := unix.Sendmsg(int(socket.Fd()), []byte("pty-master"), msg, nil, 0); err != nil {
-		ptySlave.Close()
+		ptyReplica.Close()
 		return nil, fmt.Errorf("sending console over unix socket %q: %v", socketPath, err)
 	}
-	return ptySlave, nil
+	return ptyReplica, nil
 }

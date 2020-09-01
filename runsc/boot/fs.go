@@ -453,17 +453,17 @@ func (m *mountHint) isSupported() bool {
 func (m *mountHint) checkCompatible(mount specs.Mount) error {
 	// Remove options that don't affect to mount's behavior.
 	masterOpts := filterUnsupportedOptions(m.mount)
-	slaveOpts := filterUnsupportedOptions(mount)
+	replicaOpts := filterUnsupportedOptions(mount)
 
-	if len(masterOpts) != len(slaveOpts) {
-		return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, slaveOpts)
+	if len(masterOpts) != len(replicaOpts) {
+		return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, replicaOpts)
 	}
 
 	sort.Strings(masterOpts)
-	sort.Strings(slaveOpts)
+	sort.Strings(replicaOpts)
 	for i, opt := range masterOpts {
-		if opt != slaveOpts[i] {
-			return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, slaveOpts)
+		if opt != replicaOpts[i] {
+			return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, replicaOpts)
 		}
 	}
 	return nil
