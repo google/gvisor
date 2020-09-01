@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -113,27 +114,23 @@ func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
 }
 
 // getTermios gets the linux.Termios for the tty.
-func (l *lineDiscipline) getTermios(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (l *lineDiscipline) getTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
 	// We must copy a Termios struct, not KernelTermios.
 	t := l.termios.ToTermios()
-	_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), t, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	_, err := t.CopyOut(task, args[2].Pointer())
 	return 0, err
 }
 
 // setTermios sets a linux.Termios for the tty.
-func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
 	l.termiosMu.Lock()
 	defer l.termiosMu.Unlock()
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
 	// We must copy a Termios struct, not KernelTermios.
 	var t linux.Termios
-	_, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &t, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	_, err := t.CopyIn(task, args[2].Pointer())
 	l.termios.FromTermios(t)
 
 	// If canonical mode is turned off, move bytes from inQueue's wait
@@ -150,21 +147,17 @@ func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arc
 	return 0, err
 }
 
-func (l *lineDiscipline) windowSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
+func (l *lineDiscipline) windowSize(t *kernel.Task, args arch.SyscallArguments) error {
 	l.sizeMu.Lock()
 	defer l.sizeMu.Unlock()
-	_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), l.size, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	_, err := l.size.CopyOut(t, args[2].Pointer())
 	return err
 }
 
-func (l *lineDiscipline) setWindowSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
+func (l *lineDiscipline) setWindowSize(t *kernel.Task, args arch.SyscallArguments) error {
 	l.sizeMu.Lock()
 	defer l.sizeMu.Unlock()
-	_, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &l.size, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	_, err := l.size.CopyIn(t, args[2].Pointer())
 	return err
 }
 
@@ -180,8 +173,8 @@ func (l *lineDiscipline) slaveReadiness() waiter.EventMask {
 	return l.outQueue.writeReadiness(&l.termios) | l.inQueue.readReadiness(&l.termios)
 }
 
-func (l *lineDiscipline) inputQueueReadSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
-	return l.inQueue.readableSize(ctx, io, args)
+func (l *lineDiscipline) inputQueueReadSize(t *kernel.Task, io usermem.IO, args arch.SyscallArguments) error {
+	return l.inQueue.readableSize(t, io, args)
 }
 
 func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
@@ -215,8 +208,8 @@ func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequ
 	return 0, syserror.ErrWouldBlock
 }
 
-func (l *lineDiscipline) outputQueueReadSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
-	return l.outQueue.readableSize(ctx, io, args)
+func (l *lineDiscipline) outputQueueReadSize(t *kernel.Task, io usermem.IO, args arch.SyscallArguments) error {
+	return l.outQueue.readableSize(t, io, args)
 }
 
 func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
