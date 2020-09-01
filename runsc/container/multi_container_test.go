@@ -1360,7 +1360,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 }
 
 // Test that unsupported pod mounts options are ignored when matching master and
-// slave mounts.
+// replica mounts.
 func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {

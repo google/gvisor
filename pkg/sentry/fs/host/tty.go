@@ -54,7 +54,7 @@ type TTYFileOperations struct {
 func newTTYFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags, iops *inodeOperations) *fs.File {
 	return fs.NewFile(ctx, dirent, flags, &TTYFileOperations{
 		fileOperations: fileOperations{iops: iops},
-		termios:        linux.DefaultSlaveTermios,
+		termios:        linux.DefaultReplicaTermios,
 	})
 }
 

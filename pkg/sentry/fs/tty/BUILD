@@ -10,7 +10,7 @@ go_library(
         "line_discipline.go",
         "master.go",
         "queue.go",
-        "slave.go",
+        "replica.go",
         "terminal.go",
     ],
     visibility = ["//pkg/sentry:internal"],

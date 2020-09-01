@@ -23,25 +23,25 @@
 namespace gvisor {
 namespace testing {
 
-PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& main) {
-  PosixErrorOr<int> n = ReplicaID(main);
+PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& master) {
+  PosixErrorOr<int> n = ReplicaID(master);
   if (!n.ok()) {
     return PosixErrorOr<FileDescriptor>(n.error());
   }
   return Open(absl::StrCat("/dev/pts/", n.ValueOrDie()), O_RDWR | O_NONBLOCK);
 }
 
-PosixErrorOr<int> ReplicaID(const FileDescriptor& main) {
+PosixErrorOr<int> ReplicaID(const FileDescriptor& master) {
   // Get pty index.
   int n;
-  int ret = ioctl(main.get(), TIOCGPTN, &n);
+  int ret = ioctl(master.get(), TIOCGPTN, &n);
   if (ret < 0) {
     return PosixError(errno, "ioctl(TIOCGPTN) failed");
   }
 
   // Unlock pts.
   int unlock = 0;
-  ret = ioctl(main.get(), TIOCSPTLCK, &unlock);
+  ret = ioctl(master.get(), TIOCSPTLCK, &unlock);
   if (ret < 0) {
     return PosixError(errno, "ioctl(TIOSPTLCK) failed");
   }
