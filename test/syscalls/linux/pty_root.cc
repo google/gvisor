@@ -48,9 +48,9 @@ TEST(JobControlRootTest, StealTTY) {
     ASSERT_THAT(setsid(), SyscallSucceeds());
   }
 
-  FileDescriptor main =
+  FileDescriptor master =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
-  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
 
   // Make replica the controlling terminal.
   ASSERT_THAT(ioctl(replica.get(), TIOCSCTTY, 0), SyscallSucceeds());

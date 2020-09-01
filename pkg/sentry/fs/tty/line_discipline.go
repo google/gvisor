@@ -44,7 +44,7 @@ const (
 )
 
 // lineDiscipline dictates how input and output are handled between the
-// pseudoterminal (pty) master and slave. It can be configured to alter I/O,
+// pseudoterminal (pty) master and replica. It can be configured to alter I/O,
 // modify control characters (e.g. Ctrl-C for SIGINT), etc. The following man
 // pages are good resources for how to affect the line discipline:
 //
@@ -55,8 +55,8 @@ const (
 //
 // lineDiscipline has a simple structure but supports a multitude of options
 // (see the above man pages). It consists of two queues of bytes: one from the
-// terminal master to slave (the input queue) and one from slave to master (the
-// output queue). When bytes are written to one end of the pty, the line
+// terminal master to replica (the input queue) and one from replica to master
+// (the output queue). When bytes are written to one end of the pty, the line
 // discipline reads the bytes, modifies them or takes special action if
 // required, and enqueues them to be read by the other end of the pty:
 //
@@ -65,7 +65,7 @@ const (
 //    |   (inputQueueWrite)     +-------------+     (inputQueueRead)      |
 //    |                                                                   |
 //    |                                                                   v
-// masterFD                                                            slaveFD
+// masterFD                                                           replicaFD
 //    ^                                                                   |
 //    |                                                                   |
 //    |   output to terminal   +--------------+    output from process    |
@@ -104,8 +104,8 @@ type lineDiscipline struct {
 	// masterWaiter is used to wait on the master end of the TTY.
 	masterWaiter waiter.Queue `state:"zerovalue"`
 
-	// slaveWaiter is used to wait on the slave end of the TTY.
-	slaveWaiter waiter.Queue `state:"zerovalue"`
+	// replicaWaiter is used to wait on the replica end of the TTY.
+	replicaWaiter waiter.Queue `state:"zerovalue"`
 }
 
 func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
@@ -143,7 +143,7 @@ func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArgument
 		l.inQueue.pushWaitBufLocked(l)
 		l.inQueue.readable = true
 		l.inQueue.mu.Unlock()
-		l.slaveWaiter.Notify(waiter.EventIn)
+		l.replicaWaiter.Notify(waiter.EventIn)
 	}
 
 	return 0, err
@@ -169,7 +169,7 @@ func (l *lineDiscipline) masterReadiness() waiter.EventMask {
 	return l.inQueue.writeReadiness(&linux.MasterTermios) | l.outQueue.readReadiness(&linux.MasterTermios)
 }
 
-func (l *lineDiscipline) slaveReadiness() waiter.EventMask {
+func (l *lineDiscipline) replicaReadiness() waiter.EventMask {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
 	return l.outQueue.writeReadiness(&l.termios) | l.inQueue.readReadiness(&l.termios)
@@ -189,7 +189,7 @@ func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSeque
 	if n > 0 {
 		l.masterWaiter.Notify(waiter.EventOut)
 		if pushed {
-			l.slaveWaiter.Notify(waiter.EventIn)
+			l.replicaWaiter.Notify(waiter.EventIn)
 		}
 		return n, nil
 	}
@@ -204,7 +204,7 @@ func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequ
 		return 0, err
 	}
 	if n > 0 {
-		l.slaveWaiter.Notify(waiter.EventIn)
+		l.replicaWaiter.Notify(waiter.EventIn)
 		return n, nil
 	}
 	return 0, syserror.ErrWouldBlock
@@ -222,7 +222,7 @@ func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequ
 		return 0, err
 	}
 	if n > 0 {
-		l.slaveWaiter.Notify(waiter.EventOut)
+		l.replicaWaiter.Notify(waiter.EventOut)
 		if pushed {
 			l.masterWaiter.Notify(waiter.EventIn)
 		}
