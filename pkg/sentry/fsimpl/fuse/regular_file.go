@@ -123,3 +123,108 @@ func (fd *regularFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 	fd.offMu.Unlock()
 	return n, err
 }
+
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
+func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	n, _, err := fd.pwrite(ctx, src, offset, opts)
+	return n, err
+}
+
+// Write implements vfs.FileDescriptionImpl.Write.
+func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	fd.offMu.Lock()
+	n, off, err := fd.pwrite(ctx, src, fd.off, opts)
+	fd.off = off
+	fd.offMu.Unlock()
+	return n, err
+}
+
+// pwrite returns the number of bytes written, final offset and error. The
+// final offset should be ignored by PWrite.
+func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
+	if offset < 0 {
+		return 0, offset, syserror.EINVAL
+	}
+
+	// Check that flags are supported.
+	//
+	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
+	if opts.Flags&^linux.RWF_HIPRI != 0 {
+		return 0, offset, syserror.EOPNOTSUPP
+	}
+
+	inode := fd.inode()
+	inode.metadataMu.Lock()
+	defer inode.metadataMu.Unlock()
+
+	// If the file is opened with O_APPEND, update offset to file size.
+	// Note: since our Open() implements the interface of kernfs,
+	// and kernfs currently does not support O_APPEND, this will never
+	// be true before we switch out from kernfs.
+	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
+		// Locking inode.metadataMu is sufficient for reading size
+		offset = int64(inode.size)
+	}
+
+	srclen := src.NumBytes()
+
+	if srclen > math.MaxUint32 {
+		// FUSE only supports uint32 for size.
+		// Overflow.
+		return 0, offset, syserror.EINVAL
+	}
+	if end := offset + srclen; end < offset {
+		// Overflow.
+		return 0, offset, syserror.EINVAL
+	}
+
+	srclen, err = vfs.CheckLimit(ctx, offset, srclen)
+	if err != nil {
+		return 0, offset, err
+	}
+
+	if srclen == 0 {
+		// Return before causing any side effects.
+		return 0, offset, nil
+	}
+
+	src = src.TakeFirst64(srclen)
+
+	// TODO(gvisor.dev/issue/3237): Add cache support:
+	// buffer cache. Ideally we write from src to our buffer cache first.
+	// The slice passed to fs.Write() should be a slice from buffer cache.
+	data := make([]byte, srclen)
+	// Reason for making a copy here: connection.Call() blocks on kerneltask,
+	// which in turn acquires mm.activeMu lock. Functions like CopyInTo() will
+	// attemp to acquire the mm.activeMu lock as well -> deadlock.
+	// We must finish reading from the userspace memory before
+	// t.Block() deactivates it.
+	cp, err := src.CopyIn(ctx, data)
+	if err != nil {
+		return 0, offset, err
+	}
+	if int64(cp) != srclen {
+		return 0, offset, syserror.EIO
+	}
+
+	n, err := fd.inode().fs.Write(ctx, fd, uint64(offset), uint32(srclen), data)
+	if err != nil {
+		return 0, offset, err
+	}
+
+	if n == 0 {
+		// We have checked srclen != 0 previously.
+		// If err == nil, then it's a short write and we return EIO.
+		return 0, offset, syserror.EIO
+	}
+
+	written = int64(n)
+	finalOff = offset + written
+
+	if finalOff > int64(inode.size) {
+		atomic.StoreUint64(&inode.size, uint64(finalOff))
+		atomic.AddUint64(&inode.fs.conn.attributeVersion, 1)
+	}
+
+	return
+}
