@@ -183,3 +183,90 @@ func TestValidationFail(t *testing.T) {
 		})
 	}
 }
+
+func TestOverride(t *testing.T) {
+	c, err := NewFromFlags()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AllowFlagOverride = true
+
+	t.Run("string", func(t *testing.T) {
+		c.RootDir = "foobar"
+		if err := c.Override("root", "bar"); err != nil {
+			t.Fatalf("Override(root, bar) failed: %v", err)
+		}
+		defer setDefault("root")
+		if c.RootDir != "bar" {
+			t.Errorf("Override(root, bar) didn't work: %+v", c)
+		}
+	})
+
+	t.Run("bool", func(t *testing.T) {
+		c.Debug = true
+		if err := c.Override("debug", "false"); err != nil {
+			t.Fatalf("Override(debug, false) failed: %v", err)
+		}
+		defer setDefault("debug")
+		if c.Debug {
+			t.Errorf("Override(debug, false) didn't work: %+v", c)
+		}
+	})
+
+	t.Run("enum", func(t *testing.T) {
+		c.FileAccess = FileAccessShared
+		if err := c.Override("file-access", "exclusive"); err != nil {
+			t.Fatalf("Override(file-access, exclusive) failed: %v", err)
+		}
+		defer setDefault("file-access")
+		if c.FileAccess != FileAccessExclusive {
+			t.Errorf("Override(file-access, exclusive) didn't work: %+v", c)
+		}
+	})
+}
+
+func TestOverrideDisabled(t *testing.T) {
+	c, err := NewFromFlags()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const errMsg = "flag override disabled"
+	if err := c.Override("root", "path"); err == nil || !strings.Contains(err.Error(), errMsg) {
+		t.Errorf("Override() wrong error: %v", err)
+	}
+}
+
+func TestOverrideError(t *testing.T) {
+	c, err := NewFromFlags()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AllowFlagOverride = true
+	for _, tc := range []struct {
+		name  string
+		value string
+		error string
+	}{
+		{
+			name:  "invalid",
+			value: "valid",
+			error: `flag "invalid" not found`,
+		},
+		{
+			name:  "debug",
+			value: "invalid",
+			error: "error setting flag debug",
+		},
+		{
+			name:  "file-access",
+			value: "invalid",
+			error: "invalid file access type",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := c.Override(tc.name, tc.value); err == nil || !strings.Contains(err.Error(), tc.error) {
+				t.Errorf("Override(%q, %q) wrong error: %v", tc.name, tc.value, err)
+			}
+		})
+	}
+}

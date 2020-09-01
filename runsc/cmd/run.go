@@ -75,7 +75,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	if bundleDir == "" {
 		bundleDir = getwdOrDie()
 	}
-	spec, err := specutils.ReadSpec(bundleDir)
+	spec, err := specutils.ReadSpec(bundleDir, conf)
 	if err != nil {
 		return Errorf("reading spec: %v", err)
 	}
