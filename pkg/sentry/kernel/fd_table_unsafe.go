@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -84,8 +85,8 @@ func (f *FDTable) getAll(fd int32) (*fs.File, *vfs.FileDescription, FDFlags, boo
 // reference needed by the table iff the file is different.
 //
 // Precondition: mu must be held.
-func (f *FDTable) set(fd int32, file *fs.File, flags FDFlags) {
-	f.setAll(fd, file, nil, flags)
+func (f *FDTable) set(ctx context.Context, fd int32, file *fs.File, flags FDFlags) {
+	f.setAll(ctx, fd, file, nil, flags)
 }
 
 // setVFS2 sets an entry.
@@ -94,8 +95,8 @@ func (f *FDTable) set(fd int32, file *fs.File, flags FDFlags) {
 // reference needed by the table iff the file is different.
 //
 // Precondition: mu must be held.
-func (f *FDTable) setVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) {
-	f.setAll(fd, nil, file, flags)
+func (f *FDTable) setVFS2(ctx context.Context, fd int32, file *vfs.FileDescription, flags FDFlags) {
+	f.setAll(ctx, fd, nil, file, flags)
 }
 
 // setAll sets an entry.
@@ -104,7 +105,7 @@ func (f *FDTable) setVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) {
 // reference needed by the table iff the file is different.
 //
 // Precondition: mu must be held.
-func (f *FDTable) setAll(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
+func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 	if file != nil && fileVFS2 != nil {
 		panic("VFS1 and VFS2 files set")
 	}
@@ -152,11 +153,11 @@ func (f *FDTable) setAll(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription,
 		switch {
 		case orig.file != nil:
 			if desc == nil || desc.file != orig.file {
-				f.drop(orig.file)
+				f.drop(ctx, orig.file)
 			}
 		case orig.fileVFS2 != nil:
 			if desc == nil || desc.fileVFS2 != orig.fileVFS2 {
-				f.dropVFS2(orig.fileVFS2)
+				f.dropVFS2(ctx, orig.fileVFS2)
 			}
 		}
 	}
