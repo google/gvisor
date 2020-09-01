@@ -16,13 +16,11 @@ package testbench
 
 import (
 	"context"
-	"encoding/binary"
 	"flag"
 	"net"
 	"strconv"
 	"syscall"
 	"testing"
-	"time"
 
 	pb "gvisor.dev/gvisor/test/packetimpact/proto/posix_server_go_proto"
 
@@ -701,44 +699,4 @@ func (dut *DUT) RecvWithErrno(ctx context.Context, t *testing.T, sockfd, len, fl
 		t.Fatalf("failed to call Recv: %s", err)
 	}
 	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
-}
-
-// SetSockLingerOption sets SO_LINGER socket option on the DUT.
-func (dut *DUT) SetSockLingerOption(t *testing.T, sockfd int32, timeout time.Duration, enable bool) {
-	var linger unix.Linger
-	if enable {
-		linger.Onoff = 1
-	}
-	linger.Linger = int32(timeout / time.Second)
-
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint32(buf, uint32(linger.Onoff))
-	binary.LittleEndian.PutUint32(buf[4:], uint32(linger.Linger))
-	dut.SetSockOpt(t, sockfd, unix.SOL_SOCKET, unix.SO_LINGER, buf)
-}
-
-// Shutdown calls shutdown on the DUT and causes a fatal test failure if it doesn't
-// succeed. If more control over the timeout or error handling is needed, use
-// ShutdownWithErrno.
-func (dut *DUT) Shutdown(t *testing.T, fd, how int32) error {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
-	defer cancel()
-	return dut.ShutdownWithErrno(ctx, t, fd, how)
-}
-
-// ShutdownWithErrno calls shutdown on the DUT.
-func (dut *DUT) ShutdownWithErrno(ctx context.Context, t *testing.T, fd, how int32) error {
-	t.Helper()
-
-	req := pb.ShutdownRequest{
-		Fd:  fd,
-		How: how,
-	}
-	resp, err := dut.posixServer.Shutdown(ctx, &req)
-	if err != nil {
-		t.Fatalf("failed to call Shutdown: %s", err)
-	}
-	return syscall.Errno(resp.GetErrno_())
 }
