@@ -1116,6 +1116,9 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
+  // TODO(gvisor.dev/issue/1400): Remove this after SO_LINGER is fixed.
+  SKIP_IF(IsRunningOnGvisor());
+
   // Create the listening socket.
   const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
