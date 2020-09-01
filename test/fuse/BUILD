@@ -44,6 +44,11 @@ syscall_test(
 
 syscall_test(
     fuse = "True",
+    test = "//test/fuse/linux:write_test",
+)
+
+syscall_test(
+    fuse = "True",
     test = "//test/fuse/linux:rmdir_test",
 )
 

@@ -150,3 +150,93 @@ func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off u
 		fs.conn.mu.Unlock()
 	}
 }
+
+// Write sends FUSE_WRITE requests and return the bytes
+// written according to the response.
+//
+// Preconditions: len(data) == size.
+func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, size uint32, data []byte) (uint32, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		log.Warningf("fusefs.Read: couldn't get kernel task from context")
+		return 0, syserror.EINVAL
+	}
+
+	// One request cannnot exceed either maxWrite or maxPages.
+	maxWrite := uint32(fs.conn.maxPages) << usermem.PageShift
+	if maxWrite > fs.conn.maxWrite {
+		maxWrite = fs.conn.maxWrite
+	}
+
+	// Reuse the same struct for unmarshalling to avoid unnecessary memory allocation.
+	in := linux.FUSEWriteIn{
+		Fh: fd.Fh,
+		// TODO(gvisor.dev/issue/3245): file lock
+		LockOwner: 0,
+		// TODO(gvisor.dev/issue/3245): |= linux.FUSE_READ_LOCKOWNER
+		// TODO(gvisor.dev/issue/3237): |= linux.FUSE_WRITE_CACHE (not added yet)
+		WriteFlags: 0,
+		Flags:      fd.statusFlags(),
+	}
+
+	var written uint32
+
+	// This loop is intended for fragmented write where the bytes to write is
+	// larger than either the maxWrite or maxPages or when bigWrites is false.
+	// Unless a small value for max_write is explicitly used, this loop
+	// is expected to execute only once for the majority of the writes.
+	for written < size {
+		toWrite := size - written
+
+		// Limit the write size to one page.
+		// Note that the bigWrites flag is obsolete,
+		// latest libfuse always sets it on.
+		if !fs.conn.bigWrites && toWrite > usermem.PageSize {
+			toWrite = usermem.PageSize
+		}
+
+		// Limit the write size to maxWrite.
+		if toWrite > maxWrite {
+			toWrite = maxWrite
+		}
+
+		in.Offset = off + uint64(written)
+		in.Size = toWrite
+
+		req, err := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), fd.inode().NodeID, linux.FUSE_WRITE, &in)
+		if err != nil {
+			return 0, err
+		}
+
+		req.payload = data[written : written+toWrite]
+
+		// TODO(gvisor.dev/issue/3247): support async write.
+
+		res, err := fs.conn.Call(t, req)
+		if err != nil {
+			return 0, err
+		}
+		if err := res.Error(); err != nil {
+			return 0, err
+		}
+
+		out := linux.FUSEWriteOut{}
+		if err := res.UnmarshalPayload(&out); err != nil {
+			return 0, err
+		}
+
+		// Write more than requested? EIO.
+		if out.Size > toWrite {
+			return 0, syserror.EIO
+		}
+
+		written += out.Size
+
+		// Break if short write. Not necessarily an error.
+		if out.Size != toWrite {
+			break
+		}
+	}
+
+	return written, nil
+}
