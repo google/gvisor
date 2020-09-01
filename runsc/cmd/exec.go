@@ -220,7 +220,7 @@ func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.Exi
 	cmd.Stderr = os.Stderr
 
 	// If the console control socket file is provided, then create a new
-	// pty master/slave pair and set the TTY on the sandbox process.
+	// pty master/replica pair and set the TTY on the sandbox process.
 	if ex.consoleSocket != "" {
 		// Create a new TTY pair and send the master on the provided socket.
 		tty, err := console.NewWithSocket(ex.consoleSocket)
@@ -229,7 +229,7 @@ func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.Exi
 		}
 		defer tty.Close()
 
-		// Set stdio to the new TTY slave.
+		// Set stdio to the new TTY replica.
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
