@@ -19,10 +19,12 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
 
 // waitBufMaxBytes is the maximum size of a wait buffer. It is based on
@@ -83,17 +85,15 @@ func (q *queue) writeReadiness(t *linux.KernelTermios) waiter.EventMask {
 }
 
 // readableSize writes the number of readable bytes to userspace.
-func (q *queue) readableSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
+func (q *queue) readableSize(t *kernel.Task, io usermem.IO, args arch.SyscallArguments) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	var size int32
+	size := primitive.Int32(0)
 	if q.readable {
-		size = int32(len(q.readBuf))
+		size = primitive.Int32(len(q.readBuf))
 	}
 
-	_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), size, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	_, err := size.CopyOut(t, args[2].Pointer())
 	return err
 
 }
