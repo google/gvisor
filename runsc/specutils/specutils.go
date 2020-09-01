@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
@@ -161,18 +162,18 @@ func OpenSpec(bundleDir string) (*os.File, error) {
 // ReadSpec reads an OCI runtime spec from the given bundle directory.
 // ReadSpec also normalizes all potential relative paths into absolute
 // path, e.g. spec.Root.Path, mount.Source.
-func ReadSpec(bundleDir string) (*specs.Spec, error) {
+func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 	specFile, err := OpenSpec(bundleDir)
 	if err != nil {
 		return nil, fmt.Errorf("error opening spec file %q: %v", filepath.Join(bundleDir, "config.json"), err)
 	}
 	defer specFile.Close()
-	return ReadSpecFromFile(bundleDir, specFile)
+	return ReadSpecFromFile(bundleDir, specFile, conf)
 }
 
 // ReadSpecFromFile reads an OCI runtime spec from the given File, and
 // normalizes all relative paths into absolute by prepending the bundle dir.
-func ReadSpecFromFile(bundleDir string, specFile *os.File) (*specs.Spec, error) {
+func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) (*specs.Spec, error) {
 	if _, err := specFile.Seek(0, os.SEEK_SET); err != nil {
 		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
 	}
@@ -195,6 +196,20 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File) (*specs.Spec, error) 
 			m.Source = absPath(bundleDir, m.Source)
 		}
 	}
+
+	// Override flags using annotation to allow customization per sandbox
+	// instance.
+	for annotation, val := range spec.Annotations {
+		const flagPrefix = "dev.gvisor.flag."
+		if strings.HasPrefix(annotation, flagPrefix) {
+			name := annotation[len(flagPrefix):]
+			log.Infof("Overriding flag: %s=%q", name, val)
+			if err := conf.Override(name, val); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &spec, nil
 }
 
