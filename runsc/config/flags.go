@@ -48,6 +48,7 @@ func RegisterFlags() {
 		flag.Bool("log-packets", false, "enable network packet logging.")
 		flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
 		flag.Bool("alsologtostderr", false, "send log messages to stderr.")
+		flag.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
 
 		// Debugging flags: strace related
 		flag.Bool("strace", false, "enable strace.")
@@ -147,6 +148,41 @@ func (c *Config) ToFlags() []string {
 		rv = append(rv, fmt.Sprintf("--%s=%s", flag.Name, val))
 	}
 	return rv
+}
+
+// Override writes a new value to a flag.
+func (c *Config) Override(name string, value string) error {
+	if !c.AllowFlagOverride {
+		return fmt.Errorf("flag override disabled, use --allow-flag-override to enable it")
+	}
+
+	obj := reflect.ValueOf(c).Elem()
+	st := obj.Type()
+	for i := 0; i < st.NumField(); i++ {
+		f := st.Field(i)
+		fieldName, ok := f.Tag.Lookup("flag")
+		if !ok || fieldName != name {
+			// Not a flag field, or flag name doesn't match.
+			continue
+		}
+		fl := flag.CommandLine.Lookup(name)
+		if fl == nil {
+			// Flag must exist if there is a field match above.
+			panic(fmt.Sprintf("Flag %q not found", name))
+		}
+
+		// Use flag to convert the string value to the underlying flag type, using
+		// the same rules as the command-line for consistency.
+		if err := fl.Value.Set(value); err != nil {
+			return fmt.Errorf("error setting flag %s=%q: %w", name, value, err)
+		}
+		x := reflect.ValueOf(flag.Get(fl.Value))
+		obj.Field(i).Set(x)
+
+		// Validates the config again to ensure it's left in a consistent state.
+		return c.validate()
+	}
+	return fmt.Errorf("flag %q not found. Cannot set it to %q", name, value)
 }
 
 func getVal(field reflect.Value) string {
