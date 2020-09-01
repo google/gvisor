@@ -72,7 +72,7 @@ func TestFDTableMany(t *testing.T) {
 		}
 
 		i := int32(2)
-		fdTable.Remove(i)
+		fdTable.Remove(ctx, i)
 		if fds, err := fdTable.NewFDs(ctx, 0, []*fs.File{file}, FDFlags{}); err != nil || fds[0] != i {
 			t.Fatalf("Allocated %v FDs but wanted to allocate %v: %v", i, maxFD, err)
 		}
@@ -93,7 +93,7 @@ func TestFDTableOverLimit(t *testing.T) {
 			t.Fatalf("fdTable.NewFDs(maxFD-3, {f,f,f}): got %v, wanted nil", err)
 		} else {
 			for _, fd := range fds {
-				fdTable.Remove(fd)
+				fdTable.Remove(ctx, fd)
 			}
 		}
 
@@ -150,13 +150,13 @@ func TestFDTable(t *testing.T) {
 			t.Fatalf("fdTable.Get(2): got a %v, wanted nil", ref)
 		}
 
-		ref, _ := fdTable.Remove(1)
+		ref, _ := fdTable.Remove(ctx, 1)
 		if ref == nil {
 			t.Fatalf("fdTable.Remove(1) for an existing FD: failed, want success")
 		}
 		ref.DecRef(ctx)
 
-		if ref, _ := fdTable.Remove(1); ref != nil {
+		if ref, _ := fdTable.Remove(ctx, 1); ref != nil {
 			t.Fatalf("r.Remove(1) for a removed FD: got success, want failure")
 		}
 	})
