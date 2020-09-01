@@ -19,7 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
 
 // Terminal is a pseudoterminal.
@@ -54,7 +54,7 @@ func newTerminal(n uint32) *Terminal {
 
 // setControllingTTY makes tm the controlling terminal of the calling thread
 // group.
-func (tm *Terminal) setControllingTTY(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) error {
+func (tm *Terminal) setControllingTTY(ctx context.Context, args arch.SyscallArguments, isMaster bool) error {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("setControllingTTY must be called from a task context")
@@ -65,7 +65,7 @@ func (tm *Terminal) setControllingTTY(ctx context.Context, io usermem.IO, args a
 
 // releaseControllingTTY removes tm as the controlling terminal of the calling
 // thread group.
-func (tm *Terminal) releaseControllingTTY(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) error {
+func (tm *Terminal) releaseControllingTTY(ctx context.Context, args arch.SyscallArguments, isMaster bool) error {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("releaseControllingTTY must be called from a task context")
@@ -75,7 +75,7 @@ func (tm *Terminal) releaseControllingTTY(ctx context.Context, io usermem.IO, ar
 }
 
 // foregroundProcessGroup gets the process group ID of tm's foreground process.
-func (tm *Terminal) foregroundProcessGroup(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
+func (tm *Terminal) foregroundProcessGroup(ctx context.Context, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("foregroundProcessGroup must be called from a task context")
@@ -87,24 +87,21 @@ func (tm *Terminal) foregroundProcessGroup(ctx context.Context, io usermem.IO, a
 	}
 
 	// Write it out to *arg.
-	_, err = usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(ret), usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	retP := primitive.Int32(ret)
+	_, err = retP.CopyOut(task, args[2].Pointer())
 	return 0, err
 }
 
 // foregroundProcessGroup sets tm's foreground process.
-func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
+func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("setForegroundProcessGroup must be called from a task context")
 	}
 
 	// Read in the process group ID.
-	var pgid int32
-	if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &pgid, usermem.IOOpts{
-		AddressSpaceActive: true,
-	}); err != nil {
+	var pgid primitive.Int32
+	if _, err := pgid.CopyIn(task, args[2].Pointer()); err != nil {
 		return 0, err
 	}
 
