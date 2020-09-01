@@ -64,6 +64,10 @@ type Request struct {
 	id   linux.FUSEOpID
 	hdr  *linux.FUSEHeaderIn
 	data []byte
+
+	// payload for this request: extra bytes to write after
+	// the data slice. Used by FUSE_WRITE.
+	payload []byte
 }
 
 // Response represents an actual response from the server, including the
