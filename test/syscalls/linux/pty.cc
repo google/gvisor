@@ -71,7 +71,7 @@ constexpr absl::Duration kTimeout = absl::Seconds(20);
 // The maximum line size in bytes returned per read from a pty file.
 constexpr int kMaxLineSize = 4096;
 
-constexpr char kMainPath[] = "/dev/ptmx";
+constexpr char kMasterPath[] = "/dev/ptmx";
 
 // glibc defines its own, different, version of struct termios. We care about
 // what the kernel does, not glibc.
@@ -388,22 +388,22 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
 TEST(PtyTrunc, Truncate) {
   // Opening PTYs with O_TRUNC shouldn't cause an error, but calls to
   // (f)truncate should.
-  FileDescriptor main =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(kMainPath, O_RDWR | O_TRUNC));
-  int n = ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(main));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_TRUNC));
+  int n = ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(master));
   std::string spath = absl::StrCat("/dev/pts/", n);
   FileDescriptor replica =
       ASSERT_NO_ERRNO_AND_VALUE(Open(spath, O_RDWR | O_NONBLOCK | O_TRUNC));
 
-  EXPECT_THAT(truncate(kMainPath, 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(truncate(kMasterPath, 0), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(truncate(spath.c_str(), 0), SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(ftruncate(main.get(), 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(ftruncate(master.get(), 0), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(ftruncate(replica.get(), 0), SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(BasicPtyTest, StatUnopenedMain) {
+TEST(BasicPtyTest, StatUnopenedMaster) {
   struct stat s;
-  ASSERT_THAT(stat(kMainPath, &s), SyscallSucceeds());
+  ASSERT_THAT(stat(kMasterPath, &s), SyscallSucceeds());
 
   EXPECT_EQ(s.st_rdev, makedev(TTYAUX_MAJOR, kPtmxMinor));
   EXPECT_EQ(s.st_size, 0);
@@ -454,41 +454,41 @@ void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   EXPECT_EQ(expected, n);
 }
 
-TEST(BasicPtyTest, OpenMainReplica) {
-  FileDescriptor main = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
-  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main));
+TEST(BasicPtyTest, OpenMasterReplica) {
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
 }
 
-// The replica entry in /dev/pts/ disappears when the main is closed, even if
+// The replica entry in /dev/pts/ disappears when the master is closed, even if
 // the replica is still open.
-TEST(BasicPtyTest, ReplicaEntryGoneAfterMainClose) {
-  FileDescriptor main = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
-  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main));
+TEST(BasicPtyTest, ReplicaEntryGoneAfterMasterClose) {
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
 
   // Get pty index.
   int index = -1;
-  ASSERT_THAT(ioctl(main.get(), TIOCGPTN, &index), SyscallSucceeds());
+  ASSERT_THAT(ioctl(master.get(), TIOCGPTN, &index), SyscallSucceeds());
 
   std::string path = absl::StrCat("/dev/pts/", index);
 
   struct stat st;
   EXPECT_THAT(stat(path.c_str(), &st), SyscallSucceeds());
 
-  main.reset();
+  master.reset();
 
   EXPECT_THAT(stat(path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
 }
 
 TEST(BasicPtyTest, Getdents) {
-  FileDescriptor main1 = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+  FileDescriptor master1 = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   int index1 = -1;
-  ASSERT_THAT(ioctl(main1.get(), TIOCGPTN, &index1), SyscallSucceeds());
-  FileDescriptor replica1 = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main1));
+  ASSERT_THAT(ioctl(master1.get(), TIOCGPTN, &index1), SyscallSucceeds());
+  FileDescriptor replica1 = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master1));
 
-  FileDescriptor main2 = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+  FileDescriptor master2 = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   int index2 = -1;
-  ASSERT_THAT(ioctl(main2.get(), TIOCGPTN, &index2), SyscallSucceeds());
-  FileDescriptor replica2 = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main2));
+  ASSERT_THAT(ioctl(master2.get(), TIOCGPTN, &index2), SyscallSucceeds());
+  FileDescriptor replica2 = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master2));
 
   // The directory contains ptmx, index1, and index2. (Plus any additional PTYs
   // unrelated to this test.)
@@ -498,9 +498,9 @@ TEST(BasicPtyTest, Getdents) {
   EXPECT_THAT(contents, Contains(absl::StrCat(index1)));
   EXPECT_THAT(contents, Contains(absl::StrCat(index2)));
 
-  main2.reset();
+  master2.reset();
 
-  // The directory contains ptmx and index1, but not index2 since the main is
+  // The directory contains ptmx and index1, but not index2 since the master is
   // closed. (Plus any additional PTYs unrelated to this test.)
 
   contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir("/dev/pts/", true));
@@ -519,8 +519,8 @@ TEST(BasicPtyTest, Getdents) {
 class PtyTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    main_ = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
-    replica_ = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main_));
+    master_ = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
+    replica_ = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master_));
   }
 
   void DisableCanonical() {
@@ -537,21 +537,22 @@ class PtyTest : public ::testing::Test {
     EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
   }
 
-  // Main and replica ends of the PTY. Non-blocking.
-  FileDescriptor main_;
+  // Master and replica ends of the PTY. Non-blocking.
+  FileDescriptor master_;
   FileDescriptor replica_;
 };
 
-// Main to replica sanity test.
-TEST_F(PtyTest, WriteMainToReplica) {
-  // N.B. by default, the replica reads nothing until the main writes a newline.
+// Master to replica sanity test.
+TEST_F(PtyTest, WriteMasterToReplica) {
+  // N.B. by default, the replica reads nothing until the master writes a
+  // newline.
   constexpr char kBuf[] = "hello\n";
 
-  EXPECT_THAT(WriteFd(main_.get(), kBuf, sizeof(kBuf) - 1),
+  EXPECT_THAT(WriteFd(master_.get(), kBuf, sizeof(kBuf) - 1),
               SyscallSucceedsWithValue(sizeof(kBuf) - 1));
 
-  // Linux moves data from the main to the replica via async work scheduled via
-  // tty_flip_buffer_push. Since it is asynchronous, the data may not be
+  // Linux moves data from the master to the replica via async work scheduled
+  // via tty_flip_buffer_push. Since it is asynchronous, the data may not be
   // available for reading immediately. Instead we must poll and assert that it
   // becomes available "soon".
 
@@ -561,63 +562,63 @@ TEST_F(PtyTest, WriteMainToReplica) {
   EXPECT_EQ(memcmp(buf, kBuf, sizeof(kBuf)), 0);
 }
 
-// Replica to main sanity test.
-TEST_F(PtyTest, WriteReplicaToMain) {
-  // N.B. by default, the main reads nothing until the replica writes a newline,
-  // and the main gets a carriage return.
+// Replica to master sanity test.
+TEST_F(PtyTest, WriteReplicaToMaster) {
+  // N.B. by default, the master reads nothing until the replica writes a
+  // newline, and the master gets a carriage return.
   constexpr char kInput[] = "hello\n";
   constexpr char kExpected[] = "hello\r\n";
 
   EXPECT_THAT(WriteFd(replica_.get(), kInput, sizeof(kInput) - 1),
               SyscallSucceedsWithValue(sizeof(kInput) - 1));
 
-  // Linux moves data from the main to the replica via async work scheduled via
-  // tty_flip_buffer_push. Since it is asynchronous, the data may not be
+  // Linux moves data from the master to the replica via async work scheduled
+  // via tty_flip_buffer_push. Since it is asynchronous, the data may not be
   // available for reading immediately. Instead we must poll and assert that it
   // becomes available "soon".
 
   char buf[sizeof(kExpected)] = {};
-  ExpectReadable(main_, sizeof(buf) - 1, buf);
+  ExpectReadable(master_, sizeof(buf) - 1, buf);
 
   EXPECT_EQ(memcmp(buf, kExpected, sizeof(kExpected)), 0);
 }
 
 TEST_F(PtyTest, WriteInvalidUTF8) {
   char c = 0xff;
-  ASSERT_THAT(syscall(__NR_write, main_.get(), &c, sizeof(c)),
+  ASSERT_THAT(syscall(__NR_write, master_.get(), &c, sizeof(c)),
               SyscallSucceedsWithValue(sizeof(c)));
 }
 
-// Both the main and replica report the standard default termios settings.
+// Both the master and replica report the standard default termios settings.
 //
-// Note that TCGETS on the main actually redirects to the replica (see comment
-// on MainTermiosUnchangable).
+// Note that TCGETS on the master actually redirects to the replica (see comment
+// on MasterTermiosUnchangable).
 TEST_F(PtyTest, DefaultTermios) {
   struct kernel_termios t = {};
   EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
   EXPECT_EQ(t, DefaultTermios());
 
-  EXPECT_THAT(ioctl(main_.get(), TCGETS, &t), SyscallSucceeds());
+  EXPECT_THAT(ioctl(master_.get(), TCGETS, &t), SyscallSucceeds());
   EXPECT_EQ(t, DefaultTermios());
 }
 
-// Changing termios from the main actually affects the replica.
+// Changing termios from the master actually affects the replica.
 //
-// TCSETS on the main actually redirects to the replica (see comment on
-// MainTermiosUnchangable).
+// TCSETS on the master actually redirects to the replica (see comment on
+// MasterTermiosUnchangable).
 TEST_F(PtyTest, TermiosAffectsReplica) {
-  struct kernel_termios main_termios = {};
-  EXPECT_THAT(ioctl(main_.get(), TCGETS, &main_termios), SyscallSucceeds());
-  main_termios.c_lflag ^= ICANON;
-  EXPECT_THAT(ioctl(main_.get(), TCSETS, &main_termios), SyscallSucceeds());
+  struct kernel_termios master_termios = {};
+  EXPECT_THAT(ioctl(master_.get(), TCGETS, &master_termios), SyscallSucceeds());
+  master_termios.c_lflag ^= ICANON;
+  EXPECT_THAT(ioctl(master_.get(), TCSETS, &master_termios), SyscallSucceeds());
 
   struct kernel_termios replica_termios = {};
   EXPECT_THAT(ioctl(replica_.get(), TCGETS, &replica_termios),
               SyscallSucceeds());
-  EXPECT_EQ(main_termios, replica_termios);
+  EXPECT_EQ(master_termios, replica_termios);
 }
 
-// The main end of the pty has termios:
+// The master end of the pty has termios:
 //
 // struct kernel_termios t = {
 //   .c_iflag = 0;
@@ -629,25 +630,25 @@ TEST_F(PtyTest, TermiosAffectsReplica) {
 //
 // (From drivers/tty/pty.c:unix98_pty_init)
 //
-// All termios control ioctls on the main actually redirect to the replica
+// All termios control ioctls on the master actually redirect to the replica
 // (drivers/tty/tty_ioctl.c:tty_mode_ioctl), making it impossible to change the
-// main termios.
+// master termios.
 //
 // Verify this by setting ICRNL (which rewrites input \r to \n) and verify that
-// it has no effect on the main.
-TEST_F(PtyTest, MainTermiosUnchangable) {
-  struct kernel_termios main_termios = {};
-  EXPECT_THAT(ioctl(main_.get(), TCGETS, &main_termios), SyscallSucceeds());
-  main_termios.c_lflag |= ICRNL;
-  EXPECT_THAT(ioctl(main_.get(), TCSETS, &main_termios), SyscallSucceeds());
+// it has no effect on the master.
+TEST_F(PtyTest, MasterTermiosUnchangable) {
+  struct kernel_termios master_termios = {};
+  EXPECT_THAT(ioctl(master_.get(), TCGETS, &master_termios), SyscallSucceeds());
+  master_termios.c_lflag |= ICRNL;
+  EXPECT_THAT(ioctl(master_.get(), TCSETS, &master_termios), SyscallSucceeds());
 
   char c = '\r';
   ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
-  ExpectReadable(main_, 1, &c);
+  ExpectReadable(master_, 1, &c);
   EXPECT_EQ(c, '\r');  // ICRNL had no effect!
 
-  ExpectFinished(main_);
+  ExpectFinished(master_);
 }
 
 // ICRNL rewrites input \r to \n.
@@ -658,7 +659,7 @@ TEST_F(PtyTest, TermiosICRNL) {
   ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   char c = '\r';
-  ASSERT_THAT(WriteFd(main_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   ExpectReadable(replica_, 1, &c);
   EXPECT_EQ(c, '\n');
@@ -678,7 +679,7 @@ TEST_F(PtyTest, TermiosONLCR) {
 
   // Extra byte for NUL for EXPECT_STREQ.
   char buf[3] = {};
-  ExpectReadable(main_, 2, buf);
+  ExpectReadable(master_, 2, buf);
   EXPECT_STREQ(buf, "\r\n");
 
   ExpectFinished(replica_);
@@ -691,7 +692,7 @@ TEST_F(PtyTest, TermiosIGNCR) {
   ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   char c = '\r';
-  ASSERT_THAT(WriteFd(main_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
   ASSERT_THAT(PollAndReadFd(replica_.get(), &c, 1, kTimeout),
@@ -725,18 +726,18 @@ TEST_F(PtyTest, TermiosPollReplica) {
   absl::SleepFor(absl::Seconds(1));
 
   char s[] = "foo\n";
-  ASSERT_THAT(WriteFd(main_.get(), s, strlen(s) + 1), SyscallSucceeds());
+  ASSERT_THAT(WriteFd(master_.get(), s, strlen(s) + 1), SyscallSucceeds());
 }
 
-// Test that we can successfully poll for readable data from the main.
-TEST_F(PtyTest, TermiosPollMain) {
+// Test that we can successfully poll for readable data from the master.
+TEST_F(PtyTest, TermiosPollMaster) {
   struct kernel_termios t = DefaultTermios();
   t.c_iflag |= IGNCR;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(main_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(master_.get(), TCSETS, &t), SyscallSucceeds());
 
   absl::Notification notify;
-  int mfd = main_.get();
+  int mfd = master_.get();
   ScopedThread th([mfd, &notify]() {
     notify.Notify();
 
@@ -765,7 +766,7 @@ TEST_F(PtyTest, TermiosINLCR) {
   ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   char c = '\n';
-  ASSERT_THAT(WriteFd(main_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   ExpectReadable(replica_, 1, &c);
   EXPECT_EQ(c, '\r');
@@ -784,7 +785,7 @@ TEST_F(PtyTest, TermiosONOCR) {
   ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
-  ASSERT_THAT(PollAndReadFd(main_.get(), &c, 1, kTimeout),
+  ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   // This time the column is greater than 0, so we should be able to read the CR
@@ -795,17 +796,17 @@ TEST_F(PtyTest, TermiosONOCR) {
               SyscallSucceedsWithValue(kInputSize));
 
   char buf[kInputSize] = {};
-  ExpectReadable(main_, kInputSize, buf);
+  ExpectReadable(master_, kInputSize, buf);
 
   EXPECT_EQ(memcmp(buf, kInput, kInputSize), 0);
 
-  ExpectFinished(main_);
+  ExpectFinished(master_);
 
   // Terminal should be at column 0 again, so no CR can be read.
   ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
-  ASSERT_THAT(PollAndReadFd(main_.get(), &c, 1, kTimeout),
+  ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 }
 
@@ -819,10 +820,10 @@ TEST_F(PtyTest, TermiosOCRNL) {
   char c = '\r';
   ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
-  ExpectReadable(main_, 1, &c);
+  ExpectReadable(master_, 1, &c);
   EXPECT_EQ(c, '\n');
 
-  ExpectFinished(main_);
+  ExpectFinished(master_);
 }
 
 // Tests that VEOL is disabled when we start, and that we can set it to enable
@@ -830,7 +831,7 @@ TEST_F(PtyTest, TermiosOCRNL) {
 TEST_F(PtyTest, VEOLTermination) {
   // Write a few bytes ending with '\0', and confirm that we can't read.
   constexpr char kInput[] = "hello";
-  ASSERT_THAT(WriteFd(main_.get(), kInput, sizeof(kInput)),
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput)),
               SyscallSucceedsWithValue(sizeof(kInput)));
   char buf[sizeof(kInput)] = {};
   ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(kInput), kTimeout),
@@ -841,7 +842,7 @@ TEST_F(PtyTest, VEOLTermination) {
   struct kernel_termios t = DefaultTermios();
   t.c_cc[VEOL] = delim;
   ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
-  ASSERT_THAT(WriteFd(main_.get(), &delim, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
   // Now we can read, as sending EOL caused the line to become available.
   ExpectReadable(replica_, sizeof(kInput), buf);
@@ -861,7 +862,7 @@ TEST_F(PtyTest, CanonBigWrite) {
   char input[kWriteLen];
   memset(input, 'M', kWriteLen - 1);
   input[kWriteLen - 1] = '\n';
-  ASSERT_THAT(WriteFd(main_.get(), input, kWriteLen),
+  ASSERT_THAT(WriteFd(master_.get(), input, kWriteLen),
               SyscallSucceedsWithValue(kWriteLen));
 
   // We can read the line.
@@ -877,7 +878,7 @@ TEST_F(PtyTest, SwitchCanonToNoncanon) {
   // Write a few bytes without a terminating character, switch to noncanonical
   // mode, and read them.
   constexpr char kInput[] = "hello";
-  ASSERT_THAT(WriteFd(main_.get(), kInput, sizeof(kInput)),
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput)),
               SyscallSucceedsWithValue(sizeof(kInput)));
 
   // Nothing available yet.
@@ -896,7 +897,7 @@ TEST_F(PtyTest, SwitchCanonToNoncanon) {
 TEST_F(PtyTest, SwitchCanonToNonCanonNewline) {
   // Write a few bytes with a terminating character.
   constexpr char kInput[] = "hello\n";
-  ASSERT_THAT(WriteFd(main_.get(), kInput, sizeof(kInput)),
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput)),
               SyscallSucceedsWithValue(sizeof(kInput)));
 
   DisableCanonical();
@@ -916,12 +917,12 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNewlineBig) {
   constexpr int kWriteLen = 4100;
   char input[kWriteLen];
   memset(input, 'M', kWriteLen);
-  ASSERT_THAT(WriteFd(main_.get(), input, kWriteLen),
+  ASSERT_THAT(WriteFd(master_.get(), input, kWriteLen),
               SyscallSucceedsWithValue(kWriteLen));
   // Wait for the input queue to fill.
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), kMaxLineSize - 1));
   constexpr char delim = '\n';
-  ASSERT_THAT(WriteFd(main_.get(), &delim, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
   EnableCanonical();
 
@@ -941,7 +942,7 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNoNewline) {
   // Write a few bytes without a terminating character.
   // mode, and read them.
   constexpr char kInput[] = "hello";
-  ASSERT_THAT(WriteFd(main_.get(), kInput, sizeof(kInput) - 1),
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput) - 1),
               SyscallSucceedsWithValue(sizeof(kInput) - 1));
 
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(kInput) - 1));
@@ -963,7 +964,7 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNoNewlineBig) {
   constexpr int kWriteLen = 4100;
   char input[kWriteLen];
   memset(input, 'M', kWriteLen);
-  ASSERT_THAT(WriteFd(main_.get(), input, kWriteLen),
+  ASSERT_THAT(WriteFd(master_.get(), input, kWriteLen),
               SyscallSucceedsWithValue(kWriteLen));
 
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), kMaxLineSize - 1));
@@ -987,12 +988,12 @@ TEST_F(PtyTest, NoncanonBigWrite) {
   for (int i = 0; i < kInputSize; i++) {
     // This makes too many syscalls for save/restore.
     const DisableSave ds;
-    ASSERT_THAT(WriteFd(main_.get(), &kInput, sizeof(kInput)),
+    ASSERT_THAT(WriteFd(master_.get(), &kInput, sizeof(kInput)),
                 SyscallSucceedsWithValue(sizeof(kInput)));
   }
 
   // We should be able to read out everything. Sleep a bit so that Linux has a
-  // chance to move data from the main to the replica.
+  // chance to move data from the master to the replica.
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), kMaxLineSize - 1));
   for (int i = 0; i < kInputSize; i++) {
     // This makes too many syscalls for save/restore.
@@ -1010,7 +1011,7 @@ TEST_F(PtyTest, NoncanonBigWrite) {
 // Test newline.
 TEST_F(PtyTest, TermiosICANONNewline) {
   char input[3] = {'a', 'b', 'c'};
-  ASSERT_THAT(WriteFd(main_.get(), input, sizeof(input)),
+  ASSERT_THAT(WriteFd(master_.get(), input, sizeof(input)),
               SyscallSucceedsWithValue(sizeof(input)));
 
   // Extra bytes for newline (written later) and NUL for EXPECT_STREQ.
@@ -1021,7 +1022,7 @@ TEST_F(PtyTest, TermiosICANONNewline) {
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   char delim = '\n';
-  ASSERT_THAT(WriteFd(main_.get(), &delim, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
   // Now it is available.
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(input) + 1));
@@ -1036,7 +1037,7 @@ TEST_F(PtyTest, TermiosICANONNewline) {
 // Test EOF (^D).
 TEST_F(PtyTest, TermiosICANONEOF) {
   char input[3] = {'a', 'b', 'c'};
-  ASSERT_THAT(WriteFd(main_.get(), input, sizeof(input)),
+  ASSERT_THAT(WriteFd(master_.get(), input, sizeof(input)),
               SyscallSucceedsWithValue(sizeof(input)));
 
   // Extra byte for NUL for EXPECT_STREQ.
@@ -1046,7 +1047,7 @@ TEST_F(PtyTest, TermiosICANONEOF) {
   ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(input), kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
   char delim = ControlCharacter('D');
-  ASSERT_THAT(WriteFd(main_.get(), &delim, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
   // Now it is available. Note that ^D is not included.
   ExpectReadable(replica_, sizeof(input), buf);
@@ -1069,10 +1070,10 @@ TEST_F(PtyTest, CanonDiscard) {
     // This makes too many syscalls for save/restore.
     const DisableSave ds;
     for (int i = 0; i < kInputSize; i++) {
-      ASSERT_THAT(WriteFd(main_.get(), &kInput, sizeof(kInput)),
+      ASSERT_THAT(WriteFd(master_.get(), &kInput, sizeof(kInput)),
                   SyscallSucceedsWithValue(sizeof(kInput)));
     }
-    ASSERT_THAT(WriteFd(main_.get(), &delim, 1), SyscallSucceedsWithValue(1));
+    ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
   }
 
   // There should be multiple truncated lines available to read.
@@ -1091,9 +1092,9 @@ TEST_F(PtyTest, CanonMultiline) {
   constexpr char kInput2[] = "BLUE\n";
 
   // Write both lines.
-  ASSERT_THAT(WriteFd(main_.get(), kInput1, sizeof(kInput1) - 1),
+  ASSERT_THAT(WriteFd(master_.get(), kInput1, sizeof(kInput1) - 1),
               SyscallSucceedsWithValue(sizeof(kInput1) - 1));
-  ASSERT_THAT(WriteFd(main_.get(), kInput2, sizeof(kInput2) - 1),
+  ASSERT_THAT(WriteFd(master_.get(), kInput2, sizeof(kInput2) - 1),
               SyscallSucceedsWithValue(sizeof(kInput2) - 1));
 
   // Get the first line.
@@ -1117,9 +1118,9 @@ TEST_F(PtyTest, SwitchNoncanonToCanonMultiline) {
   constexpr char kExpected[] = "GO\nBLUE\n";
 
   // Write both lines.
-  ASSERT_THAT(WriteFd(main_.get(), kInput1, sizeof(kInput1) - 1),
+  ASSERT_THAT(WriteFd(master_.get(), kInput1, sizeof(kInput1) - 1),
               SyscallSucceedsWithValue(sizeof(kInput1) - 1));
-  ASSERT_THAT(WriteFd(main_.get(), kInput2, sizeof(kInput2) - 1),
+  ASSERT_THAT(WriteFd(master_.get(), kInput2, sizeof(kInput2) - 1),
               SyscallSucceedsWithValue(sizeof(kInput2) - 1));
 
   ASSERT_NO_ERRNO(
@@ -1140,7 +1141,7 @@ TEST_F(PtyTest, SwitchTwiceMultiline) {
 
   // Write each line.
   for (const std::string& input : kInputs) {
-    ASSERT_THAT(WriteFd(main_.get(), input.c_str(), input.size()),
+    ASSERT_THAT(WriteFd(master_.get(), input.c_str(), input.size()),
                 SyscallSucceedsWithValue(input.size()));
   }
 
@@ -1162,7 +1163,7 @@ TEST_F(PtyTest, SwitchTwiceMultiline) {
 TEST_F(PtyTest, QueueSize) {
   // Write the line.
   constexpr char kInput1[] = "GO\n";
-  ASSERT_THAT(WriteFd(main_.get(), kInput1, sizeof(kInput1) - 1),
+  ASSERT_THAT(WriteFd(master_.get(), kInput1, sizeof(kInput1) - 1),
               SyscallSucceedsWithValue(sizeof(kInput1) - 1));
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(kInput1) - 1));
 
@@ -1170,7 +1171,7 @@ TEST_F(PtyTest, QueueSize) {
   // readable size.
   char input[kMaxLineSize];
   memset(input, 'M', kMaxLineSize);
-  ASSERT_THAT(WriteFd(main_.get(), input, kMaxLineSize),
+  ASSERT_THAT(WriteFd(master_.get(), input, kMaxLineSize),
               SyscallSucceedsWithValue(kMaxLineSize));
   int inputBufSize = ASSERT_NO_ERRNO_AND_VALUE(
       WaitUntilReceived(replica_.get(), sizeof(kInput1) - 1));
@@ -1192,10 +1193,11 @@ TEST_F(PtyTest, PartialBadBuffer) {
   // Leave only one free byte in the buffer.
   char* bad_buffer = buf + kPageSize - 1;
 
-  // Write to the main.
+  // Write to the master.
   constexpr char kBuf[] = "hello\n";
   constexpr size_t size = sizeof(kBuf) - 1;
-  EXPECT_THAT(WriteFd(main_.get(), kBuf, size), SyscallSucceedsWithValue(size));
+  EXPECT_THAT(WriteFd(master_.get(), kBuf, size),
+              SyscallSucceedsWithValue(size));
 
   // Read from the replica into bad_buffer.
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), size));
@@ -1207,14 +1209,14 @@ TEST_F(PtyTest, PartialBadBuffer) {
 
 TEST_F(PtyTest, SimpleEcho) {
   constexpr char kInput[] = "Mr. Eko";
-  EXPECT_THAT(WriteFd(main_.get(), kInput, strlen(kInput)),
+  EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
               SyscallSucceedsWithValue(strlen(kInput)));
 
   char buf[100] = {};
-  ExpectReadable(main_, strlen(kInput), buf);
+  ExpectReadable(master_, strlen(kInput), buf);
 
   EXPECT_STREQ(buf, kInput);
-  ExpectFinished(main_);
+  ExpectFinished(master_);
 }
 
 TEST_F(PtyTest, GetWindowSize) {
@@ -1231,16 +1233,17 @@ TEST_F(PtyTest, SetReplicaWindowSize) {
   ASSERT_THAT(ioctl(replica_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
 
   struct winsize retrieved_ws = {};
-  ASSERT_THAT(ioctl(main_.get(), TIOCGWINSZ, &retrieved_ws), SyscallSucceeds());
+  ASSERT_THAT(ioctl(master_.get(), TIOCGWINSZ, &retrieved_ws),
+              SyscallSucceeds());
   EXPECT_EQ(retrieved_ws.ws_row, kRows);
   EXPECT_EQ(retrieved_ws.ws_col, kCols);
 }
 
-TEST_F(PtyTest, SetMainWindowSize) {
+TEST_F(PtyTest, SetMasterWindowSize) {
   constexpr uint16_t kRows = 343;
   constexpr uint16_t kCols = 2401;
   struct winsize ws = {.ws_row = kRows, .ws_col = kCols};
-  ASSERT_THAT(ioctl(main_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
+  ASSERT_THAT(ioctl(master_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
 
   struct winsize retrieved_ws = {};
   ASSERT_THAT(ioctl(replica_.get(), TIOCGWINSZ, &retrieved_ws),
@@ -1252,8 +1255,8 @@ TEST_F(PtyTest, SetMainWindowSize) {
 class JobControlTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    main_ = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
-    replica_ = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(main_));
+    master_ = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
+    replica_ = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master_));
 
     // Make this a session leader, which also drops the controlling terminal.
     // In the gVisor test environment, this test will be run as the session
@@ -1277,15 +1280,15 @@ class JobControlTest : public ::testing::Test {
     return PosixError(wstatus, "process returned");
   }
 
-  // Main and replica ends of the PTY. Non-blocking.
-  FileDescriptor main_;
+  // Master and replica ends of the PTY. Non-blocking.
+  FileDescriptor master_;
   FileDescriptor replica_;
 };
 
-TEST_F(JobControlTest, SetTTYMain) {
+TEST_F(JobControlTest, SetTTYMaster) {
   auto res = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);
-    TEST_PCHECK(!ioctl(main_.get(), TIOCSCTTY, 0));
+    TEST_PCHECK(!ioctl(master_.get(), TIOCSCTTY, 0));
   });
   ASSERT_NO_ERRNO(res);
 }
@@ -1360,7 +1363,7 @@ TEST_F(JobControlTest, ReleaseWrongTTY) {
   auto res = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);
     TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
-    TEST_PCHECK(ioctl(main_.get(), TIOCNOTTY) < 0 && errno == ENOTTY);
+    TEST_PCHECK(ioctl(master_.get(), TIOCNOTTY) < 0 && errno == ENOTTY);
   });
   ASSERT_NO_ERRNO(res);
 }

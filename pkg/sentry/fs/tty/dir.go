@@ -37,14 +37,14 @@ import (
 // This indirectly manages all terminals within the mount.
 //
 // New Terminals are created by masterInodeOperations.GetFile, which registers
-// the slave Inode in the this directory for discovery via Lookup/Readdir. The
-// slave inode is unregistered when the master file is Released, as the slave
+// the replica Inode in the this directory for discovery via Lookup/Readdir. The
+// replica inode is unregistered when the master file is Released, as the replica
 // is no longer discoverable at that point.
 //
 // References on the underlying Terminal are held by masterFileOperations and
-// slaveInodeOperations.
+// replicaInodeOperations.
 //
-// masterInodeOperations and slaveInodeOperations hold a pointer to
+// masterInodeOperations and replicaInodeOperations hold a pointer to
 // dirInodeOperations, which is reference counted by the refcount their
 // corresponding Dirents hold on their parent (this directory).
 //
@@ -76,16 +76,16 @@ type dirInodeOperations struct {
 	// master is the master PTY inode.
 	master *fs.Inode
 
-	// slaves contains the slave inodes reachable from the directory.
+	// replicas contains the replica inodes reachable from the directory.
 	//
-	// A new slave is added by allocateTerminal and is removed by
+	// A new replica is added by allocateTerminal and is removed by
 	// masterFileOperations.Release.
 	//
-	// A reference is held on every slave in the map.
-	slaves map[uint32]*fs.Inode
+	// A reference is held on every replica in the map.
+	replicas map[uint32]*fs.Inode
 
 	// dentryMap is a SortedDentryMap used to implement Readdir containing
-	// the master and all entries in slaves.
+	// the master and all entries in replicas.
 	dentryMap *fs.SortedDentryMap
 
 	// next is the next pty index to use.
@@ -101,7 +101,7 @@ func newDir(ctx context.Context, m *fs.MountSource) *fs.Inode {
 	d := &dirInodeOperations{
 		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.RootOwner, fs.FilePermsFromMode(0555), linux.DEVPTS_SUPER_MAGIC),
 		msrc:                  m,
-		slaves:                make(map[uint32]*fs.Inode),
+		replicas:              make(map[uint32]*fs.Inode),
 		dentryMap:             fs.NewSortedDentryMap(nil),
 	}
 	// Linux devpts uses a default mode of 0000 for ptmx which can be
@@ -133,7 +133,7 @@ func (d *dirInodeOperations) Release(ctx context.Context) {
 	defer d.mu.Unlock()
 
 	d.master.DecRef(ctx)
-	if len(d.slaves) != 0 {
+	if len(d.replicas) != 0 {
 		panic(fmt.Sprintf("devpts directory still contains active terminals: %+v", d))
 	}
 }
@@ -149,14 +149,14 @@ func (d *dirInodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name str
 		return fs.NewDirent(ctx, d.master, name), nil
 	}
 
-	// Slave number?
+	// Replica number?
 	n, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
 		// Not found.
 		return nil, syserror.ENOENT
 	}
 
-	s, ok := d.slaves[uint32(n)]
+	s, ok := d.replicas[uint32(n)]
 	if !ok {
 		return nil, syserror.ENOENT
 	}
@@ -236,7 +236,7 @@ func (d *dirInodeOperations) allocateTerminal(ctx context.Context) (*Terminal, e
 		return nil, syserror.ENOMEM
 	}
 
-	if _, ok := d.slaves[n]; ok {
+	if _, ok := d.replicas[n]; ok {
 		panic(fmt.Sprintf("pty index collision; index %d already exists", n))
 	}
 
@@ -244,19 +244,19 @@ func (d *dirInodeOperations) allocateTerminal(ctx context.Context) (*Terminal, e
 	d.next++
 
 	// The reference returned by newTerminal is returned to the caller.
-	// Take another for the slave inode.
+	// Take another for the replica inode.
 	t.IncRef()
 
 	// Create a pts node. The owner is based on the context that opens
 	// ptmx.
 	creds := auth.CredentialsFromContext(ctx)
 	uid, gid := creds.EffectiveKUID, creds.EffectiveKGID
-	slave := newSlaveInode(ctx, d, t, fs.FileOwner{uid, gid}, fs.FilePermsFromMode(0666))
+	replica := newReplicaInode(ctx, d, t, fs.FileOwner{uid, gid}, fs.FilePermsFromMode(0666))
 
-	d.slaves[n] = slave
+	d.replicas[n] = replica
 	d.dentryMap.Add(strconv.FormatUint(uint64(n), 10), fs.DentAttr{
-		Type:    slave.StableAttr.Type,
-		InodeID: slave.StableAttr.InodeID,
+		Type:    replica.StableAttr.Type,
+		InodeID: replica.StableAttr.InodeID,
 	})
 
 	return t, nil
@@ -267,18 +267,18 @@ func (d *dirInodeOperations) masterClose(ctx context.Context, t *Terminal) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// The slave end disappears from the directory when the master end is
-	// closed, even if the slave end is open elsewhere.
+	// The replica end disappears from the directory when the master end is
+	// closed, even if the replica end is open elsewhere.
 	//
 	// N.B. since we're using a backdoor method to remove a directory entry
 	// we won't properly fire inotify events like Linux would.
-	s, ok := d.slaves[t.n]
+	s, ok := d.replicas[t.n]
 	if !ok {
 		panic(fmt.Sprintf("Terminal %+v doesn't exist in %+v?", t, d))
 	}
 
 	s.DecRef(ctx)
-	delete(d.slaves, t.n)
+	delete(d.replicas, t.n)
 	d.dentryMap.Remove(strconv.FormatUint(uint64(t.n), 10))
 }
 

@@ -166,11 +166,11 @@ func (mf *masterFileOperations) Ioctl(ctx context.Context, _ *fs.File, io userme
 		return 0, mf.t.ld.outputQueueReadSize(t, args)
 	case linux.TCGETS:
 		// N.B. TCGETS on the master actually returns the configuration
-		// of the slave end.
+		// of the replica end.
 		return mf.t.ld.getTermios(t, args)
 	case linux.TCSETS:
 		// N.B. TCSETS on the master actually affects the configuration
-		// of the slave end.
+		// of the replica end.
 		return mf.t.ld.setTermios(t, args)
 	case linux.TCSETSW:
 		// TODO(b/29356795): This should drain the output queue first.
