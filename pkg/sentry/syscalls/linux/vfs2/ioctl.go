@@ -34,13 +34,13 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Handle ioctls that apply to all FDs.
 	switch args[1].Int() {
 	case linux.FIONCLEX:
-		t.FDTable().SetFlagsVFS2(fd, kernel.FDFlags{
+		t.FDTable().SetFlagsVFS2(t, fd, kernel.FDFlags{
 			CloseOnExec: false,
 		})
 		return 0, nil, nil
 
 	case linux.FIOCLEX:
-		t.FDTable().SetFlagsVFS2(fd, kernel.FDFlags{
+		t.FDTable().SetFlagsVFS2(t, fd, kernel.FDFlags{
 			CloseOnExec: true,
 		})
 		return 0, nil, nil
