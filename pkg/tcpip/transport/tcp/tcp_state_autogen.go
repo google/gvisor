@@ -222,7 +222,6 @@ func (x *endpoint) StateFields() []string {
 		"closed",
 		"txHash",
 		"owner",
-		"linger",
 	}
 }
 
@@ -294,7 +293,6 @@ func (x *endpoint) StateSave(m state.Sink) {
 	m.Save(59, &x.closed)
 	m.Save(60, &x.txHash)
 	m.Save(61, &x.owner)
-	m.Save(62, &x.linger)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
@@ -356,7 +354,6 @@ func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(59, &x.closed)
 	m.Load(60, &x.txHash)
 	m.Load(61, &x.owner)
-	m.Load(62, &x.linger)
 	m.LoadValue(3, new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.LoadValue(10, new(EndpointState), func(y interface{}) { x.loadState(y.(EndpointState)) })
 	m.LoadValue(25, new(unixTime), func(y interface{}) { x.loadRecentTSTime(y.(unixTime)) })

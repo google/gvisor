@@ -942,14 +942,8 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *baseEndpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
-	switch opt.(type) {
-	case *tcpip.LingerOption:
-		return nil
-
-	default:
-		log.Warningf("Unsupported socket option: %T", opt)
-		return tcpip.ErrUnknownProtocolOption
-	}
+	log.Warningf("Unsupported socket option: %T", opt)
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // LastError implements Endpoint.LastError.
