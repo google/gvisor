@@ -36,18 +36,18 @@ type Terminal struct {
 	// this terminal. This field is immutable.
 	masterKTTY *kernel.TTY
 
-	// slaveKTTY contains the controlling process of the slave end of this
+	// replicaKTTY contains the controlling process of the replica end of this
 	// terminal. This field is immutable.
-	slaveKTTY *kernel.TTY
+	replicaKTTY *kernel.TTY
 }
 
 func newTerminal(n uint32) *Terminal {
-	termios := linux.DefaultSlaveTermios
+	termios := linux.DefaultReplicaTermios
 	t := Terminal{
-		n:          n,
-		ld:         newLineDiscipline(termios),
-		masterKTTY: &kernel.TTY{Index: n},
-		slaveKTTY:  &kernel.TTY{Index: n},
+		n:           n,
+		ld:          newLineDiscipline(termios),
+		masterKTTY:  &kernel.TTY{Index: n},
+		replicaKTTY: &kernel.TTY{Index: n},
 	}
 	return &t
 }
@@ -113,5 +113,5 @@ func (tm *Terminal) tty(isMaster bool) *kernel.TTY {
 	if isMaster {
 		return tm.masterKTTY
 	}
-	return tm.slaveKTTY
+	return tm.replicaKTTY
 }

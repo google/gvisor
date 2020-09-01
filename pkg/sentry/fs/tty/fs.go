@@ -79,8 +79,8 @@ type superOperations struct{}
 //
 // It always returns true, forcing a Lookup for all entries.
 //
-// Slave entries are dropped from dir when their master is closed, so an
-// existing slave Dirent in the tree is not sufficient to guarantee that it
+// Replica entries are dropped from dir when their master is closed, so an
+// existing replica Dirent in the tree is not sufficient to guarantee that it
 // still exists on the filesystem.
 func (superOperations) Revalidate(context.Context, string, *fs.Inode, *fs.Inode) bool {
 	return true

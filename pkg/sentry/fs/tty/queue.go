@@ -34,7 +34,7 @@ import (
 const waitBufMaxBytes = 131072
 
 // queue represents one of the input or output queues between a pty master and
-// slave. Bytes written to a queue are added to the read buffer until it is
+// replica. Bytes written to a queue are added to the read buffer until it is
 // full, at which point they are written to the wait buffer. Bytes are
 // processed (i.e. undergo termios transformations) as they are added to the
 // read buffer. The read buffer is readable when its length is nonzero and

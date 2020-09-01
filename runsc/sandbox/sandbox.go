@@ -478,10 +478,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Stderr = nil
 
 	// If the console control socket file is provided, then create a new
-	// pty master/slave pair and set the TTY on the sandbox process.
+	// pty master/replica pair and set the TTY on the sandbox process.
 	if args.Spec.Process.Terminal && args.ConsoleSocket != "" {
 		// console.NewWithSocket will send the master on the given
-		// socket, and return the slave.
+		// socket, and return the replica.
 		tty, err := console.NewWithSocket(args.ConsoleSocket)
 		if err != nil {
 			return fmt.Errorf("setting up console with socket %q: %v", args.ConsoleSocket, err)
