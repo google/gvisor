@@ -124,32 +124,6 @@ type FUSEHeaderOut struct {
 	Unique FUSEOpID
 }
 
-// FUSEWriteIn is the header written by a daemon when it makes a
-// write request to the FUSE filesystem.
-//
-// +marshal
-type FUSEWriteIn struct {
-	// Fh specifies the file handle that is being written to.
-	Fh uint64
-
-	// Offset is the offset of the write.
-	Offset uint64
-
-	// Size is the size of data being written.
-	Size uint32
-
-	// WriteFlags is the flags used during the write.
-	WriteFlags uint32
-
-	// LockOwner is the ID of the lock owner.
-	LockOwner uint64
-
-	// Flags is the flags for the request.
-	Flags uint32
-
-	_ uint32
-}
-
 // FUSE_INIT flags, consistent with the ones in include/uapi/linux/fuse.h.
 // Our taget version is 7.23 but we have few implemented in advance.
 const (
@@ -423,6 +397,47 @@ type FUSEReadIn struct {
 
 	// Flags for the underlying file.
 	Flags uint32
+
+	_ uint32
+}
+
+// FUSEWriteIn is the first part of the payload of the
+// request sent by the kernel to the daemon
+// for FUSE_WRITE (struct for FUSE version >= 7.9).
+//
+// The second part of the payload is the
+// binary bytes of the data to be written.
+//
+// +marshal
+type FUSEWriteIn struct {
+	// Fh is the file handle in userspace.
+	Fh uint64
+
+	// Offset is the write offset.
+	Offset uint64
+
+	// Size is the number of bytes to write.
+	Size uint32
+
+	// ReadFlags for this FUSE_WRITE request.
+	WriteFlags uint32
+
+	// LockOwner is the id of the lock owner if there is one.
+	LockOwner uint64
+
+	// Flags for the underlying file.
+	Flags uint32
+
+	_ uint32
+}
+
+// FUSEWriteOut is the payload of the reply sent by the daemon to the kernel
+// for a FUSE_WRITE request.
+//
+// +marshal
+type FUSEWriteOut struct {
+	// Size is the number of bytes written.
+	Size uint32
 
 	_ uint32
 }

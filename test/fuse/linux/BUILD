@@ -153,6 +153,19 @@ cc_binary(
 )
 
 cc_binary(
+    name = "write_test",
+    testonly = 1,
+    srcs = ["write_test.cc"],
+    deps = [
+        gtest,
+        ":fuse_base",
+        "//test/util:fuse_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "create_test",
     testonly = 1,
     srcs = ["create_test.cc"],
