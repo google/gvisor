@@ -33,6 +33,8 @@ namespace testing {
 
 constexpr char kMountOpts[] = "rootmode=755,user_id=0,group_id=0";
 
+constexpr struct fuse_init_out kDefaultFUSEInitOutPayload = {.major = 7};
+
 // Internal commands used to communicate between testing thread and the FUSE
 // server. See test/fuse/README.md for further detail.
 enum class FuseTestCmd {
@@ -171,7 +173,8 @@ class FuseTest : public ::testing::Test {
   void MountFuse(const char* mountOpts = kMountOpts);
 
   // Creates a socketpair for communication and forks FUSE server.
-  void SetUpFuseServer();
+  void SetUpFuseServer(
+      const struct fuse_init_out* payload = &kDefaultFUSEInitOutPayload);
 
   // Unmounts the mountpoint of the FUSE server.
   void UnmountFuse();
@@ -194,7 +197,7 @@ class FuseTest : public ::testing::Test {
 
   // Consumes the first FUSE request when mounting FUSE. Replies with a
   // response with empty payload.
-  PosixError ServerConsumeFuseInit();
+  PosixError ServerConsumeFuseInit(const struct fuse_init_out* payload);
 
   // A command switch that dispatch different FuseTestCmd to its handler.
   void ServerHandleCommand();
