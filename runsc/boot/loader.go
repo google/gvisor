@@ -689,9 +689,18 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 		return fmt.Errorf("creating new process: %v", err)
 	}
 
-	// setupContainerFS() dups stdioFDs, so we don't need to dup them here.
+	// VFS1 dups stdioFDs, so we don't need to dup them here. VFS2 takes
+	// ownership of the passed FDs, and we need to dup them here.
 	for _, f := range files[:3] {
-		info.stdioFDs = append(info.stdioFDs, int(f.Fd()))
+		if !kernel.VFS2Enabled {
+			info.stdioFDs = append(info.stdioFDs, int(f.Fd()))
+		} else {
+			fd, err := unix.Dup(int(f.Fd()))
+			if err != nil {
+				return fmt.Errorf("failed to dup file: %v", err)
+			}
+			info.stdioFDs = append(info.stdioFDs, fd)
+		}
 	}
 
 	// Can't take ownership away from os.File. dup them to get a new FDs.
