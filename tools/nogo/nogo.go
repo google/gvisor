@@ -40,18 +40,19 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/internal/facts"
 	"golang.org/x/tools/go/gcexportdata"
-	"gvisor.dev/gvisor/tools/nogo/dump"
+
+	// Special case: flags live here and change overall behavior.
+	"gvisor.dev/gvisor/tools/checkescape"
 )
 
 // stdlibConfig is serialized as the configuration.
 //
 // This contains everything required for stdlib analysis.
 type stdlibConfig struct {
-	Srcs       []string
-	GOOS       string
-	GOARCH     string
-	Tags       []string
-	FactOutput string
+	Srcs   []string
+	GOOS   string
+	GOARCH string
+	Tags   []string
 }
 
 // packageConfig is serialized as the configuration.
@@ -66,7 +67,6 @@ type packageConfig struct {
 	GOARCH      string
 	ImportMap   map[string]string
 	FactMap     map[string]string
-	FactOutput  string
 	StdlibFacts string
 }
 
@@ -109,14 +109,6 @@ func (c *packageConfig) factLoader() (loader, error) {
 	return func(path string) ([]byte, error) {
 		return allFacts[path], nil
 	}, nil
-}
-
-// factSaver may be used directly as a saver.
-func (c *packageConfig) factSaver(factData []byte) error {
-	if c.FactOutput == "" {
-		return nil // Nothing to save.
-	}
-	return ioutil.WriteFile(c.FactOutput, factData, 0644)
 }
 
 // shouldInclude indicates whether the file should be included.
@@ -200,9 +192,9 @@ var ErrSkip = errors.New("skipped")
 //
 // Note that not all parts of the source are expected to build. We skip obvious
 // test files, and cmd files, which should not be dependencies.
-func checkStdlib(config *stdlibConfig) ([]string, error) {
+func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]string, []byte, error) {
 	if len(config.Srcs) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Ensure all paths are normalized.
@@ -283,23 +275,21 @@ func checkStdlib(config *stdlibConfig) ([]string, error) {
 		}
 
 		// Provide the input.
-		oldReader := dump.Reader
-		dump.Reader = rc // For analysis.
+		oldReader := checkescape.Reader
+		checkescape.Reader = rc // For analysis.
 		defer func() {
 			rc.Close()
-			dump.Reader = oldReader // Restore.
+			checkescape.Reader = oldReader // Restore.
 		}()
 
 		// Run the analysis.
-		findings, err := checkPackage(config, func(factData []byte) error {
-			stdlibFacts[pkg] = factData
-			return nil
-		}, checkOne)
+		findings, factData, err := checkPackage(config, ac, checkOne)
 		if err != nil {
 			// If we can't analyze a package from the standard library,
 			// then we skip it. It will simply not have any findings.
 			return nil
 		}
+		stdlibFacts[pkg] = factData
 		allFindings = append(allFindings, findings...)
 		return nil
 	}
@@ -316,14 +306,11 @@ func checkStdlib(config *stdlibConfig) ([]string, error) {
 	// Write out all findings.
 	factData, err := json.Marshal(stdlibFacts)
 	if err != nil {
-		return nil, fmt.Errorf("error saving stdlib facts: %w", err)
-	}
-	if err := ioutil.WriteFile(config.FactOutput, factData, 0644); err != nil {
-		return nil, fmt.Errorf("error saving findings to %q: %v", config.FactOutput, err)
+		return nil, nil, fmt.Errorf("error saving stdlib facts: %w", err)
 	}
 
 	// Return all findings.
-	return allFindings, nil
+	return allFindings, factData, nil
 }
 
 // checkPackage runs all analyzers.
@@ -334,7 +321,7 @@ func checkStdlib(config *stdlibConfig) ([]string, error) {
 //
 // [1] bazelbuid/rules_go/tools/builders/nogo_main.go
 // [2] golang.org/x/tools/go/checker/internal/checker
-func checkPackage(config *packageConfig, factSaver saver, importCallback func(string) error) ([]string, error) {
+func checkPackage(config *packageConfig, ac map[*analysis.Analyzer]matcher, importCallback func(string) error) ([]string, []byte, error) {
 	imp := &importer{
 		packageConfig: config,
 		fset:          token.NewFileSet(),
@@ -347,14 +334,14 @@ func checkPackage(config *packageConfig, factSaver saver, importCallback func(st
 	for _, file := range config.GoFiles {
 		include, err := config.shouldInclude(file)
 		if err != nil {
-			return nil, fmt.Errorf("error evaluating file %q: %v", file, err)
+			return nil, nil, fmt.Errorf("error evaluating file %q: %v", file, err)
 		}
 		if !include {
 			continue
 		}
 		s, err := parser.ParseFile(imp.fset, file, nil, parser.ParseComments)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing file %q: %v", file, err)
+			return nil, nil, fmt.Errorf("error parsing file %q: %v", file, err)
 		}
 		syntax = append(syntax, s)
 	}
@@ -372,17 +359,17 @@ func checkPackage(config *packageConfig, factSaver saver, importCallback func(st
 	}
 	types, err := typeConfig.Check(config.ImportPath, imp.fset, syntax, typesInfo)
 	if err != nil && imp.lastErr != ErrSkip {
-		return nil, fmt.Errorf("error checking types: %w", err)
+		return nil, nil, fmt.Errorf("error checking types: %w", err)
 	}
 
 	// Load all package facts.
 	loader, err := config.factLoader()
 	if err != nil {
-		return nil, fmt.Errorf("error loading facts: %w", err)
+		return nil, nil, fmt.Errorf("error loading facts: %w", err)
 	}
 	facts, err := facts.Decode(types, loader)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding facts: %w", err)
+		return nil, nil, fmt.Errorf("error decoding facts: %w", err)
 	}
 
 	// Register fact types and establish dependencies between analyzers.
@@ -404,7 +391,7 @@ func checkPackage(config *packageConfig, factSaver saver, importCallback func(st
 		}
 
 		// Prepare the matcher.
-		m := analyzerConfig[a]
+		m := ac[a]
 		report := func(d analysis.Diagnostic) {
 			if m.ShouldReport(d, imp.fset) {
 				diagnostics[a] = append(diagnostics[a], d)
@@ -445,20 +432,14 @@ func checkPackage(config *packageConfig, factSaver saver, importCallback func(st
 		return nil // Success.
 	}
 
-	// Visit all analysis recursively.
-	for a, _ := range analyzerConfig {
+	// Visit all analyzers recursively.
+	for a, _ := range ac {
 		if imp.lastErr == ErrSkip {
 			continue // No local analysis.
 		}
 		if err := visit(a); err != nil {
-			return nil, err // Already has context.
+			return nil, nil, err // Already has context.
 		}
-	}
-
-	// Write the output file.
-	factData := facts.Encode()
-	if err := factSaver(factData); err != nil {
-		return nil, fmt.Errorf("error: unable to save facts: %v", err)
 	}
 
 	// Convert all diagnostics to strings.
@@ -471,12 +452,16 @@ func checkPackage(config *packageConfig, factSaver saver, importCallback func(st
 	}
 
 	// Return all findings.
-	return findings, nil
+	factData := facts.Encode()
+	return findings, factData, nil
 }
 
 var (
-	packageFile = flag.String("package", "", "package configuration file (in JSON format)")
-	stdlibFile  = flag.String("stdlib", "", "stdlib configuration file (in JSON format)")
+	packageFile    = flag.String("package", "", "package configuration file (in JSON format)")
+	stdlibFile     = flag.String("stdlib", "", "stdlib configuration file (in JSON format)")
+	findingsOutput = flag.String("findings", "", "output file (or stdout, if not specified)")
+	factsOutput    = flag.String("facts", "", "output file for facts (optional)")
+	escapesOutput  = flag.String("escapes", "", "output file for escapes (optional)")
 )
 
 func loadConfig(file string, config interface{}) interface{} {
@@ -503,6 +488,7 @@ func Main() {
 
 	var (
 		findings []string
+		factData []byte
 		err      error
 	)
 
@@ -510,13 +496,48 @@ func Main() {
 	if *packageFile != "" && *stdlibFile != "" {
 		log.Fatalf("unable to perform stdlib and package analysis; provide only one!")
 	} else if *stdlibFile != "" {
+		// Perform basic analysis.
 		c := loadConfig(*stdlibFile, new(stdlibConfig)).(*stdlibConfig)
-		findings, err = checkStdlib(c)
+		findings, factData, err = checkStdlib(c, analyzerConfig)
 	} else if *packageFile != "" {
+		// Perform basic analysis.
 		c := loadConfig(*packageFile, new(packageConfig)).(*packageConfig)
-		findings, err = checkPackage(c, c.factSaver, nil)
+		findings, factData, err = checkPackage(c, analyzerConfig, nil)
+		// Do we need to do escape analysis?
+		if *escapesOutput != "" {
+			escapes, _, err := checkPackage(c, escapesConfig, nil)
+			if err != nil {
+				log.Fatalf("error performing escape analysis: %v", err)
+			}
+			f, err := os.OpenFile(*escapesOutput, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+			if err != nil {
+				log.Fatalf("unable to open output %q: %v", *escapesOutput, err)
+			}
+			defer f.Close()
+			for _, escape := range escapes {
+				fmt.Fprintf(f, "%s\n", escape)
+			}
+		}
 	} else {
 		log.Fatalf("please provide at least one of package or stdlib!")
+	}
+
+	// Save facts.
+	if *factsOutput != "" {
+		if err := ioutil.WriteFile(*factsOutput, factData, 0644); err != nil {
+			log.Fatalf("error saving findings to %q: %v", *factsOutput, err)
+		}
+	}
+
+	// Open the output file.
+	var w io.Writer = os.Stdout
+	if *findingsOutput != "" {
+		f, err := os.OpenFile(*findingsOutput, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			log.Fatalf("unable to open output %q: %v", *findingsOutput, err)
+		}
+		defer f.Close()
+		w = f
 	}
 
 	// Handle findings & errors.
@@ -527,9 +548,8 @@ func Main() {
 		return
 	}
 
-	// Print findings and exit with non-zero code.
+	// Print findings.
 	for _, finding := range findings {
-		fmt.Fprintf(os.Stdout, "%s\n", finding)
+		fmt.Fprintf(w, "%s\n", finding)
 	}
-	os.Exit(1)
 }

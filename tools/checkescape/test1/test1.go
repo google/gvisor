@@ -175,6 +175,7 @@ func Split() {
 
 // +mustescape:stack
 //go:noinline
+//go:nosplit
 func splitRec() {
 	Split()
 }

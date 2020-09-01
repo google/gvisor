@@ -64,6 +64,7 @@ func doCopyOut(t *dummyTask) {
 
 // +mustescape:builtin
 // +mustescape:stack
+//go:nosplit
 func doMarshalBytesDirect(t *dummyTask) {
 	var stat test.Stat
 	buf := t.CopyScratchBuffer(stat.SizeBytes())
@@ -73,6 +74,7 @@ func doMarshalBytesDirect(t *dummyTask) {
 
 // +mustescape:builtin
 // +mustescape:stack
+//go:nosplit
 func doMarshalUnsafeDirect(t *dummyTask) {
 	var stat test.Stat
 	buf := t.CopyScratchBuffer(stat.SizeBytes())
@@ -82,6 +84,7 @@ func doMarshalUnsafeDirect(t *dummyTask) {
 
 // +mustescape:local,heap
 // +mustescape:stack
+//go:nosplit
 func doMarshalBytesViaMarshallable(t *dummyTask) {
 	var stat test.Stat
 	t.MarshalBytes(usermem.Addr(0xf000ba12), &stat)
@@ -89,6 +92,7 @@ func doMarshalBytesViaMarshallable(t *dummyTask) {
 
 // +mustescape:local,heap
 // +mustescape:stack
+//go:nosplit
 func doMarshalUnsafeViaMarshallable(t *dummyTask) {
 	var stat test.Stat
 	t.MarshalUnsafe(usermem.Addr(0xf000ba12), &stat)

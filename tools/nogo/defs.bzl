@@ -50,6 +50,7 @@ NogoStdlibInfo = provider(
     "information for nogo analysis (standard library facts)",
     fields = {
         "facts": "serialized standard library facts",
+        "findings": "package findings (if relevant)",
     },
 )
 
@@ -59,18 +60,18 @@ def _nogo_stdlib_impl(ctx):
 
     # Build the standard library facts.
     facts = ctx.actions.declare_file(ctx.label.name + ".facts")
+    findings = ctx.actions.declare_file(ctx.label.name + ".findings")
     config = struct(
         Srcs = [f.path for f in go_ctx.stdlib_srcs],
         GOOS = go_ctx.goos,
         GOARCH = go_ctx.goarch,
         Tags = go_ctx.tags,
-        FactOutput = facts.path,
     )
     config_file = ctx.actions.declare_file(ctx.label.name + ".cfg")
     ctx.actions.write(config_file, config.to_json())
     ctx.actions.run(
         inputs = [config_file] + go_ctx.stdlib_srcs,
-        outputs = [facts],
+        outputs = [facts, findings],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._dump_tool),
         executable = ctx.files._nogo[0],
         mnemonic = "GoStandardLibraryAnalysis",
@@ -78,12 +79,15 @@ def _nogo_stdlib_impl(ctx):
         arguments = go_ctx.nogo_args + [
             "-dump_tool=%s" % ctx.files._dump_tool[0].path,
             "-stdlib=%s" % config_file.path,
+            "-findings=%s" % findings.path,
+            "-facts=%s" % facts.path,
         ],
     )
 
     # Return the stdlib facts as output.
     return [NogoStdlibInfo(
         facts = facts,
+        findings = findings,
     )]
 
 nogo_stdlib = go_rule(
@@ -108,6 +112,7 @@ NogoInfo = provider(
     "information for nogo analysis",
     fields = {
         "facts": "serialized package facts",
+        "findings": "package findings (if relevant)",
         "importpath": "package import path",
         "binaries": "package binary files",
         "srcs": "original source files (for go_test support)",
@@ -203,6 +208,8 @@ def _nogo_aspect_impl(target, ctx):
 
     # The nogo tool operates on a configuration serialized in JSON format.
     facts = ctx.actions.declare_file(target.label.name + ".facts")
+    findings = ctx.actions.declare_file(target.label.name + ".findings")
+    escapes = ctx.actions.declare_file(target.label.name + ".escapes")
     config = struct(
         ImportPath = importpath,
         GoFiles = [src.path for src in srcs if src.path.endswith(".go")],
@@ -213,14 +220,13 @@ def _nogo_aspect_impl(target, ctx):
         FactMap = fact_map,
         ImportMap = import_map,
         StdlibFacts = stdlib_facts.path,
-        FactOutput = facts.path,
     )
     config_file = ctx.actions.declare_file(target.label.name + ".cfg")
     ctx.actions.write(config_file, config.to_json())
     inputs.append(config_file)
     ctx.actions.run(
         inputs = inputs,
-        outputs = [facts],
+        outputs = [facts, findings, escapes],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._dump_tool),
         executable = ctx.files._nogo[0],
         mnemonic = "GoStaticAnalysis",
@@ -229,17 +235,30 @@ def _nogo_aspect_impl(target, ctx):
             "-binary=%s" % target_objfile.path,
             "-dump_tool=%s" % ctx.files._dump_tool[0].path,
             "-package=%s" % config_file.path,
+            "-findings=%s" % findings.path,
+            "-facts=%s" % facts.path,
+            "-escapes=%s" % escapes.path,
         ],
     )
 
     # Return the package facts as output.
-    return [NogoInfo(
-        facts = facts,
-        importpath = importpath,
-        binaries = binaries,
-        srcs = srcs,
-        deps = deps,
-    )]
+    return [
+        NogoInfo(
+            facts = facts,
+            findings = findings,
+            importpath = importpath,
+            binaries = binaries,
+            srcs = srcs,
+            deps = deps,
+        ),
+        OutputGroupInfo(
+            # Expose all findings (should just be a single file). This can be
+            # used for build analysis of the nogo findings.
+            nogo_findings = depset([findings]),
+            # Expose all escape analysis findings (see above).
+            nogo_escapes = depset([escapes]),
+        ),
+    ]
 
 nogo_aspect = go_rule(
     aspect,
@@ -250,15 +269,9 @@ nogo_aspect = go_rule(
         "embed",
     ],
     attrs = {
-        "_nogo": attr.label(
-            default = "//tools/nogo/check:check",
-        ),
-        "_nogo_stdlib": attr.label(
-            default = "//tools/nogo:stdlib",
-        ),
-        "_dump_tool": attr.label(
-            default = "//tools/nogo:dump_tool",
-        ),
+        "_nogo": attr.label(default = "//tools/nogo/check:check"),
+        "_nogo_stdlib": attr.label(default = "//tools/nogo:stdlib"),
+        "_dump_tool": attr.label(default = "//tools/nogo:dump_tool"),
     },
 )
 
@@ -270,13 +283,26 @@ def _nogo_test_impl(ctx):
     # this way so that any test applied is effectively pushed down to all
     # upstream dependencies through the aspect.
     inputs = []
+    findings = []
     runner = ctx.actions.declare_file("%s-executer" % ctx.label.name)
     runner_content = ["#!/bin/bash"]
     for dep in ctx.attr.deps:
+        # Extract the findings.
         info = dep[NogoInfo]
-        inputs.append(info.facts)
+        inputs.append(info.findings)
+        findings.append(info.findings)
 
-        # Draw a sweet unicode checkmark with the package name (in green).
+        # Include all source files, transitively. This will make this target
+        # "directly affected" for the purpose of build analysis.
+        inputs += info.srcs
+
+        # If there are findings, dump them and fail.
+        runner_content.append("if [[ -s \"%s\" ]]; then cat \"%s\" && exit 1; fi" % (
+            info.findings.short_path,
+            info.findings.short_path,
+        ))
+
+        # Otherwise, draw a sweet unicode checkmark with the package name (in green).
         runner_content.append("echo -e \"\\033[0;32m\\xE2\\x9C\\x94\\033[0;31m\\033[0m %s\"" % info.importpath)
     runner_content.append("exit 0\n")
     ctx.actions.write(runner, "\n".join(runner_content), is_executable = True)
