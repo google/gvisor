@@ -122,3 +122,8 @@ var analyzerConfig = map[*analysis.Analyzer]matcher{
 	checkescape.Analyzer: internalMatches(),
 	checkunsafe.Analyzer: internalMatches(),
 }
+
+var escapesConfig = map[*analysis.Analyzer]matcher{
+	// Informational only: include all packages.
+	checkescape.EscapeAnalyzer: alwaysMatches(),
+}
