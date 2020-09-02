@@ -188,6 +188,15 @@ message SocketResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
+message ShutdownRequest {
+  int32 fd = 1;
+  int32 how = 2;
+}
+
+message ShutdownResponse {
+  int32 errno_ = 1;  // "errno" may fail to compile in c++.
+}
+
 message RecvRequest {
   int32 sockfd = 1;
   int32 len = 2;
@@ -225,6 +234,8 @@ service Posix {
   rpc SetSockOpt(SetSockOptRequest) returns (SetSockOptResponse);
   // Call socket() on the DUT.
   rpc Socket(SocketRequest) returns (SocketResponse);
+  // Call shutdown() on the DUT.
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
   // Call recv() on the DUT.
   rpc Recv(RecvRequest) returns (RecvResponse);
 }

@@ -166,8 +166,8 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
-    name = "tcp_close_wait_ack",
-    srcs = ["tcp_close_wait_ack_test.go"],
+    name = "tcp_unacc_seq_ack",
+    srcs = ["tcp_unacc_seq_ack_test.go"],
     deps = [
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
