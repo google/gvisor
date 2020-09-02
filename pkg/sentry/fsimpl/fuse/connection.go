@@ -85,16 +85,22 @@ type connection struct {
 	// attributeVersion is the version of connection's attributes.
 	attributeVersion uint64
 
+	// We target FUSE 7.23.
 	// The following FUSE_INIT flags are currently unsupported by this implementation:
 	// - FUSE_EXPORT_SUPPORT
-	// - FUSE_HANDLE_KILLPRIV
 	// - FUSE_POSIX_LOCKS: requires POSIX locks
 	// - FUSE_FLOCK_LOCKS: requires POSIX locks
 	// - FUSE_AUTO_INVAL_DATA: requires page caching eviction
-	// - FUSE_EXPLICIT_INVAL_DATA: requires page caching eviction
 	// - FUSE_DO_READDIRPLUS/FUSE_READDIRPLUS_AUTO: requires FUSE_READDIRPLUS implementation
 	// - FUSE_ASYNC_DIO
-	// - FUSE_POSIX_ACL: affects defaultPermissions, posixACL, xattr handler
+	// - FUSE_PARALLEL_DIROPS (7.25)
+	// - FUSE_HANDLE_KILLPRIV (7.26)
+	// - FUSE_POSIX_ACL: affects defaultPermissions, posixACL, xattr handler (7.26)
+	// - FUSE_ABORT_ERROR (7.27)
+	// - FUSE_CACHE_SYMLINKS (7.28)
+	// - FUSE_NO_OPENDIR_SUPPORT (7.29)
+	// - FUSE_EXPLICIT_INVAL_DATA: requires page caching eviction (7.30)
+	// - FUSE_MAP_ALIGNMENT (7.31)
 
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
@@ -181,18 +187,10 @@ type connection struct {
 	// Negotiated and only set in INIT.
 	asyncRead bool
 
-	// abortErr is true if kernel need to return an unique read error after abort.
-	// Negotiated and only set in INIT.
-	abortErr bool
-
 	// writebackCache is true for write-back cache policy,
 	// false for write-through policy.
 	// Negotiated and only set in INIT.
 	writebackCache bool
-
-	// cacheSymlinks if filesystem needs to cache READLINK responses in page cache.
-	// Negotiated and only set in INIT.
-	cacheSymlinks bool
 
 	// bigWrites if doing multi-page cached writes.
 	// Negotiated and only set in INIT.
