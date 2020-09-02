@@ -700,3 +700,29 @@ func (dut *DUT) RecvWithErrno(ctx context.Context, t *testing.T, sockfd, len, fl
 	}
 	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
 }
+
+// Shutdown calls shutdown on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over the timeout or error handling is needed, use
+// ShutdownWithErrno.
+func (dut *DUT) Shutdown(t *testing.T, fd, how int32) error {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
+	defer cancel()
+	return dut.ShutdownWithErrno(ctx, t, fd, how)
+}
+
+// ShutdownWithErrno calls shutdown on the DUT.
+func (dut *DUT) ShutdownWithErrno(ctx context.Context, t *testing.T, fd, how int32) error {
+	t.Helper()
+
+	req := pb.ShutdownRequest{
+		Fd:  fd,
+		How: how,
+	}
+	resp, err := dut.posixServer.Shutdown(ctx, &req)
+	if err != nil {
+		t.Fatalf("failed to call Shutdown: %s", err)
+	}
+	return syscall.Errno(resp.GetErrno_())
+}
