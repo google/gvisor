@@ -181,6 +181,8 @@ func (a *attachPoint) makeQID(stat unix.Stat_t) p9.QID {
 // The few exceptions where it cannot be done are: utimensat on symlinks, and
 // Connect() for the socket address.
 type localFile struct {
+	p9.DisallowClientCalls
+
 	// attachPoint is the attachPoint that serves this localFile.
 	attachPoint *attachPoint
 
