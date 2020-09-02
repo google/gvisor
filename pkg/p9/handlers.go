@@ -123,6 +123,37 @@ func (t *Tclunk) handle(cs *connState) message {
 	return &Rclunk{}
 }
 
+func (t *Tsetattrclunk) handle(cs *connState) message {
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(syscall.EBADF)
+	}
+	defer ref.DecRef()
+
+	setAttrErr := ref.safelyWrite(func() error {
+		// We don't allow setattr on files that have been deleted.
+		// This might be technically incorrect, as it's possible that
+		// there were multiple links and you can still change the
+		// corresponding inode information.
+		if ref.isDeleted() {
+			return syscall.EINVAL
+		}
+
+		// Set the attributes.
+		return ref.file.SetAttr(t.Valid, t.SetAttr)
+	})
+
+	// Try to delete FID even in case of failure above. Since the state of the
+	// file is unknown to the caller, it will not attempt to close the file again.
+	if !cs.DeleteFID(t.FID) {
+		return newErr(syscall.EBADF)
+	}
+	if setAttrErr != nil {
+		return newErr(setAttrErr)
+	}
+	return &Rsetattrclunk{}
+}
+
 // handle implements handler.handle.
 func (t *Tremove) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)

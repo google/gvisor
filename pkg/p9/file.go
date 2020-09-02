@@ -135,6 +135,14 @@ type File interface {
 	// On the server, Close has no concurrency guarantee.
 	Close() error
 
+	// SetAttrClose is the equivalent of calling SetAttr() followed by Close().
+	// This can be used to set file times before closing the file in a single
+	// operation.
+	//
+	// On the server, SetAttr has a write concurrency guarantee.
+	// On the server, Close has no concurrency guarantee.
+	SetAttrClose(valid SetAttrMask, attr SetAttr) error
+
 	// Open must be called prior to using Read, Write or Readdir. Once Open
 	// is called, some operations, such as Walk, will no longer work.
 	//
@@ -285,4 +293,20 @@ type DefaultWalkGetAttr struct{}
 // WalkGetAttr implements File.WalkGetAttr.
 func (DefaultWalkGetAttr) WalkGetAttr([]string) ([]QID, File, AttrMask, Attr, error) {
 	return nil, nil, AttrMask{}, Attr{}, syscall.ENOSYS
+}
+
+// DisallowClientCalls panics if a client-only function is called.
+type DisallowClientCalls struct{}
+
+// SetAttrClose implements File.SetAttrClose.
+func (DisallowClientCalls) SetAttrClose(SetAttrMask, SetAttr) error {
+	panic("SetAttrClose should not be called on the server")
+}
+
+// DisallowServerCalls panics if a server-only function is called.
+type DisallowServerCalls struct{}
+
+// Renamed implements File.Renamed.
+func (*clientFile) Renamed(File, string) {
+	panic("Renamed should not be called on the client")
 }

@@ -54,6 +54,8 @@ func (c *Client) newFile(fid FID) *clientFile {
 //
 // This proxies all of the interfaces found in file.go.
 type clientFile struct {
+	DisallowServerCalls
+
 	// client is the originating client.
 	client *Client
 
@@ -275,6 +277,39 @@ func (c *clientFile) Close() error {
 		// If an error occurred, we toss away the FID. This isn't ideal,
 		// but I'm not sure what else makes sense in this context.
 		log.Warningf("Tclunk failed, losing FID %v: %v", c.fid, err)
+		return err
+	}
+
+	// Return the FID to the pool.
+	c.client.fidPool.Put(uint64(c.fid))
+	return nil
+}
+
+// SetAttrClose implements File.SetAttrClose.
+func (c *clientFile) SetAttrClose(valid SetAttrMask, attr SetAttr) error {
+	if !versionSupportsTsetattrclunk(c.client.version) {
+		setAttrErr := c.SetAttr(valid, attr)
+
+		// Try to close file even in case of failure above. Since the state of the
+		// file is unknown to the caller, it will not attempt to close the file
+		// again.
+		if err := c.Close(); err != nil {
+			return err
+		}
+
+		return setAttrErr
+	}
+
+	// Avoid double close.
+	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
+		return syscall.EBADF
+	}
+
+	// Send the message.
+	if err := c.client.sendRecv(&Tsetattrclunk{FID: c.fid, Valid: valid, SetAttr: attr}, &Rsetattrclunk{}); err != nil {
+		// If an error occurred, we toss away the FID. This isn't ideal,
+		// but I'm not sure what else makes sense in this context.
+		log.Warningf("Tsetattrclunk failed, losing FID %v: %v", c.fid, err)
 		return err
 	}
 
@@ -681,6 +716,3 @@ func (c *clientFile) Flush() error {
 
 	return c.client.sendRecv(&Tflushf{FID: c.fid}, &Rflushf{})
 }
-
-// Renamed implements File.Renamed.
-func (c *clientFile) Renamed(newDir File, newName string) {}

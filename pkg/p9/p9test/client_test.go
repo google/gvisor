@@ -1225,22 +1225,31 @@ func TestOpen(t *testing.T) {
 func TestClose(t *testing.T) {
 	type closeTest struct {
 		name    string
-		closeFn func(backend *Mock, f p9.File)
+		closeFn func(backend *Mock, f p9.File) error
 	}
 
 	cases := []closeTest{
 		{
 			name: "close",
-			closeFn: func(_ *Mock, f p9.File) {
-				f.Close()
+			closeFn: func(_ *Mock, f p9.File) error {
+				return f.Close()
 			},
 		},
 		{
 			name: "remove",
-			closeFn: func(backend *Mock, f p9.File) {
+			closeFn: func(backend *Mock, f p9.File) error {
 				// Allow the rename call in the parent, automatically translated.
 				backend.parent.EXPECT().UnlinkAt(gomock.Any(), gomock.Any()).Times(1)
-				f.(deprecatedRemover).Remove()
+				return f.(deprecatedRemover).Remove()
+			},
+		},
+		{
+			name: "setAttrClose",
+			closeFn: func(backend *Mock, f p9.File) error {
+				valid := p9.SetAttrMask{ATime: true}
+				attr := p9.SetAttr{ATimeSeconds: 1, ATimeNanoSeconds: 2}
+				backend.EXPECT().SetAttr(valid, attr).Times(1)
+				return f.SetAttrClose(valid, attr)
 			},
 		},
 	}
@@ -1258,7 +1267,9 @@ func TestClose(t *testing.T) {
 				_, backend, f := walkHelper(h, name, root)
 
 				// Close via the prescribed method.
-				tc.closeFn(backend, f)
+				if err := tc.closeFn(backend, f); err != nil {
+					t.Fatalf("closeFn failed: %v", err)
+				}
 
 				// Everything should fail with EBADF.
 				if _, _, err := f.Walk(nil); err != syscall.EBADF {
