@@ -25,41 +25,35 @@ import (
 type Value struct{}
 
 // SeqAtomicLoad returns a copy of *ptr, ensuring that the read does not race
-// with any writer critical sections in sc.
-func SeqAtomicLoad(sc *sync.SeqCount, ptr *Value) Value {
-	// This function doesn't use SeqAtomicTryLoad because doing so is
-	// measurably, significantly (~20%) slower; Go is awful at inlining.
-	var val Value
+// with any writer critical sections in seq.
+//
+//go:nosplit
+func SeqAtomicLoad(seq *sync.SeqCount, ptr *Value) Value {
 	for {
-		epoch := sc.BeginRead()
-		if sync.RaceEnabled {
-			// runtime.RaceDisable() doesn't actually stop the race detector,
-			// so it can't help us here. Instead, call runtime.memmove
-			// directly, which is not instrumented by the race detector.
-			sync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
-		} else {
-			// This is ~40% faster for short reads than going through memmove.
-			val = *ptr
-		}
-		if sc.ReadOk(epoch) {
-			break
+		if val, ok := SeqAtomicTryLoad(seq, seq.BeginRead(), ptr); ok {
+			return val
 		}
 	}
-	return val
 }
 
 // SeqAtomicTryLoad returns a copy of *ptr while in a reader critical section
-// in sc initiated by a call to sc.BeginRead() that returned epoch. If the read
-// would race with a writer critical section, SeqAtomicTryLoad returns
+// in seq initiated by a call to seq.BeginRead() that returned epoch. If the
+// read would race with a writer critical section, SeqAtomicTryLoad returns
 // (unspecified, false).
-func SeqAtomicTryLoad(sc *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Value) (Value, bool) {
-	var val Value
+//
+//go:nosplit
+func SeqAtomicTryLoad(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Value) (val Value, ok bool) {
 	if sync.RaceEnabled {
+		// runtime.RaceDisable() doesn't actually stop the race detector, so it
+		// can't help us here. Instead, call runtime.memmove directly, which is
+		// not instrumented by the race detector.
 		sync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
+		// This is ~40% faster for short reads than going through memmove.
 		val = *ptr
 	}
-	return val, sc.ReadOk(epoch)
+	ok = seq.ReadOk(epoch)
+	return
 }
 
 func init() {

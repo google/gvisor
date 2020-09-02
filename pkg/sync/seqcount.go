@@ -8,7 +8,6 @@ package sync
 import (
 	"fmt"
 	"reflect"
-	"runtime"
 	"sync/atomic"
 )
 
@@ -43,9 +42,7 @@ type SeqCount struct {
 }
 
 // SeqCountEpoch tracks writer critical sections in a SeqCount.
-type SeqCountEpoch struct {
-	val uint32
-}
+type SeqCountEpoch uint32
 
 // We assume that:
 //
@@ -83,12 +80,25 @@ type SeqCountEpoch struct {
 // using this pattern. Most users of SeqCount will need to use the
 // SeqAtomicLoad function template in seqatomic.go.
 func (s *SeqCount) BeginRead() SeqCountEpoch {
-	epoch := atomic.LoadUint32(&s.epoch)
-	for epoch&1 != 0 {
-		runtime.Gosched()
-		epoch = atomic.LoadUint32(&s.epoch)
+	if epoch := atomic.LoadUint32(&s.epoch); epoch&1 == 0 {
+		return SeqCountEpoch(epoch)
 	}
-	return SeqCountEpoch{epoch}
+	return s.beginReadSlow()
+}
+
+func (s *SeqCount) beginReadSlow() SeqCountEpoch {
+	i := 0
+	for {
+		if canSpin(i) {
+			i++
+			doSpin()
+		} else {
+			goyield()
+		}
+		if epoch := atomic.LoadUint32(&s.epoch); epoch&1 == 0 {
+			return SeqCountEpoch(epoch)
+		}
+	}
 }
 
 // ReadOk returns true if the reader critical section initiated by a previous
@@ -99,7 +109,7 @@ func (s *SeqCount) BeginRead() SeqCountEpoch {
 // Reader critical sections do not need to be explicitly terminated; the last
 // call to ReadOk is implicitly the end of the reader critical section.
 func (s *SeqCount) ReadOk(epoch SeqCountEpoch) bool {
-	return atomic.LoadUint32(&s.epoch) == epoch.val
+	return atomic.LoadUint32(&s.epoch) == uint32(epoch)
 }
 
 // BeginWrite indicates the beginning of a writer critical section.
