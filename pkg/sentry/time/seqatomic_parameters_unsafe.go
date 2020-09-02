@@ -10,39 +10,33 @@ import (
 )
 
 // SeqAtomicLoad returns a copy of *ptr, ensuring that the read does not race
-// with any writer critical sections in sc.
-func SeqAtomicLoadParameters(sc *sync.SeqCount, ptr *Parameters) Parameters {
-	// This function doesn't use SeqAtomicTryLoad because doing so is
-	// measurably, significantly (~20%) slower; Go is awful at inlining.
-	var val Parameters
+// with any writer critical sections in seq.
+//
+//go:nosplit
+func SeqAtomicLoadParameters(seq *sync.SeqCount, ptr *Parameters) Parameters {
 	for {
-		epoch := sc.BeginRead()
-		if sync.RaceEnabled {
-
-			sync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
-		} else {
-
-			val = *ptr
-		}
-		if sc.ReadOk(epoch) {
-			break
+		if val, ok := SeqAtomicTryLoadParameters(seq, seq.BeginRead(), ptr); ok {
+			return val
 		}
 	}
-	return val
 }
 
 // SeqAtomicTryLoad returns a copy of *ptr while in a reader critical section
-// in sc initiated by a call to sc.BeginRead() that returned epoch. If the read
-// would race with a writer critical section, SeqAtomicTryLoad returns
+// in seq initiated by a call to seq.BeginRead() that returned epoch. If the
+// read would race with a writer critical section, SeqAtomicTryLoad returns
 // (unspecified, false).
-func SeqAtomicTryLoadParameters(sc *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Parameters) (Parameters, bool) {
-	var val Parameters
+//
+//go:nosplit
+func SeqAtomicTryLoadParameters(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Parameters) (val Parameters, ok bool) {
 	if sync.RaceEnabled {
+
 		sync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
+
 		val = *ptr
 	}
-	return val, sc.ReadOk(epoch)
+	ok = seq.ReadOk(epoch)
+	return
 }
 
 func initParameters() {
