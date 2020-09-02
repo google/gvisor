@@ -5,8 +5,15 @@ package(licenses = ["notice"])
 go_library(
     name = "network",
     testonly = 1,
-    srcs = ["network.go"],
-    deps = ["//test/benchmarks/harness"],
+    srcs = [
+        "network.go",
+        "static_server.go",
+    ],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/harness",
+        "//test/benchmarks/tools",
+    ],
 )
 
 go_test(
