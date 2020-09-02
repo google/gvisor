@@ -127,6 +127,13 @@ func (f p9file) close(ctx context.Context) error {
 	return err
 }
 
+func (f p9file) setAttrClose(ctx context.Context, valid p9.SetAttrMask, attr p9.SetAttr) error {
+	ctx.UninterruptibleSleepStart(false)
+	err := f.file.SetAttrClose(valid, attr)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
 func (f p9file) open(ctx context.Context, flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	ctx.UninterruptibleSleepStart(false)
 	fdobj, qid, iounit, err := f.file.Open(flags)
