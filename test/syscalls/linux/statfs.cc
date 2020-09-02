@@ -43,9 +43,6 @@ TEST(StatfsTest, InternalTmpfs) {
 
   struct statfs st;
   EXPECT_THAT(statfs(temp_file.path().c_str(), &st), SyscallSucceeds());
-  // Note: We could be an overlay or goferfs on some configurations.
-  EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC ||
-              st.f_type == V9FS_MAGIC);
 }
 
 TEST(StatfsTest, InternalDevShm) {
