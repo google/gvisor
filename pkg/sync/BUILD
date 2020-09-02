@@ -38,6 +38,7 @@ go_library(
         "race_unsafe.go",
         "rwmutex_unsafe.go",
         "seqcount.go",
+        "spin_unsafe.go",
         "sync.go",
     ],
     marshal = False,
