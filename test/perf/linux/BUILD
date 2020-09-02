@@ -354,3 +354,19 @@ cc_binary(
         "//test/util:test_util",
     ],
 )
+
+cc_binary(
+    name = "open_read_close_benchmark",
+    testonly = 1,
+    srcs = [
+        "open_read_close_benchmark.cc",
+    ],
+    deps = [
+        gbenchmark,
+        gtest,
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+    ],
+)
