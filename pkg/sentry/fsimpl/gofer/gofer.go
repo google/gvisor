@@ -1300,30 +1300,36 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.handleMu.Unlock()
 
 	if !d.file.isNil() {
+		valid := p9.SetAttrMask{}
+		attr := p9.SetAttr{}
 		if !d.isDeleted() {
 			// Write dirty timestamps back to the remote filesystem.
-			atimeDirty := atomic.LoadUint32(&d.atimeDirty) != 0
-			mtimeDirty := atomic.LoadUint32(&d.mtimeDirty) != 0
-			if atimeDirty || mtimeDirty {
+			if atomic.LoadUint32(&d.atimeDirty) != 0 {
+				valid.ATime = true
+				valid.ATimeNotSystemTime = true
 				atime := atomic.LoadInt64(&d.atime)
+				attr.ATimeSeconds = uint64(atime / 1e9)
+				attr.ATimeNanoSeconds = uint64(atime % 1e9)
+			}
+			if atomic.LoadUint32(&d.mtimeDirty) != 0 {
+				valid.MTime = true
+				valid.MTimeNotSystemTime = true
 				mtime := atomic.LoadInt64(&d.mtime)
-				if err := d.file.setAttr(ctx, p9.SetAttrMask{
-					ATime:              atimeDirty,
-					ATimeNotSystemTime: atimeDirty,
-					MTime:              mtimeDirty,
-					MTimeNotSystemTime: mtimeDirty,
-				}, p9.SetAttr{
-					ATimeSeconds:     uint64(atime / 1e9),
-					ATimeNanoSeconds: uint64(atime % 1e9),
-					MTimeSeconds:     uint64(mtime / 1e9),
-					MTimeNanoSeconds: uint64(mtime % 1e9),
-				}); err != nil {
-					log.Warningf("gofer.dentry.destroyLocked: failed to write dirty timestamps back: %v", err)
-				}
+				attr.MTimeSeconds = uint64(mtime / 1e9)
+				attr.MTimeNanoSeconds = uint64(mtime % 1e9)
 			}
 		}
-		d.file.close(ctx)
+
+		// Check if attributes need to be changed before closing the file.
+		if valid.ATime || valid.MTime {
+			if err := d.file.setAttrClose(ctx, valid, attr); err != nil {
+				log.Warningf("gofer.dentry.destroyLocked: failed to close file with write dirty timestamps: %v", err)
+			}
+		} else if err := d.file.close(ctx); err != nil {
+			log.Warningf("gofer.dentry.destroyLocked: failed to close file: %v", err)
+		}
 		d.file = p9file{}
+
 		// Remove d from the set of syncable dentries.
 		d.fs.syncMu.Lock()
 		delete(d.fs.syncableDentries, d)
