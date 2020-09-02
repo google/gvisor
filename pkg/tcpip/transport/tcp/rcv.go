@@ -268,14 +268,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 	// If we are in one of the shutdown states then we need to do
 	// additional checks before we try and process the segment.
 	switch state {
-	case StateCloseWait:
-		// If the ACK acks something not yet sent then we send an ACK.
-		if r.ep.snd.sndNxt.LessThan(s.ackNumber) {
-			r.ep.snd.sendAck()
-			return true, nil
-		}
-		fallthrough
-	case StateClosing, StateLastAck:
+	case StateCloseWait, StateClosing, StateLastAck:
 		if !s.sequenceNumber.LessThanEq(r.rcvNxt) {
 			// Just drop the segment as we have
 			// already received a FIN and this
@@ -284,9 +277,31 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 			return true, nil
 		}
 		fallthrough
-	case StateFinWait1:
-		fallthrough
-	case StateFinWait2:
+	case StateFinWait1, StateFinWait2:
+		// If the ACK acks something not yet sent then we send an ACK.
+		//
+		// RFC793, page 37: If the connection is in a synchronized state,
+		// (ESTABLISHED, FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT, CLOSING, LAST-ACK,
+		// TIME-WAIT), any unacceptable segment (out of window sequence number
+		// or unacceptable acknowledgment number) must elicit only an empty
+		// acknowledgment segment containing the current send-sequence number
+		// and an acknowledgment indicating the next sequence number expected
+		// to be received, and the connection remains in the same state.
+		//
+		// Just as on Linux, we do not apply this behavior when state is
+		// ESTABLISHED.
+		// Linux receive processing for all states except ESTABLISHED and
+		// TIME_WAIT is here where if the ACK check fails, we attempt to
+		// reply back with an ACK with correct seq/ack numbers.
+		// https://github.com/torvalds/linux/blob/v5.8/net/ipv4/tcp_input.c#L6186
+		// The ESTABLISHED state processing is here where if the ACK check
+		// fails, we ignore the packet:
+		// https://github.com/torvalds/linux/blob/v5.8/net/ipv4/tcp_input.c#L5591
+		if r.ep.snd.sndNxt.LessThan(s.ackNumber) {
+			r.ep.snd.sendAck()
+			return true, nil
+		}
+
 		// If we are closed for reads (either due to an
 		// incoming FIN or the user calling shutdown(..,
 		// SHUT_RD) then any data past the rcvNxt should
