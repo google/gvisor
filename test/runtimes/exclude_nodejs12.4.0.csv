@@ -11,8 +11,9 @@ parallel/test-dgram-socket-buffer-size.js,b/68847921,
 parallel/test-dns-channel-timeout.js,b/161893056,
 parallel/test-fs-access.js,,
 parallel/test-fs-watchfile.js,,Flaky - File already exists error
-parallel/test-fs-write-stream.js,,Flaky
-parallel/test-fs-write-stream-throw-type-error.js,b/110226209,
+parallel/test-fs-write-stream.js,b/166819807,Flaky
+parallel/test-fs-write-stream-double-close,b/166819807,Flaky
+parallel/test-fs-write-stream-throw-type-error.js,b/166819807,Flaky
 parallel/test-http-writable-true-after-close.js,,Flaky - Mismatched <anonymous> function calls. Expected exactly 1 actual 2
 parallel/test-os.js,b/63997097,
 parallel/test-net-server-listen-options.js,,Flaky - EADDRINUSE
