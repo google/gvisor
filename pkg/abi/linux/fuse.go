@@ -15,7 +15,6 @@
 package linux
 
 import (
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
@@ -263,63 +262,6 @@ type FUSEInitOut struct {
 	_ [8]uint32
 }
 
-// FUSEInitRes is a variable-length wrapper of FUSEInitOut. The FUSE server may
-// implement older version of FUSE protocol, which contains a FUSEInitOut with
-// less attributes.
-//
-// Dynamically-sized objects cannot be marshalled.
-type FUSEInitRes struct {
-	marshal.StubMarshallable
-
-	// InitOut contains the response from the FUSE server.
-	InitOut FUSEInitOut
-
-	// Len is the total length of bytes of the response.
-	Len uint32
-}
-
-// UnMarshalBytes deserializes src to the InitOut attribute in a FUSEInitRes.
-func (r *FUSEInitRes) UnmarshalBytes(src []byte) {
-	out := &r.InitOut
-
-	// Introduced before FUSE kernel version 7.13.
-	out.Major = uint32(usermem.ByteOrder.Uint32(src[:4]))
-	src = src[4:]
-	out.Minor = uint32(usermem.ByteOrder.Uint32(src[:4]))
-	src = src[4:]
-	out.MaxReadahead = uint32(usermem.ByteOrder.Uint32(src[:4]))
-	src = src[4:]
-	out.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
-	src = src[4:]
-	out.MaxBackground = uint16(usermem.ByteOrder.Uint16(src[:2]))
-	src = src[2:]
-	out.CongestionThreshold = uint16(usermem.ByteOrder.Uint16(src[:2]))
-	src = src[2:]
-	out.MaxWrite = uint32(usermem.ByteOrder.Uint32(src[:4]))
-	src = src[4:]
-
-	// Introduced in FUSE kernel version 7.23.
-	if len(src) >= 4 {
-		out.TimeGran = uint32(usermem.ByteOrder.Uint32(src[:4]))
-		src = src[4:]
-	}
-	// Introduced in FUSE kernel version 7.28.
-	if len(src) >= 2 {
-		out.MaxPages = uint16(usermem.ByteOrder.Uint16(src[:2]))
-		src = src[2:]
-	}
-	// Introduced in FUSE kernel version 7.31.
-	if len(src) >= 2 {
-		out.MapAlignment = uint16(usermem.ByteOrder.Uint16(src[:2]))
-		src = src[2:]
-	}
-}
-
-// SizeBytes is the size of the payload of the FUSE_INIT response.
-func (r *FUSEInitRes) SizeBytes() int {
-	return int(r.Len)
-}
-
 // FUSEGetAttrIn is the request sent by the kernel to the daemon,
 // to get the attribute of a inode.
 //
@@ -413,11 +355,6 @@ type FUSELookupIn struct {
 
 	// Name is a file name to be looked up.
 	Name string
-}
-
-// MarshalUnsafe serializes r.name to the dst buffer.
-func (r *FUSELookupIn) MarshalUnsafe(buf []byte) {
-	copy(buf, r.Name)
 }
 
 // MarshalBytes serializes r.name to the dst buffer.
@@ -548,12 +485,6 @@ type FUSEMknodIn struct {
 	Name string
 }
 
-// MarshalUnsafe serializes r.MknodMeta and r.Name to the dst buffer.
-func (r *FUSEMknodIn) MarshalUnsafe(buf []byte) {
-	r.MknodMeta.MarshalUnsafe(buf[:r.MknodMeta.SizeBytes()])
-	copy(buf[r.MknodMeta.SizeBytes():], r.Name)
-}
-
 // MarshalBytes serializes r.MknodMeta and r.Name to the dst buffer.
 func (r *FUSEMknodIn) MarshalBytes(buf []byte) {
 	r.MknodMeta.MarshalBytes(buf[:r.MknodMeta.SizeBytes()])
@@ -580,13 +511,6 @@ type FUSESymLinkIn struct {
 	Target string
 }
 
-// MarshalUnsafe serializes r.Name and r.Target to the dst buffer.
-// Left null-termination at end of r.Name and r.Target.
-func (r *FUSESymLinkIn) MarshalUnsafe(buf []byte) {
-	copy(buf, r.Name)
-	copy(buf[len(r.Name)+1:], r.Target)
-}
-
 // MarshalBytes serializes r.Name and r.Target to the dst buffer.
 // Left null-termination at end of r.Name and r.Target.
 func (r *FUSESymLinkIn) MarshalBytes(buf []byte) {
@@ -602,9 +526,6 @@ func (r *FUSESymLinkIn) SizeBytes() int {
 
 // FUSEEmptyIn is used by operations without request body.
 type FUSEEmptyIn struct{ marshal.StubMarshallable }
-
-// MarshalUnsafe do nothing for marshal.
-func (r *FUSEEmptyIn) MarshalUnsafe(buf []byte) {}
 
 // MarshalBytes do nothing for marshal.
 func (r *FUSEEmptyIn) MarshalBytes(buf []byte) {}
@@ -640,12 +561,6 @@ type FUSEMkdirIn struct {
 	Name string
 }
 
-// MarshalUnsafe serializes r.MkdirMeta and r.Name to the dst buffer.
-func (r *FUSEMkdirIn) MarshalUnsafe(buf []byte) {
-	r.MkdirMeta.MarshalUnsafe(buf[:r.MkdirMeta.SizeBytes()])
-	copy(buf[r.MkdirMeta.SizeBytes():], r.Name)
-}
-
 // MarshalBytes serializes r.MkdirMeta and r.Name to the dst buffer.
 func (r *FUSEMkdirIn) MarshalBytes(buf []byte) {
 	r.MkdirMeta.MarshalBytes(buf[:r.MkdirMeta.SizeBytes()])
@@ -669,11 +584,6 @@ type FUSERmDirIn struct {
 	Name string
 }
 
-// MarshalUnsafe serializes r.name to the dst buffer.
-func (r *FUSERmDirIn) MarshalUnsafe(buf []byte) {
-	copy(buf, r.Name)
-}
-
 // MarshalBytes serializes r.name to the dst buffer.
 func (r *FUSERmDirIn) MarshalBytes(buf []byte) {
 	copy(buf, r.Name)
@@ -682,16 +592,6 @@ func (r *FUSERmDirIn) MarshalBytes(buf []byte) {
 // SizeBytes is the size of the memory representation of FUSERmDirIn.
 func (r *FUSERmDirIn) SizeBytes() int {
 	return len(r.Name) + 1
-}
-
-// UnmarshalUnsafe deserializes r.name from the src buffer.
-func (r *FUSERmDirIn) UnmarshalUnsafe(src []byte) {
-	r.Name = string(src)
-}
-
-// UnmarshalBytes deserializes r.name from the src buffer.
-func (r *FUSERmDirIn) UnmarshalBytes(src []byte) {
-	r.Name = string(src)
 }
 
 // FUSEDirents is a list of Dirents received from the FUSE daemon server.
@@ -736,22 +636,6 @@ type FUSEDirentMeta struct {
 	Type uint32
 }
 
-// MarshalUnsafe serializes FUSEDirents to the dst buffer.
-func (r *FUSEDirents) MarshalUnsafe(dst []byte) {
-	for _, dirent := range r.Dirents {
-		dirent.MarshalUnsafe(dst)
-		dst = dst[dirent.SizeBytes():]
-	}
-}
-
-// MarshalBytes serializes FUSEDirents to the dst buffer.
-func (r *FUSEDirents) MarshalBytes(dst []byte) {
-	for _, dirent := range r.Dirents {
-		dirent.MarshalBytes(dst)
-		dst = dst[dirent.SizeBytes():]
-	}
-}
-
 // SizeBytes is the size of the memory representation of FUSEDirents.
 func (r *FUSEDirents) SizeBytes() int {
 	var sizeBytes int
@@ -760,30 +644,6 @@ func (r *FUSEDirents) SizeBytes() int {
 	}
 
 	return sizeBytes
-}
-
-// UnmarshalUnsafe deserializes FUSEDirents from the src buffer.
-func (r *FUSEDirents) UnmarshalUnsafe(src []byte) {
-	for {
-		if len(src) <= (*FUSEDirentMeta)(nil).SizeBytes() {
-			break
-		}
-
-		// Its unclear how many dirents there are in src. Each dirent is dynamically
-		// sized and so we can't make assumptions about how many dirents we can allocate.
-		if r.Dirents == nil {
-			r.Dirents = make([]*FUSEDirent, 0)
-		}
-
-		// We have to allocate a struct for each dirent - there must be a better way
-		// to do this. Linux allocates 1 page to store all the dirents and then
-		// simply reads them from the page.
-		var dirent FUSEDirent
-		dirent.UnmarshalUnsafe(src)
-		r.Dirents = append(r.Dirents, &dirent)
-
-		src = src[dirent.SizeBytes():]
-	}
 }
 
 // UnmarshalBytes deserializes FUSEDirents from the src buffer.
@@ -810,24 +670,6 @@ func (r *FUSEDirents) UnmarshalBytes(src []byte) {
 	}
 }
 
-// MarshalUnsafe serializes FUSEDirent to the dst buffer.
-func (r *FUSEDirent) MarshalUnsafe(dst []byte) {
-	r.Meta.MarshalUnsafe(dst)
-	dst = dst[r.Meta.SizeBytes():]
-
-	name := primitive.ByteSlice(r.Name)
-	name.MarshalUnsafe(dst)
-}
-
-// MarshalBytes serializes FUSEDirent to the dst buffer.
-func (r *FUSEDirent) MarshalBytes(dst []byte) {
-	r.Meta.MarshalBytes(dst)
-	dst = dst[r.Meta.SizeBytes():]
-
-	name := primitive.ByteSlice(r.Name)
-	name.MarshalBytes(dst)
-}
-
 // SizeBytes is the size of the memory representation of FUSEDirent.
 func (r *FUSEDirent) SizeBytes() int {
 	dataSize := r.Meta.SizeBytes() + len(r.Name)
@@ -836,23 +678,6 @@ func (r *FUSEDirent) SizeBytes() int {
 	// of FUSE_DIRENT_ALIGN. Similar to the fuse dirent alignment
 	// in linux/fuse.h.
 	return (dataSize + (FUSE_DIRENT_ALIGN - 1)) & ^(FUSE_DIRENT_ALIGN - 1)
-}
-
-// UnmarshalUnsafe deserializes FUSEDirent from the src buffer.
-func (r *FUSEDirent) UnmarshalUnsafe(src []byte) {
-	r.Meta.UnmarshalUnsafe(src)
-	src = src[r.Meta.SizeBytes():]
-
-	if r.Meta.NameLen > FUSE_NAME_MAX {
-		// The name is too long and therefore invalid. We don't
-		// need to unmarshal the name since it'll be thrown away.
-		return
-	}
-
-	buf := make([]byte, r.Meta.NameLen)
-	name := primitive.ByteSlice(buf)
-	name.UnmarshalUnsafe(src[:r.Meta.NameLen])
-	r.Name = string(name)
 }
 
 // UnmarshalBytes deserializes FUSEDirent from the src buffer.
