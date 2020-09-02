@@ -8,7 +8,7 @@ RUN set -x \
 
 # Generate a bunch of relevant files.
 RUN mkdir -p /local && \
-        for size in 1 10 100 1000 1024 10240; do \
+        for size in 1 10 100 1024 10240; do \
                 dd if=/dev/zero of=/local/latin${size}k.txt count=${size} bs=1024; \
         done
 
