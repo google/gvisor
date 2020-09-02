@@ -75,12 +75,12 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 		return err
 	}
 
-	initRes := linux.FUSEInitRes{Len: res.DataLen()}
+	initRes := fuseInitRes{initLen: res.DataLen()}
 	if err := res.UnmarshalPayload(&initRes); err != nil {
 		return err
 	}
 
-	return conn.initProcessReply(&initRes.InitOut, hasSysAdminCap)
+	return conn.initProcessReply(&initRes.initOut, hasSysAdminCap)
 }
 
 // Process the FUSE_INIT reply from the FUSE server.
