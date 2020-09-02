@@ -88,21 +88,21 @@ TEST(CreateTest, CreateExclusively) {
               SyscallFailsWithErrno(EEXIST));
 }
 
-TEST(CreateTeast, CreatWithOTrunc) {
+TEST(CreateTest, CreatWithOTrunc) {
   std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
   ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
   ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
-TEST(CreateTeast, CreatDirWithOTruncAndReadOnly) {
+TEST(CreateTest, CreatDirWithOTruncAndReadOnly) {
   std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
   ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
   ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC | O_RDONLY, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
-TEST(CreateTeast, CreatFileWithOTruncAndReadOnly) {
+TEST(CreateTest, CreatFileWithOTruncAndReadOnly) {
   std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncfile");
   int dirfd;
   ASSERT_THAT(dirfd = open(dirpath.c_str(), O_RDWR | O_CREAT, 0666),
@@ -147,6 +147,116 @@ TEST(CreateTest, OpenCreateROThenRW) {
   char c = 'a';
   EXPECT_THAT(WriteFd(fd1.get(), &c, 1), SyscallFailsWithErrno(EBADF));
   EXPECT_THAT(WriteFd(fd2.get(), &c, 1), SyscallSucceedsWithValue(1));
+}
+
+TEST(CreateTest, ChmodReadToWriteBetweenOpens_NoRandomSave) {
+  // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
+  // override file read/write permissions. CAP_DAC_READ_SEARCH needs to be
+  // cleared for the same reason.
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+
+  const TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0400));
+
+  const FileDescriptor rfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+
+  // Cannot restore after making permissions more restrictive.
+  const DisableSave ds;
+  ASSERT_THAT(fchmod(rfd.get(), 0200), SyscallSucceeds());
+
+  EXPECT_THAT(open(file.path().c_str(), O_RDONLY),
+              SyscallFailsWithErrno(EACCES));
+
+  const FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+
+  char c = 'x';
+  EXPECT_THAT(write(wfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  c = 0;
+  EXPECT_THAT(read(rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'x');
+}
+
+TEST(CreateTest, ChmodWriteToReadBetweenOpens_NoRandomSave) {
+  // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
+  // override file read/write permissions.
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+
+  const TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0200));
+
+  const FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+
+  // Cannot restore after making permissions more restrictive.
+  const DisableSave ds;
+  ASSERT_THAT(fchmod(wfd.get(), 0400), SyscallSucceeds());
+
+  EXPECT_THAT(open(file.path().c_str(), O_WRONLY),
+              SyscallFailsWithErrno(EACCES));
+
+  const FileDescriptor rfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+
+  char c = 'x';
+  EXPECT_THAT(write(wfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  c = 0;
+  EXPECT_THAT(read(rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'x');
+}
+
+TEST(CreateTest, CreateWithReadFlagNotAllowedByMode_NoRandomSave) {
+  // The only time we can open a file with flags forbidden by its permissions
+  // is when we are creating the file. We cannot re-open with the same flags,
+  // so we cannot restore an fd obtained from such an operation.
+  const DisableSave ds;
+
+  // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
+  // override file read/write permissions. CAP_DAC_READ_SEARCH needs to be
+  // cleared for the same reason.
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+
+  // Create and open a file with read flag but without read permissions.
+  const std::string path = NewTempAbsPath();
+  const FileDescriptor rfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_CREAT | O_RDONLY, 0222));
+
+  EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+  const FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_WRONLY));
+
+  char c = 'x';
+  EXPECT_THAT(write(wfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  c = 0;
+  EXPECT_THAT(read(rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'x');
+}
+
+TEST(CreateTest, CreateWithWriteFlagNotAllowedByMode_NoRandomSave) {
+  // The only time we can open a file with flags forbidden by its permissions
+  // is when we are creating the file. We cannot re-open with the same flags,
+  // so we cannot restore an fd obtained from such an operation.
+  const DisableSave ds;
+
+  // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
+  // override file read/write permissions.
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+
+  // Create and open a file with write flag but without write permissions.
+  const std::string path = NewTempAbsPath();
+  const FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_CREAT | O_WRONLY, 0444));
+
+  EXPECT_THAT(open(path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
+  const FileDescriptor rfd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_RDONLY));
+
+  char c = 'x';
+  EXPECT_THAT(write(wfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  c = 0;
+  EXPECT_THAT(read(rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'x');
 }
 
 }  // namespace
