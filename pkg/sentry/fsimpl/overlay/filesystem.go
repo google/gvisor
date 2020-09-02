@@ -743,6 +743,9 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 	start := rp.Start().Impl().(*dentry)
 	if rp.Done() {
+		if mayCreate && rp.MustBeDir() {
+			return nil, syserror.EISDIR
+		}
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
@@ -766,6 +769,10 @@ afterTrailingSymlink:
 	if err := parent.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, err
 	}
+	// Reject attempts to open directories with O_CREAT.
+	if mayCreate && rp.MustBeDir() {
+		return nil, syserror.EISDIR
+	}
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
 	child, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
@@ -774,12 +781,11 @@ afterTrailingSymlink:
 		parent.dirMu.Unlock()
 		return fd, err
 	}
+	parent.dirMu.Unlock()
 	if err != nil {
-		parent.dirMu.Unlock()
 		return nil, err
 	}
 	// Open existing child or follow symlink.
-	parent.dirMu.Unlock()
 	if mustCreate {
 		return nil, syserror.EEXIST
 	}
@@ -793,6 +799,9 @@ afterTrailingSymlink:
 		}
 		start = parent
 		goto afterTrailingSymlink
+	}
+	if rp.MustBeDir() && !child.isDir() {
+		return nil, syserror.ENOTDIR
 	}
 	if mayWrite {
 		if err := child.copyUpLocked(ctx); err != nil {
