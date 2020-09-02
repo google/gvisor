@@ -40,6 +40,7 @@ go_library(
         "register.go",
         "regular_file.go",
         "request_list.go",
+        "request_response.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
