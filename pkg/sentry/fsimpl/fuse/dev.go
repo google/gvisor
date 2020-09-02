@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -143,58 +142,62 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 }
 
 // readLocked implements the reading of the fuse device while locked with DeviceFD.mu.
+//
+// Preconditions: dst is large enough for any reasonable request.
 func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	if fd.queue.Empty() {
+	var req *Request
+
+	// Find the first valid request.
+	// For the normal case this loop only execute once.
+	for !fd.queue.Empty() {
+		req = fd.queue.Front()
+
+		if int64(req.hdr.Len) <= dst.NumBytes() {
+			break
+		}
+
+		// The request is too large. Cannot process it. All requests must be smaller than the
+		// negotiated size as specified by Connection.MaxWrite set as part of the FUSE_INIT
+		// handshake.
+		errno := -int32(syscall.EIO)
+		if req.hdr.Opcode == linux.FUSE_SETXATTR {
+			errno = -int32(syscall.E2BIG)
+		}
+
+		// Return the error to the calling task.
+		if err := fd.sendError(ctx, errno, req); err != nil {
+			return 0, err
+		}
+
+		// We're done with this request.
+		fd.queue.Remove(req)
+		req = nil
+	}
+
+	if req == nil {
 		return 0, syserror.ErrWouldBlock
 	}
 
-	var readCursor uint32
-	var bytesRead int64
-	for {
-		req := fd.queue.Front()
-		if dst.NumBytes() < int64(req.hdr.Len) {
-			// The request is too large. Cannot process it. All requests must be smaller than the
-			// negotiated size as specified by Connection.MaxWrite set as part of the FUSE_INIT
-			// handshake.
-			errno := -int32(syscall.EIO)
-			if req.hdr.Opcode == linux.FUSE_SETXATTR {
-				errno = -int32(syscall.E2BIG)
-			}
+	// We already checked the size: dst must be able to fit the whole request.
+	// Now we write the marshalled header, the payload,
+	// and the potential additional payload
+	// to the user memory IOSequence.
 
-			// Return the error to the calling task.
-			if err := fd.sendError(ctx, errno, req); err != nil {
-				return 0, err
-			}
-
-			// We're done with this request.
-			fd.queue.Remove(req)
-			if req.hdr.Opcode == linux.FUSE_RELEASE {
-				fd.numActiveRequests -= 1
-			}
-
-			// Restart the read as this request was invalid.
-			log.Warningf("fuse.DeviceFD.Read: request found was too large. Restarting read.")
-			return fd.readLocked(ctx, dst, opts)
-		}
-
-		n, err := dst.CopyOut(ctx, req.data[readCursor:])
-		if err != nil {
-			return 0, err
-		}
-		readCursor += uint32(n)
-		bytesRead += int64(n)
-
-		if readCursor >= req.hdr.Len {
-			// Fully done with this req, remove it from the queue.
-			fd.queue.Remove(req)
-			if req.hdr.Opcode == linux.FUSE_RELEASE {
-				fd.numActiveRequests -= 1
-			}
-			break
-		}
+	n, err := dst.CopyOut(ctx, req.data)
+	if err != nil {
+		return 0, err
+	}
+	if n != len(req.data) {
+		return 0, syserror.EIO
 	}
 
-	return bytesRead, nil
+	// Fully done with this req, remove it from the queue.
+	fd.queue.Remove(req)
+	if req.hdr.Opcode == linux.FUSE_RELEASE {
+		fd.numActiveRequests -= 1
+	}
+
+	return int64(n), nil
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
