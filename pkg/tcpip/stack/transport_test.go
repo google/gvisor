@@ -180,7 +180,7 @@ func (*fakeTransportEndpoint) Listen(int) *tcpip.Error {
 	return nil
 }
 
-func (f *fakeTransportEndpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
+func (f *fakeTransportEndpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	if len(f.acceptQueue) == 0 {
 		return nil, nil, nil
 	}
@@ -631,7 +631,7 @@ func TestTransportForwarding(t *testing.T) {
 		Data: req.ToVectorisedView(),
 	}))
 
-	aep, _, err := ep.Accept()
+	aep, _, err := ep.Accept(nil)
 	if err != nil || aep == nil {
 		t.Fatalf("Accept failed: %v, %v", aep, err)
 	}

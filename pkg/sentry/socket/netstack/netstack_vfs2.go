@@ -151,14 +151,18 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 // tcpip.Endpoint.
 func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
 	// Issue the accept request to get the new endpoint.
-	ep, wq, terr := s.Endpoint.Accept()
+	var peerAddr *tcpip.FullAddress
+	if peerRequested {
+		peerAddr = &tcpip.FullAddress{}
+	}
+	ep, wq, terr := s.Endpoint.Accept(peerAddr)
 	if terr != nil {
 		if terr != tcpip.ErrWouldBlock || !blocking {
 			return 0, nil, 0, syserr.TranslateNetstackError(terr)
 		}
 
 		var err *syserr.Error
-		ep, wq, err = s.blockingAccept(t)
+		ep, wq, err = s.blockingAccept(t, peerAddr)
 		if err != nil {
 			return 0, nil, 0, err
 		}
@@ -176,13 +180,9 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 
 	var addr linux.SockAddr
 	var addrLen uint32
-	if peerRequested {
+	if peerAddr != nil {
 		// Get address of the peer and write it to peer slice.
-		var err *syserr.Error
-		addr, addrLen, err = ns.Impl().(*SocketVFS2).GetPeerName(t)
-		if err != nil {
-			return 0, nil, 0, err
-		}
+		addr, addrLen = ConvertAddress(s.family, *peerAddr)
 	}
 
 	fd, e := t.NewFDFromVFS2(0, ns, kernel.FDFlags{
