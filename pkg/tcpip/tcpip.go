@@ -561,7 +561,10 @@ type Endpoint interface {
 	// block if no new connections are available.
 	//
 	// The returned Queue is the wait queue for the newly created endpoint.
-	Accept() (Endpoint, *waiter.Queue, *Error)
+	//
+	// If peerAddr is not nil then it is populated with the peer address of the
+	// returned endpoint.
+	Accept(peerAddr *FullAddress) (Endpoint, *waiter.Queue, *Error)
 
 	// Bind binds the endpoint to a specific local address and port.
 	// Specifying a NIC is optional.

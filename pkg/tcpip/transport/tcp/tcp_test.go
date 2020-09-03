@@ -291,12 +291,12 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -2203,12 +2203,12 @@ func TestScaledWindowAccept(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -2277,12 +2277,12 @@ func TestNonScaledWindowAccept(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -2840,12 +2840,12 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -2895,12 +2895,12 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -5135,12 +5135,12 @@ func TestListenBacklogFull(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	for i := 0; i < listenBacklog; i++ {
-		_, _, err = c.EP.Accept()
+		_, _, err = c.EP.Accept(nil)
 		if err == tcpip.ErrWouldBlock {
 			// Wait for connection to be established.
 			select {
 			case <-ch:
-				_, _, err = c.EP.Accept()
+				_, _, err = c.EP.Accept(nil)
 				if err != nil {
 					t.Fatalf("Accept failed: %s", err)
 				}
@@ -5152,7 +5152,7 @@ func TestListenBacklogFull(t *testing.T) {
 	}
 
 	// Now verify that there are no more connections that can be accepted.
-	_, _, err = c.EP.Accept()
+	_, _, err = c.EP.Accept(nil)
 	if err != tcpip.ErrWouldBlock {
 		select {
 		case <-ch:
@@ -5164,12 +5164,12 @@ func TestListenBacklogFull(t *testing.T) {
 	// Now a new handshake must succeed.
 	executeHandshake(t, c, context.TestPort+2, false /*synCookieInUse */)
 
-	newEP, _, err := c.EP.Accept()
+	newEP, _, err := c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			newEP, _, err = c.EP.Accept()
+			newEP, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -5476,12 +5476,12 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	newEP, _, err := c.EP.Accept()
+	newEP, _, err := c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			newEP, _, err = c.EP.Accept()
+			newEP, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -5552,12 +5552,12 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	_, _, err = c.EP.Accept()
+	_, _, err = c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			_, _, err = c.EP.Accept()
+			_, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -5568,7 +5568,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	}
 
 	// Now verify that there are no more connections that can be accepted.
-	_, _, err = c.EP.Accept()
+	_, _, err = c.EP.Accept(nil)
 	if err != tcpip.ErrWouldBlock {
 		select {
 		case <-ch:
@@ -5657,7 +5657,7 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 		RcvWnd:  30000,
 	})
 
-	newEP, _, err := c.EP.Accept()
+	newEP, _, err := c.EP.Accept(nil)
 
 	if err != nil && err != tcpip.ErrWouldBlock {
 		t.Fatalf("Accept failed: %s", err)
@@ -5672,7 +5672,7 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			newEP, _, err = c.EP.Accept()
+			newEP, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -5730,12 +5730,12 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	// Verify that there is only one acceptable connection at this point.
-	_, _, err = c.EP.Accept()
+	_, _, err = c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			_, _, err = c.EP.Accept()
+			_, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -5800,12 +5800,12 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	// Now check that there is one acceptable connections.
-	_, _, err = c.EP.Accept()
+	_, _, err = c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			_, _, err = c.EP.Accept()
+			_, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -5853,12 +5853,12 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	aep, _, err := ep.Accept()
+	aep, _, err := ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			aep, _, err = ep.Accept()
+			aep, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -6293,12 +6293,12 @@ func TestTCPTimeWaitRSTIgnored(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -6412,12 +6412,12 @@ func TestTCPTimeWaitOutOfOrder(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -6519,12 +6519,12 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -6602,12 +6602,12 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 	c.SendPacket(nil, ackHeaders)
 
 	// Try to accept the connection.
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -6675,12 +6675,12 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -6824,12 +6824,12 @@ func TestTCPCloseWithData(t *testing.T) {
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %s", err)
 			}
@@ -7271,8 +7271,8 @@ func TestTCPDeferAccept(t *testing.T) {
 
 	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
 
-	if _, _, err := c.EP.Accept(); err != tcpip.ErrWouldBlock {
-		t.Fatalf("c.EP.Accept() returned unexpected error got: %s, want: %s", err, tcpip.ErrWouldBlock)
+	if _, _, err := c.EP.Accept(nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got c.EP.Accept(nil) = %s, want: %s", err, tcpip.ErrWouldBlock)
 	}
 
 	// Send data. This should result in an acceptable endpoint.
@@ -7293,9 +7293,9 @@ func TestTCPDeferAccept(t *testing.T) {
 
 	// Give a bit of time for the socket to be delivered to the accept queue.
 	time.Sleep(50 * time.Millisecond)
-	aep, _, err := c.EP.Accept()
+	aep, _, err := c.EP.Accept(nil)
 	if err != nil {
-		t.Fatalf("c.EP.Accept() returned unexpected error got: %s, want: nil", err)
+		t.Fatalf("got c.EP.Accept(nil) = %s, want: nil", err)
 	}
 
 	aep.Close()
@@ -7329,8 +7329,8 @@ func TestTCPDeferAcceptTimeout(t *testing.T) {
 
 	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
 
-	if _, _, err := c.EP.Accept(); err != tcpip.ErrWouldBlock {
-		t.Fatalf("c.EP.Accept() returned unexpected error got: %s, want: %s", err, tcpip.ErrWouldBlock)
+	if _, _, err := c.EP.Accept(nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got c.EP.Accept(nil) = %s, want: %s", err, tcpip.ErrWouldBlock)
 	}
 
 	// Sleep for a little of the tcpDeferAccept timeout.
@@ -7362,9 +7362,9 @@ func TestTCPDeferAcceptTimeout(t *testing.T) {
 
 	// Give sometime for the endpoint to be delivered to the accept queue.
 	time.Sleep(50 * time.Millisecond)
-	aep, _, err := c.EP.Accept()
+	aep, _, err := c.EP.Accept(nil)
 	if err != nil {
-		t.Fatalf("c.EP.Accept() returned unexpected error got: %s, want: nil", err)
+		t.Fatalf("got c.EP.Accept(nil) = %s, want: nil", err)
 	}
 
 	aep.Close()

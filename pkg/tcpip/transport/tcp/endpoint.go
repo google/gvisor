@@ -2453,7 +2453,9 @@ func (e *endpoint) startAcceptedLoop() {
 
 // Accept returns a new endpoint if a peer has established a connection
 // to an endpoint previously set to listen mode.
-func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
+//
+// addr if not-nil will contain the peer address of the returned endpoint.
+func (e *endpoint) Accept(peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	e.LockUser()
 	defer e.UnlockUser()
 
@@ -2474,6 +2476,9 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 		e.acceptCond.Signal()
 	default:
 		return nil, nil, tcpip.ErrWouldBlock
+	}
+	if peerAddr != nil {
+		*peerAddr = n.getRemoteAddress()
 	}
 	return n, n.waiterQueue, nil
 }
@@ -2577,11 +2582,15 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 		return tcpip.FullAddress{}, tcpip.ErrNotConnected
 	}
 
+	return e.getRemoteAddress(), nil
+}
+
+func (e *endpoint) getRemoteAddress() tcpip.FullAddress {
 	return tcpip.FullAddress{
 		Addr: e.ID.RemoteAddress,
 		Port: e.ID.RemotePort,
 		NIC:  e.boundNICID,
-	}, nil
+	}
 }
 
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
