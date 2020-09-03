@@ -337,7 +337,7 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Shutdown(grpc_impl::ServerContext *context,
+  ::grpc::Status Shutdown(grpc::ServerContext *context,
                           const ::posix_server::ShutdownRequest *request,
                           ::posix_server::ShutdownResponse *response) override {
     if (shutdown(request->fd(), request->how()) < 0) {
