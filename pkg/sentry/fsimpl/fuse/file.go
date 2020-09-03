@@ -84,7 +84,12 @@ func (fd *fileDescription) Release(ctx context.Context) {
 	}
 	kernelTask := kernel.TaskFromContext(ctx)
 	// ignoring errors and FUSE server reply is analogous to Linux's behavior.
-	req, _ := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), fd.inode().NodeID, opcode, &in)
+	req, err := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), fd.inode().NodeID, opcode, &in)
+	if err != nil {
+		// No way to invoke Call() with an errored request.
+		return
+	}
+	req.noReply = true
 	conn.CallAsync(kernelTask, req)
 }
 
