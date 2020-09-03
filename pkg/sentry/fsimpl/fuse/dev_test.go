@@ -369,7 +369,7 @@ func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveReque
 	fsopts := filesystemOptions{
 		maxActiveRequests: maxActiveRequests,
 	}
-	fs, err := NewFUSEFilesystem(system.Ctx, 0, &fsopts, &fuseDev.vfsfd)
+	fs, err := newFUSEFilesystem(system.Ctx, 0, &fsopts, &fuseDev.vfsfd)
 	if err != nil {
 		return nil, nil, err
 	}
