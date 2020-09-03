@@ -1067,6 +1067,21 @@ func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) 
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
 }
 
+func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
+	// We only support xattrs prefixed with "user." (see b/148380782). Currently,
+	// there is no need to expose any other xattrs through a gofer.
+	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
+		return syserror.EOPNOTSUPP
+	}
+	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
+	kuid := auth.KUID(atomic.LoadUint32(&d.uid))
+	kgid := auth.KGID(atomic.LoadUint32(&d.gid))
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+		return err
+	}
+	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
+}
+
 func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
 	return vfs.CheckDeleteSticky(creds, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&child.uid)))
 }
@@ -1357,8 +1372,6 @@ func (d *dentry) setDeleted() {
 	atomic.StoreUint32(&d.deleted, 1)
 }
 
-// We only support xattrs prefixed with "user." (see b/148380782). Currently,
-// there is no need to expose any other xattrs through a gofer.
 func (d *dentry) listxattr(ctx context.Context, creds *auth.Credentials, size uint64) ([]string, error) {
 	if d.file.isNil() || !d.userXattrSupported() {
 		return nil, nil
@@ -1369,6 +1382,7 @@ func (d *dentry) listxattr(ctx context.Context, creds *auth.Credentials, size ui
 	}
 	xattrs := make([]string, 0, len(xattrMap))
 	for x := range xattrMap {
+		// We only support xattrs in the user.* namespace.
 		if strings.HasPrefix(x, linux.XATTR_USER_PREFIX) {
 			xattrs = append(xattrs, x)
 		}
@@ -1380,14 +1394,8 @@ func (d *dentry) getxattr(ctx context.Context, creds *auth.Credentials, opts *vf
 	if d.file.isNil() {
 		return "", syserror.ENODATA
 	}
-	if err := d.checkPermissions(creds, vfs.MayRead); err != nil {
+	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
-	}
-	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
-		return "", syserror.EOPNOTSUPP
-	}
-	if !d.userXattrSupported() {
-		return "", syserror.ENODATA
 	}
 	return d.file.getXattr(ctx, opts.Name, opts.Size)
 }
@@ -1396,14 +1404,8 @@ func (d *dentry) setxattr(ctx context.Context, creds *auth.Credentials, opts *vf
 	if d.file.isNil() {
 		return syserror.EPERM
 	}
-	if err := d.checkPermissions(creds, vfs.MayWrite); err != nil {
+	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
-	}
-	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
-		return syserror.EOPNOTSUPP
-	}
-	if !d.userXattrSupported() {
-		return syserror.EPERM
 	}
 	return d.file.setXattr(ctx, opts.Name, opts.Value, opts.Flags)
 }
@@ -1412,14 +1414,8 @@ func (d *dentry) removexattr(ctx context.Context, creds *auth.Credentials, name 
 	if d.file.isNil() {
 		return syserror.EPERM
 	}
-	if err := d.checkPermissions(creds, vfs.MayWrite); err != nil {
+	if err := d.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err
-	}
-	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return syserror.EOPNOTSUPP
-	}
-	if !d.userXattrSupported() {
-		return syserror.EPERM
 	}
 	return d.file.removeXattr(ctx, name)
 }
