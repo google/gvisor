@@ -371,12 +371,12 @@ func testV4Accept(t *testing.T, c *context.Context) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	nep, _, err := c.EP.Accept()
+	nep, _, err := c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			nep, _, err = c.EP.Accept()
+			nep, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %v", err)
 			}
@@ -510,13 +510,13 @@ func TestV6AcceptOnV6(t *testing.T) {
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
-
-	nep, _, err := c.EP.Accept()
+	var addr tcpip.FullAddress
+	nep, _, err := c.EP.Accept(&addr)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			nep, _, err = c.EP.Accept()
+			nep, _, err = c.EP.Accept(&addr)
 			if err != nil {
 				t.Fatalf("Accept failed: %v", err)
 			}
@@ -526,20 +526,14 @@ func TestV6AcceptOnV6(t *testing.T) {
 		}
 	}
 
+	if addr.Addr != context.TestV6Addr {
+		t.Errorf("Unexpected remote address: got %s, want %s", addr.Addr, context.TestV6Addr)
+	}
+
 	// Make sure we can still query the v6 only status of the new endpoint,
 	// that is, that it is in fact a v6 socket.
 	if _, err := nep.GetSockOptBool(tcpip.V6OnlyOption); err != nil {
-		t.Fatalf("GetSockOpt failed failed: %v", err)
-	}
-
-	// Check the peer address.
-	addr, err := nep.GetRemoteAddress()
-	if err != nil {
-		t.Fatalf("GetRemoteAddress failed failed: %v", err)
-	}
-
-	if addr.Addr != context.TestV6Addr {
-		t.Fatalf("Unexpected remote address: got %v, want %v", addr.Addr, context.TestV6Addr)
+		t.Errorf("GetSockOptBool(tcpip.V6OnlyOption) failed: %s", err)
 	}
 }
 
@@ -610,12 +604,12 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
-	nep, _, err := c.EP.Accept()
+	nep, _, err := c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			nep, _, err = c.EP.Accept()
+			nep, _, err = c.EP.Accept(nil)
 			if err != nil {
 				t.Fatalf("Accept failed: %v", err)
 			}

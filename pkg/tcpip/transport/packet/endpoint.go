@@ -192,13 +192,13 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 	return ep.ReadPacket(addr, nil)
 }
 
-func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (*endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// TODO(gvisor.dev/issue/173): Implement.
 	return 0, nil, tcpip.ErrInvalidOptionValue
 }
 
 // Peek implements tcpip.Endpoint.Peek.
-func (ep *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
+func (*endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	return 0, tcpip.ControlMessages{}, nil
 }
 
@@ -210,25 +210,25 @@ func (*endpoint) Disconnect() *tcpip.Error {
 
 // Connect implements tcpip.Endpoint.Connect. Packet sockets cannot be
 // connected, and this function always returnes tcpip.ErrNotSupported.
-func (ep *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
+func (*endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
 // Shutdown implements tcpip.Endpoint.Shutdown. Packet sockets cannot be used
 // with Shutdown, and this function always returns tcpip.ErrNotSupported.
-func (ep *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
+func (*endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
 // Listen implements tcpip.Endpoint.Listen. Packet sockets cannot be used with
 // Listen, and this function always returns tcpip.ErrNotSupported.
-func (ep *endpoint) Listen(backlog int) *tcpip.Error {
+func (*endpoint) Listen(backlog int) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
 // Accept implements tcpip.Endpoint.Accept. Packet sockets cannot be used with
 // Accept, and this function always returns tcpip.ErrNotSupported.
-func (ep *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
+func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	return nil, nil, tcpip.ErrNotSupported
 }
 
@@ -267,12 +267,12 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 }
 
 // GetLocalAddress implements tcpip.Endpoint.GetLocalAddress.
-func (ep *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
+func (*endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 	return tcpip.FullAddress{}, tcpip.ErrNotSupported
 }
 
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.
-func (ep *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
+func (*endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 	// Even a connected socket doesn't return a remote address.
 	return tcpip.FullAddress{}, tcpip.ErrNotConnected
 }
@@ -371,7 +371,7 @@ func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) *tcpip.Error {
 }
 
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
-func (ep *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+func (*endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	return false, tcpip.ErrNotSupported
 }
 
@@ -508,7 +508,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 }
 
 // State implements socket.Socket.State.
-func (ep *endpoint) State() uint32 {
+func (*endpoint) State() uint32 {
 	return 0
 }
 

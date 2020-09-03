@@ -205,7 +205,7 @@ func (s *socketOpsCommon) Listen(t *kernel.Task, backlog int) *syserr.Error {
 
 // blockingAccept implements a blocking version of accept(2), that is, if no
 // connections are ready to be accept, it will block until one becomes ready.
-func (s *SocketOperations) blockingAccept(t *kernel.Task) (transport.Endpoint, *syserr.Error) {
+func (s *SocketOperations) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAddress) (transport.Endpoint, *syserr.Error) {
 	// Register for notifications.
 	e, ch := waiter.NewChannelEntry(nil)
 	s.EventRegister(&e, waiter.EventIn)
@@ -214,7 +214,7 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task) (transport.Endpoint, *
 	// Try to accept the connection; if it fails, then wait until we get a
 	// notification.
 	for {
-		if ep, err := s.ep.Accept(); err != syserr.ErrWouldBlock {
+		if ep, err := s.ep.Accept(peerAddr); err != syserr.ErrWouldBlock {
 			return ep, err
 		}
 
@@ -227,15 +227,18 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task) (transport.Endpoint, *
 // Accept implements the linux syscall accept(2) for sockets backed by
 // a transport.Endpoint.
 func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
-	// Issue the accept request to get the new endpoint.
-	ep, err := s.ep.Accept()
+	var peerAddr *tcpip.FullAddress
+	if peerRequested {
+		peerAddr = &tcpip.FullAddress{}
+	}
+	ep, err := s.ep.Accept(peerAddr)
 	if err != nil {
 		if err != syserr.ErrWouldBlock || !blocking {
 			return 0, nil, 0, err
 		}
 
 		var err *syserr.Error
-		ep, err = s.blockingAccept(t)
+		ep, err = s.blockingAccept(t, peerAddr)
 		if err != nil {
 			return 0, nil, 0, err
 		}
@@ -252,13 +255,8 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 
 	var addr linux.SockAddr
 	var addrLen uint32
-	if peerRequested {
-		// Get address of the peer.
-		var err *syserr.Error
-		addr, addrLen, err = ns.FileOperations.(*SocketOperations).GetPeerName(t)
-		if err != nil {
-			return 0, nil, 0, err
-		}
+	if peerAddr != nil {
+		addr, addrLen = netstack.ConvertAddress(linux.AF_UNIX, *peerAddr)
 	}
 
 	fd, e := t.NewFDFrom(0, ns, kernel.FDFlags{

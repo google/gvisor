@@ -1161,30 +1161,26 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
       SyscallSucceeds());
   ASSERT_THAT(close(conn_fd.release()), SyscallSucceeds());
 
-  // TODO(gvisor.dev/issue/3780): Remove this.
   if (IsRunningOnGvisor()) {
-    // Wait for the RST to be observed.
+    // Gvisor packet procssing is asynchronous and can take a bit of time in
+    // some cases so we give it a bit of time to process the RST packet before
+    // calling accept.
+    //
+    // There is nothing to poll() on so we have no choice but to use a sleep
+    // here.
     absl::SleepFor(absl::Milliseconds(100));
   }
 
   sockaddr_storage accept_addr;
   socklen_t addrlen = sizeof(accept_addr);
 
-  // TODO(gvisor.dev/issue/3780): Remove this.
-  if (IsRunningOnGvisor()) {
-    ASSERT_THAT(accept(listen_fd.get(),
-                       reinterpret_cast<sockaddr*>(&accept_addr), &addrlen),
-                SyscallFailsWithErrno(ENOTCONN));
-    return;
-  }
-
-  conn_fd = ASSERT_NO_ERRNO_AND_VALUE(Accept(
+  auto accept_fd = ASSERT_NO_ERRNO_AND_VALUE(Accept(
       listen_fd.get(), reinterpret_cast<sockaddr*>(&accept_addr), &addrlen));
   ASSERT_EQ(addrlen, listener.addr_len);
 
   int err;
   socklen_t optlen = sizeof(err);
-  ASSERT_THAT(getsockopt(conn_fd.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
+  ASSERT_THAT(getsockopt(accept_fd.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
               SyscallSucceeds());
   ASSERT_EQ(err, ECONNRESET);
   ASSERT_EQ(optlen, sizeof(err));

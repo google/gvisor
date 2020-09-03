@@ -245,7 +245,7 @@ func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
 
 // Accept implements net.Conn.Accept.
 func (l *TCPListener) Accept() (net.Conn, error) {
-	n, wq, err := l.ep.Accept()
+	n, wq, err := l.ep.Accept(nil)
 
 	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
@@ -254,7 +254,7 @@ func (l *TCPListener) Accept() (net.Conn, error) {
 		defer l.wq.EventUnregister(&waitEntry)
 
 		for {
-			n, wq, err = l.ep.Accept()
+			n, wq, err = l.ep.Accept(nil)
 
 			if err != tcpip.ErrWouldBlock {
 				break
