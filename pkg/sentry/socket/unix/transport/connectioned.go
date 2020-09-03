@@ -391,7 +391,7 @@ func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 }
 
 // Accept accepts a new connection.
-func (e *connectionedEndpoint) Accept() (Endpoint, *syserr.Error) {
+func (e *connectionedEndpoint) Accept(peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error) {
 	e.Lock()
 	defer e.Unlock()
 
@@ -401,6 +401,18 @@ func (e *connectionedEndpoint) Accept() (Endpoint, *syserr.Error) {
 
 	select {
 	case ne := <-e.acceptedChan:
+		if peerAddr != nil {
+			ne.Lock()
+			c := ne.connected
+			ne.Unlock()
+			if c != nil {
+				addr, err := c.GetLocalAddress()
+				if err != nil {
+					return nil, syserr.TranslateNetstackError(err)
+				}
+				*peerAddr = addr
+			}
+		}
 		return ne, nil
 
 	default:
