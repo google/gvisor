@@ -15,7 +15,6 @@
 package fuse
 
 import (
-	"errors"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -201,42 +200,40 @@ func newFUSEConnection(_ context.Context, fd *vfs.FileDescription, opts *filesys
 	}, nil
 }
 
-// Call makes a request to the server and blocks the invoking task until a
-// server responds with a response. Task should never be nil.
-// Requests will not be sent before the connection is initialized.
-// For async tasks, use CallAsync().
+// CallAsync makes an async (aka background) request.
+// It's a simple wrapper around Call().
+func (conn *connection) CallAsync(t *kernel.Task, r *Request) error {
+	r.async = true
+	_, err := conn.Call(t, r)
+	return err
+}
+
+// Call makes a request to the server.
+// Block before the connection is initialized.
+// When the Request is FUSE_INIT, it will not be blocked before initialization.
+// Task should never be nil.
+//
+// For a sync request, it blocks the invoking task until
+// a server responds with a response.
+//
+// For an async request (that do not expect a response immediately),
+// it returns directly unless being blocked either before initialization
+// or when there are too many async requests ongoing.
+//
+// Example for async request:
+// init, readahead, write, async read/write, fuse_notify_reply,
+// non-sync release, interrupt, forget.
+//
+// The forget request does not have a reply,
+// as documented in include/uapi/linux/fuse.h:FUSE_FORGET.
 func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 	// Block requests sent before connection is initalized.
-	if !conn.Initialized() {
+	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
 		if err := t.Block(conn.initializedChan); err != nil {
 			return nil, err
 		}
 	}
 
-	return conn.call(t, r)
-}
-
-// CallAsync makes an async (aka background) request.
-// Those requests either do not expect a response (e.g. release) or
-// the response should be handled by others (e.g. init).
-// Return immediately unless the connection is blocked (before initialization).
-// Async call example: init, release, forget, aio, interrupt.
-// When the Request is FUSE_INIT, it will not be blocked before initialization.
-func (conn *connection) CallAsync(t *kernel.Task, r *Request) error {
-	// Block requests sent before connection is initalized.
-	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
-		if err := t.Block(conn.initializedChan); err != nil {
-			return err
-		}
-	}
-
-	// This should be the only place that invokes call() with a nil task.
-	_, err := conn.call(nil, r)
-	return err
-}
-
-// call makes a call without blocking checks.
-func (conn *connection) call(t *kernel.Task, r *Request) (*Response, error) {
 	if !conn.connected {
 		return nil, syserror.ENOTCONN
 	}
@@ -271,11 +268,6 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 	// if there are always too many ongoing requests all the time. The
 	// supported maxActiveRequests setting should be really high to avoid this.
 	for conn.fd.numActiveRequests == conn.fd.fs.opts.maxActiveRequests {
-		if t == nil {
-			// Since there is no task that is waiting. We must error out.
-			return nil, errors.New("FUSE request queue full")
-		}
-
 		log.Infof("Blocking request %v from being queued. Too many active requests: %v",
 			r.id, conn.fd.numActiveRequests)
 		conn.fd.mu.Unlock()
@@ -292,8 +284,8 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 // callFutureLocked makes a request to the server and returns a future response.
 func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureResponse, error) {
 	conn.fd.queue.PushBack(r)
-	conn.fd.numActiveRequests += 1
-	fut := newFutureResponse(r.hdr.Opcode)
+	conn.fd.numActiveRequests++
+	fut := newFutureResponse(r)
 	conn.fd.completions[r.id] = fut
 
 	// Signal the readers that there is something to read.
