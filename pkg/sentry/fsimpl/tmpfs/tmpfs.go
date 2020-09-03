@@ -652,44 +652,18 @@ func (i *inode) removexattr(creds *auth.Credentials, name string) error {
 }
 
 func (i *inode) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
-	switch {
-	case ats&vfs.MayRead == vfs.MayRead:
-		if err := i.checkPermissions(creds, vfs.MayRead); err != nil {
-			return err
-		}
-	case ats&vfs.MayWrite == vfs.MayWrite:
-		if err := i.checkPermissions(creds, vfs.MayWrite); err != nil {
-			return err
-		}
-	default:
-		panic(fmt.Sprintf("checkXattrPermissions called with impossible AccessTypes: %v", ats))
+	// We currently only support extended attributes in the user.* and
+	// trusted.* namespaces. See b/148380782.
+	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) && !strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
+		return syserror.EOPNOTSUPP
 	}
-
-	switch {
-	case strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX):
-		// The trusted.* namespace can only be accessed by privileged
-		// users.
-		if creds.HasCapability(linux.CAP_SYS_ADMIN) {
-			return nil
-		}
-		if ats&vfs.MayWrite == vfs.MayWrite {
-			return syserror.EPERM
-		}
-		return syserror.ENODATA
-	case strings.HasPrefix(name, linux.XATTR_USER_PREFIX):
-		// Extended attributes in the user.* namespace are only
-		// supported for regular files and directories.
-		filetype := linux.S_IFMT & atomic.LoadUint32(&i.mode)
-		if filetype == linux.S_IFREG || filetype == linux.S_IFDIR {
-			return nil
-		}
-		if ats&vfs.MayWrite == vfs.MayWrite {
-			return syserror.EPERM
-		}
-		return syserror.ENODATA
-
+	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
+	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
+	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+		return err
 	}
-	return syserror.EOPNOTSUPP
+	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
 }
 
 // fileDescription is embedded by tmpfs implementations of
