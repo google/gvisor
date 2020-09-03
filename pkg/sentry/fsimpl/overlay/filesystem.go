@@ -15,6 +15,7 @@
 package overlay
 
 import (
+	"strings"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -27,10 +28,15 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// _OVL_XATTR_PREFIX is an extended attribute key prefix to identify overlayfs
+// attributes.
+// Linux: fs/overlayfs/overlayfs.h:OVL_XATTR_PREFIX
+const _OVL_XATTR_PREFIX = linux.XATTR_TRUSTED_PREFIX + "overlay."
+
 // _OVL_XATTR_OPAQUE is an extended attribute key whose value is set to "y" for
 // opaque directories.
 // Linux: fs/overlayfs/overlayfs.h:OVL_XATTR_OPAQUE
-const _OVL_XATTR_OPAQUE = linux.XATTR_TRUSTED_PREFIX + "overlay.opaque"
+const _OVL_XATTR_OPAQUE = _OVL_XATTR_PREFIX + "opaque"
 
 func isWhiteout(stat *linux.Statx) bool {
 	return stat.Mode&linux.S_IFMT == linux.S_IFCHR && stat.RdevMajor == 0 && stat.RdevMinor == 0
@@ -1347,18 +1353,42 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	return nil
 }
 
+// isOverlayXattr returns whether the given extended attribute configures the
+// overlay.
+func isOverlayXattr(name string) bool {
+	return strings.HasPrefix(name, _OVL_XATTR_PREFIX)
+}
+
 // ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
 func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	_, err := fs.resolveLocked(ctx, rp, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, err
 	}
-	// TODO(gvisor.dev/issue/1199): Linux overlayfs actually allows listxattr,
-	// but not any other xattr syscalls. For now we just reject all of them.
-	return nil, syserror.ENOTSUP
+
+	return fs.listXattr(ctx, d, size)
+}
+
+func (fs *filesystem) listXattr(ctx context.Context, d *dentry, size uint64) ([]string, error) {
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	top := d.topLayer()
+	names, err := vfsObj.ListxattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, size)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out all overlay attributes.
+	n := 0
+	for _, name := range names {
+		if !isOverlayXattr(name) {
+			names[n] = name
+			n++
+		}
+	}
+	return names[:n], err
 }
 
 // GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
@@ -1366,11 +1396,29 @@ func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	_, err := fs.resolveLocked(ctx, rp, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return "", err
 	}
-	return "", syserror.ENOTSUP
+
+	return fs.getXattr(ctx, d, rp.Credentials(), &opts)
+}
+
+func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Credentials, opts *vfs.GetxattrOptions) (string, error) {
+	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
+		return "", err
+	}
+
+	// Return EOPNOTSUPP when fetching an overlay attribute.
+	// See fs/overlayfs/super.c:ovl_own_xattr_get().
+	if isOverlayXattr(opts.Name) {
+		return "", syserror.EOPNOTSUPP
+	}
+
+	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_get().
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	top := d.topLayer()
+	return vfsObj.GetxattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, opts)
 }
 
 // SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
@@ -1378,11 +1426,36 @@ func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	_, err := fs.resolveLocked(ctx, rp, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return err
 	}
-	return syserror.ENOTSUP
+
+	return fs.setXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), &opts)
+}
+
+// Precondition: fs.renameMu must be locked.
+func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, opts *vfs.SetxattrOptions) error {
+	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
+		return err
+	}
+
+	// Return EOPNOTSUPP when setting an overlay attribute.
+	// See fs/overlayfs/super.c:ovl_own_xattr_set().
+	if isOverlayXattr(opts.Name) {
+		return syserror.EOPNOTSUPP
+	}
+
+	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_set().
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return err
+	}
+	defer mnt.EndWrite()
+	if err := d.copyUpLocked(ctx); err != nil {
+		return err
+	}
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	return vfsObj.SetxattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
 }
 
 // RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
@@ -1390,11 +1463,36 @@ func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	_, err := fs.resolveLocked(ctx, rp, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return err
 	}
-	return syserror.ENOTSUP
+
+	return fs.removeXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), name)
+}
+
+// Precondition: fs.renameMu must be locked.
+func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, name string) error {
+	if err := d.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
+		return err
+	}
+
+	// Like SetxattrAt, return EOPNOTSUPP when removing an overlay attribute.
+	// Linux passes the remove request to xattr_handler->set.
+	// See fs/xattr.c:vfs_removexattr().
+	if isOverlayXattr(name) {
+		return syserror.EOPNOTSUPP
+	}
+
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return err
+	}
+	defer mnt.EndWrite()
+	if err := d.copyUpLocked(ctx); err != nil {
+		return err
+	}
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	return vfsObj.RemovexattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

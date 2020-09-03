@@ -570,6 +570,16 @@ func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) 
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
 }
 
+func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
+	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
+	kuid := auth.KUID(atomic.LoadUint32(&d.uid))
+	kgid := auth.KGID(atomic.LoadUint32(&d.gid))
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+		return err
+	}
+	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
+}
+
 // statInternalMask is the set of stat fields that is set by
 // dentry.statInternalTo().
 const statInternalMask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
@@ -620,6 +630,32 @@ func (fd *fileDescription) filesystem() *filesystem {
 
 func (fd *fileDescription) dentry() *dentry {
 	return fd.vfsfd.Dentry().Impl().(*dentry)
+}
+
+// Listxattr implements vfs.FileDescriptionImpl.Listxattr.
+func (fd *fileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
+	return fd.filesystem().listXattr(ctx, fd.dentry(), size)
+}
+
+// Getxattr implements vfs.FileDescriptionImpl.Getxattr.
+func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOptions) (string, error) {
+	return fd.filesystem().getXattr(ctx, fd.dentry(), auth.CredentialsFromContext(ctx), &opts)
+}
+
+// Setxattr implements vfs.FileDescriptionImpl.Setxattr.
+func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
+	fs := fd.filesystem()
+	fs.renameMu.RLock()
+	defer fs.renameMu.RUnlock()
+	return fs.setXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), &opts)
+}
+
+// Removexattr implements vfs.FileDescriptionImpl.Removexattr.
+func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
+	fs := fd.filesystem()
+	fs.renameMu.RLock()
+	defer fs.renameMu.RUnlock()
+	return fs.removeXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), name)
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
