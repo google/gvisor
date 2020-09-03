@@ -35,6 +35,10 @@ import (
 // Name is the default filesystem name.
 const Name = "fuse"
 
+// maxActiveRequestsDefault is the default setting controlling the upper bound
+// on the number of active requests at any given time.
+const maxActiveRequestsDefault = 10000
+
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
 
@@ -168,12 +172,12 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Check for unparsed options.
 	if len(mopts) != 0 {
-		log.Warningf("%s.GetFilesystem: unknown options: %v", fsType.Name(), mopts)
+		log.Warningf("%s.GetFilesystem: unsupported or unknown options: %v", fsType.Name(), mopts)
 		return nil, nil, syserror.EINVAL
 	}
 
 	// Create a new FUSE filesystem.
-	fs, err := NewFUSEFilesystem(ctx, devMinor, &fsopts, fuseFd)
+	fs, err := newFUSEFilesystem(ctx, devMinor, &fsopts, fuseFd)
 	if err != nil {
 		log.Warningf("%s.NewFUSEFilesystem: failed with error: %v", fsType.Name(), err)
 		return nil, nil, err
@@ -194,21 +198,22 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }
 
-// NewFUSEFilesystem creates a new FUSE filesystem.
-func NewFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOptions, device *vfs.FileDescription) (*filesystem, error) {
-	fs := &filesystem{
-		devMinor: devMinor,
-		opts:     opts,
-	}
-
+// newFUSEFilesystem creates a new FUSE filesystem.
+func newFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOptions, device *vfs.FileDescription) (*filesystem, error) {
 	conn, err := newFUSEConnection(ctx, device, opts)
 	if err != nil {
 		log.Warningf("fuse.NewFUSEFilesystem: NewFUSEConnection failed with error: %v", err)
 		return nil, syserror.EINVAL
 	}
 
-	fs.conn = conn
 	fuseFD := device.Impl().(*DeviceFD)
+
+	fs := &filesystem{
+		devMinor: devMinor,
+		opts:     opts,
+		conn:     conn,
+	}
+
 	fuseFD.fs = fs
 
 	return fs, nil
