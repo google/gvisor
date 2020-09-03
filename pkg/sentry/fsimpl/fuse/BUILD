@@ -30,11 +30,11 @@ go_library(
     name = "fuse",
     srcs = [
         "connection.go",
+        "connection_control.go",
         "dev.go",
         "directory.go",
         "file.go",
         "fusefs.go",
-        "init.go",
         "inode_refs.go",
         "read_write.go",
         "register.go",
