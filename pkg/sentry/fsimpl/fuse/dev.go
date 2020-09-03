@@ -204,8 +204,11 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 
 	// Fully done with this req, remove it from the queue.
 	fd.queue.Remove(req)
-	if req.hdr.Opcode == linux.FUSE_RELEASE {
+
+	// Remove noReply ones from map of requests expecting a reply.
+	if req.noReply {
 		fd.numActiveRequests -= 1
+		delete(fd.completions, req.hdr.Unique)
 	}
 
 	return int64(n), nil
@@ -296,6 +299,10 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 
 			fut, ok := fd.completions[hdr.Unique]
 			if !ok {
+				if fut.hdr.Unique == linux.FUSE_RELEASE {
+					// Currently we simply discard the reply for FUSE_RELEASE.
+					return n + src.NumBytes(), nil
+				}
 				// Server sent us a response for a request we never sent?
 				return 0, syserror.EINVAL
 			}
