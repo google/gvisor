@@ -52,6 +52,10 @@ syscall_test(
     test = "//test/fuse/linux:readdir_test",
 )
 
+syscall_test(
+    fuse = "True",
+    test = "//test/fuse/linux:create_test",
+)
 
 syscall_test(
     size = "large",
