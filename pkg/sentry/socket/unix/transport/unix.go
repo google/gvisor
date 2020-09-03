@@ -151,7 +151,10 @@ type Endpoint interface {
 	// block if no new connections are available.
 	//
 	// The returned Queue is the wait queue for the newly created endpoint.
-	Accept() (Endpoint, *syserr.Error)
+	//
+	// peerAddr if not nil will be populated with the address of the connected
+	// peer on a successful accept.
+	Accept(peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error)
 
 	// Bind binds the endpoint to a specific local address and port.
 	// Specifying a NIC is optional.
