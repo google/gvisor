@@ -105,7 +105,7 @@ void BM_GetdentsSameFD(benchmark::State& state) {
   state.SetItemsProcessed(state.iterations());
 }
 
-BENCHMARK(BM_GetdentsSameFD)->Range(1, 1 << 16)->UseRealTime();
+BENCHMARK(BM_GetdentsSameFD)->Range(1, 1 << 12)->UseRealTime();
 
 // Creates a directory containing `files` files, and reads all the directory
 // entries from the directory using a new FD each time.
