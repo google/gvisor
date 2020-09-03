@@ -392,6 +392,24 @@ func (inode) Valid(ctx context.Context) bool {
 	return true
 }
 
+// NewFile implements kernfs.Inode.NewFile.
+func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*vfs.Dentry, error) {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.Inode.NewFile: couldn't get kernel task from context", i.NodeID)
+		return nil, syserror.EINVAL
+	}
+	in := linux.FUSECreateIn{
+		CreateMeta: linux.FUSECreateMeta{
+			Flags: opts.Flags,
+			Mode:  uint32(opts.Mode) | linux.S_IFREG,
+			Umask: uint32(kernelTask.FSContext().Umask()),
+		},
+		Name: name,
+	}
+	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
+}
+
 // NewNode implements kernfs.Inode.NewNode.
 func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error) {
 	in := linux.FUSEMknodIn{
