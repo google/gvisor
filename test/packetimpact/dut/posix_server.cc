@@ -21,6 +21,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <iostream>
@@ -307,9 +308,9 @@ class PosixImpl final : public posix_server::Posix::Service {
         break;
       }
       case ::posix_server::SockOptVal::kTimeval: {
-        timeval tv = {.tv_sec = static_cast<__time_t>(
+        timeval tv = {.tv_sec = static_cast<time_t>(
                           request->optval().timeval().seconds()),
-                      .tv_usec = static_cast<__suseconds_t>(
+                      .tv_usec = static_cast<suseconds_t>(
                           request->optval().timeval().microseconds())};
         response->set_ret(setsockopt(request->sockfd(), request->level(),
                                      request->optname(), &tv, sizeof(tv)));
