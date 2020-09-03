@@ -19,7 +19,6 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -96,6 +95,12 @@ type Request struct {
 	// payload for this request: extra bytes to write after
 	// the data slice. Used by FUSE_WRITE.
 	payload []byte
+
+	// If this request is async.
+	async bool
+	// If we don't care its response.
+	// Manually set by the caller.
+	noReply bool
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
@@ -138,24 +143,25 @@ type futureResponse struct {
 	ch     chan struct{}
 	hdr    *linux.FUSEHeaderOut
 	data   []byte
+
+	// If this request is async.
+	async bool
 }
 
 // newFutureResponse creates a future response to a FUSE request.
-func newFutureResponse(opcode linux.FUSEOpcode) *futureResponse {
+func newFutureResponse(req *Request) *futureResponse {
 	return &futureResponse{
-		opcode: opcode,
+		opcode: req.hdr.Opcode,
 		ch:     make(chan struct{}),
+		async:  req.async,
 	}
 }
 
 // resolve blocks the task until the server responds to its corresponding request,
 // then returns a resolved response.
 func (f *futureResponse) resolve(t *kernel.Task) (*Response, error) {
-	// If there is no Task associated with this request  - then we don't try to resolve
-	// the response.  Instead, the task writing the response (proxy to the server) will
-	// process the response on our behalf.
-	if t == nil {
-		log.Infof("fuse.Response.resolve: Not waiting on a response from server.")
+	// Return directly for async requests.
+	if f.async {
 		return nil, nil
 	}
 
