@@ -15,6 +15,8 @@
 package fuse
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
@@ -49,6 +51,26 @@ var (
 	MaxUserBackgroundRequest   uint16 = fuseDefaultMaxBackground
 	MaxUserCongestionThreshold uint16 = fuseDefaultCongestionThreshold
 )
+
+// SetInitialized atomically sets the connection as initialized.
+func (conn *connection) SetInitialized() {
+	// Unblock the requests sent before INIT.
+	close(conn.initializedChan)
+
+	// Close the channel first to avoid the non-atomic situation
+	// where conn.initialized is true but there are
+	// tasks being blocked on the channel.
+	// And it prevents the newer tasks from gaining
+	// unnecessary higher chance to be issued before the blocked one.
+
+	atomic.StoreInt32(&(conn.initialized), int32(1))
+}
+
+// IsInitialized atomically check if the connection is initialized.
+// pairs with SetInitialized().
+func (conn *connection) Initialized() bool {
+	return atomic.LoadInt32(&(conn.initialized)) != 0
+}
 
 // InitSend sends a FUSE_INIT request.
 func (conn *connection) InitSend(creds *auth.Credentials, pid uint32) error {
@@ -85,15 +107,15 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 }
 
 // Process the FUSE_INIT reply from the FUSE server.
+// It tries to acquire the conn.asyncMu lock if minor version is newer than 13.
 func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap bool) error {
+	// No matter error or not, always set initialzied.
+	// to unblock the blocked requests.
+	defer conn.SetInitialized()
+
 	// No support for old major fuse versions.
 	if out.Major != linux.FUSE_KERNEL_VERSION {
 		conn.connInitError = true
-
-		// Set the connection as initialized and unblock the blocked requests
-		// (i.e. return error for them).
-		conn.SetInitialized()
-
 		return nil
 	}
 
@@ -101,29 +123,14 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 	conn.connInitSuccess = true
 	conn.minor = out.Minor
 
-	// No support for limits before minor version 13.
-	if out.Minor >= 13 {
-		conn.bgLock.Lock()
-
-		if out.MaxBackground > 0 {
-			conn.maxBackground = out.MaxBackground
-
-			if !hasSysAdminCap &&
-				conn.maxBackground > MaxUserBackgroundRequest {
-				conn.maxBackground = MaxUserBackgroundRequest
-			}
-		}
-
-		if out.CongestionThreshold > 0 {
-			conn.congestionThreshold = out.CongestionThreshold
-
-			if !hasSysAdminCap &&
-				conn.congestionThreshold > MaxUserCongestionThreshold {
-				conn.congestionThreshold = MaxUserCongestionThreshold
-			}
-		}
-
-		conn.bgLock.Unlock()
+	// No support for negotiating MaxWrite before minor version 5.
+	if out.Minor >= 5 {
+		conn.maxWrite = out.MaxWrite
+	} else {
+		conn.maxWrite = fuseMinMaxWrite
+	}
+	if conn.maxWrite < fuseMinMaxWrite {
+		conn.maxWrite = fuseMinMaxWrite
 	}
 
 	// No support for the following flags before minor version 6.
@@ -147,19 +154,30 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 		}
 	}
 
-	// No support for negotiating MaxWrite before minor version 5.
-	if out.Minor >= 5 {
-		conn.maxWrite = out.MaxWrite
-	} else {
-		conn.maxWrite = fuseMinMaxWrite
-	}
-	if conn.maxWrite < fuseMinMaxWrite {
-		conn.maxWrite = fuseMinMaxWrite
-	}
+	// No support for limits before minor version 13.
+	if out.Minor >= 13 {
+		conn.asyncMu.Lock()
 
-	// Set connection as initialized and unblock the requests
-	// issued before init.
-	conn.SetInitialized()
+		if out.MaxBackground > 0 {
+			conn.asyncNumMax = out.MaxBackground
+
+			if !hasSysAdminCap &&
+				conn.asyncNumMax > MaxUserBackgroundRequest {
+				conn.asyncNumMax = MaxUserBackgroundRequest
+			}
+		}
+
+		if out.CongestionThreshold > 0 {
+			conn.asyncCongestionThreshold = out.CongestionThreshold
+
+			if !hasSysAdminCap &&
+				conn.asyncCongestionThreshold > MaxUserCongestionThreshold {
+				conn.asyncCongestionThreshold = MaxUserCongestionThreshold
+			}
+		}
+
+		conn.asyncMu.Unlock()
+	}
 
 	return nil
 }
