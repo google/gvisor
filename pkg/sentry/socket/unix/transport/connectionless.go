@@ -144,12 +144,12 @@ func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoi
 }
 
 // Listen starts listening on the connection.
-func (e *connectionlessEndpoint) Listen(int) *syserr.Error {
+func (*connectionlessEndpoint) Listen(int) *syserr.Error {
 	return syserr.ErrNotSupported
 }
 
 // Accept accepts a new connection.
-func (e *connectionlessEndpoint) Accept() (Endpoint, *syserr.Error) {
+func (*connectionlessEndpoint) Accept(*tcpip.FullAddress) (Endpoint, *syserr.Error) {
 	return nil, syserr.ErrNotSupported
 }
 
