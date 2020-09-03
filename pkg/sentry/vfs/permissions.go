@@ -16,6 +16,7 @@ package vfs
 
 import (
 	"math"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -283,4 +284,41 @@ func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 		return remaining, nil
 	}
 	return size, nil
+}
+
+// CheckXattrPermissions checks permissions for extended attribute access.
+// This is analogous to fs/xattr.c:xattr_permission(). Some key differences:
+// * Does not check for read-only filesystem property.
+// * Does not check inode immutability or append only mode. In both cases EPERM
+//   must be returned by filesystem implementations.
+// * Does not do inode permission checks. Filesystem implementations should
+//   handle inode permission checks as they may differ across implementations.
+func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.FileMode, kuid auth.KUID, name string) error {
+	switch {
+	case strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX):
+		// The trusted.* namespace can only be accessed by privileged
+		// users.
+		if creds.HasCapability(linux.CAP_SYS_ADMIN) {
+			return nil
+		}
+		if ats.MayWrite() {
+			return syserror.EPERM
+		}
+		return syserror.ENODATA
+	case strings.HasPrefix(name, linux.XATTR_USER_PREFIX):
+		// In the user.* namespace, only regular files and directories can have
+		// extended attributes. For sticky directories, only the owner and
+		// privileged users can write attributes.
+		filetype := mode.FileType()
+		if filetype != linux.ModeRegular && filetype != linux.ModeDirectory {
+			if ats.MayWrite() {
+				return syserror.EPERM
+			}
+			return syserror.ENODATA
+		}
+		if filetype == linux.ModeDirectory && mode&linux.ModeSticky != 0 && ats.MayWrite() && !CanActAsOwner(creds, kuid) {
+			return syserror.EPERM
+		}
+	}
+	return nil
 }

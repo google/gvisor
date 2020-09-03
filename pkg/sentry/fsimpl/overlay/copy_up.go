@@ -91,6 +91,10 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		if err != nil {
 			ctx.Warningf("Unrecoverable overlayfs inconsistency: failed to delete upper layer file after copy-up error: %v", err)
 		}
+		if d.upperVD.Ok() {
+			d.upperVD.DecRef(ctx)
+			d.upperVD = vfs.VirtualDentry{}
+		}
 	}
 	switch ftype {
 	case linux.S_IFREG:
@@ -234,7 +238,10 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		panic(fmt.Sprintf("unexpected file type %o", ftype))
 	}
 
-	// TODO(gvisor.dev/issue/1199): copy up xattrs
+	if err := d.copyXattrsLocked(ctx); err != nil {
+		cleanupUndoCopyUp()
+		return err
+	}
 
 	// Update the dentry's device and inode numbers (except for directories,
 	// for which these remain overlay-assigned).
@@ -246,14 +253,10 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 			Mask: linux.STATX_INO,
 		})
 		if err != nil {
-			d.upperVD.DecRef(ctx)
-			d.upperVD = vfs.VirtualDentry{}
 			cleanupUndoCopyUp()
 			return err
 		}
 		if upperStat.Mask&linux.STATX_INO == 0 {
-			d.upperVD.DecRef(ctx)
-			d.upperVD = vfs.VirtualDentry{}
 			cleanupUndoCopyUp()
 			return syserror.EREMOTE
 		}
@@ -263,5 +266,44 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 	}
 
 	atomic.StoreUint32(&d.copiedUp, 1)
+	return nil
+}
+
+// copyXattrsLocked copies a subset of lower's extended attributes to upper.
+// Attributes that configure an overlay in the lower are not copied up.
+//
+// Preconditions: d.copyMu must be locked for writing.
+func (d *dentry) copyXattrsLocked(ctx context.Context) error {
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	lowerPop := &vfs.PathOperation{Root: d.lowerVDs[0], Start: d.lowerVDs[0]}
+	upperPop := &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}
+
+	lowerXattrs, err := vfsObj.ListxattrAt(ctx, d.fs.creds, lowerPop, 0)
+	if err != nil {
+		if err == syserror.EOPNOTSUPP {
+			// There are no guarantees as to the contents of lowerXattrs.
+			return nil
+		}
+		ctx.Warningf("failed to copy up xattrs because ListxattrAt failed: %v", err)
+		return err
+	}
+
+	for _, name := range lowerXattrs {
+		// Do not copy up overlay attributes.
+		if isOverlayXattr(name) {
+			continue
+		}
+
+		value, err := vfsObj.GetxattrAt(ctx, d.fs.creds, lowerPop, &vfs.GetxattrOptions{Name: name, Size: 0})
+		if err != nil {
+			ctx.Warningf("failed to copy up xattrs because GetxattrAt failed: %v", err)
+			return err
+		}
+
+		if err := vfsObj.SetxattrAt(ctx, d.fs.creds, upperPop, &vfs.SetxattrOptions{Name: name, Value: value}); err != nil {
+			ctx.Warningf("failed to copy up xattrs because SetxattrAt failed: %v", err)
+			return err
+		}
+	}
 	return nil
 }

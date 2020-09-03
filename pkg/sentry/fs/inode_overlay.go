@@ -16,7 +16,6 @@ package fs
 
 import (
 	"fmt"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -539,7 +538,7 @@ func overlayGetXattr(ctx context.Context, o *overlayEntry, name string, size uin
 
 	// Don't forward the value of the extended attribute if it would
 	// unexpectedly change the behavior of a wrapping overlay layer.
-	if strings.HasPrefix(XattrOverlayPrefix, name) {
+	if isXattrOverlay(name) {
 		return "", syserror.ENODATA
 	}
 
@@ -555,7 +554,7 @@ func overlayGetXattr(ctx context.Context, o *overlayEntry, name string, size uin
 
 func overlaySetxattr(ctx context.Context, o *overlayEntry, d *Dirent, name, value string, flags uint32) error {
 	// Don't allow changes to overlay xattrs through a setxattr syscall.
-	if strings.HasPrefix(XattrOverlayPrefix, name) {
+	if isXattrOverlay(name) {
 		return syserror.EPERM
 	}
 
@@ -578,7 +577,7 @@ func overlayListXattr(ctx context.Context, o *overlayEntry, size uint64) (map[st
 	for name := range names {
 		// Same as overlayGetXattr, we shouldn't forward along
 		// overlay attributes.
-		if strings.HasPrefix(XattrOverlayPrefix, name) {
+		if isXattrOverlay(name) {
 			delete(names, name)
 		}
 	}
@@ -587,7 +586,7 @@ func overlayListXattr(ctx context.Context, o *overlayEntry, size uint64) (map[st
 
 func overlayRemoveXattr(ctx context.Context, o *overlayEntry, d *Dirent, name string) error {
 	// Don't allow changes to overlay xattrs through a removexattr syscall.
-	if strings.HasPrefix(XattrOverlayPrefix, name) {
+	if isXattrOverlay(name) {
 		return syserror.EPERM
 	}
 
