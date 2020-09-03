@@ -23,8 +23,9 @@ def _packetimpact_test_impl(ctx):
     transitive_files = []
     if hasattr(ctx.attr._test_runner, "data_runfiles"):
         transitive_files.append(ctx.attr._test_runner.data_runfiles.files)
+    files = [test_runner] + ctx.files.testbench_binary + ctx.files._posix_server
     runfiles = ctx.runfiles(
-        files = [test_runner] + ctx.files.testbench_binary + ctx.files._posix_server_binary,
+        files = files,
         transitive_files = depset(transitive = transitive_files),
         collect_default = True,
         collect_data = True,
@@ -38,7 +39,7 @@ _packetimpact_test = rule(
             cfg = "target",
             default = ":packetimpact_test",
         ),
-        "_posix_server_binary": attr.label(
+        "_posix_server": attr.label(
             cfg = "target",
             default = "//test/packetimpact/dut:posix_server",
         ),

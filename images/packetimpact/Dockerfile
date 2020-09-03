@@ -1,4 +1,4 @@
-FROM ubuntu:bionic
+FROM ubuntu:focal
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         # iptables to disable OS native packet processing.
         iptables \
@@ -11,6 +11,10 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         # tshark to log verbose packet sniffing.
         tshark \
         # killall for cleanup.
-        psmisc
+        psmisc \
+        # qemu-system-x86 to emulate fuchsia.
+        qemu-system-x86 \
+        # sha1sum to generate entropy.
+        libdigest-sha-perl
 RUN hash -r
 CMD /bin/bash

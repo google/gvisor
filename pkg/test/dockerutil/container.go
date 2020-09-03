@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -403,10 +404,13 @@ func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
 		return
 	}
 	for _, name := range sources {
-		src, err := testutil.FindFile(name)
-		if err != nil {
-			c.copyErr = fmt.Errorf("testutil.FindFile(%q) failed: %v", name, err)
-			return
+		src := name
+		if !filepath.IsAbs(src) {
+			src, err = testutil.FindFile(name)
+			if err != nil {
+				c.copyErr = fmt.Errorf("testutil.FindFile(%q) failed: %w", name, err)
+				return
+			}
 		}
 		dst := path.Join(dir, path.Base(name))
 		if err := testutil.Copy(src, dst); err != nil {
