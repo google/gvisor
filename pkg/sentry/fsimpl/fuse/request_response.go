@@ -15,7 +15,13 @@
 package fuse
 
 import (
+	"fmt"
+	"syscall"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
@@ -70,4 +76,148 @@ func (r *fuseInitRes) UnmarshalBytes(src []byte) {
 // SizeBytes is the size of the payload of the FUSE_INIT response.
 func (r *fuseInitRes) SizeBytes() int {
 	return int(r.initLen)
+}
+
+// Ordinary requests have even IDs, while interrupts IDs are odd.
+// Used to increment the unique ID for each FUSE request.
+var reqIDStep uint64 = 2
+
+// Request represents a FUSE operation request that hasn't been sent to the
+// server yet.
+//
+// +stateify savable
+type Request struct {
+	requestEntry
+
+	id   linux.FUSEOpID
+	hdr  *linux.FUSEHeaderIn
+	data []byte
+
+	// payload for this request: extra bytes to write after
+	// the data slice. Used by FUSE_WRITE.
+	payload []byte
+}
+
+// NewRequest creates a new request that can be sent to the FUSE server.
+func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
+	conn.fd.mu.Lock()
+	defer conn.fd.mu.Unlock()
+	conn.fd.nextOpID += linux.FUSEOpID(reqIDStep)
+
+	hdrLen := (*linux.FUSEHeaderIn)(nil).SizeBytes()
+	hdr := linux.FUSEHeaderIn{
+		Len:    uint32(hdrLen + payload.SizeBytes()),
+		Opcode: opcode,
+		Unique: conn.fd.nextOpID,
+		NodeID: ino,
+		UID:    uint32(creds.EffectiveKUID),
+		GID:    uint32(creds.EffectiveKGID),
+		PID:    pid,
+	}
+
+	buf := make([]byte, hdr.Len)
+
+	// TODO(gVisor.dev/3698): Use the unsafe version once go_marshal is safe to use again.
+	hdr.MarshalBytes(buf[:hdrLen])
+	payload.MarshalBytes(buf[hdrLen:])
+
+	return &Request{
+		id:   hdr.Unique,
+		hdr:  &hdr,
+		data: buf,
+	}, nil
+}
+
+// futureResponse represents an in-flight request, that may or may not have
+// completed yet. Convert it to a resolved Response by calling Resolve, but note
+// that this may block.
+//
+// +stateify savable
+type futureResponse struct {
+	opcode linux.FUSEOpcode
+	ch     chan struct{}
+	hdr    *linux.FUSEHeaderOut
+	data   []byte
+}
+
+// newFutureResponse creates a future response to a FUSE request.
+func newFutureResponse(opcode linux.FUSEOpcode) *futureResponse {
+	return &futureResponse{
+		opcode: opcode,
+		ch:     make(chan struct{}),
+	}
+}
+
+// resolve blocks the task until the server responds to its corresponding request,
+// then returns a resolved response.
+func (f *futureResponse) resolve(t *kernel.Task) (*Response, error) {
+	// If there is no Task associated with this request  - then we don't try to resolve
+	// the response.  Instead, the task writing the response (proxy to the server) will
+	// process the response on our behalf.
+	if t == nil {
+		log.Infof("fuse.Response.resolve: Not waiting on a response from server.")
+		return nil, nil
+	}
+
+	if err := t.Block(f.ch); err != nil {
+		return nil, err
+	}
+
+	return f.getResponse(), nil
+}
+
+// getResponse creates a Response from the data the futureResponse has.
+func (f *futureResponse) getResponse() *Response {
+	return &Response{
+		opcode: f.opcode,
+		hdr:    *f.hdr,
+		data:   f.data,
+	}
+}
+
+// Response represents an actual response from the server, including the
+// response payload.
+//
+// +stateify savable
+type Response struct {
+	opcode linux.FUSEOpcode
+	hdr    linux.FUSEHeaderOut
+	data   []byte
+}
+
+// Error returns the error of the FUSE call.
+func (r *Response) Error() error {
+	errno := r.hdr.Error
+	if errno >= 0 {
+		return nil
+	}
+
+	sysErrNo := syscall.Errno(-errno)
+	return error(sysErrNo)
+}
+
+// DataLen returns the size of the response without the header.
+func (r *Response) DataLen() uint32 {
+	return r.hdr.Len - uint32(r.hdr.SizeBytes())
+}
+
+// UnmarshalPayload unmarshals the response data into m.
+func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
+	hdrLen := r.hdr.SizeBytes()
+	haveDataLen := r.hdr.Len - uint32(hdrLen)
+	wantDataLen := uint32(m.SizeBytes())
+
+	if haveDataLen < wantDataLen {
+		return fmt.Errorf("payload too small. Minimum data lenth required: %d,  but got data length %d", wantDataLen, haveDataLen)
+	}
+
+	// The response data is empty unless there is some payload. And so, doesn't
+	// need to be unmarshalled.
+	if r.data == nil {
+		return nil
+	}
+
+	// TODO(gVisor.dev/3698): Use the unsafe version once go_marshal is safe to use again.
+	m.UnmarshalBytes(r.data[hdrLen:])
+	return nil
 }
