@@ -188,7 +188,7 @@ func main() {
 	defer wq.EventUnregister(&waitEntry)
 
 	for {
-		n, wq, err := ep.Accept()
+		n, wq, err := ep.Accept(nil)
 		if err != nil {
 			if err == tcpip.ErrWouldBlock {
 				<-notifyCh

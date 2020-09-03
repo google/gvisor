@@ -948,12 +948,12 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 	wq.EventRegister(&we, waiter.EventIn)
 	defer wq.EventUnregister(&we)
 
-	c.EP, _, err = ep.Accept()
+	c.EP, _, err = ep.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			c.EP, _, err = ep.Accept()
+			c.EP, _, err = ep.Accept(nil)
 			if err != nil {
 				c.t.Fatalf("Accept failed: %v", err)
 			}
