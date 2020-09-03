@@ -445,6 +445,48 @@ type FUSEReleaseIn struct {
 	LockOwner uint64
 }
 
+// FUSECreateMeta contains all the static fields of FUSECreateIn,
+// which is used for FUSE_CREATE.
+//
+// +marshal
+type FUSECreateMeta struct {
+	// Flags of the creating file.
+	Flags uint32
+
+	// Mode is the mode of the creating file.
+	Mode uint32
+
+	// Umask is the current file mode creation mask.
+	Umask uint32
+	_     uint32
+}
+
+// FUSECreateIn contains all the arguments sent by the kernel to the daemon, to
+// atomically create and open a new regular file.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSECreateIn struct {
+	marshal.StubMarshallable
+
+	// CreateMeta contains mode, rdev and umash field for FUSE_MKNODS.
+	CreateMeta FUSECreateMeta
+
+	// Name is the name of the node to create.
+	Name string
+}
+
+// MarshalBytes serializes r.CreateMeta and r.Name to the dst buffer.
+func (r *FUSECreateIn) MarshalBytes(buf []byte) {
+	r.CreateMeta.MarshalBytes(buf[:r.CreateMeta.SizeBytes()])
+	copy(buf[r.CreateMeta.SizeBytes():], r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSECreateIn.
+// 1 extra byte for null-terminated string.
+func (r *FUSECreateIn) SizeBytes() int {
+	return r.CreateMeta.SizeBytes() + len(r.Name) + 1
+}
+
 // FUSEMknodMeta contains all the static fields of FUSEMknodIn,
 // which is used for FUSE_MKNOD.
 //
