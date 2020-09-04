@@ -415,10 +415,13 @@ type Stack struct {
 
 	linkAddrCache *linkAddrCache
 
-	mu               sync.RWMutex
-	nics             map[tcpip.NICID]*NIC
-	forwarding       bool
-	cleanupEndpoints map[TransportEndpoint]struct{}
+	mu         sync.RWMutex
+	nics       map[tcpip.NICID]*NIC
+	forwarding bool
+
+	// cleanupEndpointsMu protects cleanupEndpoints.
+	cleanupEndpointsMu sync.Mutex
+	cleanupEndpoints   map[TransportEndpoint]struct{}
 
 	// route is the route table passed in by the user via SetRouteTable(),
 	// it is used by FindRoute() to build a route for a specific
@@ -1528,10 +1531,9 @@ func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip
 // StartTransportEndpointCleanup removes the endpoint with the given id from
 // the stack transport dispatcher. It also transitions it to the cleanup stage.
 func (s *Stack) StartTransportEndpointCleanup(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, flags ports.Flags, bindToDevice tcpip.NICID) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	s.cleanupEndpointsMu.Lock()
 	s.cleanupEndpoints[ep] = struct{}{}
+	s.cleanupEndpointsMu.Unlock()
 
 	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, flags, bindToDevice)
 }
@@ -1539,9 +1541,9 @@ func (s *Stack) StartTransportEndpointCleanup(nicID tcpip.NICID, netProtos []tcp
 // CompleteTransportEndpointCleanup removes the endpoint from the cleanup
 // stage.
 func (s *Stack) CompleteTransportEndpointCleanup(ep TransportEndpoint) {
-	s.mu.Lock()
+	s.cleanupEndpointsMu.Lock()
 	delete(s.cleanupEndpoints, ep)
-	s.mu.Unlock()
+	s.cleanupEndpointsMu.Unlock()
 }
 
 // FindTransportEndpoint finds an endpoint that most closely matches the provided
@@ -1584,23 +1586,23 @@ func (s *Stack) RegisteredEndpoints() []TransportEndpoint {
 
 // CleanupEndpoints returns endpoints currently in the cleanup state.
 func (s *Stack) CleanupEndpoints() []TransportEndpoint {
-	s.mu.Lock()
+	s.cleanupEndpointsMu.Lock()
 	es := make([]TransportEndpoint, 0, len(s.cleanupEndpoints))
 	for e := range s.cleanupEndpoints {
 		es = append(es, e)
 	}
-	s.mu.Unlock()
+	s.cleanupEndpointsMu.Unlock()
 	return es
 }
 
 // RestoreCleanupEndpoints adds endpoints to cleanup tracking. This is useful
 // for restoring a stack after a save.
 func (s *Stack) RestoreCleanupEndpoints(es []TransportEndpoint) {
-	s.mu.Lock()
+	s.cleanupEndpointsMu.Lock()
 	for _, e := range es {
 		s.cleanupEndpoints[e] = struct{}{}
 	}
-	s.mu.Unlock()
+	s.cleanupEndpointsMu.Unlock()
 }
 
 // Close closes all currently registered transport endpoints.
