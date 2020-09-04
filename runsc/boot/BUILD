@@ -30,6 +30,7 @@ go_library(
         "//pkg/control/server",
         "//pkg/cpuid",
         "//pkg/eventchannel",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/memutil",
@@ -123,6 +124,7 @@ go_test(
     library = ":boot",
     deps = [
         "//pkg/control/server",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/p9",

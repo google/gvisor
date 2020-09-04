@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	hostvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -27,8 +28,9 @@ import (
 
 // Import imports a slice of FDs into the given FDTable. If console is true,
 // sets up TTY for the first 3 FDs in the slice representing stdin, stdout,
-// stderr. Upon success, Import takes ownership of all FDs.
-func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []int) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+// stderr. Used FDs are either closed or released. It's safe for the caller to
+// close any remaining files upon return.
+func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []*fd.FD) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	if kernel.VFS2Enabled {
 		ttyFile, err := importVFS2(ctx, fdTable, console, fds)
 		return nil, ttyFile, err
@@ -37,7 +39,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []in
 	return ttyFile, nil, err
 }
 
-func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []int) (*host.TTYFileOperations, error) {
+func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []*fd.FD) (*host.TTYFileOperations, error) {
 	var ttyFile *fs.File
 	for appFD, hostFD := range fds {
 		var appFile *fs.File
@@ -46,11 +48,12 @@ func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []
 			// Import the file as a host TTY file.
 			if ttyFile == nil {
 				var err error
-				appFile, err = host.ImportFile(ctx, hostFD, true /* isTTY */)
+				appFile, err = host.ImportFile(ctx, hostFD.FD(), true /* isTTY */)
 				if err != nil {
 					return nil, err
 				}
 				defer appFile.DecRef(ctx)
+				_ = hostFD.Close() // FD is dup'd i ImportFile.
 
 				// Remember this in the TTY file, as we will
 				// use it for the other stdio FDs.
@@ -65,11 +68,12 @@ func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []
 		} else {
 			// Import the file as a regular host file.
 			var err error
-			appFile, err = host.ImportFile(ctx, hostFD, false /* isTTY */)
+			appFile, err = host.ImportFile(ctx, hostFD.FD(), false /* isTTY */)
 			if err != nil {
 				return nil, err
 			}
 			defer appFile.DecRef(ctx)
+			_ = hostFD.Close() // FD is dup'd i ImportFile.
 		}
 
 		// Add the file to the FD map.
@@ -84,7 +88,7 @@ func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []
 	return ttyFile.FileOperations.(*host.TTYFileOperations), nil
 }
 
-func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, stdioFDs []int) (*hostvfs2.TTYFileDescription, error) {
+func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, stdioFDs []*fd.FD) (*hostvfs2.TTYFileDescription, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, fmt.Errorf("cannot find kernel from context")
@@ -98,11 +102,12 @@ func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, stdi
 			// Import the file as a host TTY file.
 			if ttyFile == nil {
 				var err error
-				appFile, err = hostvfs2.ImportFD(ctx, k.HostMount(), hostFD, true /* isTTY */)
+				appFile, err = hostvfs2.ImportFD(ctx, k.HostMount(), hostFD.FD(), true /* isTTY */)
 				if err != nil {
 					return nil, err
 				}
 				defer appFile.DecRef(ctx)
+				hostFD.Release() // FD is transfered to host FD.
 
 				// Remember this in the TTY file, as we will use it for the other stdio
 				// FDs.
@@ -115,11 +120,12 @@ func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, stdi
 			}
 		} else {
 			var err error
-			appFile, err = hostvfs2.ImportFD(ctx, k.HostMount(), hostFD, false /* isTTY */)
+			appFile, err = hostvfs2.ImportFD(ctx, k.HostMount(), hostFD.FD(), false /* isTTY */)
 			if err != nil {
 				return nil, err
 			}
 			defer appFile.DecRef(ctx)
+			hostFD.Release() // FD is transfered to host FD.
 		}
 
 		if err := fdTable.NewFDAtVFS2(ctx, int32(appFD), appFile, kernel.FDFlags{}); err != nil {
