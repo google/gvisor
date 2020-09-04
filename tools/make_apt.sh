@@ -54,18 +54,21 @@ declare -r release="${root}/dists/${suite}"
 mkdir -p "${release}"
 
 # Create a temporary keyring, and ensure it is cleaned up.
+# Using separate homedir allows us to install apt repositories multiple times
+# using the same key. This is a limitation in GnuPG pre-2.1.
 declare -r keyring=$(mktemp /tmp/keyringXXXXXX.gpg)
+declare -r homedir=$(mktemp -d /tmp/homedirXXXXXX)
 cleanup() {
-  rm -f "${keyring}"
+  rm -rf "${keyring}" "${homedir}"
 }
 trap cleanup EXIT
 
 # We attempt the import twice because the first one will fail if the public key
 # is not found. This isn't actually a failure for us, because we don't require
-# the public (this may be stored separately). The second import will succeed
+# the public key (this may be stored separately). The second import will succeed
 # because, in reality, the first import succeeded and it's a no-op.
-gpg --no-default-keyring --keyring "${keyring}" --secret-keyring "${keyring}" --import "${private_key}" || \
-  gpg --no-default-keyring --keyring "${keyring}" --secret-keyring "${keyring}" --import "${private_key}"
+gpg --no-default-keyring --keyring "${keyring}" --homedir "${homedir}" --import "${private_key}" || \
+  gpg --no-default-keyring --keyring "${keyring}" --homedir "${homedir}" --import "${private_key}"
 
 # Copy the packages into the root.
 for pkg in "$@"; do
