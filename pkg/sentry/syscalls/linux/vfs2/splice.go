@@ -18,6 +18,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
@@ -390,16 +391,21 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 					err = dw.waitForOut(t)
 				}
 				if err != nil {
-					// We didn't complete the write. Only
-					// report the bytes that were actually
-					// written, and rewind the offset.
+					// We didn't complete the write. Only report the bytes that were actually
+					// written, and rewind offsets as needed.
 					notWritten := int64(len(wbuf))
 					n -= notWritten
-					if offset != -1 {
-						// TODO(gvisor.dev/issue/3779): The inFile offset will be incorrect if we
-						// roll back, because it has already been advanced by the full amount.
-						// Merely seeking on inFile does not work, because there may be concurrent
-						// file operations.
+					if offset == -1 {
+						// We modified the offset of the input file itself during the read
+						// operation. Rewind it.
+						if _, seekErr := inFile.Seek(t, -notWritten, linux.SEEK_CUR); seekErr != nil {
+							// Log the error but don't return it, since the write has already
+							// completed successfully.
+							log.Warningf("failed to roll back input file offset: %v", seekErr)
+						}
+					} else {
+						// The sendfile call was provided an offset parameter that should be
+						// adjusted to reflect the number of bytes sent. Rewind it.
 						offset -= notWritten
 					}
 					break
