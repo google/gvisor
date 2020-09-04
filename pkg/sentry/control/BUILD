@@ -35,7 +35,6 @@ go_library(
         "//pkg/sync",
         "//pkg/tcpip/link/sniffer",
         "//pkg/urpc",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
