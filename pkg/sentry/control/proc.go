@@ -23,8 +23,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
@@ -203,27 +203,17 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	}
 	initArgs.Filename = resolved
 
-	fds := make([]int, len(args.FilePayload.Files))
-	for i, file := range args.FilePayload.Files {
-		if kernel.VFS2Enabled {
-			// Need to dup to remove ownership from os.File.
-			dup, err := unix.Dup(int(file.Fd()))
-			if err != nil {
-				return nil, 0, nil, nil, fmt.Errorf("duplicating payload files: %w", err)
-			}
-			fds[i] = dup
-		} else {
-			// VFS1 dups the file on import.
-			fds[i] = int(file.Fd())
-		}
+	fds, err := fd.NewFromFiles(args.Files)
+	if err != nil {
+		return nil, 0, nil, nil, fmt.Errorf("duplicating payload files: %w", err)
 	}
+	defer func() {
+		for _, fd := range fds {
+			_ = fd.Close()
+		}
+	}()
 	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, fds)
 	if err != nil {
-		if kernel.VFS2Enabled {
-			for _, fd := range fds {
-				unix.Close(fd)
-			}
-		}
 		return nil, 0, nil, nil, err
 	}
 
