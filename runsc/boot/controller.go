@@ -22,6 +22,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -257,13 +258,20 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	// All validation passed, logs the spec for debugging.
 	specutils.LogSpec(args.Spec)
 
-	err := cm.l.startContainer(args.Spec, args.Conf, args.CID, args.FilePayload.Files)
+	fds, err := fd.NewFromFiles(args.FilePayload.Files)
 	if err != nil {
+		return err
+	}
+	defer func() {
+		for _, fd := range fds {
+			_ = fd.Close()
+		}
+	}()
+	if err := cm.l.startContainer(args.Spec, args.Conf, args.CID, fds); err != nil {
 		log.Debugf("containerManager.Start failed %q: %+v: %v", args.CID, args, err)
 		return err
 	}
 	log.Debugf("Container %q started", args.CID)
-
 	return nil
 }
 

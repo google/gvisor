@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
@@ -89,10 +90,10 @@ type containerInfo struct {
 	procArgs kernel.CreateProcessArgs
 
 	// stdioFDs contains stdin, stdout, and stderr.
-	stdioFDs []int
+	stdioFDs []*fd.FD
 
 	// goferFDs are the FDs that attach the sandbox to the gofers.
-	goferFDs []int
+	goferFDs []*fd.FD
 }
 
 // Loader keeps state needed to start the kernel and run the container..
@@ -356,12 +357,17 @@ func New(args Args) (*Loader, error) {
 		k.SetHostMount(hostMount)
 	}
 
+	info := containerInfo{
+		conf:     args.Conf,
+		spec:     args.Spec,
+		procArgs: procArgs,
+	}
+
 	// Make host FDs stable between invocations. Host FDs must map to the exact
 	// same number when the sandbox is restored. Otherwise the wrong FD will be
 	// used.
-	var stdioFDs []int
 	newfd := startingStdioFD
-	for _, fd := range args.StdioFDs {
+	for _, stdioFD := range args.StdioFDs {
 		// Check that newfd is unused to avoid clobbering over it.
 		if _, err := unix.FcntlInt(uintptr(newfd), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
 			if err != nil {
@@ -370,13 +376,16 @@ func New(args Args) (*Loader, error) {
 			return nil, fmt.Errorf("unable to remap stdios, FD %d is already in use", newfd)
 		}
 
-		err := unix.Dup3(fd, newfd, unix.O_CLOEXEC)
+		err := unix.Dup3(stdioFD, newfd, unix.O_CLOEXEC)
 		if err != nil {
-			return nil, fmt.Errorf("dup3 of stdioFDs failed: %v", err)
+			return nil, fmt.Errorf("dup3 of stdios failed: %w", err)
 		}
-		stdioFDs = append(stdioFDs, newfd)
-		_ = unix.Close(fd)
+		info.stdioFDs = append(info.stdioFDs, fd.New(newfd))
+		_ = unix.Close(stdioFD)
 		newfd++
+	}
+	for _, goferFD := range args.GoferFDs {
+		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
 	}
 
 	eid := execID{cid: args.ID}
@@ -386,13 +395,7 @@ func New(args Args) (*Loader, error) {
 		sandboxID:  args.ID,
 		processes:  map[execID]*execProcess{eid: {}},
 		mountHints: mountHints,
-		root: containerInfo{
-			conf:     args.Conf,
-			stdioFDs: stdioFDs,
-			goferFDs: args.GoferFDs,
-			spec:     args.Spec,
-			procArgs: procArgs,
-		},
+		root:       info,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -466,9 +469,14 @@ func (l *Loader) Destroy() {
 	}
 	l.watchdog.Stop()
 
-	for i, fd := range l.root.stdioFDs {
-		_ = unix.Close(fd)
-		l.root.stdioFDs[i] = -1
+	// In the success case, stdioFDs and goferFDs will only contain
+	// released/closed FDs that ownership has been passed over to host FDs and
+	// gofer sessions. Close them here in case on failure.
+	for _, fd := range l.root.stdioFDs {
+		_ = fd.Close()
+	}
+	for _, fd := range l.root.goferFDs {
+		_ = fd.Close()
 	}
 }
 
@@ -598,17 +606,6 @@ func (l *Loader) run() error {
 		}
 	})
 
-	// l.stdioFDs are derived from dup() in boot.New() and they are now dup()ed again
-	// either in createFDTable() during initial start or in descriptor.initAfterLoad()
-	// during restore, we can release l.stdioFDs now. VFS2 takes ownership of the
-	// passed FDs, so only close for VFS1.
-	if !kernel.VFS2Enabled {
-		for i, fd := range l.root.stdioFDs {
-			_ = unix.Close(fd)
-			l.root.stdioFDs[i] = -1
-		}
-	}
-
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
 	return l.k.Start()
@@ -628,9 +625,9 @@ func (l *Loader) createContainer(cid string) error {
 }
 
 // startContainer starts a child container. It returns the thread group ID of
-// the newly created process. Caller owns 'files' and may close them after
-// this method returns.
-func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid string, files []*os.File) error {
+// the newly created process. Used FDs are either closed or released. It's safe
+// for the caller to close any remaining files upon return.
+func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid string, files []*fd.FD) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -681,37 +678,15 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 	}
 
 	info := &containerInfo{
-		conf: conf,
-		spec: spec,
+		conf:     conf,
+		spec:     spec,
+		stdioFDs: files[:3],
+		goferFDs: files[3:],
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %v", err)
 	}
-
-	// VFS1 dups stdioFDs, so we don't need to dup them here. VFS2 takes
-	// ownership of the passed FDs, and we need to dup them here.
-	for _, f := range files[:3] {
-		if !kernel.VFS2Enabled {
-			info.stdioFDs = append(info.stdioFDs, int(f.Fd()))
-		} else {
-			fd, err := unix.Dup(int(f.Fd()))
-			if err != nil {
-				return fmt.Errorf("failed to dup file: %v", err)
-			}
-			info.stdioFDs = append(info.stdioFDs, fd)
-		}
-	}
-
-	// Can't take ownership away from os.File. dup them to get a new FDs.
-	for _, f := range files[3:] {
-		fd, err := unix.Dup(int(f.Fd()))
-		if err != nil {
-			return fmt.Errorf("failed to dup file: %v", err)
-		}
-		info.goferFDs = append(info.goferFDs, fd)
-	}
-
 	tg, err := l.createContainerProcess(false, cid, info, ep)
 	if err != nil {
 		return err
@@ -795,13 +770,13 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 // startGoferMonitor runs a goroutine to monitor gofer's health. It polls on
 // the gofer FDs looking for disconnects, and destroys the container if a
 // disconnect occurs in any of the gofer FDs.
-func (l *Loader) startGoferMonitor(cid string, goferFDs []int) {
+func (l *Loader) startGoferMonitor(cid string, goferFDs []*fd.FD) {
 	go func() {
 		log.Debugf("Monitoring gofer health for container %q", cid)
 		var events []unix.PollFd
-		for _, fd := range goferFDs {
+		for _, goferFD := range goferFDs {
 			events = append(events, unix.PollFd{
-				Fd:     int32(fd),
+				Fd:     int32(goferFD.FD()),
 				Events: unix.POLLHUP | unix.POLLRDHUP,
 			})
 		}
@@ -1281,7 +1256,7 @@ func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileOperations, *hostvfs2
 	return ep.tty, ep.ttyVFS2, nil
 }
 
-func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.FDTable, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD) (*kernel.FDTable, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	if len(stdioFDs) != 3 {
 		return nil, nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}
