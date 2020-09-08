@@ -101,7 +101,7 @@ type FileDescriptionOptions struct {
 
 	// If UseDentryMetadata is true, calls to FileDescription methods that
 	// interact with file and filesystem metadata (Stat, SetStat, StatFS,
-	// Listxattr, Getxattr, Setxattr, Removexattr) are implemented by calling
+	// ListXattr, GetXattr, SetXattr, RemoveXattr) are implemented by calling
 	// the corresponding FilesystemImpl methods instead of the corresponding
 	// FileDescriptionImpl methods.
 	//
@@ -420,19 +420,19 @@ type FileDescriptionImpl interface {
 	// Ioctl implements the ioctl(2) syscall.
 	Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error)
 
-	// Listxattr returns all extended attribute names for the file.
-	Listxattr(ctx context.Context, size uint64) ([]string, error)
+	// ListXattr returns all extended attribute names for the file.
+	ListXattr(ctx context.Context, size uint64) ([]string, error)
 
-	// Getxattr returns the value associated with the given extended attribute
+	// GetXattr returns the value associated with the given extended attribute
 	// for the file.
-	Getxattr(ctx context.Context, opts GetxattrOptions) (string, error)
+	GetXattr(ctx context.Context, opts GetXattrOptions) (string, error)
 
-	// Setxattr changes the value associated with the given extended attribute
+	// SetXattr changes the value associated with the given extended attribute
 	// for the file.
-	Setxattr(ctx context.Context, opts SetxattrOptions) error
+	SetXattr(ctx context.Context, opts SetXattrOptions) error
 
-	// Removexattr removes the given extended attribute from the file.
-	Removexattr(ctx context.Context, name string) error
+	// RemoveXattr removes the given extended attribute from the file.
+	RemoveXattr(ctx context.Context, name string) error
 
 	// LockBSD tries to acquire a BSD-style advisory file lock.
 	LockBSD(ctx context.Context, uid lock.UniqueID, t lock.LockType, block lock.Blocker) error
@@ -635,25 +635,25 @@ func (fd *FileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 	return fd.impl.Ioctl(ctx, uio, args)
 }
 
-// Listxattr returns all extended attribute names for the file represented by
+// ListXattr returns all extended attribute names for the file represented by
 // fd.
 //
 // If the size of the list (including a NUL terminating byte after every entry)
 // would exceed size, ERANGE may be returned. Note that implementations
 // are free to ignore size entirely and return without error). In all cases,
 // if size is 0, the list should be returned without error, regardless of size.
-func (fd *FileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
+func (fd *FileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		names, err := fd.vd.mount.fs.impl.ListxattrAt(ctx, rp, size)
+		names, err := fd.vd.mount.fs.impl.ListXattrAt(ctx, rp, size)
 		vfsObj.putResolvingPath(ctx, rp)
 		return names, err
 	}
-	names, err := fd.impl.Listxattr(ctx, size)
+	names, err := fd.impl.ListXattr(ctx, size)
 	if err == syserror.ENOTSUP {
 		// Linux doesn't actually return ENOTSUP in this case; instead,
 		// fs/xattr.c:vfs_listxattr() falls back to allowing the security
@@ -664,57 +664,57 @@ func (fd *FileDescription) Listxattr(ctx context.Context, size uint64) ([]string
 	return names, err
 }
 
-// Getxattr returns the value associated with the given extended attribute for
+// GetXattr returns the value associated with the given extended attribute for
 // the file represented by fd.
 //
 // If the size of the return value exceeds opts.Size, ERANGE may be returned
 // (note that implementations are free to ignore opts.Size entirely and return
 // without error). In all cases, if opts.Size is 0, the value should be
 // returned without error, regardless of size.
-func (fd *FileDescription) Getxattr(ctx context.Context, opts *GetxattrOptions) (string, error) {
+func (fd *FileDescription) GetXattr(ctx context.Context, opts *GetXattrOptions) (string, error) {
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		val, err := fd.vd.mount.fs.impl.GetxattrAt(ctx, rp, *opts)
+		val, err := fd.vd.mount.fs.impl.GetXattrAt(ctx, rp, *opts)
 		vfsObj.putResolvingPath(ctx, rp)
 		return val, err
 	}
-	return fd.impl.Getxattr(ctx, *opts)
+	return fd.impl.GetXattr(ctx, *opts)
 }
 
-// Setxattr changes the value associated with the given extended attribute for
+// SetXattr changes the value associated with the given extended attribute for
 // the file represented by fd.
-func (fd *FileDescription) Setxattr(ctx context.Context, opts *SetxattrOptions) error {
+func (fd *FileDescription) SetXattr(ctx context.Context, opts *SetXattrOptions) error {
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		err := fd.vd.mount.fs.impl.SetxattrAt(ctx, rp, *opts)
+		err := fd.vd.mount.fs.impl.SetXattrAt(ctx, rp, *opts)
 		vfsObj.putResolvingPath(ctx, rp)
 		return err
 	}
-	return fd.impl.Setxattr(ctx, *opts)
+	return fd.impl.SetXattr(ctx, *opts)
 }
 
-// Removexattr removes the given extended attribute from the file represented
+// RemoveXattr removes the given extended attribute from the file represented
 // by fd.
-func (fd *FileDescription) Removexattr(ctx context.Context, name string) error {
+func (fd *FileDescription) RemoveXattr(ctx context.Context, name string) error {
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		err := fd.vd.mount.fs.impl.RemovexattrAt(ctx, rp, name)
+		err := fd.vd.mount.fs.impl.RemoveXattrAt(ctx, rp, name)
 		vfsObj.putResolvingPath(ctx, rp)
 		return err
 	}
-	return fd.impl.Removexattr(ctx, name)
+	return fd.impl.RemoveXattr(ctx, name)
 }
 
 // SyncFS instructs the filesystem containing fd to execute the semantics of

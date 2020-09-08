@@ -687,12 +687,12 @@ func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.C
 	}
 }
 
-// ListxattrAt returns all extended attribute names for the file at the given
+// ListXattrAt returns all extended attribute names for the file at the given
 // path.
-func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, size uint64) ([]string, error) {
+func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, size uint64) ([]string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
-		names, err := rp.mount.fs.impl.ListxattrAt(ctx, rp, size)
+		names, err := rp.mount.fs.impl.ListXattrAt(ctx, rp, size)
 		if err == nil {
 			vfs.putResolvingPath(ctx, rp)
 			return names, nil
@@ -712,12 +712,12 @@ func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Crede
 	}
 }
 
-// GetxattrAt returns the value associated with the given extended attribute
+// GetXattrAt returns the value associated with the given extended attribute
 // for the file at the given path.
-func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetxattrOptions) (string, error) {
+func (vfs *VirtualFilesystem) GetXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetXattrOptions) (string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
-		val, err := rp.mount.fs.impl.GetxattrAt(ctx, rp, *opts)
+		val, err := rp.mount.fs.impl.GetXattrAt(ctx, rp, *opts)
 		if err == nil {
 			vfs.putResolvingPath(ctx, rp)
 			return val, nil
@@ -729,12 +729,12 @@ func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Creden
 	}
 }
 
-// SetxattrAt changes the value associated with the given extended attribute
+// SetXattrAt changes the value associated with the given extended attribute
 // for the file at the given path.
-func (vfs *VirtualFilesystem) SetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetxattrOptions) error {
+func (vfs *VirtualFilesystem) SetXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetXattrOptions) error {
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
-		err := rp.mount.fs.impl.SetxattrAt(ctx, rp, *opts)
+		err := rp.mount.fs.impl.SetXattrAt(ctx, rp, *opts)
 		if err == nil {
 			vfs.putResolvingPath(ctx, rp)
 			return nil
@@ -746,11 +746,11 @@ func (vfs *VirtualFilesystem) SetxattrAt(ctx context.Context, creds *auth.Creden
 	}
 }
 
-// RemovexattrAt removes the given extended attribute from the file at rp.
-func (vfs *VirtualFilesystem) RemovexattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) error {
+// RemoveXattrAt removes the given extended attribute from the file at rp.
+func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) error {
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
-		err := rp.mount.fs.impl.RemovexattrAt(ctx, rp, name)
+		err := rp.mount.fs.impl.RemoveXattrAt(ctx, rp, name)
 		if err == nil {
 			vfs.putResolvingPath(ctx, rp)
 			return nil

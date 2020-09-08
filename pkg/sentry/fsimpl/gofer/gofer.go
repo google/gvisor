@@ -1372,7 +1372,7 @@ func (d *dentry) setDeleted() {
 	atomic.StoreUint32(&d.deleted, 1)
 }
 
-func (d *dentry) listxattr(ctx context.Context, creds *auth.Credentials, size uint64) ([]string, error) {
+func (d *dentry) listXattr(ctx context.Context, creds *auth.Credentials, size uint64) ([]string, error) {
 	if d.file.isNil() || !d.userXattrSupported() {
 		return nil, nil
 	}
@@ -1390,7 +1390,7 @@ func (d *dentry) listxattr(ctx context.Context, creds *auth.Credentials, size ui
 	return xattrs, nil
 }
 
-func (d *dentry) getxattr(ctx context.Context, creds *auth.Credentials, opts *vfs.GetxattrOptions) (string, error) {
+func (d *dentry) getXattr(ctx context.Context, creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
 	if d.file.isNil() {
 		return "", syserror.ENODATA
 	}
@@ -1400,7 +1400,7 @@ func (d *dentry) getxattr(ctx context.Context, creds *auth.Credentials, opts *vf
 	return d.file.getXattr(ctx, opts.Name, opts.Size)
 }
 
-func (d *dentry) setxattr(ctx context.Context, creds *auth.Credentials, opts *vfs.SetxattrOptions) error {
+func (d *dentry) setXattr(ctx context.Context, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
 	if d.file.isNil() {
 		return syserror.EPERM
 	}
@@ -1410,7 +1410,7 @@ func (d *dentry) setxattr(ctx context.Context, creds *auth.Credentials, opts *vf
 	return d.file.setXattr(ctx, opts.Name, opts.Value, opts.Flags)
 }
 
-func (d *dentry) removexattr(ctx context.Context, creds *auth.Credentials, name string) error {
+func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name string) error {
 	if d.file.isNil() {
 		return syserror.EPERM
 	}
@@ -1668,30 +1668,30 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 	return nil
 }
 
-// Listxattr implements vfs.FileDescriptionImpl.Listxattr.
-func (fd *fileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
-	return fd.dentry().listxattr(ctx, auth.CredentialsFromContext(ctx), size)
+// ListXattr implements vfs.FileDescriptionImpl.ListXattr.
+func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
+	return fd.dentry().listXattr(ctx, auth.CredentialsFromContext(ctx), size)
 }
 
-// Getxattr implements vfs.FileDescriptionImpl.Getxattr.
-func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOptions) (string, error) {
-	return fd.dentry().getxattr(ctx, auth.CredentialsFromContext(ctx), &opts)
+// GetXattr implements vfs.FileDescriptionImpl.GetXattr.
+func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
+	return fd.dentry().getXattr(ctx, auth.CredentialsFromContext(ctx), &opts)
 }
 
-// Setxattr implements vfs.FileDescriptionImpl.Setxattr.
-func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
+// SetXattr implements vfs.FileDescriptionImpl.SetXattr.
+func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
 	d := fd.dentry()
-	if err := d.setxattr(ctx, auth.CredentialsFromContext(ctx), &opts); err != nil {
+	if err := d.setXattr(ctx, auth.CredentialsFromContext(ctx), &opts); err != nil {
 		return err
 	}
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 
-// Removexattr implements vfs.FileDescriptionImpl.Removexattr.
-func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
+// RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
+func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	d := fd.dentry()
-	if err := d.removexattr(ctx, auth.CredentialsFromContext(ctx), name); err != nil {
+	if err := d.removeXattr(ctx, auth.CredentialsFromContext(ctx), name); err != nil {
 		return err
 	}
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)

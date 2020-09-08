@@ -810,8 +810,8 @@ func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	return nil, syserror.ECONNREFUSED
 }
 
-// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
-func (fs *Filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
+// ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
+func (fs *Filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	fs.mu.RLock()
 	_, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
@@ -823,8 +823,8 @@ func (fs *Filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 	return nil, syserror.ENOTSUP
 }
 
-// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
-func (fs *Filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
+// GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
+func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	fs.mu.RLock()
 	_, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
@@ -836,8 +836,8 @@ func (fs *Filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	return "", syserror.ENOTSUP
 }
 
-// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
-func (fs *Filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+// SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
+func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	fs.mu.RLock()
 	_, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
@@ -849,8 +849,8 @@ func (fs *Filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	return syserror.ENOTSUP
 }
 
-// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
-func (fs *Filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+// RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
+func (fs *Filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	fs.mu.RLock()
 	_, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
