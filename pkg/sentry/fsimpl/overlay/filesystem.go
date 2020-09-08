@@ -273,10 +273,10 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 
 		// Directories are merged with directories from lower layers if they
 		// are not explicitly opaque.
-		opaqueVal, err := vfsObj.GetxattrAt(ctx, fs.creds, &vfs.PathOperation{
+		opaqueVal, err := vfsObj.GetXattrAt(ctx, fs.creds, &vfs.PathOperation{
 			Root:  childVD,
 			Start: childVD,
-		}, &vfs.GetxattrOptions{
+		}, &vfs.GetXattrOptions{
 			Name: _OVL_XATTR_OPAQUE,
 			Size: 1,
 		})
@@ -671,7 +671,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			// There may be directories on lower layers (previously hidden by
 			// the whiteout) that the new directory should not be merged with.
 			// Mark it opaque to prevent merging.
-			if err := vfsObj.SetxattrAt(ctx, fs.creds, &pop, &vfs.SetxattrOptions{
+			if err := vfsObj.SetXattrAt(ctx, fs.creds, &pop, &vfs.SetXattrOptions{
 				Name:  _OVL_XATTR_OPAQUE,
 				Value: "y",
 			}); err != nil {
@@ -1359,8 +1359,8 @@ func isOverlayXattr(name string) bool {
 	return strings.HasPrefix(name, _OVL_XATTR_PREFIX)
 }
 
-// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
-func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
+// ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
+func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -1375,7 +1375,7 @@ func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 func (fs *filesystem) listXattr(ctx context.Context, d *dentry, size uint64) ([]string, error) {
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	top := d.topLayer()
-	names, err := vfsObj.ListxattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, size)
+	names, err := vfsObj.ListXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, size)
 	if err != nil {
 		return nil, err
 	}
@@ -1391,8 +1391,8 @@ func (fs *filesystem) listXattr(ctx context.Context, d *dentry, size uint64) ([]
 	return names[:n], err
 }
 
-// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
-func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
+// GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
+func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -1404,7 +1404,7 @@ func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	return fs.getXattr(ctx, d, rp.Credentials(), &opts)
 }
 
-func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Credentials, opts *vfs.GetxattrOptions) (string, error) {
+func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
 	}
@@ -1418,11 +1418,11 @@ func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Crede
 	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_get().
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	top := d.topLayer()
-	return vfsObj.GetxattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, opts)
+	return vfsObj.GetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, opts)
 }
 
-// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
-func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+// SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
+func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -1435,7 +1435,7 @@ func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 }
 
 // Precondition: fs.renameMu must be locked.
-func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, opts *vfs.SetxattrOptions) error {
+func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -1455,11 +1455,11 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.SetxattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
+	return vfsObj.SetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
 }
 
-// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
-func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+// RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
+func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -1477,7 +1477,7 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 		return err
 	}
 
-	// Like SetxattrAt, return EOPNOTSUPP when removing an overlay attribute.
+	// Like SetXattrAt, return EOPNOTSUPP when removing an overlay attribute.
 	// Linux passes the remove request to xattr_handler->set.
 	// See fs/xattr.c:vfs_removexattr().
 	if isOverlayXattr(name) {
@@ -1492,7 +1492,7 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.RemovexattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
+	return vfsObj.RemoveXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

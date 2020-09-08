@@ -416,26 +416,26 @@ type FilesystemImpl interface {
 	// ResolvingPath.Resolve*(), then !rp.Done().
 	UnlinkAt(ctx context.Context, rp *ResolvingPath) error
 
-	// ListxattrAt returns all extended attribute names for the file at rp.
+	// ListXattrAt returns all extended attribute names for the file at rp.
 	//
 	// Errors:
 	//
 	// - If extended attributes are not supported by the filesystem,
-	// ListxattrAt returns ENOTSUP.
+	// ListXattrAt returns ENOTSUP.
 	//
 	// - If the size of the list (including a NUL terminating byte after every
 	// entry) would exceed size, ERANGE may be returned. Note that
 	// implementations are free to ignore size entirely and return without
 	// error). In all cases, if size is 0, the list should be returned without
 	// error, regardless of size.
-	ListxattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error)
+	ListXattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error)
 
-	// GetxattrAt returns the value associated with the given extended
+	// GetXattrAt returns the value associated with the given extended
 	// attribute for the file at rp.
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem, GetxattrAt
+	// - If extended attributes are not supported by the filesystem, GetXattrAt
 	// returns ENOTSUP.
 	//
 	// - If an extended attribute named opts.Name does not exist, ENODATA is
@@ -445,30 +445,30 @@ type FilesystemImpl interface {
 	// returned (note that implementations are free to ignore opts.Size entirely
 	// and return without error). In all cases, if opts.Size is 0, the value
 	// should be returned without error, regardless of size.
-	GetxattrAt(ctx context.Context, rp *ResolvingPath, opts GetxattrOptions) (string, error)
+	GetXattrAt(ctx context.Context, rp *ResolvingPath, opts GetXattrOptions) (string, error)
 
-	// SetxattrAt changes the value associated with the given extended
+	// SetXattrAt changes the value associated with the given extended
 	// attribute for the file at rp.
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem, SetxattrAt
+	// - If extended attributes are not supported by the filesystem, SetXattrAt
 	// returns ENOTSUP.
 	//
 	// - If XATTR_CREATE is set in opts.Flag and opts.Name already exists,
 	// EEXIST is returned. If XATTR_REPLACE is set and opts.Name does not exist,
 	// ENODATA is returned.
-	SetxattrAt(ctx context.Context, rp *ResolvingPath, opts SetxattrOptions) error
+	SetXattrAt(ctx context.Context, rp *ResolvingPath, opts SetXattrOptions) error
 
-	// RemovexattrAt removes the given extended attribute from the file at rp.
+	// RemoveXattrAt removes the given extended attribute from the file at rp.
 	//
 	// Errors:
 	//
 	// - If extended attributes are not supported by the filesystem,
-	// RemovexattrAt returns ENOTSUP.
+	// RemoveXattrAt returns ENOTSUP.
 	//
 	// - If name does not exist, ENODATA is returned.
-	RemovexattrAt(ctx context.Context, rp *ResolvingPath, name string) error
+	RemoveXattrAt(ctx context.Context, rp *ResolvingPath, name string) error
 
 	// BoundEndpointAt returns the Unix socket endpoint bound at the path rp.
 	//
