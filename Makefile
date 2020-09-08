@@ -294,8 +294,8 @@ $(RELEASE_KEY):
 	echo Name-Email: test@example.com >> $$C && \
 	echo Expire-Date: 0 >> $$C && \
 	echo %commit >> $$C && \
-	gpg --batch $(GPG_TEST_OPTIONS) --passphrase '' --no-default-keyring --keyring $$T --no-tty --gen-key $$C && \
-	gpg --batch $(GPG_TEST_OPTIONS) --export-secret-keys --no-default-keyring --keyring $$T --secret-keyring $$T > $@; \
+	gpg --batch $(GPG_TEST_OPTIONS) --passphrase '' --no-default-keyring --secret-keyring $$T --no-tty --gen-key $$C && \
+	gpg --batch $(GPG_TEST_OPTIONS) --export-secret-keys --no-default-keyring --secret-keyring $$T > $@; \
 	rc=$$?; rm -f $$T $$C; exit $$rc
 
 release: $(RELEASE_KEY) ## Builds a release.
