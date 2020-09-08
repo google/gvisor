@@ -134,7 +134,7 @@ func registerFilesystems(k *kernel.Kernel) error {
 }
 
 func setupContainerVFS2(ctx context.Context, conf *config.Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
-	mns, err := mntr.setupVFS2(ctx, conf, procArgs)
+	mns, err := mntr.mountAll(conf, procArgs)
 	if err != nil {
 		return fmt.Errorf("failed to setupFS: %w", err)
 	}
@@ -149,7 +149,7 @@ func setupContainerVFS2(ctx context.Context, conf *config.Config, mntr *containe
 	return nil
 }
 
-func (c *containerMounter) setupVFS2(ctx context.Context, conf *config.Config, procArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
+func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
 	log.Infof("Configuring container's file system with VFS2")
 
 	// Create context with root credentials to mount the filesystem (the current
@@ -172,24 +172,44 @@ func (c *containerMounter) setupVFS2(ctx context.Context, conf *config.Config, p
 	if err := c.mountSubmountsVFS2(rootCtx, conf, mns, rootCreds); err != nil {
 		return nil, fmt.Errorf("mounting submounts vfs2: %w", err)
 	}
+
+	if c.root.Readonly || conf.Overlay {
+		// Switch to ReadOnly after all submounts were setup.
+		root := mns.Root()
+		defer root.DecRef(rootCtx)
+		if err := c.k.VFS().SetMountReadOnly(root.Mount(), true); err != nil {
+			return nil, fmt.Errorf(`failed to set mount at "/" readonly: %v`, err)
+		}
+	}
+
 	return mns, nil
 }
 
+// createMountNamespaceVFS2 creates the container's root mount and namespace.
+// The mount is created ReadWrite to allow mount point for submounts to be
+// created. ** The caller is responsible to switch to ReadOnly if needed **
 func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
-	opts := p9MountData(fd, conf.FileAccess, true /* vfs2 */)
+	data := p9MountData(fd, conf.FileAccess, true /* vfs2 */)
 
 	if conf.OverlayfsStaleRead {
 		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
 		// can only send mount options for specs.Mounts (specs.Root is missing
 		// Options field). So assume root is always on top of overlayfs.
-		opts = append(opts, "overlayfs_stale_read")
+		data = append(data, "overlayfs_stale_read")
 	}
 
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
-	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", gofer.Name, &vfs.GetFilesystemOptions{
-		Data: strings.Join(opts, ","),
-	})
+	opts := &vfs.MountOptions{
+		// Always mount as ReadWrite to allow other mounts on top of it. It'll be
+		// made ReadOnly in the caller (if needed).
+		ReadOnly: false,
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			Data: strings.Join(data, ","),
+		},
+		InternalMount: true,
+	}
+	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", gofer.Name, opts)
 	if err != nil {
 		return nil, fmt.Errorf("setting up mount namespace: %w", err)
 	}
@@ -227,6 +247,7 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.
 			if err := c.k.VFS().SetMountReadOnly(mnt, false); err != nil {
 				return fmt.Errorf("failed to set mount at %q readwrite: %v", submount.Destination, err)
 			}
+			// Restore back to ReadOnly at the end.
 			defer func() {
 				if err := c.k.VFS().SetMountReadOnly(mnt, true); err != nil {
 					panic(fmt.Sprintf("failed to restore mount at %q back to readonly: %v", submount.Destination, err))

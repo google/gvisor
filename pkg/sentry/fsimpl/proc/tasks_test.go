@@ -104,7 +104,7 @@ func setup(t *testing.T) *testutil.System {
 		AllowUserMount: true,
 	})
 
-	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", tmpfs.Name, &vfs.GetFilesystemOptions{})
+	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", tmpfs.Name, &vfs.MountOptions{})
 	if err != nil {
 		t.Fatalf("NewMountNamespace(): %v", err)
 	}

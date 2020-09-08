@@ -182,7 +182,7 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 				AllowUserMount: true,
 			})
-			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.GetFilesystemOptions{})
+			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{})
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
@@ -376,7 +376,7 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 				AllowUserMount: true,
 			})
-			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.GetFilesystemOptions{})
+			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{})
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
