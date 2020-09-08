@@ -159,12 +159,12 @@ type TransportProtocol interface {
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
 	// provided option value is invalid.
-	SetOption(option interface{}) *tcpip.Error
+	SetOption(option tcpip.SettableTransportProtocolOption) *tcpip.Error
 
 	// Option allows retrieving protocol specific option values.
 	// Option returns an error if the option is not supported or the
 	// provided option value is invalid.
-	Option(option interface{}) *tcpip.Error
+	Option(option tcpip.GettableTransportProtocolOption) *tcpip.Error
 
 	// Close requests that any worker goroutines owned by the protocol
 	// stop.

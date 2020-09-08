@@ -864,12 +864,93 @@ func (*DefaultTTLOption) isGettableNetworkProtocolOption() {}
 
 func (*DefaultTTLOption) isSettableNetworkProtocolOption() {}
 
-// AvailableCongestionControlOption is used to query the supported congestion
-// control algorithms.
-type AvailableCongestionControlOption string
+// GettableTransportProtocolOption is a marker interface for transport protocol
+// options that may be queried.
+type GettableTransportProtocolOption interface {
+	isGettableTransportProtocolOption()
+}
 
-// ModerateReceiveBufferOption is used by buffer moderation.
-type ModerateReceiveBufferOption bool
+// SettableTransportProtocolOption is a marker interface for transport protocol
+// options that may be set.
+type SettableTransportProtocolOption interface {
+	isSettableTransportProtocolOption()
+}
+
+// TCPSACKEnabled the SACK option for TCP.
+//
+// See: https://tools.ietf.org/html/rfc2018.
+type TCPSACKEnabled bool
+
+func (*TCPSACKEnabled) isGettableTransportProtocolOption() {}
+
+func (*TCPSACKEnabled) isSettableTransportProtocolOption() {}
+
+// TCPRecovery is the loss deteoction algorithm used by TCP.
+type TCPRecovery int32
+
+func (*TCPRecovery) isGettableTransportProtocolOption() {}
+
+func (*TCPRecovery) isSettableTransportProtocolOption() {}
+
+const (
+	// TCPRACKLossDetection indicates RACK is used for loss detection and
+	// recovery.
+	TCPRACKLossDetection TCPRecovery = 1 << iota
+
+	// TCPRACKStaticReoWnd indicates the reordering window should not be
+	// adjusted when DSACK is received.
+	TCPRACKStaticReoWnd
+
+	// TCPRACKNoDupTh indicates RACK should not consider the classic three
+	// duplicate acknowledgements rule to mark the segments as lost. This
+	// is used when reordering is not detected.
+	TCPRACKNoDupTh
+)
+
+// TCPDelayEnabled enables/disables Nagle's algorithm in TCP.
+type TCPDelayEnabled bool
+
+func (*TCPDelayEnabled) isGettableTransportProtocolOption() {}
+
+func (*TCPDelayEnabled) isSettableTransportProtocolOption() {}
+
+// TCPSendBufferSizeRangeOption is the send buffer size range for TCP.
+type TCPSendBufferSizeRangeOption struct {
+	Min     int
+	Default int
+	Max     int
+}
+
+func (*TCPSendBufferSizeRangeOption) isGettableTransportProtocolOption() {}
+
+func (*TCPSendBufferSizeRangeOption) isSettableTransportProtocolOption() {}
+
+// TCPReceiveBufferSizeRangeOption is the receive buffer size range for TCP.
+type TCPReceiveBufferSizeRangeOption struct {
+	Min     int
+	Default int
+	Max     int
+}
+
+func (*TCPReceiveBufferSizeRangeOption) isGettableTransportProtocolOption() {}
+
+func (*TCPReceiveBufferSizeRangeOption) isSettableTransportProtocolOption() {}
+
+// TCPAvailableCongestionControlOption is the supported congestion control
+// algorithms for TCP
+type TCPAvailableCongestionControlOption string
+
+func (*TCPAvailableCongestionControlOption) isGettableTransportProtocolOption() {}
+
+func (*TCPAvailableCongestionControlOption) isSettableTransportProtocolOption() {}
+
+// TCPModerateReceiveBufferOption enables/disables receive buffer moderation
+// for TCP.
+type TCPModerateReceiveBufferOption bool
+
+func (*TCPModerateReceiveBufferOption) isGettableTransportProtocolOption() {}
+
+func (*TCPModerateReceiveBufferOption) isSettableTransportProtocolOption() {}
 
 // GettableSocketOption is a marker interface for socket options that may be
 // queried.
@@ -935,6 +1016,10 @@ func (*CongestionControlOption) isGettableSocketOption() {}
 
 func (*CongestionControlOption) isSettableSocketOption() {}
 
+func (*CongestionControlOption) isGettableTransportProtocolOption() {}
+
+func (*CongestionControlOption) isSettableTransportProtocolOption() {}
+
 // TCPLingerTimeoutOption is used by SetSockOpt/GetSockOpt to set/get the
 // maximum duration for which a socket lingers in the TCP_FIN_WAIT_2 state
 // before being marked closed.
@@ -944,6 +1029,10 @@ func (*TCPLingerTimeoutOption) isGettableSocketOption() {}
 
 func (*TCPLingerTimeoutOption) isSettableSocketOption() {}
 
+func (*TCPLingerTimeoutOption) isGettableTransportProtocolOption() {}
+
+func (*TCPLingerTimeoutOption) isSettableTransportProtocolOption() {}
+
 // TCPTimeWaitTimeoutOption is used by SetSockOpt/GetSockOpt to set/get the
 // maximum duration for which a socket lingers in the TIME_WAIT state
 // before being marked closed.
@@ -952,6 +1041,10 @@ type TCPTimeWaitTimeoutOption time.Duration
 func (*TCPTimeWaitTimeoutOption) isGettableSocketOption() {}
 
 func (*TCPTimeWaitTimeoutOption) isSettableSocketOption() {}
+
+func (*TCPTimeWaitTimeoutOption) isGettableTransportProtocolOption() {}
+
+func (*TCPTimeWaitTimeoutOption) isSettableTransportProtocolOption() {}
 
 // TCPDeferAcceptOption is used by SetSockOpt/GetSockOpt to allow a
 // accept to return a completed connection only when there is data to be
@@ -971,6 +1064,10 @@ func (*TCPMinRTOOption) isGettableSocketOption() {}
 
 func (*TCPMinRTOOption) isSettableSocketOption() {}
 
+func (*TCPMinRTOOption) isGettableTransportProtocolOption() {}
+
+func (*TCPMinRTOOption) isSettableTransportProtocolOption() {}
+
 // TCPMaxRTOOption is use by SetSockOpt/GetSockOpt to allow overriding
 // default MaxRTO used by the Stack.
 type TCPMaxRTOOption time.Duration
@@ -979,6 +1076,10 @@ func (*TCPMaxRTOOption) isGettableSocketOption() {}
 
 func (*TCPMaxRTOOption) isSettableSocketOption() {}
 
+func (*TCPMaxRTOOption) isGettableTransportProtocolOption() {}
+
+func (*TCPMaxRTOOption) isSettableTransportProtocolOption() {}
+
 // TCPMaxRetriesOption is used by SetSockOpt/GetSockOpt to set/get the
 // maximum number of retransmits after which we time out the connection.
 type TCPMaxRetriesOption uint64
@@ -986,6 +1087,10 @@ type TCPMaxRetriesOption uint64
 func (*TCPMaxRetriesOption) isGettableSocketOption() {}
 
 func (*TCPMaxRetriesOption) isSettableSocketOption() {}
+
+func (*TCPMaxRetriesOption) isGettableTransportProtocolOption() {}
+
+func (*TCPMaxRetriesOption) isSettableTransportProtocolOption() {}
 
 // TCPSynRcvdCountThresholdOption is used by SetSockOpt/GetSockOpt to specify
 // the number of endpoints that can be in SYN-RCVD state before the stack
@@ -996,6 +1101,10 @@ func (*TCPSynRcvdCountThresholdOption) isGettableSocketOption() {}
 
 func (*TCPSynRcvdCountThresholdOption) isSettableSocketOption() {}
 
+func (*TCPSynRcvdCountThresholdOption) isGettableTransportProtocolOption() {}
+
+func (*TCPSynRcvdCountThresholdOption) isSettableTransportProtocolOption() {}
+
 // TCPSynRetriesOption is used by SetSockOpt/GetSockOpt to specify stack-wide
 // default for number of times SYN is retransmitted before aborting a connect.
 type TCPSynRetriesOption uint8
@@ -1003,6 +1112,10 @@ type TCPSynRetriesOption uint8
 func (*TCPSynRetriesOption) isGettableSocketOption() {}
 
 func (*TCPSynRetriesOption) isSettableSocketOption() {}
+
+func (*TCPSynRetriesOption) isGettableTransportProtocolOption() {}
+
+func (*TCPSynRetriesOption) isSettableTransportProtocolOption() {}
 
 // MulticastInterfaceOption is used by SetSockOpt/GetSockOpt to specify a
 // default interface for multicast.
@@ -1061,6 +1174,10 @@ type TCPTimeWaitReuseOption uint8
 func (*TCPTimeWaitReuseOption) isGettableSocketOption() {}
 
 func (*TCPTimeWaitReuseOption) isSettableSocketOption() {}
+
+func (*TCPTimeWaitReuseOption) isGettableTransportProtocolOption() {}
+
+func (*TCPTimeWaitReuseOption) isSettableTransportProtocolOption() {}
 
 const (
 	// TCPTimeWaitReuseDisabled indicates reuse of port bound by endponts in TIME-WAIT cannot

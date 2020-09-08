@@ -817,7 +817,7 @@ func (s *Stack) NetworkProtocolOption(network tcpip.NetworkProtocolNumber, optio
 // options. This method returns an error if the protocol is not supported or
 // option is not supported by the protocol implementation or the provided value
 // is incorrect.
-func (s *Stack) SetTransportProtocolOption(transport tcpip.TransportProtocolNumber, option interface{}) *tcpip.Error {
+func (s *Stack) SetTransportProtocolOption(transport tcpip.TransportProtocolNumber, option tcpip.SettableTransportProtocolOption) *tcpip.Error {
 	transProtoState, ok := s.transportProtocols[transport]
 	if !ok {
 		return tcpip.ErrUnknownProtocol
@@ -832,7 +832,7 @@ func (s *Stack) SetTransportProtocolOption(transport tcpip.TransportProtocolNumb
 // if err := s.TransportProtocolOption(tcpip.TCPProtocolNumber, &v); err != nil {
 //   ...
 // }
-func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber, option interface{}) *tcpip.Error {
+func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber, option tcpip.GettableTransportProtocolOption) *tcpip.Error {
 	transProtoState, ok := s.transportProtocols[transport]
 	if !ok {
 		return tcpip.ErrUnknownProtocol
