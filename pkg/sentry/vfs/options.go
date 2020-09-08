@@ -190,10 +190,10 @@ type BoundEndpointOptions struct {
 	Addr string
 }
 
-// GetxattrOptions contains options to VirtualFilesystem.GetxattrAt(),
-// FilesystemImpl.GetxattrAt(), FileDescription.Getxattr(), and
-// FileDescriptionImpl.Getxattr().
-type GetxattrOptions struct {
+// GetXattrOptions contains options to VirtualFilesystem.GetXattrAt(),
+// FilesystemImpl.GetXattrAt(), FileDescription.GetXattr(), and
+// FileDescriptionImpl.GetXattr().
+type GetXattrOptions struct {
 	// Name is the name of the extended attribute to retrieve.
 	Name string
 
@@ -204,10 +204,10 @@ type GetxattrOptions struct {
 	Size uint64
 }
 
-// SetxattrOptions contains options to VirtualFilesystem.SetxattrAt(),
-// FilesystemImpl.SetxattrAt(), FileDescription.Setxattr(), and
-// FileDescriptionImpl.Setxattr().
-type SetxattrOptions struct {
+// SetXattrOptions contains options to VirtualFilesystem.SetXattrAt(),
+// FilesystemImpl.SetXattrAt(), FileDescription.SetXattr(), and
+// FileDescriptionImpl.SetXattr().
+type SetXattrOptions struct {
 	// Name is the name of the extended attribute being mutated.
 	Name string
 
