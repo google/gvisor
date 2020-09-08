@@ -211,6 +211,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			lookupErr = err
 			return false
 		}
+		defer childVD.DecRef(ctx)
 
 		mask := uint32(linux.STATX_TYPE)
 		if !existsOnAnyLayer {
@@ -249,6 +250,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		}
 
 		// Update child to include this layer.
+		childVD.IncRef()
 		if isUpper {
 			child.upperVD = childVD
 			child.copiedUp = 1
