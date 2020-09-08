@@ -154,13 +154,13 @@ type MountNamespace struct {
 // NewMountNamespace returns a new mount namespace with a root filesystem
 // configured by the given arguments. A reference is taken on the returned
 // MountNamespace.
-func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *GetFilesystemOptions) (*MountNamespace, error) {
+func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *MountOptions) (*MountNamespace, error) {
 	rft := vfs.getFilesystemType(fsTypeName)
 	if rft == nil {
 		ctx.Warningf("Unknown filesystem type: %s", fsTypeName)
 		return nil, syserror.ENODEV
 	}
-	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
+	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 		mountpoints: make(map[*Dentry]uint32),
 	}
 	mntns.EnableLeakCheck()
-	mntns.root = newMount(vfs, fs, root, mntns, &MountOptions{})
+	mntns.root = newMount(vfs, fs, root, mntns, opts)
 	return mntns, nil
 }
 

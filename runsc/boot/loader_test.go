@@ -491,9 +491,9 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			}
 
 			ctx := l.k.SupervisorContext()
-			mns, err := mntr.setupVFS2(ctx, l.root.conf, &l.root.procArgs)
+			mns, err := mntr.mountAll(l.root.conf, &l.root.procArgs)
 			if err != nil {
-				t.Fatalf("failed to setupVFS2: %v", err)
+				t.Fatalf("mountAll: %v", err)
 			}
 
 			root := mns.Root()
