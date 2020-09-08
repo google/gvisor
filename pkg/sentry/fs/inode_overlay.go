@@ -552,7 +552,7 @@ func overlayGetXattr(ctx context.Context, o *overlayEntry, name string, size uin
 	return s, err
 }
 
-func overlaySetxattr(ctx context.Context, o *overlayEntry, d *Dirent, name, value string, flags uint32) error {
+func overlaySetXattr(ctx context.Context, o *overlayEntry, d *Dirent, name, value string, flags uint32) error {
 	// Don't allow changes to overlay xattrs through a setxattr syscall.
 	if isXattrOverlay(name) {
 		return syserror.EPERM

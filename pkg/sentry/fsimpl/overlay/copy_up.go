@@ -278,13 +278,13 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 	lowerPop := &vfs.PathOperation{Root: d.lowerVDs[0], Start: d.lowerVDs[0]}
 	upperPop := &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}
 
-	lowerXattrs, err := vfsObj.ListxattrAt(ctx, d.fs.creds, lowerPop, 0)
+	lowerXattrs, err := vfsObj.ListXattrAt(ctx, d.fs.creds, lowerPop, 0)
 	if err != nil {
 		if err == syserror.EOPNOTSUPP {
 			// There are no guarantees as to the contents of lowerXattrs.
 			return nil
 		}
-		ctx.Warningf("failed to copy up xattrs because ListxattrAt failed: %v", err)
+		ctx.Warningf("failed to copy up xattrs because ListXattrAt failed: %v", err)
 		return err
 	}
 
@@ -294,14 +294,14 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 			continue
 		}
 
-		value, err := vfsObj.GetxattrAt(ctx, d.fs.creds, lowerPop, &vfs.GetxattrOptions{Name: name, Size: 0})
+		value, err := vfsObj.GetXattrAt(ctx, d.fs.creds, lowerPop, &vfs.GetXattrOptions{Name: name, Size: 0})
 		if err != nil {
-			ctx.Warningf("failed to copy up xattrs because GetxattrAt failed: %v", err)
+			ctx.Warningf("failed to copy up xattrs because GetXattrAt failed: %v", err)
 			return err
 		}
 
-		if err := vfsObj.SetxattrAt(ctx, d.fs.creds, upperPop, &vfs.SetxattrOptions{Name: name, Value: value}); err != nil {
-			ctx.Warningf("failed to copy up xattrs because SetxattrAt failed: %v", err)
+		if err := vfsObj.SetXattrAt(ctx, d.fs.creds, upperPop, &vfs.SetXattrOptions{Name: name, Value: value}); err != nil {
+			ctx.Warningf("failed to copy up xattrs because SetXattrAt failed: %v", err)
 			return err
 		}
 	}
