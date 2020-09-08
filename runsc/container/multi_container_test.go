@@ -1517,8 +1517,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	}
 
 	// Check that container isn't running anymore.
-	args := &control.ExecArgs{Argv: []string{"/bin/true"}}
-	if _, err := c.executeSync(args); err == nil {
+	if _, err := execute(c, "/bin/true"); err == nil {
 		t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 	}
 
@@ -1533,8 +1532,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 		if err := waitForProcessList(c, pl); err != nil {
 			t.Errorf("Container %q was affected by another container: %v", c.ID, err)
 		}
-		args := &control.ExecArgs{Argv: []string{"/bin/true"}}
-		if _, err := c.executeSync(args); err != nil {
+		if _, err := execute(c, "/bin/true"); err != nil {
 			t.Fatalf("Container %q was affected by another container: %v", c.ID, err)
 		}
 	}
@@ -1556,8 +1554,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Check that entire sandbox isn't running anymore.
 	for _, c := range containers {
-		args := &control.ExecArgs{Argv: []string{"/bin/true"}}
-		if _, err := c.executeSync(args); err == nil {
+		if _, err := execute(c, "/bin/true"); err == nil {
 			t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 		}
 	}
@@ -1719,12 +1716,11 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 				homeDirs[name] = homeFile
 			}
 
-			// We will sleep in the root container in order to ensure that
-			// the root container doesn't terminate before sub containers can be
-			// created.
+			// We will sleep in the root container in order to ensure that the root
+			//container doesn't terminate before sub containers can be created.
 			rootCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s; sleep 1000", homeDirs["root"].Name())}
 			subCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["sub"].Name())}
-			execCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["exec"].Name())}
+			execCmd := fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["exec"].Name())
 
 			// Setup the containers, a root container and sub container.
 			specConfig, ids := createSpecs(rootCmd, subCmd)
@@ -1735,9 +1731,8 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 			defer cleanup()
 
 			// Exec into the root container synchronously.
-			args := &control.ExecArgs{Argv: execCmd}
-			if _, err := containers[0].executeSync(args); err != nil {
-				t.Errorf("error executing %+v: %v", args, err)
+			if _, err := execute(containers[0], "/bin/sh", "-c", execCmd); err != nil {
+				t.Errorf("error executing %+v: %v", execCmd, err)
 			}
 
 			// Wait for the subcontainer to finish.

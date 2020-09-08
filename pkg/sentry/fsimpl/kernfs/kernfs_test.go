@@ -52,7 +52,7 @@ func newTestSystem(t *testing.T, rootFn RootDentryFn) *testutil.System {
 	v.MustRegisterFilesystemType("testfs", &fsType{rootFn: rootFn}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	mns, err := v.NewMountNamespace(ctx, creds, "", "testfs", &vfs.GetFilesystemOptions{})
+	mns, err := v.NewMountNamespace(ctx, creds, "", "testfs", &vfs.MountOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create testfs root mount: %v", err)
 	}

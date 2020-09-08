@@ -254,7 +254,7 @@ func mustFindFilesystem(name string) fs.Filesystem {
 
 // addSubmountOverlay overlays the inode over a ramfs tree containing the given
 // paths.
-func addSubmountOverlay(ctx context.Context, inode *fs.Inode, submounts []string) (*fs.Inode, error) {
+func addSubmountOverlay(ctx context.Context, inode *fs.Inode, submounts []string, mf fs.MountSourceFlags) (*fs.Inode, error) {
 	// Construct a ramfs tree of mount points. The contents never
 	// change, so this can be fully caching. There's no real
 	// filesystem backing this tree, so we set the filesystem to
@@ -264,7 +264,7 @@ func addSubmountOverlay(ctx context.Context, inode *fs.Inode, submounts []string
 	if err != nil {
 		return nil, fmt.Errorf("creating mount tree: %v", err)
 	}
-	overlayInode, err := fs.NewOverlayRoot(ctx, inode, mountTree, fs.MountSourceFlags{})
+	overlayInode, err := fs.NewOverlayRoot(ctx, inode, mountTree, mf)
 	if err != nil {
 		return nil, fmt.Errorf("adding mount overlay: %v", err)
 	}
@@ -741,7 +741,7 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *config.Con
 	// for submount paths.  "/dev" "/sys" "/proc" and "/tmp" are always
 	// mounted even if they are not in the spec.
 	submounts := append(subtargets("/", c.mounts), "/dev", "/sys", "/proc", "/tmp")
-	rootInode, err = addSubmountOverlay(ctx, rootInode, submounts)
+	rootInode, err = addSubmountOverlay(ctx, rootInode, submounts, mf)
 	if err != nil {
 		return nil, fmt.Errorf("adding submount overlay: %v", err)
 	}
@@ -851,7 +851,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 	submounts := subtargets(m.Destination, c.mounts)
 	if len(submounts) > 0 {
 		log.Infof("Adding submount overlay over %q", m.Destination)
-		inode, err = addSubmountOverlay(ctx, inode, submounts)
+		inode, err = addSubmountOverlay(ctx, inode, submounts, mf)
 		if err != nil {
 			return fmt.Errorf("adding submount overlay: %v", err)
 		}
