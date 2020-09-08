@@ -113,6 +113,11 @@ const (
 	_IOC_DIRSHIFT  = _IOC_SIZESHIFT + _IOC_SIZEBITS
 )
 
+// Constants from uapi/linux/fsverity.h.
+const (
+	FS_IOC_ENABLE_VERITY = 1082156677
+)
+
 // IOC outputs the result of _IOC macro in asm-generic/ioctl.h.
 func IOC(dir, typ, nr, size uint32) uint32 {
 	return uint32(dir)<<_IOC_DIRSHIFT | typ<<_IOC_TYPESHIFT | nr<<_IOC_NRSHIFT | size<<_IOC_SIZESHIFT
