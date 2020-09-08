@@ -309,8 +309,8 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 	// Lower stackwide TIME_WAIT timeout so that the reservations
 	// are released instantly on Close.
 	tcpTW := tcpip.TCPTimeWaitTimeoutOption(1 * time.Millisecond)
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpTW); err != nil {
-		t.Fatalf("e.stack.SetTransportProtocolOption(%d, %#v) = %s", tcp.ProtocolNumber, tcpTW, err)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &tcpTW); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, tcpTW, tcpTW, err)
 	}
 
 	c.EP.Close()
@@ -432,8 +432,9 @@ func TestConnectResetAfterClose(t *testing.T) {
 	// Set TCPLinger to 3 seconds so that sockets are marked closed
 	// after 3 second in FIN_WAIT2 state.
 	tcpLingerTimeout := 3 * time.Second
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPLingerTimeoutOption(tcpLingerTimeout)); err != nil {
-		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPLingerTimeoutOption(%s) failed: %s", tcpLingerTimeout, err)
+	opt := tcpip.TCPLingerTimeoutOption(tcpLingerTimeout)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
@@ -506,8 +507,9 @@ func TestCurrentConnectedIncrement(t *testing.T) {
 	// Set TCPTimeWaitTimeout to 1 seconds so that sockets are marked closed
 	// after 1 second in TIME_WAIT state.
 	tcpTimeWaitTimeout := 1 * time.Second
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)); err != nil {
-		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPTimeWaitTimeout(%d) failed: %s", tcpTimeWaitTimeout, err)
+	opt := tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
@@ -933,8 +935,8 @@ func TestUserSuppliedMSSOnListenAccept(t *testing.T) {
 
 					// Set the SynRcvd threshold to force a syn cookie based accept to happen.
 					opt := tcpip.TCPSynRcvdCountThresholdOption(nonSynCookieAccepts)
-					if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, opt); err != nil {
-						t.Fatalf("SetTransportProtocolOption(%d, %#v): %s", tcp.ProtocolNumber, opt, err)
+					if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+						t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 					}
 
 					if err := c.EP.SetSockOptInt(tcpip.MaxSegOption, int(test.setMSS)); err != nil {
@@ -2867,8 +2869,9 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 
 	// Set the SynRcvd threshold to zero to force a syn cookie based accept
 	// to happen.
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
-		t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+	opt := tcpip.TCPSynRcvdCountThresholdOption(0)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	// Create EP and start listening.
@@ -3146,8 +3149,9 @@ func TestMaxRetransmitsTimeout(t *testing.T) {
 	defer c.Cleanup()
 
 	const numRetries = 2
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPMaxRetriesOption(numRetries)); err != nil {
-		t.Fatalf("could not set protocol option MaxRetries.\n")
+	opt := tcpip.TCPMaxRetriesOption(numRetries)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	c.CreateConnected(789 /* iss */, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
@@ -3206,8 +3210,9 @@ func TestMaxRTO(t *testing.T) {
 	defer c.Cleanup()
 
 	rto := 1 * time.Second
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPMaxRTOOption(rto)); err != nil {
-		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPMaxRTO(%d) failed: %s", rto, err)
+	opt := tcpip.TCPMaxRTOOption(rto)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	c.CreateConnected(789 /* iss */, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
@@ -3964,8 +3969,9 @@ func TestReadAfterClosedState(t *testing.T) {
 	// Set TCPTimeWaitTimeout to 1 seconds so that sockets are marked closed
 	// after 1 second in TIME_WAIT state.
 	tcpTimeWaitTimeout := 1 * time.Second
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)); err != nil {
-		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPTimeWaitTimeout(%d) failed: %s", tcpTimeWaitTimeout, err)
+	opt := tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
@@ -4204,11 +4210,15 @@ func TestDefaultBufferSizes(t *testing.T) {
 	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize)
 
 	// Change the default send buffer size.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{
-		Min:     1,
-		Default: tcp.DefaultSendBufferSize * 2,
-		Max:     tcp.DefaultSendBufferSize * 20}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPSendBufferSizeRangeOption{
+			Min:     1,
+			Default: tcp.DefaultSendBufferSize * 2,
+			Max:     tcp.DefaultSendBufferSize * 20,
+		}
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+		}
 	}
 
 	ep.Close()
@@ -4221,11 +4231,15 @@ func TestDefaultBufferSizes(t *testing.T) {
 	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize)
 
 	// Change the default receive buffer size.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{
-		Min:     1,
-		Default: tcp.DefaultReceiveBufferSize * 3,
-		Max:     tcp.DefaultReceiveBufferSize * 30}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	{
+		opt := tcpip.TCPReceiveBufferSizeRangeOption{
+			Min:     1,
+			Default: tcp.DefaultReceiveBufferSize * 3,
+			Max:     tcp.DefaultReceiveBufferSize * 30,
+		}
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+		}
 	}
 
 	ep.Close()
@@ -4252,12 +4266,18 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	defer ep.Close()
 
 	// Change the min/max values for send/receive
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{Min: 200, Default: tcp.DefaultReceiveBufferSize * 2, Max: tcp.DefaultReceiveBufferSize * 20}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 200, Default: tcp.DefaultReceiveBufferSize * 2, Max: tcp.DefaultReceiveBufferSize * 20}
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+		}
 	}
 
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{Min: 300, Default: tcp.DefaultSendBufferSize * 3, Max: tcp.DefaultSendBufferSize * 30}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPSendBufferSizeRangeOption{Min: 300, Default: tcp.DefaultSendBufferSize * 3, Max: tcp.DefaultSendBufferSize * 30}
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+		}
 	}
 
 	// Set values below the min.
@@ -4718,8 +4738,8 @@ func TestStackSetCongestionControl(t *testing.T) {
 				t.Fatalf("s.TransportProtocolOption(%v, %v) = %s", tcp.ProtocolNumber, &oldCC, err)
 			}
 
-			if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tc.cc); err != tc.err {
-				t.Fatalf("s.SetTransportProtocolOption(%v, %v) = %v, want %v", tcp.ProtocolNumber, tc.cc, err, tc.err)
+			if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &tc.cc); err != tc.err {
+				t.Fatalf("s.SetTransportProtocolOption(%d, &%T(%s)) = %s, want = %s", tcp.ProtocolNumber, tc.cc, tc.cc, err, tc.err)
 			}
 
 			var cc tcpip.CongestionControlOption
@@ -4751,12 +4771,12 @@ func TestStackAvailableCongestionControl(t *testing.T) {
 	s := c.Stack()
 
 	// Query permitted congestion control algorithms.
-	var aCC tcpip.AvailableCongestionControlOption
+	var aCC tcpip.TCPAvailableCongestionControlOption
 	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &aCC); err != nil {
 		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &aCC, err)
 	}
-	if got, want := aCC, tcpip.AvailableCongestionControlOption("reno cubic"); got != want {
-		t.Fatalf("got tcpip.AvailableCongestionControlOption: %v, want: %v", got, want)
+	if got, want := aCC, tcpip.TCPAvailableCongestionControlOption("reno cubic"); got != want {
+		t.Fatalf("got tcpip.TCPAvailableCongestionControlOption: %v, want: %v", got, want)
 	}
 }
 
@@ -4767,18 +4787,18 @@ func TestStackSetAvailableCongestionControl(t *testing.T) {
 	s := c.Stack()
 
 	// Setting AvailableCongestionControlOption should fail.
-	aCC := tcpip.AvailableCongestionControlOption("xyz")
+	aCC := tcpip.TCPAvailableCongestionControlOption("xyz")
 	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &aCC); err == nil {
-		t.Fatalf("s.TransportProtocolOption(%v, %v) = nil, want non-nil", tcp.ProtocolNumber, &aCC)
+		t.Fatalf("s.SetTransportProtocolOption(%d, &%T(%s)) = nil, want non-nil", tcp.ProtocolNumber, aCC, aCC)
 	}
 
 	// Verify that we still get the expected list of congestion control options.
-	var cc tcpip.AvailableCongestionControlOption
+	var cc tcpip.TCPAvailableCongestionControlOption
 	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
-		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &cc, err)
+		t.Fatalf("s.TransportProtocolOptio(%d, &%T(%s)): %s", tcp.ProtocolNumber, cc, cc, err)
 	}
-	if got, want := cc, tcpip.AvailableCongestionControlOption("reno cubic"); got != want {
-		t.Fatalf("got tcpip.AvailableCongestionControlOption: %v, want: %v", got, want)
+	if got, want := cc, tcpip.TCPAvailableCongestionControlOption("reno cubic"); got != want {
+		t.Fatalf("got tcpip.TCPAvailableCongestionControlOption = %s, want = %s", got, want)
 	}
 }
 
@@ -4842,8 +4862,8 @@ func TestEndpointSetCongestionControl(t *testing.T) {
 func enableCUBIC(t *testing.T, c *context.Context) {
 	t.Helper()
 	opt := tcpip.CongestionControlOption("cubic")
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, opt); err != nil {
-		t.Fatalf("c.s.SetTransportProtocolOption(tcp.ProtocolNumber, %s = %s", opt, err)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%s)) %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 }
 
@@ -5505,8 +5525,9 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(1)); err != nil {
-		t.Fatalf("setting TCPSynRcvdCountThresholdOption to 1 failed: %s", err)
+	opt := tcpip.TCPSynRcvdCountThresholdOption(1)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	// Create TCP endpoint.
@@ -5906,13 +5927,19 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// the segment queue holding unprocessed packets is limited to 500.
 	const receiveBufferSize = 80 << 10 // 80KB.
 	const maxReceiveBufferSize = receiveBufferSize * 10
-	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{Min: 1, Default: receiveBufferSize, Max: maxReceiveBufferSize}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 1, Default: receiveBufferSize, Max: maxReceiveBufferSize}
+		if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+		}
 	}
 
 	// Enable auto-tuning.
-	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPModerateReceiveBufferOption(true)
+		if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+		}
 	}
 	// Change the expected window scale to match the value needed for the
 	// maximum buffer size defined above.
@@ -6027,13 +6054,19 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 	// the segment queue holding unprocessed packets is limited to 300.
 	const receiveBufferSize = 80 << 10 // 80KB.
 	const maxReceiveBufferSize = receiveBufferSize * 10
-	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{Min: 1, Default: receiveBufferSize, Max: maxReceiveBufferSize}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 1, Default: receiveBufferSize, Max: maxReceiveBufferSize}
+		if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+		}
 	}
 
 	// Enable auto-tuning.
-	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPModerateReceiveBufferOption(true)
+		if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+		}
 	}
 	// Change the expected window scale to match the value needed for the
 	// maximum buffer size used by stack.
@@ -6169,7 +6202,7 @@ func TestDelayEnabled(t *testing.T) {
 	checkDelayOption(t, c, false, false) // Delay is disabled by default.
 
 	for _, v := range []struct {
-		delayEnabled    tcp.DelayEnabled
+		delayEnabled    tcpip.TCPDelayEnabled
 		wantDelayOption bool
 	}{
 		{delayEnabled: false, wantDelayOption: false},
@@ -6177,17 +6210,17 @@ func TestDelayEnabled(t *testing.T) {
 	} {
 		c := context.New(t, defaultMTU)
 		defer c.Cleanup()
-		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, v.delayEnabled); err != nil {
-			t.Fatalf("SetTransportProtocolOption(tcp, %t) failed: %s", v.delayEnabled, err)
+		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &v.delayEnabled); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, v.delayEnabled, v.delayEnabled, err)
 		}
 		checkDelayOption(t, c, v.delayEnabled, v.wantDelayOption)
 	}
 }
 
-func checkDelayOption(t *testing.T, c *context.Context, wantDelayEnabled tcp.DelayEnabled, wantDelayOption bool) {
+func checkDelayOption(t *testing.T, c *context.Context, wantDelayEnabled tcpip.TCPDelayEnabled, wantDelayOption bool) {
 	t.Helper()
 
-	var gotDelayEnabled tcp.DelayEnabled
+	var gotDelayEnabled tcpip.TCPDelayEnabled
 	if err := c.Stack().TransportProtocolOption(tcp.ProtocolNumber, &gotDelayEnabled); err != nil {
 		t.Fatalf("TransportProtocolOption(tcp, &gotDelayEnabled) failed: %s", err)
 	}
@@ -6625,8 +6658,9 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 	// Set TCPTimeWaitTimeout to 5 seconds so that sockets are marked closed
 	// after 5 seconds in TIME_WAIT state.
 	tcpTimeWaitTimeout := 5 * time.Second
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)); err != nil {
-		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPLingerTimeoutOption(%d) failed: %s", tcpTimeWaitTimeout, err)
+	opt := tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, tcpTimeWaitTimeout, err)
 	}
 
 	want := c.Stack().Stats().TCP.EstablishedClosed.Value() + 1
@@ -6775,8 +6809,9 @@ func TestTCPCloseWithData(t *testing.T) {
 	// Set TCPTimeWaitTimeout to 5 seconds so that sockets are marked closed
 	// after 5 seconds in TIME_WAIT state.
 	tcpTimeWaitTimeout := 5 * time.Second
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)); err != nil {
-		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPLingerTimeoutOption(%d) failed: %s", tcpTimeWaitTimeout, err)
+	opt := tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, tcpTimeWaitTimeout, err)
 	}
 
 	wq := &waiter.Queue{}
@@ -7462,9 +7497,10 @@ func TestSetStackTimeWaitReuse(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitReuseOption(tc.v))
+		opt := tcpip.TCPTimeWaitReuseOption(tc.v)
+		err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt)
 		if got, want := err, tc.err; got != want {
-			t.Fatalf("s.TransportProtocolOption(%v, %v) = %v, want %v", tcp.ProtocolNumber, tc.v, err, tc.err)
+			t.Fatalf("s.SetTransportProtocolOption(%d, &%T(%d)) = %s, want = %s", tcp.ProtocolNumber, tc.v, tc.v, err, tc.err)
 		}
 		if tc.err != nil {
 			continue

@@ -1045,22 +1045,30 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (in
 	})}
 
 	// Enable SACK Recovery.
-	if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
-		return nil, fmt.Errorf("failed to enable SACK: %s", err)
+	{
+		opt := tcpip.TCPSACKEnabled(true)
+		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+		}
 	}
 
 	// Set default TTLs as required by socket/netstack.
-	opt := tcpip.DefaultTTLOption(netstack.DefaultTTL)
-	if err := s.Stack.SetNetworkProtocolOption(ipv4.ProtocolNumber, &opt); err != nil {
-		return nil, fmt.Errorf("SetNetworkProtocolOption(%d, &%T(%d)): %s", ipv4.ProtocolNumber, opt, opt, err)
-	}
-	if err := s.Stack.SetNetworkProtocolOption(ipv6.ProtocolNumber, &opt); err != nil {
-		return nil, fmt.Errorf("SetNetworkProtocolOption(%d, &%T(%d)): %s", ipv6.ProtocolNumber, opt, opt, err)
+	{
+		opt := tcpip.DefaultTTLOption(netstack.DefaultTTL)
+		if err := s.Stack.SetNetworkProtocolOption(ipv4.ProtocolNumber, &opt); err != nil {
+			return nil, fmt.Errorf("SetNetworkProtocolOption(%d, &%T(%d)): %s", ipv4.ProtocolNumber, opt, opt, err)
+		}
+		if err := s.Stack.SetNetworkProtocolOption(ipv6.ProtocolNumber, &opt); err != nil {
+			return nil, fmt.Errorf("SetNetworkProtocolOption(%d, &%T(%d)): %s", ipv6.ProtocolNumber, opt, opt, err)
+		}
 	}
 
 	// Enable Receive Buffer Auto-Tuning.
-	if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
-		return nil, fmt.Errorf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPModerateReceiveBufferOption(true)
+		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+		}
 	}
 
 	return &s, nil
