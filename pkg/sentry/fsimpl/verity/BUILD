@@ -14,11 +14,13 @@ go_library(
         "//pkg/context",
         "//pkg/fspath",
         "//pkg/merkletree",
+        "//pkg/sentry/arch",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

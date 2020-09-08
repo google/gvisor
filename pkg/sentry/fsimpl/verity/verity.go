@@ -22,16 +22,21 @@
 package verity
 
 import (
+	"strconv"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+
+	"gvisor.dev/gvisor/pkg/merkletree"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Name is the default filesystem name.
@@ -469,6 +474,129 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	// Verity files are read-only.
 	return syserror.EPERM
+}
+
+// generateMerkle generates a Merkle tree file for fd. If fd points to a file
+// /foo/bar, a Merkle tree file /foo/.merkle.verity.bar is generated. The root
+// hash of the generated Merkle tree and the data size is returned.
+// If fd points to a regular file, the data is the content of the file. If fd
+// points to a directory, the data is all root hahes of its children, written
+// to the Merkle tree file.
+func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, error) {
+	fdReader := vfs.FileReadWriteSeeker{
+		FD:  fd.lowerFD,
+		Ctx: ctx,
+	}
+	merkleReader := vfs.FileReadWriteSeeker{
+		FD:  fd.merkleReader,
+		Ctx: ctx,
+	}
+	merkleWriter := vfs.FileReadWriteSeeker{
+		FD:  fd.merkleWriter,
+		Ctx: ctx,
+	}
+	var rootHash []byte
+	var dataSize uint64
+
+	switch atomic.LoadUint32(&fd.d.mode) & linux.S_IFMT {
+	case linux.S_IFREG:
+		// For a regular file, generate a Merkle tree based on its
+		// content.
+		var err error
+		stat, err := fd.lowerFD.Stat(ctx, vfs.StatOptions{})
+		if err != nil {
+			return nil, 0, err
+		}
+		dataSize = stat.Size
+
+		rootHash, err = merkletree.Generate(&fdReader, int64(dataSize), &merkleReader, &merkleWriter, false /* dataAndTreeInSameFile */)
+		if err != nil {
+			return nil, 0, err
+		}
+	case linux.S_IFDIR:
+		// For a directory, generate a Merkle tree based on the root
+		// hashes of its children that has already been written to the
+		// Merkle tree file.
+		merkleStat, err := fd.merkleReader.Stat(ctx, vfs.StatOptions{})
+		if err != nil {
+			return nil, 0, err
+		}
+		dataSize = merkleStat.Size
+
+		rootHash, err = merkletree.Generate(&merkleReader, int64(dataSize), &merkleReader, &merkleWriter, true /* dataAndTreeInSameFile */)
+		if err != nil {
+			return nil, 0, err
+		}
+	default:
+		// TODO(b/167728857): Investigate whether and how we should
+		// enable other types of file.
+		return nil, 0, syserror.EINVAL
+	}
+	return rootHash, dataSize, nil
+}
+
+// enableVerity enables verity features on fd by generating a Merkle tree file
+// and stores its root hash in its parent directory's Merkle tree.
+func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	if !fd.d.fs.allowRuntimeEnable {
+		return 0, syserror.EPERM
+	}
+
+	// Lock to prevent other threads performing enable or access the file
+	// while it's being enabled.
+	verityMu.Lock()
+	defer verityMu.Unlock()
+
+	if fd.lowerFD == nil || fd.merkleReader == nil || fd.merkleWriter == nil || fd.parentMerkleWriter == nil {
+		panic("Unexpected verity fd: missing expected underlying fds")
+	}
+
+	rootHash, dataSize, err := fd.generateMerkle(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	stat, err := fd.parentMerkleWriter.Stat(ctx, vfs.StatOptions{})
+	if err != nil {
+		return 0, err
+	}
+
+	// Write the root hash of fd to the parent directory's Merkle tree
+	// file, as it should be part of the parent Merkle tree data.
+	// parentMerkleWriter is open with O_APPEND, so it should write
+	// directly to the end of the file.
+	if _, err = fd.parentMerkleWriter.Write(ctx, usermem.BytesIOSequence(rootHash), vfs.WriteOptions{}); err != nil {
+		return 0, err
+	}
+
+	// Record the offset of the root hash of fd in parent directory's
+	// Merkle tree file.
+	if err := fd.merkleWriter.SetXattr(ctx, &vfs.SetXattrOptions{
+		Name:  merkleOffsetInParentXattr,
+		Value: strconv.Itoa(int(stat.Size)),
+	}); err != nil {
+		return 0, err
+	}
+
+	// Record the size of the data being hashed for fd.
+	if err := fd.merkleWriter.SetXattr(ctx, &vfs.SetXattrOptions{
+		Name:  merkleSizeXattr,
+		Value: strconv.Itoa(int(dataSize)),
+	}); err != nil {
+		return 0, err
+	}
+	fd.d.rootHash = append(fd.d.rootHash, rootHash...)
+	return 0, nil
+}
+
+// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
+func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	switch cmd := args[1].Uint(); cmd {
+	case linux.FS_IOC_ENABLE_VERITY:
+		return fd.enableVerity(ctx, uio, args)
+	default:
+		return fd.lowerFD.Ioctl(ctx, uio, args)
+	}
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
