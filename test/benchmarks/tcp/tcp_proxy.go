@@ -228,19 +228,26 @@ func newNetstackImpl(mode string) (impl, error) {
 	})
 
 	// Set protocol options.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(*sack)); err != nil {
-		return nil, fmt.Errorf("SetTransportProtocolOption for SACKEnabled failed: %s", err)
+	{
+		opt := tcpip.TCPSACKEnabled(*sack)
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+		}
 	}
 
 	// Enable Receive Buffer Auto-Tuning.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(*moderateRecvBuf)); err != nil {
-		return nil, fmt.Errorf("SetTransportProtocolOption failed: %s", err)
+	{
+		opt := tcpip.TCPModerateReceiveBufferOption(*moderateRecvBuf)
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+		}
 	}
 
 	// Set Congestion Control to cubic if requested.
 	if *cubic {
-		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.CongestionControlOption("cubic")); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption for CongestionControlOption(cubic) failed: %s", err)
+		opt := tcpip.CongestionControlOption("cubic")
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
