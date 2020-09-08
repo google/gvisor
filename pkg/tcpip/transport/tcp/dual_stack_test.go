@@ -560,8 +560,9 @@ func TestV4AcceptOnV4(t *testing.T) {
 func testV4ListenClose(t *testing.T, c *context.Context) {
 	// Set the SynRcvd threshold to zero to force a syn cookie based accept
 	// to happen.
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
-		t.Fatalf("setting TCPSynRcvdCountThresholdOption failed: %s", err)
+	var opt tcpip.TCPSynRcvdCountThresholdOption
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("setting TCPSynRcvdCountThresholdOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	const n = uint16(32)

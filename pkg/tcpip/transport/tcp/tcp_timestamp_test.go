@@ -131,8 +131,9 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 	defer c.Cleanup()
 
 	if cookieEnabled {
-		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
-			t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+		var opt tcpip.TCPSynRcvdCountThresholdOption
+		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
@@ -192,8 +193,9 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	defer c.Cleanup()
 
 	if cookieEnabled {
-		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
-			t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+		var opt tcpip.TCPSynRcvdCountThresholdOption
+		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
