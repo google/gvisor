@@ -179,10 +179,10 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// corresponding Merkle tree file.
 	// This is the offset of the root hash for child in its parent's Merkle
 	// tree file.
-	off, err := vfsObj.GetxattrAt(ctx, fs.creds, &vfs.PathOperation{
+	off, err := vfsObj.GetXattrAt(ctx, fs.creds, &vfs.PathOperation{
 		Root:  child.lowerMerkleVD,
 		Start: child.lowerMerkleVD,
-	}, &vfs.GetxattrOptions{
+	}, &vfs.GetXattrOptions{
 		Name: merkleOffsetInParentXattr,
 		// Offset is a 32 bit integer.
 		Size: sizeOfInt32,
@@ -233,7 +233,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// dataSize is the size of raw data for the Merkle tree. For a file,
 	// dataSize is the size of the whole file. For a directory, dataSize is
 	// the size of all its children's root hashes.
-	dataSize, err := parentMerkleFD.Getxattr(ctx, &vfs.GetxattrOptions{
+	dataSize, err := parentMerkleFD.GetXattr(ctx, &vfs.GetXattrOptions{
 		Name: merkleSizeXattr,
 		Size: sizeOfInt32,
 	})
@@ -660,8 +660,8 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	return nil, syserror.ECONNREFUSED
 }
 
-// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
-func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
+// ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
+func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -670,14 +670,14 @@ func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 		return nil, err
 	}
 	lowerVD := d.lowerVD
-	return fs.vfsfs.VirtualFilesystem().ListxattrAt(ctx, d.fs.creds, &vfs.PathOperation{
+	return fs.vfsfs.VirtualFilesystem().ListXattrAt(ctx, d.fs.creds, &vfs.PathOperation{
 		Root:  lowerVD,
 		Start: lowerVD,
 	}, size)
 }
 
-// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
-func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
+// GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
+func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -686,20 +686,20 @@ func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		return "", err
 	}
 	lowerVD := d.lowerVD
-	return fs.vfsfs.VirtualFilesystem().GetxattrAt(ctx, d.fs.creds, &vfs.PathOperation{
+	return fs.vfsfs.VirtualFilesystem().GetXattrAt(ctx, d.fs.creds, &vfs.PathOperation{
 		Root:  lowerVD,
 		Start: lowerVD,
 	}, &opts)
 }
 
-// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
-func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+// SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
+func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	// Verity file system is read-only.
 	return syserror.EROFS
 }
 
-// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
-func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+// RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
+func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	// Verity file system is read-only.
 	return syserror.EROFS
 }

@@ -792,37 +792,37 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	}
 }
 
-// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
-func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
+// ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
+func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	d, err := resolveLocked(ctx, rp)
 	if err != nil {
 		return nil, err
 	}
-	return d.inode.listxattr(size)
+	return d.inode.listXattr(size)
 }
 
-// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
-func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
+// GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
+func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	d, err := resolveLocked(ctx, rp)
 	if err != nil {
 		return "", err
 	}
-	return d.inode.getxattr(rp.Credentials(), &opts)
+	return d.inode.getXattr(rp.Credentials(), &opts)
 }
 
-// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
-func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+// SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
+func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	fs.mu.RLock()
 	d, err := resolveLocked(ctx, rp)
 	if err != nil {
 		fs.mu.RUnlock()
 		return err
 	}
-	if err := d.inode.setxattr(rp.Credentials(), &opts); err != nil {
+	if err := d.inode.setXattr(rp.Credentials(), &opts); err != nil {
 		fs.mu.RUnlock()
 		return err
 	}
@@ -832,15 +832,15 @@ func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	return nil
 }
 
-// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
-func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+// RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
+func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	fs.mu.RLock()
 	d, err := resolveLocked(ctx, rp)
 	if err != nil {
 		fs.mu.RUnlock()
 		return err
 	}
-	if err := d.inode.removexattr(rp.Credentials(), name); err != nil {
+	if err := d.inode.removeXattr(rp.Credentials(), name); err != nil {
 		fs.mu.RUnlock()
 		return err
 	}
