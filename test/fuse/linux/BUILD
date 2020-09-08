@@ -141,6 +141,21 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "fuse_fd_util",
+    testonly = 1,
+    srcs = ["fuse_fd_util.cc"],
+    hdrs = ["fuse_fd_util.h"],
+    deps = [
+        gtest,
+        ":fuse_base",
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:fuse_util",
+        "//test/util:posix_error",
+    ],
+)
+
 cc_binary(
     name = "read_test",
     testonly = 1,
