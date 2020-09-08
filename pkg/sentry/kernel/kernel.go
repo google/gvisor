@@ -888,17 +888,18 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		opener    fsbridge.Lookup
 		fsContext *FSContext
 		mntns     *fs.MountNamespace
+		mntnsVFS2 *vfs.MountNamespace
 	)
 
 	if VFS2Enabled {
-		mntnsVFS2 := args.MountNamespaceVFS2
+		mntnsVFS2 = args.MountNamespaceVFS2
 		if mntnsVFS2 == nil {
 			// MountNamespaceVFS2 adds a reference to the namespace, which is
 			// transferred to the new process.
 			mntnsVFS2 = k.globalInit.Leader().MountNamespaceVFS2()
 		}
 		// Get the root directory from the MountNamespace.
-		root := args.MountNamespaceVFS2.Root()
+		root := mntnsVFS2.Root()
 		// The call to newFSContext below will take a reference on root, so we
 		// don't need to hold this one.
 		defer root.DecRef(ctx)
@@ -1008,7 +1009,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		UTSNamespace:            args.UTSNamespace,
 		IPCNamespace:            args.IPCNamespace,
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
-		MountNamespaceVFS2:      args.MountNamespaceVFS2,
+		MountNamespaceVFS2:      mntnsVFS2,
 		ContainerID:             args.ContainerID,
 	}
 	t, err := k.tasks.NewTask(config)
