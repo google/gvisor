@@ -109,12 +109,12 @@ func (*protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEnd
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
-func (*protocol) SetOption(option interface{}) *tcpip.Error {
+func (*protocol) SetOption(tcpip.SettableTransportProtocolOption) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
 // Option implements stack.TransportProtocol.Option.
-func (*protocol) Option(option interface{}) *tcpip.Error {
+func (*protocol) Option(tcpip.GettableTransportProtocolOption) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
