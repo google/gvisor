@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -191,7 +192,13 @@ func TestCacheReplace(t *testing.T) {
 }
 
 func TestCacheResolution(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 250*time.Millisecond, 1)
+	// There is a race condition causing this test to fail when the executor
+	// takes longer than the resolution timeout to call linkAddrCache.get. This
+	// is especially common when this test is run with gotsan.
+	//
+	// Using a large resolution timeout decreases the probability of experiencing
+	// this race condition and does not affect how long this test takes to run.
+	c := newLinkAddrCache(1<<63-1, math.MaxInt64, 1)
 	linkRes := &testLinkAddressResolver{cache: c}
 	for i, ta := range testAddrs {
 		got, err := getBlocking(c, ta.addr, linkRes)
