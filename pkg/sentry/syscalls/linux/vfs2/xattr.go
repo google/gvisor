@@ -26,8 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// Listxattr implements Linux syscall listxattr(2).
-func Listxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// ListXattr implements Linux syscall listxattr(2).
+func ListXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return listxattr(t, args, followFinalSymlink)
 }
 
@@ -51,7 +51,7 @@ func listxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSyml
 	}
 	defer tpop.Release(t)
 
-	names, err := t.Kernel().VFS().ListxattrAt(t, t.Credentials(), &tpop.pop, uint64(size))
+	names, err := t.Kernel().VFS().ListXattrAt(t, t.Credentials(), &tpop.pop, uint64(size))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -74,7 +74,7 @@ func Flistxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 	defer file.DecRef(t)
 
-	names, err := file.Listxattr(t, uint64(size))
+	names, err := file.ListXattr(t, uint64(size))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -85,8 +85,8 @@ func Flistxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	return uintptr(n), nil, nil
 }
 
-// Getxattr implements Linux syscall getxattr(2).
-func Getxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// GetXattr implements Linux syscall getxattr(2).
+func GetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return getxattr(t, args, followFinalSymlink)
 }
 
@@ -116,7 +116,7 @@ func getxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSymli
 		return 0, nil, err
 	}
 
-	value, err := t.Kernel().VFS().GetxattrAt(t, t.Credentials(), &tpop.pop, &vfs.GetxattrOptions{
+	value, err := t.Kernel().VFS().GetXattrAt(t, t.Credentials(), &tpop.pop, &vfs.GetXattrOptions{
 		Name: name,
 		Size: uint64(size),
 	})
@@ -148,7 +148,7 @@ func Fgetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, err
 	}
 
-	value, err := file.Getxattr(t, &vfs.GetxattrOptions{Name: name, Size: uint64(size)})
+	value, err := file.GetXattr(t, &vfs.GetXattrOptions{Name: name, Size: uint64(size)})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -159,8 +159,8 @@ func Fgetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return uintptr(n), nil, nil
 }
 
-// Setxattr implements Linux syscall setxattr(2).
-func Setxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// SetXattr implements Linux syscall setxattr(2).
+func SetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, setxattr(t, args, followFinalSymlink)
 }
 
@@ -199,7 +199,7 @@ func setxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSymli
 		return err
 	}
 
-	return t.Kernel().VFS().SetxattrAt(t, t.Credentials(), &tpop.pop, &vfs.SetxattrOptions{
+	return t.Kernel().VFS().SetXattrAt(t, t.Credentials(), &tpop.pop, &vfs.SetXattrOptions{
 		Name:  name,
 		Value: value,
 		Flags: uint32(flags),
@@ -233,15 +233,15 @@ func Fsetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, err
 	}
 
-	return 0, nil, file.Setxattr(t, &vfs.SetxattrOptions{
+	return 0, nil, file.SetXattr(t, &vfs.SetXattrOptions{
 		Name:  name,
 		Value: value,
 		Flags: uint32(flags),
 	})
 }
 
-// Removexattr implements Linux syscall removexattr(2).
-func Removexattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// RemoveXattr implements Linux syscall removexattr(2).
+func RemoveXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, removexattr(t, args, followFinalSymlink)
 }
 
@@ -269,7 +269,7 @@ func removexattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSy
 		return err
 	}
 
-	return t.Kernel().VFS().RemovexattrAt(t, t.Credentials(), &tpop.pop, name)
+	return t.Kernel().VFS().RemoveXattrAt(t, t.Credentials(), &tpop.pop, name)
 }
 
 // Fremovexattr implements Linux syscall fremovexattr(2).
@@ -288,7 +288,7 @@ func Fremovexattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		return 0, nil, err
 	}
 
-	return 0, nil, file.Removexattr(t, name)
+	return 0, nil, file.RemoveXattr(t, name)
 }
 
 func copyInXattrName(t *kernel.Task, nameAddr usermem.Addr) (string, error) {

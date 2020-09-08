@@ -632,26 +632,26 @@ func (fd *fileDescription) dentry() *dentry {
 	return fd.vfsfd.Dentry().Impl().(*dentry)
 }
 
-// Listxattr implements vfs.FileDescriptionImpl.Listxattr.
-func (fd *fileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
+// ListXattr implements vfs.FileDescriptionImpl.ListXattr.
+func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
 	return fd.filesystem().listXattr(ctx, fd.dentry(), size)
 }
 
-// Getxattr implements vfs.FileDescriptionImpl.Getxattr.
-func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOptions) (string, error) {
+// GetXattr implements vfs.FileDescriptionImpl.GetXattr.
+func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
 	return fd.filesystem().getXattr(ctx, fd.dentry(), auth.CredentialsFromContext(ctx), &opts)
 }
 
-// Setxattr implements vfs.FileDescriptionImpl.Setxattr.
-func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
+// SetXattr implements vfs.FileDescriptionImpl.SetXattr.
+func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
 	fs := fd.filesystem()
 	fs.renameMu.RLock()
 	defer fs.renameMu.RUnlock()
 	return fs.setXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), &opts)
 }
 
-// Removexattr implements vfs.FileDescriptionImpl.Removexattr.
-func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
+// RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
+func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	fs := fd.filesystem()
 	fs.renameMu.RLock()
 	defer fs.renameMu.RUnlock()
