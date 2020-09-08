@@ -48,7 +48,7 @@ func setupDevtmpfs(t *testing.T) (context.Context, *auth.Credentials, *vfs.Virtu
 	})
 
 	// Create a test mount namespace with devtmpfs mounted at "/dev".
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "tmpfs" /* source */, "tmpfs" /* fsTypeName */, &vfs.GetFilesystemOptions{})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "tmpfs" /* source */, "tmpfs" /* fsTypeName */, &vfs.MountOptions{})
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}
