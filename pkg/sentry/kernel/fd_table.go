@@ -142,7 +142,9 @@ func (f *FDTable) drop(ctx context.Context, file *fs.File) {
 	} else {
 		ev |= linux.IN_CLOSE_NOWRITE
 	}
+	f.mu.Lock()
 	d.InotifyEvent(ev, 0)
+	f.mu.Unlock()
 
 	// Drop the table reference.
 	file.DecRef(ctx)
@@ -277,9 +279,6 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 		}
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	// From f.next to find available fd.
 	if fd < f.next {
 		fd = f.next
@@ -300,6 +299,9 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 		}
 		return nil, syscall.EMFILE
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if fd == f.next {
 		// Update next search start position.
@@ -332,9 +334,6 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 		}
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	// From f.next to find available fd.
 	if fd < f.next {
 		fd = f.next
@@ -355,6 +354,9 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 		}
 		return nil, syscall.EMFILE
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if fd == f.next {
 		// Update next search start position.
@@ -386,9 +388,6 @@ func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDesc
 		}
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	// From f.next to find available fd.
 	fd := minfd
 	if fd < f.next {
@@ -397,10 +396,12 @@ func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDesc
 	for fd < end {
 		if d, _, _ := f.getVFS2(fd); d == nil {
 			f.setVFS2(ctx, fd, file, flags)
+			f.mu.Lock()
 			if fd == f.next {
 				// Update next search start position.
 				f.next = fd + 1
 			}
+			f.mu.Unlock()
 			return fd, nil
 		}
 		fd++
@@ -436,8 +437,6 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *fs.File, fileVFS2
 	}
 
 	// Install the entry.
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.setAll(ctx, fd, file, fileVFS2, flags)
 	return nil
 }
@@ -450,9 +449,6 @@ func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 		// Don't accept negative FDs.
 		return syscall.EBADF
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	file, _, _ := f.get(fd)
 	if file == nil {
@@ -473,9 +469,6 @@ func (f *FDTable) SetFlagsVFS2(ctx context.Context, fd int32, flags FDFlags) err
 		// Don't accept negative FDs.
 		return syscall.EBADF
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	file, _, _ := f.getVFS2(fd)
 	if file == nil {
@@ -600,12 +593,11 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) (*fs.File, *vfs.FileDesc
 	}
 
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	// Update current available position.
 	if fd < f.next {
 		f.next = fd
 	}
+	f.mu.Unlock()
 
 	orig, orig2, _, _ := f.getAll(fd)
 
@@ -624,16 +616,15 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) (*fs.File, *vfs.FileDesc
 
 // RemoveIf removes all FDs where cond is true.
 func (f *FDTable) RemoveIf(ctx context.Context, cond func(*fs.File, *vfs.FileDescription, FDFlags) bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	f.forEach(ctx, func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 		if cond(file, fileVFS2, flags) {
 			f.set(ctx, fd, nil, FDFlags{}) // Clear from table.
+			f.mu.Lock()
 			// Update current available position.
 			if fd < f.next {
 				f.next = fd
 			}
+			f.mu.Unlock()
 		}
 	})
 }

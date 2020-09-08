@@ -65,6 +65,9 @@ func (f *FDTable) getVFS2(fd int32) (*vfs.FileDescription, FDFlags, bool) {
 //
 //go:nosplit
 func (f *FDTable) getAll(fd int32) (*fs.File, *vfs.FileDescription, FDFlags, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	slice := *(*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
 	if fd >= int32(len(slice)) {
 		return nil, nil, FDFlags{}, false
@@ -83,8 +86,6 @@ func (f *FDTable) getAll(fd int32) (*fs.File, *vfs.FileDescription, FDFlags, boo
 //
 // This handles accounting changes, as well as acquiring and releasing the
 // reference needed by the table iff the file is different.
-//
-// Precondition: mu must be held.
 func (f *FDTable) set(ctx context.Context, fd int32, file *fs.File, flags FDFlags) {
 	f.setAll(ctx, fd, file, nil, flags)
 }
@@ -93,8 +94,6 @@ func (f *FDTable) set(ctx context.Context, fd int32, file *fs.File, flags FDFlag
 //
 // This handles accounting changes, as well as acquiring and releasing the
 // reference needed by the table iff the file is different.
-//
-// Precondition: mu must be held.
 func (f *FDTable) setVFS2(ctx context.Context, fd int32, file *vfs.FileDescription, flags FDFlags) {
 	f.setAll(ctx, fd, nil, file, flags)
 }
@@ -103,13 +102,12 @@ func (f *FDTable) setVFS2(ctx context.Context, fd int32, file *vfs.FileDescripti
 //
 // This handles accounting changes, as well as acquiring and releasing the
 // reference needed by the table iff the file is different.
-//
-// Precondition: mu must be held.
 func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 	if file != nil && fileVFS2 != nil {
 		panic("VFS1 and VFS2 files set")
 	}
 
+	f.mu.Lock()
 	slice := *(*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
 
 	// Grow the table as required.
@@ -133,6 +131,7 @@ func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 
 
 	// Update the single element.
 	orig := (*descriptor)(atomic.SwapPointer(&slice[fd], unsafe.Pointer(desc)))
+	f.mu.Unlock()
 
 	// Acquire a table reference.
 	if desc != nil {
@@ -161,6 +160,9 @@ func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 
 			}
 		}
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	// Adjust used.
 	switch {
