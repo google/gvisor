@@ -146,19 +146,22 @@ func New(t *testing.T, mtu uint32) *Context {
 	const sendBufferSize = 1 << 20 // 1 MiB
 	const recvBufferSize = 1 << 20 // 1 MiB
 	// Allow minimum send/receive buffer sizes to be 1 during tests.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{Min: 1, Default: sendBufferSize, Max: 10 * sendBufferSize}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	sendBufOpt := tcpip.TCPSendBufferSizeRangeOption{Min: 1, Default: sendBufferSize, Max: 10 * sendBufferSize}
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &sendBufOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%#v) failed: %s", tcp.ProtocolNumber, sendBufOpt, err)
 	}
 
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{Min: 1, Default: recvBufferSize, Max: 10 * recvBufferSize}); err != nil {
-		t.Fatalf("SetTransportProtocolOption failed: %s", err)
+	rcvBufOpt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 1, Default: recvBufferSize, Max: 10 * recvBufferSize}
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &rcvBufOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%#v) failed: %s", tcp.ProtocolNumber, rcvBufOpt, err)
 	}
 
 	// Increase minimum RTO in tests to avoid test flakes due to early
 	// retransmit in case the test executors are overloaded and cause timers
 	// to fire earlier than expected.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPMinRTOOption(3*time.Second)); err != nil {
-		t.Fatalf("failed to set stack-wide minRTO: %s", err)
+	minRTOOpt := tcpip.TCPMinRTOOption(3 * time.Second)
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &minRTOOpt); err != nil {
+		t.Fatalf("s.SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, minRTOOpt, minRTOOpt, err)
 	}
 
 	// Some of the congestion control tests send up to 640 packets, we so
@@ -1096,7 +1099,7 @@ func (c *Context) PassiveConnectWithOptions(maxPayload, wndScale int, synOptions
 // SACKEnabled returns true if the TCP Protocol option SACKEnabled is set to true
 // for the Stack in the context.
 func (c *Context) SACKEnabled() bool {
-	var v tcp.SACKEnabled
+	var v tcpip.TCPSACKEnabled
 	if err := c.Stack().TransportProtocolOption(tcp.ProtocolNumber, &v); err != nil {
 		// Stack doesn't support SACK. So just return.
 		return false

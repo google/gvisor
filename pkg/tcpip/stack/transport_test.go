@@ -291,22 +291,20 @@ func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack
 	return true
 }
 
-func (f *fakeTransportProtocol) SetOption(option interface{}) *tcpip.Error {
+func (f *fakeTransportProtocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpip.Error {
 	switch v := option.(type) {
-	case fakeTransportGoodOption:
-		f.opts.good = bool(v)
+	case *tcpip.TCPModerateReceiveBufferOption:
+		f.opts.good = bool(*v)
 		return nil
-	case fakeTransportInvalidValueOption:
-		return tcpip.ErrInvalidOptionValue
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
-func (f *fakeTransportProtocol) Option(option interface{}) *tcpip.Error {
+func (f *fakeTransportProtocol) Option(option tcpip.GettableTransportProtocolOption) *tcpip.Error {
 	switch v := option.(type) {
-	case *fakeTransportGoodOption:
-		*v = fakeTransportGoodOption(f.opts.good)
+	case *tcpip.TCPModerateReceiveBufferOption:
+		*v = tcpip.TCPModerateReceiveBufferOption(f.opts.good)
 		return nil
 	default:
 		return tcpip.ErrUnknownProtocolOption
@@ -533,41 +531,16 @@ func TestTransportOptions(t *testing.T) {
 		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
 	})
 
-	// Try an unsupported transport protocol.
-	if err := s.SetTransportProtocolOption(tcpip.TransportProtocolNumber(99999), fakeTransportGoodOption(false)); err != tcpip.ErrUnknownProtocol {
-		t.Fatalf("SetTransportProtocolOption(fakeTrans2, blah, false) = %v, want = tcpip.ErrUnknownProtocol", err)
+	v := tcpip.TCPModerateReceiveBufferOption(true)
+	if err := s.SetTransportProtocolOption(fakeTransNumber, &v); err != nil {
+		t.Errorf("s.SetTransportProtocolOption(fakeTrans, &%T(%t)): %s", v, v, err)
 	}
-
-	testCases := []struct {
-		option   interface{}
-		wantErr  *tcpip.Error
-		verifier func(t *testing.T, p stack.TransportProtocol)
-	}{
-		{fakeTransportGoodOption(true), nil, func(t *testing.T, p stack.TransportProtocol) {
-			t.Helper()
-			fakeTrans := p.(*fakeTransportProtocol)
-			if fakeTrans.opts.good != true {
-				t.Fatalf("fakeTrans.opts.good = false, want = true")
-			}
-			var v fakeTransportGoodOption
-			if err := s.TransportProtocolOption(fakeTransNumber, &v); err != nil {
-				t.Fatalf("s.TransportProtocolOption(fakeTransNumber, &v) = %v, want = nil, where v is option %T", v, err)
-			}
-			if v != true {
-				t.Fatalf("s.TransportProtocolOption(fakeTransNumber, &v) returned v = %v, want = true", v)
-			}
-
-		}},
-		{fakeTransportBadOption(true), tcpip.ErrUnknownProtocolOption, nil},
-		{fakeTransportInvalidValueOption(1), tcpip.ErrInvalidOptionValue, nil},
+	v = false
+	if err := s.TransportProtocolOption(fakeTransNumber, &v); err != nil {
+		t.Fatalf("s.TransportProtocolOption(fakeTransNumber, &%T): %s", v, err)
 	}
-	for _, tc := range testCases {
-		if got := s.SetTransportProtocolOption(fakeTransNumber, tc.option); got != tc.wantErr {
-			t.Errorf("s.SetTransportProtocolOption(fakeTrans, %v) = %v, want = %v", tc.option, got, tc.wantErr)
-		}
-		if tc.verifier != nil {
-			tc.verifier(t, s.TransportProtocolInstance(fakeTransNumber))
-		}
+	if !v {
+		t.Fatalf("got tcpip.TCPModerateReceiveBufferOption = false, want = true")
 	}
 }
 
