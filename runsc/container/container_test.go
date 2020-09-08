@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -1490,6 +1491,8 @@ func TestMountNewDir(t *testing.T) {
 				Source:      srcDir,
 				Type:        "bind",
 			})
+			// Extra points for creating the mount with a readonly root.
+			spec.Root.Readonly = true
 
 			if err := run(spec, conf); err != nil {
 				t.Fatalf("error running sandbox: %v", err)
@@ -1499,17 +1502,17 @@ func TestMountNewDir(t *testing.T) {
 }
 
 func TestReadonlyRoot(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, overlay) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
-			spec := testutil.NewSpecWithArgs("/bin/touch", "/foo")
+			spec := testutil.NewSpecWithArgs("sleep", "100")
 			spec.Root.Readonly = true
+
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
 				t.Fatalf("error setting up container: %v", err)
 			}
 			defer cleanup()
 
-			// Create, start and wait for the container.
 			args := Args{
 				ID:        testutil.RandomContainerID(),
 				Spec:      spec,
@@ -1524,12 +1527,82 @@ func TestReadonlyRoot(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			ws, err := c.Wait()
+			// Read mounts to check that root is readonly.
+			out, ws, err := executeCombinedOutput(c, "/bin/sh", "-c", "mount | grep ' / '")
+			if err != nil || ws != 0 {
+				t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
+			}
+			t.Logf("root mount: %q", out)
+			if !strings.Contains(string(out), "(ro)") {
+				t.Errorf("root not mounted readonly: %q", out)
+			}
+
+			// Check that file cannot be created.
+			ws, err = execute(c, "/bin/touch", "/foo")
 			if err != nil {
-				t.Fatalf("error waiting on container: %v", err)
+				t.Fatalf("touch file in ro mount: %v", err)
 			}
 			if !ws.Exited() || syscall.Errno(ws.ExitStatus()) != syscall.EPERM {
-				t.Fatalf("container failed, waitStatus: %v", ws)
+				t.Fatalf("wrong waitStatus: %v", ws)
+			}
+		})
+	}
+}
+
+func TestReadonlyMount(t *testing.T) {
+	for name, conf := range configsWithVFS2(t, all...) {
+		t.Run(name, func(t *testing.T) {
+			dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
+			if err != nil {
+				t.Fatalf("ioutil.TempDir() failed: %v", err)
+			}
+			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: dir,
+				Source:      dir,
+				Type:        "bind",
+				Options:     []string{"ro"},
+			})
+			spec.Root.Readonly = false
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Read mounts to check that volume is readonly.
+			cmd := fmt.Sprintf("mount | grep ' %s '", dir)
+			out, ws, err := executeCombinedOutput(c, "/bin/sh", "-c", cmd)
+			if err != nil || ws != 0 {
+				t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
+			}
+			t.Logf("mount: %q", out)
+			if !strings.Contains(string(out), "(ro)") {
+				t.Errorf("volume not mounted readonly: %q", out)
+			}
+
+			// Check that file cannot be created.
+			ws, err = execute(c, "/bin/touch", path.Join(dir, "file"))
+			if err != nil {
+				t.Fatalf("touch file in ro mount: %v", err)
+			}
+			if !ws.Exited() || syscall.Errno(ws.ExitStatus()) != syscall.EPERM {
+				t.Fatalf("wrong WaitStatus: %v", ws)
 			}
 		})
 	}
@@ -1611,54 +1684,6 @@ func TestUIDMap(t *testing.T) {
 
 			if st.Uid != uint32(uid) || st.Gid != uint32(gid) {
 				t.Fatalf("UID: %d (%d) GID: %d (%d)", st.Uid, uid, st.Gid, gid)
-			}
-		})
-	}
-}
-
-func TestReadonlyMount(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, overlay) {
-		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
-			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
-			if err != nil {
-				t.Fatalf("ioutil.TempDir() failed: %v", err)
-			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: dir,
-				Source:      dir,
-				Type:        "bind",
-				Options:     []string{"ro"},
-			})
-			spec.Root.Readonly = false
-
-			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer cleanup()
-
-			// Create, start and wait for the container.
-			args := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      spec,
-				BundleDir: bundleDir,
-			}
-			c, err := New(conf, args)
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer c.Destroy()
-			if err := c.Start(conf); err != nil {
-				t.Fatalf("error starting container: %v", err)
-			}
-
-			ws, err := c.Wait()
-			if err != nil {
-				t.Fatalf("error waiting on container: %v", err)
-			}
-			if !ws.Exited() || syscall.Errno(ws.ExitStatus()) != syscall.EPERM {
-				t.Fatalf("container failed, waitStatus: %v", ws)
 			}
 		})
 	}
@@ -2116,21 +2141,13 @@ func TestMountPropagation(t *testing.T) {
 
 	// Check that mount didn't propagate to private mount.
 	privFile := filepath.Join(priv, "mnt", "file")
-	execArgs := &control.ExecArgs{
-		Filename: "/usr/bin/test",
-		Argv:     []string{"test", "!", "-f", privFile},
-	}
-	if ws, err := cont.executeSync(execArgs); err != nil || ws != 0 {
+	if ws, err := execute(cont, "/usr/bin/test", "!", "-f", privFile); err != nil || ws != 0 {
 		t.Fatalf("exec: test ! -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 
 	// Check that mount propagated to slave mount.
 	slaveFile := filepath.Join(slave, "mnt", "file")
-	execArgs = &control.ExecArgs{
-		Filename: "/usr/bin/test",
-		Argv:     []string{"test", "-f", slaveFile},
-	}
-	if ws, err := cont.executeSync(execArgs); err != nil || ws != 0 {
+	if ws, err := execute(cont, "/usr/bin/test", "-f", slaveFile); err != nil || ws != 0 {
 		t.Fatalf("exec: test -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 }
@@ -2196,11 +2213,7 @@ func TestMountSymlink(t *testing.T) {
 			// Check that symlink was resolved and mount was created where the symlink
 			// is pointing to.
 			file := path.Join(target, "file")
-			execArgs := &control.ExecArgs{
-				Filename: "/usr/bin/test",
-				Argv:     []string{"test", "-f", file},
-			}
-			if ws, err := cont.executeSync(execArgs); err != nil || ws != 0 {
+			if ws, err := execute(cont, "/usr/bin/test", "-f", file); err != nil || ws != 0 {
 				t.Fatalf("exec: test -f %q, ws: %v, err: %v", file, ws, err)
 			}
 		})
@@ -2324,6 +2337,35 @@ func TestTTYField(t *testing.T) {
 			})
 		}
 	}
+}
+
+func execute(cont *Container, name string, arg ...string) (syscall.WaitStatus, error) {
+	args := &control.ExecArgs{
+		Filename: name,
+		Argv:     append([]string{name}, arg...),
+	}
+	return cont.executeSync(args)
+}
+
+func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte, syscall.WaitStatus, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer r.Close()
+
+	args := &control.ExecArgs{
+		Filename:    name,
+		Argv:        append([]string{name}, arg...),
+		FilePayload: urpc.FilePayload{Files: []*os.File{os.Stdin, w, w}},
+	}
+	ws, err := cont.executeSync(args)
+	w.Close()
+	if err != nil {
+		return nil, 0, err
+	}
+	out, err := ioutil.ReadAll(r)
+	return out, ws, err
 }
 
 // executeSync synchronously executes a new process.

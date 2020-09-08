@@ -168,11 +168,7 @@ func TestSharedVolume(t *testing.T) {
 
 func checkFile(c *Container, filename string, want []byte) error {
 	cpy := filename + ".copy"
-	argsCp := &control.ExecArgs{
-		Filename: "/bin/cp",
-		Argv:     []string{"cp", "-f", filename, cpy},
-	}
-	if _, err := c.executeSync(argsCp); err != nil {
+	if _, err := execute(c, "/bin/cp", "-f", filename, cpy); err != nil {
 		return fmt.Errorf("unexpected error copying file %q to %q: %v", filename, cpy, err)
 	}
 	got, err := ioutil.ReadFile(cpy)
@@ -235,11 +231,7 @@ func TestSharedVolumeFile(t *testing.T) {
 	}
 
 	// Append to file inside the container and check that content is not lost.
-	argsAppend := &control.ExecArgs{
-		Filename: "/bin/bash",
-		Argv:     []string{"bash", "-c", "echo -n sandbox- >> " + filename},
-	}
-	if _, err := c.executeSync(argsAppend); err != nil {
+	if _, err := execute(c, "/bin/bash", "-c", "echo -n sandbox- >> "+filename); err != nil {
 		t.Fatalf("unexpected error appending file %q: %v", filename, err)
 	}
 	want = []byte("host-sandbox-")
