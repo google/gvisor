@@ -626,29 +626,29 @@ func (i *inode) touchCMtimeLocked() {
 	atomic.StoreInt64(&i.ctime, now)
 }
 
-func (i *inode) listxattr(size uint64) ([]string, error) {
-	return i.xattrs.Listxattr(size)
+func (i *inode) listXattr(size uint64) ([]string, error) {
+	return i.xattrs.ListXattr(size)
 }
 
-func (i *inode) getxattr(creds *auth.Credentials, opts *vfs.GetxattrOptions) (string, error) {
+func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
 	if err := i.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
 	}
-	return i.xattrs.Getxattr(opts)
+	return i.xattrs.GetXattr(opts)
 }
 
-func (i *inode) setxattr(creds *auth.Credentials, opts *vfs.SetxattrOptions) error {
+func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
 	if err := i.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
-	return i.xattrs.Setxattr(opts)
+	return i.xattrs.SetXattr(opts)
 }
 
-func (i *inode) removexattr(creds *auth.Credentials, name string) error {
+func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
 	if err := i.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err
 	}
-	return i.xattrs.Removexattr(name)
+	return i.xattrs.RemoveXattr(name)
 }
 
 func (i *inode) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
@@ -712,20 +712,20 @@ func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 	return globalStatfs, nil
 }
 
-// Listxattr implements vfs.FileDescriptionImpl.Listxattr.
-func (fd *fileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
-	return fd.inode().listxattr(size)
+// ListXattr implements vfs.FileDescriptionImpl.ListXattr.
+func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
+	return fd.inode().listXattr(size)
 }
 
-// Getxattr implements vfs.FileDescriptionImpl.Getxattr.
-func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOptions) (string, error) {
-	return fd.inode().getxattr(auth.CredentialsFromContext(ctx), &opts)
+// GetXattr implements vfs.FileDescriptionImpl.GetXattr.
+func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
+	return fd.inode().getXattr(auth.CredentialsFromContext(ctx), &opts)
 }
 
-// Setxattr implements vfs.FileDescriptionImpl.Setxattr.
-func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
+// SetXattr implements vfs.FileDescriptionImpl.SetXattr.
+func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
 	d := fd.dentry()
-	if err := d.inode.setxattr(auth.CredentialsFromContext(ctx), &opts); err != nil {
+	if err := d.inode.setXattr(auth.CredentialsFromContext(ctx), &opts); err != nil {
 		return err
 	}
 
@@ -734,10 +734,10 @@ func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOption
 	return nil
 }
 
-// Removexattr implements vfs.FileDescriptionImpl.Removexattr.
-func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
+// RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
+func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	d := fd.dentry()
-	if err := d.inode.removexattr(auth.CredentialsFromContext(ctx), name); err != nil {
+	if err := d.inode.removeXattr(auth.CredentialsFromContext(ctx), name); err != nil {
 		return err
 	}
 
