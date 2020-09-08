@@ -494,7 +494,11 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 		return nil, syserror.EIO
 	}
 	child := i.fs.newInode(out.NodeID, out.Attr)
-	i.dentry.InsertChildLocked(name, child)
+	if opcode == linux.FUSE_LOOKUP {
+		i.dentry.InsertChildLocked(name, child)
+	} else {
+		i.dentry.InsertChild(name, child)
+	}
 	return child.VFSDentry(), nil
 }
 
