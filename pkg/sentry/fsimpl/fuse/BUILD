@@ -66,7 +66,11 @@ go_library(
 go_test(
     name = "fuse_test",
     size = "small",
-    srcs = ["dev_test.go"],
+    srcs = [
+        "connection_test.go",
+        "dev_test.go",
+        "utils_test.go",
+    ],
     library = ":fuse",
     deps = [
         "//pkg/abi/linux",
