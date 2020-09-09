@@ -256,6 +256,13 @@ func (a *InodeAttrs) Stat(context.Context, *vfs.Filesystem, vfs.StatOptions) (li
 
 // SetStat implements Inode.SetStat.
 func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return a.SetInodeStat(ctx, fs, creds, opts)
+}
+
+// SetInodeStat sets the corresponding attributes from opts to InodeAttrs.
+// This function can be used by other kernfs-based filesystem implementation to
+// sets the unexported attributes into kernfs.InodeAttrs.
+func (a *InodeAttrs) SetInodeStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
