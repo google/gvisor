@@ -254,7 +254,7 @@ type inode struct {
 	// metaDataMu protects the metadata of this inode.
 	metadataMu sync.Mutex
 
-	NodeID uint64
+	nodeID uint64
 
 	locks vfs.FileLocks
 
@@ -279,13 +279,13 @@ func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode)
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.dentry.Init(i)
-	i.NodeID = 1
+	i.nodeID = 1
 
 	return &i.dentry
 }
 
 func (fs *filesystem) newInode(nodeID uint64, attr linux.FUSEAttr) *kernfs.Dentry {
-	i := &inode{fs: fs, NodeID: nodeID}
+	i := &inode{fs: fs, nodeID: nodeID}
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
 	i.InodeAttrs.Init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
 	atomic.StoreUint64(&i.size, attr.Size)
@@ -342,7 +342,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 			in.Flags &= ^uint32(linux.O_TRUNC)
 		}
 
-		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, opcode, &in)
+		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, &in)
 		if err != nil {
 			return nil, err
 		}
@@ -405,13 +405,13 @@ func (i *inode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
 	return i.newEntry(ctx, name, 0, linux.FUSE_LOOKUP, &in)
 }
 
-// IterDirents implements Inode.IterDirents.
-func (inode) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+// IterDirents implements kernfs.Inode.IterDirents.
+func (*inode) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	return offset, nil
 }
 
-// Valid implements Inode.Valid.
-func (inode) Valid(ctx context.Context) bool {
+// Valid implements kernfs.Inode.Valid.
+func (*inode) Valid(ctx context.Context) bool {
 	return true
 }
 
@@ -419,7 +419,7 @@ func (inode) Valid(ctx context.Context) bool {
 func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*vfs.Dentry, error) {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
-		log.Warningf("fusefs.Inode.NewFile: couldn't get kernel task from context", i.NodeID)
+		log.Warningf("fusefs.Inode.NewFile: couldn't get kernel task from context", i.nodeID)
 		return nil, syserror.EINVAL
 	}
 	in := linux.FUSECreateIn{
@@ -459,11 +459,11 @@ func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentr
 func (i *inode) Unlink(ctx context.Context, name string, child *vfs.Dentry) error {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
-		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.NodeID)
+		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
 		return syserror.EINVAL
 	}
 	in := linux.FUSEUnlinkIn{Name: name}
-	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_UNLINK, &in)
+	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_UNLINK, &in)
 	if err != nil {
 		return err
 	}
@@ -496,7 +496,7 @@ func (i *inode) RmDir(ctx context.Context, name string, child *vfs.Dentry) error
 	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
 
 	in := linux.FUSERmDirIn{Name: name}
-	req, err := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_RMDIR, &in)
+	req, err := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_RMDIR, &in)
 	if err != nil {
 		return err
 	}
@@ -522,10 +522,10 @@ func (i *inode) RmDir(ctx context.Context, name string, child *vfs.Dentry) error
 func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*vfs.Dentry, error) {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
-		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.NodeID)
+		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
 		return nil, syserror.EINVAL
 	}
-	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, opcode, payload)
+	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -552,7 +552,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	return child.VFSDentry(), nil
 }
 
-// Getlink implements Inode.Getlink.
+// Getlink implements kernfs.Inode.Getlink.
 func (i *inode) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	path, err := i.Readlink(ctx, mnt)
 	return vfs.VirtualDentry{}, path, err
@@ -563,13 +563,13 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 	if i.Mode().FileType()&linux.S_IFLNK == 0 {
 		return "", syserror.EINVAL
 	}
-	if i.link == "" {
+	if len(i.link) == 0 {
 		kernelTask := kernel.TaskFromContext(ctx)
 		if kernelTask == nil {
 			log.Warningf("fusefs.Inode.Readlink: couldn't get kernel task from context")
 			return "", syserror.EINVAL
 		}
-		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
+		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
 		if err != nil {
 			return "", err
 		}
@@ -675,7 +675,7 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 		GetAttrFlags: flags,
 		Fh:           fh,
 	}
-	req, err := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_GETATTR, &in)
+	req, err := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_GETATTR, &in)
 	if err != nil {
 		return linux.FUSEAttr{}, err
 	}
@@ -798,7 +798,7 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		UID:       opts.Stat.UID,
 		GID:       opts.Stat.GID,
 	}
-	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_SETATTR, &in)
+	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_SETATTR, &in)
 	if err != nil {
 		return err
 	}
