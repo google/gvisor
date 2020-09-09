@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
@@ -82,6 +83,9 @@ type filesystem struct {
 
 	// opts is the options the fusefs is initialized with.
 	opts *filesystemOptions
+
+	// umounted is true if filesystem.Release() has been called.
+	umounted bool
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -221,6 +225,14 @@ func newFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOpt
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
+	fs.umounted = true
+	fs.conn.Abort(ctx)
+
+	fs.conn.fd.mu.Lock()
+	// Notify all the waiters on this fd.
+	fs.conn.fd.waitQueue.Notify(waiter.EventIn)
+	fs.conn.fd.mu.Unlock()
+
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.Filesystem.Release(ctx)
 }
