@@ -20,6 +20,9 @@
 #include <sys/statfs.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <linux/magic.h>
+#endif  // __linux__
 
 #include "absl/strings/string_view.h"
 #include "test/util/file_descriptor.h"
@@ -182,6 +185,8 @@ PosixErrorOr<std::string> ProcessExePath(int pid);
 #ifdef __linux__
 // IsTmpfs returns true if the file at path is backed by tmpfs.
 PosixErrorOr<bool> IsTmpfs(const std::string& path);
+// IsOverlayfs returns true if the file at path is backed by overlayfs.
+PosixErrorOr<bool> IsOverlayfs(const std::string& path);
 #endif  // __linux__
 
 namespace internal {

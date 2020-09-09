@@ -97,6 +97,11 @@ TEST_F(StatTest, FstatatSymlink) {
 }
 
 TEST_F(StatTest, Nlinks) {
+  // Skip this test if we are testing overlayfs because overlayfs does not
+  // (intentionally) return the correct nlink value for directories.
+  // See fs/overlayfs/inode.c:ovl_getattr().
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+
   TempPath basedir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   // Directory is initially empty, it should contain 2 links (one from itself,
@@ -432,6 +437,11 @@ TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoRandomSave) {
 
 // Test link counts with a directory as the child.
 TEST_F(StatTest, LinkCountsWithDirChild) {
+  // Skip this test if we are testing overlayfs because overlayfs does not
+  // (intentionally) return the correct nlink value for directories.
+  // See fs/overlayfs/inode.c:ovl_getattr().
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   // Before a child is added the two links are "." and the link from the parent.
