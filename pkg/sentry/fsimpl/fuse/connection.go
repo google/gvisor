@@ -47,7 +47,7 @@ const (
 type connection struct {
 	fd *DeviceFD
 
-	// mu protect access to struct memebers.
+	// mu protects access to struct memebers.
 	mu sync.Mutex
 
 	// attributeVersion is the version of connection's attributes.
