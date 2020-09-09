@@ -84,7 +84,7 @@ func (fd *fileDescription) Release(ctx context.Context) {
 	}
 	kernelTask := kernel.TaskFromContext(ctx)
 	// ignoring errors and FUSE server reply is analogous to Linux's behavior.
-	req, err := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), fd.inode().NodeID, opcode, &in)
+	req, err := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), fd.inode().nodeID, opcode, &in)
 	if err != nil {
 		// No way to invoke Call() with an errored request.
 		return
@@ -125,8 +125,9 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 	return inode.Stat(ctx, fs, opts)
 }
 
-// SetStat implements FileDescriptionImpl.SetStat.
+// SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+	fs := fd.filesystem()
 	creds := auth.CredentialsFromContext(ctx)
-	return fd.inode().setAttr(ctx, fd.inode().fs.VFSFilesystem(), creds, opts, true, fd.Fh)
+	return fd.inode().setAttr(ctx, fs, creds, opts, true, fd.Fh)
 }
