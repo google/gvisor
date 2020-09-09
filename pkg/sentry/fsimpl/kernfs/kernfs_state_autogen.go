@@ -227,6 +227,47 @@ func (x *StaticDirectoryRefs) StateLoad(m state.Source) {
 	m.Load(0, &x.refCount)
 }
 
+func (x *syntheticDirectory) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.syntheticDirectory"
+}
+
+func (x *syntheticDirectory) StateFields() []string {
+	return []string{
+		"InodeAttrs",
+		"InodeNoStatFS",
+		"InodeNoopRefCount",
+		"InodeNoDynamicLookup",
+		"InodeNotSymlink",
+		"OrderedChildren",
+		"locks",
+	}
+}
+
+func (x *syntheticDirectory) beforeSave() {}
+
+func (x *syntheticDirectory) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.InodeAttrs)
+	m.Save(1, &x.InodeNoStatFS)
+	m.Save(2, &x.InodeNoopRefCount)
+	m.Save(3, &x.InodeNoDynamicLookup)
+	m.Save(4, &x.InodeNotSymlink)
+	m.Save(5, &x.OrderedChildren)
+	m.Save(6, &x.locks)
+}
+
+func (x *syntheticDirectory) afterLoad() {}
+
+func (x *syntheticDirectory) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeAttrs)
+	m.Load(1, &x.InodeNoStatFS)
+	m.Load(2, &x.InodeNoopRefCount)
+	m.Load(3, &x.InodeNoDynamicLookup)
+	m.Load(4, &x.InodeNotSymlink)
+	m.Load(5, &x.OrderedChildren)
+	m.Load(6, &x.locks)
+}
+
 func init() {
 	state.Register((*DentryRefs)(nil))
 	state.Register((*DynamicBytesFile)(nil))
@@ -235,4 +276,5 @@ func init() {
 	state.Register((*slotList)(nil))
 	state.Register((*slotEntry)(nil))
 	state.Register((*StaticDirectoryRefs)(nil))
+	state.Register((*syntheticDirectory)(nil))
 }
