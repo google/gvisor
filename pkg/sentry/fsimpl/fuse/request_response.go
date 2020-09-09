@@ -122,7 +122,7 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 
 	buf := make([]byte, hdr.Len)
 
-	// TODO(gVisor.dev/3698): Use the unsafe version once go_marshal is safe to use again.
+	// TODO(gVisor.dev/issue/3698): Use the unsafe version once go_marshal is safe to use again.
 	hdr.MarshalBytes(buf[:hdrLen])
 	payload.MarshalBytes(buf[hdrLen:])
 
@@ -223,7 +223,7 @@ func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 		return nil
 	}
 
-	// TODO(gVisor.dev/3698): Use the unsafe version once go_marshal is safe to use again.
+	// TODO(gVisor.dev/issue/3698): Use the unsafe version once go_marshal is safe to use again.
 	m.UnmarshalBytes(r.data[hdrLen:])
 	return nil
 }
