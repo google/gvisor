@@ -24,10 +24,9 @@ import (
 // SyscallFilters returns syscalls made exclusively by the ptrace platform.
 func (*PTrace) SyscallFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		unix.SYS_GETCPU:            {},
-		unix.SYS_SCHED_SETAFFINITY: {},
-		syscall.SYS_PTRACE:         {},
-		syscall.SYS_TGKILL:         {},
-		syscall.SYS_WAIT4:          {},
+		unix.SYS_GETCPU:    {},
+		syscall.SYS_PTRACE: {},
+		syscall.SYS_TGKILL: {},
+		syscall.SYS_WAIT4:  {},
 	}
 }
