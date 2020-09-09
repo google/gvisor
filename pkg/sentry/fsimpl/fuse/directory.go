@@ -67,8 +67,8 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 		Flags:  dir.statusFlags(),
 	}
 
-	/// TODO(gVisor.dev/issue/3404): Support FUSE_READDIRPLUS.
-	req, err := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), dir.inode().NodeID, linux.FUSE_READDIR, &in)
+	// TODO(gVisor.dev/issue/3404): Support FUSE_READDIRPLUS.
+	req, err := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), dir.inode().nodeID, linux.FUSE_READDIR, &in)
 	if err != nil {
 		return err
 	}
