@@ -252,22 +252,52 @@ type FUSEGetAttrIn struct {
 //
 // +marshal
 type FUSEAttr struct {
-	Ino       uint64
-	Size      uint64
-	Blocks    uint64
-	Atime     uint64
-	Mtime     uint64
-	Ctime     uint64
+	// Ino is the inode number of this file.
+	Ino uint64
+
+	// Size is the size of this file.
+	Size uint64
+
+	// Blocks is the number of the 512B blocks allocated by this file.
+	Blocks uint64
+
+	// Atime is the time of last access.
+	Atime uint64
+
+	// Mtime is the time of last modification.
+	Mtime uint64
+
+	// Ctime is the time of last status change.
+	Ctime uint64
+
+	// AtimeNsec is the nano second part of Atime.
 	AtimeNsec uint32
+
+	// MtimeNsec is the nano second part of Mtime.
 	MtimeNsec uint32
+
+	// CtimeNsec is the nano second part of Ctime.
 	CtimeNsec uint32
-	Mode      uint32
-	Nlink     uint32
-	UID       uint32
-	GID       uint32
-	Rdev      uint32
-	BlkSize   uint32
-	_         uint32
+
+	// Mode contains the file type and mode.
+	Mode uint32
+
+	// Nlink is the number of the hard links.
+	Nlink uint32
+
+	// UID is user ID of the owner.
+	UID uint32
+
+	// GID is group ID of the owner.
+	GID uint32
+
+	// Rdev is the device ID if this is a special file.
+	Rdev uint32
+
+	// BlkSize is the block size for filesystem I/O.
+	BlkSize uint32
+
+	_ uint32
 }
 
 // FUSEGetAttrOut is the reply sent by the daemon to the kernel
