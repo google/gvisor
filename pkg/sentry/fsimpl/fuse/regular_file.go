@@ -65,7 +65,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 
 	// Reading beyond EOF, update file size if outdated.
 	if uint64(offset+size) > atomic.LoadUint64(&inode.size) {
-		if err := inode.reviseAttr(ctx); err != nil {
+		if err := inode.reviseAttr(ctx, linux.FUSE_GETATTR_FH, fd.Fh); err != nil {
 			return 0, err
 		}
 		// If the offset after update is still too large, return error.
