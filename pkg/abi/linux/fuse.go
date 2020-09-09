@@ -663,7 +663,7 @@ func (r *FUSEMkdirIn) SizeBytes() int {
 type FUSERmDirIn struct {
 	marshal.StubMarshallable
 
-	// Name is a directory name to be looked up.
+	// Name is a directory name to be removed.
 	Name string
 }
 
