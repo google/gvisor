@@ -23,12 +23,12 @@ gcloud beta container node-pools create sandbox-pool --cluster=${CLUSTER_NAME} -
 If you prefer to use the console, select your cluster and select the **ADD NODE
 POOL** button:
 
-![+ ADD NODE POOL](./node-pool-button.png)
+![+ ADD NODE POOL](node-pool-button.png)
 
 Then select the **Image type** with **Containerd** and select **Enable sandbox
 with gVisor** option. Select other options as you like:
 
-![+ NODE POOL](./add-node-pool.png)
+![+ NODE POOL](add-node-pool.png)
 
 ### Check that gVisor is enabled
 
@@ -57,47 +57,149 @@ curl -LO https://k8s.io/examples/application/wordpress/mysql-deployment.yaml
 Add a **spec.template.spec.runtimeClassName** set to **gvisor** to both files,
 as shown below:
 
-**wordpress-deployment.yaml:** ```yaml apiVersion: v1 kind: Service metadata:
-name: wordpress labels: app: wordpress spec: ports: - port: 80 selector: app:
-wordpress tier: frontend
+**wordpress-deployment.yaml:**
 
-## type: LoadBalancer
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+spec:
+  ports:
+    - port: 80
+  selector:
+    app: wordpress
+    tier: frontend
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-pv-claim
+  labels:
+    app: wordpress
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+spec:
+  selector:
+    matchLabels:
+      app: wordpress
+      tier: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: wordpress
+        tier: frontend
+    spec:
+      runtimeClassName: gvisor   # ADD THIS LINE
+      containers:
+      - image: wordpress:4.8-apache
+        name: wordpress
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: wordpress-mysql
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-pass
+              key: password
+        ports:
+        - containerPort: 80
+          name: wordpress
+        volumeMounts:
+        - name: wordpress-persistent-storage
+          mountPath: /var/www/html
+      volumes:
+      - name: wordpress-persistent-storage
+        persistentVolumeClaim:
+          claimName: wp-pv-claim
+```
 
-apiVersion: v1 kind: PersistentVolumeClaim metadata: name: wp-pv-claim labels:
-app: wordpress spec: accessModes: - ReadWriteOnce resources: requests:
+**mysql-deployment.yaml:**
 
-## storage: 20Gi
-
-apiVersion: apps/v1 kind: Deployment metadata: name: wordpress labels: app:
-wordpress spec: selector: matchLabels: app: wordpress tier: frontend strategy:
-type: Recreate template: metadata: labels: app: wordpress tier: frontend spec:
-runtimeClassName: gvisor # ADD THIS LINE containers: - image:
-wordpress:4.8-apache name: wordpress env: - name: WORDPRESS_DB_HOST value:
-wordpress-mysql - name: WORDPRESS_DB_PASSWORD valueFrom: secretKeyRef: name:
-mysql-pass key: password ports: - containerPort: 80 name: wordpress
-volumeMounts: - name: wordpress-persistent-storage mountPath: /var/www/html
-volumes: - name: wordpress-persistent-storage persistentVolumeClaim: claimName:
-wp-pv-claim ```
-
-**mysql-deployment.yaml:** ```yaml apiVersion: v1 kind: Service metadata: name:
-wordpress-mysql labels: app: wordpress spec: ports: - port: 3306 selector: app:
-wordpress tier: mysql
-
-## clusterIP: None
-
-apiVersion: v1 kind: PersistentVolumeClaim metadata: name: mysql-pv-claim
-labels: app: wordpress spec: accessModes: - ReadWriteOnce resources: requests:
-
-## storage: 20Gi
-
-apiVersion: apps/v1 kind: Deployment metadata: name: wordpress-mysql labels:
-app: wordpress spec: selector: matchLabels: app: wordpress tier: mysql strategy:
-type: Recreate template: metadata: labels: app: wordpress tier: mysql spec:
-runtimeClassName: gvisor # ADD THIS LINE containers: - image: mysql:5.6 name:
-mysql env: - name: MYSQL_ROOT_PASSWORD valueFrom: secretKeyRef: name: mysql-pass
-key: password ports: - containerPort: 3306 name: mysql volumeMounts: - name:
-mysql-persistent-storage mountPath: /var/lib/mysql volumes: - name:
-mysql-persistent-storage persistentVolumeClaim: claimName: mysql-pv-claim ```
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress-mysql
+  labels:
+    app: wordpress
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: wordpress
+    tier: mysql
+  clusterIP: None
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pv-claim
+  labels:
+    app: wordpress
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress-mysql
+  labels:
+    app: wordpress
+spec:
+  selector:
+    matchLabels:
+      app: wordpress
+      tier: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: wordpress
+        tier: mysql
+    spec:
+      runtimeClassName: gvisor   # ADD THIS LINE
+      containers:
+      - image: mysql:5.6
+        name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-pass
+              key: password
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-persistent-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mysql-persistent-storage
+        persistentVolumeClaim:
+          claimName: mysql-pv-claim
+```
 
 Note that apart from `runtimeClassName: gvisor`, nothing else about the
 Deployment has is changed.
