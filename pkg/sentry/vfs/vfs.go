@@ -297,6 +297,8 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 // MkdirAt creates a directory at the given path.
 func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MkdirOptions) error {
 	if !pop.Path.Begin.Ok() {
+		// pop.Path should not be empty in operations that create/delete files.
+		// This is consistent with mkdirat(dirfd, "", mode).
 		if pop.Path.Absolute {
 			return syserror.EEXIST
 		}
@@ -333,6 +335,8 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 // error from the syserror package.
 func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MknodOptions) error {
 	if !pop.Path.Begin.Ok() {
+		// pop.Path should not be empty in operations that create/delete files.
+		// This is consistent with mknodat(dirfd, "", mode, dev).
 		if pop.Path.Absolute {
 			return syserror.EEXIST
 		}
@@ -518,6 +522,8 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 // RmdirAt removes the directory at the given path.
 func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
 	if !pop.Path.Begin.Ok() {
+		// pop.Path should not be empty in operations that create/delete files.
+		// This is consistent with unlinkat(dirfd, "", AT_REMOVEDIR).
 		if pop.Path.Absolute {
 			return syserror.EBUSY
 		}
@@ -599,6 +605,8 @@ func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credenti
 // SymlinkAt creates a symbolic link at the given path with the given target.
 func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, target string) error {
 	if !pop.Path.Begin.Ok() {
+		// pop.Path should not be empty in operations that create/delete files.
+		// This is consistent with symlinkat(oldpath, newdirfd, "").
 		if pop.Path.Absolute {
 			return syserror.EEXIST
 		}
@@ -631,6 +639,8 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 // UnlinkAt deletes the non-directory file at the given path.
 func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
 	if !pop.Path.Begin.Ok() {
+		// pop.Path should not be empty in operations that create/delete files.
+		// This is consistent with unlinkat(dirfd, "", 0).
 		if pop.Path.Absolute {
 			return syserror.EBUSY
 		}
@@ -662,12 +672,6 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 
 // BoundEndpointAt gets the bound endpoint at the given path, if one exists.
 func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *BoundEndpointOptions) (transport.BoundEndpoint, error) {
-	if !pop.Path.Begin.Ok() {
-		if pop.Path.Absolute {
-			return nil, syserror.ECONNREFUSED
-		}
-		return nil, syserror.ENOENT
-	}
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		bep, err := rp.mount.fs.impl.BoundEndpointAt(ctx, rp, *opts)
