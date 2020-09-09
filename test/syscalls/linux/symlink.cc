@@ -327,6 +327,16 @@ TEST(SymlinkTest, FollowUpdatesATime) {
   EXPECT_LT(st_before_follow.st_atime, st_after_follow.st_atime);
 }
 
+TEST(SymlinkTest, SymlinkAtEmptyPath) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY, 0666));
+  EXPECT_THAT(symlinkat(file.path().c_str(), fd.get(), ""),
+              SyscallFailsWithErrno(ENOENT));
+}
+
 class ParamSymlinkTest : public ::testing::TestWithParam<std::string> {};
 
 // Test that creating an existing symlink with creat will create the target.

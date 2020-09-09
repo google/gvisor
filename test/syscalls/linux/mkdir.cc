@@ -82,6 +82,13 @@ TEST_F(MkdirTest, FailsOnDirWithoutWritePerms) {
               SyscallFailsWithErrno(EACCES));
 }
 
+TEST_F(MkdirTest, MkdirAtEmptyPath) {
+  ASSERT_THAT(mkdir(dirname_.c_str(), 0777), SyscallSucceeds());
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dirname_, O_RDONLY | O_DIRECTORY, 0666));
+  EXPECT_THAT(mkdirat(fd.get(), "", 0777), SyscallFailsWithErrno(ENOENT));
+}
+
 }  // namespace
 
 }  // namespace testing
