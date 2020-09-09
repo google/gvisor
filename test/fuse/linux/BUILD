@@ -11,7 +11,9 @@ cc_binary(
     srcs = ["stat_test.cc"],
     deps = [
         gtest,
-        ":fuse_base",
+        ":fuse_fd_util",
+        "//test/util:cleanup",
+        "//test/util:fs_util",
         "//test/util:fuse_util",
         "//test/util:test_main",
         "//test/util:test_util",

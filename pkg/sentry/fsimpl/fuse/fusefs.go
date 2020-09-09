@@ -609,9 +609,9 @@ func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
 }
 
 // getAttr gets the attribute of this inode by issuing a FUSE_GETATTR request
-// or read from local cache.
-// It updates the corresponding attributes if necessary.
-func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.FUSEAttr, error) {
+// or read from local cache. It updates the corresponding attributes if
+// necessary.
+func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions, flags uint32, fh uint64) (linux.FUSEAttr, error) {
 	attributeVersion := atomic.LoadUint64(&i.fs.conn.attributeVersion)
 
 	// TODO(gvisor.dev/issue/3679): send the request only if
@@ -631,11 +631,10 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 
 	creds := auth.CredentialsFromContext(ctx)
 
-	var in linux.FUSEGetAttrIn
-	// We don't set any attribute in the request, because in VFS2 fstat(2) will
-	// finally be translated into vfs.FilesystemImpl.StatAt() (see
-	// pkg/sentry/syscalls/linux/vfs2/stat.go), resulting in the same flow
-	// as stat(2). Thus GetAttrFlags and Fh variable will never be used in VFS2.
+	in := linux.FUSEGetAttrIn{
+		GetAttrFlags: flags,
+		Fh:           fh,
+	}
 	req, err := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_GETATTR, &in)
 	if err != nil {
 		return linux.FUSEAttr{}, err
@@ -676,17 +675,17 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 // reviseAttr attempts to update the attributes for internal purposes
 // by calling getAttr with a pre-specified mask.
 // Used by read, write, lseek.
-func (i *inode) reviseAttr(ctx context.Context) error {
+func (i *inode) reviseAttr(ctx context.Context, flags uint32, fh uint64) error {
 	// Never need atime for internal purposes.
 	_, err := i.getAttr(ctx, i.fs.VFSFilesystem(), vfs.StatOptions{
 		Mask: linux.STATX_BASIC_STATS &^ linux.STATX_ATIME,
-	})
+	}, flags, fh)
 	return err
 }
 
 // Stat implements kernfs.Inode.Stat.
 func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
-	attr, err := i.getAttr(ctx, fs, opts)
+	attr, err := i.getAttr(ctx, fs, opts, 0, 0)
 	if err != nil {
 		return linux.Statx{}, err
 	}

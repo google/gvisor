@@ -64,10 +64,11 @@ std::vector<struct iovec> FuseGenerateIovecs(T &first, Types &...args) {
 }
 
 // Create a fuse_attr filled with the specified mode and inode.
-fuse_attr DefaultFuseAttr(mode_t mode, uint64_t inode);
+fuse_attr DefaultFuseAttr(mode_t mode, uint64_t inode, uint64_t size = 512);
 
 // Return a fuse_entry_out FUSE server response body.
-fuse_entry_out DefaultEntryOut(mode_t mode, uint64_t nodeId);
+fuse_entry_out DefaultEntryOut(mode_t mode, uint64_t node_id,
+                               uint64_t size = 512);
 
 }  // namespace testing
 }  // namespace gvisor
