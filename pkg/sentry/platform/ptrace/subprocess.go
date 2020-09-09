@@ -518,11 +518,6 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	}
 	defer c.interrupt.Disable()
 
-	// Ensure that the CPU set is bound appropriately; this makes the
-	// emulation below several times faster, presumably by avoiding
-	// interprocessor wakeups and by simplifying the schedule.
-	t.bind()
-
 	// Set registers.
 	if err := t.setRegs(regs); err != nil {
 		panic(fmt.Sprintf("ptrace set regs (%+v) failed: %v", regs, err))
