@@ -360,7 +360,10 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	defer rp.Mount().EndWrite()
 	childVFSD, err := parentInode.NewDir(ctx, pc, opts)
 	if err != nil {
-		return err
+		if !opts.ForSyntheticMountpoint || err == syserror.EEXIST {
+			return err
+		}
+		childVFSD = newSyntheticDirectory(rp.Credentials(), opts.Mode)
 	}
 	parentVFSD.Impl().(*Dentry).InsertChild(pc, childVFSD.Impl().(*Dentry))
 	return nil
