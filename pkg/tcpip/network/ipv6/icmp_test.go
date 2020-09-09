@@ -102,6 +102,22 @@ func (*stubNUDHandler) HandleConfirmation(addr tcpip.Address, linkAddr tcpip.Lin
 func (*stubNUDHandler) HandleUpperLevelConfirmation(addr tcpip.Address) {
 }
 
+var testNIC stack.NetworkInterface = (*testInterface)(nil)
+
+type testInterface struct{}
+
+func (*testInterface) ID() tcpip.NICID {
+	return 0
+}
+
+func (*testInterface) IsLoopback() bool {
+	return false
+}
+
+func (*testInterface) Name() string {
+	return ""
+}
+
 func TestICMPCounts(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -149,7 +165,7 @@ func TestICMPCounts(t *testing.T) {
 			if netProto == nil {
 				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 			}
-			ep := netProto.NewEndpoint(0, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{}, nil, s)
+			ep := netProto.NewEndpoint(testNIC, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{}, nil, s)
 			defer ep.Close()
 
 			r, err := s.FindRoute(nicID, lladdr0, lladdr1, ProtocolNumber, false /* multicastLoop */)
@@ -287,7 +303,7 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 	if netProto == nil {
 		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 	}
-	ep := netProto.NewEndpoint(0, nil, &stubNUDHandler{}, &stubDispatcher{}, nil, s)
+	ep := netProto.NewEndpoint(testNIC, nil, &stubNUDHandler{}, &stubDispatcher{}, nil, s)
 	defer ep.Close()
 
 	r, err := s.FindRoute(nicID, lladdr0, lladdr1, ProtocolNumber, false /* multicastLoop */)
