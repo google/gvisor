@@ -203,6 +203,14 @@ TEST(MknodTest, FifoTruncNoOp) {
   EXPECT_THAT(ftruncate(wfd.get(), 0), SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(MknodTest, MknodAtEmptyPath) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY, 0666));
+  EXPECT_THAT(mknodat(fd.get(), "", S_IFREG | 0777, 0),
+              SyscallFailsWithErrno(ENOENT));
+}
+
 }  // namespace
 
 }  // namespace testing
