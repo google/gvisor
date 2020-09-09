@@ -83,6 +83,7 @@ go_library(
         "slot_list.go",
         "static_directory_refs.go",
         "symlink.go",
+        "synthetic_directory.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
