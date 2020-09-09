@@ -749,3 +749,70 @@ func (r *FUSEDirent) UnmarshalBytes(src []byte) {
 	name.UnmarshalBytes(src[:r.Meta.NameLen])
 	r.Name = string(name)
 }
+
+// FATTR_* consts are the attribute flags defined in include/uapi/linux/fuse.h.
+// These should be or-ed together for setattr to know what has been changed.
+const (
+	FATTR_MODE      = (1 << 0)
+	FATTR_UID       = (1 << 1)
+	FATTR_GID       = (1 << 2)
+	FATTR_SIZE      = (1 << 3)
+	FATTR_ATIME     = (1 << 4)
+	FATTR_MTIME     = (1 << 5)
+	FATTR_FH        = (1 << 6)
+	FATTR_ATIME_NOW = (1 << 7)
+	FATTR_MTIME_NOW = (1 << 8)
+	FATTR_LOCKOWNER = (1 << 9)
+	FATTR_CTIME     = (1 << 10)
+)
+
+// FUSESetAttrIn is the request sent by the kernel to the daemon,
+// to set the attribute(s) of a file.
+//
+// +marshal
+type FUSESetAttrIn struct {
+	// Valid indicates which attributes are modified by this request.
+	Valid uint32
+
+	_ uint32
+
+	// Fh is used to identify the file if FATTR_FH is set in Valid.
+	Fh uint64
+
+	// Size is the size that the request wants to change to.
+	Size uint64
+
+	// LockOwner is the owner of the lock that the request wants to change to.
+	LockOwner uint64
+
+	// Atime is the access time that the request wants to change to.
+	Atime uint64
+
+	// Mtime is the modification time that the request wants to change to.
+	Mtime uint64
+
+	// Ctime is the status change time that the request wants to change to.
+	Ctime uint64
+
+	// AtimeNsec is the nano second part of Atime.
+	AtimeNsec uint32
+
+	// MtimeNsec is the nano second part of Mtime.
+	MtimeNsec uint32
+
+	// CtimeNsec is the nano second part of Ctime.
+	CtimeNsec uint32
+
+	// Mode is the file mode that the request wants to change to.
+	Mode uint32
+
+	_ uint32
+
+	// UID is the user ID of the owner that the request wants to change to.
+	UID uint32
+
+	// GID is the group ID of the owner that the request wants to change to.
+	GID uint32
+
+	_ uint32
+}
