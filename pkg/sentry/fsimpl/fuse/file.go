@@ -123,5 +123,5 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 // SetStat implements FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
-	return fd.inode().SetStat(ctx, fd.inode().fs.VFSFilesystem(), creds, opts)
+	return fd.inode().setAttr(ctx, fd.inode().fs.VFSFilesystem(), creds, opts, true, fd.Fh)
 }
