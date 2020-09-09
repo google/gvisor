@@ -101,6 +101,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "setstat_test",
+    testonly = 1,
+    srcs = ["setstat_test.cc"],
+    deps = [
+        gtest,
+        ":fuse_fd_util",
+        "//test/util:cleanup",
+        "//test/util:fs_util",
+        "//test/util:fuse_util",
+        "//test/util:temp_umask",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "rmdir_test",
     testonly = 1,
     srcs = ["rmdir_test.cc"],

@@ -660,7 +660,7 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 	}
 
 	// Set the metadata of kernfs.InodeAttrs.
-	if err := i.SetStat(ctx, fs, creds, vfs.SetStatOptions{
+	if err := i.SetInodeStat(ctx, fs, creds, vfs.SetStatOptions{
 		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, i.fs.devMinor),
 	}); err != nil {
 		return linux.FUSEAttr{}, err
@@ -702,4 +702,85 @@ func (i *inode) DecRef(context.Context) {
 func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
 	// TODO(gvisor.dev/issues/3413): Complete the implementation of statfs.
 	return vfs.GenericStatFS(linux.FUSE_SUPER_MAGIC), nil
+}
+
+// fattrMaskFromStats converts vfs.SetStatOptions.Stat.Mask to linux stats mask
+// aligned with the attribute mask defined in include/linux/fs.h.
+func fattrMaskFromStats(mask uint32) uint32 {
+	var fuseAttrMask uint32
+	maskMap := map[uint32]uint32{
+		linux.STATX_MODE:  linux.FATTR_MODE,
+		linux.STATX_UID:   linux.FATTR_UID,
+		linux.STATX_GID:   linux.FATTR_GID,
+		linux.STATX_SIZE:  linux.FATTR_SIZE,
+		linux.STATX_ATIME: linux.FATTR_ATIME,
+		linux.STATX_MTIME: linux.FATTR_MTIME,
+		linux.STATX_CTIME: linux.FATTR_CTIME,
+	}
+	for statxMask, fattrMask := range maskMap {
+		if mask&statxMask != 0 {
+			fuseAttrMask |= fattrMask
+		}
+	}
+	return fuseAttrMask
+}
+
+// SetStat implements kernfs.Inode.SetStat.
+func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return i.setAttr(ctx, fs, creds, opts, false, 0)
+}
+
+func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions, useFh bool, fh uint64) error {
+	conn := i.fs.conn
+	task := kernel.TaskFromContext(ctx)
+	if task == nil {
+		log.Warningf("couldn't get kernel task from context")
+		return syserror.EINVAL
+	}
+
+	// We should retain the original file type when assigning new mode.
+	fileType := uint16(i.Mode()) & linux.S_IFMT
+	fattrMask := fattrMaskFromStats(opts.Stat.Mask)
+	if useFh {
+		fattrMask |= linux.FATTR_FH
+	}
+	in := linux.FUSESetAttrIn{
+		Valid:     fattrMask,
+		Fh:        fh,
+		Size:      opts.Stat.Size,
+		Atime:     uint64(opts.Stat.Atime.Sec),
+		Mtime:     uint64(opts.Stat.Mtime.Sec),
+		Ctime:     uint64(opts.Stat.Ctime.Sec),
+		AtimeNsec: opts.Stat.Atime.Nsec,
+		MtimeNsec: opts.Stat.Mtime.Nsec,
+		CtimeNsec: opts.Stat.Ctime.Nsec,
+		Mode:      uint32(fileType | opts.Stat.Mode),
+		UID:       opts.Stat.UID,
+		GID:       opts.Stat.GID,
+	}
+	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_SETATTR, &in)
+	if err != nil {
+		return err
+	}
+
+	res, err := conn.Call(task, req)
+	if err != nil {
+		return err
+	}
+	if err := res.Error(); err != nil {
+		return err
+	}
+	out := linux.FUSEGetAttrOut{}
+	if err := res.UnmarshalPayload(&out); err != nil {
+		return err
+	}
+
+	// Set the metadata of kernfs.InodeAttrs.
+	if err := i.SetInodeStat(ctx, fs, creds, vfs.SetStatOptions{
+		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, i.fs.devMinor),
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
