@@ -35,10 +35,6 @@ import (
 // will simply echo the payload back with the appropriate headers.
 const echoTestOpcode linux.FUSEOpcode = 1000
 
-type testPayload struct {
-	data uint32
-}
-
 // TestFUSECommunication tests that the communication layer between the Sentry and the
 // FUSE server daemon works as expected.
 func TestFUSECommunication(t *testing.T) {

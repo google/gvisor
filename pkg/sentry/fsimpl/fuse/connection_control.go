@@ -16,8 +16,10 @@ package fuse
 
 import (
 	"sync/atomic"
+	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -180,4 +182,64 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 	}
 
 	return nil
+}
+
+// Abort this FUSE connection.
+// It tries to acquire conn.fd.mu, conn.lock, conn.bgLock in order.
+// All possible requests waiting or blocking will be aborted.
+func (conn *connection) Abort(ctx context.Context) {
+	conn.fd.mu.Lock()
+	conn.mu.Lock()
+	conn.asyncMu.Lock()
+
+	if !conn.connected {
+		conn.asyncMu.Unlock()
+		conn.mu.Unlock()
+		conn.fd.mu.Unlock()
+		return
+	}
+
+	conn.connected = false
+
+	// Empty the `fd.queue` that holds the requests
+	// not yet read by the FUSE daemon yet.
+	// These are a subset of the requests in `fuse.completion` map.
+	for !conn.fd.queue.Empty() {
+		req := conn.fd.queue.Front()
+		conn.fd.queue.Remove(req)
+	}
+
+	var terminate []linux.FUSEOpID
+
+	// 2. Collect the requests have not been sent to FUSE daemon,
+	// or have not received a reply.
+	for unique := range conn.fd.completions {
+		terminate = append(terminate, unique)
+	}
+
+	// Release all locks to avoid deadlock.
+	conn.asyncMu.Unlock()
+	conn.mu.Unlock()
+	conn.fd.mu.Unlock()
+
+	// 1. The requets blocked before initialization.
+	// Will reach call() `connected` check and return.
+	if !conn.Initialized() {
+		conn.SetInitialized()
+	}
+
+	// 2. Terminate the requests collected above.
+	// Set ECONNABORTED error.
+	// sendError() will remove them from `fd.completion` map.
+	// Will enter the path of a normally received error.
+	for _, toTerminate := range terminate {
+		conn.fd.sendError(ctx, -int32(syscall.ECONNABORTED), toTerminate)
+	}
+
+	// 3. The requests not yet written to FUSE device.
+	// Early terminate.
+	// Will reach callFutureLocked() `connected` check and return.
+	close(conn.fd.fullQueueCh)
+
+	// TODO(gvisor.dev/issue/3528): Forget all pending forget reqs.
 }
