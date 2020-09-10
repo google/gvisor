@@ -1,10 +1,10 @@
 package mm
 
 import (
-	"fmt"
 	"runtime"
 	"sync/atomic"
 
+	"fmt"
 	"gvisor.dev/gvisor/pkg/log"
 	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
 )
