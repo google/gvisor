@@ -96,6 +96,30 @@ containerd.
 
 See [issue #1765](https://gvisor.dev/issue/1765) for more details.
 
+### I'm getting an error like `RuntimeHandler "runsc" not supported` {#runtime-handler}
+
+This error indicates that the Kubernetes CRI runtime was not set up to handle
+`runsc` as a runtime handler. Please ensure that containerd configuration has
+been created properly and containerd has been restarted. See the
+[containerd quick start](containerd/quick_start.md) for more details.
+
+If you have ensured that containerd has been set up properly and you used
+kubeadm to create your cluster please check if Docker is also installed on that
+system. Kubeadm prefers using Docker if both Docker and containerd are
+installed.
+
+Please recreate your cluster and set the `--cni-socket` option on kubeadm
+commands. For example:
+
+```bash
+kubeadm init --cni-socket=/var/run/containerd/containerd.sock` ...
+```
+
+To fix an existing cluster edit the `/var/lib/kubelet/kubeadm-flags.env` file
+and set the `--container-runtime` flag to `remote` and set the
+`--container-runtime-endpoint` flag to point to the containerd socket. e.g.
+`/var/run/containerd/containerd.sock`.
+
 ### My container cannot resolve another container's name when using Docker user defined bridge {#docker-bridge}
 
 This is normally indicated by errors like `bad address 'container-name'` when
