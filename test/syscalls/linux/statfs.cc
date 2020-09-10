@@ -27,10 +27,6 @@ namespace testing {
 
 namespace {
 
-// From linux/magic.h. For some reason, not defined in the headers for some
-// build environments.
-#define OVERLAYFS_SUPER_MAGIC 0x794c7630
-
 TEST(StatfsTest, CannotStatBadPath) {
   auto temp_file = NewTempAbsPathInDir("/tmp");
 

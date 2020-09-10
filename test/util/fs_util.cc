@@ -649,5 +649,19 @@ PosixErrorOr<bool> IsTmpfs(const std::string& path) {
 }
 #endif  // __linux__
 
+PosixErrorOr<bool> IsOverlayfs(const std::string& path) {
+  struct statfs stat;
+  if (statfs(path.c_str(), &stat)) {
+    if (errno == ENOENT) {
+      // Nothing at path, don't raise this as an error. Instead, just report no
+      // overlayfs at path.
+      return false;
+    }
+    return PosixError(errno,
+                      absl::StrFormat("statfs(\"%s\", %#p)", path, &stat));
+  }
+  return stat.f_type == OVERLAYFS_SUPER_MAGIC;
+}
+
 }  // namespace testing
 }  // namespace gvisor
