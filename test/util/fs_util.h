@@ -38,6 +38,10 @@ constexpr int kOLargeFile = 00400000;
 #error "Unknown architecture"
 #endif
 
+// From linux/magic.h. For some reason, not defined in the headers for some
+// build environments.
+#define OVERLAYFS_SUPER_MAGIC 0x794c7630
+
 // Returns a status or the current working directory.
 PosixErrorOr<std::string> GetCWD();
 
@@ -183,6 +187,9 @@ PosixErrorOr<std::string> ProcessExePath(int pid);
 // IsTmpfs returns true if the file at path is backed by tmpfs.
 PosixErrorOr<bool> IsTmpfs(const std::string& path);
 #endif  // __linux__
+
+// IsOverlayfs returns true if the file at path is backed by overlayfs.
+PosixErrorOr<bool> IsOverlayfs(const std::string& path);
 
 namespace internal {
 // Not part of the public API.
