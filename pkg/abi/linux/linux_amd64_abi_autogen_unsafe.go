@@ -288,7 +288,7 @@ func (s *Stat) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *Stat) Packed() bool {
-    return s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed()
+    return s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
