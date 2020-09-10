@@ -104,7 +104,7 @@ interactions with a guest operating system and a set of virtualized hardware
 devices. These hardware devices are then implemented via the host System API by
 a Virtual Machine Monitor (VMM). The Sentry similarly prevents direct
 interactions by providing its own implementation of the System API that the
-application must interact with. Applications are not able to to directly craft
+application must interact with. Applications are not able to directly craft
 specific arguments or flags for the host System API, or interact directly with
 host primitives.
 
