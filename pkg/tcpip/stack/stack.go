@@ -1117,6 +1117,19 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) *tcpip.Error {
 	return nic.remove()
 }
 
+// NICAddressRanges returns a map of NICIDs to their associated subnets.
+func (s *Stack) NICAddressRanges() map[tcpip.NICID][]tcpip.Subnet {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nics := map[tcpip.NICID][]tcpip.Subnet{}
+
+	for id, nic := range s.nics {
+		nics[id] = append(nics[id], nic.AddressRanges()...)
+	}
+	return nics
+}
+
 // NICInfo captures the name and addresses assigned to a NIC.
 type NICInfo struct {
 	Name              string

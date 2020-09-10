@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"reflect"
 	"sort"
+	"strings"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/sleep"
@@ -981,6 +982,23 @@ func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWit
 	}
 
 	return tcpip.AddressWithPrefix{}
+}
+
+// AddressRanges returns the Subnets associated with this NIC.
+func (n *NIC) AddressRanges() []tcpip.Subnet {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	sns := make([]tcpip.Subnet, 0, len(n.mu.endpoints))
+	for nid := range n.mu.endpoints {
+		sn, err := tcpip.NewSubnet(nid.LocalAddress, tcpip.AddressMask(strings.Repeat("\xff", len(nid.LocalAddress))))
+		if err != nil {
+			// This should never happen as the mask has been carefully crafted to
+			// match the address.
+			panic("Invalid endpoint subnet: " + err.Error())
+		}
+		sns = append(sns, sn)
+	}
+	return sns
 }
 
 // insertPrimaryEndpointLocked adds r to n's primary endpoint list as required
