@@ -213,6 +213,7 @@ func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRange
 		}
 
 		b := t.CopyScratchBuffer(itemLen)
+		lenMax := uint64(MAX_RW_COUNT)
 		for i := 0; i < numIovecs; i++ {
 			if _, err := t.CopyInBytes(addr, b); err != nil {
 				return usermem.AddrRangeSeq{}, err
@@ -227,6 +228,11 @@ func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRange
 			if !ok {
 				return usermem.AddrRangeSeq{}, syserror.EFAULT
 			}
+			if length > lenMax {
+				length = lenMax
+				ar, _ = t.MemoryManager().CheckIORange(base, int64(length))
+			}
+			lenMax -= length
 
 			if numIovecs == 1 {
 				// Special case to avoid allocating dst.

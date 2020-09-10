@@ -840,8 +840,8 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, fla
 // recvFrom is the implementation of the recvfrom syscall. It is called by
 // recvfrom and recv syscall handlers.
 func recvFrom(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flags int32, namePtr usermem.Addr, nameLenPtr usermem.Addr) (uintptr, error) {
-	if int(bufLen) < 0 {
-		return 0, syserror.EINVAL
+	if bufLen > uint64(kernel.MAX_RW_COUNT) {
+		bufLen = uint64(kernel.MAX_RW_COUNT)
 	}
 
 	// Reject flags that we don't handle yet.
@@ -1077,10 +1077,10 @@ func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescriptio
 // sendTo is the implementation of the sendto syscall. It is called by sendto
 // and send syscall handlers.
 func sendTo(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flags int32, namePtr usermem.Addr, nameLen uint32) (uintptr, error) {
-	bl := int(bufLen)
-	if bl < 0 {
-		return 0, syserror.EINVAL
+	if bufLen > uint64(kernel.MAX_RW_COUNT) {
+		bufLen = uint64(kernel.MAX_RW_COUNT)
 	}
+	bl := int(bufLen)
 
 	// Get socket from the file descriptor.
 	file := t.GetFileVFS2(fd)
