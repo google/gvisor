@@ -214,3 +214,17 @@ cc_binary(
         "//test/util:test_util",
     ],
 )
+
+cc_binary(
+    name = "unlink_test",
+    testonly = 1,
+    srcs = ["unlink_test.cc"],
+    deps = [
+        gtest,
+        ":fuse_base",
+        "//test/util:fuse_util",
+        "//test/util:temp_umask",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
