@@ -455,6 +455,29 @@ func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentr
 	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
 }
 
+// Unlink implements kernfs.Inode.Unlink.
+func (i *inode) Unlink(ctx context.Context, name string, child *vfs.Dentry) error {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.NodeID)
+		return syserror.EINVAL
+	}
+	in := linux.FUSEUnlinkIn{Name: name}
+	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_UNLINK, &in)
+	if err != nil {
+		return err
+	}
+	res, err := i.fs.conn.Call(kernelTask, req)
+	if err != nil {
+		return err
+	}
+	// only return error, discard res.
+	if err := res.Error(); err != nil {
+		return err
+	}
+	return i.dentry.RemoveChildLocked(name, child)
+}
+
 // NewDir implements kernfs.Inode.NewDir.
 func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
 	in := linux.FUSEMkdirIn{

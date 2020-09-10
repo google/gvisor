@@ -846,3 +846,26 @@ type FUSESetAttrIn struct {
 
 	_ uint32
 }
+
+// FUSEUnlinkIn is the request sent by the kernel to the daemon
+// when trying to unlink a node.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSEUnlinkIn struct {
+	marshal.StubMarshallable
+
+	// Name of the node to unlink.
+	Name string
+}
+
+// MarshalBytes serializes r.name to the dst buffer, which should
+// have size len(r.Name) + 1 and last byte set to 0.
+func (r *FUSEUnlinkIn) MarshalBytes(buf []byte) {
+	copy(buf, r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSEUnlinkIn.
+// 1 extra byte for null-terminated Name string.
+func (r *FUSEUnlinkIn) SizeBytes() int {
+	return len(r.Name) + 1
+}

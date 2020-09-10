@@ -60,6 +60,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
@@ -265,6 +266,36 @@ func (d *Dentry) InsertChildLocked(name string, child *Dentry) {
 		d.children = make(map[string]*Dentry)
 	}
 	d.children[name] = child
+}
+
+// RemoveChild removes child from the vfs dentry cache. This does not update the
+// directory inode or modify the inode to be unlinked. So calling this on its own
+// isn't sufficient to remove a child from a directory.
+//
+// Precondition: d must represent a directory inode.
+func (d *Dentry) RemoveChild(name string, child *vfs.Dentry) error {
+	d.dirMu.Lock()
+	defer d.dirMu.Unlock()
+	return d.RemoveChildLocked(name, child)
+}
+
+// RemoveChildLocked is equivalent to RemoveChild, with additional
+// preconditions.
+//
+// Precondition: d.dirMu must be locked.
+func (d *Dentry) RemoveChildLocked(name string, child *vfs.Dentry) error {
+	if !d.isDir() {
+		panic(fmt.Sprintf("RemoveChild called on non-directory Dentry: %+v.", d))
+	}
+	c, ok := d.children[name]
+	if !ok {
+		return syserror.ENOENT
+	}
+	if &c.vfsd != child {
+		panic(fmt.Sprintf("Dentry hashed into inode doesn't match what vfs thinks! Child: %+v, vfs: %+v", c, child))
+	}
+	delete(d.children, name)
+	return nil
 }
 
 // Inode returns the dentry's inode.
