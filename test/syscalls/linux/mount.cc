@@ -147,8 +147,15 @@ TEST(MountTest, UmountDetach) {
   // Unmount the tmpfs.
   mount.Release()();
 
-  const struct stat after2 = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
-  EXPECT_EQ(before.st_ino, after2.st_ino);
+  // Only check for inode number equality if the directory is not in overlayfs.
+  // If xino option is not enabled and if all overlayfs layers do not belong to
+  // the same filesystem then "the value of st_ino for directory objects may not
+  // be persistent and could change even while the overlay filesystem is
+  // mounted."  -- Documentation/filesystems/overlayfs.txt
+  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
+    const struct stat after2 = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
+    EXPECT_EQ(before.st_ino, after2.st_ino);
+  }
 
   // Can still read file after unmounting.
   std::vector<char> buf(sizeof(kContents));
@@ -213,8 +220,15 @@ TEST(MountTest, MountTmpfs) {
   }
 
   // Now that dir is unmounted again, we should have the old inode back.
-  const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
-  EXPECT_EQ(before.st_ino, after.st_ino);
+  // Only check for inode number equality if the directory is not in overlayfs.
+  // If xino option is not enabled and if all overlayfs layers do not belong to
+  // the same filesystem then "the value of st_ino for directory objects may not
+  // be persistent and could change even while the overlay filesystem is
+  // mounted."  -- Documentation/filesystems/overlayfs.txt
+  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
+    const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
+    EXPECT_EQ(before.st_ino, after.st_ino);
+  }
 }
 
 TEST(MountTest, MountTmpfsMagicValIgnored) {
