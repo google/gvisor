@@ -244,6 +244,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 		GSOOptions:            pk.GSOOptions,
 		NetworkProtocolNumber: pk.NetworkProtocolNumber,
 		NatDone:               pk.NatDone,
+		PktType:               pk.PktType,
 	}
 	return newPk
 }
