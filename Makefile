@@ -157,6 +157,10 @@ syscall-tests: syscall-ptrace-tests syscall-kvm-tests syscall-native-tests
 	@$(call submake,install-test-runtime)
 	@$(call submake,test-runtime OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
 
+%-runtime-tests_vfs2: load-runtimes_%
+	@$(call submake,install-test-runtime RUNTIME="vfs2" ARGS="--vfs2")
+	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
+
 do-tests: runsc
 	@$(call submake,run TARGETS="//runsc" ARGS="--rootless do true")
 	@$(call submake,run TARGETS="//runsc" ARGS="--rootless -network=none do true")
