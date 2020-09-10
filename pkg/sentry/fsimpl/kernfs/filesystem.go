@@ -770,6 +770,10 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
+	// Store the name before walkExistingLocked as rp will be advanced past the
+	// name in the following call.
+	name := rp.Component()
 	vfsd, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
@@ -795,7 +799,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
-	if err := parentDentry.inode.Unlink(ctx, rp.Component(), vfsd); err != nil {
+	if err := parentDentry.inode.Unlink(ctx, name, vfsd); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
