@@ -64,6 +64,11 @@ syscall_test(
 
 syscall_test(
     fuse = "True",
+    test = "//test/fuse/linux:unlink_test",
+)
+
+syscall_test(
+    fuse = "True",
     test = "//test/fuse/linux:setstat_test",
 )
 
