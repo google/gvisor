@@ -254,6 +254,42 @@ I/O syscalls like `read(2)`, `write(2)` and `mmap(2)`.
 -   `FUSE_BMAP`: Old address space API for block defrag. Probably not needed.
 -   `FUSE_NOTIFY_REPLY`: [TODO: what does this do?]
 
+## Benchmark FUSE
+
+FUSE benchmark makes FUSE syscall inside docker container to make sure required
+environment conditions are met - such as having the right libraries to start a
+FUSE server.
+
+### Setup
+
+To run benchmark:
+
+1.  Make sure you have `Docker` installed.
+2.  Download all docker images `make load-all-images`.
+3.  Config `runsc` docker runtime to have VFS2 and FUSE supported. (e.g. `make
+    configure RUNTIME=runsc ARGS="--vfs2 --fuse ..." ...`)
+
+You should now have a runtime with the following options configured in
+`/etc/docker/daemon.json` `"runsc": { "path": "path/to/your/runsc",
+"runtimeArgs": [ "--vfs2", "--fuse" ... ] }`
+
+### Running benchmarks
+
+With above setup, benchmark can be run with following command `bazel test
+--test_output=all --cache_test_results=no --test_arg=-test.bench=
+//path/to:target` For example: if you want to run stat test `bazel test
+--test_output=all --cache_test_results=no --test_arg=-test.bench=
+//test/fuse:open_benchmark_runsc_ptrace_vfs2_fuse_container`
+
+Note: - test target need to have `vfs2_fuse_container` to run in container with
+`vfs2` and `fuse` enabled - `test_output` set to `all` to view the result in
+terminal - `--cache_test_results` set to `no` to avoid cached benchmark
+
+### Use your fuse server
+
+To use your own FUSE server, change the `images/basic/fuse/Dockerfile` to
+compile your FUSE server into the container and name it `server-bin`.
+
 # References
 
 -   [fuse(4) Linux manual page](https://www.man7.org/linux/man-pages/man4/fuse.4.html)
