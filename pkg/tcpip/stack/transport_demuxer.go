@@ -582,7 +582,7 @@ func (d *transportDemuxer) deliverRawPacket(r *Route, protocol tcpip.TransportPr
 	for _, rawEP := range eps.rawEndpoints {
 		// Each endpoint gets its own copy of the packet for the sake
 		// of save/restore.
-		rawEP.HandlePacket(r, pkt)
+		rawEP.HandlePacket(r, pkt.Clone())
 		foundRaw = true
 	}
 	eps.mu.RUnlock()
