@@ -91,7 +91,9 @@
 
 // ERET returns using the ELR and SPSR for the current exception level.
 #define ERET() \
-  WORD $0xd69f03e0
+  WORD $0xd69f03e0; \
+  DSB $7; \
+  ISB $15;
 
 // RSV_REG is a register that holds el1 information temporarily.
 #define RSV_REG 	R18_PLATFORM
