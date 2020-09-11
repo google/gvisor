@@ -65,10 +65,10 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (
 	controlTrunc = msg.Flags&syscall.MSG_CTRUNC == syscall.MSG_CTRUNC
 
 	if n > length {
-		return length, n, msg.Controllen, controlTrunc, err
+		return length, n, msg.Controllen, controlTrunc, nil
 	}
 
-	return n, n, msg.Controllen, controlTrunc, err
+	return n, n, msg.Controllen, controlTrunc, nil
 }
 
 // fdWriteVec sends from bufs to fd.
