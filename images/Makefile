@@ -61,7 +61,7 @@ local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
 # conflicting with the bazel "build" terminology, which is used elsewhere.
 rebuild-%: FROM=$(shell grep FROM $(call path,$*)/Dockerfile | cut -d' ' -f2)
 rebuild-%: register-cross
-	$(foreach IMAGE,$(FROM),docker pull $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) true && \
+	$(foreach IMAGE,$(FROM),docker pull $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) \
 	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
 		docker build $(DOCKER_PLATFORM_ARGS) -t $(call remote_image,$*) $$T && \
 		rm -rf $$T
@@ -73,10 +73,10 @@ pull-%:
 	docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$*)
 
 # load will either pull the "remote" or build it locally. This is the preferred
-# entrypoint, as it should never file. The local tag should always be set after
+# entrypoint, as it should never fail. The local tag should always be set after
 # this returns (either by the pull or the build).
 load-%:
-	docker inspect $(call remote_image,$*) >/dev/null 2>&1 || $(MAKE) pull-$* || $(MAKE) rebuild-$*
+	$(MAKE) pull-$* || $(MAKE) rebuild-$*
 	docker tag $(call remote_image,$*) $(call local_image,$*)
 
 # push pushes the remote image, after either pulling (to validate that the tag

@@ -16,5 +16,3 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         qemu-system-x86 \
         # sha1sum to generate entropy.
         libdigest-sha-perl
-RUN hash -r
-CMD /bin/bash
