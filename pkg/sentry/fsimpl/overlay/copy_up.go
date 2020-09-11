@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -81,6 +82,8 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		Start: d.parent.upperVD,
 		Path:  fspath.Parse(d.name),
 	}
+	// Used during copy-up of memory-mapped regular files.
+	var mmapOpts *memmap.MMapOpts
 	cleanupUndoCopyUp := func() {
 		var err error
 		if ftype == linux.S_IFDIR {
@@ -135,6 +138,25 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 			if readErr == io.EOF {
 				break
 			}
+		}
+		d.mapsMu.Lock()
+		defer d.mapsMu.Unlock()
+		if d.wrappedMappable != nil {
+			// We may have memory mappings of the file on the lower layer.
+			// Switch to mapping the file on the upper layer instead.
+			mmapOpts = &memmap.MMapOpts{
+				Perms:    usermem.ReadWrite,
+				MaxPerms: usermem.ReadWrite,
+			}
+			if err := newFD.ConfigureMMap(ctx, mmapOpts); err != nil {
+				cleanupUndoCopyUp()
+				return err
+			}
+			if mmapOpts.MappingIdentity != nil {
+				mmapOpts.MappingIdentity.DecRef(ctx)
+			}
+			// Don't actually switch Mappables until the end of copy-up; see
+			// below for why.
 		}
 		if err := newFD.SetStat(ctx, vfs.SetStatOptions{
 			Stat: linux.Statx{
@@ -263,6 +285,62 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		atomic.StoreUint32(&d.devMajor, upperStat.DevMajor)
 		atomic.StoreUint32(&d.devMinor, upperStat.DevMinor)
 		atomic.StoreUint64(&d.ino, upperStat.Ino)
+	}
+
+	if mmapOpts != nil && mmapOpts.Mappable != nil {
+		// Note that if mmapOpts != nil, then d.mapsMu is locked for writing
+		// (from the S_IFREG path above).
+
+		// Propagate mappings of d to the new Mappable. Remember which mappings
+		// we added so we can remove them on failure.
+		upperMappable := mmapOpts.Mappable
+		allAdded := make(map[memmap.MappableRange]memmap.MappingsOfRange)
+		for seg := d.lowerMappings.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+			added := make(memmap.MappingsOfRange)
+			for m := range seg.Value() {
+				if err := upperMappable.AddMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start(), m.Writable); err != nil {
+					for m := range added {
+						upperMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start(), m.Writable)
+					}
+					for mr, mappings := range allAdded {
+						for m := range mappings {
+							upperMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, mr.Start, m.Writable)
+						}
+					}
+					return err
+				}
+				added[m] = struct{}{}
+			}
+			allAdded[seg.Range()] = added
+		}
+
+		// Switch to the new Mappable. We do this at the end of copy-up
+		// because:
+		//
+		// - We need to switch Mappables (by changing d.wrappedMappable) before
+		// invalidating Translations from the old Mappable (to pick up
+		// Translations from the new one).
+		//
+		// - We need to lock d.dataMu while changing d.wrappedMappable, but
+		// must invalidate Translations with d.dataMu unlocked (due to lock
+		// ordering).
+		//
+		// - Consequently, once we unlock d.dataMu, other threads may
+		// immediately observe the new (copied-up) Mappable, which we want to
+		// delay until copy-up is guaranteed to succeed.
+		d.dataMu.Lock()
+		lowerMappable := d.wrappedMappable
+		d.wrappedMappable = upperMappable
+		d.dataMu.Unlock()
+		d.lowerMappings.InvalidateAll(memmap.InvalidateOpts{})
+
+		// Remove mappings from the old Mappable.
+		for seg := d.lowerMappings.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+			for m := range seg.Value() {
+				lowerMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start(), m.Writable)
+			}
+		}
+		d.lowerMappings.RemoveAll()
 	}
 
 	atomic.StoreUint32(&d.copiedUp, 1)
