@@ -171,11 +171,8 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		}},
 	}
 
-	// Add ctrlNet as eth1 and testNet as eth2.
-	const testNetDev = "eth2"
-
 	device := mkDevice(dut)
-	remoteIPv6, remoteMAC, dutDeviceID := device.Prepare(ctx, t, runOpts, ctrlNet, testNet, containerAddr)
+	remoteIPv6, remoteMAC, dutDeviceID, testNetDev := device.Prepare(ctx, t, runOpts, ctrlNet, testNet, containerAddr)
 
 	// Create the Docker container for the testbench.
 	testbench := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
@@ -282,8 +279,8 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 // DUT describes how to setup/teardown the dut for packetimpact tests.
 type DUT interface {
 	// Prepare prepares the dut, starts posix_server and returns the IPv6, MAC
-	// address and the interface ID for the testNet on DUT.
-	Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network, containerAddr net.IP) (net.IP, net.HardwareAddr, uint32)
+	// address, the interface ID, and the interface name for the testNet on DUT.
+	Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network, containerAddr net.IP) (net.IP, net.HardwareAddr, uint32, string)
 	// Logs retrieves the logs from the dut.
 	Logs(ctx context.Context) (string, error)
 }
@@ -301,7 +298,7 @@ func NewDockerDUT(c *dockerutil.Container) DUT {
 }
 
 // Prepare implements DUT.Prepare.
-func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network, containerAddr net.IP) (net.IP, net.HardwareAddr, uint32) {
+func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network, containerAddr net.IP) (net.IP, net.HardwareAddr, uint32, string) {
 	const containerPosixServerBinary = "/packetimpact/posix_server"
 	dut.c.CopyFiles(&runOpts, "/packetimpact", "test/packetimpact/dut/posix_server")
 
@@ -345,7 +342,9 @@ func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockeru
 			t.Fatalf("unable to set IPv6 address on container %s", dut.c.Name)
 		}
 	}
-	return remoteIPv6, dutDeviceInfo.MAC, dutDeviceInfo.ID
+	const testNetDev = "eth2"
+
+	return remoteIPv6, dutDeviceInfo.MAC, dutDeviceInfo.ID, testNetDev
 }
 
 // Logs implements DUT.Logs.
