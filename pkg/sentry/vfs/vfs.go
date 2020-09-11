@@ -819,30 +819,6 @@ func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string
 	return nil
 }
 
-// MakeSyntheticMountpoint creates parent directories of target if they do not
-// exist and attempts to create a directory for the mountpoint. If a
-// non-directory file already exists there then we allow it.
-func (vfs *VirtualFilesystem) MakeSyntheticMountpoint(ctx context.Context, target string, root VirtualDentry, creds *auth.Credentials) error {
-	mkdirOpts := &MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}
-
-	// Make sure the parent directory of target exists.
-	if err := vfs.MkdirAllAt(ctx, path.Dir(target), root, creds, mkdirOpts); err != nil {
-		return fmt.Errorf("failed to create parent directory of mountpoint %q: %w", target, err)
-	}
-
-	// Attempt to mkdir the final component. If a file (of any type) exists
-	// then we let allow mounting on top of that because we do not require the
-	// target to be an existing directory, unlike Linux mount(2).
-	if err := vfs.MkdirAt(ctx, creds, &PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse(target),
-	}, mkdirOpts); err != nil && err != syserror.EEXIST {
-		return fmt.Errorf("failed to create mountpoint %q: %w", target, err)
-	}
-	return nil
-}
-
 // A VirtualDentry represents a node in a VFS tree, by combining a Dentry
 // (which represents a node in a Filesystem's tree) and a Mount (which
 // represents the Filesystem's position in a VFS mount tree).

@@ -195,7 +195,11 @@ const (
 	// and consistent with Linux's semantics (in particular, it is not always
 	// possible for clients to set arbitrary atimes and mtimes depending on the
 	// remote filesystem implementation, and never possible for clients to set
-	// arbitrary ctimes.)
+	// arbitrary ctimes.) If a dentry containing a client-defined atime or
+	// mtime is evicted from cache, client timestamps will be sent to the
+	// remote filesystem on a best-effort basis to attempt to ensure that
+	// timestamps will be preserved when another dentry representing the same
+	// file is instantiated.
 	InteropModeExclusive InteropMode = iota
 
 	// InteropModeWritethrough is appropriate when there are read-only users of
@@ -1311,15 +1315,32 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.handleMu.Unlock()
 
 	if !d.file.isNil() {
-		// Note that it's possible that d.atimeDirty or d.mtimeDirty are true,
-		// i.e. client and server timestamps may differ (because e.g. a client
-		// write was serviced by the page cache, and only written back to the
-		// remote file later). Ideally, we'd write client timestamps back to
-		// the remote filesystem so that timestamps for a new dentry
-		// instantiated for the same file would remain coherent. Unfortunately,
-		// this turns out to be too expensive in many cases, so for now we
-		// don't do this.
-		if err := d.file.close(ctx); err != nil {
+		valid := p9.SetAttrMask{}
+		attr := p9.SetAttr{}
+		if !d.isDeleted() {
+			// Write dirty timestamps back to the remote filesystem.
+			if atomic.LoadUint32(&d.atimeDirty) != 0 {
+				valid.ATime = true
+				valid.ATimeNotSystemTime = true
+				atime := atomic.LoadInt64(&d.atime)
+				attr.ATimeSeconds = uint64(atime / 1e9)
+				attr.ATimeNanoSeconds = uint64(atime % 1e9)
+			}
+			if atomic.LoadUint32(&d.mtimeDirty) != 0 {
+				valid.MTime = true
+				valid.MTimeNotSystemTime = true
+				mtime := atomic.LoadInt64(&d.mtime)
+				attr.MTimeSeconds = uint64(mtime / 1e9)
+				attr.MTimeNanoSeconds = uint64(mtime % 1e9)
+			}
+		}
+
+		// Check if attributes need to be changed before closing the file.
+		if valid.ATime || valid.MTime {
+			if err := d.file.setAttrClose(ctx, valid, attr); err != nil {
+				log.Warningf("gofer.dentry.destroyLocked: failed to close file with write dirty timestamps: %v", err)
+			}
+		} else if err := d.file.close(ctx); err != nil {
 			log.Warningf("gofer.dentry.destroyLocked: failed to close file: %v", err)
 		}
 		d.file = p9file{}
