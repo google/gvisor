@@ -202,29 +202,41 @@ func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]str
 		config.Srcs[i] = path.Clean(config.Srcs[i])
 	}
 
-	// Calculate the root directory.
-	longestPrefix := path.Dir(config.Srcs[0])
-	for _, file := range config.Srcs[1:] {
-		for i := 0; i < len(file) && i < len(longestPrefix); i++ {
-			if file[i] != longestPrefix[i] {
-				// Truncate here; will stop the loop.
-				longestPrefix = longestPrefix[:i]
-				break
-			}
+	// Calculate the root source directory. This is always a directory
+	// named 'src', of which we simply take the first we find. This is a
+	// bit fragile, but works for all currently known Go source
+	// configurations.
+	//
+	// Note that there may be extra files outside of the root source
+	// directory; we simply ignore those.
+	rootSrcPrefix := ""
+	for _, file := range config.Srcs {
+		const src = "/src/"
+		i := strings.Index(file, src)
+		if i == -1 {
+			// Superfluous file.
+			continue
 		}
-	}
-	if len(longestPrefix) > 0 && longestPrefix[len(longestPrefix)-1] != '/' {
-		longestPrefix += "/"
+
+		// Index of first character after /src/.
+		i += len(src)
+		rootSrcPrefix = file[:i]
+		break
 	}
 
 	// Aggregate all files by directory.
 	packages := make(map[string]*packageConfig)
 	for _, file := range config.Srcs {
+		if !strings.HasPrefix(file, rootSrcPrefix) {
+			// Superflouous file.
+			continue
+		}
+
 		d := path.Dir(file)
-		if len(longestPrefix) >= len(d) {
+		if len(rootSrcPrefix) >= len(d) {
 			continue // Not a file.
 		}
-		pkg := path.Dir(file)[len(longestPrefix):]
+		pkg := d[len(rootSrcPrefix):]
 		// Skip cmd packages and obvious test files: see above.
 		if strings.HasPrefix(pkg, "cmd/") || strings.HasSuffix(file, "_test.go") {
 			continue
@@ -301,6 +313,11 @@ func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]str
 	// all packages are evaluated.
 	for pkg := range packages {
 		checkOne(pkg)
+	}
+
+	// Sanity check.
+	if len(stdlibFacts) == 0 {
+		return nil, nil, fmt.Errorf("no stdlib facts found: misconfiguration?")
 	}
 
 	// Write out all findings.
