@@ -209,7 +209,7 @@ func (fs *filesystem) newFDSymlink(task *kernel.Task, fd int32, ino uint64) *ker
 	return d
 }
 
-func (s *fdSymlink) Readlink(ctx context.Context) (string, error) {
+func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	file, _ := getTaskFD(s.task, s.fd)
 	if file == nil {
 		return "", syserror.ENOENT
