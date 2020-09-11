@@ -326,9 +326,13 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	return n, nil
 }
 
-// WriteHeaderIncludedPacket writes a packet already containing a network
-// header through the given route.
-func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) *tcpip.Error {
+// WriteHeaderIncludedPacket implements stack.NetworkEndpoint.
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, vv buffer.VectorisedView) *tcpip.Error {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(e.linkEP.MaxHeaderLength()),
+		Data:               vv,
+	})
+
 	// The packet already has an IP header, but there are a few required
 	// checks.
 	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)

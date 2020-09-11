@@ -102,7 +102,7 @@ func (f *fwdTestNetworkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBuf
 	panic("not implemented")
 }
 
-func (*fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) *tcpip.Error {
+func (*fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(*Route, buffer.VectorisedView) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 

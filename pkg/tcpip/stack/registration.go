@@ -260,7 +260,7 @@ type NetworkEndpoint interface {
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address. It takes ownership of pkt.
-	WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) *tcpip.Error
+	WriteHeaderIncludedPacket(r *Route, pkt buffer.VectorisedView) *tcpip.Error
 
 	// NICID returns the id of the NIC this endpoint belongs to.
 	NICID() tcpip.NICID

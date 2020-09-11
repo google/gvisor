@@ -139,7 +139,7 @@ func (*testIPv6Endpoint) WritePackets(*Route, *GSO, PacketBufferList, NetworkHea
 
 // WriteHeaderIncludedPacket implements
 // NetworkEndpoint.WriteHeaderIncludedPacket.
-func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, *PacketBuffer) *tcpip.Error {
+func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, buffer.VectorisedView) *tcpip.Error {
 	// Our tests don't use this so we don't support it.
 	return tcpip.ErrNotSupported
 }

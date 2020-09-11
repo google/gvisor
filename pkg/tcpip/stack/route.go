@@ -17,6 +17,7 @@ package stack
 import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -231,13 +232,13 @@ func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHead
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) *tcpip.Error {
+func (r *Route) WriteHeaderIncludedPacket(pkt buffer.VectorisedView) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
 	// WriteHeaderIncludedPacket takes ownership of pkt, calculate numBytes first.
-	numBytes := pkt.Data.Size()
+	numBytes := pkt.Size()
 
 	if err := r.ref.ep.WriteHeaderIncludedPacket(r, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()

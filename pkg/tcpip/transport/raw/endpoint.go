@@ -352,10 +352,7 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 	}
 
 	if e.hdrIncluded {
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.View(payloadBytes).ToVectorisedView(),
-		})
-		if err := route.WriteHeaderIncludedPacket(pkt); err != nil {
+		if err := route.WriteHeaderIncludedPacket(buffer.View(payloadBytes).ToVectorisedView()); err != nil {
 			return 0, nil, err
 		}
 	} else {
