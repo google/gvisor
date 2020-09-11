@@ -615,11 +615,17 @@ TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
 
-  // Setting/Getting in the trusted namespace requires CAP_SYS_ADMIN.
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-
   const char* path = test_file_name_.c_str();
   const char name[] = "trusted.test";
+
+  // Writing to the trusted.* xattr namespace requires CAP_SYS_ADMIN in the root
+  // user namespace. There's no easy way to check that, other than trying the
+  // operation and seeing what happens. We'll call removexattr because it's
+  // simplest.
+  if (removexattr(path, name) < 0) {
+    SKIP_IF(errno == EPERM);
+    FAIL() << "unexpected errno from removexattr: " << errno;
+  }
 
   // Set.
   char val = 'a';
