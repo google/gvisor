@@ -22,10 +22,6 @@
 //   filesystem.renameMu
 //     dentry.dirMu
 //       dentry.copyMu
-//         *** "memmap.Mappable locks" below this point
-//         dentry.mapsMu
-//           *** "memmap.Mappable locks taken by Translate" below this point
-//           dentry.dataMu
 //
 // Locking dentry.dirMu in multiple dentries requires that parent dentries are
 // locked before child dentries, and that filesystem.renameMu is locked to
@@ -41,7 +37,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -423,35 +418,6 @@ type dentry struct {
 	devMajor uint32
 	devMinor uint32
 	ino      uint64
-
-	// If this dentry represents a regular file, then:
-	//
-	// - mapsMu is used to synchronize between copy-up and memmap.Mappable
-	// methods on dentry preceding mm.MemoryManager.activeMu in the lock order.
-	//
-	// - dataMu is used to synchronize between copy-up and
-	// dentry.(memmap.Mappable).Translate.
-	//
-	// - lowerMappings tracks memory mappings of the file. lowerMappings is
-	// used to invalidate mappings of the lower layer when the file is copied
-	// up to ensure that they remain coherent with subsequent writes to the
-	// file. (Note that, as of this writing, Linux overlayfs does not do this;
-	// this feature is a gVisor extension.) lowerMappings is protected by
-	// mapsMu.
-	//
-	// - If this dentry is copied-up, then wrappedMappable is the Mappable
-	// obtained from a call to the current top layer's
-	// FileDescription.ConfigureMMap(). Once wrappedMappable becomes non-nil
-	// (from a call to nonDirectoryFD.ensureMappable()), it cannot become nil.
-	// wrappedMappable is protected by mapsMu and dataMu.
-	//
-	// - isMappable is non-zero iff wrappedMappable is non-nil. isMappable is
-	// accessed using atomic memory operations.
-	mapsMu          sync.Mutex
-	lowerMappings   memmap.MappingSet
-	dataMu          sync.RWMutex
-	wrappedMappable memmap.Mappable
-	isMappable      uint32
 
 	locks vfs.FileLocks
 }
