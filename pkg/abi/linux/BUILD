@@ -74,9 +74,9 @@ go_library(
         "//pkg/abi",
         "//pkg/binary",
         "//pkg/bits",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/usermem",
-        "//tools/go_marshal/marshal",
-        "//tools/go_marshal/primitive",
     ],
 )
 

@@ -12,7 +12,7 @@ go_library(
         "//:sandbox",
     ],
     deps = [
+        "//pkg/marshal",
         "//pkg/usermem",
-        "//tools/go_marshal/marshal",
     ],
 )

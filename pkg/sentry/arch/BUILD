@@ -33,11 +33,11 @@ go_library(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
+        "//pkg/marshal",
         "//pkg/sentry/limits",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",
-        "//tools/go_marshal/marshal",
     ],
 )
 

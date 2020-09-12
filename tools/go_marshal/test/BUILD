@@ -35,10 +35,10 @@ go_test(
     srcs = ["marshal_test.go"],
     deps = [
         ":test",
+        "//pkg/marshal",
         "//pkg/syserror",
         "//pkg/usermem",
         "//tools/go_marshal/analysis",
-        "//tools/go_marshal/marshal",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

@@ -56,7 +56,7 @@ marshal_deps = [
     "//pkg/gohacks",
     "//pkg/safecopy",
     "//pkg/usermem",
-    "//tools/go_marshal/marshal",
+    "//pkg/marshal",
 ]
 
 # marshal_test_deps are required by test targets.

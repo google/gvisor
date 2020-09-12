@@ -10,6 +10,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/context",
+        "//pkg/marshal",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
@@ -20,6 +21,5 @@ go_library(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/usermem",
-        "//tools/go_marshal/marshal",
     ],
 )

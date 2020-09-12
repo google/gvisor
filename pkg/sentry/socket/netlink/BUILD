@@ -16,6 +16,8 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/context",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
@@ -36,8 +38,6 @@ go_library(
         "//pkg/tcpip",
         "//pkg/usermem",
         "//pkg/waiter",
-        "//tools/go_marshal/marshal",
-        "//tools/go_marshal/primitive",
     ],
 )
 
