@@ -32,6 +32,7 @@ go_library(
         "//pkg/fdnotifier",
         "//pkg/iovec",
         "//pkg/log",
+        "//pkg/marshal/primitive",
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/secio",
@@ -55,7 +56,6 @@ go_library(
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",
-        "//tools/go_marshal/primitive",
     ],
 )
 

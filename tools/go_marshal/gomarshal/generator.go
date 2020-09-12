@@ -107,7 +107,7 @@ func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*G
 	g.imports.add("gvisor.dev/gvisor/pkg/gohacks")
 	g.imports.add("gvisor.dev/gvisor/pkg/safecopy")
 	g.imports.add("gvisor.dev/gvisor/pkg/usermem")
-	g.imports.add("gvisor.dev/gvisor/tools/go_marshal/marshal")
+	g.imports.add("gvisor.dev/gvisor/pkg/marshal")
 
 	return &g, nil
 }

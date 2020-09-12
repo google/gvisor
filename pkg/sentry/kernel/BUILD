@@ -212,6 +212,7 @@ go_library(
         "//pkg/eventchannel",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/marshal",
         "//pkg/metric",
         "//pkg/refs",
         "//pkg/refs_vfs2",
@@ -261,7 +262,6 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/usermem",
         "//pkg/waiter",
-        "//tools/go_marshal/marshal",
     ],
 )
 

@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/marshal/primitive",
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
@@ -31,7 +32,6 @@ go_library(
         "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
-        "//tools/go_marshal/primitive",
     ],
 )
 

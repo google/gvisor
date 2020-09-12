@@ -7,8 +7,8 @@ go_library(
     testonly = 1,
     srcs = ["escape.go"],
     deps = [
+        "//pkg/marshal",
         "//pkg/usermem",
-        "//tools/go_marshal/marshal",
         "//tools/go_marshal/test",
     ],
 )

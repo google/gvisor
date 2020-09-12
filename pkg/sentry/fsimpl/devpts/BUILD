@@ -30,6 +30,8 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/log",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
@@ -43,8 +45,6 @@ go_library(
         "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
-        "//tools/go_marshal/marshal",
-        "//tools/go_marshal/primitive",
     ],
 )
 

@@ -22,6 +22,8 @@ go_library(
         "//pkg/binary",
         "//pkg/context",
         "//pkg/log",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/metric",
         "//pkg/safemem",
         "//pkg/sentry/arch",
@@ -51,8 +53,6 @@ go_library(
         "//pkg/tcpip/transport/udp",
         "//pkg/usermem",
         "//pkg/waiter",
-        "//tools/go_marshal/marshal",
-        "//tools/go_marshal/primitive",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
