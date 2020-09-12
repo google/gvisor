@@ -17,8 +17,8 @@
 package arch
 
 import (
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/usermem"
-	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
 const (
