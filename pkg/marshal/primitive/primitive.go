@@ -19,8 +19,8 @@ package primitive
 import (
 	"io"
 
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/usermem"
-	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
 // Int8 is a marshal.Marshallable implementation for int8.

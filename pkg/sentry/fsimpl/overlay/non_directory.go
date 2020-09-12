@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -256,10 +257,105 @@ func (fd *nonDirectoryFD) Sync(ctx context.Context) error {
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *nonDirectoryFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	wrappedFD, err := fd.getCurrentFD(ctx)
+	if err := fd.ensureMappable(ctx, opts); err != nil {
+		return err
+	}
+	return vfs.GenericConfigureMMap(&fd.vfsfd, fd.dentry(), opts)
+}
+
+// ensureMappable ensures that fd.dentry().wrappedMappable is not nil.
+func (fd *nonDirectoryFD) ensureMappable(ctx context.Context, opts *memmap.MMapOpts) error {
+	d := fd.dentry()
+
+	// Fast path if we already have a Mappable for the current top layer.
+	if atomic.LoadUint32(&d.isMappable) != 0 {
+		return nil
+	}
+
+	// Only permit mmap of regular files, since other file types may have
+	// unpredictable behavior when mmapped (e.g. /dev/zero).
+	if atomic.LoadUint32(&d.mode)&linux.S_IFMT != linux.S_IFREG {
+		return syserror.ENODEV
+	}
+
+	// Get a Mappable for the current top layer.
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	d.copyMu.RLock()
+	defer d.copyMu.RUnlock()
+	if atomic.LoadUint32(&d.isMappable) != 0 {
+		return nil
+	}
+	wrappedFD, err := fd.currentFDLocked(ctx)
 	if err != nil {
 		return err
 	}
-	defer wrappedFD.DecRef(ctx)
-	return wrappedFD.ConfigureMMap(ctx, opts)
+	if err := wrappedFD.ConfigureMMap(ctx, opts); err != nil {
+		return err
+	}
+	if opts.MappingIdentity != nil {
+		opts.MappingIdentity.DecRef(ctx)
+		opts.MappingIdentity = nil
+	}
+	// Use this Mappable for all mappings of this layer (unless we raced with
+	// another call to ensureMappable).
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	d.dataMu.Lock()
+	defer d.dataMu.Unlock()
+	if d.wrappedMappable == nil {
+		d.wrappedMappable = opts.Mappable
+		atomic.StoreUint32(&d.isMappable, 1)
+	}
+	return nil
+}
+
+// AddMapping implements memmap.Mappable.AddMapping.
+func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	if err := d.wrappedMappable.AddMapping(ctx, ms, ar, offset, writable); err != nil {
+		return err
+	}
+	if !d.isCopiedUp() {
+		d.lowerMappings.AddMapping(ms, ar, offset, writable)
+	}
+	return nil
+}
+
+// RemoveMapping implements memmap.Mappable.RemoveMapping.
+func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	d.wrappedMappable.RemoveMapping(ctx, ms, ar, offset, writable)
+	if !d.isCopiedUp() {
+		d.lowerMappings.RemoveMapping(ms, ar, offset, writable)
+	}
+}
+
+// CopyMapping implements memmap.Mappable.CopyMapping.
+func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	if err := d.wrappedMappable.CopyMapping(ctx, ms, srcAR, dstAR, offset, writable); err != nil {
+		return err
+	}
+	if !d.isCopiedUp() {
+		d.lowerMappings.AddMapping(ms, dstAR, offset, writable)
+	}
+	return nil
+}
+
+// Translate implements memmap.Mappable.Translate.
+func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
+	return d.wrappedMappable.Translate(ctx, required, optional, at)
+}
+
+// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
+func (d *dentry) InvalidateUnsavable(ctx context.Context) error {
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	return d.wrappedMappable.InvalidateUnsavable(ctx)
 }
