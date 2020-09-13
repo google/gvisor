@@ -74,6 +74,10 @@ const (
 	// IPv6AddressSize is the size, in bytes, of an IPv6 address.
 	IPv6AddressSize = 16
 
+	// IPv6MaximumPayloadSize is the maximum size of a valid IPv6 payload per
+	// RFC 8200 Section 4.5.
+	IPv6MaximumPayloadSize = 65535
+
 	// IPv6ProtocolNumber is IPv6's network protocol number.
 	IPv6ProtocolNumber tcpip.NetworkProtocolNumber = 0x86dd
 
