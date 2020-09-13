@@ -372,115 +372,308 @@ func TestFragmentationErrors(t *testing.T) {
 }
 
 func TestInvalidFragments(t *testing.T) {
+	const (
+		nicID    = 1
+		linkAddr = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
+		addr1    = "\x0a\x00\x00\x01"
+		addr2    = "\x0a\x00\x00\x02"
+		tos      = 0
+		ident    = 1
+		ttl      = 48
+		protocol = 6
+	)
+
+	payloadGen := func(payloadLen int) []byte {
+		payload := make([]byte, payloadLen)
+		for i := 0; i < len(payload); i++ {
+			payload[i] = 0x30
+		}
+		return payload
+	}
+
+	type fragmentData struct {
+		ipv4fields   header.IPv4Fields
+		payload      []byte
+		autoChecksum bool // if true, the Checksum field will be overwritten.
+	}
+
 	// These packets have both IHL and TotalLength set to 0.
-	testCases := []struct {
+	tests := []struct {
 		name                   string
-		packets                [][]byte
+		fragments              []fragmentData
 		wantMalformedIPPackets uint64
 		wantMalformedFragments uint64
 	}{
 		{
-			"ihl_totallen_zero_valid_frag_offset",
-			[][]byte{
-				{0x40, 0x30, 0x00, 0x00, 0x6c, 0x74, 0x7d, 0x30, 0x30, 0x30, 0x30, 0x30, 0x39, 0x32, 0x39, 0x33, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			name: "IHL and TotalLength zero, FragmentOffset non-zero",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            0,
+						TOS:            tos,
+						TotalLength:    0,
+						ID:             ident,
+						Flags:          header.IPv4FlagDontFragment | header.IPv4FlagMoreFragments,
+						FragmentOffset: 59776,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(12),
+					autoChecksum: true,
+				},
 			},
-			1,
-			0,
+			wantMalformedIPPackets: 1,
+			wantMalformedFragments: 0,
 		},
 		{
-			"ihl_totallen_zero_invalid_frag_offset",
-			[][]byte{
-				{0x40, 0x30, 0x00, 0x00, 0x6c, 0x74, 0x20, 0x00, 0x30, 0x30, 0x30, 0x30, 0x39, 0x32, 0x39, 0x33, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			name: "IHL and TotalLength zero, FragmentOffset zero",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            0,
+						TOS:            tos,
+						TotalLength:    0,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(12),
+					autoChecksum: true,
+				},
 			},
-			1,
-			0,
+			wantMalformedIPPackets: 1,
+			wantMalformedFragments: 0,
 		},
 		{
-			// Total Length of 37(20 bytes IP header + 17 bytes of
-			// payload)
-			// Frag Offset of 0x1ffe = 8190*8 = 65520
-			// Leading to the fragment end to be past 65535.
-			"ihl_totallen_valid_invalid_frag_offset_1",
-			[][]byte{
-				{0x45, 0x30, 0x00, 0x25, 0x6c, 0x74, 0x1f, 0xfe, 0x30, 0x30, 0x30, 0x30, 0x39, 0x32, 0x39, 0x33, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			// Payload 17 octets and Fragment offset 65520
+			// Leading to the fragment end to be past 65536.
+			name: "fragment ends past 65536",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 17,
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 65520,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(17),
+					autoChecksum: true,
+				},
 			},
-			1,
-			1,
-		},
-		// The following 3 tests were found by running a fuzzer and were
-		// triggering a panic in the IPv4 reassembler code.
-		{
-			"ihl_less_than_ipv4_minimum_size_1",
-			[][]byte{
-				{0x42, 0x30, 0x0, 0x30, 0x30, 0x40, 0x0, 0xf3, 0x30, 0x1, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
-				{0x42, 0x30, 0x0, 0x8, 0x30, 0x40, 0x20, 0x0, 0x30, 0x1, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
-			},
-			2,
-			0,
-		},
-		{
-			"ihl_less_than_ipv4_minimum_size_2",
-			[][]byte{
-				{0x42, 0x30, 0x0, 0x30, 0x30, 0x40, 0xb3, 0x12, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
-				{0x42, 0x30, 0x0, 0x8, 0x30, 0x40, 0x20, 0x0, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
-			},
-			2,
-			0,
+			wantMalformedIPPackets: 1,
+			wantMalformedFragments: 1,
 		},
 		{
-			"ihl_less_than_ipv4_minimum_size_3",
-			[][]byte{
-				{0x42, 0x30, 0x0, 0x30, 0x30, 0x40, 0xb3, 0x30, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
-				{0x42, 0x30, 0x0, 0x8, 0x30, 0x40, 0x20, 0x0, 0x30, 0x6, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			// Payload 16 octets and fragment offset 65520
+			// Leading to the fragment end to be exactly 65536.
+			name: "fragment ends exactly at 65536",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 16,
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 65520,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(16),
+					autoChecksum: true,
+				},
 			},
-			2,
-			0,
+			wantMalformedIPPackets: 0,
+			wantMalformedFragments: 0,
 		},
 		{
-			"fragment_with_short_total_len_extra_payload",
-			[][]byte{
-				{0x46, 0x30, 0x00, 0x30, 0x30, 0x40, 0x0e, 0x12, 0x30, 0x06, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
-				{0x46, 0x30, 0x00, 0x18, 0x30, 0x40, 0x20, 0x00, 0x30, 0x06, 0x30, 0x30, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30},
+			name: "IHL less than IPv4 minimum size",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize - 12,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 28,
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 1944,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(28),
+					autoChecksum: true,
+				},
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize - 12,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize - 12,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(28),
+					autoChecksum: true,
+				},
 			},
-			1,
-			1,
+			wantMalformedIPPackets: 2,
+			wantMalformedFragments: 0,
 		},
 		{
-			"multiple_fragments_with_more_fragments_set_to_false",
-			[][]byte{
-				{0x45, 0x00, 0x00, 0x1c, 0x30, 0x40, 0x00, 0x10, 0x00, 0x06, 0x34, 0x69, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-				{0x45, 0x00, 0x00, 0x1c, 0x30, 0x40, 0x00, 0x01, 0x61, 0x06, 0x34, 0x69, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-				{0x45, 0x00, 0x00, 0x1c, 0x30, 0x40, 0x20, 0x00, 0x00, 0x06, 0x34, 0x1e, 0x73, 0x73, 0x69, 0x6e, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			name: "fragment with short TotalLength and extra payload",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize + 4,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 28,
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 28816,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(28),
+					autoChecksum: true,
+				},
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize + 4,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 4,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(28),
+					autoChecksum: true,
+				},
 			},
-			1,
-			1,
+			wantMalformedIPPackets: 1,
+			wantMalformedFragments: 1,
+		},
+		{
+			name: "multiple fragments with More Fragments flag set to false",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 8,
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 128,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(8),
+					autoChecksum: true,
+				},
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 8,
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 8,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(8),
+					autoChecksum: true,
+				},
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 8,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload:      payloadGen(8),
+					autoChecksum: true,
+				},
+			},
+			wantMalformedIPPackets: 1,
+			wantMalformedFragments: 1,
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			const nicID tcpip.NICID = 42
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{
 					ipv4.NewProtocol(),
 				},
 			})
+			e := channel.New(0, 1500, linkAddr)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, addr2, err)
+			}
 
-			var linkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x30})
-			var remoteLinkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x31})
-			ep := channel.New(10, 1500, linkAddr)
-			s.CreateNIC(nicID, sniffer.New(ep))
+			for _, f := range test.fragments {
+				pktSize := header.IPv4MinimumSize + len(f.payload)
+				hdr := buffer.NewPrependable(pktSize)
 
-			for _, pkt := range tc.packets {
-				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: buffer.NewVectorisedView(len(pkt), []buffer.View{pkt}),
+				ip := header.IPv4(hdr.Prepend(pktSize))
+				ip.Encode(&f.ipv4fields)
+				copy(ip[header.IPv4MinimumSize:], f.payload)
+
+				if f.autoChecksum {
+					ip.SetChecksum(0)
+					ip.SetChecksum(^ip.CalculateChecksum())
+				}
+
+				vv := hdr.View().ToVectorisedView()
+				e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: vv,
 				}))
 			}
 
-			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), tc.wantMalformedIPPackets; got != want {
+			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), test.wantMalformedIPPackets; got != want {
 				t.Errorf("incorrect Stats.IP.MalformedPacketsReceived, got: %d, want: %d", got, want)
 			}
-			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), tc.wantMalformedFragments; got != want {
+			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), test.wantMalformedFragments; got != want {
 				t.Errorf("incorrect Stats.IP.MalformedFragmentsReceived, got: %d, want: %d", got, want)
 			}
 		})
@@ -534,6 +727,9 @@ func TestReceiveFragments(t *testing.T) {
 	// the fragment block size of 8 (RFC 791 section 3.1 page 14).
 	ipv4Payload3Addr1ToAddr2 := udpGen(127, 3, addr1, addr2)
 	udpPayload3Addr1ToAddr2 := ipv4Payload3Addr1ToAddr2[header.UDPMinimumSize:]
+	// Used to test the max reassembled payload length (65,535 octets).
+	ipv4Payload4Addr1ToAddr2 := udpGen(header.UDPMaximumSize-header.UDPMinimumSize, 4, addr1, addr2)
+	udpPayload4Addr1ToAddr2 := ipv4Payload4Addr1ToAddr2[header.UDPMinimumSize:]
 
 	type fragmentData struct {
 		srcAddr        tcpip.Address
@@ -826,6 +1022,28 @@ func TestReceiveFragments(t *testing.T) {
 				},
 			},
 			expectedPayloads: nil,
+		},
+		{
+			name: "Two fragments reassembled into a maximum UDP packet",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload4Addr1ToAddr2[:65512],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 65512,
+					payload:        ipv4Payload4Addr1ToAddr2[65512:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload4Addr1ToAddr2},
 		},
 	}
 

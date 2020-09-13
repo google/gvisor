@@ -15,6 +15,7 @@
 package ipv6
 
 import (
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -687,6 +688,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 		// Used to test cases where the fragment blocks are not a multiple of
 		// the fragment block size of 8 (RFC 8200 section 4.5).
 		udpPayload3Length = 127
+		udpPayload4Length = header.IPv6MaximumPayloadSize - header.UDPMinimumSize
 		fragmentExtHdrLen = 8
 		// Note, not all routing extension headers will be 8 bytes but this test
 		// uses 8 byte routing extension headers for most sub tests.
@@ -730,6 +732,10 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 	var udpPayload3Addr1ToAddr2Buf [udpPayload3Length]byte
 	udpPayload3Addr1ToAddr2 := udpPayload3Addr1ToAddr2Buf[:]
 	ipv6Payload3Addr1ToAddr2 := udpGen(udpPayload3Addr1ToAddr2, 3, addr1, addr2)
+
+	var udpPayload4Addr1ToAddr2Buf [udpPayload4Length]byte
+	udpPayload4Addr1ToAddr2 := udpPayload4Addr1ToAddr2Buf[:]
+	ipv6Payload4Addr1ToAddr2 := udpGen(udpPayload4Addr1ToAddr2, 4, addr1, addr2)
 
 	tests := []struct {
 		name             string
@@ -1018,6 +1024,44 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				},
 			},
 			expectedPayloads: nil,
+		},
+		{
+			name: "Two fragments reassembled into a maximum UDP packet",
+			fragments: []fragmentData{
+				{
+					srcAddr: addr1,
+					dstAddr: addr2,
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+65520,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 0, More = true, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+
+							ipv6Payload4Addr1ToAddr2[:65520],
+						},
+					),
+				},
+				{
+					srcAddr: addr1,
+					dstAddr: addr2,
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+len(ipv6Payload4Addr1ToAddr2)-65520,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 8190, More = false, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 255, 240, 0, 0, 0, 1}),
+
+							ipv6Payload4Addr1ToAddr2[65520:],
+						},
+					),
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload4Addr1ToAddr2},
 		},
 		{
 			name: "Two fragments with per-fragment routing header with zero segments left",
@@ -1568,6 +1612,99 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 
 			if gotPayload, _, err := ep.Read(nil); err != tcpip.ErrWouldBlock {
 				t.Fatalf("(last) got Read(nil) = (%x, _, %v), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
+			}
+		})
+	}
+}
+
+func TestInvalidIPv6Fragments(t *testing.T) {
+	const (
+		nicID             = 1
+		fragmentExtHdrLen = 8
+	)
+
+	payloadGen := func(payloadLen int) []byte {
+		payload := make([]byte, payloadLen)
+		for i := 0; i < len(payload); i++ {
+			payload[i] = 0x30
+		}
+		return payload
+	}
+
+	tests := []struct {
+		name                   string
+		fragments              []fragmentData
+		wantMalformedIPPackets uint64
+		wantMalformedFragments uint64
+	}{
+		{
+			name: "fragments reassembled into a payload exceeding the max IPv6 payload size",
+			fragments: []fragmentData{
+				{
+					srcAddr: addr1,
+					dstAddr: addr2,
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+(header.IPv6MaximumPayloadSize+1)-16,
+						[]buffer.View{
+							// Fragment extension header.
+							// Fragment offset = 8190, More = false, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0,
+								((header.IPv6MaximumPayloadSize + 1) - 16) >> 8,
+								((header.IPv6MaximumPayloadSize + 1) - 16) & math.MaxUint8,
+								0, 0, 0, 1}),
+							// Payload length = 16
+							payloadGen(16),
+						},
+					),
+				},
+			},
+			wantMalformedIPPackets: 1,
+			wantMalformedFragments: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{
+					NewProtocol(),
+				},
+			})
+			e := channel.New(0, 1500, linkAddr1)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, addr2, err)
+			}
+
+			for _, f := range test.fragments {
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize)
+
+				// Serialize IPv6 fixed header.
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength: uint16(f.data.Size()),
+					NextHeader:    f.nextHdr,
+					HopLimit:      255,
+					SrcAddr:       f.srcAddr,
+					DstAddr:       f.dstAddr,
+				})
+
+				vv := hdr.View().ToVectorisedView()
+				vv.Append(f.data)
+
+				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: vv,
+				}))
+			}
+
+			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), test.wantMalformedIPPackets; got != want {
+				t.Errorf("got Stats.IP.MalformedPacketsReceived = %d, want = %d", got, want)
+			}
+			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), test.wantMalformedFragments; got != want {
+				t.Errorf("got Stats.IP.MalformedFragmentsReceived = %d, want = %d", got, want)
 			}
 		})
 	}
