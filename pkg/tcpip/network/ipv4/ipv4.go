@@ -404,11 +404,15 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			return
 		}
 		// The packet is a fragment, let's try to reassemble it.
-		last := h.FragmentOffset() + uint16(pkt.Data.Size()) - 1
-		// Drop the packet if the fragmentOffset is incorrect. i.e the
-		// combination of fragmentOffset and pkt.Data.size() causes a
-		// wrap around resulting in last being less than the offset.
-		if last < h.FragmentOffset() {
+		start := h.FragmentOffset()
+		// Drop the fragment if the size of the reassembled payload would exceed the
+		// maximum payload size.
+		//
+		// Note that this addition doesn't overflow even on 32bit architecture
+		// because pkt.Data.Size() should not exceed 65535 (the max IP datagram
+		// size). Otherwise the packet would've been rejected as invalid before
+		// reaching here.
+		if int(start)+pkt.Data.Size() > header.IPv4MaximumPayloadSize {
 			r.Stats().IP.MalformedPacketsReceived.Increment()
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
 			return
@@ -425,8 +429,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				ID:          uint32(h.ID()),
 				Protocol:    proto,
 			},
-			h.FragmentOffset(),
-			last,
+			start,
+			start+uint16(pkt.Data.Size())-1,
 			h.More(),
 			proto,
 			pkt.Data,
