@@ -88,6 +88,16 @@ const (
 	// units, the header cannot exceed 15*4 = 60 bytes.
 	IPv4MaximumHeaderSize = 60
 
+	// IPv4MaximumPayloadSize is the maximum size of a valid IPv4 payload.
+	//
+	// Linux limits this to 65,515 octets (the max IP datagram size - the IPv4
+	// header size). But RFC 791 section 3.2 discusses the design of the IPv4
+	// fragment "allows 2**13 = 8192 fragments of 8 octets each for a total of
+	// 65,536 octets. Note that this is consistent with the the datagram total
+	// length field (of course, the header is counted in the total length and not
+	// in the fragments)."
+	IPv4MaximumPayloadSize = 65536
+
 	// MinIPFragmentPayloadSize is the minimum number of payload bytes that
 	// the first fragment must carry when an IPv4 packet is fragmented.
 	MinIPFragmentPayloadSize = 8

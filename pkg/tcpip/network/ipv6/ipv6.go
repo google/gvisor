@@ -311,12 +311,10 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 
 			// The packet is a fragment, let's try to reassemble it.
 			start := extHdr.FragmentOffset() * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
-			last := start + uint16(fragmentPayloadLen) - 1
 
-			// Drop the packet if the fragmentOffset is incorrect. i.e the
-			// combination of fragmentOffset and pkt.Data.size() causes a
-			// wrap around resulting in last being less than the offset.
-			if last < start {
+			// Drop the fragment if the size of the reassembled payload would exceed
+			// the maximum payload size.
+			if int(start)+fragmentPayloadLen > header.IPv6MaximumPayloadSize {
 				r.Stats().IP.MalformedPacketsReceived.Increment()
 				r.Stats().IP.MalformedFragmentsReceived.Increment()
 				return
@@ -333,7 +331,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 					ID:          extHdr.ID(),
 				},
 				start,
-				last,
+				start+uint16(fragmentPayloadLen)-1,
 				extHdr.More(),
 				uint8(rawPayload.Identifier),
 				rawPayload.Buf,
