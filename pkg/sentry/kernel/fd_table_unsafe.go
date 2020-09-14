@@ -79,6 +79,13 @@ func (f *FDTable) getAll(fd int32) (*fs.File, *vfs.FileDescription, FDFlags, boo
 	return d.file, d.fileVFS2, d.flags, true
 }
 
+// CurrentMaxFDs returns the number of file descriptors that may be stored in f
+// without reallocation.
+func (f *FDTable) CurrentMaxFDs() int {
+	slice := *(*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
+	return len(slice)
+}
+
 // set sets an entry.
 //
 // This handles accounting changes, as well as acquiring and releasing the
