@@ -15,6 +15,7 @@
 package fuse
 
 import (
+	"io"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -108,4 +109,24 @@ func (t *testPayload) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (t *testPayload) UnmarshalUnsafe(src []byte) {
 	t.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (t *testPayload) CopyOutN(task marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+	panic("not implemented")
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (t *testPayload) CopyOut(task marshal.CopyContext, addr usermem.Addr) (int, error) {
+	panic("not implemented")
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (t *testPayload) CopyIn(task marshal.CopyContext, addr usermem.Addr) (int, error) {
+	panic("not implemented")
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (t *testPayload) WriteTo(w io.Writer) (int64, error) {
+	panic("not implemented")
 }
