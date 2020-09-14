@@ -543,7 +543,7 @@ func (s *statusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	var vss, rss, data uint64
 	s.task.WithMuLocked(func(t *kernel.Task) {
 		if fdTable := t.FDTable(); fdTable != nil {
-			fds = fdTable.Size()
+			fds = fdTable.CurrentMaxFDs()
 		}
 		if mm := t.MemoryManager(); mm != nil {
 			vss = mm.VirtualMemorySize()
