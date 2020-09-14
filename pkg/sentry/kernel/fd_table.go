@@ -111,6 +111,7 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 	ctx := context.Background()
 	f.init() // Initialize table.
+	f.used = 0
 	for fd, d := range m {
 		f.setAll(ctx, fd, d.file, d.fileVFS2, d.flags)
 
@@ -184,12 +185,6 @@ func (f *FDTable) DecRef(ctx context.Context) {
 			return true
 		})
 	})
-}
-
-// Size returns the number of file descriptor slots currently allocated.
-func (f *FDTable) Size() int {
-	size := atomic.LoadInt32(&f.used)
-	return int(size)
 }
 
 // forEach iterates over all non-nil files in sorted order.
@@ -548,30 +543,6 @@ func (f *FDTable) GetFDs(ctx context.Context) []int32 {
 		fds = append(fds, fd)
 	})
 	return fds
-}
-
-// GetRefs returns a stable slice of references to all files and bumps the
-// reference count on each. The caller must use DecRef on each reference when
-// they're done using the slice.
-func (f *FDTable) GetRefs(ctx context.Context) []*fs.File {
-	files := make([]*fs.File, 0, f.Size())
-	f.forEach(ctx, func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
-		file.IncRef() // Acquire a reference for caller.
-		files = append(files, file)
-	})
-	return files
-}
-
-// GetRefsVFS2 returns a stable slice of references to all files and bumps the
-// reference count on each. The caller must use DecRef on each reference when
-// they're done using the slice.
-func (f *FDTable) GetRefsVFS2(ctx context.Context) []*vfs.FileDescription {
-	files := make([]*vfs.FileDescription, 0, f.Size())
-	f.forEach(ctx, func(_ int32, _ *fs.File, file *vfs.FileDescription, _ FDFlags) {
-		file.IncRef() // Acquire a reference for caller.
-		files = append(files, file)
-	})
-	return files
 }
 
 // Fork returns an independent FDTable.
