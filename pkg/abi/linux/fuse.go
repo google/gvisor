@@ -15,8 +15,8 @@
 package linux
 
 import (
-	"gvisor.dev/gvisor/tools/go_marshal/marshal"
-	"gvisor.dev/gvisor/tools/go_marshal/primitive"
+	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
 // +marshal

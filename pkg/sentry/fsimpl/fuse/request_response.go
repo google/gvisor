@@ -19,10 +19,10 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
-	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
 // fuseInitRes is a variable-length wrapper of linux.FUSEInitOut. The FUSE
