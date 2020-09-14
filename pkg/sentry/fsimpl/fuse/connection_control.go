@@ -95,6 +95,8 @@ func (conn *connection) InitSend(creds *auth.Credentials, pid uint32) error {
 }
 
 // InitRecv receives a FUSE_INIT reply and process it.
+//
+// Preconditions: conn.asyncMu must not be held if minor verion is newer than 13.
 func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 	if err := res.Error(); err != nil {
 		return err
@@ -189,6 +191,8 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 // All possible requests waiting or blocking will be aborted.
 func (conn *connection) Abort(ctx context.Context) {
 	conn.fd.mu.Lock()
+	defer conn.fd.mu.Unlock()
+
 	conn.mu.Lock()
 	conn.asyncMu.Lock()
 
@@ -217,10 +221,9 @@ func (conn *connection) Abort(ctx context.Context) {
 		terminate = append(terminate, unique)
 	}
 
-	// Release all locks to avoid deadlock.
+	// Release locks to avoid deadlock.
 	conn.asyncMu.Unlock()
 	conn.mu.Unlock()
-	conn.fd.mu.Unlock()
 
 	// 1. The requets blocked before initialization.
 	// Will reach call() `connected` check and return.

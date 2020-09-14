@@ -391,6 +391,8 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 }
 
 // sendResponse sends a response to the waiting task (if any).
+//
+// Preconditions: fd.mu must be held.
 func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error {
 	// Signal the task waiting on a response if any.
 	defer close(fut.ch)
@@ -410,6 +412,8 @@ func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error
 }
 
 // sendError sends an error response to the waiting task (if any) by calling sendResponse().
+//
+// Preconditions: fd.mu must be held.
 func (fd *DeviceFD) sendError(ctx context.Context, errno int32, unique linux.FUSEOpID) error {
 	// Return the error to the calling task.
 	outHdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
