@@ -211,7 +211,8 @@ packetdrill-tests: load-packetdrill
 .PHONY: packetdrill-tests
 
 packetimpact-tests: load-packetimpact
-	@sudo modprobe iptable_filter ip6table_filter
+	@sudo modprobe iptable_filter
+	@sudo modprobe ip6table_filter
 	@$(call submake,install-test-runtime RUNTIME="packetimpact")
 	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
 .PHONY: packetimpact-tests
