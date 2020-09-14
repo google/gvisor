@@ -3002,10 +3002,16 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 
 	rc := e.snd.rc
 	s.Sender.RACKState = stack.TCPRACKState{
-		XmitTime:    rc.xmitTime,
-		EndSequence: rc.endSequence,
-		FACK:        rc.fack,
-		RTT:         rc.rtt,
+		XmitTime:      rc.xmitTime,
+		EndSequence:   rc.endSequence,
+		FACK:          rc.fack,
+		RTT:           rc.rtt,
+		Reord:         rc.reord,
+		DSACK:         rc.dsack,
+		ReoWnd:        rc.reoWnd,
+		ReoWndIncr:    rc.reoWndIncr,
+		ReoWndPersist: rc.reoWndPersist,
+		RTTSeq:        rc.rttSeq,
 	}
 	return s
 }

@@ -68,9 +68,9 @@ const (
 	// V4MappedWildcardAddr is the mapped v6 representation of 0.0.0.0.
 	V4MappedWildcardAddr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00"
 
-	// testInitialSequenceNumber is the initial sequence number sent in packets that
+	// TestInitialSequenceNumber is the initial sequence number sent in packets that
 	// are sent in response to a SYN or in the initial SYN sent to the stack.
-	testInitialSequenceNumber = 789
+	TestInitialSequenceNumber = 789
 )
 
 // StackAddrWithPrefix is StackAddr with its associated prefix length.
@@ -505,7 +505,7 @@ func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, op
 		checker.TCP(
 			checker.DstPort(TestPort),
 			checker.TCPSeqNum(uint32(c.IRS.Add(seqnum.Size(1+offset)))),
-			checker.TCPAckNum(uint32(seqnum.Value(testInitialSequenceNumber).Add(1))),
+			checker.TCPAckNum(uint32(seqnum.Value(TestInitialSequenceNumber).Add(1))),
 			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
 		),
 	)
@@ -532,7 +532,7 @@ func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int
 		checker.TCP(
 			checker.DstPort(TestPort),
 			checker.TCPSeqNum(uint32(c.IRS.Add(seqnum.Size(1+offset)))),
-			checker.TCPAckNum(uint32(seqnum.Value(testInitialSequenceNumber).Add(1))),
+			checker.TCPAckNum(uint32(seqnum.Value(TestInitialSequenceNumber).Add(1))),
 			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
 		),
 	)
@@ -912,7 +912,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 
 	// Build SYN-ACK.
 	c.IRS = seqnum.Value(tcpSeg.SequenceNumber())
-	iss := seqnum.Value(testInitialSequenceNumber)
+	iss := seqnum.Value(TestInitialSequenceNumber)
 	c.SendPacket(nil, &Headers{
 		SrcPort: tcpSeg.DestinationPort(),
 		DstPort: tcpSeg.SourcePort(),
@@ -1084,7 +1084,7 @@ func (c *Context) PassiveConnectWithOptions(maxPayload, wndScale int, synOptions
 	offset += paddingToAdd
 
 	// Send a SYN request.
-	iss := seqnum.Value(testInitialSequenceNumber)
+	iss := seqnum.Value(TestInitialSequenceNumber)
 	c.SendPacket(nil, &Headers{
 		SrcPort: TestPort,
 		DstPort: StackPort,

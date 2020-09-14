@@ -17,6 +17,7 @@ package tcp
 import (
 	"fmt"
 	"math"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -262,6 +263,10 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			last:      iss,
 			highRxt:   iss,
 			rescueRxt: iss,
+		},
+		rc: rackControl{
+			// Initialize FACK used in RACK.
+			fack: iss,
 		},
 		gso: ep.gso != nil,
 	}
@@ -1274,6 +1279,70 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 	return true
 }
 
+// Iterate the writeList and update RACK for each segment which is newly acked
+// either cumulatively or selectively.
+func (s *sender) walkSACK(rcvdSeg *segment) {
+	seg := s.writeList.Front()
+	for seg != nil && seg.sequenceNumber.LessThan(s.sndUna) {
+		seg = seg.Next()
+	}
+
+	s.rtt.Lock()
+	srtt := s.rtt.srtt
+	s.rtt.Unlock()
+
+	// Sort the SACK blocks. The first block is the most recent unacked
+	// block. The following blocks can be in arbitrary order.
+	sackBlocks := rcvdSeg.parsedOptions.SACKBlocks
+	sort.Slice(sackBlocks, func(i, j int) bool {
+		return sackBlocks[j].Start.LessThan(sackBlocks[i].Start)
+	})
+	for _, sb := range sackBlocks {
+		for seg != nil && seg.sequenceNumber.LessThan(sb.End) {
+			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
+				s.rc.update(seg, rcvdSeg, srtt, s.ep.tsOffset, s.sndNxt)
+				s.rc.detectReorder(seg)
+				seg.acked = true
+			}
+			seg = seg.Next()
+		}
+	}
+}
+
+// checkDSACK checks if a DSACK is reported and updates it in RACK.
+func (s *sender) checkDSACK(rcvdSeg *segment) {
+	if len(rcvdSeg.parsedOptions.SACKBlocks) == 0 {
+		return
+	}
+
+	sb := rcvdSeg.parsedOptions.SACKBlocks[0]
+	// Check if SACK block is invalid.
+	if sb.End.LessThan(sb.Start) {
+		return
+	}
+
+	// DSACK is reported in atmost one SACK block.
+	if sb.Start.LessThan(rcvdSeg.ackNumber) {
+		s.rc.dsackSeen()
+		return
+	}
+
+	if len(rcvdSeg.parsedOptions.SACKBlocks) == 1 {
+		return
+	}
+
+	sb1 := rcvdSeg.parsedOptions.SACKBlocks[1]
+	if sb1.End.LessThan(sb1.Start) {
+		return
+	}
+
+	// Identify if DSACK is reported in the case of two non-contiguous sub
+	// segments. See: https://tools.ietf.org/html/rfc2883#section-4.2.3.
+	if sb1.End.LessThan(sb.End) && sb.Start.LessThanEq(sb1.Start) {
+		s.rc.dsackSeen()
+	}
+}
+
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
@@ -1290,6 +1359,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 	// Insert SACKBlock information into our scoreboard.
 	if s.ep.sackPermitted {
+		// Check for DSACK.
+		s.checkDSACK(rcvdSeg)
+
 		for _, sb := range rcvdSeg.parsedOptions.SACKBlocks {
 			// Only insert the SACK block if the following holds
 			// true:
@@ -1308,6 +1380,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				rcvdSeg.hasNewSACKInfo = true
 			}
 		}
+		s.walkSACK(rcvdSeg)
 		s.SetPipe()
 	}
 
@@ -1387,9 +1460,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				s.writeNext = seg.Next()
 			}
 
-			// Update the RACK fields if SACK is enabled.
-			if s.ep.sackPermitted {
-				s.rc.Update(seg, rcvdSeg, srtt, s.ep.tsOffset)
+			if s.ep.sackPermitted && !seg.acked {
+				s.rc.update(seg, rcvdSeg, srtt, s.ep.tsOffset, s.sndNxt)
+				s.rc.detectReorder(seg)
 			}
 
 			s.writeList.Remove(seg)
@@ -1437,6 +1510,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			s.resendTimer.disable()
 		}
 	}
+
+	s.rtt.Lock()
+	srtt := s.rtt.srtt
+	s.rtt.Unlock()
+	// Update RACK reorder window.
+	s.rc.updateRACKReorderWindow(rcvdSeg, s.sndUna, s.sndNxt, s.fr.active, srtt)
+
 	// Now that we've popped all acknowledged data from the retransmit
 	// queue, retransmit if needed.
 	if rtx {

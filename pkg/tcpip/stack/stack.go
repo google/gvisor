@@ -76,11 +76,16 @@ type TCPCubicState struct {
 // TCPRACKState is used to hold a copy of the internal RACK state when the
 // TCPProbeFunc is invoked.
 type TCPRACKState struct {
-	XmitTime    time.Time
-	EndSequence seqnum.Value
-	FACK        seqnum.Value
-	RTT         time.Duration
-	Reord       bool
+	XmitTime      time.Time
+	EndSequence   seqnum.Value
+	FACK          seqnum.Value
+	RTT           time.Duration
+	Reord         bool
+	DSACK         bool
+	ReoWnd        time.Duration
+	ReoWndIncr    uint8
+	ReoWndPersist uint8
+	RTTSeq        seqnum.Value
 }
 
 // TCPEndpointID is the unique 4 tuple that identifies a given endpoint.
