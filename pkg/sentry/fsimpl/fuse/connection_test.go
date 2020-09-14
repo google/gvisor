@@ -62,9 +62,9 @@ func TestConnectionAbort(t *testing.T) {
 	creds := auth.CredentialsFromContext(s.Ctx)
 	task := kernel.TaskFromContext(s.Ctx)
 
-	const maxActiveRequest uint64 = 10
+	const numRequests uint64 = 256
 
-	conn, _, err := newTestConnection(s, k, maxActiveRequest)
+	conn, _, err := newTestConnection(s, k, numRequests)
 	if err != nil {
 		t.Fatalf("newTestConnection: %v", err)
 	}
@@ -75,32 +75,22 @@ func TestConnectionAbort(t *testing.T) {
 
 	var futNormal []*futureResponse
 
-	for i := 0; i < 2*int(maxActiveRequest); i++ {
+	for i := 0; i < int(numRequests); i++ {
 		req, err := conn.NewRequest(creds, uint32(i), uint64(i), 0, testObj)
 		if err != nil {
 			t.Fatalf("NewRequest creation failed: %v", err)
 		}
-		if i < int(maxActiveRequest) {
-			// Issue the requests that will not be blocked due to maxActiveRequest.
-			fut, err := conn.callFutureLocked(task, req)
-			if err != nil {
-				t.Fatalf("callFutureLocked failed: %v", err)
-			}
-			futNormal = append(futNormal, fut)
-		} else {
-			go func(t *testing.T) {
-				// The requests beyond maxActiveRequest will be blocked and receive expected errors.
-				_, err := conn.callFutureLocked(task, req)
-				if err != syserror.ECONNABORTED && err != syserror.ENOTCONN {
-					t.Fatalf("Incorrect error code received for blocked callFutureLocked() on aborted connection")
-				}
-			}(t)
+		fut, err := conn.callFutureLocked(task, req)
+		if err != nil {
+			t.Fatalf("callFutureLocked failed: %v", err)
 		}
+		futNormal = append(futNormal, fut)
 	}
 
 	conn.Abort(s.Ctx)
 
 	// Abort should unblock the initialization channel.
+	// Note: no test requests are actually blocked on `conn.initializedChan`.
 	select {
 	case <-conn.initializedChan:
 	default:
@@ -110,7 +100,7 @@ func TestConnectionAbort(t *testing.T) {
 	// Abort will return ECONNABORTED error to unblocked requests.
 	for _, fut := range futNormal {
 		if fut.getResponse().hdr.Error != -int32(syscall.ECONNABORTED) {
-			t.Fatalf("Incorrect error code received for aborted connection")
+			t.Fatalf("Incorrect error code received for aborted connection: %v", fut.getResponse().hdr.Error)
 		}
 	}
 
