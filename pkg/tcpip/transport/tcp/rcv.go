@@ -436,6 +436,13 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 	// Just silently drop any RST packets in TIME_WAIT. We do not support
 	// TIME_WAIT assasination as a result we confirm w/ fix 1 as described
 	// in https://tools.ietf.org/html/rfc1337#section-3.
+	//
+	// This behavior overrides RFC793 page 70 where we transition to CLOSED
+	// on receiving RST, which is also default Linux behavior.
+	// On Linux the RST can be ignored by setting sysctl net.ipv4.tcp_rfc1337.
+	//
+	// As we do not yet support PAWS, we are being conservative in ignoring
+	// RSTs by default.
 	if s.flagIsSet(header.TCPFlagRst) {
 		return false, false
 	}
