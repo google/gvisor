@@ -92,7 +92,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	e.stack = s
 
-	for _, m := range e.multicastMemberships {
+	for m := range e.multicastMemberships {
 		if err := e.stack.JoinGroup(e.NetProto, m.nicID, m.multicastAddr); err != nil {
 			panic(err)
 		}
