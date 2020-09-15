@@ -797,17 +797,12 @@ TEST(ProcCpuinfo, DeniesWriteNonRoot) {
     constexpr int kNobody = 65534;
     EXPECT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
     EXPECT_THAT(open("/proc/cpuinfo", O_WRONLY), SyscallFailsWithErrno(EACCES));
-    // TODO(gvisor.dev/issue/1193): Properly support setting size attributes in
-    // kernfs.
-    if (!IsRunningOnGvisor() || IsRunningWithVFS1()) {
-      EXPECT_THAT(truncate("/proc/cpuinfo", 123),
-                  SyscallFailsWithErrno(EACCES));
-    }
+    EXPECT_THAT(truncate("/proc/cpuinfo", 123), SyscallFailsWithErrno(EACCES));
   });
 }
 
 // With root privileges, it is possible to open /proc/cpuinfo with write mode,
-// but all write operations will return EIO.
+// but all write operations should fail.
 TEST(ProcCpuinfo, DeniesWriteRoot) {
   // VFS1 does not behave differently for root/non-root.
   SKIP_IF(IsRunningWithVFS1());
@@ -816,16 +811,10 @@ TEST(ProcCpuinfo, DeniesWriteRoot) {
   int fd;
   EXPECT_THAT(fd = open("/proc/cpuinfo", O_WRONLY), SyscallSucceeds());
   if (fd > 0) {
-    EXPECT_THAT(write(fd, "x", 1), SyscallFailsWithErrno(EIO));
-    EXPECT_THAT(pwrite(fd, "x", 1, 123), SyscallFailsWithErrno(EIO));
-  }
-  // TODO(gvisor.dev/issue/1193): Properly support setting size attributes in
-  // kernfs.
-  if (!IsRunningOnGvisor() || IsRunningWithVFS1()) {
-    if (fd > 0) {
-      EXPECT_THAT(ftruncate(fd, 123), SyscallFailsWithErrno(EIO));
-    }
-    EXPECT_THAT(truncate("/proc/cpuinfo", 123), SyscallFailsWithErrno(EIO));
+    // Truncate is not tested--it may succeed on some kernels without doing
+    // anything.
+    EXPECT_THAT(write(fd, "x", 1), SyscallFails());
+    EXPECT_THAT(pwrite(fd, "x", 1, 123), SyscallFails());
   }
 }
 

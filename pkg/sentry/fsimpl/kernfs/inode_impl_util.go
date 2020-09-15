@@ -259,8 +259,18 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
-	if opts.Stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID) != 0 {
+
+	// Note that not all fields are modifiable. For example, the file type and
+	// inode numbers are immutable after node creation. Setting the size is often
+	// allowed by kernfs files but does not do anything. If some other behavior is
+	// needed, the embedder should consider extending SetStat.
+	//
+	// TODO(gvisor.dev/issue/1193): Implement other stat fields like timestamps.
+	if opts.Stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_SIZE) != 0 {
 		return syserror.EPERM
+	}
+	if opts.Stat.Mask&linux.STATX_SIZE != 0 && a.Mode().IsDir() {
+		return syserror.EISDIR
 	}
 	if err := vfs.CheckSetStat(ctx, creds, &opts, a.Mode(), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
 		return err
@@ -283,13 +293,6 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	if stat.Mask&linux.STATX_GID != 0 {
 		atomic.StoreUint32(&a.gid, stat.GID)
 	}
-
-	// Note that not all fields are modifiable. For example, the file type and
-	// inode numbers are immutable after node creation.
-
-	// TODO(gvisor.dev/issue/1193): Implement other stat fields like timestamps.
-	// Also, STATX_SIZE will need some special handling, because read-only static
-	// files should return EIO for truncate operations.
 
 	return nil
 }
