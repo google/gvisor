@@ -26,7 +26,6 @@ import (
 	"context"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -68,8 +67,9 @@ func ThreadGroupIDFromContext(ctx Context) (tgid int32, ok bool) {
 // In both cases, values extracted from the Context should be used instead.
 type Context interface {
 	log.Logger
-	amutex.Sleeper
 	context.Context
+
+	ChannelSleeper
 
 	// UninterruptibleSleepStart indicates the beginning of an uninterruptible
 	// sleep state (equivalent to Linux's TASK_UNINTERRUPTIBLE). If deactivate
@@ -85,29 +85,60 @@ type Context interface {
 	UninterruptibleSleepFinish(activate bool)
 }
 
-// NoopSleeper is a noop implementation of amutex.Sleeper and UninterruptibleSleep
-// methods for anonymous embedding in other types that do not implement sleeps.
-type NoopSleeper struct {
-	amutex.NoopSleeper
+// A ChannelSleeper represents a goroutine that may sleep interruptibly, where
+// interruption is indicated by a channel becoming readable.
+type ChannelSleeper interface {
+	// SleepStart is called before going to sleep interruptibly. If SleepStart
+	// returns a non-nil channel and that channel becomes ready for receiving
+	// while the goroutine is sleeping, the goroutine should be woken, and
+	// SleepFinish(false) should be called. Otherwise, SleepFinish(true) should
+	// be called after the goroutine stops sleeping.
+	SleepStart() <-chan struct{}
+
+	// SleepFinish is called after an interruptibly-sleeping goroutine stops
+	// sleeping, as documented by SleepStart.
+	SleepFinish(success bool)
+
+	// Interrupted returns true if the channel returned by SleepStart is
+	// ready for receiving.
+	Interrupted() bool
 }
 
-// UninterruptibleSleepStart does nothing.
-func (NoopSleeper) UninterruptibleSleepStart(bool) {}
+// NoopSleeper is a noop implementation of ChannelSleeper and
+// Context.UninterruptibleSleep* methods for anonymous embedding in other types
+// that do not implement special behavior around sleeps.
+type NoopSleeper struct{}
 
-// UninterruptibleSleepFinish does nothing.
-func (NoopSleeper) UninterruptibleSleepFinish(bool) {}
+// SleepStart implements ChannelSleeper.SleepStart.
+func (NoopSleeper) SleepStart() <-chan struct{} {
+	return nil
+}
 
-// Deadline returns zero values, meaning no deadline.
+// SleepFinish implements ChannelSleeper.SleepFinish.
+func (NoopSleeper) SleepFinish(success bool) {}
+
+// Interrupted implements ChannelSleeper.Interrupted.
+func (NoopSleeper) Interrupted() bool {
+	return false
+}
+
+// UninterruptibleSleepStart implements Context.UninterruptibleSleepStart.
+func (NoopSleeper) UninterruptibleSleepStart(deactivate bool) {}
+
+// UninterruptibleSleepFinish implements Context.UninterruptibleSleepFinish.
+func (NoopSleeper) UninterruptibleSleepFinish(activate bool) {}
+
+// Deadline implements context.Context.Deadline.
 func (NoopSleeper) Deadline() (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// Done returns nil.
+// Done implements context.Context.Done.
 func (NoopSleeper) Done() <-chan struct{} {
 	return nil
 }
 
-// Err returns nil.
+// Err returns context.Context.Err.
 func (NoopSleeper) Err() error {
 	return nil
 }
