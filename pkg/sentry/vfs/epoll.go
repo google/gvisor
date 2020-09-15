@@ -331,11 +331,9 @@ func (ep *EpollInstance) removeLocked(epi *epollInterest) {
 	ep.mu.Unlock()
 }
 
-// ReadEvents reads up to len(events) ready events into events and returns the
-// number of events read.
-//
-// Preconditions: len(events) != 0.
-func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent) int {
+// ReadEvents appends up to maxReady events to events and returns the updated
+// slice of events.
+func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []linux.EpollEvent {
 	i := 0
 	// Hot path: avoid defer.
 	ep.mu.Lock()
@@ -368,16 +366,16 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent) int {
 			requeue.PushBack(epi)
 		}
 		// Report ievents.
-		events[i] = linux.EpollEvent{
+		events = append(events, linux.EpollEvent{
 			Events: ievents.ToLinux(),
 			Data:   epi.userData,
-		}
+		})
 		i++
-		if i == len(events) {
+		if i == maxEvents {
 			break
 		}
 	}
 	ep.ready.PushBackList(&requeue)
 	ep.mu.Unlock()
-	return i
+	return events
 }
