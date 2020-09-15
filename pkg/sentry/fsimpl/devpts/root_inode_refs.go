@@ -1,12 +1,11 @@
 package devpts
 
 import (
-	"runtime"
-	"sync/atomic"
-
 	"fmt"
 	"gvisor.dev/gvisor/pkg/log"
 	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
+	"runtime"
+	"sync/atomic"
 )
 
 // ownerType is used to customize logging. Note that we use a pointer to T so
