@@ -694,6 +694,30 @@ TEST(ProcSelfFd, OpenFd) {
   ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
 }
 
+static void CheckFdDirGetdentsDuplicates(const std::string& path) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path.c_str(), O_RDONLY | O_DIRECTORY));
+  // Open a FD whose value is supposed to be much larger than
+  // the number of FDs opened by current process.
+  auto newfd = fcntl(fd.get(), F_DUPFD, 1024);
+  EXPECT_GE(newfd, 1024);
+  auto fd_closer = Cleanup([newfd]() { close(newfd); });
+  auto fd_files = ASSERT_NO_ERRNO_AND_VALUE(ListDir(path.c_str(), false));
+  std::unordered_set<std::string> fd_files_dedup(fd_files.begin(),
+                                                 fd_files.end());
+  EXPECT_EQ(fd_files.size(), fd_files_dedup.size());
+}
+
+// This is a regression test for gvisor.dev/issues/3894
+TEST(ProcSelfFd, GetdentsDuplicates) {
+  CheckFdDirGetdentsDuplicates("/proc/self/fd");
+}
+
+// This is a regression test for gvisor.dev/issues/3894
+TEST(ProcSelfFdInfo, GetdentsDuplicates) {
+  CheckFdDirGetdentsDuplicates("/proc/self/fdinfo");
+}
+
 TEST(ProcSelfFdInfo, CorrectFds) {
   // Make sure there is at least one open file.
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
