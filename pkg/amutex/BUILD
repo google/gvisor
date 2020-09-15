@@ -6,7 +6,10 @@ go_library(
     name = "amutex",
     srcs = ["amutex.go"],
     visibility = ["//:sandbox"],
-    deps = ["//pkg/syserror"],
+    deps = [
+        "//pkg/context",
+        "//pkg/syserror",
+    ],
 )
 
 go_test(
