@@ -86,14 +86,19 @@ func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, off
 			Name:    strconv.FormatUint(uint64(fd), 10),
 			Type:    typ,
 			Ino:     i.fs.NextIno(),
-			NextOff: offset + 1,
+			NextOff: int64(fd) + 3,
 		}
 		if err := cb.Handle(dirent); err != nil {
-			return offset, err
+			// Getdents should iterate correctly despite mutation
+			// of fds, so we return the next fd to serialize plus
+			// 2 (which accounts for the "." and ".." tracked by
+			// kernfs) as the offset.
+			return int64(fd) + 2, err
 		}
-		offset++
 	}
-	return offset, nil
+	// We serialized them all.  Next offset should be higher than last
+	// serialized fd.
+	return int64(fds[len(fds)-1]) + 3, nil
 }
 
 // fdDirInode represents the inode for /proc/[pid]/fd directory.
