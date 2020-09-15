@@ -24,27 +24,20 @@ import (
 
 var globalError error
 
-func returnErrnoAsError() error {
-	return syscall.EINVAL
-}
-
-func returnError() error {
-	return syserror.EINVAL
-}
-
-func BenchmarkReturnErrnoAsError(b *testing.B) {
+func BenchmarkAssignErrno(b *testing.B) {
 	for i := b.N; i > 0; i-- {
-		returnErrnoAsError()
+		globalError = syscall.EINVAL
 	}
 }
 
-func BenchmarkReturnError(b *testing.B) {
+func BenchmarkAssignError(b *testing.B) {
 	for i := b.N; i > 0; i-- {
-		returnError()
+		globalError = syserror.EINVAL
 	}
 }
 
 func BenchmarkCompareErrno(b *testing.B) {
+	globalError = syscall.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
 		if globalError == syscall.EINVAL {
@@ -54,6 +47,7 @@ func BenchmarkCompareErrno(b *testing.B) {
 }
 
 func BenchmarkCompareError(b *testing.B) {
+	globalError = syserror.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
 		if globalError == syserror.EINVAL {
@@ -63,6 +57,7 @@ func BenchmarkCompareError(b *testing.B) {
 }
 
 func BenchmarkSwitchErrno(b *testing.B) {
+	globalError = syscall.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
 		switch globalError {
@@ -77,6 +72,7 @@ func BenchmarkSwitchErrno(b *testing.B) {
 }
 
 func BenchmarkSwitchError(b *testing.B) {
+	globalError = syserror.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
 		switch globalError {
