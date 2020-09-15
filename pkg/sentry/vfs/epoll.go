@@ -52,7 +52,7 @@ type EpollInstance struct {
 	// process fails to notice that additional file descriptors are ready
 	// because it focuses on a set of file descriptors that are already known
 	// to be ready." - epoll_wait(2)
-	ready epollInterestList
+	ready EpollInterestList
 }
 
 type epollInterestKey struct {
@@ -81,10 +81,10 @@ type epollInterest struct {
 	// flags EPOLLET and EPOLLONESHOT. mask is protected by epoll.mu.
 	mask uint32
 
-	// ready is true if epollInterestEntry is linked into epoll.ready. ready
-	// and epollInterestEntry are protected by epoll.mu.
+	// ready is true if EpollInterestEntry is linked into epoll.ready. ready
+	// and EpollInterestEntry are protected by epoll.mu.
 	ready bool
-	epollInterestEntry
+	EpollInterestEntry
 
 	// userData is the struct epoll_event::data associated with this
 	// epollInterest. userData is protected by epoll.mu.
@@ -333,14 +333,17 @@ func (ep *EpollInstance) removeLocked(epi *epollInterest) {
 
 // ReadEvents reads up to len(events) ready events into events and returns the
 // number of events read.
+// This method also populates the requeue list passed. The caller is
+// responsible for requeuing all those entries AFTER it has completed making
+// calls to this method. This prevents duplicate `EpollEvent`s being returned
+// to the application.
 //
 // Preconditions: len(events) != 0.
-func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent) int {
+func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, requeue *EpollInterestList) int {
 	i := 0
 	// Hot path: avoid defer.
 	ep.mu.Lock()
 	var next *epollInterest
-	var requeue epollInterestList
 	for epi := ep.ready.Front(); epi != nil; epi = next {
 		next = epi.Next()
 		// Regardless of what else happens, epi is initially removed from the
@@ -377,7 +380,13 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent) int {
 			break
 		}
 	}
-	ep.ready.PushBackList(&requeue)
 	ep.mu.Unlock()
 	return i
+}
+
+// Requeue pushes back the passed epoll interest list to the ready queue.
+func (ep *EpollInstance) Requeue(epl *EpollInterestList) {
+	ep.mu.Lock()
+	ep.ready.PushBackList(epl)
+	ep.mu.Unlock()
 }

@@ -149,13 +149,15 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		ch           chan struct{}
 		haveDeadline bool
 		deadline     ktime.Time
+		requeue      vfs.EpollInterestList
 	)
+	defer ep.Requeue(&requeue)
 	for {
 		batchEvents := len(events)
 		if batchEvents > maxEvents {
 			batchEvents = maxEvents
 		}
-		n := ep.ReadEvents(events[:batchEvents])
+		n := ep.ReadEvents(events[:batchEvents], &requeue)
 		maxEvents -= n
 		if n != 0 {
 			// Copy what we read out.

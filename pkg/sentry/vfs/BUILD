@@ -7,7 +7,7 @@ go_template_instance(
     name = "epoll_interest_list",
     out = "epoll_interest_list.go",
     package = "vfs",
-    prefix = "epollInterest",
+    prefix = "EpollInterest",
     template = "//pkg/ilist:generic_list",
     types = {
         "Element": "*epollInterest",
