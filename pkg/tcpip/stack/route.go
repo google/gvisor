@@ -48,10 +48,6 @@ type Route struct {
 
 	// Loop controls where WritePacket should send packets.
 	Loop PacketLooping
-
-	// directedBroadcast indicates whether this route is sending a directed
-	// broadcast packet.
-	directedBroadcast bool
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
@@ -303,24 +299,27 @@ func (r *Route) Stack() *Stack {
 	return r.ref.stack()
 }
 
+func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
+	if addr == header.IPv4Broadcast {
+		return true
+	}
+
+	subnet := r.ref.addrWithPrefix().Subnet()
+	return subnet.IsBroadcast(addr)
+}
+
 // IsOutboundBroadcast returns true if the route is for an outbound broadcast
 // packet.
 func (r *Route) IsOutboundBroadcast() bool {
 	// Only IPv4 has a notion of broadcast.
-	return r.directedBroadcast || r.RemoteAddress == header.IPv4Broadcast
+	return r.isV4Broadcast(r.RemoteAddress)
 }
 
 // IsInboundBroadcast returns true if the route is for an inbound broadcast
 // packet.
 func (r *Route) IsInboundBroadcast() bool {
 	// Only IPv4 has a notion of broadcast.
-	if r.LocalAddress == header.IPv4Broadcast {
-		return true
-	}
-
-	addr := r.ref.addrWithPrefix()
-	subnet := addr.Subnet()
-	return subnet.IsBroadcast(r.LocalAddress)
+	return r.isV4Broadcast(r.LocalAddress)
 }
 
 // ReverseRoute returns new route with given source and destination address.

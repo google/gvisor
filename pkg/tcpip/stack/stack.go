@@ -1311,13 +1311,11 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					}
 
 					r := makeRoute(netProto, ref.address(), remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback())
-					r.directedBroadcast = route.Destination.IsBroadcast(remoteAddr)
-
 					if len(route.Gateway) > 0 {
 						if needRoute {
 							r.NextHop = route.Gateway
 						}
-					} else if r.directedBroadcast {
+					} else if subnet := ref.addrWithPrefix().Subnet(); subnet.IsBroadcast(remoteAddr) {
 						r.RemoteLinkAddress = header.EthernetBroadcastAddress
 					}
 
