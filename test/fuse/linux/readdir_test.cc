@@ -131,7 +131,8 @@ TEST_F(ReaddirTest, SingleEntry) {
   // Create an appropriately sized payload.
   size_t readdir_payload_size =
       test_file_dirent_size + dot_file_dirent_size + dot_dot_file_dirent_size;
-  char readdir_payload[readdir_payload_size];
+  std::vector<char> readdir_payload_vec(readdir_payload_size);
+  char *readdir_payload = readdir_payload_vec.data();
 
   fill_fuse_dirent(readdir_payload, dot.c_str());
   fill_fuse_dirent(readdir_payload + dot_file_dirent_size, dot_dot.c_str());
@@ -139,10 +140,8 @@ TEST_F(ReaddirTest, SingleEntry) {
       readdir_payload + dot_file_dirent_size + dot_dot_file_dirent_size,
       test_file.c_str());
 
-  std::vector<char> readdir_payload_vec(readdir_payload,
-                                        readdir_payload + readdir_payload_size);
   struct fuse_out_header readdir_header = {
-      .len = uint32_t(sizeof(struct fuse_out_header) + sizeof(readdir_payload)),
+      .len = uint32_t(sizeof(struct fuse_out_header) + readdir_payload_size),
   };
   struct fuse_out_header readdir_header_break = {
       .len = uint32_t(sizeof(struct fuse_out_header)),
