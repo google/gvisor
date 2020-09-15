@@ -2343,8 +2343,10 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 					NIC:         nicID1,
 				},
 			},
-			remoteAddr:           remNetSubnetBcast,
-			requiresBroadcastOpt: true,
+			remoteAddr: remNetSubnetBcast,
+			// TODO(gvisor.dev/issue/3938): Once we support marking a route as
+			// broadcast, this test should require the broadcast option to be set.
+			requiresBroadcastOpt: false,
 		},
 	}
 
