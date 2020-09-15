@@ -57,7 +57,7 @@ fuse_entry_out DefaultEntryOut(mode_t mode, uint64_t node_id, uint64_t size) {
       .attr = DefaultFuseAttr(mode, node_id, size),
   };
   return default_entry_out;
-};
+}
 
 }  // namespace testing
 }  // namespace gvisor
