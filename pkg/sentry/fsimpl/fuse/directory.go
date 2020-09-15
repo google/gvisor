@@ -31,27 +31,27 @@ type directoryFD struct {
 }
 
 // Allocate implements directoryFD.Allocate.
-func (directoryFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+func (*directoryFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	return syserror.EISDIR
 }
 
 // PRead implements FileDescriptionImpl.PRead.
-func (directoryFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+func (*directoryFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
 // Read implements FileDescriptionImpl.Read.
-func (directoryFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+func (*directoryFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
 // PWrite implements FileDescriptionImpl.PWrite.
-func (directoryFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+func (*directoryFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
 // Write implements FileDescriptionImpl.Write.
-func (directoryFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+func (*directoryFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
