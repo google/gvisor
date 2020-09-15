@@ -86,33 +86,30 @@ func (f *FDTable) CurrentMaxFDs() int {
 	return len(slice)
 }
 
-// set sets an entry.
-//
-// This handles accounting changes, as well as acquiring and releasing the
-// reference needed by the table iff the file is different.
+// set sets an entry for VFS1, refer to setAll().
 //
 // Precondition: mu must be held.
-func (f *FDTable) set(ctx context.Context, fd int32, file *fs.File, flags FDFlags) {
-	f.setAll(ctx, fd, file, nil, flags)
+func (f *FDTable) set(ctx context.Context, fd int32, file *fs.File, flags FDFlags) *fs.File {
+	dropFile, _ := f.setAll(ctx, fd, file, nil, flags)
+	return dropFile
 }
 
-// setVFS2 sets an entry.
-//
-// This handles accounting changes, as well as acquiring and releasing the
-// reference needed by the table iff the file is different.
+// setVFS2 sets an entry for VFS2, refer to setAll().
 //
 // Precondition: mu must be held.
-func (f *FDTable) setVFS2(ctx context.Context, fd int32, file *vfs.FileDescription, flags FDFlags) {
-	f.setAll(ctx, fd, nil, file, flags)
+func (f *FDTable) setVFS2(ctx context.Context, fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
+	_, dropFile := f.setAll(ctx, fd, nil, file, flags)
+	return dropFile
 }
 
-// setAll sets an entry.
-//
-// This handles accounting changes, as well as acquiring and releasing the
-// reference needed by the table iff the file is different.
+// setAll sets the file description referred to by fd to file/fileVFS2. If
+// file/fileVFS2 are non-nil, it takes a reference on them. If setAll replaces
+// an existing file description, it returns it with the FDTable's reference
+// transferred to the caller, which must call f.drop/dropVFS2() on the returned
+// file after unlocking f.mu.
 //
 // Precondition: mu must be held.
-func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
+func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) (*fs.File, *vfs.FileDescription) {
 	if file != nil && fileVFS2 != nil {
 		panic("VFS1 and VFS2 files set")
 	}
@@ -155,20 +152,6 @@ func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 
 		}
 	}
 
-	// Drop the table reference.
-	if orig != nil {
-		switch {
-		case orig.file != nil:
-			if desc == nil || desc.file != orig.file {
-				f.drop(ctx, orig.file)
-			}
-		case orig.fileVFS2 != nil:
-			if desc == nil || desc.fileVFS2 != orig.fileVFS2 {
-				f.dropVFS2(ctx, orig.fileVFS2)
-			}
-		}
-	}
-
 	// Adjust used.
 	switch {
 	case orig == nil && desc != nil:
@@ -176,4 +159,18 @@ func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 
 	case orig != nil && desc == nil:
 		atomic.AddInt32(&f.used, -1)
 	}
+
+	if orig != nil {
+		switch {
+		case orig.file != nil:
+			if desc == nil || desc.file != orig.file {
+				return orig.file, nil
+			}
+		case orig.fileVFS2 != nil:
+			if desc == nil || desc.fileVFS2 != orig.fileVFS2 {
+				return nil, orig.fileVFS2
+			}
+		}
+	}
+	return nil, nil
 }
