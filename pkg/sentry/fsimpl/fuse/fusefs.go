@@ -225,12 +225,13 @@ func newFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOpt
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
+	fs.conn.fd.mu.Lock()
+
 	fs.umounted = true
 	fs.conn.Abort(ctx)
-
-	fs.conn.fd.mu.Lock()
 	// Notify all the waiters on this fd.
 	fs.conn.fd.waitQueue.Notify(waiter.EventIn)
+
 	fs.conn.fd.mu.Unlock()
 
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
