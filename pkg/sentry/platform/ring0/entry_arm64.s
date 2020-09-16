@@ -302,17 +302,23 @@
 
 // SWITCH_TO_APP_PAGETABLE sets a new pagetable for a container application.
 #define SWITCH_TO_APP_PAGETABLE(from) \
-	MOVD CPU_TTBR0_APP(from), RSV_REG; \
-	WORD $0xd5182012; \	//        MSR R18, TTBR0_EL1
+	MRS TTBR1_EL1, R0; \
+	MOVD CPU_APP_ASID(from), R1; \
+	BFI $48, R1, $16, R0; \
+	MSR R0, TTBR1_EL1; \ // set the ASID in TTBR1_EL1 (since TCR.A1 is set)
 	ISB $15; \
-	DSB $15;
+	MOVD CPU_TTBR0_APP(from), RSV_REG; \
+	MSR RSV_REG, TTBR0_EL1;
 
 // SWITCH_TO_KVM_PAGETABLE sets the kvm pagetable.
 #define SWITCH_TO_KVM_PAGETABLE(from) \
-	MOVD CPU_TTBR0_KVM(from), RSV_REG; \
-	WORD $0xd5182012; \	//        MSR R18, TTBR0_EL1
+	MRS TTBR1_EL1, R0; \
+	MOVD $1, R1; \
+	BFI $48, R1, $16, R0; \
+	MSR R0, TTBR1_EL1; \
 	ISB $15; \
-	DSB $15;
+	MOVD CPU_TTBR0_KVM(from), RSV_REG; \
+	MSR RSV_REG, TTBR0_EL1;
 
 #define VFP_ENABLE \
 	MOVD $FPEN_ENABLE, R0; \
@@ -328,23 +334,20 @@
 #define KERNEL_ENTRY_FROM_EL0 \
 	SUB $16, RSP, RSP; \		// step1, save r18, r9 into kernel temporary stack.
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
-	WORD $0xd538d092; \    //MRS   TPIDR_EL1, R18, step2, switch user pagetable.
-	SWITCH_TO_KVM_PAGETABLE(RSV_REG); \
-	WORD $0xd538d092; \    //MRS   TPIDR_EL1, R18
-	MOVD CPU_APP_ADDR(RSV_REG), RSV_REG_APP; \ // step3, load app context pointer.
-	REGISTERS_SAVE(RSV_REG_APP, 0); \          // step4, save app context.
+	WORD $0xd538d092; \    // MRS   TPIDR_EL1, R18
+	MOVD CPU_APP_ADDR(RSV_REG), RSV_REG_APP; \ // step2, load app context pointer.
+	REGISTERS_SAVE(RSV_REG_APP, 0); \          // step3, save app context.
 	MOVD RSV_REG_APP, R20; \
 	LDP 16*0(RSP), (RSV_REG, RSV_REG_APP); \
 	ADD $16, RSP, RSP; \
 	MOVD RSV_REG, PTRACE_R18(R20); \
 	MOVD RSV_REG_APP, PTRACE_R9(R20); \
-	MOVD R20, RSV_REG_APP; \
 	WORD $0xd5384003; \      //  MRS SPSR_EL1, R3
-	MOVD R3, PTRACE_PSTATE(RSV_REG_APP); \
+	MOVD R3, PTRACE_PSTATE(R20); \
 	MRS ELR_EL1, R3; \
-	MOVD R3, PTRACE_PC(RSV_REG_APP); \
+	MOVD R3, PTRACE_PC(R20); \
 	WORD $0xd5384103; \      //  MRS SP_EL0, R3
-	MOVD R3, PTRACE_SP(RSV_REG_APP);
+	MOVD R3, PTRACE_SP(R20);
 
 // KERNEL_ENTRY_FROM_EL1 is the entry code of the vcpu from el1 to el1.
 #define KERNEL_ENTRY_FROM_EL1 \
@@ -358,6 +361,13 @@
 	MOVD RSP, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_SP(RSV_REG); \
 	LOAD_KERNEL_STACK(RSV_REG);  // Load the temporary stack.
+
+// storeAppASID writes the application's asid value.
+TEXT ·storeAppASID(SB),NOSPLIT,$0-8
+	MOVD asid+0(FP), R1
+	MRS  TPIDR_EL1, RSV_REG
+	MOVD R1, CPU_APP_ASID(RSV_REG)
+	RET
 
 // Halt halts execution.
 TEXT ·Halt(SB),NOSPLIT,$0
@@ -416,7 +426,7 @@ TEXT ·Current(SB),NOSPLIT,$0-8
 	MOVD R8, ret+0(FP)
 	RET
 
-#define STACK_FRAME_SIZE 16
+#define STACK_FRAME_SIZE 32
 
 // kernelExitToEl0 is the entrypoint for application in guest_el0.
 // Prepare the vcpu environment for container application.
@@ -460,15 +470,16 @@ TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 
 	SUB $STACK_FRAME_SIZE, RSP, RSP
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP)
+	STP (R0, R1), 16*1(RSP)
 
 	WORD $0xd538d092    //MRS   TPIDR_EL1, R18
 
 	SWITCH_TO_APP_PAGETABLE(RSV_REG)
 
+	LDP 16*1(RSP), (R0, R1)
 	LDP 16*0(RSP), (RSV_REG, RSV_REG_APP)
 	ADD $STACK_FRAME_SIZE, RSP, RSP
 
-	ISB $15
 	ERET()
 
 // kernelExitToEl1 is the entrypoint for sentry in guest_el1.
@@ -483,6 +494,9 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 
 	MOVD CPU_REGISTERS+PTRACE_SP(RSV_REG), R1
 	MOVD R1, RSP
+
+	SWITCH_TO_KVM_PAGETABLE(RSV_REG)
+	MRS TPIDR_EL1, RSV_REG
 
 	REGISTERS_LOAD(RSV_REG, CPU_REGISTERS)
 	MOVD CPU_REGISTERS+PTRACE_R9(RSV_REG), RSV_REG_APP
