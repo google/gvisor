@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -556,8 +557,181 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	//TODO(b/159261227): Implement OpenAt.
-	return nil, nil
+	// Verity fs is read-only.
+	if opts.Flags&(linux.O_WRONLY|linux.O_CREAT) != 0 {
+		return nil, syserror.EROFS
+	}
+
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+
+	start := rp.Start().Impl().(*dentry)
+	if rp.Done() {
+		return start.openLocked(ctx, rp, &opts)
+	}
+
+afterTrailingSymlink:
+	parent, err := fs.walkParentDirLocked(ctx, rp, start, &ds)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for search permission in the parent directory.
+	if err := parent.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
+		return nil, err
+	}
+
+	// Open existing child or follow symlink.
+	parent.dirMu.Lock()
+	child, err := fs.stepLocked(ctx, rp, parent, false /*mayFollowSymlinks*/, &ds)
+	parent.dirMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if child.isSymlink() && rp.ShouldFollowSymlink() {
+		target, err := child.readlink(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := rp.HandleSymlink(target); err != nil {
+			return nil, err
+		}
+		start = parent
+		goto afterTrailingSymlink
+	}
+	return child.openLocked(ctx, rp, &opts)
+}
+
+// Preconditions: fs.renameMu must be locked.
+func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	// Users should not open the Merkle tree files. Those are for verity fs
+	// use only.
+	if strings.Contains(d.name, merklePrefix) {
+		return nil, syserror.EPERM
+	}
+	ats := vfs.AccessTypesForOpenFlags(opts)
+	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
+		return nil, err
+	}
+
+	// Verity fs is read-only.
+	if ats&vfs.MayWrite != 0 {
+		return nil, syserror.EROFS
+	}
+
+	// Get the path to the target file. This is only used to provide path
+	// information in failure case.
+	path, err := d.fs.vfsfs.VirtualFilesystem().PathnameWithDeleted(ctx, d.fs.rootDentry.lowerVD, d.lowerVD)
+	if err != nil {
+		return nil, err
+	}
+
+	// Open the file in the underlying file system.
+	lowerFD, err := rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
+		Root:  d.lowerVD,
+		Start: d.lowerVD,
+	}, opts)
+
+	// The file should exist, as we succeeded in finding its dentry. If it's
+	// missing, it indicates an unexpected modification to the file system.
+	if err != nil {
+		if err == syserror.ENOENT {
+			return nil, alertIntegrityViolation(err, fmt.Sprintf("File %s expected but not found", path))
+		}
+		return nil, err
+	}
+
+	// lowerFD needs to be cleaned up if any error occurs. IncRef will be
+	// called if a verity FD is successfully created.
+	defer lowerFD.DecRef(ctx)
+
+	// Open the Merkle tree file corresponding to the current file/directory
+	// to be used later for verifying Read/Walk.
+	merkleReader, err := rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
+		Root:  d.lowerMerkleVD,
+		Start: d.lowerMerkleVD,
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
+
+	// The Merkle tree file should exist, as we succeeded in finding its
+	// dentry. If it's missing, it indicates an unexpected modification to
+	// the file system.
+	if err != nil {
+		if err == syserror.ENOENT {
+			return nil, alertIntegrityViolation(err, fmt.Sprintf("Merkle file for %s expected but not found", path))
+		}
+		return nil, err
+	}
+
+	// merkleReader needs to be cleaned up if any error occurs. IncRef will
+	// be called if a verity FD is successfully created.
+	defer merkleReader.DecRef(ctx)
+
+	lowerFlags := lowerFD.StatusFlags()
+	lowerFDOpts := lowerFD.Options()
+	var merkleWriter *vfs.FileDescription
+	var parentMerkleWriter *vfs.FileDescription
+
+	// Only open the Merkle tree files for write if in allowRuntimeEnable
+	// mode.
+	if d.fs.allowRuntimeEnable {
+		merkleWriter, err = rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
+			Root:  d.lowerMerkleVD,
+			Start: d.lowerMerkleVD,
+		}, &vfs.OpenOptions{
+			Flags: linux.O_WRONLY | linux.O_APPEND,
+		})
+		if err != nil {
+			if err == syserror.ENOENT {
+				return nil, alertIntegrityViolation(err, fmt.Sprintf("Merkle file for %s expected but not found", path))
+			}
+			return nil, err
+		}
+		// merkleWriter is cleaned up if any error occurs. IncRef will
+		// be called if a verity FD is created successfully.
+		defer merkleWriter.DecRef(ctx)
+
+		parentMerkleWriter, err = rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
+			Root:  d.parent.lowerMerkleVD,
+			Start: d.parent.lowerMerkleVD,
+		}, &vfs.OpenOptions{
+			Flags: linux.O_WRONLY | linux.O_APPEND,
+		})
+		if err != nil {
+			if err == syserror.ENOENT {
+				parentPath, _ := d.fs.vfsfs.VirtualFilesystem().PathnameWithDeleted(ctx, d.fs.rootDentry.lowerVD, d.parent.lowerVD)
+				return nil, alertIntegrityViolation(err, fmt.Sprintf("Merkle file for %s expected but not found", parentPath))
+			}
+			return nil, err
+		}
+		// parentMerkleWriter is cleaned up if any error occurs. IncRef
+		// will be called if a verity FD is created successfully.
+		defer parentMerkleWriter.DecRef(ctx)
+	}
+
+	fd := &fileDescription{
+		d:                  d,
+		lowerFD:            lowerFD,
+		merkleReader:       merkleReader,
+		merkleWriter:       merkleWriter,
+		parentMerkleWriter: parentMerkleWriter,
+		isDir:              d.isDir(),
+	}
+
+	if err := fd.vfsfd.Init(fd, lowerFlags, rp.Mount(), &d.vfsd, &lowerFDOpts); err != nil {
+		return nil, err
+	}
+	lowerFD.IncRef()
+	merkleReader.IncRef()
+	if merkleWriter != nil {
+		merkleWriter.IncRef()
+	}
+	if parentMerkleWriter != nil {
+		parentMerkleWriter.IncRef()
+	}
+	return &fd.vfsfd, err
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.

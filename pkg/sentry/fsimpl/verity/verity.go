@@ -557,7 +557,7 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO, arg
 	defer verityMu.Unlock()
 
 	if fd.lowerFD == nil || fd.merkleReader == nil || fd.merkleWriter == nil || fd.parentMerkleWriter == nil {
-		panic("Unexpected verity fd: missing expected underlying fds")
+		return 0, alertIntegrityViolation(syserror.EIO, "Unexpected verity fd: missing expected underlying fds")
 	}
 
 	rootHash, dataSize, err := fd.generateMerkle(ctx)
