@@ -293,22 +293,20 @@ var (
 func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
 	// Always load the default config.
 	cs := make(map[string]*config.Config)
+	testutil.TestConfig(t)
 	for _, o := range opts {
+		c := testutil.TestConfig(t)
 		switch o {
 		case overlay:
-			c := testutil.TestConfig(t)
 			c.Overlay = true
 			cs["overlay"] = c
 		case ptrace:
-			c := testutil.TestConfig(t)
 			c.Platform = platforms.Ptrace
 			cs["ptrace"] = c
 		case kvm:
-			c := testutil.TestConfig(t)
 			c.Platform = platforms.KVM
 			cs["kvm"] = c
 		case nonExclusiveFS:
-			c := testutil.TestConfig(t)
 			c.FileAccess = config.FileAccessShared
 			cs["non-exclusive"] = c
 		default:
@@ -513,7 +511,7 @@ func TestExePath(t *testing.T) {
 		t.Fatalf("error making directory: %v", err)
 	}
 
-	for name, conf := range configsWithVFS2(t, overlay) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			for _, test := range []struct {
 				path    string
@@ -838,7 +836,7 @@ func TestExecProcList(t *testing.T) {
 
 // TestKillPid verifies that we can signal individual exec'd processes.
 func TestKillPid(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, overlay) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			app, err := testutil.FindFile("test/cmd/test_app/test_app")
 			if err != nil {
@@ -1471,7 +1469,7 @@ func TestRunNonRoot(t *testing.T) {
 // TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, overlay) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			root, err := ioutil.TempDir(testutil.TmpDir(), "root")
 			if err != nil {
@@ -2038,7 +2036,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, overlay) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "cwd-create")
 			if err != nil {
@@ -2153,7 +2151,7 @@ func TestMountPropagation(t *testing.T) {
 }
 
 func TestMountSymlink(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, overlay) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "mount-symlink")
 			if err != nil {
