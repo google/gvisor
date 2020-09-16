@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/fuse.h>
+#include <linux/unistd.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
@@ -69,14 +71,6 @@ TEST_F(ReaddirTest, SingleEntry) {
       .mode = expected_mode,
       .blksize = 4096,
   };
-  struct fuse_out_header stat_header = {
-      .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_attr_out),
-  };
-
-  struct fuse_attr_out stat_payload = {
-      .attr_valid_nsec = 2,
-      .attr = dir_attr,
-  };
 
   // We need to make sure the test dir is a directory that can be found.
   struct fuse_out_header lookup_header = {
@@ -101,16 +95,12 @@ TEST_F(ReaddirTest, SingleEntry) {
   iov_out = FuseGenerateIovecs(open_header, open_payload);
   SetServerResponse(FUSE_OPENDIR, iov_out);
 
-  iov_out = FuseGenerateIovecs(stat_header, stat_payload);
-  SetServerResponse(FUSE_GETATTR, iov_out);
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(test_dir_path.c_str(), O_RDONLY));
 
-  DIR *dir = opendir(test_dir_path.c_str());
-
-  // The opendir command makes three syscalls. Lookup the dir file, stat it and
-  // open.
+  // The open command makes two syscalls. Lookup the dir file and open.
   // We don't need to inspect those headers in this test.
   SkipServerActualRequest();  // LOOKUP.
-  SkipServerActualRequest();  // GETATTR.
   SkipServerActualRequest();  // OPENDIR.
 
   // Readdir test code.
@@ -153,24 +143,34 @@ TEST_F(ReaddirTest, SingleEntry) {
   iov_out = FuseGenerateIovecs(readdir_header_break);
   SetServerResponse(FUSE_READDIR, iov_out);
 
-  struct dirent *entry;
-  entry = readdir(dir);
-  EXPECT_EQ(std::string(entry->d_name), dot);
+  std::vector<char> buf(4090, 0);
+  int nread, off = 0, i = 0;
+  EXPECT_THAT(nread = syscall(__NR_getdents64, fd.get(), buf.data(), buf.size()),
+              SyscallSucceeds());
+  for (; off < nread;) {
+    struct dirent64 *ent = (struct dirent64 *)(buf.data() + off);
+    off += ent->d_reclen;
+    switch (i++) {
+      case 0:
+        EXPECT_EQ(std::string(ent->d_name), dot);
+        break;
+      case 1:
+        EXPECT_EQ(std::string(ent->d_name), dot_dot);
+        break;
+      case 2:
+        EXPECT_EQ(std::string(ent->d_name), test_file);
+        break;
+    }
+  }
 
-  entry = readdir(dir);
-  EXPECT_EQ(std::string(entry->d_name), dot_dot);
-
-  entry = readdir(dir);
-  EXPECT_EQ(std::string(entry->d_name), test_file);
-
-  entry = readdir(dir);
-  EXPECT_TRUE((entry == NULL));
+  EXPECT_THAT(nread = syscall(__NR_getdents64, fd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(0));
 
   SkipServerActualRequest();  // READDIR.
   SkipServerActualRequest();  // READDIR with no data.
 
   // Clean up.
-  closedir(dir);
+  fd.reset(-1);
 
   struct fuse_in_header in_header;
   struct fuse_release_in in_payload;
