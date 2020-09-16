@@ -309,10 +309,6 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 
 			fut, ok := fd.completions[hdr.Unique]
 			if !ok {
-				if fut.hdr.Unique == linux.FUSE_RELEASE {
-					// Currently we simply discard the reply for FUSE_RELEASE.
-					return n + src.NumBytes(), nil
-				}
 				// Server sent us a response for a request we never sent,
 				// or for which we already received a reply (e.g. aborted), an unlikely event.
 				return 0, syserror.EINVAL

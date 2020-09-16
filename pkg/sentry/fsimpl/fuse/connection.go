@@ -110,7 +110,7 @@ type connection struct {
 	//
 	// We call the "background" requests in unix term as async requests.
 	// The "async requests" in unix term is our async requests that expect a reply,
-	// i.e. `!requestOptions.noReply`
+	// i.e. `!request.noReply`
 
 	// asyncMu protects the async request fields.
 	asyncMu sync.Mutex

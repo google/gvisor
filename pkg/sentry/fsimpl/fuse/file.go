@@ -89,7 +89,7 @@ func (fd *fileDescription) Release(ctx context.Context) {
 		// No way to invoke Call() with an errored request.
 		return
 	}
-	req.noReply = true
+	// The reply will be ignored since no callback is defined in asyncCallBack().
 	conn.CallAsync(kernelTask, req)
 }
 
