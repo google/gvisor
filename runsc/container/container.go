@@ -311,6 +311,10 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 	if isRoot(args.Spec) {
 		log.Debugf("Creating new sandbox for container %q", args.ID)
 
+		if args.Spec.Linux != nil && args.Spec.Linux.CgroupsPath == "" {
+			args.Spec.Linux.CgroupsPath = "/" + args.ID
+		}
+
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all their children processes).
 		cg, err := cgroup.New(args.Spec)
