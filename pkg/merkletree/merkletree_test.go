@@ -67,17 +67,17 @@ func TestLayout(t *testing.T) {
 		t.Run(fmt.Sprintf("%d", tc.dataSize), func(t *testing.T) {
 			l := InitLayout(tc.dataSize, tc.dataAndTreeInSameFile)
 			if l.blockSize != int64(usermem.PageSize) {
-				t.Errorf("got blockSize %d, want %d", l.blockSize, usermem.PageSize)
+				t.Errorf("Got blockSize %d, want %d", l.blockSize, usermem.PageSize)
 			}
 			if l.digestSize != sha256DigestSize {
-				t.Errorf("got digestSize %d, want %d", l.digestSize, sha256DigestSize)
+				t.Errorf("Got digestSize %d, want %d", l.digestSize, sha256DigestSize)
 			}
 			if l.numLevels() != len(tc.expectedLevelOffset) {
-				t.Errorf("got levels %d, want %d", l.numLevels(), len(tc.expectedLevelOffset))
+				t.Errorf("Got levels %d, want %d", l.numLevels(), len(tc.expectedLevelOffset))
 			}
 			for i := 0; i < l.numLevels() && i < len(tc.expectedLevelOffset); i++ {
 				if l.levelOffset[i] != tc.expectedLevelOffset[i] {
-					t.Errorf("got levelStart[%d] %d, want %d", i, l.levelOffset[i], tc.expectedLevelOffset[i])
+					t.Errorf("Got levelStart[%d] %d, want %d", i, l.levelOffset[i], tc.expectedLevelOffset[i])
 				}
 			}
 		})
@@ -169,11 +169,11 @@ func TestGenerate(t *testing.T) {
 					}, int64(len(tc.data)), &tree, &tree, dataAndTreeInSameFile)
 				}
 				if err != nil {
-					t.Fatalf("got err: %v, want nil", err)
+					t.Fatalf("Got err: %v, want nil", err)
 				}
 
 				if !bytes.Equal(root, tc.expectedRoot) {
-					t.Errorf("got root: %v, want %v", root, tc.expectedRoot)
+					t.Errorf("Got root: %v, want %v", root, tc.expectedRoot)
 				}
 			}
 		})
@@ -334,14 +334,21 @@ func TestVerify(t *testing.T) {
 				var buf bytes.Buffer
 				data[tc.modifyByte] ^= 1
 				if tc.shouldSucceed {
-					if err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile); err != nil && err != io.EOF {
+					n, err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile)
+					if err != nil && err != io.EOF {
 						t.Errorf("Verification failed when expected to succeed: %v", err)
 					}
-					if int64(buf.Len()) != tc.verifySize || !bytes.Equal(data[tc.verifyStart:tc.verifyStart+tc.verifySize], buf.Bytes()) {
-						t.Errorf("Incorrect output from Verify")
+					if n != tc.verifySize {
+						t.Errorf("Got Verify output size %d, want %d", n, tc.verifySize)
+					}
+					if int64(buf.Len()) != tc.verifySize {
+						t.Errorf("Got Verify output buf size %d, want %d,", buf.Len(), tc.verifySize)
+					}
+					if !bytes.Equal(data[tc.verifyStart:tc.verifyStart+tc.verifySize], buf.Bytes()) {
+						t.Errorf("Incorrect output buf from Verify")
 					}
 				} else {
-					if err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile); err == nil {
+					if _, err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile); err == nil {
 						t.Errorf("Verification succeeded when expected to fail")
 					}
 				}
@@ -382,14 +389,21 @@ func TestVerifyRandom(t *testing.T) {
 		var buf bytes.Buffer
 		// Checks that the random portion of data from the original data is
 		// verified successfully.
-		if err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile); err != nil && err != io.EOF {
+		n, err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile)
+		if err != nil && err != io.EOF {
 			t.Errorf("Verification failed for correct data: %v", err)
 		}
 		if size > dataSize-start {
 			size = dataSize - start
 		}
-		if int64(buf.Len()) != size || !bytes.Equal(data[start:start+size], buf.Bytes()) {
-			t.Errorf("Incorrect output from Verify")
+		if n != size {
+			t.Errorf("Got Verify output size %d, want %d", n, size)
+		}
+		if int64(buf.Len()) != size {
+			t.Errorf("Got Verify output buf size %d, want %d", buf.Len(), size)
+		}
+		if !bytes.Equal(data[start:start+size], buf.Bytes()) {
+			t.Errorf("Incorrect output buf from Verify")
 		}
 
 		buf.Reset()
@@ -397,7 +411,7 @@ func TestVerifyRandom(t *testing.T) {
 		randBytePos := rand.Int63n(size)
 		data[start+randBytePos] ^= 1
 
-		if err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile); err == nil {
+		if _, err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile); err == nil {
 			t.Errorf("Verification succeeded for modified data")
 		}
 	}
