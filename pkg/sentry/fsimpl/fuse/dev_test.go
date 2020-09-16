@@ -408,17 +408,17 @@ func (t *testPayload) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (t *testPayload) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+func (t *testPayload) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
 	panic("not implemented")
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (t *testPayload) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
+func (t *testPayload) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 	panic("not implemented")
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (t *testPayload) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+func (t *testPayload) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 	panic("not implemented")
 }
 

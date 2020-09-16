@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -280,29 +281,29 @@ func (t *Task) IovecsIOSequence(addr usermem.Addr, iovcnt int, opts usermem.IOOp
 	}, nil
 }
 
-// CopyContext wraps a task to allow copying memory to and from the
-// task memory with user specified usermem.IOOpts.
-type CopyContext struct {
+// copyContext implements marshal.CopyContext. It wraps a task to allow copying
+// memory to and from the task memory with custom usermem.IOOpts.
+type copyContext struct {
 	*Task
 	opts usermem.IOOpts
 }
 
 // AsCopyContext wraps the task and returns it as CopyContext.
-func (t *Task) AsCopyContext(opts usermem.IOOpts) *CopyContext {
-	return &CopyContext{t, opts}
+func (t *Task) AsCopyContext(opts usermem.IOOpts) marshal.CopyContext {
+	return &copyContext{t, opts}
 }
 
 // CopyInString copies a string in from the task's memory.
-func (t *CopyContext) CopyInString(addr usermem.Addr, maxLen int) (string, error) {
+func (t *copyContext) CopyInString(addr usermem.Addr, maxLen int) (string, error) {
 	return usermem.CopyStringIn(t, t.MemoryManager(), addr, maxLen, t.opts)
 }
 
 // CopyInBytes copies task memory into dst from an IO context.
-func (t *CopyContext) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
+func (t *copyContext) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
 	return t.MemoryManager().CopyIn(t, addr, dst, t.opts)
 }
 
 // CopyOutBytes copies src into task memoryfrom an IO context.
-func (t *CopyContext) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
+func (t *copyContext) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
 	return t.MemoryManager().CopyOut(t, addr, src, t.opts)
 }

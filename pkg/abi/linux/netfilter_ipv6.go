@@ -128,9 +128,9 @@ func (ke *KernelIP6TGetEntries) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (ke *KernelIP6TGetEntries) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-	buf := task.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
-	length, err := task.CopyInBytes(addr, buf)    // escapes: okay.
+func (ke *KernelIP6TGetEntries) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+	buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+	length, err := cc.CopyInBytes(addr, buf)    // escapes: okay.
 	// Unmarshal unconditionally. If we had a short copy-in, this results
 	// in a partially unmarshalled struct.
 	ke.UnmarshalBytes(buf) // escapes: fallback.
@@ -138,21 +138,21 @@ func (ke *KernelIP6TGetEntries) CopyIn(task marshal.Task, addr usermem.Addr) (in
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (ke *KernelIP6TGetEntries) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
+func (ke *KernelIP6TGetEntries) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 	// Type KernelIP6TGetEntries doesn't have a packed layout in memory,
 	// fall back to MarshalBytes.
-	return task.CopyOutBytes(addr, ke.marshalAll(task))
+	return cc.CopyOutBytes(addr, ke.marshalAll(cc))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (ke *KernelIP6TGetEntries) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+func (ke *KernelIP6TGetEntries) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
 	// Type KernelIP6TGetEntries doesn't have a packed layout in memory, fall
 	// back to MarshalBytes.
-	return task.CopyOutBytes(addr, ke.marshalAll(task)[:limit])
+	return cc.CopyOutBytes(addr, ke.marshalAll(cc)[:limit])
 }
 
-func (ke *KernelIP6TGetEntries) marshalAll(task marshal.Task) []byte {
-	buf := task.CopyScratchBuffer(ke.SizeBytes())
+func (ke *KernelIP6TGetEntries) marshalAll(cc marshal.CopyContext) []byte {
+	buf := cc.CopyScratchBuffer(ke.SizeBytes())
 	ke.MarshalBytes(buf)
 	return buf
 }

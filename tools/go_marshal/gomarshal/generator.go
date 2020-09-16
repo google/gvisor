@@ -38,8 +38,8 @@ import (
 // All recievers are single letters, so we don't allow import aliases to be a
 // single letter.
 var badIdents = []string{
-	"addr", "blk", "buf", "dst", "dsts", "count", "err", "hdr", "idx", "inner",
-	"length", "limit", "ptr", "size", "src", "srcs", "task", "val",
+	"addr", "blk", "buf", "cc", "dst", "dsts", "count", "err", "hdr", "idx",
+	"inner", "length", "limit", "ptr", "size", "src", "srcs", "val",
 	// All single-letter identifiers.
 }
 
