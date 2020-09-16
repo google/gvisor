@@ -16,6 +16,7 @@ go_library(
         "//pkg/merkletree",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs/lock",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
