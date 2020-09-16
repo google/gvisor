@@ -26,6 +26,62 @@ namespace {
 
 constexpr uint32_t kSeq = 12345;
 
+// Types of address modifications that may be performed on an interface.
+enum class LinkAddrModification {
+  kAdd,
+  kDelete,
+};
+
+// Populates |hdr| with appripriate values for the modification type.
+PosixError PopulateNlmsghdr(LinkAddrModification modification,
+                            struct nlmsghdr* hdr) {
+  switch (modification) {
+    case LinkAddrModification::kAdd:
+      hdr->nlmsg_type = RTM_NEWADDR;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+      return NoError();
+    case LinkAddrModification::kDelete:
+      hdr->nlmsg_type = RTM_DELADDR;
+      hdr->nlmsg_flags = NLM_F_REQUEST;
+      return NoError();
+  }
+
+  return PosixError(EINVAL);
+}
+
+// Adds or removes the specified address from the specified interface.
+PosixError LinkModifyLocalAddr(int index, int family, int prefixlen,
+                               const void* addr, int addrlen,
+                               LinkAddrModification modification) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifaddrmsg ifaddr;
+    char attrbuf[512];
+  };
+
+  struct request req = {};
+  PosixError err = PopulateNlmsghdr(modification, &req.hdr);
+  if (!err.ok()) {
+    return err;
+  }
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.ifaddr));
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifaddr.ifa_index = index;
+  req.ifaddr.ifa_family = family;
+  req.ifaddr.ifa_prefixlen = prefixlen;
+
+  struct rtattr* rta = reinterpret_cast<struct rtattr*>(
+      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+  rta->rta_type = IFA_LOCAL;
+  rta->rta_len = RTA_LENGTH(addrlen);
+  req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(addrlen);
+  memcpy(RTA_DATA(rta), addr, addrlen);
+
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
 }  // namespace
 
 PosixError DumpLinks(
@@ -84,31 +140,14 @@ PosixErrorOr<Link> LoopbackLink() {
 
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen) {
-  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+                             LinkAddrModification::kAdd);
+}
 
-  struct request {
-    struct nlmsghdr hdr;
-    struct ifaddrmsg ifaddr;
-    char attrbuf[512];
-  };
-
-  struct request req = {};
-  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.ifaddr));
-  req.hdr.nlmsg_type = RTM_NEWADDR;
-  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-  req.hdr.nlmsg_seq = kSeq;
-  req.ifaddr.ifa_index = index;
-  req.ifaddr.ifa_family = family;
-  req.ifaddr.ifa_prefixlen = prefixlen;
-
-  struct rtattr* rta = reinterpret_cast<struct rtattr*>(
-      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
-  rta->rta_type = IFA_LOCAL;
-  rta->rta_len = RTA_LENGTH(addrlen);
-  req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(addrlen);
-  memcpy(RTA_DATA(rta), addr, addrlen);
-
-  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+PosixError LinkDelLocalAddr(int index, int family, int prefixlen,
+                            const void* addr, int addrlen) {
+  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+                             LinkAddrModification::kDelete);
 }
 
 PosixError LinkChangeFlags(int index, unsigned int flags, unsigned int change) {
