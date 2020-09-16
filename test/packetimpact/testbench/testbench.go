@@ -29,8 +29,11 @@ import (
 var (
 	// Native indicates that the test is being run natively.
 	Native = false
-	// Device is the local device on the test network.
-	Device = ""
+	// LocalDevice is the device that testbench uses to inject traffic.
+	LocalDevice = ""
+	// RemoteDevice is the device name on the DUT, individual tests can
+	// use the name to construct tests.
+	RemoteDevice = ""
 
 	// LocalIPv4 is the local IPv4 address on the test network.
 	LocalIPv4 = ""
@@ -80,7 +83,8 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&RemoteIPv4, "remote_ipv4", RemoteIPv4, "remote IPv4 address for test packets")
 	fs.StringVar(&RemoteIPv6, "remote_ipv6", RemoteIPv6, "remote IPv6 address for test packets")
 	fs.StringVar(&RemoteMAC, "remote_mac", RemoteMAC, "remote mac address for test packets")
-	fs.StringVar(&Device, "device", Device, "local device for test packets")
+	fs.StringVar(&LocalDevice, "local_device", LocalDevice, "local device to inject traffic")
+	fs.StringVar(&RemoteDevice, "remote_device", RemoteDevice, "remote device on the DUT")
 	fs.BoolVar(&Native, "native", Native, "whether the test is running natively")
 	fs.Uint64Var(&RemoteInterfaceID, "remote_interface_id", RemoteInterfaceID, "remote interface ID for test packets")
 }
