@@ -187,3 +187,64 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 		})
 	}
 }
+
+// TestLoopbackSubnetLifetimeBoundToAddr tests that the lifetime of an address
+// in a loopback interface's associated subnet is bound to the permanently bound
+// address.
+func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
+	const nicID = 1
+
+	protoAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: ipv4Addr,
+	}
+	addrBytes := []byte(ipv4Addr.Address)
+	addrBytes[len(addrBytes)-1]++
+	otherAddr := tcpip.Address(addrBytes)
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
+	})
+	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+	if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+	}
+	s.SetRouteTable([]tcpip.Route{
+		tcpip.Route{
+			Destination: header.IPv4EmptySubnet,
+			NIC:         nicID,
+		},
+	})
+
+	r, err := s.FindRoute(nicID, otherAddr, remoteIPv4Addr, ipv4.ProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, otherAddr, remoteIPv4Addr, ipv4.ProtocolNumber, err)
+	}
+	defer r.Release()
+
+	params := stack.NetworkHeaderParams{
+		Protocol: 111,
+		TTL:      64,
+		TOS:      stack.DefaultTOS,
+	}
+	data := buffer.View([]byte{1, 2, 3, 4})
+	if err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(r.MaxHeaderLength()),
+		Data:               data.ToVectorisedView(),
+	})); err != nil {
+		t.Fatalf("r.WritePacket(nil, %#v, _): %s", params, err)
+	}
+
+	// Removing the address should make the endpoint invalid.
+	if err := s.RemoveAddress(nicID, protoAddr.AddressWithPrefix.Address); err != nil {
+		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, protoAddr.AddressWithPrefix.Address, err)
+	}
+	if err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(r.MaxHeaderLength()),
+		Data:               data.ToVectorisedView(),
+	})); err != tcpip.ErrInvalidEndpointState {
+		t.Fatalf("got r.WritePacket(nil, %#v, _) = %s, want = %s", params, err, tcpip.ErrInvalidEndpointState)
+	}
+}
