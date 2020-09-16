@@ -66,10 +66,10 @@ const flagsOffset = 48
 const sizeOfInt32 = 4
 
 // messageHeader64Len is the length of a MessageHeader64 struct.
-var messageHeader64Len = uint64(binary.Size(MessageHeader64{}))
+var messageHeader64Len = uint64((*MessageHeader64)(nil).SizeBytes())
 
 // multipleMessageHeader64Len is the length of a multipeMessageHeader64 struct.
-var multipleMessageHeader64Len = uint64(binary.Size(multipleMessageHeader64{}))
+var multipleMessageHeader64Len = uint64((*multipleMessageHeader64)(nil).SizeBytes())
 
 // baseRecvFlags are the flags that are accepted across recvmsg(2),
 // recvmmsg(2), and recvfrom(2).
@@ -77,6 +77,8 @@ const baseRecvFlags = linux.MSG_OOB | linux.MSG_DONTROUTE | linux.MSG_DONTWAIT |
 
 // MessageHeader64 is the 64-bit representation of the msghdr struct used in
 // the recvmsg and sendmsg syscalls.
+//
+// +marshal
 type MessageHeader64 struct {
 	// Name is the optional pointer to a network address buffer.
 	Name uint64
@@ -105,28 +107,12 @@ type MessageHeader64 struct {
 
 // multipleMessageHeader64 is the 64-bit representation of the mmsghdr struct used in
 // the recvmmsg and sendmmsg syscalls.
+//
+// +marshal
 type multipleMessageHeader64 struct {
 	msgHdr MessageHeader64
 	msgLen uint32
 	_      int32
-}
-
-// CopyInMessageHeader64 copies a message header from user to kernel memory.
-func CopyInMessageHeader64(t *kernel.Task, addr usermem.Addr, msg *MessageHeader64) error {
-	b := t.CopyScratchBuffer(52)
-	if _, err := t.CopyInBytes(addr, b); err != nil {
-		return err
-	}
-
-	msg.Name = usermem.ByteOrder.Uint64(b[0:])
-	msg.NameLen = usermem.ByteOrder.Uint32(b[8:])
-	msg.Iov = usermem.ByteOrder.Uint64(b[16:])
-	msg.IovLen = usermem.ByteOrder.Uint64(b[24:])
-	msg.Control = usermem.ByteOrder.Uint64(b[32:])
-	msg.ControlLen = usermem.ByteOrder.Uint64(b[40:])
-	msg.Flags = int32(usermem.ByteOrder.Uint32(b[48:]))
-
-	return nil
 }
 
 // CaptureAddress allocates memory for and copies a socket address structure
@@ -147,10 +133,10 @@ func CaptureAddress(t *kernel.Task, addr usermem.Addr, addrlen uint32) ([]byte, 
 // writeAddress writes a sockaddr structure and its length to an output buffer
 // in the unstrusted address space range. If the address is bigger than the
 // buffer, it is truncated.
-func writeAddress(t *kernel.Task, addr interface{}, addrLen uint32, addrPtr usermem.Addr, addrLenPtr usermem.Addr) error {
+func writeAddress(t *kernel.Task, addr linux.SockAddr, addrLen uint32, addrPtr usermem.Addr, addrLenPtr usermem.Addr) error {
 	// Get the buffer length.
 	var bufLen uint32
-	if _, err := t.CopyIn(addrLenPtr, &bufLen); err != nil {
+	if _, err := primitive.CopyUint32In(t, addrLenPtr, &bufLen); err != nil {
 		return err
 	}
 
@@ -159,7 +145,7 @@ func writeAddress(t *kernel.Task, addr interface{}, addrLen uint32, addrPtr user
 	}
 
 	// Write the length unconditionally.
-	if _, err := t.CopyOut(addrLenPtr, addrLen); err != nil {
+	if _, err := primitive.CopyUint32Out(t, addrLenPtr, addrLen); err != nil {
 		return err
 	}
 
@@ -172,7 +158,8 @@ func writeAddress(t *kernel.Task, addr interface{}, addrLen uint32, addrPtr user
 	}
 
 	// Copy as much of the address as will fit in the buffer.
-	encodedAddr := binary.Marshal(nil, usermem.ByteOrder, addr)
+	encodedAddr := t.CopyScratchBuffer(addr.SizeBytes())
+	addr.MarshalUnsafe(encodedAddr)
 	if bufLen > uint32(len(encodedAddr)) {
 		bufLen = uint32(len(encodedAddr))
 	}
@@ -250,7 +237,7 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, err
 	}
 
-	if _, err := t.CopyOut(addr, fds); err != nil {
+	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
 			if _, file := t.FDTable().Remove(t, fd); file != nil {
 				file.DecRef(t)
@@ -459,8 +446,8 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	// Read the length. Reject negative values.
-	optLen := int32(0)
-	if _, err := t.CopyIn(optLenAddr, &optLen); err != nil {
+	var optLen int32
+	if _, err := primitive.CopyInt32In(t, optLenAddr, &optLen); err != nil {
 		return 0, nil, err
 	}
 	if optLen < 0 {
@@ -474,7 +461,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	vLen := int32(binary.Size(v))
-	if _, err := t.CopyOut(optLenAddr, vLen); err != nil {
+	if _, err := primitive.CopyInt32Out(t, optLenAddr, vLen); err != nil {
 		return 0, nil, err
 	}
 
@@ -736,7 +723,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		if !ok {
 			return 0, nil, syserror.EFAULT
 		}
-		if _, err = t.CopyOut(lp, uint32(n)); err != nil {
+		if _, err = primitive.CopyUint32Out(t, lp, uint32(n)); err != nil {
 			break
 		}
 		count++
@@ -751,7 +738,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, flags int32, haveDeadline bool, deadline ktime.Time) (uintptr, error) {
 	// Capture the message header and io vectors.
 	var msg MessageHeader64
-	if err := CopyInMessageHeader64(t, msgPtr, &msg); err != nil {
+	if _, err := msg.CopyIn(t, msgPtr); err != nil {
 		return 0, err
 	}
 
@@ -783,7 +770,7 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, fla
 
 		if int(msg.Flags) != mflags {
 			// Copy out the flags to the caller.
-			if _, err := t.CopyOut(msgPtr+flagsOffset, int32(mflags)); err != nil {
+			if _, err := primitive.CopyInt32Out(t, msgPtr+flagsOffset, int32(mflags)); err != nil {
 				return 0, err
 			}
 		}
@@ -820,17 +807,17 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, fla
 	}
 
 	// Copy the control data to the caller.
-	if _, err := t.CopyOut(msgPtr+controlLenOffset, uint64(len(controlData))); err != nil {
+	if _, err := primitive.CopyUint64Out(t, msgPtr+controlLenOffset, uint64(len(controlData))); err != nil {
 		return 0, err
 	}
 	if len(controlData) > 0 {
-		if _, err := t.CopyOut(usermem.Addr(msg.Control), controlData); err != nil {
+		if _, err := t.CopyOutBytes(usermem.Addr(msg.Control), controlData); err != nil {
 			return 0, err
 		}
 	}
 
 	// Copy out the flags to the caller.
-	if _, err := t.CopyOut(msgPtr+flagsOffset, int32(mflags)); err != nil {
+	if _, err := primitive.CopyInt32Out(t, msgPtr+flagsOffset, int32(mflags)); err != nil {
 		return 0, err
 	}
 
@@ -999,7 +986,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		if !ok {
 			return 0, nil, syserror.EFAULT
 		}
-		if _, err = t.CopyOut(lp, uint32(n)); err != nil {
+		if _, err = primitive.CopyUint32Out(t, lp, uint32(n)); err != nil {
 			break
 		}
 		count++
@@ -1014,7 +1001,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescription, msgPtr usermem.Addr, flags int32) (uintptr, error) {
 	// Capture the message header.
 	var msg MessageHeader64
-	if err := CopyInMessageHeader64(t, msgPtr, &msg); err != nil {
+	if _, err := msg.CopyIn(t, msgPtr); err != nil {
 		return 0, err
 	}
 
@@ -1025,7 +1012,7 @@ func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescriptio
 			return 0, syserror.ENOBUFS
 		}
 		controlData = make([]byte, msg.ControlLen)
-		if _, err := t.CopyIn(usermem.Addr(msg.Control), &controlData); err != nil {
+		if _, err := t.CopyInBytes(usermem.Addr(msg.Control), controlData); err != nil {
 			return 0, err
 		}
 	}

@@ -341,12 +341,12 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		nt.SetClearTID(opts.ChildTID)
 	}
 	if opts.ChildSetTID {
-		// Can't use Task.CopyOut, which assumes AddressSpaceActive.
-		usermem.CopyObjectOut(t, nt.MemoryManager(), opts.ChildTID, nt.ThreadID(), usermem.IOOpts{})
+		ctid := nt.ThreadID()
+		ctid.CopyOut(nt.AsCopyContext(usermem.IOOpts{AddressSpaceActive: false}), opts.ChildTID)
 	}
 	ntid := t.tg.pidns.IDOfTask(nt)
 	if opts.ParentSetTID {
-		t.CopyOut(opts.ParentTID, ntid)
+		ntid.CopyOut(t, opts.ParentTID)
 	}
 
 	kind := ptraceCloneKindClone

@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -287,7 +288,7 @@ func (t *Task) doVsyscall(addr usermem.Addr, sysno uintptr) taskRunState {
 
 	// Grab the caller up front, to make sure there's a sensible stack.
 	caller := t.Arch().Native(uintptr(0))
-	if _, err := t.CopyIn(usermem.Addr(t.Arch().Stack()), caller); err != nil {
+	if _, err := caller.CopyIn(t, usermem.Addr(t.Arch().Stack())); err != nil {
 		t.Debugf("vsyscall %d: error reading return address from stack: %v", sysno, err)
 		t.forceSignal(linux.SIGSEGV, false /* unconditional */)
 		t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
@@ -323,7 +324,7 @@ func (t *Task) doVsyscall(addr usermem.Addr, sysno uintptr) taskRunState {
 type runVsyscallAfterPtraceEventSeccomp struct {
 	addr   usermem.Addr
 	sysno  uintptr
-	caller interface{}
+	caller marshal.Marshallable
 }
 
 func (r *runVsyscallAfterPtraceEventSeccomp) execute(t *Task) taskRunState {
@@ -346,7 +347,7 @@ func (r *runVsyscallAfterPtraceEventSeccomp) execute(t *Task) taskRunState {
 	return t.doVsyscallInvoke(sysno, t.Arch().SyscallArgs(), r.caller)
 }
 
-func (t *Task) doVsyscallInvoke(sysno uintptr, args arch.SyscallArguments, caller interface{}) taskRunState {
+func (t *Task) doVsyscallInvoke(sysno uintptr, args arch.SyscallArguments, caller marshal.Marshallable) taskRunState {
 	rval, ctrl, err := t.executeSyscall(sysno, args)
 	if ctrl != nil {
 		t.Debugf("vsyscall %d, caller %x: syscall control: %v", sysno, t.Arch().Value(caller), ctrl)

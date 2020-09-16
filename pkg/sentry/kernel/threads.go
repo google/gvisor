@@ -36,6 +36,8 @@ import (
 const TasksLimit = (1 << 16)
 
 // ThreadID is a generic thread identifier.
+//
+// +marshal
 type ThreadID int32
 
 // String returns a decimal representation of the ThreadID.

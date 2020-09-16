@@ -43,6 +43,6 @@ func Sysinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		FreeRAM:  memFree,
 		Unit:     1,
 	}
-	_, err := t.CopyOut(addr, si)
+	_, err := si.CopyOut(t, addr)
 	return 0, nil, err
 }

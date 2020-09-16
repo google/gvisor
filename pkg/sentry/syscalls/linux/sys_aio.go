@@ -17,6 +17,7 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -36,7 +37,7 @@ func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	//
 	// The context pointer _must_ be zero initially.
 	var idIn uint64
-	if _, err := t.CopyIn(idAddr, &idIn); err != nil {
+	if _, err := primitive.CopyUint64In(t, idAddr, &idIn); err != nil {
 		return 0, nil, err
 	}
 	if idIn != 0 {
@@ -49,7 +50,7 @@ func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	// Copy out the new ID.
-	if _, err := t.CopyOut(idAddr, &id); err != nil {
+	if _, err := primitive.CopyUint64Out(t, idAddr, id); err != nil {
 		t.MemoryManager().DestroyAIOContext(t, id)
 		return 0, nil, err
 	}
@@ -142,7 +143,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		ev := v.(*linux.IOEvent)
 
 		// Copy out the result.
-		if _, err := t.CopyOut(eventsAddr, ev); err != nil {
+		if _, err := ev.CopyOut(t, eventsAddr); err != nil {
 			if count > 0 {
 				return uintptr(count), nil, nil
 			}
@@ -338,21 +339,27 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	for i := int32(0); i < nrEvents; i++ {
-		// Copy in the address.
-		cbAddrNative := t.Arch().Native(0)
-		if _, err := t.CopyIn(addr, cbAddrNative); err != nil {
-			if i > 0 {
-				// Some successful.
-				return uintptr(i), nil, nil
+		// Copy in the callback address.
+		var cbAddr usermem.Addr
+		switch t.Arch().Width() {
+		case 8:
+			var cbAddrP primitive.Uint64
+			if _, err := cbAddrP.CopyIn(t, addr); err != nil {
+				if i > 0 {
+					// Some successful.
+					return uintptr(i), nil, nil
+				}
+				// Nothing done.
+				return 0, nil, err
 			}
-			// Nothing done.
-			return 0, nil, err
+			cbAddr = usermem.Addr(cbAddrP)
+		default:
+			return 0, nil, syserror.ENOSYS
 		}
 
 		// Copy in this callback.
 		var cb linux.IOCallback
-		cbAddr := usermem.Addr(t.Arch().Value(cbAddrNative))
-		if _, err := t.CopyIn(cbAddr, &cb); err != nil {
+		if _, err := cb.CopyIn(t, cbAddr); err != nil {
 
 			if i > 0 {
 				// Some have been successful.

@@ -43,34 +43,12 @@ func (t *Task) Deactivate() {
 	}
 }
 
-// CopyIn copies a fixed-size value or slice of fixed-size values in from the
-// task's memory. The copy will fail with syscall.EFAULT if it traverses user
-// memory that is unmapped or not readable by the user.
-//
-// This Task's AddressSpace must be active.
-func (t *Task) CopyIn(addr usermem.Addr, dst interface{}) (int, error) {
-	return usermem.CopyObjectIn(t, t.MemoryManager(), addr, dst, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
-}
-
 // CopyInBytes is a fast version of CopyIn if the caller can serialize the
 // data without reflection and pass in a byte slice.
 //
 // This Task's AddressSpace must be active.
 func (t *Task) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
 	return t.MemoryManager().CopyIn(t, addr, dst, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
-}
-
-// CopyOut copies a fixed-size value or slice of fixed-size values out to the
-// task's memory. The copy will fail with syscall.EFAULT if it traverses user
-// memory that is unmapped or not writeable by the user.
-//
-// This Task's AddressSpace must be active.
-func (t *Task) CopyOut(addr usermem.Addr, src interface{}) (int, error) {
-	return usermem.CopyObjectOut(t, t.MemoryManager(), addr, src, usermem.IOOpts{
 		AddressSpaceActive: true,
 	})
 }
@@ -114,7 +92,7 @@ func (t *Task) CopyInVector(addr usermem.Addr, maxElemSize, maxTotalSize int) ([
 	var v []string
 	for {
 		argAddr := t.Arch().Native(0)
-		if _, err := t.CopyIn(addr, argAddr); err != nil {
+		if _, err := argAddr.CopyIn(t, addr); err != nil {
 			return v, err
 		}
 		if t.Arch().Value(argAddr) == 0 {
@@ -302,29 +280,29 @@ func (t *Task) IovecsIOSequence(addr usermem.Addr, iovcnt int, opts usermem.IOOp
 	}, nil
 }
 
-// CopyContextWithOpts wraps a task to allow copying memory to and from the
+// CopyContext wraps a task to allow copying memory to and from the
 // task memory with user specified usermem.IOOpts.
-type CopyContextWithOpts struct {
+type CopyContext struct {
 	*Task
 	opts usermem.IOOpts
 }
 
-// AsCopyContextWithOpts wraps the task and returns it as CopyContextWithOpts.
-func (t *Task) AsCopyContextWithOpts(opts usermem.IOOpts) *CopyContextWithOpts {
-	return &CopyContextWithOpts{t, opts}
+// AsCopyContext wraps the task and returns it as CopyContext.
+func (t *Task) AsCopyContext(opts usermem.IOOpts) *CopyContext {
+	return &CopyContext{t, opts}
 }
 
 // CopyInString copies a string in from the task's memory.
-func (t *CopyContextWithOpts) CopyInString(addr usermem.Addr, maxLen int) (string, error) {
+func (t *CopyContext) CopyInString(addr usermem.Addr, maxLen int) (string, error) {
 	return usermem.CopyStringIn(t, t.MemoryManager(), addr, maxLen, t.opts)
 }
 
 // CopyInBytes copies task memory into dst from an IO context.
-func (t *CopyContextWithOpts) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
+func (t *CopyContext) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
 	return t.MemoryManager().CopyIn(t, addr, dst, t.opts)
 }
 
 // CopyOutBytes copies src into task memoryfrom an IO context.
-func (t *CopyContextWithOpts) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
+func (t *CopyContext) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
 	return t.MemoryManager().CopyOut(t, addr, src, t.opts)
 }

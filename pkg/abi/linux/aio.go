@@ -42,6 +42,8 @@ const (
 //
 // The priority field is currently ignored in the implementation below. Also
 // note that the IOCB_FLAG_RESFD feature is not supported.
+//
+// +marshal
 type IOCallback struct {
 	Data uint64
 	Key  uint32
@@ -64,6 +66,7 @@ type IOCallback struct {
 
 // IOEvent describes an I/O result.
 //
+// +marshal
 // +stateify savable
 type IOEvent struct {
 	Data    uint64

@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -87,7 +88,7 @@ func (t *Task) exitRobustList() {
 		return
 	}
 
-	next := rl.List
+	next := primitive.Uint64(rl.List)
 	done := 0
 	var pendingLockAddr usermem.Addr
 	if rl.ListOpPending != 0 {
@@ -99,12 +100,12 @@ func (t *Task) exitRobustList() {
 		// We traverse to the next element of the list before we
 		// actually wake anything. This prevents the race where waking
 		// this futex causes a modification of the list.
-		thisLockAddr := usermem.Addr(next + rl.FutexOffset)
+		thisLockAddr := usermem.Addr(uint64(next) + rl.FutexOffset)
 
 		// Try to decode the next element in the list before waking the
 		// current futex. But don't check the error until after we've
 		// woken the current futex. Linux does it in this order too
-		_, nextErr := t.CopyIn(usermem.Addr(next), &next)
+		_, nextErr := next.CopyIn(t, usermem.Addr(next))
 
 		// Wakeup the current futex if it's not pending.
 		if thisLockAddr != pendingLockAddr {

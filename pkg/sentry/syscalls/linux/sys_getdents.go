@@ -19,7 +19,6 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -93,19 +92,23 @@ func getdents(t *kernel.Task, fd int32, addr usermem.Addr, size int, f func(*dir
 	}
 }
 
-// oldDirentHdr is a fixed sized header matching the fixed size
-// fields found in the old linux dirent struct.
+// oldDirentHdr is a fixed sized header matching the fixed size fields found in
+// the old linux dirent struct.
+//
+// +marshal
 type oldDirentHdr struct {
 	Ino    uint64
 	Off    uint64
-	Reclen uint16
+	Reclen uint16 `marshal:"unaligned"` // Struct ends mid-word.
 }
 
-// direntHdr is a fixed sized header matching the fixed size
-// fields found in the new linux dirent struct.
+// direntHdr is a fixed sized header matching the fixed size fields found in the
+// new linux dirent struct.
+//
+// +marshal
 type direntHdr struct {
 	OldHdr oldDirentHdr
-	Typ    uint8
+	Typ    uint8 `marshal:"unaligned"` // Struct ends mid-word.
 }
 
 // dirent contains the data pointed to by a new linux dirent struct.
@@ -134,20 +137,20 @@ func newDirent(width uint, name string, attr fs.DentAttr, offset uint64) *dirent
 // the old linux dirent format.
 func smallestDirent(a arch.Context) uint {
 	d := dirent{}
-	return uint(binary.Size(d.Hdr.OldHdr)) + a.Width() + 1
+	return uint(d.Hdr.OldHdr.SizeBytes()) + a.Width() + 1
 }
 
 // smallestDirent64 returns the size of the smallest possible dirent using
 // the new linux dirent format.
 func smallestDirent64(a arch.Context) uint {
 	d := dirent{}
-	return uint(binary.Size(d.Hdr)) + a.Width()
+	return uint(d.Hdr.SizeBytes()) + a.Width()
 }
 
 // padRec pads the name field until the rec length is a multiple of the width,
 // which must be a power of 2. It returns the padded rec length.
 func (d *dirent) padRec(width int) uint16 {
-	a := int(binary.Size(d.Hdr)) + len(d.Name)
+	a := d.Hdr.SizeBytes() + len(d.Name)
 	r := (a + width) &^ (width - 1)
 	padding := r - a
 	d.Name = append(d.Name, make([]byte, padding)...)
@@ -157,7 +160,7 @@ func (d *dirent) padRec(width int) uint16 {
 // Serialize64 serializes a Dirent struct to a byte slice, keeping the new
 // linux dirent format. Returns the number of bytes serialized or an error.
 func (d *dirent) Serialize64(w io.Writer) (int, error) {
-	n1, err := w.Write(binary.Marshal(nil, usermem.ByteOrder, d.Hdr))
+	n1, err := d.Hdr.WriteTo(w)
 	if err != nil {
 		return 0, err
 	}
@@ -165,14 +168,14 @@ func (d *dirent) Serialize64(w io.Writer) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return n1 + n2, nil
+	return int(n1) + n2, nil
 }
 
 // Serialize serializes a Dirent struct to a byte slice, using the old linux
 // dirent format.
 // Returns the number of bytes serialized or an error.
 func (d *dirent) Serialize(w io.Writer) (int, error) {
-	n1, err := w.Write(binary.Marshal(nil, usermem.ByteOrder, d.Hdr.OldHdr))
+	n1, err := d.Hdr.OldHdr.WriteTo(w)
 	if err != nil {
 		return 0, err
 	}
@@ -184,7 +187,7 @@ func (d *dirent) Serialize(w io.Writer) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return n1 + n2 + n3, nil
+	return int(n1) + n2 + n3, nil
 }
 
 // direntSerializer implements fs.InodeOperationsInfoSerializer, serializing dirents to an

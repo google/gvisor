@@ -26,7 +26,7 @@ import (
 
 func epollEvent(t *kernel.Task, eventAddr usermem.Addr) string {
 	var e linux.EpollEvent
-	if _, err := t.CopyIn(eventAddr, &e); err != nil {
+	if _, err := e.CopyIn(t, eventAddr); err != nil {
 		return fmt.Sprintf("%#x {error reading event: %v}", eventAddr, err)
 	}
 	var sb strings.Builder
@@ -41,7 +41,7 @@ func epollEvents(t *kernel.Task, eventsAddr usermem.Addr, numEvents, maxBytes ui
 	addr := eventsAddr
 	for i := uint64(0); i < numEvents; i++ {
 		var e linux.EpollEvent
-		if _, err := t.CopyIn(addr, &e); err != nil {
+		if _, err := e.CopyIn(t, addr); err != nil {
 			fmt.Fprintf(&sb, "{error reading event at %#x: %v}", addr, err)
 			continue
 		}

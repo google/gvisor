@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -141,7 +142,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 		// Copy in the offset.
 		var offset int64
-		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
+		if _, err := primitive.CopyInt64In(t, offsetAddr, &offset); err != nil {
 			return 0, nil, err
 		}
 
@@ -149,11 +150,11 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		n, err = doSplice(t, outFile, inFile, fs.SpliceOpts{
 			Length:    count,
 			SrcOffset: true,
-			SrcStart:  offset,
+			SrcStart:  int64(offset),
 		}, outFile.Flags().NonBlocking)
 
 		// Copy out the new offset.
-		if _, err := t.CopyOut(offsetAddr, n+offset); err != nil {
+		if _, err := primitive.CopyInt64Out(t, offsetAddr, offset+n); err != nil {
 			return 0, nil, err
 		}
 	} else {
@@ -228,7 +229,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			}
 
 			var offset int64
-			if _, err := t.CopyIn(outOffset, &offset); err != nil {
+			if _, err := primitive.CopyInt64In(t, outOffset, &offset); err != nil {
 				return 0, nil, err
 			}
 
@@ -246,7 +247,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			}
 
 			var offset int64
-			if _, err := t.CopyIn(inOffset, &offset); err != nil {
+			if _, err := primitive.CopyInt64In(t, inOffset, &offset); err != nil {
 				return 0, nil, err
 			}
 

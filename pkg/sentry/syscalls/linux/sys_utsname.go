@@ -46,7 +46,7 @@ func Uname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	// Copy out the result.
 	va := args[0].Pointer()
-	_, err := t.CopyOut(va, u)
+	_, err := u.CopyOut(t, va)
 	return 0, nil, err
 }
 
