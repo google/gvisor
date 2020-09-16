@@ -32,13 +32,21 @@ type ProgramBuilder struct {
 	// Maps label names to label objects.
 	labels map[string]*label
 
+	// unusableLabels are labels that are added before being referenced in a
+	// jump. Any labels added this way cannot be referenced later in order to
+	// avoid backwards references.
+	unusableLabels map[string]bool
+
 	// Array of BPF instructions that makes up the program.
 	instructions []linux.BPFInstruction
 }
 
 // NewProgramBuilder creates a new ProgramBuilder instance.
 func NewProgramBuilder() *ProgramBuilder {
-	return &ProgramBuilder{labels: map[string]*label{}}
+	return &ProgramBuilder{
+		labels:         map[string]*label{},
+		unusableLabels: map[string]bool{},
+	}
 }
 
 // label contains information to resolve a label to an offset.
@@ -108,9 +116,12 @@ func (b *ProgramBuilder) AddJumpLabels(code uint16, k uint32, jtLabel, jfLabel s
 func (b *ProgramBuilder) AddLabel(name string) error {
 	l, ok := b.labels[name]
 	if !ok {
-		// This is done to catch jump backwards cases, but it's not strictly wrong
-		// to have unused labels.
-		return fmt.Errorf("Adding a label that hasn't been used is not allowed: %v", name)
+		if _, ok = b.unusableLabels[name]; ok {
+			return fmt.Errorf("label %q already set", name)
+		}
+		// Mark the label as unusable. This is done to catch backwards jumps.
+		b.unusableLabels[name] = true
+		return nil
 	}
 	if l.target != -1 {
 		return fmt.Errorf("label %q target already set: %v", name, l.target)
@@ -141,6 +152,10 @@ func (b *ProgramBuilder) addLabelSource(labelName string, t jmpType) {
 
 func (b *ProgramBuilder) resolveLabels() error {
 	for key, v := range b.labels {
+		if _, ok := b.unusableLabels[key]; ok {
+			return fmt.Errorf("backwards reference detected for label: %q", key)
+		}
+
 		if v.target == -1 {
 			return fmt.Errorf("label target not set: %v", key)
 		}

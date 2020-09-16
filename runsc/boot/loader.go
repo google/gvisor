@@ -27,6 +27,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -70,6 +71,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 
 	// Include supported socket providers.
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
@@ -507,6 +509,7 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	return mf, nil
 }
 
+// installSeccompFilters installs sandbox seccomp filters with the host.
 func (l *Loader) installSeccompFilters() error {
 	if l.root.conf.DisableSeccomp {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
@@ -577,6 +580,7 @@ func (l *Loader) run() error {
 		if _, err := l.createContainerProcess(true, l.sandboxID, &l.root, ep); err != nil {
 			return err
 		}
+
 	}
 
 	ep.tg = l.k.GlobalInit()
@@ -761,6 +765,31 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		case ttyFile != nil:
 			ep.tty = ttyFile
 			ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
+		}
+	}
+
+	// Install seccomp filters with the new task if there are any.
+	if info.conf.OCISeccomp {
+		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
+			program, err := seccomp.BuildProgram(info.spec.Linux.Seccomp)
+			if err != nil {
+				return nil, fmt.Errorf("building seccomp program: %v", err)
+			}
+
+			if log.IsLogging(log.Debug) {
+				out, _ := bpf.DecodeProgram(program)
+				log.Debugf("Installing OCI seccomp filters\nProgram:\n%s", out)
+			}
+
+			task := tg.Leader()
+			// NOTE: It seems Flags are ignored by runc so we ignore them too.
+			if err := task.AppendSyscallFilter(program, true); err != nil {
+				return nil, fmt.Errorf("appending seccomp filters: %v", err)
+			}
+		}
+	} else {
+		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
+			log.Warningf("Seccomp spec is being ignored")
 		}
 	}
 

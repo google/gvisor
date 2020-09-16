@@ -25,9 +25,9 @@ func profileFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
 		syscall.SYS_OPENAT: []seccomp.Rule{
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.O_RDONLY | syscall.O_LARGEFILE | syscall.O_CLOEXEC),
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.O_RDONLY | syscall.O_LARGEFILE | syscall.O_CLOEXEC),
 			},
 		},
 	}

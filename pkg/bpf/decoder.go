@@ -21,10 +21,15 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// DecodeProgram translates an array of BPF instructions into text format.
-func DecodeProgram(program []linux.BPFInstruction) (string, error) {
+// DecodeProgram translates a compiled BPF program into text format.
+func DecodeProgram(p Program) (string, error) {
+	return DecodeInstructions(p.instructions)
+}
+
+// DecodeInstructions translates an array of BPF instructions into text format.
+func DecodeInstructions(instns []linux.BPFInstruction) (string, error) {
 	var ret bytes.Buffer
-	for line, s := range program {
+	for line, s := range instns {
 		ret.WriteString(fmt.Sprintf("%v: ", line))
 		if err := decode(s, line, &ret); err != nil {
 			return "", err
@@ -34,7 +39,7 @@ func DecodeProgram(program []linux.BPFInstruction) (string, error) {
 	return ret.String(), nil
 }
 
-// Decode translates BPF instruction into text format.
+// Decode translates a single BPF instruction into text format.
 func Decode(inst linux.BPFInstruction) (string, error) {
 	var ret bytes.Buffer
 	err := decode(inst, -1, &ret)

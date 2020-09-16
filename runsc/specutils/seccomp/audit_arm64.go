@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,22 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64
+// +build arm64
 
-package filter
+package seccomp
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-func init() {
-	allowedSyscalls[syscall.SYS_ARCH_PRCTL] = []seccomp.Rule{
-		{seccomp.EqualTo(linux.ARCH_GET_FS)},
-		{seccomp.EqualTo(linux.ARCH_SET_FS)},
-	}
-
-	allowedSyscalls[syscall.SYS_NEWFSTATAT] = []seccomp.Rule{}
-}
+const (
+	nativeArchAuditNo = linux.AUDIT_ARCH_AARCH64
+)
