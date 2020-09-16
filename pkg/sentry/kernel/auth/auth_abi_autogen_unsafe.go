@@ -52,7 +52,7 @@ func (u *UID) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (u *UID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+func (u *UID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -60,7 +60,7 @@ func (u *UID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, er
     hdr.Len = u.SizeBytes()
     hdr.Cap = u.SizeBytes()
 
-    length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
     runtime.KeepAlive(u) // escapes: replaced by intrinsic.
@@ -69,13 +69,13 @@ func (u *UID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, er
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (u *UID) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
-    return u.CopyOutN(task, addr, u.SizeBytes())
+func (u *UID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return u.CopyOutN(cc, addr, u.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (u *UID) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+func (u *UID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -83,7 +83,7 @@ func (u *UID) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     hdr.Len = u.SizeBytes()
     hdr.Cap = u.SizeBytes()
 
-    length, err := task.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
     runtime.KeepAlive(u) // escapes: replaced by intrinsic.
@@ -141,7 +141,7 @@ func (g *GID) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (g *GID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+func (g *GID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -149,7 +149,7 @@ func (g *GID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, er
     hdr.Len = g.SizeBytes()
     hdr.Cap = g.SizeBytes()
 
-    length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
     // must live until the use above.
     runtime.KeepAlive(g) // escapes: replaced by intrinsic.
@@ -158,13 +158,13 @@ func (g *GID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, er
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (g *GID) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
-    return g.CopyOutN(task, addr, g.SizeBytes())
+func (g *GID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return g.CopyOutN(cc, addr, g.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (g *GID) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+func (g *GID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -172,7 +172,7 @@ func (g *GID) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     hdr.Len = g.SizeBytes()
     hdr.Cap = g.SizeBytes()
 
-    length, err := task.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
     // must live until the use above.
     runtime.KeepAlive(g) // escapes: replaced by intrinsic.
@@ -197,7 +197,7 @@ func (g *GID) WriteTo(w io.Writer) (int64, error) {
 
 // CopyGIDSliceIn copies in a slice of GID objects from the task's memory.
 //go:nosplit
-func CopyGIDSliceIn(task marshal.Task, addr usermem.Addr, dst []GID) (int, error) {
+func CopyGIDSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []GID) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -214,7 +214,7 @@ func CopyGIDSliceIn(task marshal.Task, addr usermem.Addr, dst []GID) (int, error
     hdr.Len = size * count
     hdr.Cap = size * count
 
-    length, err := task.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that dst
     // must live until the use above.
     runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
@@ -223,7 +223,7 @@ func CopyGIDSliceIn(task marshal.Task, addr usermem.Addr, dst []GID) (int, error
 
 // CopyGIDSliceOut copies a slice of GID objects to the task's memory.
 //go:nosplit
-func CopyGIDSliceOut(task marshal.Task, addr usermem.Addr, src []GID) (int, error) {
+func CopyGIDSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []GID) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -240,7 +240,7 @@ func CopyGIDSliceOut(task marshal.Task, addr usermem.Addr, src []GID) (int, erro
     hdr.Len = size * count
     hdr.Cap = size * count
 
-    length, err := task.CopyOutBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyOutBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that src
     // must live until the use above.
     runtime.KeepAlive(src) // escapes: replaced by intrinsic.

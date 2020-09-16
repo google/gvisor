@@ -51,7 +51,7 @@ func (t *ThreadID) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (t *ThreadID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+func (t *ThreadID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -59,7 +59,7 @@ func (t *ThreadID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (in
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t) // escapes: replaced by intrinsic.
@@ -68,13 +68,13 @@ func (t *ThreadID) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (in
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (t *ThreadID) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
-    return t.CopyOutN(task, addr, t.SizeBytes())
+func (t *ThreadID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return t.CopyOutN(cc, addr, t.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (t *ThreadID) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+func (t *ThreadID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -82,7 +82,7 @@ func (t *ThreadID) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    length, err := task.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t) // escapes: replaced by intrinsic.
