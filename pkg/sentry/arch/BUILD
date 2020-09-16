@@ -34,6 +34,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/sentry/limits",
         "//pkg/sync",
         "//pkg/syserror",

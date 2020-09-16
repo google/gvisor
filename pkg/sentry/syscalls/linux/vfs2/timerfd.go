@@ -87,7 +87,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	}
 
 	var newVal linux.Itimerspec
-	if _, err := t.CopyIn(newValAddr, &newVal); err != nil {
+	if _, err := newVal.CopyIn(t, newValAddr); err != nil {
 		return 0, nil, err
 	}
 	newS, err := ktime.SettingFromItimerspec(newVal, flags&linux.TFD_TIMER_ABSTIME != 0, tfd.Clock())
@@ -97,7 +97,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	tm, oldS := tfd.SetTime(newS)
 	if oldValAddr != 0 {
 		oldVal := ktime.ItimerspecFromSetting(tm, oldS)
-		if _, err := t.CopyOut(oldValAddr, &oldVal); err != nil {
+		if _, err := oldVal.CopyOut(t, oldValAddr); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -122,6 +122,6 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	tm, s := tfd.GetTime()
 	curVal := ktime.ItimerspecFromSetting(tm, s)
-	_, err := t.CopyOut(curValAddr, &curVal)
+	_, err := curVal.CopyOut(t, curValAddr)
 	return 0, nil, err
 }

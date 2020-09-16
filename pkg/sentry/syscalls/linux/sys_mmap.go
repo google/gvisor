@@ -239,7 +239,7 @@ func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		return 0, nil, syserror.ENOMEM
 	}
 	resident := bytes.Repeat([]byte{1}, int(mapped/usermem.PageSize))
-	_, err := t.CopyOut(vec, resident)
+	_, err := t.CopyOutBytes(vec, resident)
 	return 0, nil, err
 }
 

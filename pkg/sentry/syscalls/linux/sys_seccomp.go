@@ -24,6 +24,8 @@ import (
 )
 
 // userSockFprog is equivalent to Linux's struct sock_fprog on amd64.
+//
+// +marshal
 type userSockFprog struct {
 	// Len is the length of the filter in BPF instructions.
 	Len uint16
@@ -33,7 +35,7 @@ type userSockFprog struct {
 	// Filter is a user pointer to the struct sock_filter array that makes up
 	// the filter program. Filter is a uint64 rather than a usermem.Addr
 	// because usermem.Addr is actually uintptr, which is not a fixed-size
-	// type, and encoding/binary.Read objects to this.
+	// type.
 	Filter uint64
 }
 
@@ -54,11 +56,11 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr usermem.Addr) error {
 	}
 
 	var fprog userSockFprog
-	if _, err := t.CopyIn(addr, &fprog); err != nil {
+	if _, err := fprog.CopyIn(t, addr); err != nil {
 		return err
 	}
 	filter := make([]linux.BPFInstruction, int(fprog.Len))
-	if _, err := t.CopyIn(usermem.Addr(fprog.Filter), &filter); err != nil {
+	if _, err := linux.CopyBPFInstructionSliceIn(t, usermem.Addr(fprog.Filter), filter); err != nil {
 		return err
 	}
 	compiledFilter, err := bpf.Compile(filter)

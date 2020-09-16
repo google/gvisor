@@ -214,6 +214,8 @@ const (
 )
 
 // Sigevent represents struct sigevent.
+//
+// +marshal
 type Sigevent struct {
 	Value  uint64 // union sigval {int, void*}
 	Signo  int32

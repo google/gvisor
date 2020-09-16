@@ -13,6 +13,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/marshal/primitive",
         "//pkg/merkletree",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs/lock",

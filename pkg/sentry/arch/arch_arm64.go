@@ -22,6 +22,8 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -163,14 +165,14 @@ func (c *context64) SetOldRSeqInterruptedIP(value uintptr) {
 }
 
 // Native returns the native type for the given val.
-func (c *context64) Native(val uintptr) interface{} {
-	v := uint64(val)
+func (c *context64) Native(val uintptr) marshal.Marshallable {
+	v := primitive.Uint64(val)
 	return &v
 }
 
 // Value returns the generic val for the given native type.
-func (c *context64) Value(val interface{}) uintptr {
-	return uintptr(*val.(*uint64))
+func (c *context64) Value(val marshal.Marshallable) uintptr {
+	return uintptr(*val.(*primitive.Uint64))
 }
 
 // Width returns the byte width of this architecture.
@@ -274,7 +276,7 @@ func (c *context64) PIELoadAddress(l MmapLayout) usermem.Addr {
 }
 
 // PtracePeekUser implements Context.PtracePeekUser.
-func (c *context64) PtracePeekUser(addr uintptr) (interface{}, error) {
+func (c *context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
 	// TODO(gvisor.dev/issue/1239): Full ptrace supporting for Arm64.
 	return c.Native(0), nil
 }

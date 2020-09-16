@@ -112,18 +112,18 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 		stat, err := segment.IPCStat(t)
 		if err == nil {
-			_, err = t.CopyOut(buf, stat)
+			_, err = stat.CopyOut(t, buf)
 		}
 		return 0, nil, err
 
 	case linux.IPC_INFO:
 		params := r.IPCInfo()
-		_, err := t.CopyOut(buf, params)
+		_, err := params.CopyOut(t, buf)
 		return 0, nil, err
 
 	case linux.SHM_INFO:
 		info := r.ShmInfo()
-		_, err := t.CopyOut(buf, info)
+		_, err := info.CopyOut(t, buf)
 		return 0, nil, err
 	}
 
@@ -137,11 +137,10 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	switch cmd {
 	case linux.IPC_SET:
 		var ds linux.ShmidDS
-		_, err = t.CopyIn(buf, &ds)
-		if err != nil {
+		if _, err = ds.CopyIn(t, buf); err != nil {
 			return 0, nil, err
 		}
-		err = segment.Set(t, &ds)
+		err := segment.Set(t, &ds)
 		return 0, nil, err
 
 	case linux.IPC_RMID:

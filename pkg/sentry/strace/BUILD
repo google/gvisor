@@ -28,6 +28,7 @@ go_library(
         "//pkg/binary",
         "//pkg/bits",
         "//pkg/eventchannel",
+        "//pkg/marshal/primitive",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",

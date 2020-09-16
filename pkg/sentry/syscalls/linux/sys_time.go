@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -168,7 +169,7 @@ func Time(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		return uintptr(r), nil, nil
 	}
 
-	if _, err := t.CopyOut(addr, r); err != nil {
+	if _, err := r.CopyOut(t, addr); err != nil {
 		return 0, nil, err
 	}
 	return uintptr(r), nil, nil
@@ -334,8 +335,8 @@ func Gettimeofday(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		// Ask the time package for the timezone.
 		_, offset := time.Now().Zone()
 		// This int32 array mimics linux's struct timezone.
-		timezone := [2]int32{-int32(offset) / 60, 0}
-		_, err := t.CopyOut(tz, timezone)
+		timezone := []int32{-int32(offset) / 60, 0}
+		_, err := primitive.CopyInt32SliceOut(t, tz, timezone)
 		return 0, nil, err
 	}
 	return 0, nil, nil

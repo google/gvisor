@@ -14,7 +14,10 @@
 
 package linux
 
-import "gvisor.dev/gvisor/pkg/binary"
+import (
+	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/marshal"
+)
 
 // Address families, from linux/socket.h.
 const (
@@ -265,6 +268,8 @@ type InetMulticastRequestWithNIC struct {
 type Inet6Addr [16]byte
 
 // SockAddrInet6 is struct sockaddr_in6, from uapi/linux/in6.h.
+//
+// +marshal
 type SockAddrInet6 struct {
 	Family   uint16
 	Port     uint16
@@ -274,6 +279,8 @@ type SockAddrInet6 struct {
 }
 
 // SockAddrLink is a struct sockaddr_ll, from uapi/linux/if_packet.h.
+//
+// +marshal
 type SockAddrLink struct {
 	Family          uint16
 	Protocol        uint16
@@ -290,6 +297,8 @@ type SockAddrLink struct {
 const UnixPathMax = 108
 
 // SockAddrUnix is struct sockaddr_un, from uapi/linux/un.h.
+//
+// +marshal
 type SockAddrUnix struct {
 	Family uint16
 	Path   [UnixPathMax]int8
@@ -299,6 +308,8 @@ type SockAddrUnix struct {
 // equivalent to struct sockaddr. SockAddr ensures that a well-defined set of
 // types can be used as socket addresses.
 type SockAddr interface {
+	marshal.Marshallable
+
 	// implementsSockAddr exists purely to allow a type to indicate that they
 	// implement this interface. This method is a no-op and shouldn't be called.
 	implementsSockAddr()

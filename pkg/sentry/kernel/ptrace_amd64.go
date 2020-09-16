@@ -30,7 +30,7 @@ func (t *Task) ptraceArch(target *Task, req int64, addr, data usermem.Addr) erro
 		if err != nil {
 			return err
 		}
-		_, err = t.CopyOut(data, n)
+		_, err = n.CopyOut(t, data)
 		return err
 
 	case linux.PTRACE_POKEUSR: // aka PTRACE_POKEUSER

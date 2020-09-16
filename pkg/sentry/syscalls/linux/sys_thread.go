@@ -19,6 +19,7 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
@@ -311,13 +312,13 @@ func wait4(t *kernel.Task, pid int, statusAddr usermem.Addr, options int, rusage
 		return 0, err
 	}
 	if statusAddr != 0 {
-		if _, err := t.CopyOut(statusAddr, wr.Status); err != nil {
+		if _, err := primitive.CopyUint32Out(t, statusAddr, wr.Status); err != nil {
 			return 0, err
 		}
 	}
 	if rusageAddr != 0 {
 		ru := getrusage(wr.Task, linux.RUSAGE_BOTH)
-		if _, err := t.CopyOut(rusageAddr, &ru); err != nil {
+		if _, err := ru.CopyOut(t, rusageAddr); err != nil {
 			return 0, err
 		}
 	}
@@ -395,14 +396,14 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			// as well.
 			if infop != 0 {
 				var si arch.SignalInfo
-				_, err = t.CopyOut(infop, &si)
+				_, err = si.CopyOut(t, infop)
 			}
 		}
 		return 0, nil, err
 	}
 	if rusageAddr != 0 {
 		ru := getrusage(wr.Task, linux.RUSAGE_BOTH)
-		if _, err := t.CopyOut(rusageAddr, &ru); err != nil {
+		if _, err := ru.CopyOut(t, rusageAddr); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -441,7 +442,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	default:
 		t.Warningf("waitid got incomprehensible wait status %d", s)
 	}
-	_, err = t.CopyOut(infop, &si)
+	_, err = si.CopyOut(t, infop)
 	return 0, nil, err
 }
 
@@ -558,9 +559,7 @@ func Getcpu(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// third argument to this system call is nowadays unused.
 
 	if cpu != 0 {
-		buf := t.CopyScratchBuffer(4)
-		usermem.ByteOrder.PutUint32(buf, uint32(t.CPU()))
-		if _, err := t.CopyOutBytes(cpu, buf); err != nil {
+		if _, err := primitive.CopyInt32Out(t, cpu, t.CPU()); err != nil {
 			return 0, nil, err
 		}
 	}

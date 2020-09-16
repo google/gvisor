@@ -141,7 +141,7 @@ func (*runApp) handleCPUIDInstruction(t *Task) error {
 	region := trace.StartRegion(t.traceContext, cpuidRegion)
 	expected := arch.CPUIDInstruction[:]
 	found := make([]byte, len(expected))
-	_, err := t.CopyIn(usermem.Addr(t.Arch().IP()), &found)
+	_, err := t.CopyInBytes(usermem.Addr(t.Arch().IP()), found)
 	if err == nil && bytes.Equal(expected, found) {
 		// Skip the cpuid instruction.
 		t.Arch().CPUIDEmulate(t)

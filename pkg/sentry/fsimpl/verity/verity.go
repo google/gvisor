@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 
 	"gvisor.dev/gvisor/pkg/merkletree"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -598,7 +599,10 @@ func (fd *fileDescription) getFlags(ctx context.Context, uio usermem.IO, args ar
 	if len(fd.d.rootHash) != 0 {
 		f |= linux.FS_VERITY_FL
 	}
-	_, err := kernel.TaskFromContext(ctx).CopyOut(args[2].Pointer(), f)
+
+	t := kernel.TaskFromContext(ctx)
+	addr := args[2].Pointer()
+	_, err := primitive.CopyInt32Out(t, addr, f)
 	return 0, err
 }
 

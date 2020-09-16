@@ -37,6 +37,8 @@ const IPC_PRIVATE = 0
 // features like 32-bit UIDs.
 
 // IPCPerm is equivalent to struct ipc64_perm.
+//
+// +marshal
 type IPCPerm struct {
 	Key     uint32
 	UID     uint32

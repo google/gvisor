@@ -153,7 +153,7 @@ TEST(PrctlTest, PDeathSig) {
       // Enable tracing, then raise SIGSTOP and expect our parent to suppress
       // it.
       TEST_CHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) >= 0);
-      raise(SIGSTOP);
+      TEST_CHECK(raise(SIGSTOP) == 0);
       // Sleep until killed by our parent death signal. sleep(3) is
       // async-signal-safe, absl::SleepFor isn't.
       while (true) {
