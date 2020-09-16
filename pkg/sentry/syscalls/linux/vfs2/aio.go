@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -38,21 +39,27 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	for i := int32(0); i < nrEvents; i++ {
-		// Copy in the address.
-		cbAddrNative := t.Arch().Native(0)
-		if _, err := t.CopyIn(addr, cbAddrNative); err != nil {
-			if i > 0 {
-				// Some successful.
-				return uintptr(i), nil, nil
+		// Copy in the callback address.
+		var cbAddr usermem.Addr
+		switch t.Arch().Width() {
+		case 8:
+			var cbAddrP primitive.Uint64
+			if _, err := cbAddrP.CopyIn(t, addr); err != nil {
+				if i > 0 {
+					// Some successful.
+					return uintptr(i), nil, nil
+				}
+				// Nothing done.
+				return 0, nil, err
 			}
-			// Nothing done.
-			return 0, nil, err
+			cbAddr = usermem.Addr(cbAddrP)
+		default:
+			return 0, nil, syserror.ENOSYS
 		}
 
 		// Copy in this callback.
 		var cb linux.IOCallback
-		cbAddr := usermem.Addr(t.Arch().Value(cbAddrNative))
-		if _, err := t.CopyIn(cbAddr, &cb); err != nil {
+		if _, err := cb.CopyIn(t, cbAddr); err != nil {
 			if i > 0 {
 				// Some have been successful.
 				return uintptr(i), nil, nil

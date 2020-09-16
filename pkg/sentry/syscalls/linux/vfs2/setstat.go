@@ -346,7 +346,7 @@ func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr usermem.Addr, opt
 		return nil
 	}
 	var times [2]linux.Timeval
-	if _, err := t.CopyIn(timesAddr, &times); err != nil {
+	if _, err := linux.CopyTimevalSliceIn(t, timesAddr, times[:]); err != nil {
 		return err
 	}
 	if times[0].Usec < 0 || times[0].Usec > 999999 || times[1].Usec < 0 || times[1].Usec > 999999 {
@@ -410,7 +410,7 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr usermem.Addr, op
 		return nil
 	}
 	var times [2]linux.Timespec
-	if _, err := t.CopyIn(timesAddr, &times); err != nil {
+	if _, err := linux.CopyTimespecSliceIn(t, timesAddr, times[:]); err != nil {
 		return err
 	}
 	if times[0].Nsec != linux.UTIME_OMIT {

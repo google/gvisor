@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
@@ -613,7 +614,7 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.FIONBIO:
 		var set int32
-		if _, err := t.CopyIn(args[2].Pointer(), &set); err != nil {
+		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &set); err != nil {
 			return 0, nil, err
 		}
 		flags := file.Flags()
@@ -627,7 +628,7 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.FIOASYNC:
 		var set int32
-		if _, err := t.CopyIn(args[2].Pointer(), &set); err != nil {
+		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &set); err != nil {
 			return 0, nil, err
 		}
 		flags := file.Flags()
@@ -641,15 +642,14 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.FIOSETOWN, linux.SIOCSPGRP:
 		var set int32
-		if _, err := t.CopyIn(args[2].Pointer(), &set); err != nil {
+		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &set); err != nil {
 			return 0, nil, err
 		}
 		fSetOwn(t, file, set)
 		return 0, nil, nil
 
 	case linux.FIOGETOWN, linux.SIOCGPGRP:
-		who := fGetOwn(t, file)
-		_, err := t.CopyOut(args[2].Pointer(), &who)
+		_, err := primitive.CopyInt32Out(t, args[2].Pointer(), fGetOwn(t, file))
 		return 0, nil, err
 
 	default:
@@ -694,7 +694,7 @@ func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Top it off with a terminator.
-	_, err = t.CopyOut(addr+usermem.Addr(bytes), []byte("\x00"))
+	_, err = t.CopyOutBytes(addr+usermem.Addr(bytes), []byte("\x00"))
 	return uintptr(bytes + 1), nil, err
 }
 
@@ -962,7 +962,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		// Copy in the lock request.
 		flockAddr := args[2].Pointer()
 		var flock linux.Flock
-		if _, err := t.CopyIn(flockAddr, &flock); err != nil {
+		if _, err := flock.CopyIn(t, flockAddr); err != nil {
 			return 0, nil, err
 		}
 
@@ -1052,12 +1052,12 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_GETOWN_EX:
 		addr := args[2].Pointer()
 		owner := fGetOwnEx(t, file)
-		_, err := t.CopyOut(addr, &owner)
+		_, err := owner.CopyOut(t, addr)
 		return 0, nil, err
 	case linux.F_SETOWN_EX:
 		addr := args[2].Pointer()
 		var owner linux.FOwnerEx
-		_, err := t.CopyIn(addr, &owner)
+		_, err := owner.CopyIn(t, addr)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -1922,7 +1922,7 @@ func Utime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	ts := defaultSetToSystemTimeSpec()
 	if timesAddr != 0 {
 		var times linux.Utime
-		if _, err := t.CopyIn(timesAddr, &times); err != nil {
+		if _, err := times.CopyIn(t, timesAddr); err != nil {
 			return 0, nil, err
 		}
 		ts = fs.TimeSpec{
@@ -1942,7 +1942,7 @@ func Utimes(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	ts := defaultSetToSystemTimeSpec()
 	if timesAddr != 0 {
 		var times [2]linux.Timeval
-		if _, err := t.CopyIn(timesAddr, &times); err != nil {
+		if _, err := linux.CopyTimevalSliceIn(t, timesAddr, times[:]); err != nil {
 			return 0, nil, err
 		}
 		ts = fs.TimeSpec{
@@ -1970,7 +1970,7 @@ func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	ts := defaultSetToSystemTimeSpec()
 	if timesAddr != 0 {
 		var times [2]linux.Timespec
-		if _, err := t.CopyIn(timesAddr, &times); err != nil {
+		if _, err := linux.CopyTimespecSliceIn(t, timesAddr, times[:]); err != nil {
 			return 0, nil, err
 		}
 		if !timespecIsValid(times[0]) || !timespecIsValid(times[1]) {
@@ -2004,7 +2004,7 @@ func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	ts := defaultSetToSystemTimeSpec()
 	if timesAddr != 0 {
 		var times [2]linux.Timeval
-		if _, err := t.CopyIn(timesAddr, &times); err != nil {
+		if _, err := linux.CopyTimevalSliceIn(t, timesAddr, times[:]); err != nil {
 			return 0, nil, err
 		}
 		if times[0].Usec >= 1e6 || times[0].Usec < 0 ||

@@ -221,7 +221,7 @@ func statx(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr, statxAddr
 		DevMajor:  uint32(devMajor),
 		DevMinor:  devMinor,
 	}
-	_, err := t.CopyOut(statxAddr, &s)
+	_, err := s.CopyOut(t, statxAddr)
 	return err
 }
 
@@ -283,7 +283,7 @@ func statfsImpl(t *kernel.Task, d *fs.Dirent, addr usermem.Addr) error {
 		FragmentSize: d.Inode.StableAttr.BlockSize,
 		// Leave other fields 0 like simple_statfs does.
 	}
-	_, err = t.CopyOut(addr, &statfs)
+	_, err = statfs.CopyOut(t, addr)
 	return err
 }
 

@@ -27,6 +27,8 @@ const (
 )
 
 // SchedParam replicates struct sched_param in sched.h.
+//
+// +marshal
 type SchedParam struct {
 	schedPriority int64
 }
@@ -45,7 +47,7 @@ func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, syserror.ESRCH
 	}
 	r := SchedParam{schedPriority: onlyPriority}
-	if _, err := t.CopyOut(param, r); err != nil {
+	if _, err := r.CopyOut(t, param); err != nil {
 		return 0, nil, err
 	}
 
@@ -79,7 +81,7 @@ func SchedSetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ke
 		return 0, nil, syserror.ESRCH
 	}
 	var r SchedParam
-	if _, err := t.CopyIn(param, &r); err != nil {
+	if _, err := r.CopyIn(t, param); err != nil {
 		return 0, nil, syserror.EINVAL
 	}
 	if r.schedPriority != onlyPriority {

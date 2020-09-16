@@ -80,7 +80,7 @@ func Getrusage(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 
 	ru := getrusage(t, which)
-	_, err := t.CopyOut(addr, &ru)
+	_, err := ru.CopyOut(t, addr)
 	return 0, nil, err
 }
 
@@ -104,7 +104,7 @@ func Times(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		CUTime: linux.ClockTFromDuration(cs2.UserTime),
 		CSTime: linux.ClockTFromDuration(cs2.SysTime),
 	}
-	if _, err := t.CopyOut(addr, &r); err != nil {
+	if _, err := r.CopyOut(t, addr); err != nil {
 		return 0, nil, err
 	}
 

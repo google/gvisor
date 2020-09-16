@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -72,12 +73,12 @@ type Context interface {
 	// with return values of varying sizes (for example ARCH_GETFS). This
 	// is a simple utility function to convert to the native size in these
 	// cases, and then we can CopyOut.
-	Native(val uintptr) interface{}
+	Native(val uintptr) marshal.Marshallable
 
 	// Value converts a native type back to a generic value.
 	// Once a value has been converted to native via the above call -- it
 	// can be converted back here.
-	Value(val interface{}) uintptr
+	Value(val marshal.Marshallable) uintptr
 
 	// Width returns the number of bytes for a native value.
 	Width() uint
@@ -205,7 +206,7 @@ type Context interface {
 	// equivalent of arch_ptrace():
 
 	// PtracePeekUser implements ptrace(PTRACE_PEEKUSR).
-	PtracePeekUser(addr uintptr) (interface{}, error)
+	PtracePeekUser(addr uintptr) (marshal.Marshallable, error)
 
 	// PtracePokeUser implements ptrace(PTRACE_POKEUSR).
 	PtracePokeUser(addr, data uintptr) error

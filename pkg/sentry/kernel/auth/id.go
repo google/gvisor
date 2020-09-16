@@ -19,9 +19,13 @@ import (
 )
 
 // UID is a user ID in an unspecified user namespace.
+//
+// +marshal
 type UID uint32
 
 // GID is a group ID in an unspecified user namespace.
+//
+// +marshal slice:GIDSlice
 type GID uint32
 
 // In the root user namespace, user/group IDs have a 1-to-1 relationship with

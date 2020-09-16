@@ -177,12 +177,16 @@ const (
 )
 
 // CapUserHeader is equivalent to Linux's cap_user_header_t.
+//
+// +marshal
 type CapUserHeader struct {
 	Version uint32
 	Pid     int32
 }
 
 // CapUserData is equivalent to Linux's cap_user_data_t.
+//
+// +marshal slice:CapUserDataSlice
 type CapUserData struct {
 	Effective   uint32
 	Permitted   uint32
