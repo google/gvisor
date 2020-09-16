@@ -139,7 +139,7 @@ type Injector struct {
 func NewInjector(t *testing.T) (Injector, error) {
 	t.Helper()
 
-	ifInfo, err := net.InterfaceByName(Device)
+	ifInfo, err := net.InterfaceByName(LocalDevice)
 	if err != nil {
 		return Injector{}, err
 	}
