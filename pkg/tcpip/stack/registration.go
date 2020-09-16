@@ -226,9 +226,28 @@ type NetworkHeaderParams struct {
 	TOS uint8
 }
 
+// EnabledEndpoint is an endpoint that may be enabled.
+//
+// Callers may call into this interface at anytime. That is, implementations
+// must gaurantee that calling into the interface will not block
+// forever/deadlock.
+type EnabledEndpoint interface {
+	// Enabled returns true if the receiver is enabled.
+	Enabled() bool
+}
+
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
 // of network layer protocols (e.g., ipv4, ipv6).
 type NetworkEndpoint interface {
+	EnabledEndpoint
+	AddressableEndpoint
+
+	// Enable enables the endpoint.
+	Enable() *tcpip.Error
+
+	// Disable disables the endpoint.
+	Disable() *tcpip.Error
+
 	// DefaultTTL is the default time-to-live value (or hop limit, in ipv6)
 	// for this endpoint.
 	DefaultTTL() uint8
@@ -279,6 +298,20 @@ type NetworkEndpoint interface {
 	NetworkProtocolNumber() tcpip.NetworkProtocolNumber
 }
 
+// ForwardingNetworkProtocol is a NetworkProtocol that may forward packets.
+type ForwardingNetworkProtocol interface {
+	NetworkProtocol
+
+	// Forwarding returns the forwarding configuration.
+	//
+	// Callers may call this method at anytime. That is, implementations must
+	// guarantee that calling this method will not block forever/deadlock.
+	Forwarding() bool
+
+	// SetForwarding sets the forwarding configuration.
+	SetForwarding(bool)
+}
+
 // NetworkProtocol is the interface that needs to be implemented by network
 // protocols (e.g., ipv4, ipv6) that want to be part of the networking stack.
 type NetworkProtocol interface {
@@ -298,7 +331,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nicID tcpip.NICID, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) NetworkEndpoint
+	NewEndpoint(nic NetworkInterface, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) NetworkEndpoint
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the

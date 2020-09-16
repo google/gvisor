@@ -54,9 +54,10 @@ go_template_instance(
 go_library(
     name = "stack",
     srcs = [
+        "addressable_endpoint.go",
         "conntrack.go",
-        "dhcpv6configurationfromndpra_string.go",
         "forwarder.go",
+        "group_addressable_endpoint.go",
         "headertype_string.go",
         "icmp_rate_limit.go",
         "iptables.go",
@@ -65,7 +66,6 @@ go_library(
         "iptables_types.go",
         "linkaddrcache.go",
         "linkaddrentry_list.go",
-        "ndp.go",
         "neighbor_cache.go",
         "neighbor_entry.go",
         "neighbor_entry_list.go",
@@ -116,6 +116,7 @@ go_test(
     deps = [
         ":stack",
         "//pkg/rand",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",

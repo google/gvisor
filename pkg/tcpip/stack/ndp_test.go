@@ -150,10 +150,10 @@ type ndpDNSSLEvent struct {
 
 type ndpDHCPv6Event struct {
 	nicID         tcpip.NICID
-	configuration stack.DHCPv6ConfigurationFromNDPRA
+	configuration ipv6.DHCPv6ConfigurationFromNDPRA
 }
 
-var _ stack.NDPDispatcher = (*ndpDispatcher)(nil)
+var _ ipv6.NDPDispatcher = (*ndpDispatcher)(nil)
 
 // ndpDispatcher implements NDPDispatcher so tests can know when various NDP
 // related events happen for test purposes.
@@ -170,7 +170,7 @@ type ndpDispatcher struct {
 	dhcpv6ConfigurationC chan ndpDHCPv6Event
 }
 
-// Implements stack.NDPDispatcher.OnDuplicateAddressDetectionStatus.
+// Implements ipv6.NDPDispatcher.OnDuplicateAddressDetectionStatus.
 func (n *ndpDispatcher) OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error) {
 	if n.dadC != nil {
 		n.dadC <- ndpDADEvent{
@@ -182,7 +182,7 @@ func (n *ndpDispatcher) OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, add
 	}
 }
 
-// Implements stack.NDPDispatcher.OnDefaultRouterDiscovered.
+// Implements ipv6.NDPDispatcher.OnDefaultRouterDiscovered.
 func (n *ndpDispatcher) OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.Address) bool {
 	if c := n.routerC; c != nil {
 		c <- ndpRouterEvent{
@@ -195,7 +195,7 @@ func (n *ndpDispatcher) OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.
 	return n.rememberRouter
 }
 
-// Implements stack.NDPDispatcher.OnDefaultRouterInvalidated.
+// Implements ipv6.NDPDispatcher.OnDefaultRouterInvalidated.
 func (n *ndpDispatcher) OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address) {
 	if c := n.routerC; c != nil {
 		c <- ndpRouterEvent{
@@ -206,7 +206,7 @@ func (n *ndpDispatcher) OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip
 	}
 }
 
-// Implements stack.NDPDispatcher.OnOnLinkPrefixDiscovered.
+// Implements ipv6.NDPDispatcher.OnOnLinkPrefixDiscovered.
 func (n *ndpDispatcher) OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip.Subnet) bool {
 	if c := n.prefixC; c != nil {
 		c <- ndpPrefixEvent{
@@ -219,7 +219,7 @@ func (n *ndpDispatcher) OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip
 	return n.rememberPrefix
 }
 
-// Implements stack.NDPDispatcher.OnOnLinkPrefixInvalidated.
+// Implements ipv6.NDPDispatcher.OnOnLinkPrefixInvalidated.
 func (n *ndpDispatcher) OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet) {
 	if c := n.prefixC; c != nil {
 		c <- ndpPrefixEvent{
@@ -261,7 +261,7 @@ func (n *ndpDispatcher) OnAutoGenAddressInvalidated(nicID tcpip.NICID, addr tcpi
 	}
 }
 
-// Implements stack.NDPDispatcher.OnRecursiveDNSServerOption.
+// Implements ipv6.NDPDispatcher.OnRecursiveDNSServerOption.
 func (n *ndpDispatcher) OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tcpip.Address, lifetime time.Duration) {
 	if c := n.rdnssC; c != nil {
 		c <- ndpRDNSSEvent{
@@ -274,7 +274,7 @@ func (n *ndpDispatcher) OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tc
 	}
 }
 
-// Implements stack.NDPDispatcher.OnDNSSearchListOption.
+// Implements ipv6.NDPDispatcher.OnDNSSearchListOption.
 func (n *ndpDispatcher) OnDNSSearchListOption(nicID tcpip.NICID, domainNames []string, lifetime time.Duration) {
 	if n.dnsslC != nil {
 		n.dnsslC <- ndpDNSSLEvent{
@@ -285,8 +285,8 @@ func (n *ndpDispatcher) OnDNSSearchListOption(nicID tcpip.NICID, domainNames []s
 	}
 }
 
-// Implements stack.NDPDispatcher.OnDHCPv6Configuration.
-func (n *ndpDispatcher) OnDHCPv6Configuration(nicID tcpip.NICID, configuration stack.DHCPv6ConfigurationFromNDPRA) {
+// Implements ipv6.NDPDispatcher.OnDHCPv6Configuration.
+func (n *ndpDispatcher) OnDHCPv6Configuration(nicID tcpip.NICID, configuration ipv6.DHCPv6ConfigurationFromNDPRA) {
 	if c := n.dhcpv6ConfigurationC; c != nil {
 		c <- ndpDHCPv6Event{
 			nicID,
@@ -319,13 +319,13 @@ func TestDADDisabled(t *testing.T) {
 	ndpDisp := ndpDispatcher{
 		dadC: make(chan ndpDADEvent, 1),
 	}
-	opts := stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPDisp:          &ndpDisp,
-	}
 
 	e := channel.New(0, 1280, linkAddr1)
-	s := stack.New(opts)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPDisp: &ndpDisp,
+		})},
+	})
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
@@ -413,19 +413,21 @@ func TestDADResolve(t *testing.T) {
 			ndpDisp := ndpDispatcher{
 				dadC: make(chan ndpDADEvent),
 			}
-			opts := stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPDisp:          &ndpDisp,
-			}
-			opts.NDPConfigs.RetransmitTimer = test.retransTimer
-			opts.NDPConfigs.DupAddrDetectTransmits = test.dupAddrDetectTransmits
 
 			e := channelLinkWithHeaderLength{
 				Endpoint:     channel.New(int(test.dupAddrDetectTransmits), 1280, linkAddr1),
 				headerLength: test.linkHeaderLen,
 			}
 			e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-			s := stack.New(opts)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPDisp: &ndpDisp,
+					NDPConfigs: ipv6.NDPConfigurations{
+						RetransmitTimer:        test.retransTimer,
+						DupAddrDetectTransmits: test.dupAddrDetectTransmits,
+					},
+				})},
+			})
 			if err := s.CreateNIC(nicID, &e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -558,6 +560,26 @@ func TestDADResolve(t *testing.T) {
 	}
 }
 
+func rxNDPSolicit(e *channel.Endpoint, tgt tcpip.Address) {
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborSolicitMinimumSize)
+	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborSolicitMinimumSize))
+	pkt.SetType(header.ICMPv6NeighborSolicit)
+	ns := header.NDPNeighborSolicit(pkt.NDPPayload())
+	ns.SetTargetAddress(tgt)
+	snmc := header.SolicitedNodeAddr(tgt)
+	pkt.SetChecksum(header.ICMPv6Checksum(pkt, header.IPv6Any, snmc, buffer.VectorisedView{}))
+	payloadLength := hdr.UsedLength()
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength: uint16(payloadLength),
+		NextHeader:    uint8(icmp.ProtocolNumber6),
+		HopLimit:      255,
+		SrcAddr:       header.IPv6Any,
+		DstAddr:       snmc,
+	})
+	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: hdr.View().ToVectorisedView()}))
+}
+
 // TestDADFail tests to make sure that the DAD process fails if another node is
 // detected to be performing DAD on the same address (receive an NS message from
 // a node doing DAD for the same address), or if another node is detected to own
@@ -567,39 +589,19 @@ func TestDADFail(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		makeBuf func(tgt tcpip.Address) buffer.Prependable
+		rxPkt   func(e *channel.Endpoint, tgt tcpip.Address)
 		getStat func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter
 	}{
 		{
-			"RxSolicit",
-			func(tgt tcpip.Address) buffer.Prependable {
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborSolicitMinimumSize)
-				pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborSolicitMinimumSize))
-				pkt.SetType(header.ICMPv6NeighborSolicit)
-				ns := header.NDPNeighborSolicit(pkt.NDPPayload())
-				ns.SetTargetAddress(tgt)
-				snmc := header.SolicitedNodeAddr(tgt)
-				pkt.SetChecksum(header.ICMPv6Checksum(pkt, header.IPv6Any, snmc, buffer.VectorisedView{}))
-				payloadLength := hdr.UsedLength()
-				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
-				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(payloadLength),
-					NextHeader:    uint8(icmp.ProtocolNumber6),
-					HopLimit:      255,
-					SrcAddr:       header.IPv6Any,
-					DstAddr:       snmc,
-				})
-
-				return hdr
-
-			},
-			func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name:  "RxSolicit",
+			rxPkt: rxNDPSolicit,
+			getStat: func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return s.NeighborSolicit
 			},
 		},
 		{
-			"RxAdvert",
-			func(tgt tcpip.Address) buffer.Prependable {
+			name: "RxAdvert",
+			rxPkt: func(e *channel.Endpoint, tgt tcpip.Address) {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
 				hdr := buffer.NewPrependable(header.IPv6MinimumSize + naSize)
 				pkt := header.ICMPv6(hdr.Prepend(naSize))
@@ -621,11 +623,9 @@ func TestDADFail(t *testing.T) {
 					SrcAddr:       tgt,
 					DstAddr:       header.IPv6AllNodesMulticastAddress,
 				})
-
-				return hdr
-
+				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: hdr.View().ToVectorisedView()}))
 			},
-			func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			getStat: func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return s.NeighborAdvert
 			},
 		},
@@ -636,16 +636,16 @@ func TestDADFail(t *testing.T) {
 			ndpDisp := ndpDispatcher{
 				dadC: make(chan ndpDADEvent, 1),
 			}
-			ndpConfigs := stack.DefaultNDPConfigurations()
-			opts := stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPConfigs:       ndpConfigs,
-				NDPDisp:          &ndpDisp,
-			}
-			opts.NDPConfigs.RetransmitTimer = time.Second * 2
+			ndpConfigs := ipv6.DefaultNDPConfigurations()
+			ndpConfigs.RetransmitTimer = time.Second * 2
 
 			e := channel.New(0, 1280, linkAddr1)
-			s := stack.New(opts)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPDisp:    &ndpDisp,
+					NDPConfigs: ndpConfigs,
+				})},
+			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -664,13 +664,8 @@ func TestDADFail(t *testing.T) {
 				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 			}
 
-			// Receive a packet to simulate multiple nodes owning or
-			// attempting to own the same address.
-			hdr := test.makeBuf(addr1)
-			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
-			})
-			e.InjectInbound(header.IPv6ProtocolNumber, pkt)
+			// Receive a packet to simulate an address conflict.
+			test.rxPkt(e, addr1)
 
 			stat := test.getStat(s.Stats().ICMP.V6PacketsReceived)
 			if got := stat.Value(); got != 1 {
@@ -754,18 +749,18 @@ func TestDADStop(t *testing.T) {
 			ndpDisp := ndpDispatcher{
 				dadC: make(chan ndpDADEvent, 1),
 			}
-			ndpConfigs := stack.NDPConfigurations{
+
+			ndpConfigs := ipv6.NDPConfigurations{
 				RetransmitTimer:        time.Second,
 				DupAddrDetectTransmits: 2,
 			}
-			opts := stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPDisp:          &ndpDisp,
-				NDPConfigs:       ndpConfigs,
-			}
-
 			e := channel.New(0, 1280, linkAddr1)
-			s := stack.New(opts)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPDisp:    &ndpDisp,
+					NDPConfigs: ndpConfigs,
+				})},
+			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -815,19 +810,6 @@ func TestDADStop(t *testing.T) {
 	}
 }
 
-// TestSetNDPConfigurationFailsForBadNICID tests to make sure we get an error if
-// we attempt to update NDP configurations using an invalid NICID.
-func TestSetNDPConfigurationFailsForBadNICID(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-	})
-
-	// No NIC with ID 1 yet.
-	if got := s.SetNDPConfigurations(1, stack.NDPConfigurations{}); got != tcpip.ErrUnknownNICID {
-		t.Fatalf("got s.SetNDPConfigurations = %v, want = %s", got, tcpip.ErrUnknownNICID)
-	}
-}
-
 // TestSetNDPConfigurations tests that we can update and use per-interface NDP
 // configurations without affecting the default NDP configurations or other
 // interfaces' configurations.
@@ -863,8 +845,9 @@ func TestSetNDPConfigurations(t *testing.T) {
 			}
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPDisp:          &ndpDisp,
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPDisp: &ndpDisp,
+				})},
 			})
 
 			expectDADEvent := func(nicID tcpip.NICID, addr tcpip.Address) {
@@ -892,12 +875,15 @@ func TestSetNDPConfigurations(t *testing.T) {
 			}
 
 			// Update the NDP configurations on NIC(1) to use DAD.
-			configs := stack.NDPConfigurations{
+			configs := ipv6.NDPConfigurations{
 				DupAddrDetectTransmits: test.dupAddrDetectTransmits,
 				RetransmitTimer:        test.retransmitTimer,
 			}
-			if err := s.SetNDPConfigurations(nicID1, configs); err != nil {
-				t.Fatalf("got SetNDPConfigurations(%d, _) = %s", nicID1, err)
+			if ipv6Ep, err := s.GetNetworkEndpoint(nicID1, header.IPv6ProtocolNumber); err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID1, header.IPv6ProtocolNumber, err)
+			} else {
+				ndpEP := ipv6Ep.(ipv6.NDPEndpoint)
+				ndpEP.SetNDPConfigurations(configs)
 			}
 
 			// Created after updating NIC(1)'s NDP configurations
@@ -1113,12 +1099,13 @@ func TestNoRouterDiscovery(t *testing.T) {
 			}
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPConfigs: stack.NDPConfigurations{
-					HandleRAs:              handle,
-					DiscoverDefaultRouters: discover,
-				},
-				NDPDisp: &ndpDisp,
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ipv6.NDPConfigurations{
+						HandleRAs:              handle,
+						DiscoverDefaultRouters: discover,
+					},
+					NDPDisp: &ndpDisp,
+				})},
 			})
 			s.SetForwarding(ipv6.ProtocolNumber, forwarding)
 
@@ -1151,12 +1138,13 @@ func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			DiscoverDefaultRouters: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverDefaultRouters: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1192,12 +1180,13 @@ func TestRouterDiscovery(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			DiscoverDefaultRouters: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverDefaultRouters: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	expectRouterEvent := func(addr tcpip.Address, discovered bool) {
@@ -1285,7 +1274,7 @@ func TestRouterDiscovery(t *testing.T) {
 }
 
 // TestRouterDiscoveryMaxRouters tests that only
-// stack.MaxDiscoveredDefaultRouters discovered routers are remembered.
+// ipv6.MaxDiscoveredDefaultRouters discovered routers are remembered.
 func TestRouterDiscoveryMaxRouters(t *testing.T) {
 	ndpDisp := ndpDispatcher{
 		routerC:        make(chan ndpRouterEvent, 1),
@@ -1293,12 +1282,13 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			DiscoverDefaultRouters: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverDefaultRouters: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1306,14 +1296,14 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 	}
 
 	// Receive an RA from 2 more than the max number of discovered routers.
-	for i := 1; i <= stack.MaxDiscoveredDefaultRouters+2; i++ {
+	for i := 1; i <= ipv6.MaxDiscoveredDefaultRouters+2; i++ {
 		linkAddr := []byte{2, 2, 3, 4, 5, 0}
 		linkAddr[5] = byte(i)
 		llAddr := header.LinkLocalAddr(tcpip.LinkAddress(linkAddr))
 
 		e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr, 5))
 
-		if i <= stack.MaxDiscoveredDefaultRouters {
+		if i <= ipv6.MaxDiscoveredDefaultRouters {
 			select {
 			case e := <-ndpDisp.routerC:
 				if diff := checkRouterEvent(e, llAddr, true); diff != "" {
@@ -1358,12 +1348,13 @@ func TestNoPrefixDiscovery(t *testing.T) {
 			}
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPConfigs: stack.NDPConfigurations{
-					HandleRAs:              handle,
-					DiscoverOnLinkPrefixes: discover,
-				},
-				NDPDisp: &ndpDisp,
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ipv6.NDPConfigurations{
+						HandleRAs:              handle,
+						DiscoverOnLinkPrefixes: discover,
+					},
+					NDPDisp: &ndpDisp,
+				})},
 			})
 			s.SetForwarding(ipv6.ProtocolNumber, forwarding)
 
@@ -1399,13 +1390,14 @@ func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			DiscoverDefaultRouters: false,
-			DiscoverOnLinkPrefixes: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverDefaultRouters: false,
+				DiscoverOnLinkPrefixes: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1445,12 +1437,13 @@ func TestPrefixDiscovery(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			DiscoverOnLinkPrefixes: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverOnLinkPrefixes: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1545,12 +1538,13 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			DiscoverOnLinkPrefixes: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverOnLinkPrefixes: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1621,33 +1615,34 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 }
 
 // TestPrefixDiscoveryMaxRouters tests that only
-// stack.MaxDiscoveredOnLinkPrefixes discovered on-link prefixes are remembered.
+// ipv6.MaxDiscoveredOnLinkPrefixes discovered on-link prefixes are remembered.
 func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
 	ndpDisp := ndpDispatcher{
-		prefixC:        make(chan ndpPrefixEvent, stack.MaxDiscoveredOnLinkPrefixes+3),
+		prefixC:        make(chan ndpPrefixEvent, ipv6.MaxDiscoveredOnLinkPrefixes+3),
 		rememberPrefix: true,
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			DiscoverDefaultRouters: false,
-			DiscoverOnLinkPrefixes: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverDefaultRouters: false,
+				DiscoverOnLinkPrefixes: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
 		t.Fatalf("CreateNIC(1) = %s", err)
 	}
 
-	optSer := make(header.NDPOptionsSerializer, stack.MaxDiscoveredOnLinkPrefixes+2)
-	prefixes := [stack.MaxDiscoveredOnLinkPrefixes + 2]tcpip.Subnet{}
+	optSer := make(header.NDPOptionsSerializer, ipv6.MaxDiscoveredOnLinkPrefixes+2)
+	prefixes := [ipv6.MaxDiscoveredOnLinkPrefixes + 2]tcpip.Subnet{}
 
 	// Receive an RA with 2 more than the max number of discovered on-link
 	// prefixes.
-	for i := 0; i < stack.MaxDiscoveredOnLinkPrefixes+2; i++ {
+	for i := 0; i < ipv6.MaxDiscoveredOnLinkPrefixes+2; i++ {
 		prefixAddr := [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0}
 		prefixAddr[7] = byte(i)
 		prefix := tcpip.AddressWithPrefix{
@@ -1665,8 +1660,8 @@ func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
 	}
 
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithOpts(llAddr1, 0, optSer))
-	for i := 0; i < stack.MaxDiscoveredOnLinkPrefixes+2; i++ {
-		if i < stack.MaxDiscoveredOnLinkPrefixes {
+	for i := 0; i < ipv6.MaxDiscoveredOnLinkPrefixes+2; i++ {
+		if i < ipv6.MaxDiscoveredOnLinkPrefixes {
 			select {
 			case e := <-ndpDisp.prefixC:
 				if diff := checkPrefixEvent(e, prefixes[i], true); diff != "" {
@@ -1716,12 +1711,13 @@ func TestNoAutoGenAddr(t *testing.T) {
 			}
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPConfigs: stack.NDPConfigurations{
-					HandleRAs:              handle,
-					AutoGenGlobalAddresses: autogen,
-				},
-				NDPDisp: &ndpDisp,
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ipv6.NDPConfigurations{
+						HandleRAs:              handle,
+						AutoGenGlobalAddresses: autogen,
+					},
+					NDPDisp: &ndpDisp,
+				})},
 			})
 			s.SetForwarding(ipv6.ProtocolNumber, forwarding)
 
@@ -1749,14 +1745,14 @@ func checkAutoGenAddrEvent(e ndpAutoGenAddrEvent, addr tcpip.AddressWithPrefix, 
 
 // TestAutoGenAddr tests that an address is properly generated and invalidated
 // when configured to do so.
-func TestAutoGenAddr(t *testing.T) {
+func TestAutoGenAddr2(t *testing.T) {
 	const newMinVL = 2
 	newMinVLDuration := newMinVL * time.Second
-	saved := stack.MinPrefixInformationValidLifetimeForUpdate
+	saved := ipv6.MinPrefixInformationValidLifetimeForUpdate
 	defer func() {
-		stack.MinPrefixInformationValidLifetimeForUpdate = saved
+		ipv6.MinPrefixInformationValidLifetimeForUpdate = saved
 	}()
-	stack.MinPrefixInformationValidLifetimeForUpdate = newMinVLDuration
+	ipv6.MinPrefixInformationValidLifetimeForUpdate = newMinVLDuration
 
 	prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
 	prefix2, _, addr2 := prefixSubnetAddr(1, linkAddr1)
@@ -1766,12 +1762,13 @@ func TestAutoGenAddr(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			AutoGenGlobalAddresses: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				AutoGenGlobalAddresses: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1876,14 +1873,14 @@ func TestAutoGenTempAddr(t *testing.T) {
 		newMinVLDuration = newMinVL * time.Second
 	)
 
-	savedMinPrefixInformationValidLifetimeForUpdate := stack.MinPrefixInformationValidLifetimeForUpdate
-	savedMaxDesync := stack.MaxDesyncFactor
+	savedMinPrefixInformationValidLifetimeForUpdate := ipv6.MinPrefixInformationValidLifetimeForUpdate
+	savedMaxDesync := ipv6.MaxDesyncFactor
 	defer func() {
-		stack.MinPrefixInformationValidLifetimeForUpdate = savedMinPrefixInformationValidLifetimeForUpdate
-		stack.MaxDesyncFactor = savedMaxDesync
+		ipv6.MinPrefixInformationValidLifetimeForUpdate = savedMinPrefixInformationValidLifetimeForUpdate
+		ipv6.MaxDesyncFactor = savedMaxDesync
 	}()
-	stack.MinPrefixInformationValidLifetimeForUpdate = newMinVLDuration
-	stack.MaxDesyncFactor = time.Nanosecond
+	ipv6.MinPrefixInformationValidLifetimeForUpdate = newMinVLDuration
+	ipv6.MaxDesyncFactor = time.Nanosecond
 
 	prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
 	prefix2, _, addr2 := prefixSubnetAddr(1, linkAddr1)
@@ -1931,16 +1928,17 @@ func TestAutoGenTempAddr(t *testing.T) {
 				}
 				e := channel.New(0, 1280, linkAddr1)
 				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-					NDPConfigs: stack.NDPConfigurations{
-						DupAddrDetectTransmits:     test.dupAddrTransmits,
-						RetransmitTimer:            test.retransmitTimer,
-						HandleRAs:                  true,
-						AutoGenGlobalAddresses:     true,
-						AutoGenTempGlobalAddresses: true,
-					},
-					NDPDisp:     &ndpDisp,
-					TempIIDSeed: seed,
+					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+						NDPConfigs: ipv6.NDPConfigurations{
+							DupAddrDetectTransmits:     test.dupAddrTransmits,
+							RetransmitTimer:            test.retransmitTimer,
+							HandleRAs:                  true,
+							AutoGenGlobalAddresses:     true,
+							AutoGenTempGlobalAddresses: true,
+						},
+						NDPDisp:     &ndpDisp,
+						TempIIDSeed: seed,
+					})},
 				})
 
 				if err := s.CreateNIC(nicID, e); err != nil {
@@ -2119,11 +2117,11 @@ func TestAutoGenTempAddr(t *testing.T) {
 func TestNoAutoGenTempAddrForLinkLocal(t *testing.T) {
 	const nicID = 1
 
-	savedMaxDesyncFactor := stack.MaxDesyncFactor
+	savedMaxDesyncFactor := ipv6.MaxDesyncFactor
 	defer func() {
-		stack.MaxDesyncFactor = savedMaxDesyncFactor
+		ipv6.MaxDesyncFactor = savedMaxDesyncFactor
 	}()
-	stack.MaxDesyncFactor = time.Nanosecond
+	ipv6.MaxDesyncFactor = time.Nanosecond
 
 	tests := []struct {
 		name             string
@@ -2160,12 +2158,13 @@ func TestNoAutoGenTempAddrForLinkLocal(t *testing.T) {
 				}
 				e := channel.New(0, 1280, linkAddr1)
 				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-					NDPConfigs: stack.NDPConfigurations{
-						AutoGenTempGlobalAddresses: true,
-					},
-					NDPDisp:              &ndpDisp,
-					AutoGenIPv6LinkLocal: true,
+					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+						NDPConfigs: ipv6.NDPConfigurations{
+							AutoGenTempGlobalAddresses: true,
+						},
+						NDPDisp:              &ndpDisp,
+						AutoGenIPv6LinkLocal: true,
+					})},
 				})
 
 				if err := s.CreateNIC(nicID, e); err != nil {
@@ -2211,11 +2210,11 @@ func TestNoAutoGenTempAddrWithoutStableAddr(t *testing.T) {
 		retransmitTimer = 2 * time.Second
 	)
 
-	savedMaxDesyncFactor := stack.MaxDesyncFactor
+	savedMaxDesyncFactor := ipv6.MaxDesyncFactor
 	defer func() {
-		stack.MaxDesyncFactor = savedMaxDesyncFactor
+		ipv6.MaxDesyncFactor = savedMaxDesyncFactor
 	}()
-	stack.MaxDesyncFactor = 0
+	ipv6.MaxDesyncFactor = 0
 
 	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
 	var tempIIDHistory [header.IIDSize]byte
@@ -2228,15 +2227,16 @@ func TestNoAutoGenTempAddrWithoutStableAddr(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			DupAddrDetectTransmits:     dadTransmits,
-			RetransmitTimer:            retransmitTimer,
-			HandleRAs:                  true,
-			AutoGenGlobalAddresses:     true,
-			AutoGenTempGlobalAddresses: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				DupAddrDetectTransmits:     dadTransmits,
+				RetransmitTimer:            retransmitTimer,
+				HandleRAs:                  true,
+				AutoGenGlobalAddresses:     true,
+				AutoGenTempGlobalAddresses: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(nicID, e); err != nil {
@@ -2294,17 +2294,17 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 		newMinVLDuration = newMinVL * time.Second
 	)
 
-	savedMaxDesyncFactor := stack.MaxDesyncFactor
-	savedMinMaxTempAddrPreferredLifetime := stack.MinMaxTempAddrPreferredLifetime
-	savedMinMaxTempAddrValidLifetime := stack.MinMaxTempAddrValidLifetime
+	savedMaxDesyncFactor := ipv6.MaxDesyncFactor
+	savedMinMaxTempAddrPreferredLifetime := ipv6.MinMaxTempAddrPreferredLifetime
+	savedMinMaxTempAddrValidLifetime := ipv6.MinMaxTempAddrValidLifetime
 	defer func() {
-		stack.MaxDesyncFactor = savedMaxDesyncFactor
-		stack.MinMaxTempAddrPreferredLifetime = savedMinMaxTempAddrPreferredLifetime
-		stack.MinMaxTempAddrValidLifetime = savedMinMaxTempAddrValidLifetime
+		ipv6.MaxDesyncFactor = savedMaxDesyncFactor
+		ipv6.MinMaxTempAddrPreferredLifetime = savedMinMaxTempAddrPreferredLifetime
+		ipv6.MinMaxTempAddrValidLifetime = savedMinMaxTempAddrValidLifetime
 	}()
-	stack.MaxDesyncFactor = 0
-	stack.MinMaxTempAddrPreferredLifetime = newMinVLDuration
-	stack.MinMaxTempAddrValidLifetime = newMinVLDuration
+	ipv6.MaxDesyncFactor = 0
+	ipv6.MinMaxTempAddrPreferredLifetime = newMinVLDuration
+	ipv6.MinMaxTempAddrValidLifetime = newMinVLDuration
 
 	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
 	var tempIIDHistory [header.IIDSize]byte
@@ -2317,16 +2317,17 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 2),
 	}
 	e := channel.New(0, 1280, linkAddr1)
-	ndpConfigs := stack.NDPConfigurations{
+	ndpConfigs := ipv6.NDPConfigurations{
 		HandleRAs:                  true,
 		AutoGenGlobalAddresses:     true,
 		AutoGenTempGlobalAddresses: true,
 		RegenAdvanceDuration:       newMinVLDuration - regenAfter,
 	}
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs:       ndpConfigs,
-		NDPDisp:          &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ndpConfigs,
+			NDPDisp:    &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(nicID, e); err != nil {
@@ -2382,8 +2383,11 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 
 	// Stop generating temporary addresses
 	ndpConfigs.AutoGenTempGlobalAddresses = false
-	if err := s.SetNDPConfigurations(nicID, ndpConfigs); err != nil {
-		t.Fatalf("s.SetNDPConfigurations(%d, _): %s", nicID, err)
+	if ipv6Ep, err := s.GetNetworkEndpoint(nicID, header.IPv6ProtocolNumber); err != nil {
+		t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+	} else {
+		ndpEP := ipv6Ep.(ipv6.NDPEndpoint)
+		ndpEP.SetNDPConfigurations(ndpConfigs)
 	}
 
 	// Wait for all the temporary addresses to get invalidated.
@@ -2439,17 +2443,17 @@ func TestAutoGenTempAddrRegenJobUpdates(t *testing.T) {
 		newMinVLDuration = newMinVL * time.Second
 	)
 
-	savedMaxDesyncFactor := stack.MaxDesyncFactor
-	savedMinMaxTempAddrPreferredLifetime := stack.MinMaxTempAddrPreferredLifetime
-	savedMinMaxTempAddrValidLifetime := stack.MinMaxTempAddrValidLifetime
+	savedMaxDesyncFactor := ipv6.MaxDesyncFactor
+	savedMinMaxTempAddrPreferredLifetime := ipv6.MinMaxTempAddrPreferredLifetime
+	savedMinMaxTempAddrValidLifetime := ipv6.MinMaxTempAddrValidLifetime
 	defer func() {
-		stack.MaxDesyncFactor = savedMaxDesyncFactor
-		stack.MinMaxTempAddrPreferredLifetime = savedMinMaxTempAddrPreferredLifetime
-		stack.MinMaxTempAddrValidLifetime = savedMinMaxTempAddrValidLifetime
+		ipv6.MaxDesyncFactor = savedMaxDesyncFactor
+		ipv6.MinMaxTempAddrPreferredLifetime = savedMinMaxTempAddrPreferredLifetime
+		ipv6.MinMaxTempAddrValidLifetime = savedMinMaxTempAddrValidLifetime
 	}()
-	stack.MaxDesyncFactor = 0
-	stack.MinMaxTempAddrPreferredLifetime = newMinVLDuration
-	stack.MinMaxTempAddrValidLifetime = newMinVLDuration
+	ipv6.MaxDesyncFactor = 0
+	ipv6.MinMaxTempAddrPreferredLifetime = newMinVLDuration
+	ipv6.MinMaxTempAddrValidLifetime = newMinVLDuration
 
 	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
 	var tempIIDHistory [header.IIDSize]byte
@@ -2462,16 +2466,17 @@ func TestAutoGenTempAddrRegenJobUpdates(t *testing.T) {
 		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 2),
 	}
 	e := channel.New(0, 1280, linkAddr1)
-	ndpConfigs := stack.NDPConfigurations{
+	ndpConfigs := ipv6.NDPConfigurations{
 		HandleRAs:                  true,
 		AutoGenGlobalAddresses:     true,
 		AutoGenTempGlobalAddresses: true,
 		RegenAdvanceDuration:       newMinVLDuration - regenAfter,
 	}
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs:       ndpConfigs,
-		NDPDisp:          &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ndpConfigs,
+			NDPDisp:    &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(nicID, e); err != nil {
@@ -2545,9 +2550,12 @@ func TestAutoGenTempAddrRegenJobUpdates(t *testing.T) {
 	// as paased.
 	ndpConfigs.MaxTempAddrValidLifetime = 100 * time.Second
 	ndpConfigs.MaxTempAddrPreferredLifetime = 100 * time.Second
-	if err := s.SetNDPConfigurations(nicID, ndpConfigs); err != nil {
-		t.Fatalf("s.SetNDPConfigurations(%d, _): %s", nicID, err)
+	ipv6Ep, err := s.GetNetworkEndpoint(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
 	}
+	ndpEP := ipv6Ep.(ipv6.NDPEndpoint)
+	ndpEP.SetNDPConfigurations(ndpConfigs)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, 100, 100))
 	select {
 	case e := <-ndpDisp.autoGenAddrC:
@@ -2565,9 +2573,7 @@ func TestAutoGenTempAddrRegenJobUpdates(t *testing.T) {
 	newLifetimes := newMinVLDuration + regenAfter + defaultAsyncNegativeEventTimeout
 	ndpConfigs.MaxTempAddrValidLifetime = newLifetimes
 	ndpConfigs.MaxTempAddrPreferredLifetime = newLifetimes
-	if err := s.SetNDPConfigurations(nicID, ndpConfigs); err != nil {
-		t.Fatalf("s.SetNDPConfigurations(%d, _): %s", nicID, err)
-	}
+	ndpEP.SetNDPConfigurations(ndpConfigs)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, 100, 100))
 	expectAutoGenAddrEventAsync(tempAddr3, newAddr, regenAfter+defaultAsyncPositiveEventTimeout)
 }
@@ -2655,20 +2661,21 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 2),
 			}
 			e := channel.New(0, 1280, linkAddr1)
-			ndpConfigs := stack.NDPConfigurations{
+			ndpConfigs := ipv6.NDPConfigurations{
 				HandleRAs:                     true,
 				AutoGenGlobalAddresses:        true,
 				AutoGenTempGlobalAddresses:    test.tempAddrs,
 				AutoGenAddressConflictRetries: 1,
 			}
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ndpConfigs,
+					NDPDisp:    &ndpDisp,
+					OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
+						NICNameFromID: test.nicNameFromID,
+					},
+				})},
 				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
-				NDPConfigs:         ndpConfigs,
-				NDPDisp:            &ndpDisp,
-				OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
-					NICNameFromID: test.nicNameFromID,
-				},
 			})
 
 			s.SetRouteTable([]tcpip.Route{{
@@ -2739,8 +2746,11 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 			ndpDisp.dadC = make(chan ndpDADEvent, 2)
 			ndpConfigs.DupAddrDetectTransmits = dupAddrTransmits
 			ndpConfigs.RetransmitTimer = retransmitTimer
-			if err := s.SetNDPConfigurations(nicID, ndpConfigs); err != nil {
-				t.Fatalf("s.SetNDPConfigurations(%d, _): %s", nicID, err)
+			if ipv6Ep, err := s.GetNetworkEndpoint(nicID, header.IPv6ProtocolNumber); err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+			} else {
+				ndpEP := ipv6Ep.(ipv6.NDPEndpoint)
+				ndpEP.SetNDPConfigurations(ndpConfigs)
 			}
 
 			// Do SLAAC for prefix.
@@ -2754,9 +2764,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 			// DAD failure to restart the local generation process.
 			addr := test.addrs[maxSLAACAddrLocalRegenAttempts-1]
 			expectAutoGenAddrAsyncEvent(addr, newAddr)
-			if err := s.DupTentativeAddrDetected(nicID, addr.Address); err != nil {
-				t.Fatalf("s.DupTentativeAddrDetected(%d, %s): %s", nicID, addr.Address, err)
-			}
+			rxNDPSolicit(e, addr.Address)
 			select {
 			case e := <-ndpDisp.dadC:
 				if diff := checkDADEvent(e, nicID, addr.Address, false, nil); diff != "" {
@@ -2794,14 +2802,15 @@ func stackAndNdpDispatcherWithDefaultRoute(t *testing.T, nicID tcpip.NICID, useN
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				AutoGenGlobalAddresses: true,
+			},
+			NDPDisp: ndpDisp,
+		})},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			AutoGenGlobalAddresses: true,
-		},
-		NDPDisp:          ndpDisp,
-		UseNeighborCache: useNeighborCache,
+		UseNeighborCache:   useNeighborCache,
 	})
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -3036,11 +3045,11 @@ func TestAutoGenAddrJobDeprecation(t *testing.T) {
 
 	for _, stackTyp := range stacks {
 		t.Run(stackTyp.name, func(t *testing.T) {
-			saved := stack.MinPrefixInformationValidLifetimeForUpdate
+			saved := ipv6.MinPrefixInformationValidLifetimeForUpdate
 			defer func() {
-				stack.MinPrefixInformationValidLifetimeForUpdate = saved
+				ipv6.MinPrefixInformationValidLifetimeForUpdate = saved
 			}()
-			stack.MinPrefixInformationValidLifetimeForUpdate = newMinVLDuration
+			ipv6.MinPrefixInformationValidLifetimeForUpdate = newMinVLDuration
 
 			prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
 			prefix2, _, addr2 := prefixSubnetAddr(1, linkAddr1)
@@ -3258,12 +3267,12 @@ func TestAutoGenAddrFiniteToInfiniteToFiniteVL(t *testing.T) {
 	const infiniteVLSeconds = 2
 	const minVLSeconds = 1
 	savedIL := header.NDPInfiniteLifetime
-	savedMinVL := stack.MinPrefixInformationValidLifetimeForUpdate
+	savedMinVL := ipv6.MinPrefixInformationValidLifetimeForUpdate
 	defer func() {
-		stack.MinPrefixInformationValidLifetimeForUpdate = savedMinVL
+		ipv6.MinPrefixInformationValidLifetimeForUpdate = savedMinVL
 		header.NDPInfiniteLifetime = savedIL
 	}()
-	stack.MinPrefixInformationValidLifetimeForUpdate = minVLSeconds * time.Second
+	ipv6.MinPrefixInformationValidLifetimeForUpdate = minVLSeconds * time.Second
 	header.NDPInfiniteLifetime = infiniteVLSeconds * time.Second
 
 	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
@@ -3307,12 +3316,13 @@ func TestAutoGenAddrFiniteToInfiniteToFiniteVL(t *testing.T) {
 				}
 				e := channel.New(0, 1280, linkAddr1)
 				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-					NDPConfigs: stack.NDPConfigurations{
-						HandleRAs:              true,
-						AutoGenGlobalAddresses: true,
-					},
-					NDPDisp: &ndpDisp,
+					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+						NDPConfigs: ipv6.NDPConfigurations{
+							HandleRAs:              true,
+							AutoGenGlobalAddresses: true,
+						},
+						NDPDisp: &ndpDisp,
+					})},
 				})
 
 				if err := s.CreateNIC(1, e); err != nil {
@@ -3357,11 +3367,11 @@ func TestAutoGenAddrFiniteToInfiniteToFiniteVL(t *testing.T) {
 func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 	const infiniteVL = 4294967295
 	const newMinVL = 4
-	saved := stack.MinPrefixInformationValidLifetimeForUpdate
+	saved := ipv6.MinPrefixInformationValidLifetimeForUpdate
 	defer func() {
-		stack.MinPrefixInformationValidLifetimeForUpdate = saved
+		ipv6.MinPrefixInformationValidLifetimeForUpdate = saved
 	}()
-	stack.MinPrefixInformationValidLifetimeForUpdate = newMinVL * time.Second
+	ipv6.MinPrefixInformationValidLifetimeForUpdate = newMinVL * time.Second
 
 	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
 
@@ -3449,12 +3459,13 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 				}
 				e := channel.New(10, 1280, linkAddr1)
 				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-					NDPConfigs: stack.NDPConfigurations{
-						HandleRAs:              true,
-						AutoGenGlobalAddresses: true,
-					},
-					NDPDisp: &ndpDisp,
+					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+						NDPConfigs: ipv6.NDPConfigurations{
+							HandleRAs:              true,
+							AutoGenGlobalAddresses: true,
+						},
+						NDPDisp: &ndpDisp,
+					})},
 				})
 
 				if err := s.CreateNIC(1, e); err != nil {
@@ -3515,12 +3526,13 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			AutoGenGlobalAddresses: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				AutoGenGlobalAddresses: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -3700,12 +3712,13 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			AutoGenGlobalAddresses: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				AutoGenGlobalAddresses: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -3781,18 +3794,19 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs:              true,
-			AutoGenGlobalAddresses: true,
-		},
-		NDPDisp: &ndpDisp,
-		OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
-			NICNameFromID: func(_ tcpip.NICID, nicName string) string {
-				return nicName
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				AutoGenGlobalAddresses: true,
 			},
-			SecretKey: secretKey,
-		},
+			NDPDisp: &ndpDisp,
+			OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: func(_ tcpip.NICID, nicName string) string {
+					return nicName
+				},
+				SecretKey: secretKey,
+			},
+		})},
 	})
 	opts := stack.NICOptions{Name: nicName}
 	if err := s.CreateNICWithOptions(nicID, e, opts); err != nil {
@@ -3856,11 +3870,11 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 	const lifetimeSeconds = 10
 
 	// Needed for the temporary address sub test.
-	savedMaxDesync := stack.MaxDesyncFactor
+	savedMaxDesync := ipv6.MaxDesyncFactor
 	defer func() {
-		stack.MaxDesyncFactor = savedMaxDesync
+		ipv6.MaxDesyncFactor = savedMaxDesync
 	}()
-	stack.MaxDesyncFactor = time.Nanosecond
+	ipv6.MaxDesyncFactor = time.Nanosecond
 
 	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
 	secretKey := secretKeyBuf[:]
@@ -3938,14 +3952,14 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 
 	addrTypes := []struct {
 		name             string
-		ndpConfigs       stack.NDPConfigurations
+		ndpConfigs       ipv6.NDPConfigurations
 		autoGenLinkLocal bool
 		prepareFn        func(t *testing.T, ndpDisp *ndpDispatcher, e *channel.Endpoint, tempIIDHistory []byte) []tcpip.AddressWithPrefix
 		addrGenFn        func(dadCounter uint8, tempIIDHistory []byte) tcpip.AddressWithPrefix
 	}{
 		{
 			name: "Global address",
-			ndpConfigs: stack.NDPConfigurations{
+			ndpConfigs: ipv6.NDPConfigurations{
 				DupAddrDetectTransmits: dadTransmits,
 				RetransmitTimer:        retransmitTimer,
 				HandleRAs:              true,
@@ -3963,7 +3977,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 		},
 		{
 			name: "LinkLocal address",
-			ndpConfigs: stack.NDPConfigurations{
+			ndpConfigs: ipv6.NDPConfigurations{
 				DupAddrDetectTransmits: dadTransmits,
 				RetransmitTimer:        retransmitTimer,
 			},
@@ -3977,7 +3991,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 		},
 		{
 			name: "Temporary address",
-			ndpConfigs: stack.NDPConfigurations{
+			ndpConfigs: ipv6.NDPConfigurations{
 				DupAddrDetectTransmits:     dadTransmits,
 				RetransmitTimer:            retransmitTimer,
 				HandleRAs:                  true,
@@ -4029,16 +4043,17 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 						ndpConfigs := addrType.ndpConfigs
 						ndpConfigs.AutoGenAddressConflictRetries = maxRetries
 						s := stack.New(stack.Options{
-							NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
-							AutoGenIPv6LinkLocal: addrType.autoGenLinkLocal,
-							NDPConfigs:           ndpConfigs,
-							NDPDisp:              &ndpDisp,
-							OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
-								NICNameFromID: func(_ tcpip.NICID, nicName string) string {
-									return nicName
+							NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+								AutoGenIPv6LinkLocal: addrType.autoGenLinkLocal,
+								NDPConfigs:           ndpConfigs,
+								NDPDisp:              &ndpDisp,
+								OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
+									NICNameFromID: func(_ tcpip.NICID, nicName string) string {
+										return nicName
+									},
+									SecretKey: secretKey,
 								},
-								SecretKey: secretKey,
-							},
+							})},
 						})
 						opts := stack.NICOptions{Name: nicName}
 						if err := s.CreateNICWithOptions(nicID, e, opts); err != nil {
@@ -4059,9 +4074,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 							}
 
 							// Simulate a DAD conflict.
-							if err := s.DupTentativeAddrDetected(nicID, addr.Address); err != nil {
-								t.Fatalf("s.DupTentativeAddrDetected(%d, %s): %s", nicID, addr.Address, err)
-							}
+							rxNDPSolicit(e, addr.Address)
 							expectAutoGenAddrEvent(t, &ndpDisp, addr, invalidatedAddr)
 							expectDADEvent(t, &ndpDisp, addr.Address, false)
 
@@ -4119,14 +4132,14 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 
 	addrTypes := []struct {
 		name             string
-		ndpConfigs       stack.NDPConfigurations
+		ndpConfigs       ipv6.NDPConfigurations
 		autoGenLinkLocal bool
 		subnet           tcpip.Subnet
 		triggerSLAACFn   func(e *channel.Endpoint)
 	}{
 		{
 			name: "Global address",
-			ndpConfigs: stack.NDPConfigurations{
+			ndpConfigs: ipv6.NDPConfigurations{
 				DupAddrDetectTransmits:        dadTransmits,
 				RetransmitTimer:               retransmitTimer,
 				HandleRAs:                     true,
@@ -4142,7 +4155,7 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 		},
 		{
 			name: "LinkLocal address",
-			ndpConfigs: stack.NDPConfigurations{
+			ndpConfigs: ipv6.NDPConfigurations{
 				DupAddrDetectTransmits:        dadTransmits,
 				RetransmitTimer:               retransmitTimer,
 				AutoGenAddressConflictRetries: maxRetries,
@@ -4165,10 +4178,11 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 			}
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
-				NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
-				AutoGenIPv6LinkLocal: addrType.autoGenLinkLocal,
-				NDPConfigs:           addrType.ndpConfigs,
-				NDPDisp:              &ndpDisp,
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					AutoGenIPv6LinkLocal: addrType.autoGenLinkLocal,
+					NDPConfigs:           addrType.ndpConfigs,
+					NDPDisp:              &ndpDisp,
+				})},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -4198,9 +4212,7 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 			expectAutoGenAddrEvent(addr, newAddr)
 
 			// Simulate a DAD conflict.
-			if err := s.DupTentativeAddrDetected(nicID, addr.Address); err != nil {
-				t.Fatalf("s.DupTentativeAddrDetected(%d, %s): %s", nicID, addr.Address, err)
-			}
+			rxNDPSolicit(e, addr.Address)
 			expectAutoGenAddrEvent(addr, invalidatedAddr)
 			select {
 			case e := <-ndpDisp.dadC:
@@ -4250,21 +4262,22 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			DupAddrDetectTransmits:        dadTransmits,
-			RetransmitTimer:               retransmitTimer,
-			HandleRAs:                     true,
-			AutoGenGlobalAddresses:        true,
-			AutoGenAddressConflictRetries: maxRetries,
-		},
-		NDPDisp: &ndpDisp,
-		OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
-			NICNameFromID: func(_ tcpip.NICID, nicName string) string {
-				return nicName
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				DupAddrDetectTransmits:        dadTransmits,
+				RetransmitTimer:               retransmitTimer,
+				HandleRAs:                     true,
+				AutoGenGlobalAddresses:        true,
+				AutoGenAddressConflictRetries: maxRetries,
 			},
-			SecretKey: secretKey,
-		},
+			NDPDisp: &ndpDisp,
+			OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: func(_ tcpip.NICID, nicName string) string {
+					return nicName
+				},
+				SecretKey: secretKey,
+			},
+		})},
 	})
 	opts := stack.NICOptions{Name: nicName}
 	if err := s.CreateNICWithOptions(nicID, e, opts); err != nil {
@@ -4296,9 +4309,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 
 	// Simulate a DAD conflict after some time has passed.
 	time.Sleep(failureTimer)
-	if err := s.DupTentativeAddrDetected(nicID, addr.Address); err != nil {
-		t.Fatalf("s.DupTentativeAddrDetected(%d, %s): %s", nicID, addr.Address, err)
-	}
+	rxNDPSolicit(e, addr.Address)
 	expectAutoGenAddrEvent(addr, invalidatedAddr)
 	select {
 	case e := <-ndpDisp.dadC:
@@ -4459,11 +4470,12 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 			}
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPConfigs: stack.NDPConfigurations{
-					HandleRAs: true,
-				},
-				NDPDisp: &ndpDisp,
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ipv6.NDPConfigurations{
+						HandleRAs: true,
+					},
+					NDPDisp: &ndpDisp,
+				})},
 			})
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(1) = %s", err)
@@ -4509,11 +4521,12 @@ func TestNDPDNSSearchListDispatch(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -4694,15 +4707,16 @@ func TestCleanupNDPState(t *testing.T) {
 				autoGenAddrC:   make(chan ndpAutoGenAddrEvent, test.maxAutoGenAddrEvents),
 			}
 			s := stack.New(stack.Options{
-				NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
-				AutoGenIPv6LinkLocal: true,
-				NDPConfigs: stack.NDPConfigurations{
-					HandleRAs:              true,
-					DiscoverDefaultRouters: true,
-					DiscoverOnLinkPrefixes: true,
-					AutoGenGlobalAddresses: true,
-				},
-				NDPDisp: &ndpDisp,
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					AutoGenIPv6LinkLocal: true,
+					NDPConfigs: ipv6.NDPConfigurations{
+						HandleRAs:              true,
+						DiscoverDefaultRouters: true,
+						DiscoverOnLinkPrefixes: true,
+						AutoGenGlobalAddresses: true,
+					},
+					NDPDisp: &ndpDisp,
+				})},
 			})
 
 			expectRouterEvent := func() (bool, ndpRouterEvent) {
@@ -4967,18 +4981,19 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	}
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			HandleRAs: true,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	})
 
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	expectDHCPv6Event := func(configuration stack.DHCPv6ConfigurationFromNDPRA) {
+	expectDHCPv6Event := func(configuration ipv6.DHCPv6ConfigurationFromNDPRA) {
 		t.Helper()
 		select {
 		case e := <-ndpDisp.dhcpv6ConfigurationC:
@@ -5002,7 +5017,7 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	// Even if the first RA reports no DHCPv6 configurations are available, the
 	// dispatcher should get an event.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
-	expectDHCPv6Event(stack.DHCPv6NoConfiguration)
+	expectDHCPv6Event(ipv6.DHCPv6NoConfiguration)
 	// Receiving the same update again should not result in an event to the
 	// dispatcher.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
@@ -5011,19 +5026,19 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	// Receive an RA that updates the DHCPv6 configuration to Other
 	// Configurations.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
-	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
+	expectDHCPv6Event(ipv6.DHCPv6OtherConfigurations)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
 	expectNoDHCPv6Event()
 
 	// Receive an RA that updates the DHCPv6 configuration to Managed Address.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, false))
-	expectDHCPv6Event(stack.DHCPv6ManagedAddress)
+	expectDHCPv6Event(ipv6.DHCPv6ManagedAddress)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, false))
 	expectNoDHCPv6Event()
 
 	// Receive an RA that updates the DHCPv6 configuration to none.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
-	expectDHCPv6Event(stack.DHCPv6NoConfiguration)
+	expectDHCPv6Event(ipv6.DHCPv6NoConfiguration)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
 	expectNoDHCPv6Event()
 
@@ -5031,7 +5046,7 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	//
 	// Note, when the M flag is set, the O flag is redundant.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, true))
-	expectDHCPv6Event(stack.DHCPv6ManagedAddress)
+	expectDHCPv6Event(ipv6.DHCPv6ManagedAddress)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, true))
 	expectNoDHCPv6Event()
 	// Even though the DHCPv6 flags are different, the effective configuration is
@@ -5044,7 +5059,7 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	// Receive an RA that updates the DHCPv6 configuration to Other
 	// Configurations.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
-	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
+	expectDHCPv6Event(ipv6.DHCPv6OtherConfigurations)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
 	expectNoDHCPv6Event()
 
@@ -5059,7 +5074,7 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	// Receive an RA that updates the DHCPv6 configuration to Other
 	// Configurations.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
-	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
+	expectDHCPv6Event(ipv6.DHCPv6OtherConfigurations)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
 	expectNoDHCPv6Event()
 }
@@ -5217,12 +5232,13 @@ func TestRouterSolicitation(t *testing.T) {
 					}
 				}
 				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-					NDPConfigs: stack.NDPConfigurations{
-						MaxRtrSolicitations:     test.maxRtrSolicit,
-						RtrSolicitationInterval: test.rtrSolicitInt,
-						MaxRtrSolicitationDelay: test.maxRtrSolicitDelay,
-					},
+					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+						NDPConfigs: ipv6.NDPConfigurations{
+							MaxRtrSolicitations:     test.maxRtrSolicit,
+							RtrSolicitationInterval: test.rtrSolicitInt,
+							MaxRtrSolicitationDelay: test.maxRtrSolicitDelay,
+						},
+					})},
 				})
 				if err := s.CreateNIC(nicID, &e); err != nil {
 					t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -5357,12 +5373,13 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 					checker.NDPRS())
 			}
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPConfigs: stack.NDPConfigurations{
-					MaxRtrSolicitations:     maxRtrSolicitations,
-					RtrSolicitationInterval: interval,
-					MaxRtrSolicitationDelay: delay,
-				},
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ipv6.NDPConfigurations{
+						MaxRtrSolicitations:     maxRtrSolicitations,
+						RtrSolicitationInterval: interval,
+						MaxRtrSolicitationDelay: delay,
+					},
+				})},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
