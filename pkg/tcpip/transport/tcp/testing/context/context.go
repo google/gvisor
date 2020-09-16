@@ -53,11 +53,11 @@ const (
 	TestPort = 4096
 
 	// StackV6Addr is the IPv6 address assigned to the stack.
-	StackV6Addr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+	StackV6Addr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
 
 	// TestV6Addr is the source address for packets sent to the stack via
 	// the link layer endpoint.
-	TestV6Addr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	TestV6Addr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
 
 	// StackV4MappedAddr is StackAddr as a mapped v6 address.
 	StackV4MappedAddr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + StackAddr
@@ -72,6 +72,18 @@ const (
 	// are sent in response to a SYN or in the initial SYN sent to the stack.
 	testInitialSequenceNumber = 789
 )
+
+// StackAddrWithPrefix is StackAddr with its associated prefix length.
+var StackAddrWithPrefix = tcpip.AddressWithPrefix{
+	Address:   StackAddr,
+	PrefixLen: 24,
+}
+
+// StackV6AddrWithPrefix is StackV6Addr with its associated prefix length.
+var StackV6AddrWithPrefix = tcpip.AddressWithPrefix{
+	Address:   StackV6Addr,
+	PrefixLen: header.IIDOffsetInIPv6Address * 8,
+}
 
 // Headers is used to represent the TCP header fields when building a
 // new packet.
@@ -184,12 +196,20 @@ func New(t *testing.T, mtu uint32) *Context {
 		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts2, err)
 	}
 
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, StackAddr); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+	v4ProtocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: StackAddrWithPrefix,
+	}
+	if err := s.AddProtocolAddress(1, v4ProtocolAddr); err != nil {
+		t.Fatalf("AddProtocolAddress(1, %#v): %s", v4ProtocolAddr, err)
 	}
 
-	if err := s.AddAddress(1, ipv6.ProtocolNumber, StackV6Addr); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+	v6ProtocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: StackV6AddrWithPrefix,
+	}
+	if err := s.AddProtocolAddress(1, v6ProtocolAddr); err != nil {
+		t.Fatalf("AddProtocolAddress(1, %#v): %s", v6ProtocolAddr, err)
 	}
 
 	s.SetRouteTable([]tcpip.Route{

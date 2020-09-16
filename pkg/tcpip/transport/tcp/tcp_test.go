@@ -5214,6 +5214,8 @@ func TestListenBacklogFull(t *testing.T) {
 func TestListenNoAcceptNonUnicastV4(t *testing.T) {
 	multicastAddr := tcpip.Address("\xe0\x00\x01\x02")
 	otherMulticastAddr := tcpip.Address("\xe0\x00\x01\x03")
+	subnet := context.StackAddrWithPrefix.Subnet()
+	subnetBroadcastAddr := subnet.Broadcast()
 
 	tests := []struct {
 		name    string
@@ -5221,53 +5223,59 @@ func TestListenNoAcceptNonUnicastV4(t *testing.T) {
 		dstAddr tcpip.Address
 	}{
 		{
-			"SourceUnspecified",
-			header.IPv4Any,
-			context.StackAddr,
+			name:    "SourceUnspecified",
+			srcAddr: header.IPv4Any,
+			dstAddr: context.StackAddr,
 		},
 		{
-			"SourceBroadcast",
-			header.IPv4Broadcast,
-			context.StackAddr,
+			name:    "SourceBroadcast",
+			srcAddr: header.IPv4Broadcast,
+			dstAddr: context.StackAddr,
 		},
 		{
-			"SourceOurMulticast",
-			multicastAddr,
-			context.StackAddr,
+			name:    "SourceOurMulticast",
+			srcAddr: multicastAddr,
+			dstAddr: context.StackAddr,
 		},
 		{
-			"SourceOtherMulticast",
-			otherMulticastAddr,
-			context.StackAddr,
+			name:    "SourceOtherMulticast",
+			srcAddr: otherMulticastAddr,
+			dstAddr: context.StackAddr,
 		},
 		{
-			"DestUnspecified",
-			context.TestAddr,
-			header.IPv4Any,
+			name:    "DestUnspecified",
+			srcAddr: context.TestAddr,
+			dstAddr: header.IPv4Any,
 		},
 		{
-			"DestBroadcast",
-			context.TestAddr,
-			header.IPv4Broadcast,
+			name:    "DestBroadcast",
+			srcAddr: context.TestAddr,
+			dstAddr: header.IPv4Broadcast,
 		},
 		{
-			"DestOurMulticast",
-			context.TestAddr,
-			multicastAddr,
+			name:    "DestOurMulticast",
+			srcAddr: context.TestAddr,
+			dstAddr: multicastAddr,
 		},
 		{
-			"DestOtherMulticast",
-			context.TestAddr,
-			otherMulticastAddr,
+			name:    "DestOtherMulticast",
+			srcAddr: context.TestAddr,
+			dstAddr: otherMulticastAddr,
+		},
+		{
+			name:    "SrcSubnetBroadcast",
+			srcAddr: subnetBroadcastAddr,
+			dstAddr: context.StackAddr,
+		},
+		{
+			name:    "DestSubnetBroadcast",
+			srcAddr: context.TestAddr,
+			dstAddr: subnetBroadcastAddr,
 		},
 	}
 
 	for _, test := range tests {
-		test := test // capture range variable
-
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			c := context.New(t, defaultMTU)
 			defer c.Cleanup()
 
@@ -5367,11 +5375,7 @@ func TestListenNoAcceptNonUnicastV6(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test // capture range variable
-
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			c := context.New(t, defaultMTU)
 			defer c.Cleanup()
 

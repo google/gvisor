@@ -2430,6 +2430,7 @@ cc_library(
         ":socket_netlink_route_util",
         ":socket_test_util",
         "//test/util:capability_util",
+        "//test/util:cleanup",
         gtest,
     ],
     alwayslink = 1,

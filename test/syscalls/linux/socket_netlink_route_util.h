@@ -43,6 +43,10 @@ PosixErrorOr<Link> LoopbackLink();
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen);
 
+// LinkDelLocalAddr removes IFA_LOCAL attribute on the interface.
+PosixError LinkDelLocalAddr(int index, int family, int prefixlen,
+                            const void* addr, int addrlen);
+
 // LinkChangeFlags changes interface flags. E.g. IFF_UP.
 PosixError LinkChangeFlags(int index, unsigned int flags, unsigned int change);
 
