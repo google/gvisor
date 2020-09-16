@@ -1088,7 +1088,7 @@ func (s *Statx) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *Statx) Packed() bool {
-    return s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed()
+    return s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -1103,7 +1103,7 @@ func (s *Statx) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Statx) UnmarshalUnsafe(src []byte) {
-    if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
+    if s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         // Type Statx doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -1144,7 +1144,7 @@ func (s *Statx) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (s *Statx) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() {
+    if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
@@ -1170,7 +1170,7 @@ func (s *Statx) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *Statx) WriteTo(writer io.Writer) (int64, error) {
-    if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
+    if !s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
@@ -1563,7 +1563,7 @@ func (f *FUSEHeaderIn) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (f *FUSEHeaderIn) Packed() bool {
-    return f.Unique.Packed() && f.Opcode.Packed()
+    return f.Opcode.Packed() && f.Unique.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -1578,7 +1578,7 @@ func (f *FUSEHeaderIn) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEHeaderIn) UnmarshalUnsafe(src []byte) {
-    if f.Unique.Packed() && f.Opcode.Packed() {
+    if f.Opcode.Packed() && f.Unique.Packed() {
         safecopy.CopyOut(unsafe.Pointer(f), src)
     } else {
         // Type FUSEHeaderIn doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -3229,7 +3229,7 @@ func (i *IPTEntry) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTEntry) UnmarshalUnsafe(src []byte) {
-    if i.IP.Packed() && i.Counters.Packed() {
+    if i.Counters.Packed() && i.IP.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         // Type IPTEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -3402,7 +3402,7 @@ func (i *IPTIP) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (i *IPTIP) Packed() bool {
-    return i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed()
+    return i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -3417,7 +3417,7 @@ func (i *IPTIP) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTIP) UnmarshalUnsafe(src []byte) {
-    if i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
+    if i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         // Type IPTIP doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -3428,7 +3428,7 @@ func (i *IPTIP) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IPTIP) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
+    if !i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -4193,7 +4193,7 @@ func (i *IP6TEntry) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (i *IP6TEntry) Packed() bool {
-    return i.IPv6.Packed() && i.Counters.Packed()
+    return i.Counters.Packed() && i.IPv6.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -4416,7 +4416,7 @@ func (i *IP6TIP) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IP6TIP) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
+    if !i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
         // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -4446,7 +4446,7 @@ func (i *IP6TIP) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error)
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (i *IP6TIP) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
+    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IP6TIP doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
@@ -4472,7 +4472,7 @@ func (i *IP6TIP) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) 
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (i *IP6TIP) WriteTo(writer io.Writer) (int64, error) {
-    if !i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
+    if !i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
         // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
@@ -4970,7 +4970,7 @@ func (r *Rusage) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (r *Rusage) MarshalUnsafe(dst []byte) {
-    if r.STime.Packed() && r.UTime.Packed() {
+    if r.UTime.Packed() && r.STime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(r))
     } else {
         // Type Rusage doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -5112,12 +5112,12 @@ func (s *SemidDS) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *SemidDS) Packed() bool {
-    return s.SemOTime.Packed() && s.SemCTime.Packed() && s.SemPerm.Packed()
+    return s.SemPerm.Packed() && s.SemOTime.Packed() && s.SemCTime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SemidDS) MarshalUnsafe(dst []byte) {
-    if s.SemPerm.Packed() && s.SemOTime.Packed() && s.SemCTime.Packed() {
+    if s.SemOTime.Packed() && s.SemCTime.Packed() && s.SemPerm.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         // Type SemidDS doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -5127,7 +5127,7 @@ func (s *SemidDS) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SemidDS) UnmarshalUnsafe(src []byte) {
-    if s.SemCTime.Packed() && s.SemPerm.Packed() && s.SemOTime.Packed() {
+    if s.SemPerm.Packed() && s.SemOTime.Packed() && s.SemCTime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         // Type SemidDS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -5168,7 +5168,7 @@ func (s *SemidDS) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (s *SemidDS) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !s.SemPerm.Packed() && s.SemOTime.Packed() && s.SemCTime.Packed() {
+    if !s.SemCTime.Packed() && s.SemPerm.Packed() && s.SemOTime.Packed() {
         // Type SemidDS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
@@ -5194,7 +5194,7 @@ func (s *SemidDS) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error)
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *SemidDS) WriteTo(writer io.Writer) (int64, error) {
-    if !s.SemPerm.Packed() && s.SemOTime.Packed() && s.SemCTime.Packed() {
+    if !s.SemOTime.Packed() && s.SemCTime.Packed() && s.SemPerm.Packed() {
         // Type SemidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
@@ -5459,7 +5459,7 @@ func (s *ShmidDS) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *ShmidDS) Packed() bool {
-    return s.ShmAtime.Packed() && s.ShmDtime.Packed() && s.ShmCtime.Packed() && s.ShmPerm.Packed()
+    return s.ShmCtime.Packed() && s.ShmPerm.Packed() && s.ShmAtime.Packed() && s.ShmDtime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -5474,7 +5474,7 @@ func (s *ShmidDS) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *ShmidDS) UnmarshalUnsafe(src []byte) {
-    if s.ShmPerm.Packed() && s.ShmAtime.Packed() && s.ShmDtime.Packed() && s.ShmCtime.Packed() {
+    if s.ShmDtime.Packed() && s.ShmCtime.Packed() && s.ShmPerm.Packed() && s.ShmAtime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         // Type ShmidDS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -5485,7 +5485,7 @@ func (s *ShmidDS) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (s *ShmidDS) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !s.ShmPerm.Packed() && s.ShmAtime.Packed() && s.ShmDtime.Packed() && s.ShmCtime.Packed() {
+    if !s.ShmDtime.Packed() && s.ShmCtime.Packed() && s.ShmPerm.Packed() && s.ShmAtime.Packed() {
         // Type ShmidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         s.MarshalBytes(buf) // escapes: fallback.
@@ -5515,7 +5515,7 @@ func (s *ShmidDS) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (s *ShmidDS) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !s.ShmPerm.Packed() && s.ShmAtime.Packed() && s.ShmDtime.Packed() && s.ShmCtime.Packed() {
+    if !s.ShmDtime.Packed() && s.ShmCtime.Packed() && s.ShmPerm.Packed() && s.ShmAtime.Packed() {
         // Type ShmidDS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
@@ -7572,7 +7572,7 @@ func (i *Itimerspec) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Itimerspec) MarshalUnsafe(dst []byte) {
-    if i.Interval.Packed() && i.Value.Packed() {
+    if i.Value.Packed() && i.Interval.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(i))
     } else {
         // Type Itimerspec doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -7593,7 +7593,7 @@ func (i *Itimerspec) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *Itimerspec) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
+    if !i.Value.Packed() && i.Interval.Packed() {
         // Type Itimerspec doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -7623,7 +7623,7 @@ func (i *Itimerspec) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, er
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (i *Itimerspec) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !i.Value.Packed() && i.Interval.Packed() {
+    if !i.Interval.Packed() && i.Value.Packed() {
         // Type Itimerspec doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
@@ -7712,7 +7712,7 @@ func (i *ItimerVal) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *ItimerVal) UnmarshalUnsafe(src []byte) {
-    if i.Value.Packed() && i.Interval.Packed() {
+    if i.Interval.Packed() && i.Value.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         // Type ItimerVal doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -7931,7 +7931,7 @@ func (t *Tms) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (t *Tms) MarshalUnsafe(dst []byte) {
-    if t.UTime.Packed() && t.STime.Packed() && t.CUTime.Packed() && t.CSTime.Packed() {
+    if t.CSTime.Packed() && t.UTime.Packed() && t.STime.Packed() && t.CUTime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(t))
     } else {
         // Type Tms doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -7952,7 +7952,7 @@ func (t *Tms) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (t *Tms) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !t.CUTime.Packed() && t.CSTime.Packed() && t.UTime.Packed() && t.STime.Packed() {
+    if !t.UTime.Packed() && t.STime.Packed() && t.CUTime.Packed() && t.CSTime.Packed() {
         // Type Tms doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(t.SizeBytes()) // escapes: okay.
         t.MarshalBytes(buf) // escapes: fallback.
@@ -7982,7 +7982,7 @@ func (t *Tms) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (t *Tms) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !t.UTime.Packed() && t.STime.Packed() && t.CUTime.Packed() && t.CSTime.Packed() {
+    if !t.STime.Packed() && t.CUTime.Packed() && t.CSTime.Packed() && t.UTime.Packed() {
         // Type Tms doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(t.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
