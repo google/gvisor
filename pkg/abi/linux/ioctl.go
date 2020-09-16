@@ -113,6 +113,12 @@ const (
 	_IOC_DIRSHIFT  = _IOC_SIZESHIFT + _IOC_SIZEBITS
 )
 
+// Constants from uapi/linux/fs.h.
+const (
+	FS_IOC_GETFLAGS = 2147771905
+	FS_VERITY_FL    = 1048576
+)
+
 // Constants from uapi/linux/fsverity.h.
 const (
 	FS_IOC_ENABLE_VERITY = 1082156677
