@@ -111,6 +111,32 @@ func (x *LinkPacketInfo) StateLoad(m state.Source) {
 	m.Load(1, &x.PktType)
 }
 
+func (x *LingerOption) StateTypeName() string {
+	return "pkg/tcpip.LingerOption"
+}
+
+func (x *LingerOption) StateFields() []string {
+	return []string{
+		"Enabled",
+		"Timeout",
+	}
+}
+
+func (x *LingerOption) beforeSave() {}
+
+func (x *LingerOption) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Enabled)
+	m.Save(1, &x.Timeout)
+}
+
+func (x *LingerOption) afterLoad() {}
+
+func (x *LingerOption) StateLoad(m state.Source) {
+	m.Load(0, &x.Enabled)
+	m.Load(1, &x.Timeout)
+}
+
 func (x *IPPacketInfo) StateTypeName() string {
 	return "pkg/tcpip.IPPacketInfo"
 }
@@ -144,5 +170,6 @@ func init() {
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))
+	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 }
