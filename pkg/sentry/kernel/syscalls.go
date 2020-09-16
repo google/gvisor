@@ -348,6 +348,16 @@ func (s *SyscallTable) LookupName(sysno uintptr) string {
 	return fmt.Sprintf("sys_%d", sysno) // Unlikely.
 }
 
+// LookupNo looks up a syscall number by name.
+func (s *SyscallTable) LookupNo(name string) (uintptr, error) {
+	for i, syscall := range s.Table {
+		if syscall.Name == name {
+			return uintptr(i), nil
+		}
+	}
+	return 0, fmt.Errorf("syscall %q not found", name)
+}
+
 // LookupEmulate looks up an emulation syscall number.
 func (s *SyscallTable) LookupEmulate(addr usermem.Addr) (uintptr, bool) {
 	sysno, ok := s.Emulate[addr]
