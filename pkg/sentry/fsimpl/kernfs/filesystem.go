@@ -658,9 +658,6 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	// Store the name before walkExistingLocked as rp will be advanced past the
-	// name in the following call.
-	name := rp.Component()
 	vfsd, inode, err := fs.walkExistingLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
@@ -691,7 +688,7 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 
-	if err := parentDentry.inode.RmDir(ctx, name, vfsd); err != nil {
+	if err := parentDentry.inode.RmDir(ctx, d.name, vfsd); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
@@ -771,9 +768,6 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	// Store the name before walkExistingLocked as rp will be advanced past the
-	// name in the following call.
-	name := rp.Component()
 	vfsd, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
@@ -799,7 +793,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
-	if err := parentDentry.inode.Unlink(ctx, name, vfsd); err != nil {
+	if err := parentDentry.inode.Unlink(ctx, d.name, vfsd); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
