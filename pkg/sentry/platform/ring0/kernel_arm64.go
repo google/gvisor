@@ -53,6 +53,11 @@ func IsCanonical(addr uint64) bool {
 
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
+	storeAppASID(uintptr(switchOpts.UserASID))
+	if switchOpts.Flush {
+		FlushTlbAll()
+	}
+
 	regs := switchOpts.Registers
 
 	regs.Pstate &= ^uint64(PsrFlagsClear)

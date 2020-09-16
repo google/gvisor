@@ -15,6 +15,20 @@
 #include "funcdata.h"
 #include "textflag.h"
 
+TEXT ·LocalFlushTlbAll(SB),NOSPLIT,$0
+	DSB $6			// dsb(nshst)
+	WORD $0xd508871f	// __tlbi(vmalle1)
+	DSB $7			// dsb(nsh)
+	ISB $15
+	RET
+
+TEXT ·FlushTlbAll(SB),NOSPLIT,$0
+	DSB $10			// dsb(ishst)
+	WORD $0xd508831f	// __tlbi(vmalle1is)
+	DSB $11			// dsb(ish)
+	ISB $15
+	RET
+
 TEXT ·GetTLS(SB),NOSPLIT,$0-8
 	MRS TPIDR_EL0, R1
 	MOVD R1, ret+0(FP)
