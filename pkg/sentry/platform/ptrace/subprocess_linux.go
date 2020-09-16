@@ -80,9 +80,9 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 			Rules: seccomp.SyscallRules{
 				syscall.SYS_CLONE: []seccomp.Rule{
 					// Allow creation of new subprocesses (used by the master).
-					{seccomp.AllowValue(syscall.CLONE_FILES | syscall.SIGKILL)},
+					{seccomp.EqualTo(syscall.CLONE_FILES | syscall.SIGKILL)},
 					// Allow creation of new threads within a single address space (used by addresss spaces).
-					{seccomp.AllowValue(
+					{seccomp.EqualTo(
 						syscall.CLONE_FILES |
 							syscall.CLONE_FS |
 							syscall.CLONE_SIGHAND |
@@ -97,14 +97,14 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 
 				// For the stub prctl dance (all).
 				syscall.SYS_PRCTL: []seccomp.Rule{
-					{seccomp.AllowValue(syscall.PR_SET_PDEATHSIG), seccomp.AllowValue(syscall.SIGKILL)},
+					{seccomp.EqualTo(syscall.PR_SET_PDEATHSIG), seccomp.EqualTo(syscall.SIGKILL)},
 				},
 				syscall.SYS_GETPPID: {},
 
 				// For the stub to stop itself (all).
 				syscall.SYS_GETPID: {},
 				syscall.SYS_KILL: []seccomp.Rule{
-					{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SIGSTOP)},
+					{seccomp.MatchAny{}, seccomp.EqualTo(syscall.SIGSTOP)},
 				},
 
 				// Injected to support the address space operations.
@@ -115,7 +115,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 		})
 	}
 	rules = appendArchSeccompRules(rules, defaultAction)
-	instrs, err := seccomp.BuildProgram(rules, defaultAction)
+	instrs, err := seccomp.BuildProgram(rules, defaultAction, defaultAction)
 	if err != nil {
 		return nil, err
 	}

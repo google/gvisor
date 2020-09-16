@@ -93,7 +93,7 @@ func TestDecode(t *testing.T) {
 	}
 }
 
-func TestDecodeProgram(t *testing.T) {
+func TestDecodeInstructions(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		program  []linux.BPFInstruction
@@ -126,7 +126,7 @@ func TestDecodeProgram(t *testing.T) {
 			program: []linux.BPFInstruction{Stmt(Ld+Abs+W, 10), Stmt(Ld+Len+Mem, 0)},
 			fail:    true},
 	} {
-		got, err := DecodeProgram(test.program)
+		got, err := DecodeInstructions(test.program)
 		if test.fail {
 			if err == nil {
 				t.Errorf("%s: Decode(...) failed, expected: 'error', got: %q", test.name, got)

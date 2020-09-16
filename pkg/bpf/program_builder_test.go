@@ -26,16 +26,16 @@ func validate(p *ProgramBuilder, expected []linux.BPFInstruction) error {
 	if err != nil {
 		return fmt.Errorf("Instructions() failed: %v", err)
 	}
-	got, err := DecodeProgram(instructions)
+	got, err := DecodeInstructions(instructions)
 	if err != nil {
-		return fmt.Errorf("DecodeProgram('instructions') failed: %v", err)
+		return fmt.Errorf("DecodeInstructions('instructions') failed: %v", err)
 	}
-	expectedDecoded, err := DecodeProgram(expected)
+	expectedDecoded, err := DecodeInstructions(expected)
 	if err != nil {
-		return fmt.Errorf("DecodeProgram('expected') failed: %v", err)
+		return fmt.Errorf("DecodeInstructions('expected') failed: %v", err)
 	}
 	if got != expectedDecoded {
-		return fmt.Errorf("DecodeProgram() failed, expected: %q, got: %q", expectedDecoded, got)
+		return fmt.Errorf("DecodeInstructions() failed, expected: %q, got: %q", expectedDecoded, got)
 	}
 	return nil
 }
@@ -124,10 +124,38 @@ func TestProgramBuilderLabelWithNoInstruction(t *testing.T) {
 	}
 }
 
+// TestProgramBuilderUnusedLabel tests that adding an unused label doesn't
+// cause program generation to fail.
 func TestProgramBuilderUnusedLabel(t *testing.T) {
 	p := NewProgramBuilder()
-	if err := p.AddLabel("unused"); err == nil {
-		t.Errorf("AddLabel(unused) should have failed")
+	p.AddStmt(Ld+Abs+W, 10)
+	p.AddJump(Jmp+Ja, 10, 0, 0)
+
+	expected := []linux.BPFInstruction{
+		Stmt(Ld+Abs+W, 10),
+		Jump(Jmp+Ja, 10, 0, 0),
+	}
+
+	if err := p.AddLabel("unused"); err != nil {
+		t.Errorf("AddLabel(unused) should have succeeded")
+	}
+
+	if err := validate(p, expected); err != nil {
+		t.Errorf("Validate() failed: %v", err)
+	}
+}
+
+// TestProgramBuilderBackwardsReference tests that including a backwards
+// reference to a label in a program causes a failure.
+func TestProgramBuilderBackwardsReference(t *testing.T) {
+	p := NewProgramBuilder()
+	if err := p.AddLabel("bw_label"); err != nil {
+		t.Errorf("failed to add label")
+	}
+	p.AddStmt(Ld+Abs+W, 10)
+	p.AddJumpTrueLabel(Jmp+Jeq+K, 10, "bw_label", 0)
+	if _, err := p.Instructions(); err == nil {
+		t.Errorf("Instructions() should have failed")
 	}
 }
 

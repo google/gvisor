@@ -29,7 +29,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_CLOCK_GETTIME: {},
 	syscall.SYS_CLONE: []seccomp.Rule{
 		{
-			seccomp.AllowValue(
+			seccomp.EqualTo(
 				syscall.CLONE_VM |
 					syscall.CLONE_FS |
 					syscall.CLONE_FILES |
@@ -42,26 +42,26 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_DUP:   {},
 	syscall.SYS_DUP3: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.O_CLOEXEC),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.O_CLOEXEC),
 		},
 	},
 	syscall.SYS_EPOLL_CREATE1: {},
 	syscall.SYS_EPOLL_CTL:     {},
 	syscall.SYS_EPOLL_PWAIT: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(0),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(0),
 		},
 	},
 	syscall.SYS_EVENTFD2: []seccomp.Rule{
 		{
-			seccomp.AllowValue(0),
-			seccomp.AllowValue(0),
+			seccomp.EqualTo(0),
+			seccomp.EqualTo(0),
 		},
 	},
 	syscall.SYS_EXIT:       {},
@@ -70,16 +70,16 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_FCHMOD:     {},
 	syscall.SYS_FCNTL: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.F_GETFL),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.F_GETFL),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.F_SETFL),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.F_SETFL),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.F_GETFD),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.F_GETFD),
 		},
 	},
 	syscall.SYS_FSTAT:     {},
@@ -87,52 +87,52 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_FTRUNCATE: {},
 	syscall.SYS_FUTEX: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
-			seccomp.AllowAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
+			seccomp.MatchAny{},
 		},
 		// Non-private variants are included for flipcall support. They are otherwise
 		// unncessary, as the sentry will use only private futexes internally.
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(linux.FUTEX_WAIT),
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(linux.FUTEX_WAIT),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(linux.FUTEX_WAKE),
-			seccomp.AllowAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(linux.FUTEX_WAKE),
+			seccomp.MatchAny{},
 		},
 	},
 	syscall.SYS_GETPID: {},
 	unix.SYS_GETRANDOM: {},
 	syscall.SYS_GETSOCKOPT: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_DOMAIN),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.SOL_SOCKET),
+			seccomp.EqualTo(syscall.SO_DOMAIN),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_TYPE),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.SOL_SOCKET),
+			seccomp.EqualTo(syscall.SO_TYPE),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_ERROR),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.SOL_SOCKET),
+			seccomp.EqualTo(syscall.SO_ERROR),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_SNDBUF),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.SOL_SOCKET),
+			seccomp.EqualTo(syscall.SO_SNDBUF),
 		},
 	},
 	syscall.SYS_GETTID:       {},
@@ -141,34 +141,34 @@ var allowedSyscalls = seccomp.SyscallRules{
 	// setting/getting termios and winsize.
 	syscall.SYS_IOCTL: []seccomp.Rule{
 		{
-			seccomp.AllowAny{}, /* fd */
-			seccomp.AllowValue(linux.TCGETS),
-			seccomp.AllowAny{}, /* termios struct */
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.TCGETS),
+			seccomp.MatchAny{}, /* termios struct */
 		},
 		{
-			seccomp.AllowAny{}, /* fd */
-			seccomp.AllowValue(linux.TCSETS),
-			seccomp.AllowAny{}, /* termios struct */
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.TCSETS),
+			seccomp.MatchAny{}, /* termios struct */
 		},
 		{
-			seccomp.AllowAny{}, /* fd */
-			seccomp.AllowValue(linux.TCSETSF),
-			seccomp.AllowAny{}, /* termios struct */
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.TCSETSF),
+			seccomp.MatchAny{}, /* termios struct */
 		},
 		{
-			seccomp.AllowAny{}, /* fd */
-			seccomp.AllowValue(linux.TCSETSW),
-			seccomp.AllowAny{}, /* termios struct */
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.TCSETSW),
+			seccomp.MatchAny{}, /* termios struct */
 		},
 		{
-			seccomp.AllowAny{}, /* fd */
-			seccomp.AllowValue(linux.TIOCSWINSZ),
-			seccomp.AllowAny{}, /* winsize struct */
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.TIOCSWINSZ),
+			seccomp.MatchAny{}, /* winsize struct */
 		},
 		{
-			seccomp.AllowAny{}, /* fd */
-			seccomp.AllowValue(linux.TIOCGWINSZ),
-			seccomp.AllowAny{}, /* winsize struct */
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.TIOCGWINSZ),
+			seccomp.MatchAny{}, /* winsize struct */
 		},
 	},
 	syscall.SYS_LSEEK:   {},
@@ -182,46 +182,46 @@ var allowedSyscalls = seccomp.SyscallRules{
 	// TODO(b/148688965): Remove once this is gone from Go.
 	syscall.SYS_MLOCK: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(4096),
+			seccomp.MatchAny{},
+			seccomp.EqualTo(4096),
 		},
 	},
 	syscall.SYS_MMAP: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MAP_SHARED),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MAP_SHARED),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MAP_PRIVATE),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MAP_PRIVATE),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS | syscall.MAP_STACK),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS | syscall.MAP_STACK),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS | syscall.MAP_NORESERVE),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS | syscall.MAP_NORESERVE),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.PROT_WRITE | syscall.PROT_READ),
-			seccomp.AllowValue(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS | syscall.MAP_FIXED),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.PROT_WRITE | syscall.PROT_READ),
+			seccomp.EqualTo(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS | syscall.MAP_FIXED),
 		},
 	},
 	syscall.SYS_MPROTECT:  {},
@@ -237,32 +237,32 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_READ:      {},
 	syscall.SYS_RECVMSG: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC),
 		},
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC | syscall.MSG_PEEK),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC | syscall.MSG_PEEK),
 		},
 	},
 	syscall.SYS_RECVMMSG: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(fdbased.MaxMsgsPerRecv),
-			seccomp.AllowValue(syscall.MSG_DONTWAIT),
-			seccomp.AllowValue(0),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(fdbased.MaxMsgsPerRecv),
+			seccomp.EqualTo(syscall.MSG_DONTWAIT),
+			seccomp.EqualTo(0),
 		},
 	},
 	unix.SYS_SENDMMSG: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MSG_DONTWAIT),
-			seccomp.AllowValue(0),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MSG_DONTWAIT),
+			seccomp.EqualTo(0),
 		},
 	},
 	syscall.SYS_RESTART_SYSCALL: {},
@@ -272,49 +272,49 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_SCHED_YIELD:     {},
 	syscall.SYS_SENDMSG: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.MSG_DONTWAIT | syscall.MSG_NOSIGNAL),
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(syscall.MSG_DONTWAIT | syscall.MSG_NOSIGNAL),
 		},
 	},
 	syscall.SYS_SETITIMER: {},
 	syscall.SYS_SHUTDOWN: []seccomp.Rule{
 		// Used by fs/host to shutdown host sockets.
-		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RD)},
-		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_WR)},
+		{seccomp.MatchAny{}, seccomp.EqualTo(syscall.SHUT_RD)},
+		{seccomp.MatchAny{}, seccomp.EqualTo(syscall.SHUT_WR)},
 		// Used by unet to shutdown connections.
-		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RDWR)},
+		{seccomp.MatchAny{}, seccomp.EqualTo(syscall.SHUT_RDWR)},
 	},
 	syscall.SYS_SIGALTSTACK:     {},
 	unix.SYS_STATX:              {},
 	syscall.SYS_SYNC_FILE_RANGE: {},
 	syscall.SYS_TEE: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(1),                      /* len */
-			seccomp.AllowValue(unix.SPLICE_F_NONBLOCK), /* flags */
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(1),                      /* len */
+			seccomp.EqualTo(unix.SPLICE_F_NONBLOCK), /* flags */
 		},
 	},
 	syscall.SYS_TGKILL: []seccomp.Rule{
 		{
-			seccomp.AllowValue(uint64(os.Getpid())),
+			seccomp.EqualTo(uint64(os.Getpid())),
 		},
 	},
 	syscall.SYS_UTIMENSAT: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(0), /* null pathname */
-			seccomp.AllowAny{},
-			seccomp.AllowValue(0), /* flags */
+			seccomp.MatchAny{},
+			seccomp.EqualTo(0), /* null pathname */
+			seccomp.MatchAny{},
+			seccomp.EqualTo(0), /* flags */
 		},
 	},
 	syscall.SYS_WRITE: {},
 	// For rawfile.NonBlockingWriteIovec.
 	syscall.SYS_WRITEV: []seccomp.Rule{
 		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
 			seccomp.GreaterThan(0),
 		},
 	},
@@ -325,10 +325,10 @@ func hostInetFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
 		syscall.SYS_ACCEPT4: []seccomp.Rule{
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowAny{},
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
 			},
 		},
 		syscall.SYS_BIND:        {},
@@ -337,84 +337,84 @@ func hostInetFilters() seccomp.SyscallRules {
 		syscall.SYS_GETSOCKNAME: {},
 		syscall.SYS_GETSOCKOPT: []seccomp.Rule{
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IP),
-				seccomp.AllowValue(syscall.IP_TOS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IP),
+				seccomp.EqualTo(syscall.IP_TOS),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IP),
-				seccomp.AllowValue(syscall.IP_RECVTOS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IP),
+				seccomp.EqualTo(syscall.IP_RECVTOS),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IPV6),
-				seccomp.AllowValue(syscall.IPV6_TCLASS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IPV6),
+				seccomp.EqualTo(syscall.IPV6_TCLASS),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IPV6),
-				seccomp.AllowValue(syscall.IPV6_RECVTCLASS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IPV6),
+				seccomp.EqualTo(syscall.IPV6_RECVTCLASS),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IPV6),
-				seccomp.AllowValue(syscall.IPV6_V6ONLY),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IPV6),
+				seccomp.EqualTo(syscall.IPV6_V6ONLY),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_ERROR),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_ERROR),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_KEEPALIVE),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_KEEPALIVE),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_SNDBUF),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_SNDBUF),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_RCVBUF),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_RCVBUF),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_REUSEADDR),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_REUSEADDR),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_TYPE),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_TYPE),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_LINGER),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_LINGER),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_TCP),
-				seccomp.AllowValue(syscall.TCP_NODELAY),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_TCP),
+				seccomp.EqualTo(syscall.TCP_NODELAY),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_TCP),
-				seccomp.AllowValue(syscall.TCP_INFO),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_TCP),
+				seccomp.EqualTo(syscall.TCP_INFO),
 			},
 		},
 		syscall.SYS_IOCTL: []seccomp.Rule{
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.TIOCOUTQ),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.TIOCOUTQ),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.TIOCINQ),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.TIOCINQ),
 			},
 		},
 		syscall.SYS_LISTEN:   {},
@@ -425,103 +425,103 @@ func hostInetFilters() seccomp.SyscallRules {
 		syscall.SYS_SENDTO:   {},
 		syscall.SYS_SETSOCKOPT: []seccomp.Rule{
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IPV6),
-				seccomp.AllowValue(syscall.IPV6_V6ONLY),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IPV6),
+				seccomp.EqualTo(syscall.IPV6_V6ONLY),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_SNDBUF),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_SNDBUF),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_RCVBUF),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_RCVBUF),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_REUSEADDR),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_REUSEADDR),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_TCP),
-				seccomp.AllowValue(syscall.TCP_NODELAY),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_TCP),
+				seccomp.EqualTo(syscall.TCP_NODELAY),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IP),
-				seccomp.AllowValue(syscall.IP_TOS),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IP),
+				seccomp.EqualTo(syscall.IP_TOS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IP),
-				seccomp.AllowValue(syscall.IP_RECVTOS),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IP),
+				seccomp.EqualTo(syscall.IP_RECVTOS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IPV6),
-				seccomp.AllowValue(syscall.IPV6_TCLASS),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IPV6),
+				seccomp.EqualTo(syscall.IPV6_TCLASS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_IPV6),
-				seccomp.AllowValue(syscall.IPV6_RECVTCLASS),
-				seccomp.AllowAny{},
-				seccomp.AllowValue(4),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_IPV6),
+				seccomp.EqualTo(syscall.IPV6_RECVTCLASS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
 			},
 		},
 		syscall.SYS_SHUTDOWN: []seccomp.Rule{
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SHUT_RD),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SHUT_RD),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SHUT_WR),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SHUT_WR),
 			},
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SHUT_RDWR),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SHUT_RDWR),
 			},
 		},
 		syscall.SYS_SOCKET: []seccomp.Rule{
 			{
-				seccomp.AllowValue(syscall.AF_INET),
-				seccomp.AllowValue(syscall.SOCK_STREAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
-				seccomp.AllowValue(0),
+				seccomp.EqualTo(syscall.AF_INET),
+				seccomp.EqualTo(syscall.SOCK_STREAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
+				seccomp.EqualTo(0),
 			},
 			{
-				seccomp.AllowValue(syscall.AF_INET),
-				seccomp.AllowValue(syscall.SOCK_DGRAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
-				seccomp.AllowValue(0),
+				seccomp.EqualTo(syscall.AF_INET),
+				seccomp.EqualTo(syscall.SOCK_DGRAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
+				seccomp.EqualTo(0),
 			},
 			{
-				seccomp.AllowValue(syscall.AF_INET6),
-				seccomp.AllowValue(syscall.SOCK_STREAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
-				seccomp.AllowValue(0),
+				seccomp.EqualTo(syscall.AF_INET6),
+				seccomp.EqualTo(syscall.SOCK_STREAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
+				seccomp.EqualTo(0),
 			},
 			{
-				seccomp.AllowValue(syscall.AF_INET6),
-				seccomp.AllowValue(syscall.SOCK_DGRAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
-				seccomp.AllowValue(0),
+				seccomp.EqualTo(syscall.AF_INET6),
+				seccomp.EqualTo(syscall.SOCK_DGRAM | syscall.SOCK_NONBLOCK | syscall.SOCK_CLOEXEC),
+				seccomp.EqualTo(0),
 			},
 		},
 		syscall.SYS_WRITEV: {},
@@ -532,20 +532,20 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 	return seccomp.SyscallRules{
 		syscall.SYS_ACCEPT: []seccomp.Rule{
 			{
-				seccomp.AllowValue(fd),
+				seccomp.EqualTo(fd),
 			},
 		},
 		syscall.SYS_LISTEN: []seccomp.Rule{
 			{
-				seccomp.AllowValue(fd),
-				seccomp.AllowValue(16 /* unet.backlog */),
+				seccomp.EqualTo(fd),
+				seccomp.EqualTo(16 /* unet.backlog */),
 			},
 		},
 		syscall.SYS_GETSOCKOPT: []seccomp.Rule{
 			{
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.SOL_SOCKET),
-				seccomp.AllowValue(syscall.SO_PEERCRED),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(syscall.SOL_SOCKET),
+				seccomp.EqualTo(syscall.SO_PEERCRED),
 			},
 		},
 	}
