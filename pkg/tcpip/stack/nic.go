@@ -665,33 +665,15 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 		}
 	}
 
-	// Check if address is a broadcast address for the endpoint's network.
-	//
-	// Only IPv4 has a notion of broadcast addresses.
 	if protocol == header.IPv4ProtocolNumber {
-		if ref := n.getRefForBroadcastRLocked(address); ref != nil {
+		if ref := n.getIPv4RefForBroadcastOrLoopbackRLocked(address); ref != nil {
 			n.mu.RUnlock()
 			return ref
 		}
 	}
-
-	// A usable reference was not found, create a temporary one if requested by
-	// the caller or if the IPv4 address is found in the NIC's subnets and the NIC
-	// is a loopback interface.
-	createTempEP := spoofingOrPromiscuous
-	if !createTempEP && n.isLoopback() && protocol == header.IPv4ProtocolNumber {
-		for _, r := range n.mu.endpoints {
-			addr := r.addrWithPrefix()
-			subnet := addr.Subnet()
-			if subnet.Contains(address) {
-				createTempEP = true
-				break
-			}
-		}
-	}
 	n.mu.RUnlock()
 
-	if !createTempEP {
+	if !spoofingOrPromiscuous {
 		return nil
 	}
 
@@ -704,20 +686,21 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	return ref
 }
 
-// getRefForBroadcastLocked returns an endpoint where address is the IPv4
-// broadcast address for the endpoint's network.
+// getRefForBroadcastOrLoopbackRLocked returns an endpoint whose address is the
+// broadcast address for the endpoint's network or an address in the endpoint's
+// subnet if the NIC is a loopback interface. This matches linux behaviour.
 //
-// n.mu MUST be read locked.
-func (n *NIC) getRefForBroadcastRLocked(address tcpip.Address) *referencedNetworkEndpoint {
+// n.mu MUST be read or write locked.
+func (n *NIC) getIPv4RefForBroadcastOrLoopbackRLocked(address tcpip.Address) *referencedNetworkEndpoint {
 	for _, ref := range n.mu.endpoints {
-		// Only IPv4 has a notion of broadcast addresses.
+		// Only IPv4 has a notion of broadcast addresses or considers the loopback
+		// interface bound to an address's whole subnet (on linux).
 		if ref.protocol != header.IPv4ProtocolNumber {
 			continue
 		}
 
-		addr := ref.addrWithPrefix()
-		subnet := addr.Subnet()
-		if subnet.IsBroadcast(address) && ref.tryIncRef() {
+		subnet := ref.addrWithPrefix().Subnet()
+		if (subnet.IsBroadcast(address) || (n.isLoopback() && subnet.Contains(address))) && ref.isValidForOutgoingRLocked() && ref.tryIncRef() {
 			return ref
 		}
 	}
@@ -745,11 +728,8 @@ func (n *NIC) getRefOrCreateTempLocked(protocol tcpip.NetworkProtocolNumber, add
 		n.removeEndpointLocked(ref)
 	}
 
-	// Check if address is a broadcast address for an endpoint's network.
-	//
-	// Only IPv4 has a notion of broadcast addresses.
 	if protocol == header.IPv4ProtocolNumber {
-		if ref := n.getRefForBroadcastRLocked(address); ref != nil {
+		if ref := n.getIPv4RefForBroadcastOrLoopbackRLocked(address); ref != nil {
 			return ref
 		}
 	}
