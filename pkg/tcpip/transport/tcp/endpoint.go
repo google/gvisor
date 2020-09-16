@@ -654,6 +654,9 @@ type endpoint struct {
 
 	// owner is used to get uid and gid of the packet.
 	owner tcpip.PacketOwner
+
+	// linger is used for SO_LINGER socket option.
+	linger tcpip.LingerOption
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -1005,6 +1008,26 @@ func (e *endpoint) Close() {
 	defer e.UnlockUser()
 	if e.closed {
 		return
+	}
+
+	if e.linger.Enabled && e.linger.Timeout == 0 {
+		s := e.EndpointState()
+		isResetState := s == StateEstablished || s == StateCloseWait || s == StateFinWait1 || s == StateFinWait2 || s == StateSynRecv
+		if isResetState {
+			// Close the endpoint without doing full shutdown and
+			// send a RST.
+			e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+			e.closeNoShutdownLocked()
+
+			// Wake up worker to close the endpoint.
+			switch s {
+			case StateSynRecv:
+				e.notifyProtocolGoroutine(notifyClose)
+			default:
+				e.notifyProtocolGoroutine(notifyTickleWorker)
+			}
+			return
+		}
 	}
 
 	// Issue a shutdown so that the peer knows we won't send any more data
@@ -1807,6 +1830,11 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 	case *tcpip.SocketDetachFilterOption:
 		return nil
 
+	case *tcpip.LingerOption:
+		e.LockUser()
+		e.linger = *v
+		e.UnlockUser()
+
 	default:
 		return nil
 	}
@@ -2030,6 +2058,11 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 			Addr: addr,
 			Port: port,
 		}
+
+	case *tcpip.LingerOption:
+		e.LockUser()
+		*o = e.linger
+		e.UnlockUser()
 
 	default:
 		return tcpip.ErrUnknownProtocolOption
