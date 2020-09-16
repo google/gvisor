@@ -41,13 +41,14 @@ namespace {
 
 class ReaddirTest : public FuseTest {
  public:
-  void fill_fuse_dirent(char *buf, const char *name) {
+  void fill_fuse_dirent(char *buf, const char *name, uint64_t ino) {
     size_t namelen = strlen(name);
     size_t entlen = FUSE_NAME_OFFSET + namelen;
     size_t entlen_padded = FUSE_DIRENT_ALIGN(entlen);
     struct fuse_dirent *dirent;
 
     dirent = reinterpret_cast<struct fuse_dirent *>(buf);
+    dirent->ino = ino;
     dirent->namelen = namelen;
     memcpy(dirent->name, name, namelen);
     memset(dirent->name + namelen, 0, entlen_padded - entlen);
@@ -61,11 +62,12 @@ TEST_F(ReaddirTest, SingleEntry) {
   const std::string test_dir_path =
       JoinPath(mount_point_.path().c_str(), test_dir_name_);
 
+  const uint64_t ino_dir = 1024;
   // We need to make sure the test dir is a directory that can be found.
   mode_t expected_mode =
       S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
   struct fuse_attr dir_attr = {
-      .ino = 1,
+      .ino = ino_dir,
       .size = 512,
       .blocks = 4,
       .mode = expected_mode,
@@ -124,11 +126,12 @@ TEST_F(ReaddirTest, SingleEntry) {
   std::vector<char> readdir_payload_vec(readdir_payload_size);
   char *readdir_payload = readdir_payload_vec.data();
 
-  fill_fuse_dirent(readdir_payload, dot.c_str());
-  fill_fuse_dirent(readdir_payload + dot_file_dirent_size, dot_dot.c_str());
+  // Use fake ino for other directories.
+  fill_fuse_dirent(readdir_payload, dot.c_str(), ino_dir-2);
+  fill_fuse_dirent(readdir_payload + dot_file_dirent_size, dot_dot.c_str(), ino_dir-1);
   fill_fuse_dirent(
       readdir_payload + dot_file_dirent_size + dot_dot_file_dirent_size,
-      test_file.c_str());
+      test_file.c_str(), ino_dir);
 
   struct fuse_out_header readdir_header = {
       .len = uint32_t(sizeof(struct fuse_out_header) + readdir_payload_size),
