@@ -192,10 +192,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// contains the expected xattrs. If the file or the xattr does not
 	// exist, it indicates unexpected modifications to the file system.
 	if err == syserror.ENOENT || err == syserror.ENODATA {
-		if noCrashOnVerificationFailure {
-			return nil, err
-		}
-		panic(fmt.Sprintf("Failed to get xattr %s for %s: %v", merkleOffsetInParentXattr, childPath, err))
+		return nil, alertIntegrityViolation(err, fmt.Sprintf("Failed to get xattr %s for %s: %v", merkleOffsetInParentXattr, childPath, err))
 	}
 	if err != nil {
 		return nil, err
@@ -204,10 +201,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// unexpected modifications to the file system.
 	offset, err := strconv.Atoi(off)
 	if err != nil {
-		if noCrashOnVerificationFailure {
-			return nil, syserror.EINVAL
-		}
-		panic(fmt.Sprintf("Failed to convert xattr %s for %s to int: %v", merkleOffsetInParentXattr, childPath, err))
+		return nil, alertIntegrityViolation(err, fmt.Sprintf("Failed to convert xattr %s for %s to int: %v", merkleOffsetInParentXattr, childPath, err))
 	}
 
 	// Open parent Merkle tree file to read and verify child's root hash.
@@ -221,10 +215,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// The parent Merkle tree file should have been created. If it's
 	// missing, it indicates an unexpected modification to the file system.
 	if err == syserror.ENOENT {
-		if noCrashOnVerificationFailure {
-			return nil, err
-		}
-		panic(fmt.Sprintf("Failed to open parent Merkle file for %s: %v", childPath, err))
+		return nil, alertIntegrityViolation(err, fmt.Sprintf("Failed to open parent Merkle file for %s: %v", childPath, err))
 	}
 	if err != nil {
 		return nil, err
@@ -242,10 +233,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// contains the expected xattrs. If the file or the xattr does not
 	// exist, it indicates unexpected modifications to the file system.
 	if err == syserror.ENOENT || err == syserror.ENODATA {
-		if noCrashOnVerificationFailure {
-			return nil, err
-		}
-		panic(fmt.Sprintf("Failed to get xattr %s for %s: %v", merkleSizeXattr, childPath, err))
+		return nil, alertIntegrityViolation(err, fmt.Sprintf("Failed to get xattr %s for %s: %v", merkleSizeXattr, childPath, err))
 	}
 	if err != nil {
 		return nil, err
@@ -255,10 +243,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// unexpected modifications to the file system.
 	parentSize, err := strconv.Atoi(dataSize)
 	if err != nil {
-		if noCrashOnVerificationFailure {
-			return nil, syserror.EINVAL
-		}
-		panic(fmt.Sprintf("Failed to convert xattr %s for %s to int: %v", merkleSizeXattr, childPath, err))
+		return nil, alertIntegrityViolation(syserror.EINVAL, fmt.Sprintf("Failed to convert xattr %s for %s to int: %v", merkleSizeXattr, childPath, err))
 	}
 
 	fdReader := vfs.FileReadWriteSeeker{
@@ -270,11 +255,8 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// contain the root hash of the children in the parent Merkle tree when
 	// Verify returns with success.
 	var buf bytes.Buffer
-	if err := merkletree.Verify(&buf, &fdReader, &fdReader, int64(parentSize), int64(offset), int64(merkletree.DigestSize()), parent.rootHash, true /* dataAndTreeInSameFile */); err != nil && err != io.EOF {
-		if noCrashOnVerificationFailure {
-			return nil, syserror.EIO
-		}
-		panic(fmt.Sprintf("Verification for %s failed: %v", childPath, err))
+	if _, err := merkletree.Verify(&buf, &fdReader, &fdReader, int64(parentSize), int64(offset), int64(merkletree.DigestSize()), parent.rootHash, true /* dataAndTreeInSameFile */); err != nil && err != io.EOF {
+		return nil, alertIntegrityViolation(syserror.EIO, fmt.Sprintf("Verification for %s failed: %v", childPath, err))
 	}
 
 	// Cache child root hash when it's verified the first time.
@@ -370,10 +352,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 		// corresponding Merkle tree is found. This indicates an
 		// unexpected modification to the file system that
 		// removed/renamed the child.
-		if noCrashOnVerificationFailure {
-			return nil, childErr
-		}
-		panic(fmt.Sprintf("Target file %s is expected but missing", parentPath+"/"+name))
+		return nil, alertIntegrityViolation(childErr, fmt.Sprintf("Target file %s is expected but missing", parentPath+"/"+name))
 	} else if childErr == nil && childMerkleErr == syserror.ENOENT {
 		// If in allowRuntimeEnable mode, and the Merkle tree file is
 		// not created yet, we create an empty Merkle tree file, so that
@@ -409,10 +388,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 			// If runtime enable is not allowed. This indicates an
 			// unexpected modification to the file system that
 			// removed/renamed the Merkle tree file.
-			if noCrashOnVerificationFailure {
-				return nil, childMerkleErr
-			}
-			panic(fmt.Sprintf("Expected Merkle file for target %s but none found", parentPath+"/"+name))
+			return nil, alertIntegrityViolation(childMerkleErr, fmt.Sprintf("Expected Merkle file for target %s but none found", parentPath+"/"+name))
 		}
 	} else if childErr == syserror.ENOENT && childMerkleErr == syserror.ENOENT {
 		// Both the child and the corresponding Merkle tree are missing.
@@ -421,7 +397,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 		// TODO(b/167752508): Investigate possible ways to differentiate
 		// cases that both files are deleted from cases that they never
 		// exist in the file system.
-		panic(fmt.Sprintf("Failed to find file %s", parentPath+"/"+name))
+		return nil, alertIntegrityViolation(childErr, fmt.Sprintf("Failed to find file %s", parentPath+"/"+name))
 	}
 
 	mask := uint32(linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID)

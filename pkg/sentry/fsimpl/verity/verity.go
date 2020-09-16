@@ -22,6 +22,7 @@
 package verity
 
 import (
+	"fmt"
 	"strconv"
 	"sync/atomic"
 
@@ -29,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-
 	"gvisor.dev/gvisor/pkg/merkletree"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
@@ -135,6 +135,16 @@ func (FilesystemType) Name() string {
 	return Name
 }
 
+// alertIntegrityViolation alerts a violation of integrity, which usually means
+// unexpected modification to the file system is detected. In
+// noCrashOnVerificationFailure mode, it returns an error, otherwise it panic.
+func alertIntegrityViolation(err error, msg string) error {
+	if noCrashOnVerificationFailure {
+		return err
+	}
+	panic(msg)
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
@@ -204,15 +214,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			return nil, nil, err
 		}
 	} else if err != nil {
-		// Failed to get dentry for the root Merkle file. This indicates
-		// an attack that removed/renamed the root Merkle file, or it's
-		// never generated.
-		if noCrashOnVerificationFailure {
-			fs.vfsfs.DecRef(ctx)
-			d.DecRef(ctx)
-			return nil, nil, err
-		}
-		panic("Failed to find root Merkle file")
+		// Failed to get dentry for the root Merkle file. This
+		// indicates an unexpected modification that removed/renamed
+		// the root Merkle file, or it's never generated.
+		fs.vfsfs.DecRef(ctx)
+		d.DecRef(ctx)
+		return nil, nil, alertIntegrityViolation(err, "Failed to find root Merkle file")
 	}
 	d.lowerMerkleVD = lowerMerkleVD
 
@@ -616,6 +623,54 @@ func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 	default:
 		return fd.lowerFD.Ioctl(ctx, uio, args)
 	}
+}
+
+// PRead implements vfs.FileDescriptionImpl.PRead.
+func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	// No need to verify if the file is not enabled yet in
+	// allowRuntimeEnable mode.
+	if fd.d.fs.allowRuntimeEnable && len(fd.d.rootHash) == 0 {
+		return fd.lowerFD.PRead(ctx, dst, offset, opts)
+	}
+
+	// dataSize is the size of the whole file.
+	dataSize, err := fd.merkleReader.GetXattr(ctx, &vfs.GetXattrOptions{
+		Name: merkleSizeXattr,
+		Size: sizeOfInt32,
+	})
+
+	// The Merkle tree file for the child should have been created and
+	// contains the expected xattrs. If the xattr does not exist, it
+	// indicates unexpected modifications to the file system.
+	if err == syserror.ENODATA {
+		return 0, alertIntegrityViolation(err, fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	// The dataSize xattr should be an integer. If it's not, it indicates
+	// unexpected modifications to the file system.
+	size, err := strconv.Atoi(dataSize)
+	if err != nil {
+		return 0, alertIntegrityViolation(err, fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
+	}
+
+	dataReader := vfs.FileReadWriteSeeker{
+		FD:  fd.lowerFD,
+		Ctx: ctx,
+	}
+
+	merkleReader := vfs.FileReadWriteSeeker{
+		FD:  fd.merkleReader,
+		Ctx: ctx,
+	}
+
+	n, err := merkletree.Verify(dst.Writer(ctx), &dataReader, &merkleReader, int64(size), offset, dst.NumBytes(), fd.d.rootHash, false /* dataAndTreeInSameFile */)
+	if err != nil {
+		return 0, alertIntegrityViolation(syserror.EINVAL, fmt.Sprintf("Verification failed: %v", err))
+	}
+	return n, err
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.

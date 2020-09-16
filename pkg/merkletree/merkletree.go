@@ -225,9 +225,9 @@ func Generate(data io.ReadSeeker, dataSize int64, treeReader io.ReadSeeker, tree
 // Verify will modify the cursor for data, but always restores it to its
 // original position upon exit. The cursor for tree is modified and not
 // restored.
-func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset int64, readSize int64, expectedRoot []byte, dataAndTreeInSameFile bool) error {
+func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset int64, readSize int64, expectedRoot []byte, dataAndTreeInSameFile bool) (int64, error) {
 	if readSize <= 0 {
-		return fmt.Errorf("Unexpected read size: %d", readSize)
+		return 0, fmt.Errorf("Unexpected read size: %d", readSize)
 	}
 	layout := InitLayout(int64(dataSize), dataAndTreeInSameFile)
 
@@ -240,29 +240,30 @@ func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset in
 	// finishes.
 	origOffset, err := data.Seek(0, io.SeekCurrent)
 	if err != nil {
-		return fmt.Errorf("Find current data offset failed: %v", err)
+		return 0, fmt.Errorf("Find current data offset failed: %v", err)
 	}
 	defer data.Seek(origOffset, io.SeekStart)
 
 	// Move to the first block that contains target data.
 	if _, err := data.Seek(firstDataBlock*layout.blockSize, io.SeekStart); err != nil {
-		return fmt.Errorf("Seek to datablock start failed: %v", err)
+		return 0, fmt.Errorf("Seek to datablock start failed: %v", err)
 	}
 
 	buf := make([]byte, layout.blockSize)
 	var readErr error
-	bytesRead := 0
+	total := int64(0)
 	for i := firstDataBlock; i <= lastDataBlock; i++ {
 		// Read a block that includes all or part of target range in
 		// input data.
-		bytesRead, readErr = data.Read(buf)
+		bytesRead, err := data.Read(buf)
+		readErr = err
 		// If at the end of input data and all previous blocks are
 		// verified, return the verified input data and EOF.
 		if readErr == io.EOF && bytesRead == 0 {
 			break
 		}
 		if readErr != nil && readErr != io.EOF {
-			return fmt.Errorf("Read from data failed: %v", err)
+			return 0, fmt.Errorf("Read from data failed: %v", err)
 		}
 		// If this is the end of file, zero the remaining bytes in buf,
 		// otherwise they are still from the previous block.
@@ -274,7 +275,7 @@ func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset in
 			}
 		}
 		if err := verifyBlock(tree, layout, buf, i, expectedRoot); err != nil {
-			return err
+			return 0, err
 		}
 		// startOff is the beginning of the read range within the
 		// current data block. Note that for all blocks other than the
@@ -298,10 +299,14 @@ func Verify(w io.Writer, data, tree io.ReadSeeker, dataSize int64, readOffset in
 		if endOff > int64(bytesRead) {
 			endOff = int64(bytesRead)
 		}
-		w.Write(buf[startOff:endOff])
+		n, err := w.Write(buf[startOff:endOff])
+		if err != nil {
+			return total, err
+		}
+		total += int64(n)
 
 	}
-	return readErr
+	return total, readErr
 }
 
 // verifyBlock verifies a block against tree. index is the number of block in
