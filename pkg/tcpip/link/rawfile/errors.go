@@ -31,10 +31,12 @@ var translations [maxErrno]*tcpip.Error
 // *tcpip.Error.
 //
 // Valid, but unrecognized errnos will be translated to
-// tcpip.ErrInvalidEndpointState (EINVAL). Panics on invalid errnos.
+// tcpip.ErrInvalidEndpointState (EINVAL).
 func TranslateErrno(e syscall.Errno) *tcpip.Error {
-	if err := translations[e]; err != nil {
-		return err
+	if e > 0 && e < syscall.Errno(len(translations)) {
+		if err := translations[e]; err != nil {
+			return err
+		}
 	}
 	return tcpip.ErrInvalidEndpointState
 }
