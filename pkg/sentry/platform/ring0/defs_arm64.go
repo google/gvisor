@@ -77,6 +77,9 @@ type CPUArchState struct {
 
 	// lazyVFP is the value of cpacr_el1.
 	lazyVFP uintptr
+
+	// appASID is the asid value of guest application.
+	appASID uintptr
 }
 
 // ErrorCode returns the last error code.
