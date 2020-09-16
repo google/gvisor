@@ -249,6 +249,9 @@ type CPUArchState struct {
 
 	// lazyVFP is the value of cpacr_el1.
 	lazyVFP uintptr
+
+	// appASID is the asid value of guest application.
+	appASID uintptr
 }
 
 // ErrorCode returns the last error code.
@@ -331,6 +334,7 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define CPU_VECTOR_CODE      0x%02x\n", reflect.ValueOf(&c.vecCode).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_APP_ADDR         0x%02x\n", reflect.ValueOf(&c.appAddr).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_LAZY_VFP         0x%02x\n", reflect.ValueOf(&c.lazyVFP).Pointer()-reflect.ValueOf(c).Pointer())
+	fmt.Fprintf(w, "#define CPU_APP_ASID         0x%02x\n", reflect.ValueOf(&c.appASID).Pointer()-reflect.ValueOf(c).Pointer())
 
 	fmt.Fprintf(w, "\n// Bits.\n")
 	fmt.Fprintf(w, "#define _KERNEL_FLAGS        0x%02x\n", KernelFlagsSet)

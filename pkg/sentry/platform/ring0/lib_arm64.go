@@ -16,6 +16,15 @@
 
 package ring0
 
+// storeAppASID writes the application's asid value.
+func storeAppASID(asid uintptr)
+
+// LocalFlushTlbAll same as FlushTlbAll, but only applies to the calling CPU.
+func LocalFlushTlbAll()
+
+// FlushTlbAll flush all tlb.
+func FlushTlbAll()
+
 // CPACREL1 returns the value of the CPACR_EL1 register.
 func CPACREL1() (value uintptr)
 
