@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package linux contains the constants and types needed to interface with a Linux kernel.
+// Package linux contains the constants and types needed to interface with a
+// Linux kernel.
 package linux
 
 // NumSoftIRQ is the number of software IRQs, exposed via /proc/stat.
@@ -21,6 +22,8 @@ package linux
 const NumSoftIRQ = 10
 
 // Sysinfo is the structure provided by sysinfo on linux versions > 2.3.48.
+//
+// +marshal
 type Sysinfo struct {
 	Uptime    int64
 	Loads     [3]uint64
@@ -34,6 +37,6 @@ type Sysinfo struct {
 	_         [6]byte // Pad Procs to 64bits.
 	TotalHigh uint64
 	FreeHigh  uint64
-	Unit      uint32
-	/* The _f field in the glibc version of Sysinfo has size 0 on AMD64 */
+	Unit      uint32 `marshal:"unaligned"` // Struct ends mid-64-bit-word.
+	// The _f field in the glibc version of Sysinfo has size 0 on AMD64.
 }

@@ -181,11 +181,11 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if !hasOwner {
 			return 0, nil, nil
 		}
-		_, err := t.CopyOut(args[2].Pointer(), &owner)
+		_, err := owner.CopyOut(t, args[2].Pointer())
 		return 0, nil, err
 	case linux.F_SETOWN_EX:
 		var owner linux.FOwnerEx
-		_, err := t.CopyIn(args[2].Pointer(), &owner)
+		_, err := owner.CopyIn(t, args[2].Pointer())
 		if err != nil {
 			return 0, nil, err
 		}
@@ -286,7 +286,7 @@ func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescrip
 	// Copy in the lock request.
 	flockAddr := args[2].Pointer()
 	var flock linux.Flock
-	if _, err := t.CopyIn(flockAddr, &flock); err != nil {
+	if _, err := flock.CopyIn(t, flockAddr); err != nil {
 		return err
 	}
 

@@ -18,6 +18,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -30,17 +31,19 @@ func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	case linux.ARCH_GET_FS:
 		addr := args[1].Pointer()
 		fsbase := t.Arch().TLS()
-		_, err := t.CopyOut(addr, uint64(fsbase))
-		if err != nil {
-			return 0, nil, err
+		switch t.Arch().Width() {
+		case 8:
+			if _, err := primitive.CopyUint64Out(t, addr, uint64(fsbase)); err != nil {
+				return 0, nil, err
+			}
+		default:
+			return 0, nil, syserror.ENOSYS
 		}
-
 	case linux.ARCH_SET_FS:
 		fsbase := args[1].Uint64()
 		if !t.Arch().SetTLS(uintptr(fsbase)) {
 			return 0, nil, syserror.EPERM
 		}
-
 	case linux.ARCH_GET_GS, linux.ARCH_SET_GS:
 		t.Kernel().EmitUnimplementedEvent(t)
 		fallthrough

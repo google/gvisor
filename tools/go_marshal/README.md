@@ -3,18 +3,19 @@ This package implements the go_marshal utility.
 # Overview
 
 `go_marshal` is a code generation utility similar to `go_stateify` for
-automatically generating code to marshal go data structures to memory.
+marshalling go data structures to and from memory.
 
 `go_marshal` attempts to improve on `binary.Write` and the sentry's
-`binary.Marshal` by moving the go runtime reflection necessary to marshal a
-struct to compile-time.
+`binary.Marshal` by moving the expensive use of reflection from runtime to
+compile-time.
 
 `go_marshal` automatically generates implementations for `marshal.Marshallable`
-and `safemem.{Reader,Writer}`. Data structures that require custom serialization
-will have manual implementations for these interfaces.
+interface. Data structures that require custom serialization can be accomodated
+through a manual implementation this interface.
 
 Data structures can be flagged for code generation by adding a struct-level
-comment `// +marshal`.
+comment `// +marshal`. For additional details and options, see the documentation
+for the `marshal.Marshallable` interface.
 
 # Usage
 
@@ -74,7 +75,7 @@ intended for ABI structs, which have these additional restrictions:
     dependent native pointer size.
 
 -   Fields must either be a primitive integer type (`byte`,
-    `[u]int{8,16,32,64}`), or of a type that implements abi.Marshallable.
+    `[u]int{8,16,32,64}`), or of a type that implements `marshal.Marshallable`.
 
 -   `int` and `uint` fields are not allowed. Use an explicitly-sized numeric
     type.

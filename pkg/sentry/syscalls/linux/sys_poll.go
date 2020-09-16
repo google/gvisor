@@ -162,7 +162,7 @@ func CopyInPollFDs(t *kernel.Task, addr usermem.Addr, nfds uint) ([]linux.PollFD
 
 	pfd := make([]linux.PollFD, nfds)
 	if nfds > 0 {
-		if _, err := t.CopyIn(addr, &pfd); err != nil {
+		if _, err := linux.CopyPollFDSliceIn(t, addr, pfd); err != nil {
 			return nil, err
 		}
 	}
@@ -189,7 +189,7 @@ func doPoll(t *kernel.Task, addr usermem.Addr, nfds uint, timeout time.Duration)
 	// The poll entries are copied out regardless of whether
 	// any are set or not. This aligns with the Linux behavior.
 	if nfds > 0 && err == nil {
-		if _, err := t.CopyOut(addr, pfd); err != nil {
+		if _, err := linux.CopyPollFDSliceOut(t, addr, pfd); err != nil {
 			return remainingTimeout, 0, err
 		}
 	}
@@ -202,7 +202,7 @@ func CopyInFDSet(t *kernel.Task, addr usermem.Addr, nBytes, nBitsInLastPartialBy
 	set := make([]byte, nBytes)
 
 	if addr != 0 {
-		if _, err := t.CopyIn(addr, &set); err != nil {
+		if _, err := t.CopyInBytes(addr, set); err != nil {
 			return nil, err
 		}
 		// If we only use part of the last byte, mask out the extraneous bits.
@@ -329,19 +329,19 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs usermem.Add
 
 	// Copy updated vectors back.
 	if readFDs != 0 {
-		if _, err := t.CopyOut(readFDs, r); err != nil {
+		if _, err := t.CopyOutBytes(readFDs, r); err != nil {
 			return 0, err
 		}
 	}
 
 	if writeFDs != 0 {
-		if _, err := t.CopyOut(writeFDs, w); err != nil {
+		if _, err := t.CopyOutBytes(writeFDs, w); err != nil {
 			return 0, err
 		}
 	}
 
 	if exceptFDs != 0 {
-		if _, err := t.CopyOut(exceptFDs, e); err != nil {
+		if _, err := t.CopyOutBytes(exceptFDs, e); err != nil {
 			return 0, err
 		}
 	}

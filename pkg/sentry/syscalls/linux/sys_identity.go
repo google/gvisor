@@ -49,13 +49,13 @@ func Getresuid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	ruid := c.RealKUID.In(c.UserNamespace).OrOverflow()
 	euid := c.EffectiveKUID.In(c.UserNamespace).OrOverflow()
 	suid := c.SavedKUID.In(c.UserNamespace).OrOverflow()
-	if _, err := t.CopyOut(ruidAddr, ruid); err != nil {
+	if _, err := ruid.CopyOut(t, ruidAddr); err != nil {
 		return 0, nil, err
 	}
-	if _, err := t.CopyOut(euidAddr, euid); err != nil {
+	if _, err := euid.CopyOut(t, euidAddr); err != nil {
 		return 0, nil, err
 	}
-	if _, err := t.CopyOut(suidAddr, suid); err != nil {
+	if _, err := suid.CopyOut(t, suidAddr); err != nil {
 		return 0, nil, err
 	}
 	return 0, nil, nil
@@ -84,13 +84,13 @@ func Getresgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	rgid := c.RealKGID.In(c.UserNamespace).OrOverflow()
 	egid := c.EffectiveKGID.In(c.UserNamespace).OrOverflow()
 	sgid := c.SavedKGID.In(c.UserNamespace).OrOverflow()
-	if _, err := t.CopyOut(rgidAddr, rgid); err != nil {
+	if _, err := rgid.CopyOut(t, rgidAddr); err != nil {
 		return 0, nil, err
 	}
-	if _, err := t.CopyOut(egidAddr, egid); err != nil {
+	if _, err := egid.CopyOut(t, egidAddr); err != nil {
 		return 0, nil, err
 	}
-	if _, err := t.CopyOut(sgidAddr, sgid); err != nil {
+	if _, err := sgid.CopyOut(t, sgidAddr); err != nil {
 		return 0, nil, err
 	}
 	return 0, nil, nil
@@ -157,7 +157,7 @@ func Getgroups(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	for i, kgid := range kgids {
 		gids[i] = kgid.In(t.UserNamespace()).OrOverflow()
 	}
-	if _, err := t.CopyOut(args[1].Pointer(), gids); err != nil {
+	if _, err := auth.CopyGIDSliceOut(t, args[1].Pointer(), gids); err != nil {
 		return 0, nil, err
 	}
 	return uintptr(len(gids)), nil, nil
@@ -173,7 +173,7 @@ func Setgroups(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, t.SetExtraGIDs(nil)
 	}
 	gids := make([]auth.GID, size)
-	if _, err := t.CopyIn(args[1].Pointer(), &gids); err != nil {
+	if _, err := auth.CopyGIDSliceIn(t, args[1].Pointer(), gids); err != nil {
 		return 0, nil, err
 	}
 	return 0, nil, t.SetExtraGIDs(gids)

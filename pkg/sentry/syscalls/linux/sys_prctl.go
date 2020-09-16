@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
@@ -43,7 +44,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, nil
 
 	case linux.PR_GET_PDEATHSIG:
-		_, err := t.CopyOut(args[1].Pointer(), int32(t.ParentDeathSignal()))
+		_, err := primitive.CopyInt32Out(t, args[1].Pointer(), int32(t.ParentDeathSignal()))
 		return 0, nil, err
 
 	case linux.PR_GET_DUMPABLE:
@@ -110,7 +111,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			buf[len] = 0
 			len++
 		}
-		_, err := t.CopyOut(addr, buf[:len])
+		_, err := t.CopyOutBytes(addr, buf[:len])
 		if err != nil {
 			return 0, nil, err
 		}

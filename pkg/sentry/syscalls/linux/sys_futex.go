@@ -306,8 +306,8 @@ func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	// Despite the syscall using the name 'pid' for this variable, it is
 	// very much a tid.
 	tid := args[0].Int()
-	head := args[1].Pointer()
-	size := args[2].Pointer()
+	headAddr := args[1].Pointer()
+	sizeAddr := args[2].Pointer()
 
 	if tid < 0 {
 		return 0, nil, syserror.EINVAL
@@ -321,12 +321,16 @@ func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	}
 
 	// Copy out head pointer.
-	if _, err := t.CopyOut(head, uint64(ot.GetRobustList())); err != nil {
+	head := t.Arch().Native(uintptr(ot.GetRobustList()))
+	if _, err := head.CopyOut(t, headAddr); err != nil {
 		return 0, nil, err
 	}
 
-	// Copy out size, which is a constant.
-	if _, err := t.CopyOut(size, uint64(linux.SizeOfRobustListHead)); err != nil {
+	// Copy out size, which is a constant. Note that while size isn't
+	// an address, it is defined as the arch-dependent size_t, so it
+	// needs to be converted to a native-sized int.
+	size := t.Arch().Native(uintptr(linux.SizeOfRobustListHead))
+	if _, err := size.CopyOut(t, sizeAddr); err != nil {
 		return 0, nil, err
 	}
 

@@ -26,6 +26,8 @@ const (
 )
 
 // UtsName represents struct utsname, the struct returned by uname(2).
+//
+// +marshal
 type UtsName struct {
 	Sysname    [UTSLen + 1]byte
 	Nodename   [UTSLen + 1]byte

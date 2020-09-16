@@ -197,6 +197,7 @@ go_library(
         "gvisor.dev/gvisor/pkg/sentry/device",
         "gvisor.dev/gvisor/pkg/tcpip",
     ],
+    marshal = True,
     visibility = ["//:sandbox"],
     deps = [
         ":uncaught_signal_go_proto",
@@ -213,6 +214,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/metric",
         "//pkg/refs",
         "//pkg/refs_vfs2",

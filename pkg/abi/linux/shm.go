@@ -51,6 +51,8 @@ const (
 
 // ShmidDS is equivalent to struct shmid64_ds. Source:
 // include/uapi/asm-generic/shmbuf.h
+//
+// +marshal
 type ShmidDS struct {
 	ShmPerm    IPCPerm
 	ShmSegsz   uint64
@@ -66,6 +68,8 @@ type ShmidDS struct {
 }
 
 // ShmParams is equivalent to struct shminfo. Source: include/uapi/linux/shm.h
+//
+// +marshal
 type ShmParams struct {
 	ShmMax uint64
 	ShmMin uint64
@@ -75,6 +79,8 @@ type ShmParams struct {
 }
 
 // ShmInfo is equivalent to struct shm_info. Source: include/uapi/linux/shm.h
+//
+// +marshal
 type ShmInfo struct {
 	UsedIDs       int32 // Number of currently existing segments.
 	_             [4]byte

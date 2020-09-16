@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
@@ -89,7 +90,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		if inFile.Options().DenyPRead {
 			return 0, nil, syserror.EINVAL
 		}
-		if _, err := t.CopyIn(inOffsetPtr, &inOffset); err != nil {
+		if _, err := primitive.CopyInt64In(t, inOffsetPtr, &inOffset); err != nil {
 			return 0, nil, err
 		}
 		if inOffset < 0 {
@@ -104,7 +105,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		if outFile.Options().DenyPWrite {
 			return 0, nil, syserror.EINVAL
 		}
-		if _, err := t.CopyIn(outOffsetPtr, &outOffset); err != nil {
+		if _, err := primitive.CopyInt64In(t, outOffsetPtr, &outOffset); err != nil {
 			return 0, nil, err
 		}
 		if outOffset < 0 {
@@ -160,12 +161,12 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Copy updated offsets out.
 	if inOffsetPtr != 0 {
-		if _, err := t.CopyOut(inOffsetPtr, &inOffset); err != nil {
+		if _, err := primitive.CopyInt64Out(t, inOffsetPtr, inOffset); err != nil {
 			return 0, nil, err
 		}
 	}
 	if outOffsetPtr != 0 {
-		if _, err := t.CopyOut(outOffsetPtr, &outOffset); err != nil {
+		if _, err := primitive.CopyInt64Out(t, outOffsetPtr, outOffset); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -303,9 +304,12 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		if inFile.Options().DenyPRead {
 			return 0, nil, syserror.ESPIPE
 		}
-		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
+		var offsetP primitive.Int64
+		if _, err := offsetP.CopyIn(t, offsetAddr); err != nil {
 			return 0, nil, err
 		}
+		offset = int64(offsetP)
+
 		if offset < 0 {
 			return 0, nil, syserror.EINVAL
 		}
@@ -422,7 +426,8 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	if offsetAddr != 0 {
 		// Copy out the new offset.
-		if _, err := t.CopyOut(offsetAddr, offset); err != nil {
+		offsetP := primitive.Uint64(offset)
+		if _, err := offsetP.CopyOut(t, offsetAddr); err != nil {
 			return 0, nil, err
 		}
 	}

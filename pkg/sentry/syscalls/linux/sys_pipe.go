@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -46,7 +47,7 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 		return 0, err
 	}
 
-	if _, err := t.CopyOut(addr, fds); err != nil {
+	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
 			if file, _ := t.FDTable().Remove(t, fd); file != nil {
 				file.DecRef(t)

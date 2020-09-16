@@ -56,6 +56,7 @@ go_library(
         "sys_xattr.go",
         "timespec.go",
     ],
+    marshal = True,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi",
