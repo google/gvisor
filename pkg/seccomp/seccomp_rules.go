@@ -39,28 +39,79 @@ func seccompDataOffsetArgHigh(i int) uint32 {
 	return seccompDataOffsetArgLow(i) + 4
 }
 
-// AllowAny is marker to indicate any value will be accepted.
-type AllowAny struct{}
+// MatchAny is marker to indicate any value will be accepted.
+type MatchAny struct{}
 
-func (a AllowAny) String() (s string) {
+func (a MatchAny) String() (s string) {
 	return "*"
 }
 
-// AllowValue specifies a value that needs to be strictly matched.
-type AllowValue uintptr
+// EqualTo specifies a value that needs to be strictly matched.
+type EqualTo uintptr
+
+func (a EqualTo) String() (s string) {
+	return fmt.Sprintf("== %#x", uintptr(a))
+}
+
+// NotEqual specifies a value that is strictly not equal.
+type NotEqual uintptr
+
+func (a NotEqual) String() (s string) {
+	return fmt.Sprintf("!= %#x", uintptr(a))
+}
 
 // GreaterThan specifies a value that needs to be strictly smaller.
 type GreaterThan uintptr
 
-func (a AllowValue) String() (s string) {
-	return fmt.Sprintf("%#x ", uintptr(a))
+func (a GreaterThan) String() (s string) {
+	return fmt.Sprintf("> %#x", uintptr(a))
+}
+
+// GreaterThanOrEqual specifies a value that needs to be smaller or equal.
+type GreaterThanOrEqual uintptr
+
+func (a GreaterThanOrEqual) String() (s string) {
+	return fmt.Sprintf(">= %#x", uintptr(a))
+}
+
+// LessThan specifies a value that needs to be strictly greater.
+type LessThan uintptr
+
+func (a LessThan) String() (s string) {
+	return fmt.Sprintf("< %#x", uintptr(a))
+}
+
+// LessThanOrEqual specifies a value that needs to be greater or equal.
+type LessThanOrEqual uintptr
+
+func (a LessThanOrEqual) String() (s string) {
+	return fmt.Sprintf("<= %#x", uintptr(a))
+}
+
+type maskedEqual struct {
+	mask  uintptr
+	value uintptr
+}
+
+func (a maskedEqual) String() (s string) {
+	return fmt.Sprintf("& %#x == %#x", a.mask, a.value)
+}
+
+// MaskedEqual specifies a value that matches the input after the input is
+// masked (bitwise &) against the given mask. Can be used to verify that input
+// only includes certain approved flags.
+func MaskedEqual(mask, value uintptr) interface{} {
+	return maskedEqual{
+		mask:  mask,
+		value: value,
+	}
 }
 
 // Rule stores the allowed syscall arguments.
 //
 // For example:
 // rule := Rule {
-//       AllowValue(linux.ARCH_GET_FS | linux.ARCH_SET_FS), // arg0
+//       EqualTo(linux.ARCH_GET_FS | linux.ARCH_SET_FS), // arg0
 // }
 type Rule [7]interface{} // 6 arguments + RIP
 
@@ -89,12 +140,12 @@ func (r Rule) String() (s string) {
 //  rules := SyscallRules{
 //         syscall.SYS_FUTEX: []Rule{
 //                 {
-//                         AllowAny{},
-//                         AllowValue(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
+//                         MatchAny{},
+//                         EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
 //                 }, // OR
 //                 {
-//                         AllowAny{},
-//                         AllowValue(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
+//                         MatchAny{},
+//                         EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
 //                 },
 //         },
 //         syscall.SYS_GETPID: []Rule{},

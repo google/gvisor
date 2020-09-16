@@ -26,6 +26,7 @@ go_library(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/bpf",
         "//pkg/context",
         "//pkg/control/server",
         "//pkg/cpuid",
@@ -107,6 +108,7 @@ go_library(
         "//runsc/boot/pprof",
         "//runsc/config",
         "//runsc/specutils",
+        "//runsc/specutils/seccomp",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",

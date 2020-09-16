@@ -100,7 +100,7 @@ func main() {
 	if !die {
 		syscalls[syscall.SYS_OPENAT] = []seccomp.Rule{
 			{
-				seccomp.AllowValue(10),
+				seccomp.EqualTo(10),
 			},
 		}
 	}

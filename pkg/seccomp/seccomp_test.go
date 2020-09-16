@@ -76,11 +76,14 @@ func TestBasic(t *testing.T) {
 	}
 
 	for _, test := range []struct {
+		name          string
 		ruleSets      []RuleSet
 		defaultAction linux.BPFAction
+		badArchAction linux.BPFAction
 		specs         []spec
 	}{
 		{
+			name: "Single syscall",
 			ruleSets: []RuleSet{
 				{
 					Rules:  SyscallRules{1: {}},
@@ -88,26 +91,28 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "Single syscall allowed",
+					desc: "syscall allowed",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "Single syscall disallowed",
+					desc: "syscall disallowed",
 					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
 		},
 		{
+			name: "Multiple rulesets",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
 						1: []Rule{
 							{
-								AllowValue(0x1),
+								EqualTo(0x1),
 							},
 						},
 					},
@@ -122,30 +127,32 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_KILL_THREAD,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "Multiple rulesets allowed (1a)",
+					desc: "allowed (1a)",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x1}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "Multiple rulesets allowed (1b)",
+					desc: "allowed (1b)",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "Multiple rulesets allowed (2)",
+					desc: "syscall 1 matched 2nd rule",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "Multiple rulesets allowed (2)",
+					desc: "no match",
 					data: seccompData{nr: 0, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_KILL_THREAD,
 				},
 			},
 		},
 		{
+			name: "Multiple syscalls",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
@@ -157,50 +164,52 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "Multiple syscalls allowed (1)",
+					desc: "allowed (1)",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "Multiple syscalls allowed (3)",
+					desc: "allowed (3)",
 					data: seccompData{nr: 3, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "Multiple syscalls allowed (5)",
+					desc: "allowed (5)",
 					data: seccompData{nr: 5, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "Multiple syscalls disallowed (0)",
+					desc: "disallowed (0)",
 					data: seccompData{nr: 0, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "Multiple syscalls disallowed (2)",
+					desc: "disallowed (2)",
 					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "Multiple syscalls disallowed (4)",
+					desc: "disallowed (4)",
 					data: seccompData{nr: 4, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "Multiple syscalls disallowed (6)",
+					desc: "disallowed (6)",
 					data: seccompData{nr: 6, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "Multiple syscalls disallowed (100)",
+					desc: "disallowed (100)",
 					data: seccompData{nr: 100, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
 		},
 		{
+			name: "Wrong architecture",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
@@ -210,15 +219,17 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "Wrong architecture",
+					desc: "arch (123)",
 					data: seccompData{nr: 1, arch: 123},
-					want: linux.SECCOMP_RET_TRAP,
+					want: linux.SECCOMP_RET_KILL_THREAD,
 				},
 			},
 		},
 		{
+			name: "Syscall disallowed",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
@@ -228,22 +239,24 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "Syscall disallowed, action trap",
+					desc: "action trap",
 					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
 		},
 		{
+			name: "Syscall arguments",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
 						1: []Rule{
 							{
-								AllowAny{},
-								AllowValue(0xf),
+								MatchAny{},
+								EqualTo(0xf),
 							},
 						},
 					},
@@ -251,29 +264,31 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "Syscall argument allowed",
+					desc: "allowed",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xf}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "Syscall argument disallowed",
+					desc: "disallowed",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xe}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
 		},
 		{
+			name: "Multiple arguments",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
 						1: []Rule{
 							{
-								AllowValue(0xf),
+								EqualTo(0xf),
 							},
 							{
-								AllowValue(0xe),
+								EqualTo(0xe),
 							},
 						},
 					},
@@ -281,28 +296,30 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "Syscall argument allowed, two rules",
+					desc: "match first rule",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "Syscall argument allowed, two rules",
+					desc: "match 2nd rule",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xe}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 			},
 		},
 		{
+			name: "EqualTo",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
 						1: []Rule{
 							{
-								AllowValue(0),
-								AllowValue(math.MaxUint64 - 1),
-								AllowValue(math.MaxUint32),
+								EqualTo(0),
+								EqualTo(math.MaxUint64 - 1),
+								EqualTo(math.MaxUint32),
 							},
 						},
 					},
@@ -310,9 +327,10 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "64bit syscall argument allowed",
+					desc: "argument allowed (all match)",
 					data: seccompData{
 						nr:   1,
 						arch: LINUX_AUDIT_ARCH,
@@ -321,7 +339,7 @@ func TestBasic(t *testing.T) {
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "64bit syscall argument disallowed",
+					desc: "argument disallowed (one mismatch)",
 					data: seccompData{
 						nr:   1,
 						arch: LINUX_AUDIT_ARCH,
@@ -330,7 +348,7 @@ func TestBasic(t *testing.T) {
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "64bit syscall argument disallowed",
+					desc: "argument disallowed (multiple mismatch)",
 					data: seccompData{
 						nr:   1,
 						arch: LINUX_AUDIT_ARCH,
@@ -341,6 +359,103 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
+			name: "NotEqual",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								NotEqual(0x7aabbccdd),
+								NotEqual(math.MaxUint64 - 1),
+								NotEqual(math.MaxUint32),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "arg allowed",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						args: [6]uint64{0, math.MaxUint64, math.MaxUint32 - 1},
+					},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg disallowed (one equal)",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						args: [6]uint64{0x7aabbccdd, math.MaxUint64, math.MaxUint32 - 1},
+					},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (all equal)",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						args: [6]uint64{0x7aabbccdd, math.MaxUint64 - 1, math.MaxUint32},
+					},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			name: "GreaterThan",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								// 4294967298
+								// Both upper 32 bits and lower 32 bits are non-zero.
+								// 00000000000000000000000000000010
+								// 00000000000000000000000000000010
+								GreaterThan(0x00000002_00000002),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "high 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits equal, low 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits equal, low 32bits equal",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits equal, low 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000003}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			name: "GreaterThan (multi)",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
@@ -355,46 +470,47 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "GreaterThan: Syscall argument allowed",
+					desc: "arg allowed",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xffffffff}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "GreaterThan: Syscall argument disallowed (equal)",
+					desc: "arg disallowed (first arg equal)",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "Syscall argument disallowed (smaller)",
+					desc: "arg disallowed (first arg smaller)",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "GreaterThan2: Syscall argument allowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xfbcd000d}},
-					want: linux.SECCOMP_RET_ALLOW,
-				},
-				{
-					desc: "GreaterThan2: Syscall argument disallowed (equal)",
+					desc: "arg disallowed (second arg equal)",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xabcd000d}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
-					desc: "GreaterThan2: Syscall argument disallowed (smaller)",
+					desc: "arg disallowed (second arg smaller)",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xa000ffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
 		},
 		{
+			name: "GreaterThanOrEqual",
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
 						1: []Rule{
 							{
-								RuleIP: AllowValue(0x7aabbccdd),
+								// 4294967298
+								// Both upper 32 bits and lower 32 bits are non-zero.
+								// 00000000000000000000000000000010
+								// 00000000000000000000000000000010
+								GreaterThanOrEqual(0x00000002_00000002),
 							},
 						},
 					},
@@ -402,40 +518,405 @@ func TestBasic(t *testing.T) {
 				},
 			},
 			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
-					desc: "IP: Syscall instruction pointer allowed",
+					desc: "high 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits equal, low 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits equal, low 32bits equal",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits equal, low 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000002}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			name: "GreaterThanOrEqual (multi)",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								GreaterThanOrEqual(0xf),
+								GreaterThanOrEqual(0xabcd000d),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "arg allowed (both greater)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xffffffff}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg allowed (first arg equal)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xffffffff}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg disallowed (first arg smaller)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg allowed (second arg equal)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xabcd000d}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg disallowed (second arg smaller)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xa000ffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (both arg smaller)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xa000ffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			name: "LessThan",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								// 4294967298
+								// Both upper 32 bits and lower 32 bits are non-zero.
+								// 00000000000000000000000000000010
+								// 00000000000000000000000000000010
+								LessThan(0x00000002_00000002),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "high 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits equal, low 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits equal, low 32bits equal",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits equal, low 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000002}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+		},
+		{
+			name: "LessThan (multi)",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								LessThan(0x1),
+								LessThan(0xabcd000d),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "arg allowed",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0x0}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg disallowed (first arg equal)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x1, 0x0}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (first arg greater)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0x0}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (second arg equal)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xabcd000d}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (second arg greater)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (both arg greater)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			name: "LessThanOrEqual",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								// 4294967298
+								// Both upper 32 bits and lower 32 bits are non-zero.
+								// 00000000000000000000000000000010
+								// 00000000000000000000000000000010
+								LessThanOrEqual(0x00000002_00000002),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "high 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits equal, low 32bits greater",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "high 32bits equal, low 32bits equal",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits equal, low 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "high 32bits less",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000002}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+		},
+
+		{
+			name: "LessThanOrEqual (multi)",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								LessThanOrEqual(0x1),
+								LessThanOrEqual(0xabcd000d),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "arg allowed",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0x0}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg allowed (first arg equal)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x1, 0x0}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg disallowed (first arg greater)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0x0}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg allowed (second arg equal)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xabcd000d}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg disallowed (second arg greater)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (both arg greater)",
+					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			name: "MaskedEqual",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								// x & 00000001 00000011 (0x103) == 00000000 00000001 (0x1)
+								// Input x must have lowest order bit set and
+								// must *not* have 8th or second lowest order bit set.
+								MaskedEqual(0x103, 0x1),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "arg allowed (low order mandatory bit)",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						// 00000000 00000000 00000000 00000001
+						args: [6]uint64{0x1},
+					},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg allowed (low order optional bit)",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						// 00000000 00000000 00000000 00000101
+						args: [6]uint64{0x5},
+					},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "arg disallowed (lowest order bit not set)",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						// 00000000 00000000 00000000 00000010
+						args: [6]uint64{0x2},
+					},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (second lowest order bit set)",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						// 00000000 00000000 00000000 00000011
+						args: [6]uint64{0x3},
+					},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "arg disallowed (8th bit set)",
+					data: seccompData{
+						nr:   1,
+						arch: LINUX_AUDIT_ARCH,
+						// 00000000 00000000 00000001 00000000
+						args: [6]uint64{0x100},
+					},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			name: "Instruction Pointer",
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								RuleIP: EqualTo(0x7aabbccdd),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "allowed",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{}, instructionPointer: 0x7aabbccdd},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
-					desc: "IP: Syscall instruction pointer disallowed",
+					desc: "disallowed",
 					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{}, instructionPointer: 0x711223344},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
 		},
 	} {
-		instrs, err := BuildProgram(test.ruleSets, test.defaultAction)
-		if err != nil {
-			t.Errorf("%s: buildProgram() got error: %v", test.specs[0].desc, err)
-			continue
-		}
-		p, err := bpf.Compile(instrs)
-		if err != nil {
-			t.Errorf("%s: bpf.Compile() got error: %v", test.specs[0].desc, err)
-			continue
-		}
-		for _, spec := range test.specs {
-			got, err := bpf.Exec(p, spec.data.asInput())
+		t.Run(test.name, func(t *testing.T) {
+			instrs, err := BuildProgram(test.ruleSets, test.defaultAction, test.badArchAction)
 			if err != nil {
-				t.Errorf("%s: bpf.Exec() got error: %v", spec.desc, err)
-				continue
+				t.Fatalf("BuildProgram() got error: %v", err)
 			}
-			if got != uint32(spec.want) {
-				t.Errorf("%s: bpd.Exec() = %d, want: %d", spec.desc, got, spec.want)
+			p, err := bpf.Compile(instrs)
+			if err != nil {
+				t.Fatalf("bpf.Compile() got error: %v", err)
 			}
-		}
+			for _, spec := range test.specs {
+				got, err := bpf.Exec(p, spec.data.asInput())
+				if err != nil {
+					t.Fatalf("%s: bpf.Exec() got error: %v", spec.desc, err)
+				}
+				if got != uint32(spec.want) {
+					// Include a decoded version of the program in output for debugging purposes.
+					decoded, _ := bpf.DecodeInstructions(instrs)
+					t.Fatalf("%s: got: %d, want: %d\nBPF Program\n%s", spec.desc, got, spec.want, decoded)
+				}
+			}
+		})
 	}
 }
 
@@ -457,7 +938,7 @@ func TestRandom(t *testing.T) {
 			Rules:  syscallRules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, linux.SECCOMP_RET_TRAP)
+	}, linux.SECCOMP_RET_TRAP, linux.SECCOMP_RET_KILL_THREAD)
 	if err != nil {
 		t.Fatalf("buildProgram() got error: %v", err)
 	}

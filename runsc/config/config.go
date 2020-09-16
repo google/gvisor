@@ -157,7 +157,11 @@ type Config struct {
 	// Enables FUSE usage.
 	FUSE bool `flag:"fuse"`
 
+	// Allows overriding of flags in OCI annotations.
 	AllowFlagOverride bool `flag:"allow-flag-override"`
+
+	// Enables seccomp inside the sandbox.
+	OCISeccomp bool `flag:"oci-seccomp"`
 
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current

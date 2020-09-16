@@ -201,7 +201,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFActi
 			seccomp.RuleSet{
 				Rules: seccomp.SyscallRules{
 					syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
-						{seccomp.AllowValue(linux.ARCH_SET_CPUID), seccomp.AllowValue(0)},
+						{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
 					},
 				},
 				Action: linux.SECCOMP_RET_ALLOW,

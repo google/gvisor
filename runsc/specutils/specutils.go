@@ -111,11 +111,6 @@ func ValidateSpec(spec *specs.Spec) error {
 		log.Warningf("noNewPrivileges ignored. PR_SET_NO_NEW_PRIVS is assumed to always be set.")
 	}
 
-	// TODO(gvisor.dev/issue/510): Apply seccomp to application inside sandbox.
-	if spec.Linux != nil && spec.Linux.Seccomp != nil {
-		log.Warningf("Seccomp spec is being ignored")
-	}
-
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
 		if err := validateRootfsPropagation(spec.Linux.RootfsPropagation); err != nil {
 			return err
