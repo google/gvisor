@@ -174,7 +174,7 @@ type tcpSackData struct {
 
 var _ vfs.WritableDynamicBytesSource = (*tcpSackData)(nil)
 
-// Generate implements vfs.DynamicBytesSource.
+// Generate implements vfs.DynamicBytesSource.Generate.
 func (d *tcpSackData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if d.enabled == nil {
 		sack, err := d.stack.TCPSACKEnabled()
@@ -232,7 +232,7 @@ type tcpRecoveryData struct {
 
 var _ vfs.WritableDynamicBytesSource = (*tcpRecoveryData)(nil)
 
-// Generate implements vfs.DynamicBytesSource.
+// Generate implements vfs.DynamicBytesSource.Generate.
 func (d *tcpRecoveryData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	recovery, err := d.stack.TCPRecovery()
 	if err != nil {
@@ -284,7 +284,7 @@ type tcpMemData struct {
 
 var _ vfs.WritableDynamicBytesSource = (*tcpMemData)(nil)
 
-// Generate implements vfs.DynamicBytesSource.
+// Generate implements vfs.DynamicBytesSource.Generate.
 func (d *tcpMemData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

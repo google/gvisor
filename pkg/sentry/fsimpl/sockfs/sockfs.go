@@ -30,12 +30,12 @@ import (
 // filesystemType implements vfs.FilesystemType.
 type filesystemType struct{}
 
-// GetFilesystem implements FilesystemType.GetFilesystem.
+// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fsType filesystemType) GetFilesystem(_ context.Context, vfsObj *vfs.VirtualFilesystem, _ *auth.Credentials, _ string, _ vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	panic("sockfs.filesystemType.GetFilesystem should never be called")
 }
 
-// Name implements FilesystemType.Name.
+// Name implements vfs.FilesystemType.Name.
 //
 // Note that registering sockfs is unnecessary, except for the fact that it
 // will not show up under /proc/filesystems as a result. This is a very minor

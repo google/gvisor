@@ -69,7 +69,7 @@ func (s *selfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualD
 	return vfs.VirtualDentry{}, target, err
 }
 
-// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*selfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
@@ -113,7 +113,7 @@ func (s *threadSelfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vi
 	return vfs.VirtualDentry{}, target, err
 }
 
-// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*threadSelfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
@@ -125,7 +125,7 @@ type dynamicBytesFileSetAttr struct {
 	kernfs.DynamicBytesFile
 }
 
-// SetStat implements Inode.SetStat.
+// SetStat implements kernfs.Inode.SetStat.
 func (d *dynamicBytesFileSetAttr) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	return d.DynamicBytesFile.InodeAttrs.SetStat(ctx, fs, creds, opts)
 }

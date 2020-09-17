@@ -667,7 +667,7 @@ func (fs *filesystem) newExeSymlink(task *kernel.Task, ino uint64) *kernfs.Dentr
 	return d
 }
 
-// Readlink implements kernfs.Inode.
+// Readlink implements kernfs.Inode.Readlink.
 func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return "", syserror.EACCES
@@ -807,7 +807,7 @@ func (fs *filesystem) newNamespaceSymlink(task *kernel.Task, ino uint64, ns stri
 	return d
 }
 
-// Readlink implements Inode.
+// Readlink implements kernfs.Inode.Readlink.
 func (s *namespaceSymlink) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 	if err := checkTaskState(s.task); err != nil {
 		return "", err
@@ -815,7 +815,7 @@ func (s *namespaceSymlink) Readlink(ctx context.Context, mnt *vfs.Mount) (string
 	return s.StaticSymlink.Readlink(ctx, mnt)
 }
 
-// Getlink implements Inode.Getlink.
+// Getlink implements kernfs.Inode.Getlink.
 func (s *namespaceSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	if err := checkTaskState(s.task); err != nil {
 		return vfs.VirtualDentry{}, "", err
@@ -852,7 +852,7 @@ func (i *namespaceInode) Init(creds *auth.Credentials, devMajor, devMinor uint32
 	i.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeRegular|perm)
 }
 
-// Open implements Inode.Open.
+// Open implements kernfs.Inode.Open.
 func (i *namespaceInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &namespaceFD{inode: i}
 	i.IncRef()
@@ -875,20 +875,20 @@ type namespaceFD struct {
 
 var _ vfs.FileDescriptionImpl = (*namespaceFD)(nil)
 
-// Stat implements FileDescriptionImpl.
+// Stat implements vfs.FileDescriptionImpl.Stat.
 func (fd *namespaceFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	vfs := fd.vfsfd.VirtualDentry().Mount().Filesystem()
 	return fd.inode.Stat(ctx, vfs, opts)
 }
 
-// SetStat implements FileDescriptionImpl.
+// SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *namespaceFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	vfs := fd.vfsfd.VirtualDentry().Mount().Filesystem()
 	creds := auth.CredentialsFromContext(ctx)
 	return fd.inode.SetStat(ctx, vfs, creds, opts)
 }
 
-// Release implements FileDescriptionImpl.
+// Release implements vfs.FileDescriptionImpl.Release.
 func (fd *namespaceFD) Release(ctx context.Context) {
 	fd.inode.DecRef(ctx)
 }
