@@ -21,6 +21,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
@@ -168,26 +169,30 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 	}
 	rootProcArgs.MountNamespaceVFS2 = mns
 
+	root := mns.Root()
+	defer root.DecRef(rootCtx)
+	if root.Mount().ReadOnly() {
+		// Switch to ReadWrite while we setup submounts.
+		if err := c.k.VFS().SetMountReadOnly(root.Mount(), false); err != nil {
+			return nil, fmt.Errorf(`failed to set mount at "/" readwrite: %w`, err)
+		}
+		// Restore back to ReadOnly at the end.
+		defer func() {
+			if err := c.k.VFS().SetMountReadOnly(root.Mount(), true); err != nil {
+				panic(fmt.Sprintf(`failed to restore mount at "/" back to readonly: %v`, err))
+			}
+		}()
+	}
+
 	// Mount submounts.
 	if err := c.mountSubmountsVFS2(rootCtx, conf, mns, rootCreds); err != nil {
 		return nil, fmt.Errorf("mounting submounts vfs2: %w", err)
-	}
-
-	if c.root.Readonly || conf.Overlay {
-		// Switch to ReadOnly after all submounts were setup.
-		root := mns.Root()
-		defer root.DecRef(rootCtx)
-		if err := c.k.VFS().SetMountReadOnly(root.Mount(), true); err != nil {
-			return nil, fmt.Errorf(`failed to set mount at "/" readonly: %v`, err)
-		}
 	}
 
 	return mns, nil
 }
 
 // createMountNamespaceVFS2 creates the container's root mount and namespace.
-// The mount is created ReadWrite to allow mount point for submounts to be
-// created. ** The caller is responsible to switch to ReadOnly if needed **
 func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
 	data := p9MountData(fd, conf.FileAccess, true /* vfs2 */)
@@ -201,19 +206,69 @@ func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *c
 
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	opts := &vfs.MountOptions{
-		// Always mount as ReadWrite to allow other mounts on top of it. It'll be
-		// made ReadOnly in the caller (if needed).
-		ReadOnly: false,
+		ReadOnly: c.root.Readonly,
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
 			Data: strings.Join(data, ","),
 		},
 		InternalMount: true,
 	}
-	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", gofer.Name, opts)
+
+	fsName := gofer.Name
+	if conf.Overlay && !c.root.Readonly {
+		log.Infof("Adding overlay on top of root")
+		var err error
+		var cleanup func()
+		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName)
+		if err != nil {
+			return nil, fmt.Errorf("mounting root with overlay: %w", err)
+		}
+		defer cleanup()
+		fsName = overlay.Name
+	}
+
+	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", fsName, opts)
 	if err != nil {
 		return nil, fmt.Errorf("setting up mount namespace: %w", err)
 	}
 	return mns, nil
+}
+
+// configureOverlay mounts the lower layer using "lowerOpts", mounts the upper
+// layer using tmpfs, and return overlay mount options. "cleanup" must be called
+// after the options have been used to mount the overlay, to release refs on
+// lower and upper mounts.
+func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string) (*vfs.MountOptions, func(), error) {
+	// First copy options from lower layer to upper layer and overlay. Clear
+	// filesystem specific options.
+	upperOpts := *lowerOpts
+	upperOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{}
+
+	overlayOpts := *lowerOpts
+	overlayOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{}
+
+	// Next mount upper and lower. Upper is a tmpfs mount to keep all
+	// modifications inside the sandbox.
+	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %v", upperOpts, err)
+	}
+	cu := cleanup.Make(func() { upper.DecRef(ctx) })
+	defer cu.Clean()
+
+	// All writes go to the upper layer, be paranoid and make lower readonly.
+	lowerOpts.ReadOnly = true
+	lower, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, lowerFSName, lowerOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+	cu.Add(func() { lower.DecRef(ctx) })
+
+	// Configure overlay with both layers.
+	overlayOpts.GetFilesystemOptions.InternalData = overlay.FilesystemOptions{
+		UpperRoot:  vfs.MakeVirtualDentry(upper, upper.Root()),
+		LowerRoots: []vfs.VirtualDentry{vfs.MakeVirtualDentry(lower, lower.Root())},
+	}
+	return &overlayOpts, cu.Release(), nil
 }
 
 func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
@@ -245,7 +300,7 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.
 		if mnt != nil && mnt.ReadOnly() {
 			// Switch to ReadWrite while we setup submounts.
 			if err := c.k.VFS().SetMountReadOnly(mnt, false); err != nil {
-				return fmt.Errorf("failed to set mount at %q readwrite: %v", submount.Destination, err)
+				return fmt.Errorf("failed to set mount at %q readwrite: %w", submount.Destination, err)
 			}
 			// Restore back to ReadOnly at the end.
 			defer func() {
@@ -297,14 +352,7 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 }
 
 func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) (*vfs.Mount, error) {
-	root := mns.Root()
-	defer root.DecRef(ctx)
-	target := &vfs.PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse(submount.Destination),
-	}
-	fsName, opts, err := c.getMountNameAndOptionsVFS2(conf, submount)
+	fsName, opts, useOverlay, err := c.getMountNameAndOptionsVFS2(conf, submount)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -313,8 +361,27 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.C
 		return nil, nil
 	}
 
-	if err := c.k.VFS().MakeSyntheticMountpoint(ctx, submount.Destination, root, creds); err != nil {
-		return nil, err
+	if err := c.makeMountPoint(ctx, creds, mns, submount.Destination); err != nil {
+		return nil, fmt.Errorf("creating mount point %q: %w", submount.Destination, err)
+	}
+
+	if useOverlay {
+		log.Infof("Adding overlay on top of mount %q", submount.Destination)
+		var cleanup func()
+		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName)
+		if err != nil {
+			return nil, fmt.Errorf("mounting volume with overlay at %q: %w", submount.Destination, err)
+		}
+		defer cleanup()
+		fsName = overlay.Name
+	}
+
+	root := mns.Root()
+	defer root.DecRef(ctx)
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(submount.Destination),
 	}
 	mnt, err := c.k.VFS().MountAt(ctx, creds, "", target, fsName, opts)
 	if err != nil {
@@ -326,8 +393,9 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.C
 
 // getMountNameAndOptionsVFS2 retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mountAndFD) (string, *vfs.MountOptions, error) {
+func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mountAndFD) (string, *vfs.MountOptions, bool, error) {
 	fsName := m.Type
+	useOverlay := false
 	var data []string
 
 	// Find filesystem name and FS specific data field.
@@ -342,7 +410,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 		var err error
 		data, err = parseAndFilterOptions(m.Options, tmpfsAllowedData...)
 		if err != nil {
-			return "", nil, err
+			return "", nil, false, err
 		}
 
 	case bind:
@@ -350,13 +418,16 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 		if m.fd == 0 {
 			// Check that an FD was provided to fails fast. Technically FD=0 is valid,
 			// but unlikely to be correct in this context.
-			return "", nil, fmt.Errorf("9P mount requires a connection FD")
+			return "", nil, false, fmt.Errorf("9P mount requires a connection FD")
 		}
 		data = p9MountData(m.fd, c.getMountAccessType(m.Mount), true /* vfs2 */)
 
+		// If configured, add overlay to all writable mounts.
+		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
+
 	default:
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
-		return "", nil, nil
+		return "", nil, false, nil
 	}
 
 	opts := &vfs.MountOptions{
@@ -381,11 +452,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 		}
 	}
 
-	if conf.Overlay {
-		// All writes go to upper, be paranoid and make lower readonly.
-		opts.ReadOnly = true
-	}
-	return fsName, opts, nil
+	return fsName, opts, useOverlay, nil
 }
 
 // mountTmpVFS2 mounts an internal tmpfs at '/tmp' if it's safe to do so.
@@ -488,13 +555,25 @@ func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *conf
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
 	mntFD := &mountAndFD{Mount: hint.mount}
-	fsName, opts, err := c.getMountNameAndOptionsVFS2(conf, mntFD)
+	fsName, opts, useOverlay, err := c.getMountNameAndOptionsVFS2(conf, mntFD)
 	if err != nil {
 		return nil, err
 	}
 	if len(fsName) == 0 {
 		return nil, fmt.Errorf("mount type not supported %q", hint.mount.Type)
 	}
+
+	if useOverlay {
+		log.Infof("Adding overlay on top of shared mount %q", mntFD.Destination)
+		var cleanup func()
+		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName)
+		if err != nil {
+			return nil, fmt.Errorf("mounting shared volume with overlay at %q: %w", mntFD.Destination, err)
+		}
+		defer cleanup()
+		fsName = overlay.Name
+	}
+
 	return c.k.VFS().MountDisconnected(ctx, creds, "", fsName, opts)
 }
 
@@ -505,7 +584,9 @@ func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *co
 		return nil, err
 	}
 
-	_, opts, err := c.getMountNameAndOptionsVFS2(conf, &mountAndFD{Mount: mount})
+	// Ignore data and useOverlay because these were already applied to
+	// the master mount.
+	_, opts, _, err := c.getMountNameAndOptionsVFS2(conf, &mountAndFD{Mount: mount})
 	if err != nil {
 		return nil, err
 	}
@@ -517,18 +598,39 @@ func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *co
 
 	root := mns.Root()
 	defer root.DecRef(ctx)
-	if err := c.k.VFS().MakeSyntheticMountpoint(ctx, mount.Destination, root, creds); err != nil {
-		return nil, err
-	}
-
 	target := &vfs.PathOperation{
 		Root:  root,
 		Start: root,
 		Path:  fspath.Parse(mount.Destination),
 	}
+
+	if err := c.makeMountPoint(ctx, creds, mns, mount.Destination); err != nil {
+		return nil, fmt.Errorf("creating mount point %q: %w", mount.Destination, err)
+	}
+
 	if err := c.k.VFS().ConnectMountAt(ctx, creds, newMnt, target); err != nil {
 		return nil, err
 	}
 	log.Infof("Mounted %q type shared bind to %q", mount.Destination, source.name)
 	return newMnt, nil
+}
+
+func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, dest string) error {
+	root := mns.Root()
+	defer root.DecRef(ctx)
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(dest),
+	}
+	// First check if mount point exists. When overlay is enabled, gofer doesn't
+	// allow changes to the FS, making MakeSytheticMountpoint() ineffective
+	// because MkdirAt fails with EROFS even if file exists.
+	vd, err := c.k.VFS().GetDentryAt(ctx, creds, target, &vfs.GetDentryOptions{})
+	if err == nil {
+		// File exists, we're done.
+		vd.DecRef(ctx)
+		return nil
+	}
+	return c.k.VFS().MakeSyntheticMountpoint(ctx, dest, root, creds)
 }
