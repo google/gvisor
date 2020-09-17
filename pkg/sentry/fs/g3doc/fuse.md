@@ -79,7 +79,7 @@ ops can be implemented in parallel.
 -   Implement `/dev/fuse` - a character device used to establish an FD for
     communication between the sentry and the server daemon.
 
--   Implement basic FUSE ops like `FUSE_INIT`, `FUSE_DESTROY`.
+-   Implement basic FUSE ops like `FUSE_INIT`.
 
 #### Read-only mount with basic file operations
 
@@ -140,6 +140,58 @@ ops can be implemented in parallel.
 
 -   a channel that the kernel task will be blocked on when the fd is not
     available.
+
+#### Basic I/O Implementation
+
+Currently we have implemented basic functionalities of read and write
+for our FUSE. We describe the design and ways to improve it here:
+
+##### Basic FUSE Read
+
+The vfs2 expects implementations of `vfs.FileDescriptionImpl.Read()` and
+`vfs.FileDescriptionImpl.PRead()`. When a syscall is made, it will eventually
+reach our implementation of those interface functions located at
+`pkg/sentry/fsimpl/fuse/regular_file.go` for regular files.
+
+After validation checks of the input, sentry sends `FUSE_READ` requests
+to the FUSE daemon. The FUSE daemon returns data after the `fuse_out_header`
+as the responses. For the first version, we create a copy in kernel memory
+of those data. They are represented as a byte slice in the marshalled
+struct. This happens as a common process for all the FUSE responses at this
+moment at `pkg/sentry/fsimpl/fuse/dev.go:writeLocked()`. We then directly
+copy from this intermediate buffer to the input buffer
+provided by the read syscall.
+
+There is an extra requirement for FUSE: When mounting the FUSE fs,
+the mounter or the FUSE daemon can specify a `max_read` or a `max_pages`
+parameter. They are the upperbound of the bytes to read in each
+`FUSE_READ` request. We implemented the code to handle the fragmented reads.
+
+To improve the performance: ideally we should have buffer cache to copy
+those data from the responses of FUSE daemon into, as is also the
+design of several other existing file system implementations for
+sentry, instead of a single-use temporary buffer. Directly mapping
+the memory of one process to another could also boost the performance,
+but to keep them isolated, we did not choose to do so.
+
+##### Basic FUSE Write
+
+The vfs2 invokes implementations of `vfs.FileDescriptionImpl.Write()`
+and `vfs.FileDescriptionImpl.PWrite()` on the regular file descriptor
+of FUSE when a user makes write(2) and pwrite(2) syscall.
+
+For valid writes, sentry sends the bytes to write after a `FUSE_WRITE`
+header (can be regarded as a request with 2 payloads) to the FUSE daemon.
+For the first version, we allocate a buffer inside kernel memory to store
+the bytes from the user, and copy directly from that buffer to the memory
+of FUSE daemon. This happens at `pkg/sentry/fsimpl/fuse/dev.go:readLocked()`
+
+The parameters `max_write` and `max_pages` restrict the number of bytes in one
+`FUSE_WRITE`. There are code handling fragmented writes in current
+implementation.
+
+To have better performance: the extra copy created to store the bytes to write
+can be replaced by the buffer cache as well.
 
 # Appendix
 
