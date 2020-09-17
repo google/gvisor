@@ -372,6 +372,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 				Path:  fspath.Parse(childMerkleFilename),
 			}, &vfs.OpenOptions{
 				Flags: linux.O_RDWR | linux.O_CREAT,
+				Mode:  0644,
 			})
 			if err != nil {
 				return nil, err
