@@ -553,29 +553,6 @@ func TestROMountChecks(t *testing.T) {
 	})
 }
 
-func TestROMountPanics(t *testing.T) {
-	conf := Config{ROMount: true, PanicOnWrite: true}
-	uid := p9.UID(os.Getuid())
-	gid := p9.GID(os.Getgid())
-
-	runCustom(t, allTypes, []Config{conf}, func(t *testing.T, s state) {
-		if s.fileType != unix.S_IFLNK {
-			assertPanic(t, func() { s.file.Open(p9.WriteOnly) })
-		}
-		assertPanic(t, func() { s.file.Create("some_file", p9.ReadWrite, 0777, uid, gid) })
-		assertPanic(t, func() { s.file.Mkdir("some_dir", 0777, uid, gid) })
-		assertPanic(t, func() { s.file.RenameAt("some_file", s.file, "other_file") })
-		assertPanic(t, func() { s.file.Symlink("some_place", "some_symlink", uid, gid) })
-		assertPanic(t, func() { s.file.UnlinkAt("some_file", 0) })
-		assertPanic(t, func() { s.file.Link(s.file, "some_link") })
-		assertPanic(t, func() { s.file.Mknod("some-nod", 0777, 1, 2, uid, gid) })
-
-		valid := p9.SetAttrMask{Size: true}
-		attr := p9.SetAttr{Size: 0}
-		assertPanic(t, func() { s.file.SetAttr(valid, attr) })
-	})
-}
-
 func TestWalkNotFound(t *testing.T) {
 	runCustom(t, []uint32{unix.S_IFDIR}, allConfs, func(t *testing.T, s state) {
 		if _, _, err := s.file.Walk([]string{"nobody-here"}); err != unix.ENOENT {

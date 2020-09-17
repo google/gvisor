@@ -902,9 +902,6 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	}
 
 	args = append(args, "gofer", "--bundle", bundleDir)
-	if conf.Overlay {
-		args = append(args, "--panic-on-write=true")
-	}
 
 	// Open the spec file to donate to the sandbox.
 	specFile, err := specutils.OpenSpec(bundleDir)
