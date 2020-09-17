@@ -30,7 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// EventFileDescription implements FileDescriptionImpl for file-based event
+// EventFileDescription implements vfs.FileDescriptionImpl for file-based event
 // notification (eventfd). Eventfds are usually internal to the Sentry but in
 // certain situations they may be converted into a host-backed eventfd.
 type EventFileDescription struct {
@@ -106,7 +106,7 @@ func (efd *EventFileDescription) HostFD() (int, error) {
 	return efd.hostfd, nil
 }
 
-// Release implements FileDescriptionImpl.Release()
+// Release implements vfs.FileDescriptionImpl.Release.
 func (efd *EventFileDescription) Release(context.Context) {
 	efd.mu.Lock()
 	defer efd.mu.Unlock()
@@ -119,7 +119,7 @@ func (efd *EventFileDescription) Release(context.Context) {
 	}
 }
 
-// Read implements FileDescriptionImpl.Read.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	if dst.NumBytes() < 8 {
 		return 0, syscall.EINVAL
@@ -130,7 +130,7 @@ func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 	return 8, nil
 }
 
-// Write implements FileDescriptionImpl.Write.
+// Write implements vfs.FileDescriptionImpl.Write.
 func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
 	if src.NumBytes() < 8 {
 		return 0, syscall.EINVAL

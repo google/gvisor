@@ -76,7 +76,7 @@ func (t *TTYFileDescription) Release(ctx context.Context) {
 	t.fileDescription.Release(ctx)
 }
 
-// PRead implements vfs.FileDescriptionImpl.
+// PRead implements vfs.FileDescriptionImpl.PRead.
 //
 // Reading from a TTY is only allowed for foreground process groups. Background
 // process groups will either get EIO or a SIGTTIN.
@@ -94,7 +94,7 @@ func (t *TTYFileDescription) PRead(ctx context.Context, dst usermem.IOSequence, 
 	return t.fileDescription.PRead(ctx, dst, offset, opts)
 }
 
-// Read implements vfs.FileDescriptionImpl.
+// Read implements vfs.FileDescriptionImpl.Read.
 //
 // Reading from a TTY is only allowed for foreground process groups. Background
 // process groups will either get EIO or a SIGTTIN.
@@ -112,7 +112,7 @@ func (t *TTYFileDescription) Read(ctx context.Context, dst usermem.IOSequence, o
 	return t.fileDescription.Read(ctx, dst, opts)
 }
 
-// PWrite implements vfs.FileDescriptionImpl.
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (t *TTYFileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -127,7 +127,7 @@ func (t *TTYFileDescription) PWrite(ctx context.Context, src usermem.IOSequence,
 	return t.fileDescription.PWrite(ctx, src, offset, opts)
 }
 
-// Write implements vfs.FileDescriptionImpl.
+// Write implements vfs.FileDescriptionImpl.Write.
 func (t *TTYFileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -142,7 +142,7 @@ func (t *TTYFileDescription) Write(ctx context.Context, src usermem.IOSequence, 
 	return t.fileDescription.Write(ctx, src, opts)
 }
 
-// Ioctl implements vfs.FileDescriptionImpl.
+// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {

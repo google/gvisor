@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// SignalFileDescription implements FileDescriptionImpl for signal fds.
+// SignalFileDescription implements vfs.FileDescriptionImpl for signal fds.
 type SignalFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
@@ -83,7 +83,7 @@ func (sfd *SignalFileDescription) SetMask(mask linux.SignalSet) {
 	sfd.mask = mask
 }
 
-// Read implements FileDescriptionImpl.Read.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	// Attempt to dequeue relevant signals.
 	info, err := sfd.target.Sigtimedwait(sfd.Mask(), 0)
@@ -132,5 +132,5 @@ func (sfd *SignalFileDescription) EventUnregister(entry *waiter.Entry) {
 	sfd.target.SignalUnregister(entry)
 }
 
-// Release implements FileDescriptionImpl.Release()
+// Release implements vfs.FileDescriptionImpl.Release.
 func (sfd *SignalFileDescription) Release(context.Context) {}

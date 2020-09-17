@@ -594,7 +594,7 @@ func (s *StaticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint3
 	s.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeDirectory|perm)
 }
 
-// Open implements kernfs.Inode.
+// Open implements kernfs.Inode.Open.
 func (s *StaticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd, err := NewGenericDirectoryFD(rp.Mount(), vfsd, &s.OrderedChildren, &s.locks, &opts, s.fdOpts)
 	if err != nil {
@@ -608,7 +608,7 @@ func (*StaticDirectory) SetStat(context.Context, *vfs.Filesystem, *auth.Credenti
 	return syserror.EPERM
 }
 
-// DecRef implements kernfs.Inode.
+// DecRef implements kernfs.Inode.DecRef.
 func (s *StaticDirectory) DecRef(context.Context) {
 	s.StaticDirectoryRefs.DecRef(s.Destroy)
 }
@@ -616,7 +616,7 @@ func (s *StaticDirectory) DecRef(context.Context) {
 // AlwaysValid partially implements kernfs.inodeDynamicLookup.
 type AlwaysValid struct{}
 
-// Valid implements kernfs.inodeDynamicLookup.
+// Valid implements kernfs.inodeDynamicLookup.Valid.
 func (*AlwaysValid) Valid(context.Context) bool {
 	return true
 }
