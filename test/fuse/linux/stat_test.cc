@@ -18,12 +18,16 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "test/fuse/linux/fuse_base.h"
+#include "test/fuse/linux/fuse_fd_util.h"
+#include "test/util/cleanup.h"
+#include "test/util/fs_util.h"
+#include "test/util/fuse_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -31,89 +35,45 @@ namespace testing {
 
 namespace {
 
-class StatTest : public FuseTest {
+class StatTest : public FuseFdTest {
  public:
-  bool CompareRequest(void* expected_mem, size_t expected_len, void* real_mem,
-                      size_t real_len) override {
-    if (expected_len != real_len) return false;
-    struct fuse_in_header* real_header =
-        reinterpret_cast<fuse_in_header*>(real_mem);
-
-    if (real_header->opcode != FUSE_GETATTR) {
-      std::cerr << "expect header opcode " << FUSE_GETATTR << " but got "
-                << real_header->opcode << std::endl;
-      return false;
-    }
-    return true;
+  void SetUp() override {
+    FuseFdTest::SetUp();
+    test_file_path_ = JoinPath(mount_point_.path(), test_file_);
   }
 
+ protected:
   bool StatsAreEqual(struct stat expected, struct stat actual) {
-    // device number will be dynamically allocated by kernel, we cannot know
-    // in advance
+    // Device number will be dynamically allocated by kernel, we cannot know in
+    // advance.
     actual.st_dev = expected.st_dev;
     return memcmp(&expected, &actual, sizeof(struct stat)) == 0;
   }
+
+  const std::string test_file_ = "testfile";
+  const mode_t expected_mode = S_IFREG | S_IRUSR | S_IWUSR;
+  const uint64_t fh = 23;
+
+  std::string test_file_path_;
 };
 
 TEST_F(StatTest, StatNormal) {
-  struct iovec iov_in[2];
-  struct iovec iov_out[2];
-
-  struct fuse_in_header in_header = {
-      .len = sizeof(struct fuse_in_header) + sizeof(struct fuse_getattr_in),
-      .opcode = FUSE_GETATTR,
-      .unique = 4,
-      .nodeid = 1,
-      .uid = 0,
-      .gid = 0,
-      .pid = 4,
-      .padding = 0,
-  };
-  struct fuse_getattr_in in_payload = {0};
-  iov_in[0].iov_len = sizeof(in_header);
-  iov_in[0].iov_base = &in_header;
-  iov_in[1].iov_len = sizeof(in_payload);
-  iov_in[1].iov_base = &in_payload;
-
-  mode_t expected_mode = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
-  struct timespec atime = {.tv_sec = 1595436289, .tv_nsec = 134150844};
-  struct timespec mtime = {.tv_sec = 1595436290, .tv_nsec = 134150845};
-  struct timespec ctime = {.tv_sec = 1595436291, .tv_nsec = 134150846};
+  // Set up fixture.
+  struct fuse_attr attr = DefaultFuseAttr(expected_mode, 1);
   struct fuse_out_header out_header = {
       .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_attr_out),
-      .error = 0,
-      .unique = 4,
-  };
-  struct fuse_attr attr = {
-      .ino = 1,
-      .size = 512,
-      .blocks = 4,
-      .atime = static_cast<uint64_t>(atime.tv_sec),
-      .mtime = static_cast<uint64_t>(mtime.tv_sec),
-      .ctime = static_cast<uint64_t>(ctime.tv_sec),
-      .atimensec = static_cast<uint32_t>(atime.tv_nsec),
-      .mtimensec = static_cast<uint32_t>(mtime.tv_nsec),
-      .ctimensec = static_cast<uint32_t>(ctime.tv_nsec),
-      .mode = expected_mode,
-      .nlink = 2,
-      .uid = 1234,
-      .gid = 4321,
-      .rdev = 12,
-      .blksize = 4096,
   };
   struct fuse_attr_out out_payload = {
       .attr = attr,
   };
-  iov_out[0].iov_len = sizeof(out_header);
-  iov_out[0].iov_base = &out_header;
-  iov_out[1].iov_len = sizeof(out_payload);
-  iov_out[1].iov_base = &out_payload;
+  auto iov_out = FuseGenerateIovecs(out_header, out_payload);
+  SetServerResponse(FUSE_GETATTR, iov_out);
 
-  SetExpected(iov_in, 2, iov_out, 2);
-
+  // Make syscall.
   struct stat stat_buf;
   EXPECT_THAT(stat(mount_point_.path().c_str(), &stat_buf), SyscallSucceeds());
 
+  // Check filesystem operation result.
   struct stat expected_stat = {
       .st_ino = attr.ino,
       .st_nlink = attr.nlink,
@@ -124,43 +84,133 @@ TEST_F(StatTest, StatNormal) {
       .st_size = static_cast<off_t>(attr.size),
       .st_blksize = attr.blksize,
       .st_blocks = static_cast<blkcnt_t>(attr.blocks),
-      .st_atim = atime,
-      .st_mtim = mtime,
-      .st_ctim = ctime,
+      .st_atim = (struct timespec){.tv_sec = static_cast<int>(attr.atime),
+                                   .tv_nsec = attr.atimensec},
+      .st_mtim = (struct timespec){.tv_sec = static_cast<int>(attr.mtime),
+                                   .tv_nsec = attr.mtimensec},
+      .st_ctim = (struct timespec){.tv_sec = static_cast<int>(attr.ctime),
+                                   .tv_nsec = attr.ctimensec},
   };
   EXPECT_TRUE(StatsAreEqual(stat_buf, expected_stat));
-  WaitCompleted();
+
+  // Check FUSE request.
+  struct fuse_in_header in_header;
+  struct fuse_getattr_in in_payload;
+  auto iov_in = FuseGenerateIovecs(in_header, in_payload);
+
+  GetServerActualRequest(iov_in);
+  EXPECT_EQ(in_header.opcode, FUSE_GETATTR);
+  EXPECT_EQ(in_payload.getattr_flags, 0);
+  EXPECT_EQ(in_payload.fh, 0);
 }
 
 TEST_F(StatTest, StatNotFound) {
-  struct iovec iov_in[2];
-  struct iovec iov_out[2];
-
-  struct fuse_in_header in_header = {
-      .len = sizeof(struct fuse_in_header) + sizeof(struct fuse_getattr_in),
-      .opcode = FUSE_GETATTR,
-      .unique = 4,
-  };
-  struct fuse_getattr_in in_payload = {0};
-  iov_in[0].iov_len = sizeof(in_header);
-  iov_in[0].iov_base = &in_header;
-  iov_in[1].iov_len = sizeof(in_payload);
-  iov_in[1].iov_base = &in_payload;
-
+  // Set up fixture.
   struct fuse_out_header out_header = {
       .len = sizeof(struct fuse_out_header),
       .error = -ENOENT,
-      .unique = 4,
   };
-  iov_out[0].iov_len = sizeof(out_header);
-  iov_out[0].iov_base = &out_header;
+  auto iov_out = FuseGenerateIovecs(out_header);
+  SetServerResponse(FUSE_GETATTR, iov_out);
 
-  SetExpected(iov_in, 2, iov_out, 1);
-
+  // Make syscall.
   struct stat stat_buf;
   EXPECT_THAT(stat(mount_point_.path().c_str(), &stat_buf),
               SyscallFailsWithErrno(ENOENT));
-  WaitCompleted();
+
+  // Check FUSE request.
+  struct fuse_in_header in_header;
+  struct fuse_getattr_in in_payload;
+  auto iov_in = FuseGenerateIovecs(in_header, in_payload);
+
+  GetServerActualRequest(iov_in);
+  EXPECT_EQ(in_header.opcode, FUSE_GETATTR);
+  EXPECT_EQ(in_payload.getattr_flags, 0);
+  EXPECT_EQ(in_payload.fh, 0);
+}
+
+TEST_F(StatTest, FstatNormal) {
+  // Set up fixture.
+  SetServerInodeLookup(test_file_);
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(OpenPath(test_file_path_, O_RDONLY, fh));
+  auto close_fd = CloseFD(fd);
+
+  struct fuse_attr attr = DefaultFuseAttr(expected_mode, 2);
+  struct fuse_out_header out_header = {
+      .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_attr_out),
+  };
+  struct fuse_attr_out out_payload = {
+      .attr = attr,
+  };
+  auto iov_out = FuseGenerateIovecs(out_header, out_payload);
+  SetServerResponse(FUSE_GETATTR, iov_out);
+
+  // Make syscall.
+  struct stat stat_buf;
+  EXPECT_THAT(fstat(fd.get(), &stat_buf), SyscallSucceeds());
+
+  // Check filesystem operation result.
+  struct stat expected_stat = {
+      .st_ino = attr.ino,
+      .st_nlink = attr.nlink,
+      .st_mode = expected_mode,
+      .st_uid = attr.uid,
+      .st_gid = attr.gid,
+      .st_rdev = attr.rdev,
+      .st_size = static_cast<off_t>(attr.size),
+      .st_blksize = attr.blksize,
+      .st_blocks = static_cast<blkcnt_t>(attr.blocks),
+      .st_atim = (struct timespec){.tv_sec = static_cast<int>(attr.atime),
+                                   .tv_nsec = attr.atimensec},
+      .st_mtim = (struct timespec){.tv_sec = static_cast<int>(attr.mtime),
+                                   .tv_nsec = attr.mtimensec},
+      .st_ctim = (struct timespec){.tv_sec = static_cast<int>(attr.ctime),
+                                   .tv_nsec = attr.ctimensec},
+  };
+  EXPECT_TRUE(StatsAreEqual(stat_buf, expected_stat));
+
+  // Check FUSE request.
+  struct fuse_in_header in_header;
+  struct fuse_getattr_in in_payload;
+  auto iov_in = FuseGenerateIovecs(in_header, in_payload);
+
+  GetServerActualRequest(iov_in);
+  EXPECT_EQ(in_header.opcode, FUSE_GETATTR);
+  EXPECT_EQ(in_payload.getattr_flags, 0);
+  EXPECT_EQ(in_payload.fh, 0);
+}
+
+TEST_F(StatTest, StatByFileHandle) {
+  // Set up fixture.
+  SetServerInodeLookup(test_file_, expected_mode, 0);
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(OpenPath(test_file_path_, O_RDONLY, fh));
+  auto close_fd = CloseFD(fd);
+
+  struct fuse_attr attr = DefaultFuseAttr(expected_mode, 2, 0);
+  struct fuse_out_header out_header = {
+      .len = sizeof(struct fuse_out_header) + sizeof(struct fuse_attr_out),
+  };
+  struct fuse_attr_out out_payload = {
+      .attr = attr,
+  };
+  auto iov_out = FuseGenerateIovecs(out_header, out_payload);
+  SetServerResponse(FUSE_GETATTR, iov_out);
+
+  // Make syscall.
+  std::vector<char> buf(1);
+  // Since this is an empty file, it won't issue FUSE_READ. But a FUSE_GETATTR
+  // will be issued before read completes.
+  EXPECT_THAT(read(fd.get(), buf.data(), buf.size()), SyscallSucceeds());
+
+  // Check FUSE request.
+  struct fuse_in_header in_header;
+  struct fuse_getattr_in in_payload;
+  auto iov_in = FuseGenerateIovecs(in_header, in_payload);
+
+  GetServerActualRequest(iov_in);
+  EXPECT_EQ(in_header.opcode, FUSE_GETATTR);
+  EXPECT_EQ(in_payload.getattr_flags, FUSE_GETATTR_FH);
+  EXPECT_EQ(in_payload.fh, fh);
 }
 
 }  // namespace

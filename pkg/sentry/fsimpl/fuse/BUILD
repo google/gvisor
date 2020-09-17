@@ -30,12 +30,17 @@ go_library(
     name = "fuse",
     srcs = [
         "connection.go",
+        "connection_control.go",
         "dev.go",
+        "directory.go",
+        "file.go",
         "fusefs.go",
-        "init.go",
         "inode_refs.go",
+        "read_write.go",
         "register.go",
+        "regular_file.go",
         "request_list.go",
+        "request_response.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -44,6 +49,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/refs",
+        "//pkg/safemem",
         "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",
@@ -60,7 +66,11 @@ go_library(
 go_test(
     name = "fuse_test",
     size = "small",
-    srcs = ["dev_test.go"],
+    srcs = [
+        "connection_test.go",
+        "dev_test.go",
+        "utils_test.go",
+    ],
     library = ":fuse",
     deps = [
         "//pkg/abi/linux",

@@ -16,12 +16,10 @@ package fuse
 
 import (
 	"fmt"
-	"io"
 	"math/rand"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -34,10 +32,6 @@ import (
 // echoTestOpcode is the Opcode used during testing. The server used in tests
 // will simply echo the payload back with the appropriate headers.
 const echoTestOpcode linux.FUSEOpcode = 1000
-
-type testPayload struct {
-	data uint32
-}
 
 // TestFUSECommunication tests that the communication layer between the Sentry and the
 // FUSE server daemon works as expected.
@@ -326,103 +320,4 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 			t.Fatalf("Write failed :%v", err)
 		}
 	}
-}
-
-func setup(t *testing.T) *testutil.System {
-	k, err := testutil.Boot()
-	if err != nil {
-		t.Fatalf("Error creating kernel: %v", err)
-	}
-
-	ctx := k.SupervisorContext()
-	creds := auth.CredentialsFromContext(ctx)
-
-	k.VFS().MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
-		AllowUserList:  true,
-		AllowUserMount: true,
-	})
-
-	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{})
-	if err != nil {
-		t.Fatalf("NewMountNamespace(): %v", err)
-	}
-
-	return testutil.NewSystem(ctx, t, k.VFS(), mntns)
-}
-
-// newTestConnection creates a fuse connection that the sentry can communicate with
-// and the FD for the server to communicate with.
-func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveRequests uint64) (*connection, *vfs.FileDescription, error) {
-	vfsObj := &vfs.VirtualFilesystem{}
-	fuseDev := &DeviceFD{}
-
-	if err := vfsObj.Init(system.Ctx); err != nil {
-		return nil, nil, err
-	}
-
-	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
-	defer vd.DecRef(system.Ctx)
-	if err := fuseDev.vfsfd.Init(fuseDev, linux.O_RDWR|linux.O_CREAT, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{}); err != nil {
-		return nil, nil, err
-	}
-
-	fsopts := filesystemOptions{
-		maxActiveRequests: maxActiveRequests,
-	}
-	fs, err := NewFUSEFilesystem(system.Ctx, 0, &fsopts, &fuseDev.vfsfd)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return fs.conn, &fuseDev.vfsfd, nil
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (t *testPayload) SizeBytes() int {
-	return 4
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (t *testPayload) MarshalBytes(dst []byte) {
-	usermem.ByteOrder.PutUint32(dst[:4], t.data)
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (t *testPayload) UnmarshalBytes(src []byte) {
-	*t = testPayload{data: usermem.ByteOrder.Uint32(src[:4])}
-}
-
-// Packed implements marshal.Marshallable.Packed.
-func (t *testPayload) Packed() bool {
-	return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (t *testPayload) MarshalUnsafe(dst []byte) {
-	t.MarshalBytes(dst)
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (t *testPayload) UnmarshalUnsafe(src []byte) {
-	t.UnmarshalBytes(src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-func (t *testPayload) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-	panic("not implemented")
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-func (t *testPayload) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-	panic("not implemented")
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (t *testPayload) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-	panic("not implemented")
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (t *testPayload) WriteTo(w io.Writer) (int64, error) {
-	panic("not implemented")
 }
