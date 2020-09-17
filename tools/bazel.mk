@@ -31,6 +31,7 @@ DOCKER_PRIVILEGED ?= --privileged
 BAZEL_CACHE := $(shell readlink -m ~/.cache/bazel/)
 GCLOUD_CONFIG := $(shell readlink -m ~/.config/gcloud/)
 DOCKER_SOCKET := /var/run/docker.sock
+DOCKER_CONFIG := /etc/docker/daemon.json
 
 # Bazel flags.
 BAZEL := bazel $(STARTUP_OPTIONS)
@@ -56,6 +57,9 @@ endif
 # Add docker passthrough options.
 ifneq ($(DOCKER_PRIVILEGED),)
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
+# TODO(gvisor.dev/issue/1624): Remove docker config volume. This is required
+# temporarily for checking VFS1 vs VFS2 by some tests.
+FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_CONFIG):$(DOCKER_CONFIG)"
 FULL_DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
 FULL_DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
 DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
