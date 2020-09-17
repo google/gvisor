@@ -62,9 +62,8 @@ type Gofer struct {
 	applyCaps bool
 	setUpRoot bool
 
-	panicOnWrite bool
-	specFD       int
-	mountsFD     int
+	specFD   int
+	mountsFD int
 }
 
 // Name implements subcommands.Command.
@@ -87,7 +86,6 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&g.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect 9P servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
-	f.BoolVar(&g.panicOnWrite, "panic-on-write", false, "if true, panics on attempts to write to RO mounts. RW mounts are unnaffected")
 	f.BoolVar(&g.setUpRoot, "setup-root", true, "if true, set up an empty root for the process")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
@@ -168,8 +166,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// Start with root mount, then add any other additional mount as needed.
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
-		ROMount:      spec.Root.Readonly || conf.Overlay,
-		PanicOnWrite: g.panicOnWrite,
+		ROMount: spec.Root.Readonly || conf.Overlay,
 	})
 	if err != nil {
 		Fatalf("creating attach point: %v", err)
@@ -181,9 +178,8 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
 			cfg := fsgofer.Config{
-				ROMount:      isReadonlyMount(m.Options) || conf.Overlay,
-				PanicOnWrite: g.panicOnWrite,
-				HostUDS:      conf.FSGoferHostUDS,
+				ROMount: isReadonlyMount(m.Options) || conf.Overlay,
+				HostUDS: conf.FSGoferHostUDS,
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {
@@ -316,6 +312,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		if err != nil {
 			return fmt.Errorf("resolving symlinks to %q: %v", spec.Process.Cwd, err)
 		}
+		log.Infof("Create working directory %q if needed", spec.Process.Cwd)
 		if err := os.MkdirAll(dst, 0755); err != nil {
 			return fmt.Errorf("creating working directory %q: %v", spec.Process.Cwd, err)
 		}
