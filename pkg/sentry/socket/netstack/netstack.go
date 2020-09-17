@@ -1768,10 +1768,16 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 	case linux.SOL_IP:
 		return setSockOptIP(t, s, ep, name, optVal)
 
+	case linux.SOL_PACKET:
+		// gVisor doesn't support any SOL_PACKET options just return not
+		// supported. Returning nil here will result in tcpdump thinking AF_PACKET
+		// features are supported and proceed to use them and break.
+		t.Kernel().EmitUnimplementedEvent(t)
+		return syserr.ErrProtocolNotAvailable
+
 	case linux.SOL_UDP,
 		linux.SOL_ICMPV6,
-		linux.SOL_RAW,
-		linux.SOL_PACKET:
+		linux.SOL_RAW:
 
 		t.Kernel().EmitUnimplementedEvent(t)
 	}
