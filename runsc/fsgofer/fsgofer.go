@@ -1181,9 +1181,6 @@ func extractErrno(err error) unix.Errno {
 
 func (l *localFile) checkROMount() error {
 	if conf := l.attachPoint.conf; conf.ROMount {
-		if conf.PanicOnWrite {
-			panic("attempt to write to RO mount")
-		}
 		return unix.EROFS
 	}
 	return nil
