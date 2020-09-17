@@ -38,6 +38,7 @@ namespace {
 class RmDirTest : public FuseTest {
  protected:
   const std::string test_dir_name_ = "test_dir";
+  const std::string test_subdir_ = "test_subdir";
   const mode_t test_dir_mode_ = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
 };
 
@@ -45,6 +46,32 @@ TEST_F(RmDirTest, NormalRmDir) {
   const std::string test_dir_path_ =
       JoinPath(mount_point_.path().c_str(), test_dir_name_);
 
+  SetServerInodeLookup(test_dir_name_, test_dir_mode_);
+
+  // RmDir code.
+  struct fuse_out_header rmdir_header = {
+      .len = sizeof(struct fuse_out_header),
+  };
+
+  auto iov_out = FuseGenerateIovecs(rmdir_header);
+  SetServerResponse(FUSE_RMDIR, iov_out);
+
+  ASSERT_THAT(rmdir(test_dir_path_.c_str()), SyscallSucceeds());
+
+  struct fuse_in_header in_header;
+  std::vector<char> actual_dirname(test_dir_name_.length() + 1);
+  auto iov_in = FuseGenerateIovecs(in_header, actual_dirname);
+  GetServerActualRequest(iov_in);
+
+  EXPECT_EQ(in_header.len, sizeof(in_header) + test_dir_name_.length() + 1);
+  EXPECT_EQ(in_header.opcode, FUSE_RMDIR);
+  EXPECT_EQ(std::string(actual_dirname.data()), test_dir_name_);
+}
+
+TEST_F(RmDirTest, NormalRmDirSubdir) {
+  SetServerInodeLookup(test_subdir_, S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO);
+  const std::string test_dir_path_ =
+      JoinPath(mount_point_.path().c_str(), test_subdir_, test_dir_name_);
   SetServerInodeLookup(test_dir_name_, test_dir_mode_);
 
   // RmDir code.
