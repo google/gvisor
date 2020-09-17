@@ -668,7 +668,7 @@ func (fs *filesystem) newExeSymlink(task *kernel.Task, ino uint64) *kernfs.Dentr
 }
 
 // Readlink implements kernfs.Inode.
-func (s *exeSymlink) Readlink(ctx context.Context) (string, error) {
+func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return "", syserror.EACCES
 	}
@@ -808,11 +808,11 @@ func (fs *filesystem) newNamespaceSymlink(task *kernel.Task, ino uint64, ns stri
 }
 
 // Readlink implements Inode.
-func (s *namespaceSymlink) Readlink(ctx context.Context) (string, error) {
+func (s *namespaceSymlink) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 	if err := checkTaskState(s.task); err != nil {
 		return "", err
 	}
-	return s.StaticSymlink.Readlink(ctx)
+	return s.StaticSymlink.Readlink(ctx, mnt)
 }
 
 // Getlink implements Inode.Getlink.
