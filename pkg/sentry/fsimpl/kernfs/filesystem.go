@@ -140,7 +140,7 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 		}
 		// Reference on childVFSD dropped by a corresponding Valid.
 		child = childVFSD.Impl().(*Dentry)
-		parent.insertChildLocked(name, child)
+		parent.InsertChildLocked(name, child)
 	}
 	return child, nil
 }
@@ -548,7 +548,7 @@ func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	if !d.Impl().(*Dentry).isSymlink() {
 		return "", syserror.EINVAL
 	}
-	return inode.Readlink(ctx)
+	return inode.Readlink(ctx, rp.Mount())
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
@@ -657,6 +657,10 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
+	// Store the name before walkExistingLocked as rp will be advanced past the
+	// name in the following call.
+	name := rp.Component()
 	vfsd, inode, err := fs.walkExistingLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
@@ -686,7 +690,8 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
-	if err := parentDentry.inode.RmDir(ctx, rp.Component(), vfsd); err != nil {
+
+	if err := parentDentry.inode.RmDir(ctx, name, vfsd); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
@@ -765,6 +770,10 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
+	// Store the name before walkExistingLocked as rp will be advanced past the
+	// name in the following call.
+	name := rp.Component()
 	vfsd, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
@@ -790,7 +799,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
-	if err := parentDentry.inode.Unlink(ctx, rp.Component(), vfsd); err != nil {
+	if err := parentDentry.inode.Unlink(ctx, name, vfsd); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}

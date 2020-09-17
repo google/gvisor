@@ -60,6 +60,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
@@ -246,15 +247,15 @@ func (d *Dentry) OnZeroWatches(context.Context) {}
 // Precondition: d must represent a directory inode.
 func (d *Dentry) InsertChild(name string, child *Dentry) {
 	d.dirMu.Lock()
-	d.insertChildLocked(name, child)
+	d.InsertChildLocked(name, child)
 	d.dirMu.Unlock()
 }
 
-// insertChildLocked is equivalent to InsertChild, with additional
+// InsertChildLocked is equivalent to InsertChild, with additional
 // preconditions.
 //
 // Precondition: d.dirMu must be locked.
-func (d *Dentry) insertChildLocked(name string, child *Dentry) {
+func (d *Dentry) InsertChildLocked(name string, child *Dentry) {
 	if !d.isDir() {
 		panic(fmt.Sprintf("InsertChild called on non-directory Dentry: %+v.", d))
 	}
@@ -265,6 +266,36 @@ func (d *Dentry) insertChildLocked(name string, child *Dentry) {
 		d.children = make(map[string]*Dentry)
 	}
 	d.children[name] = child
+}
+
+// RemoveChild removes child from the vfs dentry cache. This does not update the
+// directory inode or modify the inode to be unlinked. So calling this on its own
+// isn't sufficient to remove a child from a directory.
+//
+// Precondition: d must represent a directory inode.
+func (d *Dentry) RemoveChild(name string, child *vfs.Dentry) error {
+	d.dirMu.Lock()
+	defer d.dirMu.Unlock()
+	return d.RemoveChildLocked(name, child)
+}
+
+// RemoveChildLocked is equivalent to RemoveChild, with additional
+// preconditions.
+//
+// Precondition: d.dirMu must be locked.
+func (d *Dentry) RemoveChildLocked(name string, child *vfs.Dentry) error {
+	if !d.isDir() {
+		panic(fmt.Sprintf("RemoveChild called on non-directory Dentry: %+v.", d))
+	}
+	c, ok := d.children[name]
+	if !ok {
+		return syserror.ENOENT
+	}
+	if &c.vfsd != child {
+		panic(fmt.Sprintf("Dentry hashed into inode doesn't match what vfs thinks! Child: %+v, vfs: %+v", c, child))
+	}
+	delete(d.children, name)
+	return nil
 }
 
 // Inode returns the dentry's inode.
@@ -425,7 +456,7 @@ type inodeDynamicLookup interface {
 	Valid(ctx context.Context) bool
 
 	// IterDirents is used to iterate over dynamically created entries. It invokes
-	// cb on each entry in the directory represented by the FileDescription.
+	// cb on each entry in the directory represented by the Inode.
 	// 'offset' is the offset for the entire IterDirents call, which may include
 	// results from the caller (e.g. "." and ".."). 'relOffset' is the offset
 	// inside the entries returned by this IterDirents invocation. In other words,
@@ -437,7 +468,7 @@ type inodeDynamicLookup interface {
 type inodeSymlink interface {
 	// Readlink returns the target of a symbolic link. If an inode is not a
 	// symlink, the implementation should return EINVAL.
-	Readlink(ctx context.Context) (string, error)
+	Readlink(ctx context.Context, mnt *vfs.Mount) (string, error)
 
 	// Getlink returns the target of a symbolic link, as used by path
 	// resolution:

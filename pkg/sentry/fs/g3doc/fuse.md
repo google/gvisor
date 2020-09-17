@@ -95,6 +95,52 @@ ops can be implemented in parallel.
 -   Implement the remaining FUSE ops and decide if we can omit rarely used
     operations like ioctl.
 
+### Design Details
+
+#### Lifecycle for a FUSE Request
+
+-   User invokes a syscall
+-   Sentry prepares corresponding request
+    -   If FUSE device is available
+        -   Write the request in binary
+    -   If FUSE device is full
+        -   Kernel task blocked until available
+-   Sentry notifies the readers of fuse device that it's ready for read
+-   FUSE daemon reads the request and processes it
+-   Sentry waits until a reply is written to the FUSE device
+    -   but returns directly for async requests
+-   FUSE daemon writes to the fuse device
+-   Sentry processes the reply
+    -   For sync requests, unblock blocked kernel task
+    -   For async requests, execute pre-specified callback if any
+-   Sentry returns the syscall to the user
+
+#### Channels and Queues for Requests in Different Stages
+
+`connection.initializedChan`
+
+-   a channel that the requests issued before connection initialization blocks
+    on.
+
+`fd.queue`
+
+-   a queue of requests that haven’t been read by the FUSE daemon yet.
+
+`fd.completions`
+
+-   a map of the requests that have been prepared but not yet received a
+    response, including the ones on the `fd.queue`.
+
+`fd.waitQueue`
+
+-   a queue of waiters that is waiting for the fuse device fd to be available,
+    such as the FUSE daemon.
+
+`fd.fullQueueCh`
+
+-   a channel that the kernel task will be blocked on when the fd is not
+    available.
+
 # Appendix
 
 ## FUSE Protocol
