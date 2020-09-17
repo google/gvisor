@@ -1,4 +1,5 @@
 test name,bug id,comment
+async-hooks/test-statwatcher.js,https://github.com/nodejs/node/issues/21425,Check for fix inclusion in nodejs releases after 2020-03-29
 benchmark/test-benchmark-fs.js,,
 benchmark/test-benchmark-napi.js,,
 doctool/test-make-doc.js,b/68848110,Expected to fail.
