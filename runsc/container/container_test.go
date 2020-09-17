@@ -317,22 +317,12 @@ func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
 }
 
 func configsWithVFS2(t *testing.T, opts ...configOption) map[string]*config.Config {
-	vfs1 := configs(t, opts...)
-
-	var optsVFS2 []configOption
-	for _, opt := range opts {
-		// TODO(gvisor.dev/issue/1487): Enable overlay tests.
-		if opt != overlay {
-			optsVFS2 = append(optsVFS2, opt)
-		}
-	}
-
-	for key, value := range configs(t, optsVFS2...) {
+	all := configs(t, opts...)
+	for key, value := range configs(t, opts...) {
 		value.VFS2 = true
-		vfs1[key+"VFS2"] = value
+		all[key+"VFS2"] = value
 	}
-
-	return vfs1
+	return all
 }
 
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
