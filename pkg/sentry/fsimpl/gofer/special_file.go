@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -133,6 +134,16 @@ func (fd *specialFileFD) EventUnregister(e *waiter.Entry) {
 		return
 	}
 	fd.fileDescription.EventUnregister(e)
+}
+
+func (fd *specialFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	if fd.isRegularFile {
+		d := fd.dentry()
+		return d.doAllocate(ctx, offset, length, func() error {
+			return fd.handle.file.allocate(ctx, p9.ToAllocateMode(mode), offset, length)
+		})
+	}
+	return fd.FileDescriptionDefaultImpl.Allocate(ctx, mode, offset, length)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.

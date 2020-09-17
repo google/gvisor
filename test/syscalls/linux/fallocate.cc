@@ -179,6 +179,12 @@ TEST_F(AllocateTest, FallocateOtherFDs) {
   auto sock0 = FileDescriptor(socks[0]);
   auto sock1 = FileDescriptor(socks[1]);
   EXPECT_THAT(fallocate(sock0.get(), 0, 0, 10), SyscallFailsWithErrno(ENODEV));
+
+  int pipefds[2];
+  ASSERT_THAT(pipe(pipefds), SyscallSucceeds());
+  EXPECT_THAT(fallocate(pipefds[1], 0, 0, 10), SyscallFailsWithErrno(ESPIPE));
+  close(pipefds[0]);
+  close(pipefds[1]);
 }
 
 }  // namespace
