@@ -1026,7 +1026,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		// step is required even if !d.cachedMetadataAuthoritative() because
 		// d.mappings has to be updated.
 		// d.metadataMu has already been acquired if trunc == true.
-		d.updateFileSizeLocked(0)
+		d.updateSizeLocked(0)
 
 		if d.cachedMetadataAuthoritative() {
 			d.touchCMtimeLocked()

@@ -560,12 +560,7 @@ func (f *fileDescription) Release(context.Context) {
 
 // Allocate implements vfs.FileDescriptionImpl.
 func (f *fileDescription) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	if !f.inode.seekable {
-		return syserror.ESPIPE
-	}
-
-	// TODO(gvisor.dev/issue/3589): Implement Allocate for non-pipe hostfds.
-	return syserror.EOPNOTSUPP
+	return unix.Fallocate(f.inode.hostFD, uint32(mode), int64(offset), int64(length))
 }
 
 // PRead implements FileDescriptionImpl.
