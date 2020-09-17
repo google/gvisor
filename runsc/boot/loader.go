@@ -282,6 +282,7 @@ func New(args Args) (*Loader, error) {
 		args.NumCPU = runtime.NumCPU()
 	}
 	log.Infof("CPUs: %d", args.NumCPU)
+	runtime.GOMAXPROCS(args.NumCPU)
 
 	if args.TotalMem > 0 {
 		// Adjust the total memory returned by the Sentry so that applications that
