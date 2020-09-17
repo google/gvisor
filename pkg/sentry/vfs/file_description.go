@@ -326,6 +326,9 @@ type FileDescriptionImpl interface {
 	// Allocate grows the file to offset + length bytes.
 	// Only mode == 0 is supported currently.
 	//
+	// Allocate should return EISDIR on directories, ESPIPE on pipes, and ENODEV on
+	// other files where it is not supported.
+	//
 	// Preconditions: The FileDescription was opened for writing.
 	Allocate(ctx context.Context, mode, offset, length uint64) error
 

@@ -57,7 +57,11 @@ func (FileDescriptionDefaultImpl) StatFS(ctx context.Context) (linux.Statfs, err
 }
 
 // Allocate implements FileDescriptionImpl.Allocate analogously to
-// fallocate called on regular file, directory or FIFO in Linux.
+// fallocate called on an invalid type of file in Linux.
+//
+// Note that directories can rely on this implementation even though they
+// should technically return EISDIR. Allocate should never be called for a
+// directory, because it requires a writable fd.
 func (FileDescriptionDefaultImpl) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	return syserror.ENODEV
 }

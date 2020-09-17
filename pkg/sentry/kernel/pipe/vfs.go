@@ -67,6 +67,11 @@ func (vp *VFSPipe) ReaderWriterPair(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlag
 	return vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags, locks), vp.newFD(mnt, vfsd, linux.O_WRONLY|statusFlags, locks)
 }
 
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (*VFSPipe) Allocate(context.Context, uint64, uint64, uint64) error {
+	return syserror.ESPIPE
+}
+
 // Open opens the pipe represented by vp.
 func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks) (*vfs.FileDescription, error) {
 	vp.mu.Lock()

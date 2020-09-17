@@ -147,6 +147,16 @@ func (fd *nonDirectoryFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux
 	return stat, nil
 }
 
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (fd *nonDirectoryFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	wrappedFD, err := fd.getCurrentFD(ctx)
+	if err != nil {
+		return err
+	}
+	defer wrappedFD.DecRef(ctx)
+	return wrappedFD.Allocate(ctx, mode, offset, length)
+}
+
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *nonDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	d := fd.dentry()
