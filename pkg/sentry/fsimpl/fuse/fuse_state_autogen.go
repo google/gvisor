@@ -6,99 +6,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Request) StateTypeName() string {
-	return "pkg/sentry/fsimpl/fuse.Request"
-}
-
-func (x *Request) StateFields() []string {
-	return []string{
-		"requestEntry",
-		"id",
-		"hdr",
-		"data",
-	}
-}
-
-func (x *Request) beforeSave() {}
-
-func (x *Request) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.requestEntry)
-	m.Save(1, &x.id)
-	m.Save(2, &x.hdr)
-	m.Save(3, &x.data)
-}
-
-func (x *Request) afterLoad() {}
-
-func (x *Request) StateLoad(m state.Source) {
-	m.Load(0, &x.requestEntry)
-	m.Load(1, &x.id)
-	m.Load(2, &x.hdr)
-	m.Load(3, &x.data)
-}
-
-func (x *Response) StateTypeName() string {
-	return "pkg/sentry/fsimpl/fuse.Response"
-}
-
-func (x *Response) StateFields() []string {
-	return []string{
-		"opcode",
-		"hdr",
-		"data",
-	}
-}
-
-func (x *Response) beforeSave() {}
-
-func (x *Response) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.opcode)
-	m.Save(1, &x.hdr)
-	m.Save(2, &x.data)
-}
-
-func (x *Response) afterLoad() {}
-
-func (x *Response) StateLoad(m state.Source) {
-	m.Load(0, &x.opcode)
-	m.Load(1, &x.hdr)
-	m.Load(2, &x.data)
-}
-
-func (x *futureResponse) StateTypeName() string {
-	return "pkg/sentry/fsimpl/fuse.futureResponse"
-}
-
-func (x *futureResponse) StateFields() []string {
-	return []string{
-		"opcode",
-		"ch",
-		"hdr",
-		"data",
-	}
-}
-
-func (x *futureResponse) beforeSave() {}
-
-func (x *futureResponse) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.opcode)
-	m.Save(1, &x.ch)
-	m.Save(2, &x.hdr)
-	m.Save(3, &x.data)
-}
-
-func (x *futureResponse) afterLoad() {}
-
-func (x *futureResponse) StateLoad(m state.Source) {
-	m.Load(0, &x.opcode)
-	m.Load(1, &x.ch)
-	m.Load(2, &x.hdr)
-	m.Load(3, &x.data)
-}
-
 func (x *inodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/fuse.inodeRefs"
 }
@@ -174,11 +81,116 @@ func (x *requestEntry) StateLoad(m state.Source) {
 	m.Load(1, &x.prev)
 }
 
+func (x *Request) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.Request"
+}
+
+func (x *Request) StateFields() []string {
+	return []string{
+		"requestEntry",
+		"id",
+		"hdr",
+		"data",
+		"payload",
+		"async",
+		"noReply",
+	}
+}
+
+func (x *Request) beforeSave() {}
+
+func (x *Request) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.requestEntry)
+	m.Save(1, &x.id)
+	m.Save(2, &x.hdr)
+	m.Save(3, &x.data)
+	m.Save(4, &x.payload)
+	m.Save(5, &x.async)
+	m.Save(6, &x.noReply)
+}
+
+func (x *Request) afterLoad() {}
+
+func (x *Request) StateLoad(m state.Source) {
+	m.Load(0, &x.requestEntry)
+	m.Load(1, &x.id)
+	m.Load(2, &x.hdr)
+	m.Load(3, &x.data)
+	m.Load(4, &x.payload)
+	m.Load(5, &x.async)
+	m.Load(6, &x.noReply)
+}
+
+func (x *futureResponse) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.futureResponse"
+}
+
+func (x *futureResponse) StateFields() []string {
+	return []string{
+		"opcode",
+		"ch",
+		"hdr",
+		"data",
+		"async",
+	}
+}
+
+func (x *futureResponse) beforeSave() {}
+
+func (x *futureResponse) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.opcode)
+	m.Save(1, &x.ch)
+	m.Save(2, &x.hdr)
+	m.Save(3, &x.data)
+	m.Save(4, &x.async)
+}
+
+func (x *futureResponse) afterLoad() {}
+
+func (x *futureResponse) StateLoad(m state.Source) {
+	m.Load(0, &x.opcode)
+	m.Load(1, &x.ch)
+	m.Load(2, &x.hdr)
+	m.Load(3, &x.data)
+	m.Load(4, &x.async)
+}
+
+func (x *Response) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.Response"
+}
+
+func (x *Response) StateFields() []string {
+	return []string{
+		"opcode",
+		"hdr",
+		"data",
+	}
+}
+
+func (x *Response) beforeSave() {}
+
+func (x *Response) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.opcode)
+	m.Save(1, &x.hdr)
+	m.Save(2, &x.data)
+}
+
+func (x *Response) afterLoad() {}
+
+func (x *Response) StateLoad(m state.Source) {
+	m.Load(0, &x.opcode)
+	m.Load(1, &x.hdr)
+	m.Load(2, &x.data)
+}
+
 func init() {
-	state.Register((*Request)(nil))
-	state.Register((*Response)(nil))
-	state.Register((*futureResponse)(nil))
 	state.Register((*inodeRefs)(nil))
 	state.Register((*requestList)(nil))
 	state.Register((*requestEntry)(nil))
+	state.Register((*Request)(nil))
+	state.Register((*futureResponse)(nil))
+	state.Register((*Response)(nil))
 }
