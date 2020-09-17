@@ -44,6 +44,7 @@ import (
 
 	"gvisor.dev/gvisor/tools/checkescape"
 	"gvisor.dev/gvisor/tools/checkunsafe"
+	"gvisor.dev/gvisor/tools/deferunlock"
 )
 
 var analyzerConfig = map[*analysis.Analyzer]matcher{
@@ -121,6 +122,7 @@ var analyzerConfig = map[*analysis.Analyzer]matcher{
 	// Internal analyzers: external packages not subject.
 	checkescape.Analyzer: internalMatches(),
 	checkunsafe.Analyzer: internalMatches(),
+	deferunlock.Analyzer: internalMatches(),
 }
 
 var escapesConfig = map[*analysis.Analyzer]matcher{

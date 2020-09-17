@@ -27,6 +27,7 @@ go_library(
     deps = [
         "//tools/checkescape",
         "//tools/checkunsafe",
+        "//tools/deferunlock",
         "@org_golang_x_tools//go/analysis:go_tool_library",
         "@org_golang_x_tools//go/analysis/internal/facts:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/asmdecl:go_tool_library",
