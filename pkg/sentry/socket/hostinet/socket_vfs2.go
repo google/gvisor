@@ -97,11 +97,6 @@ func (s *socketVFS2) Ioctl(ctx context.Context, uio usermem.IO, args arch.Syscal
 	return ioctl(ctx, s.fd, uio, args)
 }
 
-// Allocate implements vfs.FileDescriptionImpl.Allocate.
-func (s *socketVFS2) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	return syserror.ENODEV
-}
-
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (s *socketVFS2) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.ESPIPE

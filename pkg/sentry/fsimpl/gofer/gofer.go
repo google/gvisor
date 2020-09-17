@@ -833,7 +833,7 @@ func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 		atomic.StoreUint32(&d.nlink, uint32(attr.NLink))
 	}
 	if mask.Size {
-		d.updateFileSizeLocked(attr.Size)
+		d.updateSizeLocked(attr.Size)
 	}
 }
 
@@ -987,7 +987,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 				// d.size should be kept up to date, and privatized
 				// copy-on-write mappings of truncated pages need to be
 				// invalidated, even if InteropModeShared is in effect.
-				d.updateFileSizeLocked(stat.Size)
+				d.updateSizeLocked(stat.Size)
 			}
 		}
 		if d.fs.opts.interop == InteropModeShared {
@@ -1024,8 +1024,31 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	return nil
 }
 
+// doAllocate performs an allocate operation on d. Note that d.metadataMu will
+// be held when allocate is called.
+func (d *dentry) doAllocate(ctx context.Context, offset, length uint64, allocate func() error) error {
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
+
+	// Allocating a smaller size is a noop.
+	size := offset + length
+	if d.cachedMetadataAuthoritative() && size <= d.size {
+		return nil
+	}
+
+	err := allocate()
+	if err != nil {
+		return err
+	}
+	d.updateSizeLocked(size)
+	if d.cachedMetadataAuthoritative() {
+		d.touchCMtimeLocked()
+	}
+	return nil
+}
+
 // Preconditions: d.metadataMu must be locked.
-func (d *dentry) updateFileSizeLocked(newSize uint64) {
+func (d *dentry) updateSizeLocked(newSize uint64) {
 	d.dataMu.Lock()
 	oldSize := d.size
 	atomic.StoreUint64(&d.size, newSize)
