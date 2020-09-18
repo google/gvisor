@@ -30,7 +30,7 @@ const (
 //
 // +marshal
 type SchedParam struct {
-	schedPriority int64
+	schedPriority int32
 }
 
 // SchedGetparam implements linux syscall sched_getparam(2).
