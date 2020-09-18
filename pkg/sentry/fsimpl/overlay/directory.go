@@ -143,7 +143,14 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	defer d.fs.renameMu.RUnlock()
 	d.dirMu.Lock()
 	defer d.dirMu.Unlock()
+	return d.getDirentsLocked(ctx)
+}
 
+// Preconditions:
+// * filesystem.renameMu must be locked.
+// * d.dirMu must be locked.
+// * d.isDir().
+func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 	if d.dirents != nil {
 		return d.dirents, nil
 	}
