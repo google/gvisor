@@ -94,19 +94,33 @@ func (*UDPMatcher) Name() string {
 
 // Match implements Matcher.Match.
 func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
-	netHeader := header.IPv4(pkt.NetworkHeader().View())
-
 	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
 	// into the stack.Check codepath as matchers are added.
-	if netHeader.TransportProtocol() != header.UDPProtocolNumber {
-		return false, false
-	}
-
-	// We dont't match fragments.
-	if frag := netHeader.FragmentOffset(); frag != 0 {
-		if frag == 1 {
-			return false, true
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		netHeader := header.IPv4(pkt.NetworkHeader().View())
+		if netHeader.TransportProtocol() != header.UDPProtocolNumber {
+			return false, false
 		}
+
+		// We don't match fragments.
+		if frag := netHeader.FragmentOffset(); frag != 0 {
+			if frag == 1 {
+				return false, true
+			}
+			return false, false
+		}
+
+	case header.IPv6ProtocolNumber:
+		// As in Linux, we do not perform an IPv6 fragment check. See
+		// xt_action_param.fragoff in
+		// include/linux/netfilter/x_tables.h.
+		if header.IPv6(pkt.NetworkHeader().View()).TransportProtocol() != header.UDPProtocolNumber {
+			return false, false
+		}
+
+	default:
+		// We don't know the network protocol.
 		return false, false
 	}
 

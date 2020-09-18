@@ -107,6 +107,31 @@ func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params s
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
 	e.addIPHeader(r, pkt, params)
 
+	// iptables filtering. All packets that reach here are locally
+	// generated.
+	nicName := e.stack.FindNICNameFromID(e.NICID())
+	ipt := e.stack.IPTables()
+	if ok := ipt.Check(stack.Output, pkt, gso, r, "", nicName); !ok {
+		// iptables is telling us to drop the packet.
+		return nil
+	}
+
+	// If the packet is manipulated as per NAT Output rules, handle packet
+	// based on destination address and do not send the packet to link
+	// layer.
+	//
+	// TODO(gvisor.dev/issue/170): We should do this for every
+	// packet, rather than only NATted packets, but removing this check
+	// short circuits broadcasts before they are sent out to other hosts.
+	if pkt.NatDone {
+		netHeader := header.IPv6(pkt.NetworkHeader().View())
+		if ep, err := e.stack.FindNetworkEndpoint(header.IPv6ProtocolNumber, netHeader.DestinationAddress()); err == nil {
+			route := r.ReverseRoute(netHeader.SourceAddress(), netHeader.DestinationAddress())
+			ep.HandlePacket(&route, pkt)
+			return nil
+		}
+	}
+
 	if r.Loop&stack.PacketLoop != 0 {
 		loopedR := r.MakeLoopedRoute()
 
@@ -138,9 +163,46 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		e.addIPHeader(r, pb, params)
 	}
 
-	n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
+	// iptables filtering. All packets that reach here are locally
+	// generated.
+	nicName := e.stack.FindNICNameFromID(e.NICID())
+	ipt := e.stack.IPTables()
+	dropped, natPkts := ipt.CheckPackets(stack.Output, pkts, gso, r, nicName)
+	if len(dropped) == 0 && len(natPkts) == 0 {
+		// Fast path: If no packets are to be dropped then we can just invoke the
+		// faster WritePackets API directly.
+		n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
+		r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+		return n, err
+	}
+
+	// Slow path as we are dropping some packets in the batch degrade to
+	// emitting one packet at a time.
+	n := 0
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		if _, ok := dropped[pkt]; ok {
+			continue
+		}
+		if _, ok := natPkts[pkt]; ok {
+			netHeader := header.IPv6(pkt.NetworkHeader().View())
+			if ep, err := e.stack.FindNetworkEndpoint(header.IPv6ProtocolNumber, netHeader.DestinationAddress()); err == nil {
+				src := netHeader.SourceAddress()
+				dst := netHeader.DestinationAddress()
+				route := r.ReverseRoute(src, dst)
+				ep.HandlePacket(&route, pkt)
+				n++
+				continue
+			}
+		}
+		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
+			r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+			return n, err
+		}
+		n++
+	}
+
 	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
-	return n, err
+	return n, nil
 }
 
 // WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
@@ -168,6 +230,14 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	vv.Append(pkt.Data)
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), vv)
 	hasFragmentHeader := false
+
+	// iptables filtering. All packets that reach here are intended for
+	// this machine and will not be forwarded.
+	ipt := e.stack.IPTables()
+	if ok := ipt.Check(stack.Input, pkt, nil, nil, "", ""); !ok {
+		// iptables is telling us to drop the packet.
+		return
+	}
 
 	for firstHeader := true; ; firstHeader = false {
 		extHdr, done, err := it.Next()

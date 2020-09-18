@@ -200,6 +200,8 @@ kvm-tests: load-basic-images
 .PHONY: kvm-tests
 
 iptables-tests: load-iptables
+	@sudo modprobe iptable_filter
+	@sudo modprobe ip6table_filter
 	@$(call submake,test-runtime RUNTIME="runc" TARGETS="//test/iptables:iptables_test")
 	@$(call submake,install-test-runtime RUNTIME="iptables" ARGS="--net-raw")
 	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")

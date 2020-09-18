@@ -1282,9 +1282,8 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		return
 	}
 
-	// TODO(gvisor.dev/issue/170): Not supporting iptables for IPv6 yet.
 	// Loopback traffic skips the prerouting chain.
-	if protocol == header.IPv4ProtocolNumber && !n.isLoopback() {
+	if !n.isLoopback() {
 		// iptables filtering.
 		ipt := n.stack.IPTables()
 		address := n.primaryAddress(protocol)
