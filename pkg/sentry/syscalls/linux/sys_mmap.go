@@ -100,6 +100,15 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		if err := file.ConfigureMMap(t, &opts); err != nil {
 			return 0, nil, err
 		}
+	} else if shared {
+		// Back shared anonymous mappings with a special mappable.
+		opts.Offset = 0
+		m, err := mm.NewSharedAnonMappable(opts.Length, t.Kernel())
+		if err != nil {
+			return 0, nil, err
+		}
+		opts.MappingIdentity = m // transfers ownership of m to opts
+		opts.Mappable = m
 	}
 
 	rv, err := t.MemoryManager().MMap(t, opts)

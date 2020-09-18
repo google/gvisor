@@ -242,7 +242,7 @@ type MemoryManager struct {
 // +stateify savable
 type vma struct {
 	// mappable is the virtual memory object mapped by this vma. If mappable is
-	// nil, the vma represents a private anonymous mapping.
+	// nil, the vma represents an anonymous mapping.
 	mappable memmap.Mappable
 
 	// off is the offset into mappable at which this vma begins. If mappable is
