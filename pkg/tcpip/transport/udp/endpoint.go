@@ -154,6 +154,9 @@ type endpoint struct {
 
 	// owner is used to get uid and gid of the packet.
 	owner tcpip.PacketOwner
+
+	// linger is used for SO_LINGER socket option.
+	linger tcpip.LingerOption
 }
 
 // +stateify savable
@@ -810,6 +813,11 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 
 	case *tcpip.SocketDetachFilterOption:
 		return nil
+
+	case *tcpip.LingerOption:
+		e.mu.Lock()
+		e.linger = *v
+		e.mu.Unlock()
 	}
 	return nil
 }
@@ -964,6 +972,11 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 	case *tcpip.BindToDeviceOption:
 		e.mu.RLock()
 		*o = tcpip.BindToDeviceOption(e.bindToDevice)
+		e.mu.RUnlock()
+
+	case *tcpip.LingerOption:
+		e.mu.RLock()
+		*o = e.linger
 		e.mu.RUnlock()
 
 	default:
