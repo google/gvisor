@@ -746,37 +746,6 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	return nil
 }
 
-// NewMemfd creates a new tmpfs regular file and file description that can back
-// an anonymous fd created by memfd_create.
-func NewMemfd(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, allowSeals bool, name string) (*vfs.FileDescription, error) {
-	fs, ok := mount.Filesystem().Impl().(*filesystem)
-	if !ok {
-		panic("NewMemfd() called with non-tmpfs mount")
-	}
-
-	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd inodes are set up with
-	// S_IRWXUGO.
-	inode := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777)
-	rf := inode.impl.(*regularFile)
-	if allowSeals {
-		rf.seals = 0
-	}
-
-	d := fs.newDentry(inode)
-	defer d.DecRef(ctx)
-	d.name = name
-
-	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd files are set up with
-	// FMODE_READ | FMODE_WRITE.
-	var fd regularFileFD
-	fd.Init(&inode.locks)
-	flags := uint32(linux.O_RDWR)
-	if err := fd.vfsfd.Init(&fd, flags, mount, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
-		return nil, err
-	}
-	return &fd.vfsfd, nil
-}
-
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
 func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
 	return fd.Locks().LockPOSIX(ctx, &fd.vfsfd, uid, t, start, length, whence, block)
