@@ -238,11 +238,13 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 		return nil
 	}
 
-	// If the packet is manipulated as per NAT Ouput rules, handle packet
-	// based on destination address and do not send the packet to link layer.
-	// TODO(gvisor.dev/issue/170): We should do this for every packet, rather than
-	// only NATted packets, but removing this check short circuits broadcasts
-	// before they are sent out to other hosts.
+	// If the packet is manipulated as per NAT Output rules, handle packet
+	// based on destination address and do not send the packet to link
+	// layer.
+	//
+	// TODO(gvisor.dev/issue/170): We should do this for every
+	// packet, rather than only NATted packets, but removing this check
+	// short circuits broadcasts before they are sent out to other hosts.
 	if pkt.NatDone {
 		netHeader := header.IPv4(pkt.NetworkHeader().View())
 		ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
@@ -298,7 +300,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		return n, err
 	}
 
-	// Slow Path as we are dropping some packets in the batch degrade to
+	// Slow path as we are dropping some packets in the batch degrade to
 	// emitting one packet at a time.
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
