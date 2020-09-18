@@ -61,7 +61,7 @@ func (in *inode) isSymlink() bool {
 	return ok
 }
 
-// symlinkFD represents a symlink file description and implements implements
+// symlinkFD represents a symlink file description and implements
 // vfs.FileDescriptionImpl. which may only be used if open options contains
 // O_PATH. For this reason most of the functions return EBADF.
 type symlinkFD struct {

@@ -35,27 +35,27 @@ func (*directoryFD) Allocate(ctx context.Context, mode, offset, length uint64) e
 	return syserror.EISDIR
 }
 
-// PRead implements FileDescriptionImpl.PRead.
+// PRead implements vfs.FileDescriptionImpl.PRead.
 func (*directoryFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
-// Read implements FileDescriptionImpl.Read.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (*directoryFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
-// PWrite implements FileDescriptionImpl.PWrite.
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (*directoryFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
-// Write implements FileDescriptionImpl.Write.
+// Write implements vfs.FileDescriptionImpl.Write.
 func (*directoryFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	return 0, syserror.EISDIR
 }
 
-// IterDirents implements FileDescriptionImpl.IterDirents.
+// IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback) error {
 	fusefs := dir.inode().fs
 	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)

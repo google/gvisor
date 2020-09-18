@@ -735,7 +735,7 @@ func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptio
 	return statFromFUSEAttr(attr, opts.Mask, i.fs.devMinor), nil
 }
 
-// DecRef implements kernfs.Inode.
+// DecRef implements kernfs.Inode.DecRef.
 func (i *inode) DecRef(context.Context) {
 	i.inodeRefs.DecRef(i.Destroy)
 }
