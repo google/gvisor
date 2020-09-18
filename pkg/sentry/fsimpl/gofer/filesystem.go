@@ -1311,6 +1311,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			if !renamed.isDir() {
 				return syserror.EISDIR
 			}
+			if genericIsAncestorDentry(replaced, renamed) {
+				return syserror.ENOTEMPTY
+			}
 		} else {
 			if rp.MustBeDir() || renamed.isDir() {
 				return syserror.ENOTDIR
@@ -1361,14 +1364,15 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// with reference counts and queue oldParent for checkCachingLocked if the
 	// parent isn't actually changing.
 	if oldParent != newParent {
+		oldParent.decRefLocked()
 		ds = appendDentry(ds, oldParent)
 		newParent.IncRef()
 		if renamed.isSynthetic() {
 			oldParent.syntheticChildren--
 			newParent.syntheticChildren++
 		}
+		renamed.parent = newParent
 	}
-	renamed.parent = newParent
 	renamed.name = newName
 	if newParent.children == nil {
 		newParent.children = make(map[string]*dentry)
