@@ -106,7 +106,7 @@ func (i *taskInode) Valid(ctx context.Context) bool {
 	return i.task.ExitState() != kernel.TaskExitDead
 }
 
-// Open implements kernfs.Inode.
+// Open implements kernfs.Inode.Open.
 func (i *taskInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndZero,
@@ -117,12 +117,12 @@ func (i *taskInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.D
 	return fd.VFSFileDescription(), nil
 }
 
-// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*taskInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 
-// DecRef implements kernfs.Inode.
+// DecRef implements kernfs.Inode.DecRef.
 func (i *taskInode) DecRef(context.Context) {
 	i.taskInodeRefs.DecRef(i.Destroy)
 }
@@ -168,7 +168,7 @@ func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.
 	return d
 }
 
-// Stat implements kernfs.Inode.
+// Stat implements kernfs.Inode.Stat.
 func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	stat, err := i.Inode.Stat(ctx, fs, opts)
 	if err != nil {
@@ -186,7 +186,7 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 	return stat, nil
 }
 
-// CheckPermissions implements kernfs.Inode.
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *taskOwnedInode) CheckPermissions(_ context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)

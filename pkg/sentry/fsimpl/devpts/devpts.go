@@ -237,7 +237,7 @@ func (i *rootInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback,
 	return offset, nil
 }
 
-// DecRef implements kernfs.Inode.
+// DecRef implements kernfs.Inode.DecRef.
 func (i *rootInode) DecRef(context.Context) {
 	i.rootInodeRefs.DecRef(i.Destroy)
 }
