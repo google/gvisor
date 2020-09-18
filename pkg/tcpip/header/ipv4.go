@@ -54,7 +54,8 @@ type IPv4Fields struct {
 	// Flags is the "flags" field of an IPv4 packet.
 	Flags uint8
 
-	// FragmentOffset is the "fragment offset" field of an IPv4 packet.
+	// FragmentOffset is the offset in bytes at which this packet fragment appears
+	// in the reassembled packet.
 	FragmentOffset uint16
 
 	// TTL is the "time to live" field of an IPv4 packet.

@@ -33,7 +33,8 @@ type IPv6FragmentFields struct {
 	// NextHeader is the "next header" field of an IPv6 fragment.
 	NextHeader uint8
 
-	// FragmentOffset is the "fragment offset" field of an IPv6 fragment.
+	// FragmentOffset is the offset in bytes at which this packet fragment appears
+	// in the reassembled packet.
 	FragmentOffset uint16
 
 	// M is the "more" field of an IPv6 fragment.
@@ -61,7 +62,7 @@ const (
 // Encode encodes all the fields of the ipv6 fragment.
 func (b IPv6Fragment) Encode(i *IPv6FragmentFields) {
 	b[nextHdrFrag] = i.NextHeader
-	binary.BigEndian.PutUint16(b[fragOff:], i.FragmentOffset<<3)
+	binary.BigEndian.PutUint16(b[fragOff:], (i.FragmentOffset/IPv6FragmentExtHdrFragmentOffsetBytesPerUnit)<<3)
 	if i.M {
 		b[more] |= 1
 	}
@@ -78,9 +79,10 @@ func (b IPv6Fragment) NextHeader() uint8 {
 	return b[nextHdrFrag]
 }
 
-// FragmentOffset returns the "fragment offset" field of the ipv6 fragment.
+// FragmentOffset returns the offset in bytes at which this packet fragment
+// appears in the reassembled packet.
 func (b IPv6Fragment) FragmentOffset() uint16 {
-	return binary.BigEndian.Uint16(b[fragOff:]) >> 3
+	return (binary.BigEndian.Uint16(b[fragOff:]) >> 3) * IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
 }
 
 // More returns the "more" field of the ipv6 fragment.

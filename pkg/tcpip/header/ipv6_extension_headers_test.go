@@ -435,14 +435,14 @@ func TestIPv6FragmentExtHdr(t *testing.T) {
 		{
 			name:           "Ones",
 			bytes:          [6]byte{0, 9, 0, 0, 0, 1},
-			fragmentOffset: 1,
+			fragmentOffset: 1 * IPv6FragmentExtHdrFragmentOffsetBytesPerUnit,
 			more:           true,
 			id:             1,
 		},
 		{
 			name:           "Mixed",
-			bytes:          [6]byte{68, 9, 128, 4, 2, 1},
-			fragmentOffset: 2177,
+			bytes:          [6]byte{68, 1, 128, 4, 2, 1},
+			fragmentOffset: 2176 * IPv6FragmentExtHdrFragmentOffsetBytesPerUnit,
 			more:           true,
 			id:             2147746305,
 		},

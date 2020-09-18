@@ -331,12 +331,11 @@ type IPv6FragmentExtHdr [6]byte
 // isIPv6PayloadHeader implements IPv6PayloadHeader.isIPv6PayloadHeader.
 func (IPv6FragmentExtHdr) isIPv6PayloadHeader() {}
 
-// FragmentOffset returns the Fragment Offset field.
-//
-// This value indicates where the buffer following the Fragment extension header
-// starts in the target (reassembled) packet.
+// FragmentOffset returns the offset in bytes at which this packet fragment
+// appears in the reassembled packet.
 func (b IPv6FragmentExtHdr) FragmentOffset() uint16 {
-	return binary.BigEndian.Uint16(b[ipv6FragmentExtHdrFragmentOffsetOffset:]) >> ipv6FragmentExtHdrFragmentOffsetShift
+	field := binary.BigEndian.Uint16(b[ipv6FragmentExtHdrFragmentOffsetOffset:]) >> ipv6FragmentExtHdrFragmentOffsetShift
+	return field * IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
 }
 
 // More returns the More (M) flag.

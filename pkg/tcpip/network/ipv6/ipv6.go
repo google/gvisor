@@ -390,7 +390,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			}
 
 			// The packet is a fragment, let's try to reassemble it.
-			start := extHdr.FragmentOffset() * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
+			start := extHdr.FragmentOffset()
 
 			// Drop the fragment if the size of the reassembled payload would exceed
 			// the maximum payload size.
