@@ -58,6 +58,7 @@ func (x *endpoint) StateFields() []string {
 		"shutdownFlags",
 		"state",
 		"ttl",
+		"linger",
 		"owner",
 	}
 }
@@ -77,7 +78,8 @@ func (x *endpoint) StateSave(m state.Sink) {
 	m.Save(9, &x.shutdownFlags)
 	m.Save(10, &x.state)
 	m.Save(11, &x.ttl)
-	m.Save(12, &x.owner)
+	m.Save(12, &x.linger)
+	m.Save(13, &x.owner)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
@@ -92,7 +94,8 @@ func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(9, &x.shutdownFlags)
 	m.Load(10, &x.state)
 	m.Load(11, &x.ttl)
-	m.Load(12, &x.owner)
+	m.Load(12, &x.linger)
+	m.Load(13, &x.owner)
 	m.LoadValue(5, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }

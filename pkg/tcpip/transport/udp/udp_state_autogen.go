@@ -85,6 +85,7 @@ func (x *endpoint) StateFields() []string {
 		"multicastMemberships",
 		"effectiveNetProtos",
 		"owner",
+		"linger",
 	}
 }
 
@@ -125,6 +126,7 @@ func (x *endpoint) StateSave(m state.Sink) {
 	m.Save(30, &x.multicastMemberships)
 	m.Save(31, &x.effectiveNetProtos)
 	m.Save(32, &x.owner)
+	m.Save(33, &x.linger)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
@@ -159,6 +161,7 @@ func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(30, &x.multicastMemberships)
 	m.Load(31, &x.effectiveNetProtos)
 	m.Load(32, &x.owner)
+	m.Load(33, &x.linger)
 	m.LoadValue(5, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.LoadValue(22, new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.AfterLoad(x.afterLoad)
