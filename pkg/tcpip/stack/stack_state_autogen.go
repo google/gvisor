@@ -195,9 +195,10 @@ func (x *IPTables) StateTypeName() string {
 func (x *IPTables) StateFields() []string {
 	return []string{
 		"mu",
-		"tables",
-		"priorities",
+		"v4Tables",
+		"v6Tables",
 		"modified",
+		"priorities",
 		"connections",
 		"reaperDone",
 	}
@@ -206,20 +207,22 @@ func (x *IPTables) StateFields() []string {
 func (x *IPTables) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.mu)
-	m.Save(1, &x.tables)
-	m.Save(2, &x.priorities)
+	m.Save(1, &x.v4Tables)
+	m.Save(2, &x.v6Tables)
 	m.Save(3, &x.modified)
-	m.Save(4, &x.connections)
-	m.Save(5, &x.reaperDone)
+	m.Save(4, &x.priorities)
+	m.Save(5, &x.connections)
+	m.Save(6, &x.reaperDone)
 }
 
 func (x *IPTables) StateLoad(m state.Source) {
 	m.Load(0, &x.mu)
-	m.Load(1, &x.tables)
-	m.Load(2, &x.priorities)
+	m.Load(1, &x.v4Tables)
+	m.Load(2, &x.v6Tables)
 	m.Load(3, &x.modified)
-	m.Load(4, &x.connections)
-	m.Load(5, &x.reaperDone)
+	m.Load(4, &x.priorities)
+	m.Load(5, &x.connections)
+	m.Load(6, &x.reaperDone)
 	m.AfterLoad(x.afterLoad)
 }
 
