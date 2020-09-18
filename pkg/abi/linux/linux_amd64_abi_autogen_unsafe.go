@@ -303,7 +303,7 @@ func (s *Stat) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Stat) UnmarshalUnsafe(src []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         // Type Stat doesn't have a packed layout in memory, fallback to UnmarshalBytes.
@@ -370,7 +370,7 @@ func (s *Stat) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *Stat) WriteTo(writer io.Writer) (int64, error) {
-    if !s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
