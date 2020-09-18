@@ -124,9 +124,8 @@ smoke-tests: ## Runs a simple smoke test after build runsc.
 unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
 	@$(call submake,test TARGETS="pkg/... runsc/... tools/...")
 
-tests: ## Runs all unit tests and syscall tests.
-tests: unit-tests
-	@$(call submake,test TARGETS="test/syscalls/...")
+tests: ## Runs all unit tests and syscall tests on ptrace and kvm.
+tests: unit-tests syscall-ptrace-tests syscall-kvm-tests
 .PHONY: tests
 
 integration-tests: ## Run all standard integration tests.
