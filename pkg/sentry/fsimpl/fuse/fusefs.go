@@ -218,6 +218,7 @@ func newFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOpt
 		conn:     conn,
 	}
 
+	fs.VFSFilesystem().IncRef()
 	fuseFD.fs = fs
 
 	return fs, nil
