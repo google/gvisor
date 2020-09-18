@@ -57,8 +57,9 @@ const merkleOffsetInParentXattr = "user.merkle.offset"
 // whole file. For a directory, it's the size of all its children's root hashes.
 const merkleSizeXattr = "user.merkle.size"
 
-// sizeOfInt32 is the size in bytes for a 32 bit integer in extended attributes.
-const sizeOfInt32 = 4
+// sizeOfStringInt32 is the size for a 32 bit integer stored as string in
+// extended attributes. The maximum value of a 32 bit integer is 10 digits.
+const sizeOfStringInt32 = 10
 
 // noCrashOnVerificationFailure indicates whether the sandbox should panic
 // whenever verification fails. If true, an error is returned instead of
@@ -636,7 +637,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	// dataSize is the size of the whole file.
 	dataSize, err := fd.merkleReader.GetXattr(ctx, &vfs.GetXattrOptions{
 		Name: merkleSizeXattr,
-		Size: sizeOfInt32,
+		Size: sizeOfStringInt32,
 	})
 
 	// The Merkle tree file for the child should have been created and
