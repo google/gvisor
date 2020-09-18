@@ -87,8 +87,6 @@ TEST(IP6TablesBasic, GetEntriesErrorPrecedence) {
 // empty when running in native, but we can test that gVisor has the same
 // initial state that a newly-booted Linux machine would have.
 TEST(IP6TablesTest, InitialInfo) {
-  // TODO(gvisor.dev/issue/3549): Enable for ip6tables.
-  SKIP_IF(true);
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
   FileDescriptor sock =
@@ -132,8 +130,6 @@ TEST(IP6TablesTest, InitialInfo) {
 // are empty when running in native, but we can test that gVisor has the same
 // initial state that a newly-booted Linux machine would have.
 TEST(IP6TablesTest, InitialEntries) {
-  // TODO(gvisor.dev/issue/3549): Enable for ip6tables.
-  SKIP_IF(true);
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
   FileDescriptor sock =
