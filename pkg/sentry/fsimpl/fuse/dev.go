@@ -95,9 +95,14 @@ type DeviceFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *DeviceFD) Release(context.Context) {
+func (fd *DeviceFD) Release(ctx context.Context) {
 	if fd.fs != nil {
+		fd.fs.conn.mu.Lock()
 		fd.fs.conn.connected = false
+		fd.fs.conn.mu.Unlock()
+
+		fd.fs.VFSFilesystem().DecRef(ctx)
+		fd.fs = nil
 	}
 }
 
