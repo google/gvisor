@@ -1317,14 +1317,17 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 // indicating the reason why it's not writable.
 // Caller must hold e.mu and e.sndBufMu
 func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
-	// The endpoint cannot be written to if it's not connected.
-	if !e.EndpointState().connected() {
-		switch e.EndpointState() {
-		case StateError:
-			return 0, e.HardError
-		default:
-			return 0, tcpip.ErrClosedForSend
-		}
+	switch s := e.EndpointState(); {
+	case s == StateError:
+		return 0, e.HardError
+	case !s.connecting() && !s.connected():
+		return 0, tcpip.ErrClosedForSend
+	case s.connecting():
+		// As per RFC793, page 56, a send request arriving when in connecting
+		// state, can be queued to be completed after the state becomes
+		// connected. Return an error code for the caller of endpoint Write to
+		// try again, until the connection handshake is complete.
+		return 0, tcpip.ErrWouldBlock
 	}
 
 	// Check if the connection has already been closed for sends.
