@@ -80,7 +80,7 @@ type PacketBuffer struct {
 	// data are held in the same underlying buffer storage.
 	header buffer.Prependable
 
-	// NetworkProtocol is only valid when NetworkHeader is set.
+	// NetworkProtocolNumber is only valid when NetworkHeader is set.
 	// TODO(gvisor.dev/issue/3574): Remove the separately passed protocol
 	// numbers in registration APIs that take a PacketBuffer.
 	NetworkProtocolNumber tcpip.NetworkProtocolNumber
