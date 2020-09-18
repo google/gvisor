@@ -83,6 +83,8 @@ type endpoint struct {
 	stats         tcpip.TransportEndpointStats `state:"nosave"`
 	bound         bool
 	boundNIC      tcpip.NICID
+	// linger is used for SO_LINGER socket option.
+	linger tcpip.LingerOption
 
 	// lastErrorMu protects lastError.
 	lastErrorMu sync.Mutex   `state:"nosave"`
@@ -298,8 +300,14 @@ func (ep *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // used with SetSockOpt, and this function always returns
 // tcpip.ErrNotSupported.
 func (ep *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
-	switch opt.(type) {
+	switch v := opt.(type) {
 	case *tcpip.SocketDetachFilterOption:
+		return nil
+
+	case *tcpip.LingerOption:
+		ep.mu.Lock()
+		ep.linger = *v
+		ep.mu.Unlock()
 		return nil
 
 	default:
@@ -366,8 +374,17 @@ func (ep *endpoint) LastError() *tcpip.Error {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) *tcpip.Error {
-	return tcpip.ErrNotSupported
+func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
+	switch o := opt.(type) {
+	case *tcpip.LingerOption:
+		ep.mu.Lock()
+		*o = ep.linger
+		ep.mu.Unlock()
+		return nil
+
+	default:
+		return tcpip.ErrNotSupported
+	}
 }
 
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.

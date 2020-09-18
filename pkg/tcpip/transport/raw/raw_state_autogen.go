@@ -59,6 +59,7 @@ func (x *endpoint) StateFields() []string {
 		"closed",
 		"connected",
 		"bound",
+		"linger",
 		"owner",
 	}
 }
@@ -79,7 +80,8 @@ func (x *endpoint) StateSave(m state.Sink) {
 	m.Save(10, &x.closed)
 	m.Save(11, &x.connected)
 	m.Save(12, &x.bound)
-	m.Save(13, &x.owner)
+	m.Save(13, &x.linger)
+	m.Save(14, &x.owner)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
@@ -95,7 +97,8 @@ func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(10, &x.closed)
 	m.Load(11, &x.connected)
 	m.Load(12, &x.bound)
-	m.Load(13, &x.owner)
+	m.Load(13, &x.linger)
+	m.Load(14, &x.owner)
 	m.LoadValue(6, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }
