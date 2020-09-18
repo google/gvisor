@@ -63,8 +63,8 @@ func TestHelloWorld(t *testing.T) {
 	}
 }
 
-func runHTTPRequest(port int) error {
-	url := fmt.Sprintf("http://localhost:%d/not-found", port)
+func runHTTPRequest(ip string, port int) error {
+	url := fmt.Sprintf("http://%s:%d/not-found", ip, port)
 	resp, err := http.Get(url)
 	if err != nil {
 		return fmt.Errorf("error reaching http server: %v", err)
@@ -73,7 +73,7 @@ func runHTTPRequest(port int) error {
 		return fmt.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
 	}
 
-	url = fmt.Sprintf("http://localhost:%d/latin10k.txt", port)
+	url = fmt.Sprintf("http://%s:%d/latin10k.txt", ip, port)
 	resp, err = http.Get(url)
 	if err != nil {
 		return fmt.Errorf("Error reaching http server: %v", err)
@@ -95,13 +95,13 @@ func runHTTPRequest(port int) error {
 	return nil
 }
 
-func testHTTPServer(t *testing.T, port int) {
+func testHTTPServer(t *testing.T, ip string, port int) {
 	const requests = 10
 	ch := make(chan error, requests)
 	for i := 0; i < requests; i++ {
 		go func() {
 			start := time.Now()
-			err := runHTTPRequest(port)
+			err := runHTTPRequest(ip, port)
 			log.Printf("Response time %v: %v", time.Since(start).String(), err)
 			ch <- err
 		}()
@@ -110,7 +110,7 @@ func testHTTPServer(t *testing.T, port int) {
 	for i := 0; i < requests; i++ {
 		err := <-ch
 		if err != nil {
-			t.Errorf("testHTTPServer(%d) failed: %v", port, err)
+			t.Errorf("testHTTPServer(%s, %d) failed: %v", ip, port, err)
 		}
 	}
 }
@@ -121,27 +121,28 @@ func TestHttpd(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	// Start the container.
+	port := 80
 	opts := dockerutil.RunOpts{
 		Image: "basic/httpd",
-		Ports: []int{80},
+		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/usr/local/apache2/htdocs", "test/image/latin10k.txt")
 	if err := d.Spawn(ctx, opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	// Find where port 80 is mapped to.
-	port, err := d.FindPort(ctx, 80)
+	// Find container IP address.
+	ip, err := d.FindIP(ctx, false)
 	if err != nil {
-		t.Fatalf("FindPort(80) failed: %v", err)
+		t.Fatalf("docker.FindIP failed: %v", err)
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
 		t.Errorf("WaitForHTTP() timeout: %v", err)
 	}
 
-	testHTTPServer(t, port)
+	testHTTPServer(t, ip.String(), port)
 }
 
 func TestNginx(t *testing.T) {
@@ -150,27 +151,28 @@ func TestNginx(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	// Start the container.
+	port := 80
 	opts := dockerutil.RunOpts{
 		Image: "basic/nginx",
-		Ports: []int{80},
+		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/usr/share/nginx/html", "test/image/latin10k.txt")
 	if err := d.Spawn(ctx, opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	// Find where port 80 is mapped to.
-	port, err := d.FindPort(ctx, 80)
+	// Find container IP address.
+	ip, err := d.FindIP(ctx, false)
 	if err != nil {
-		t.Fatalf("FindPort(80) failed: %v", err)
+		t.Fatalf("docker.FindIP failed: %v", err)
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
 		t.Errorf("WaitForHTTP() timeout: %v", err)
 	}
 
-	testHTTPServer(t, port)
+	testHTTPServer(t, ip.String(), port)
 }
 
 func TestMysql(t *testing.T) {
@@ -218,26 +220,27 @@ func TestTomcat(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	// Start the server.
+	port := 8080
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/tomcat",
-		Ports: []int{8080},
+		Ports: []int{port},
 	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	// Find where port 8080 is mapped to.
-	port, err := d.FindPort(ctx, 8080)
+	// Find container IP address.
+	ip, err := d.FindIP(ctx, false)
 	if err != nil {
-		t.Fatalf("FindPort(8080) failed: %v", err)
+		t.Fatalf("docker.FindIP failed: %v", err)
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Ensure that content is being served.
-	url := fmt.Sprintf("http://localhost:%d", port)
+	url := fmt.Sprintf("http://%s:%d", ip.String(), port)
 	resp, err := http.Get(url)
 	if err != nil {
 		t.Errorf("Error reaching http server: %v", err)
@@ -253,28 +256,29 @@ func TestRuby(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	// Execute the ruby workload.
+	port := 8080
 	opts := dockerutil.RunOpts{
 		Image: "basic/ruby",
-		Ports: []int{8080},
+		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/src", "test/image/ruby.rb", "test/image/ruby.sh")
 	if err := d.Spawn(ctx, opts, "/src/ruby.sh"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	// Find where port 8080 is mapped to.
-	port, err := d.FindPort(ctx, 8080)
+	// Find container IP address.
+	ip, err := d.FindIP(ctx, false)
 	if err != nil {
-		t.Fatalf("FindPort(8080) failed: %v", err)
+		t.Fatalf("docker.FindIP failed: %v", err)
 	}
 
 	// Wait until it's up and running, 'gem install' can take some time.
-	if err := testutil.WaitForHTTP(port, time.Minute); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, time.Minute); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Ensure that content is being served.
-	url := fmt.Sprintf("http://localhost:%d", port)
+	url := fmt.Sprintf("http://%s:%d", ip.String(), port)
 	resp, err := http.Get(url)
 	if err != nil {
 		t.Errorf("error reaching http server: %v", err)

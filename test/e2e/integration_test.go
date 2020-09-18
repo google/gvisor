@@ -64,9 +64,10 @@ func TestLifeCycle(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	// Start the container.
+	port := 80
 	if err := d.Create(ctx, dockerutil.RunOpts{
 		Image: "basic/nginx",
-		Ports: []int{80},
+		Ports: []int{port},
 	}); err != nil {
 		t.Fatalf("docker create failed: %v", err)
 	}
@@ -74,16 +75,15 @@ func TestLifeCycle(t *testing.T) {
 		t.Fatalf("docker start failed: %v", err)
 	}
 
-	// Test that container is working.
-	port, err := d.FindPort(ctx, 80)
+	ip, err := d.FindIP(ctx, false)
 	if err != nil {
-		t.Fatalf("docker.FindPort(80) failed: %v", err)
+		t.Fatalf("docker.FindIP failed: %v", err)
 	}
-	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 	client := http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
+	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
 		t.Errorf("http request failed: %v", err)
 	}
 
@@ -105,27 +105,28 @@ func TestPauseResume(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	// Start the container.
+	port := 8080
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/python",
-		Ports: []int{8080}, // See Dockerfile.
+		Ports: []int{port}, // See Dockerfile.
 	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	// Find where port 8080 is mapped to.
-	port, err := d.FindPort(ctx, 8080)
+	// Find container IP address.
+	ip, err := d.FindIP(ctx, false)
 	if err != nil {
-		t.Fatalf("docker.FindPort(8080) failed: %v", err)
+		t.Fatalf("docker.FindIP failed: %v", err)
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Check that container is working.
 	client := http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
+	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
 		t.Error("http request failed:", err)
 	}
 
@@ -135,7 +136,7 @@ func TestPauseResume(t *testing.T) {
 
 	// Check if container is paused.
 	client = http.Client{Timeout: 10 * time.Millisecond} // Don't wait a minute.
-	switch _, err := client.Get(fmt.Sprintf("http://localhost:%d", port)); v := err.(type) {
+	switch _, err := client.Get(fmt.Sprintf("http://%s:%d", ip.String(), port)); v := err.(type) {
 	case nil:
 		t.Errorf("http req expected to fail but it succeeded")
 	case net.Error:
@@ -151,13 +152,13 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Check if container is working again.
 	client = http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
+	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
 		t.Error("http request failed:", err)
 	}
 }
@@ -179,9 +180,10 @@ func TestCheckpointRestore(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	// Start the container.
+	port := 8080
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/python",
-		Ports: []int{8080}, // See Dockerfile.
+		Ports: []int{port}, // See Dockerfile.
 	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -199,20 +201,20 @@ func TestCheckpointRestore(t *testing.T) {
 		t.Fatalf("docker restore failed: %v", err)
 	}
 
-	// Find where port 8080 is mapped to.
-	port, err := d.FindPort(ctx, 8080)
+	// Find container IP address.
+	ip, err := d.FindIP(ctx, false)
 	if err != nil {
-		t.Fatalf("docker.FindPort(8080) failed: %v", err)
+		t.Fatalf("docker.FindIP failed: %v", err)
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Check if container is working again.
 	client := http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
+	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
 		t.Error("http request failed:", err)
 	}
 }

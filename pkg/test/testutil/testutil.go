@@ -332,13 +332,13 @@ func PollContext(ctx context.Context, cb func() error) error {
 }
 
 // WaitForHTTP tries GET requests on a port until the call succeeds or timeout.
-func WaitForHTTP(port int, timeout time.Duration) error {
+func WaitForHTTP(ip string, port int, timeout time.Duration) error {
 	cb := func() error {
 		c := &http.Client{
 			// Calculate timeout to be able to do minimum 5 attempts.
 			Timeout: timeout / 5,
 		}
-		url := fmt.Sprintf("http://localhost:%d/", port)
+		url := fmt.Sprintf("http://%s:%d/", ip, port)
 		resp, err := c.Get(url)
 		if err != nil {
 			log.Printf("Waiting %s: %v", url, err)
