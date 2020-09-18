@@ -25,7 +25,6 @@ import (
 
 func init() {
 	allowedSyscalls[syscall.SYS_ARCH_PRCTL] = []seccomp.Rule{
-		{seccomp.EqualTo(linux.ARCH_GET_FS)},
 		{seccomp.EqualTo(linux.ARCH_SET_FS)},
 	}
 
