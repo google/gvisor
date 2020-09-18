@@ -346,7 +346,10 @@ TEST_F(StatTest, StatDoesntChangeAfterRename) {
 
   EXPECT_EQ(st_old.st_nlink, st_new.st_nlink);
   EXPECT_EQ(st_old.st_dev, st_new.st_dev);
-  EXPECT_EQ(st_old.st_ino, st_new.st_ino);
+  // Overlay filesystems may synthesize directory inode numbers on the fly.
+  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir()))) {
+    EXPECT_EQ(st_old.st_ino, st_new.st_ino);
+  }
   EXPECT_EQ(st_old.st_mode, st_new.st_mode);
   EXPECT_EQ(st_old.st_uid, st_new.st_uid);
   EXPECT_EQ(st_old.st_gid, st_new.st_gid);

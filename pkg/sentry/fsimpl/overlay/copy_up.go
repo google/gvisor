@@ -92,7 +92,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 			err = vfsObj.UnlinkAt(ctx, d.fs.creds, &newpop)
 		}
 		if err != nil {
-			ctx.Warningf("Unrecoverable overlayfs inconsistency: failed to delete upper layer file after copy-up error: %v", err)
+			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after copy-up error: %v", err))
 		}
 		if d.upperVD.Ok() {
 			d.upperVD.DecRef(ctx)
@@ -362,7 +362,7 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 			// There are no guarantees as to the contents of lowerXattrs.
 			return nil
 		}
-		ctx.Warningf("failed to copy up xattrs because ListXattrAt failed: %v", err)
+		ctx.Infof("failed to copy up xattrs because ListXattrAt failed: %v", err)
 		return err
 	}
 
@@ -374,13 +374,47 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 
 		value, err := vfsObj.GetXattrAt(ctx, d.fs.creds, lowerPop, &vfs.GetXattrOptions{Name: name, Size: 0})
 		if err != nil {
-			ctx.Warningf("failed to copy up xattrs because GetXattrAt failed: %v", err)
+			ctx.Infof("failed to copy up xattrs because GetXattrAt failed: %v", err)
 			return err
 		}
 
 		if err := vfsObj.SetXattrAt(ctx, d.fs.creds, upperPop, &vfs.SetXattrOptions{Name: name, Value: value}); err != nil {
-			ctx.Warningf("failed to copy up xattrs because SetXattrAt failed: %v", err)
+			ctx.Infof("failed to copy up xattrs because SetXattrAt failed: %v", err)
 			return err
+		}
+	}
+	return nil
+}
+
+// copyUpDescendantsLocked ensures that all descendants of d are copied up.
+//
+// Preconditions:
+// * filesystem.renameMu must be locked.
+// * d.dirMu must be locked.
+// * d.isDir().
+func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) error {
+	dirents, err := d.getDirentsLocked(ctx)
+	if err != nil {
+		return err
+	}
+	for _, dirent := range dirents {
+		if dirent.Name == "." || dirent.Name == ".." {
+			continue
+		}
+		child, err := d.fs.getChildLocked(ctx, d, dirent.Name, ds)
+		if err != nil {
+			return err
+		}
+		if err := child.copyUpLocked(ctx); err != nil {
+			return err
+		}
+		if child.isDir() {
+			child.dirMu.Lock()
+			err := child.copyUpDescendantsLocked(ctx, ds)
+			child.dirMu.Unlock()
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
