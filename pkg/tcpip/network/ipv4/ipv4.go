@@ -236,6 +236,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	ipt := e.stack.IPTables()
 	if ok := ipt.Check(stack.Output, pkt, gso, r, "", nicName); !ok {
 		// iptables is telling us to drop the packet.
+		r.Stats().IP.IPTablesOutputDropped.Increment()
 		return nil
 	}
 
@@ -300,6 +301,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
 		return n, err
 	}
+	r.Stats().IP.IPTablesOutputDropped.IncrementBy(uint64(len(dropped)))
 
 	// Slow path as we are dropping some packets in the batch degrade to
 	// emitting one packet at a time.
@@ -321,12 +323,15 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		}
 		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
 			r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
-			return n, err
+			// Dropped packets aren't errors, so include them in
+			// the return value.
+			return n + len(dropped), err
 		}
 		n++
 	}
 	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
-	return n, nil
+	// Dropped packets aren't errors, so include them in the return value.
+	return n + len(dropped), nil
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
@@ -395,6 +400,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	ipt := e.stack.IPTables()
 	if ok := ipt.Check(stack.Input, pkt, nil, nil, "", ""); !ok {
 		// iptables is telling us to drop the packet.
+		r.Stats().IP.IPTablesInputDropped.Increment()
 		return
 	}
 
