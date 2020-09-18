@@ -272,19 +272,19 @@ func (r *rlimit64) WriteTo(writer io.Writer) (int64, error) {
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SchedParam) SizeBytes() int {
-    return 8
+    return 4
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SchedParam) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.schedPriority))
-    dst = dst[8:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.schedPriority))
+    dst = dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *SchedParam) UnmarshalBytes(src []byte) {
-    s.schedPriority = int64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
+    s.schedPriority = int32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
