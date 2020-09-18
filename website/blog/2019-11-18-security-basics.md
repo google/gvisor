@@ -279,8 +279,10 @@ weaknesses of each gVisor component.
 We will also use it to introduce Google's Vulnerability Reward Program[^14], and
 other ways the community can contribute to help make gVisor safe, fast and
 stable.
+<br>
+<br>
 
-## Notes
+--------------------------------------------------------------------------------
 
 [^1]: [https://en.wikipedia.org/wiki/Secure_by_design](https://en.wikipedia.org/wiki/Secure_by_design)
 [^2]: [https://gvisor.dev/docs/architecture_guide](https://gvisor.dev/docs/architecture_guide/)
