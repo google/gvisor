@@ -129,10 +129,9 @@ tests: unit-tests
 	@$(call submake,test TARGETS="test/syscalls/...")
 .PHONY: tests
 
-
 integration-tests: ## Run all standard integration tests.
 integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
-integration-tests: do-tests kvm-tests root-tests containerd-tests
+integration-tests: do-tests kvm-tests containerd-test-1.3.4
 .PHONY: integration-tests
 
 network-tests: ## Run all networking integration tests.
@@ -186,6 +185,7 @@ swgso-tests: load-basic-images
 	@$(call submake,install-test-runtime RUNTIME="swgso" ARGS="--software-gso=true --gso=false")
 	@$(call submake,test-runtime RUNTIME="swgso" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: swgso-tests
+
 hostnet-tests: load-basic-images
 	@$(call submake,install-test-runtime RUNTIME="hostnet" ARGS="--network=host")
 	@$(call submake,test-runtime RUNTIME="hostnet" OPTIONS="--test_arg=-checkpoint=false" TARGETS="$(INTEGRATION_TARGETS)")
@@ -217,16 +217,12 @@ packetimpact-tests: load-packetimpact
 	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
 .PHONY: packetimpact-tests
 
-root-tests: load-basic-images
-	@$(call submake,install-test-runtime)
-	@$(call submake,sudo TARGETS="//test/root:root_test" ARGS="-test.v")
-.PHONY: root-tests
-
 # Specific containerd version tests.
-containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd install-test-runtime
+containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu
+	@$(call submake,install-test-runtime RUNTIME="root")
 	@CONTAINERD_VERSION=$* $(MAKE) sudo TARGETS="tools/installers:containerd"
 	@$(MAKE) sudo TARGETS="tools/installers:shim"
-	@$(MAKE) sudo TARGETS="test/root:root_test" ARGS="-test.v"
+	@$(MAKE) sudo TARGETS="test/root:root_test" ARGS="--runtime=root -test.v"
 
 # Note that we can't run containerd-test-1.1.8 tests here.
 #
