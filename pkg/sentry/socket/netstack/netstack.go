@@ -1185,7 +1185,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 		var v tcpip.LingerOption
 		var linger linux.Linger
 		if err := ep.GetSockOpt(&v); err != nil {
-			return &linger, nil
+			return nil, syserr.TranslateNetstackError(err)
 		}
 
 		if v.Enabled {

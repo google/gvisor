@@ -103,6 +103,24 @@ TEST_P(StreamUnixSocketPairTest, Sendto) {
               SyscallFailsWithErrno(EISCONN));
 }
 
+TEST_P(StreamUnixSocketPairTest, SetAndGetSocketLinger) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct linger sl = {1, 5};
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+      SyscallSucceedsWithValue(0));
+
+  struct linger got_linger = {};
+  socklen_t length = sizeof(sl);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER,
+                         &got_linger, &length),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_EQ(length, sizeof(got_linger));
+  EXPECT_EQ(0, memcmp(&got_linger, &sl, length));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
