@@ -333,14 +333,14 @@ TEST_F(StatTest, LeadingDoubleSlash) {
 
 // Test that a rename doesn't change the underlying file.
 TEST_F(StatTest, StatDoesntChangeAfterRename) {
-  const TempPath old_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const TempPath old_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const TempPath new_path(NewTempAbsPath());
 
   struct stat st_old = {};
   struct stat st_new = {};
 
-  ASSERT_THAT(stat(old_dir.path().c_str(), &st_old), SyscallSucceeds());
-  ASSERT_THAT(rename(old_dir.path().c_str(), new_path.path().c_str()),
+  ASSERT_THAT(stat(old_file.path().c_str(), &st_old), SyscallSucceeds());
+  ASSERT_THAT(rename(old_file.path().c_str(), new_path.path().c_str()),
               SyscallSucceeds());
   ASSERT_THAT(stat(new_path.path().c_str(), &st_new), SyscallSucceeds());
 
@@ -386,7 +386,9 @@ TEST_F(StatTest, LinkCountsWithRegularFileChild) {
 
 // This test verifies that inodes remain around when there is an open fd
 // after link count hits 0.
-TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoRandomSave) {
+//
+// It is marked NoSave because we don't support saving unlinked files.
+TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoSave) {
   // Setting the enviornment variable GVISOR_GOFER_UNCACHED to any value
   // will prevent this test from running, see the tmpfs lifecycle.
   //
@@ -394,9 +396,6 @@ TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoRandomSave) {
   // the stat to the gofer it would return ENOENT.
   const char* uncached_gofer = getenv("GVISOR_GOFER_UNCACHED");
   SKIP_IF(uncached_gofer != nullptr);
-
-  // We don't support saving unlinked files.
-  const DisableSave ds;
 
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath child = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
