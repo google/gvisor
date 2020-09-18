@@ -1289,6 +1289,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		address := n.primaryAddress(protocol)
 		if ok := ipt.Check(Prerouting, pkt, nil, nil, address.Address, ""); !ok {
 			// iptables is telling us to drop the packet.
+			n.stack.stats.IP.IPTablesPreroutingDropped.Increment()
 			return
 		}
 	}
