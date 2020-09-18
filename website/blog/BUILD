@@ -28,6 +28,16 @@ doc(
     permalink = "/blog/2020/04/02/gvisor-networking-security/",
 )
 
+doc(
+    name = "containing_a_real_vulnerability",
+    src = "2020-09-18-containing-a-real-vulnerability.md",
+    authors = [
+        "fvoznika",
+    ],
+    layout = "post",
+    permalink = "/blog/2020/09/18/containing-a-real-vulnerability/",
+)
+
 docs(
     name = "posts",
     deps = [
