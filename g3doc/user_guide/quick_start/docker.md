@@ -22,18 +22,6 @@ named "runsc" by default.
 sudo runsc install
 ```
 
-You may also wish to install a runtime entry for debugging. The `runsc install`
-command can accept options that will be passed to the runtime when it is invoked
-by Docker.
-
-```bash
-sudo runsc install --runtime runsc-debug -- \
-  --debug \
-  --debug-log=/tmp/runsc-debug.log \
-  --strace \
-  --log-packets
-```
-
 You must restart the Docker daemon after installing the runtime. Typically this
 is done via `systemd`:
 
@@ -84,6 +72,21 @@ $ docker run --runtime=runsc -it ubuntu dmesg
 
 Note that this is easily replicated by an attacker so applications should never
 use `dmesg` to verify the runtime in a security sensitive context.
+
+## Options
+
+You may also wish to install a runtime entry with different options. The `runsc
+install` command can accept flags that will be passed to the runtime when it is
+invoked by Docker. For example, to install a runtime with debugging enabled, run
+the following:
+
+```bash
+sudo runsc install --runtime runsc-debug -- \
+  --debug \
+  --debug-log=/tmp/runsc-debug.log \
+  --strace \
+  --log-packets
+```
 
 Next, look at the different options available for gVisor: [platform][platforms],
 [network][networking], [filesystem][filesystem].

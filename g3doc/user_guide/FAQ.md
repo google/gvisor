@@ -74,11 +74,10 @@ directories.
 
 ### I'm getting an error like: `panic: unable to attach: operation not permitted` or `fork/exec /proc/self/exe: invalid argument: unknown` {#runsc-perms}
 
-Make sure that permissions and the owner is correct on the `runsc` binary.
+Make sure that permissions is correct on the `runsc` binary.
 
 ```bash
-sudo chown root:root /usr/local/bin/runsc
-sudo chmod 0755 /usr/local/bin/runsc
+sudo chmod a+rx /usr/local/bin/runsc
 ```
 
 ### I'm getting an error like `mount submount "/etc/hostname": creating mount with source ".../hostname": input/output error: unknown.` {#memlock}
