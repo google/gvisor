@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/fragmentation"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -529,37 +530,14 @@ func (*protocol) Close() {}
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
 
-// Parse implements stack.TransportProtocol.Parse.
+// Parse implements stack.NetworkProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool) {
-	hdr, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
-	if !ok {
+	if ok := parse.IPv4(pkt); !ok {
 		return 0, false, false
 	}
-	ipHdr := header.IPv4(hdr)
 
-	// Header may have options, determine the true header length.
-	headerLen := int(ipHdr.HeaderLength())
-	if headerLen < header.IPv4MinimumSize {
-		// TODO(gvisor.dev/issue/2404): Per RFC 791, IHL needs to be at least 5 in
-		// order for the packet to be valid. Figure out if we want to reject this
-		// case.
-		headerLen = header.IPv4MinimumSize
-	}
-	hdr, ok = pkt.NetworkHeader().Consume(headerLen)
-	if !ok {
-		return 0, false, false
-	}
-	ipHdr = header.IPv4(hdr)
-
-	// If this is a fragment, don't bother parsing the transport header.
-	parseTransportHeader := true
-	if ipHdr.More() || ipHdr.FragmentOffset() != 0 {
-		parseTransportHeader = false
-	}
-
-	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-	pkt.Data.CapLength(int(ipHdr.TotalLength()) - len(hdr))
-	return ipHdr.TransportProtocol(), parseTransportHeader, true
+	ipHdr := header.IPv4(pkt.NetworkHeader().View())
+	return ipHdr.TransportProtocol(), !ipHdr.More() && ipHdr.FragmentOffset() == 0, true
 }
 
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
