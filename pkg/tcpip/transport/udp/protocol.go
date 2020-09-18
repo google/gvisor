@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -219,8 +220,7 @@ func (*protocol) Wait() {}
 
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
-	_, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
-	return ok
+	return parse.UDP(pkt)
 }
 
 // NewProtocol returns a UDP transport protocol.

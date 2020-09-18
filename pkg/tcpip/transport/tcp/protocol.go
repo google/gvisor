@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
@@ -506,22 +507,7 @@ func (p *protocol) SynRcvdCounter() *synRcvdCounter {
 
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
-	// TCP header is variable length, peek at it first.
-	hdrLen := header.TCPMinimumSize
-	hdr, ok := pkt.Data.PullUp(hdrLen)
-	if !ok {
-		return false
-	}
-
-	// If the header has options, pull those up as well.
-	if offset := int(header.TCP(hdr).DataOffset()); offset > header.TCPMinimumSize && offset <= pkt.Data.Size() {
-		// TODO(gvisor.dev/issue/2404): Figure out whether to reject this kind of
-		// packets.
-		hdrLen = offset
-	}
-
-	_, ok = pkt.TransportHeader().Consume(hdrLen)
-	return ok
+	return parse.TCP(pkt)
 }
 
 // NewProtocol returns a TCP transport protocol.
