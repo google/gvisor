@@ -865,8 +865,16 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 		}
 		if d.parent == nil {
 			if d.name != "" {
-				// This must be an anonymous memfd file.
+				// This file must have been created by
+				// newUnlinkedRegularFileDescription(). In Linux,
+				// mm/shmem.c:__shmem_file_setup() =>
+				// fs/file_table.c:alloc_file_pseudo() sets the created
+				// dentry's dentry_operations to anon_ops, for which d_dname ==
+				// simple_dname. fs/d_path.c:simple_dname() defines the
+				// dentry's pathname to be its name, prefixed with "/" and
+				// suffixed with " (deleted)".
 				b.PrependComponent("/" + d.name)
+				b.AppendString(" (deleted)")
 				return vfs.PrependPathSyntheticError{}
 			}
 			return vfs.PrependPathAtNonMountRootError{}

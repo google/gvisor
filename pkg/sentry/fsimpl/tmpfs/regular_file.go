@@ -42,6 +42,10 @@ type regularFile struct {
 	// memFile is a platform.File used to allocate pages to this regularFile.
 	memFile *pgalloc.MemoryFile
 
+	// memoryUsageKind is the memory accounting category under which pages backing
+	// this regularFile's contents are accounted.
+	memoryUsageKind usage.MemoryKind
+
 	// mapsMu protects mappings.
 	mapsMu sync.Mutex `state:"nosave"`
 
@@ -86,12 +90,73 @@ type regularFile struct {
 
 func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) *inode {
 	file := &regularFile{
-		memFile: fs.memFile,
-		seals:   linux.F_SEAL_SEAL,
+		memFile:         fs.memFile,
+		memoryUsageKind: usage.Tmpfs,
+		seals:           linux.F_SEAL_SEAL,
 	}
 	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
+}
+
+// newUnlinkedRegularFileDescription creates a regular file on the tmpfs
+// filesystem represented by mount and returns an FD representing that file.
+// The new file is not reachable by path traversal from any other file.
+//
+// newUnlinkedRegularFileDescription is analogous to Linux's
+// mm/shmem.c:__shmem_file_setup().
+//
+// Preconditions: mount must be a tmpfs mount.
+func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, name string) (*regularFileFD, error) {
+	fs, ok := mount.Filesystem().Impl().(*filesystem)
+	if !ok {
+		panic("tmpfs.newUnlinkedRegularFileDescription() called with non-tmpfs mount")
+	}
+
+	inode := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777)
+	d := fs.newDentry(inode)
+	defer d.DecRef(ctx)
+	d.name = name
+
+	fd := &regularFileFD{}
+	fd.Init(&inode.locks)
+	flags := uint32(linux.O_RDWR)
+	if err := fd.vfsfd.Init(fd, flags, mount, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
+	return fd, nil
+}
+
+// NewZeroFile creates a new regular file and file description as for
+// mmap(MAP_SHARED | MAP_ANONYMOUS). The file has the given size and is
+// initially (implicitly) filled with zeroes.
+//
+// Preconditions: mount must be a tmpfs mount.
+func NewZeroFile(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, size uint64) (*vfs.FileDescription, error) {
+	// Compare mm/shmem.c:shmem_zero_setup().
+	fd, err := newUnlinkedRegularFileDescription(ctx, creds, mount, "dev/zero")
+	if err != nil {
+		return nil, err
+	}
+	rf := fd.inode().impl.(*regularFile)
+	rf.memoryUsageKind = usage.Anonymous
+	rf.size = size
+	return &fd.vfsfd, err
+}
+
+// NewMemfd creates a new regular file and file description as for
+// memfd_create.
+//
+// Preconditions: mount must be a tmpfs mount.
+func NewMemfd(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, allowSeals bool, name string) (*vfs.FileDescription, error) {
+	fd, err := newUnlinkedRegularFileDescription(ctx, creds, mount, name)
+	if err != nil {
+		return nil, err
+	}
+	if allowSeals {
+		fd.inode().impl.(*regularFile).seals = 0
+	}
+	return &fd.vfsfd, nil
 }
 
 // truncate grows or shrinks the file to the given size. It returns true if the
@@ -226,7 +291,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		optional.End = pgend
 	}
 
-	cerr := rf.data.Fill(ctx, required, optional, rf.memFile, usage.Tmpfs, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	cerr := rf.data.Fill(ctx, required, optional, rf.memFile, rf.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -575,7 +640,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		case gap.Ok():
 			// Allocate memory for the write.
 			gapMR := gap.Range().Intersect(pgMR)
-			fr, err := rw.file.memFile.Allocate(gapMR.Length(), usage.Tmpfs)
+			fr, err := rw.file.memFile.Allocate(gapMR.Length(), rw.file.memoryUsageKind)
 			if err != nil {
 				retErr = err
 				goto exitLoop

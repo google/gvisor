@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -93,18 +92,6 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 		}
 	} else {
 		opts.Offset = 0
-		if !opts.Private {
-			if opts.MappingIdentity != nil {
-				return 0, syserror.EINVAL
-			}
-			m, err := NewSharedAnonMappable(opts.Length, pgalloc.MemoryFileProviderFromContext(ctx))
-			if err != nil {
-				return 0, err
-			}
-			defer m.DecRef(ctx)
-			opts.MappingIdentity = m
-			opts.Mappable = m
-		}
 	}
 
 	if opts.Addr.RoundDown() != opts.Addr {

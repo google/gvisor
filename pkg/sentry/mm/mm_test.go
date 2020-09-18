@@ -51,7 +51,8 @@ func TestUsageASUpdates(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length: 2 * usermem.PageSize,
+		Length:  2 * usermem.PageSize,
+		Private: true,
 	})
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)

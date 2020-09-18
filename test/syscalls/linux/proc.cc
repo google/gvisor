@@ -63,6 +63,7 @@
 #include "test/util/fs_util.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/proc_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -670,6 +671,23 @@ TEST(ProcSelfMaps, Mprotect) {
   strings = absl::StrSplit(proc_self_maps, '\n');
   EXPECT_THAT(strings, Contains(AnonymousMapsEntry(m.addr() + kPageSize,
                                                    3 * kPageSize, PROT_READ)));
+}
+
+TEST(ProcSelfMaps, SharedAnon) {
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ, MAP_SHARED | MAP_ANONYMOUS));
+
+  const auto proc_self_maps =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  for (const auto& line : absl::StrSplit(proc_self_maps, '\n')) {
+    const auto entry = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMapsLine(line));
+    if (entry.start <= m.addr() && m.addr() < entry.end) {
+      // cf. proc(5), "/proc/[pid]/map_files/"
+      EXPECT_EQ(entry.filename, "/dev/zero (deleted)");
+      return;
+    }
+  }
+  FAIL() << "no maps entry containing mapping at " << m.ptr();
 }
 
 TEST(ProcSelfFd, OpenFd) {
