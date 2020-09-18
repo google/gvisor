@@ -32,6 +32,7 @@ ext/standard/tests/file/symlink_link_linkinfo_is_link_variation4.phpt,b/16289534
 ext/standard/tests/file/symlink_link_linkinfo_is_link_variation8.phpt,b/162896223,
 ext/standard/tests/general_functions/escapeshellarg_bug71270.phpt,,
 ext/standard/tests/general_functions/escapeshellcmd_bug71270.phpt,,
+ext/standard/tests/streams/proc_open_bug60120.phpt,,Flaky until php-src 3852a35fdbcb
 ext/standard/tests/streams/proc_open_bug69900.phpt,,Flaky
 ext/standard/tests/streams/stream_socket_sendto.phpt,,
 ext/standard/tests/strings/007.phpt,,
