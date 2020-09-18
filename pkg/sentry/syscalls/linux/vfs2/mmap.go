@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -82,6 +83,17 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 			opts.MaxPerms.Write = false
 		}
 
+		if err := file.ConfigureMMap(t, &opts); err != nil {
+			return 0, nil, err
+		}
+	} else if shared {
+		// Back shared anonymous mappings with an anonymous tmpfs file.
+		opts.Offset = 0
+		file, err := tmpfs.NewZeroFile(t, t.Credentials(), t.Kernel().ShmMount(), opts.Length)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer file.DecRef(t)
 		if err := file.ConfigureMMap(t, &opts); err != nil {
 			return 0, nil, err
 		}

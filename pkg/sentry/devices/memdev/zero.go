@@ -16,9 +16,10 @@ package memdev
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -79,11 +80,22 @@ func (fd *zeroFD) Seek(ctx context.Context, offset int64, whence int32) (int64, 
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *zeroFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	m, err := mm.NewSharedAnonMappable(opts.Length, pgalloc.MemoryFileProviderFromContext(ctx))
+	if opts.Private || !opts.MaxPerms.Write {
+		// This mapping will never permit writing to the "underlying file" (in
+		// Linux terms, it isn't VM_SHARED), so implement it as an anonymous
+		// mapping, but back it with fd; this is what Linux does, and is
+		// actually application-visible because the resulting VMA will show up
+		// in /proc/[pid]/maps with fd.vfsfd.VirtualDentry()'s path rather than
+		// "/dev/zero (deleted)".
+		opts.Offset = 0
+		opts.MappingIdentity = &fd.vfsfd
+		opts.MappingIdentity.IncRef()
+		return nil
+	}
+	tmpfsFD, err := tmpfs.NewZeroFile(ctx, auth.CredentialsFromContext(ctx), kernel.KernelFromContext(ctx).ShmMount(), opts.Length)
 	if err != nil {
 		return err
 	}
-	opts.MappingIdentity = m
-	opts.Mappable = m
-	return nil
+	defer tmpfsFD.DecRef(ctx)
+	return tmpfsFD.ConfigureMMap(ctx, opts)
 }
