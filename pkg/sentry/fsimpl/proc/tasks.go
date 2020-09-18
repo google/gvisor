@@ -98,7 +98,7 @@ func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace
 	return inode, dentry
 }
 
-// Lookup implements kernfs.inodeDynamicLookup.
+// Lookup implements kernfs.inodeDynamicLookup.Lookup.
 func (i *tasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
 	// Try to lookup a corresponding task.
 	tid, err := strconv.ParseUint(name, 10, 64)
@@ -122,7 +122,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 	return taskDentry.VFSDentry(), nil
 }
 
-// IterDirents implements kernfs.inodeDynamicLookup.
+// IterDirents implements kernfs.inodeDynamicLookup.IterDirents.
 func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, _ int64) (int64, error) {
 	// fs/proc/internal.h: #define FIRST_PROCESS_ENTRY 256
 	const FIRST_PROCESS_ENTRY = 256
@@ -200,7 +200,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 	return maxTaskID, nil
 }
 
-// Open implements kernfs.Inode.
+// Open implements kernfs.Inode.Open.
 func (i *tasksInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndZero,
@@ -229,7 +229,7 @@ func (i *tasksInode) Stat(ctx context.Context, vsfs *vfs.Filesystem, opts vfs.St
 	return stat, nil
 }
 
-// DecRef implements kernfs.Inode.
+// DecRef implements kernfs.Inode.DecRef.
 func (i *tasksInode) DecRef(context.Context) {
 	i.tasksInodeRefs.DecRef(i.Destroy)
 }
