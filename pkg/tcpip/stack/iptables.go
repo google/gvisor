@@ -289,8 +289,6 @@ const (
 // which address and nicName can be gathered. Currently, address is only
 // needed for prerouting and nicName is only needed for output.
 //
-// TODO(gvisor.dev/issue/170): Dropped packets should be counted.
-//
 // Precondition: pkt.NetworkHeader is set.
 func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, preroutingAddr tcpip.Address, nicName string) bool {
 	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber && pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {

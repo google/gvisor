@@ -1047,26 +1047,32 @@ func TestReceiveFragments(t *testing.T) {
 	}
 }
 
-func TestWritePacketsStats(t *testing.T) {
+func TestWriteStats(t *testing.T) {
 	const nPackets = 3
 	tests := []struct {
-		name       string
-		setup      func(*testing.T, *stack.Stack)
-		linkEP     stack.LinkEndpoint
-		expectSent int
+		name          string
+		setup         func(*testing.T, *stack.Stack)
+		linkEP        func() stack.LinkEndpoint
+		expectSent    int
+		expectDropped int
+		expectWritten int
 	}{
 		{
 			name: "Accept all",
 			// No setup needed, tables accept everything by default.
-			setup:      func(*testing.T, *stack.Stack) {},
-			linkEP:     &limitedEP{nPackets},
-			expectSent: nPackets,
+			setup:         func(*testing.T, *stack.Stack) {},
+			linkEP:        func() stack.LinkEndpoint { return &limitedEP{nPackets} },
+			expectSent:    nPackets,
+			expectDropped: 0,
+			expectWritten: nPackets,
 		}, {
 			name: "Accept all with error",
 			// No setup needed, tables accept everything by default.
-			setup:      func(*testing.T, *stack.Stack) {},
-			linkEP:     &limitedEP{nPackets - 1},
-			expectSent: nPackets - 1,
+			setup:         func(*testing.T, *stack.Stack) {},
+			linkEP:        func() stack.LinkEndpoint { return &limitedEP{nPackets - 1} },
+			expectSent:    nPackets - 1,
+			expectDropped: 0,
+			expectWritten: nPackets - 1,
 		}, {
 			name: "Drop all",
 			setup: func(t *testing.T, stk *stack.Stack) {
@@ -1083,8 +1089,10 @@ func TestWritePacketsStats(t *testing.T) {
 					t.Fatalf("failed to replace table: %v", err)
 				}
 			},
-			linkEP:     &limitedEP{nPackets},
-			expectSent: 0,
+			linkEP:        func() stack.LinkEndpoint { return &limitedEP{nPackets} },
+			expectSent:    0,
+			expectDropped: nPackets,
+			expectWritten: nPackets,
 		}, {
 			name: "Drop some",
 			setup: func(t *testing.T, stk *stack.Stack) {
@@ -1106,38 +1114,68 @@ func TestWritePacketsStats(t *testing.T) {
 					t.Fatalf("failed to replace table: %v", err)
 				}
 			},
-			linkEP:     &limitedEP{nPackets},
-			expectSent: nPackets - 1,
+			linkEP:        func() stack.LinkEndpoint { return &limitedEP{nPackets} },
+			expectSent:    nPackets - 1,
+			expectDropped: 1,
+			expectWritten: nPackets,
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			rt := buildRoute(t, nil, test.linkEP)
+	// Parameterize the tests to run with both WritePacket and WritePackets.
+	writers := []struct {
+		name         string
+		writePackets func(*stack.Route, stack.PacketBufferList) (int, *tcpip.Error)
+	}{
+		{
+			name: "WritePacket",
+			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, *tcpip.Error) {
+				nWritten := 0
+				for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+					if err := rt.WritePacket(nil, stack.NetworkHeaderParams{}, pkt); err != nil {
+						return nWritten, err
+					}
+					nWritten++
+				}
+				return nWritten, nil
+			},
+		}, {
+			name: "WritePackets",
+			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, *tcpip.Error) {
+				return rt.WritePackets(nil, pkts, stack.NetworkHeaderParams{})
+			},
+		},
+	}
 
-			var pbl stack.PacketBufferList
-			for i := 0; i < nPackets; i++ {
-				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
-					Data:               buffer.NewView(1).ToVectorisedView(),
+	for _, writer := range writers {
+		t.Run(writer.name, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					rt := buildRoute(t, nil, test.linkEP())
+
+					var pkts stack.PacketBufferList
+					for i := 0; i < nPackets; i++ {
+						pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+							ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
+							Data:               buffer.NewView(0).ToVectorisedView(),
+						})
+						pkt.TransportHeader().Push(header.UDPMinimumSize)
+						pkts.PushBack(pkt)
+					}
+
+					test.setup(t, rt.Stack())
+
+					nWritten, _ := writer.writePackets(&rt, pkts)
+
+					if got := int(rt.Stats().IP.PacketsSent.Value()); got != test.expectSent {
+						t.Errorf("sent %d packets, but expected to send %d", got, test.expectSent)
+					}
+					if got := int(rt.Stats().IP.IPTablesOutputDropped.Value()); got != test.expectDropped {
+						t.Errorf("dropped %d packets, but expected to drop %d", got, test.expectDropped)
+					}
+					if nWritten != test.expectWritten {
+						t.Errorf("wrote %d packets, but expected WritePackets to return %d", nWritten, test.expectWritten)
+					}
 				})
-				pkt.TransportHeader().Push(header.UDPMinimumSize)
-				pbl.PushBack(pkt)
-			}
-
-			test.setup(t, rt.Stack())
-
-			nWritten, err := rt.WritePackets(nil, pbl, stack.NetworkHeaderParams{})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			got := int(rt.Stats().IP.PacketsSent.Value())
-			if got != test.expectSent {
-				t.Errorf("sent %d packets, but expected to send %d", got, test.expectSent)
-			}
-			if got != nWritten {
-				t.Errorf("sent %d packets, WritePackets returned %d", got, nWritten)
 			}
 		})
 	}
@@ -1177,7 +1215,10 @@ type limitedEP struct {
 }
 
 // MTU implements LinkEndpoint.MTU.
-func (*limitedEP) MTU() uint32 { return 0 }
+func (*limitedEP) MTU() uint32 {
+	// Give an MTU that won't cause fragmentation for IPv4+UDP.
+	return header.IPv4MinimumSize + header.UDPMinimumSize
+}
 
 // Capabilities implements LinkEndpoint.Capabilities.
 func (*limitedEP) Capabilities() stack.LinkEndpointCapabilities { return 0 }

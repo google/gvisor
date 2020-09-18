@@ -1474,6 +1474,18 @@ type IPStats struct {
 	// MalformedFragmentsReceived is the total number of IP Fragments that were
 	// dropped due to the fragment failing validation checks.
 	MalformedFragmentsReceived *StatCounter
+
+	// IPTablesPreroutingDropped is the total number of IP packets dropped
+	// in the Prerouting chain.
+	IPTablesPreroutingDropped *StatCounter
+
+	// IPTablesInputDropped is the total number of IP packets dropped in
+	// the Input chain.
+	IPTablesInputDropped *StatCounter
+
+	// IPTablesOutputDropped is the total number of IP packets dropped in
+	// the Output chain.
+	IPTablesOutputDropped *StatCounter
 }
 
 // TCPStats collects TCP-specific stats.
