@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -234,11 +235,7 @@ func (*protocol) Wait() {}
 
 // Parse implements stack.NetworkProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool) {
-	_, ok = pkt.NetworkHeader().Consume(header.ARPSize)
-	if !ok {
-		return 0, false, false
-	}
-	return 0, false, true
+	return 0, false, parse.ARP(pkt)
 }
 
 // NewProtocol returns an ARP network protocol.
