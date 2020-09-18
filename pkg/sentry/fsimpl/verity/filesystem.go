@@ -185,8 +185,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 		Start: child.lowerMerkleVD,
 	}, &vfs.GetXattrOptions{
 		Name: merkleOffsetInParentXattr,
-		// Offset is a 32 bit integer.
-		Size: sizeOfInt32,
+		Size: sizeOfStringInt32,
 	})
 
 	// The Merkle tree file for the child should have been created and
@@ -227,7 +226,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// the size of all its children's root hashes.
 	dataSize, err := parentMerkleFD.GetXattr(ctx, &vfs.GetXattrOptions{
 		Name: merkleSizeXattr,
-		Size: sizeOfInt32,
+		Size: sizeOfStringInt32,
 	})
 
 	// The Merkle tree file for the child should have been created and
