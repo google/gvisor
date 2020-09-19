@@ -21,8 +21,10 @@
 package ipv4
 
 import (
+	"fmt"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -51,23 +53,127 @@ const (
 	fragmentblockSize = 8
 )
 
+var ipv4BroadcastAddr = tcpip.AddressWithPrefix{
+	Address:   header.IPv4Broadcast,
+	PrefixLen: 8 * header.IPv4AddressSize,
+}
+
+var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
+var _ stack.AddressableEndpoint = (*endpoint)(nil)
+var _ stack.NetworkEndpoint = (*endpoint)(nil)
+
 type endpoint struct {
-	nicID      tcpip.NICID
+	nic        stack.NetworkInterface
 	linkEP     stack.LinkEndpoint
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
 	stack      *stack.Stack
+
+	// atomics hold fields that must be accessed using atomic operations.
+	atomics struct {
+		// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
+		//
+		// May only be updated while mu is write locked. This is so that we can read
+		// the enabled status without worrying about currently held locks and
+		// synchronize writes when enabling/disabling the endpoint.
+		enabled uint32
+	}
+
+	mu struct {
+		sync.RWMutex
+
+		addressableEndpoint      *stack.AddressableEndpointState
+		groupAddressableEndpoint *stack.GroupAddressableEndpointState
+	}
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
-	return &endpoint{
-		nicID:      nicID,
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+	e := &endpoint{
+		nic:        nic,
 		linkEP:     linkEP,
 		dispatcher: dispatcher,
 		protocol:   p,
 		stack:      st,
 	}
+	e.mu.addressableEndpoint = stack.NewAddressableEndpointState(e)
+	e.mu.groupAddressableEndpoint = stack.NewGroupAddressableEndpointState(e.mu.addressableEndpoint)
+	return e
+}
+
+// Enable implements stack.NetworkEndpoint.
+func (e *endpoint) Enable() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// If the NIC is not enabled, don't enable the endpoint.
+	if !e.nic.Enabled() || e.enabled() {
+		return nil
+	}
+
+	e.setEnabledLocked(true)
+
+	// Create an endpoint to receive broadcast packets on this interface.
+	if _, err := e.mu.addressableEndpoint.AddPermanentAddress(ipv4BroadcastAddr, stack.NeverPrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+		return err
+	}
+
+	// As per RFC 1122 section 3.3.7, all hosts should join the all-hosts
+	// multicast group. Note, the IANA calls the all-hosts multicast group the
+	// all-systems multicast group.
+	if _, err := e.mu.groupAddressableEndpoint.JoinGroup(header.IPv4AllSystems); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Enabled implements stack.NetworkEndpoint.
+func (e *endpoint) Enabled() bool {
+	return e.nic.Enabled() && e.enabled()
+}
+
+// enabled returns true if the endpoint is enabled, regardless of the
+// enabled status of the NIC.
+func (e *endpoint) enabled() bool {
+	return atomic.LoadUint32(&e.atomics.enabled) == 1
+}
+
+// setEnabledLocked sets the enabled status for the endpoint.
+//
+// Precondition: e.mu must be write locked.
+func (e *endpoint) setEnabledLocked(v bool) {
+	if v {
+		atomic.StoreUint32(&e.atomics.enabled, 1)
+	} else {
+		atomic.StoreUint32(&e.atomics.enabled, 0)
+	}
+}
+
+// Disable implements stack.NetworkEndpoint.
+func (e *endpoint) Disable() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.disableLocked()
+}
+
+func (e *endpoint) disableLocked() *tcpip.Error {
+	if !e.enabled() {
+		return nil
+	}
+
+	// The NIC may have already left the multicast group.
+	if _, err := e.mu.groupAddressableEndpoint.LeaveGroup(header.IPv4AllSystems); err != nil && err != tcpip.ErrBadLocalAddress {
+		return err
+	}
+
+	// The address may have already been removed.
+	if err := e.mu.addressableEndpoint.RemovePermanentAddress(ipv4BroadcastAddr.Address); err != nil && err != tcpip.ErrBadLocalAddress {
+		return err
+	}
+
+	e.setEnabledLocked(false)
+	return nil
 }
 
 // DefaultTTL is the default time-to-live value for this endpoint.
@@ -81,14 +187,14 @@ func (e *endpoint) MTU() uint32 {
 	return calculateMTU(e.linkEP.MTU())
 }
 
-// Capabilities implements stack.NetworkEndpoint.Capabilities.
+// Capabilities implements stack.NetworkEndpoint.
 func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return e.linkEP.Capabilities()
 }
 
 // NICID returns the ID of the NIC this endpoint belongs to.
 func (e *endpoint) NICID() tcpip.NICID {
-	return e.nicID
+	return e.nic.ID()
 }
 
 // MaxHeaderLength returns the maximum length needed by ipv4 headers (and
@@ -389,6 +495,10 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
+	if !e.enabled() {
+		return
+	}
+
 	h := header.IPv4(pkt.NetworkHeader().View())
 	if !h.IsValid(pkt.Data.Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
@@ -463,16 +573,136 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 }
 
 // Close cleans up resources associated with the endpoint.
-func (e *endpoint) Close() {}
+func (e *endpoint) Close() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	_ = e.disableLocked()
+	_ = e.mu.groupAddressableEndpoint.LeaveAllGroups()
+	_ = e.mu.addressableEndpoint.RemoveAllPermanentAddresses()
+}
+
+// AddPermanentAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AddPermanentAddress(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, *tcpip.Error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.addressableEndpoint.AddPermanentAddress(addr, peb, configType, deprecated)
+}
+
+// RemovePermanentAddress implements stack.AddressableEndpoint.
+func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.addressableEndpoint.RemovePermanentAddress(addr)
+}
+
+// AcquireAssignedAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	loopback := e.nic.IsLoopback()
+	ref := e.mu.addressableEndpoint.ReadOnly().AddrOrMatching(localAddr, allowTemp, func(ep stack.AddressEndpoint) bool {
+		subnet := ep.AddressWithPrefix().Subnet()
+		// IPv4 has a notion of a subnet broadcast address and considers the
+		// loopback interface bound to an address's whole subnet (on linux).
+		return subnet.IsBroadcast(localAddr) || (loopback && subnet.Contains(localAddr))
+	})
+	if ref != nil {
+		return ref
+	}
+
+	if !allowTemp {
+		return nil
+	}
+
+	addr := localAddr.WithPrefix()
+	r, err := e.mu.addressableEndpoint.AddAndAcquireTemporaryAddress(addr, tempPEB)
+	if err != nil {
+		// AddAddress only returns an error if the address is already assigned,
+		// but we just checked above if the address exists so we expect no error.
+		panic(fmt.Sprintf("e.mu.addressableEndpoint.AddAndAcquireTemporaryAddress(%s, %d): %s", addr, tempPEB, err))
+	}
+	return r
+}
+
+// AcquirePrimaryAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AcquirePrimaryAddress(remoteAddr tcpip.Address, spoofingOrPromiscuous bool) stack.AddressEndpoint {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpoint.AcquirePrimaryAddress(remoteAddr, spoofingOrPromiscuous)
+}
+
+// PrimaryAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) PrimaryAddresses() []tcpip.AddressWithPrefix {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpoint.PrimaryAddresses()
+}
+
+// AllPermanentAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) AllPermanentAddresses() []tcpip.AddressWithPrefix {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpoint.AllPermanentAddresses()
+}
+
+// RemoveAllPermanentAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) RemoveAllPermanentAddresses() *tcpip.Error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpoint.RemoveAllPermanentAddresses()
+}
+
+// JoinGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) JoinGroup(addr tcpip.Address) (bool, *tcpip.Error) {
+	if !header.IsV4MulticastAddress(addr) {
+		return false, tcpip.ErrBadAddress
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.groupAddressableEndpoint.JoinGroup(addr)
+}
+
+// LeaveGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) LeaveGroup(addr tcpip.Address) (bool, *tcpip.Error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.groupAddressableEndpoint.LeaveGroup(addr)
+}
+
+// IsInGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.groupAddressableEndpoint.IsInGroup(addr)
+}
+
+// LeaveAllGroups implements stack.GroupAddressableEndpoint.
+func (e *endpoint) LeaveAllGroups() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.groupAddressableEndpoint.LeaveAllGroups()
+}
+
+var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
+var _ stack.NetworkProtocol = (*protocol)(nil)
 
 type protocol struct {
+	// atomics hold fields that must be accessed using atomic operations.
+	atomics struct {
+		// defaultTTL is the current default TTL for the protocol. Only the
+		// uint8 portion of it is meaningful.
+		defaultTTL uint32
+
+		// forwarding is set to 1 when the protocol has forwarding enabled and 0
+		// when it is disabled.
+		forwarding uint32
+	}
+
 	ids    []uint32
 	hashIV uint32
-
-	// defaultTTL is the current default TTL for the protocol. Only the
-	// uint8 portion of it is meaningful and it must be accessed
-	// atomically.
-	defaultTTL uint32
 
 	fragmentation *fragmentation.Fragmentation
 }
@@ -522,12 +752,12 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) *tcpip.Err
 
 // SetDefaultTTL sets the default TTL for endpoints created with this protocol.
 func (p *protocol) SetDefaultTTL(ttl uint8) {
-	atomic.StoreUint32(&p.defaultTTL, uint32(ttl))
+	atomic.StoreUint32(&p.atomics.defaultTTL, uint32(ttl))
 }
 
 // DefaultTTL returns the default TTL for endpoints created with this protocol.
 func (p *protocol) DefaultTTL() uint8 {
-	return uint8(atomic.LoadUint32(&p.defaultTTL))
+	return uint8(atomic.LoadUint32(&p.atomics.defaultTTL))
 }
 
 // Close implements stack.TransportProtocol.Close.
@@ -544,6 +774,20 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 
 	ipHdr := header.IPv4(pkt.NetworkHeader().View())
 	return ipHdr.TransportProtocol(), !ipHdr.More() && ipHdr.FragmentOffset() == 0, true
+}
+
+// Forwarding implements stack.ForwardingNetworkProtocol.
+func (p *protocol) Forwarding() bool {
+	return uint8(atomic.LoadUint32(&p.atomics.forwarding)) == 1
+}
+
+// SetForwarding implements stack.ForwardingNetworkProtocol.
+func (p *protocol) SetForwarding(v bool) {
+	if v {
+		atomic.StoreUint32(&p.atomics.forwarding, 1)
+	} else {
+		atomic.StoreUint32(&p.atomics.forwarding, 0)
+	}
 }
 
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
@@ -577,10 +821,11 @@ func NewProtocol() stack.NetworkProtocol {
 	}
 	hashIV := r[buckets]
 
-	return &protocol{
+	p := &protocol{
 		ids:           ids,
 		hashIV:        hashIV,
-		defaultTTL:    DefaultTTL,
 		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 	}
+	p.SetDefaultTTL(DefaultTTL)
+	return p
 }

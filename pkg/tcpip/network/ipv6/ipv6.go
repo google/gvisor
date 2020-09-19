@@ -22,8 +22,10 @@ package ipv6
 
 import (
 	"fmt"
+	"sort"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -45,14 +47,298 @@ const (
 	DefaultTTL = 64
 )
 
+var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
+var _ stack.AddressableEndpoint = (*endpoint)(nil)
+var _ stack.NetworkEndpoint = (*endpoint)(nil)
+var _ stack.NDPEndpoint = (*endpoint)(nil)
+var _ NDPEndpoint = (*endpoint)(nil)
+
 type endpoint struct {
-	nicID         tcpip.NICID
+	nic           stack.NetworkInterface
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	nud           stack.NUDHandler
 	dispatcher    stack.TransportDispatcher
 	protocol      *protocol
 	stack         *stack.Stack
+
+	// atomics hold fields that must be accessed using atomic operations.
+	atomics struct {
+		// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
+		//
+		// May only be updated while mu is write locked. This is so that we can read
+		// the enabled status without worrying about currently held locks and
+		// synchronize writes when enabling/disabling the endpoint.
+		enabled uint32
+	}
+
+	mu struct {
+		sync.RWMutex
+
+		addressableEndpoint      *stack.AddressableEndpointState
+		groupAddressableEndpoint *stack.GroupAddressableEndpointState
+		ndp                      ndpState
+	}
+}
+
+// NICNameFromID is a function that returns a stable name for the specified NIC,
+// even if different NIC IDs are used to refer to the same NIC in different
+// program runs. It is used when generating opaque interface identifiers (IIDs).
+// If the NIC was created with a name, it will be passed to NICNameFromID.
+//
+// NICNameFromID SHOULD return unique NIC names so unique opaque IIDs are
+// generated for the same prefix on differnt NICs.
+type NICNameFromID func(tcpip.NICID, string) string
+
+// OpaqueInterfaceIdentifierOptions holds the options related to the generation
+// of opaque interface indentifiers (IIDs) as defined by RFC 7217.
+type OpaqueInterfaceIdentifierOptions struct {
+	// NICNameFromID is a function that returns a stable name for a specified NIC,
+	// even if the NIC ID changes over time.
+	//
+	// Must be specified to generate the opaque IID.
+	NICNameFromID NICNameFromID
+
+	// SecretKey is a pseudo-random number used as the secret key when generating
+	// opaque IIDs as defined by RFC 7217. The key SHOULD be at least
+	// header.OpaqueIIDSecretKeyMinBytes bytes and MUST follow minimum randomness
+	// requirements for security as outlined by RFC 4086. SecretKey MUST NOT
+	// change between program runs, unless explicitly changed.
+	//
+	// OpaqueInterfaceIdentifierOptions takes ownership of SecretKey. SecretKey
+	// MUST NOT be modified after Stack is created.
+	//
+	// May be nil, but a nil value is highly discouraged to maintain
+	// some level of randomness between nodes.
+	SecretKey []byte
+}
+
+// InvalidateDefaultRouter implements stack.NDPEndpoint.
+func (e *endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mu.ndp.invalidateDefaultRouter(rtr)
+}
+
+// SetNDPConfigurations implements NDPEndpoint.
+func (e *endpoint) SetNDPConfigurations(c NDPConfigurations) {
+	c.validate()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mu.ndp.configs = c
+}
+
+// isAddrTentative returns true if addr is tentative on e.
+//
+// Note that if addr is not associated with e, then this function will return
+// false. It will only return true if the address is associated with the NIC
+// AND it is tentative.
+func (e *endpoint) isAddrTentative(addr tcpip.Address) bool {
+	e.mu.RLock()
+	nep := e.getAddressRLocked(addr)
+	e.mu.RUnlock()
+	if nep == nil {
+		return false
+	}
+	kind := nep.GetKind()
+	return kind == stack.PermanentTentative
+}
+
+// dupTentativeAddrDetected attempts to inform e that a tentative addr is a
+// duplicate on a link.
+//
+// dupTentativeAddrDetected will remove the tentative address if it exists. If
+// the address was generated via SLAAC, an attempt will be made to generate a
+// new address.
+func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address) *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	nep := e.getAddressRLocked(addr)
+	if nep == nil {
+		return tcpip.ErrBadAddress
+	}
+
+	if nep.GetKind() != stack.PermanentTentative {
+		return tcpip.ErrInvalidEndpointState
+	}
+
+	// If the address is a SLAAC address, do not invalidate its SLAAC prefix as a
+	// new address will be generated for it.
+	if err := e.removePermanentEndpointLocked(nep, false /* allowSLAACInvalidation */); err != nil {
+		return err
+	}
+
+	prefix := nep.AddressWithPrefix().Subnet()
+
+	switch nep.ConfigType() {
+	case stack.AddressConfigSlaac:
+		e.mu.ndp.regenerateSLAACAddr(prefix)
+	case stack.AddressConfigSlaacTemp:
+		// Do not reset the generation attempts counter for the prefix as the
+		// temporary address is being regenerated in response to a DAD conflict.
+		e.mu.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
+	}
+
+	return nil
+}
+
+// setForwarding updates the endpoint's forwarding status.
+func (e *endpoint) setForwarding(forwarding bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if !e.Enabled() {
+		return
+	}
+
+	if forwarding {
+		// When transitioning into an IPv6 router, host-only state (NDP discovered
+		// routers, discovered on-link prefixes, and auto-generated addresses) will
+		// be cleaned up/invalidated and NDP router solicitations will be stopped.
+		e.mu.ndp.stopSolicitingRouters()
+		e.mu.ndp.cleanupState(true /* hostOnly */)
+	} else {
+		// When transitioning into an IPv6 host, NDP router solicitations will be
+		// started.
+		e.mu.ndp.startSolicitingRouters()
+	}
+}
+
+// Enable implements stack.NetworkEndpoint.
+func (e *endpoint) Enable() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// If the NIC is not enabled, don't enable the endpoint.
+	if !e.nic.Enabled() || e.enabled() {
+		return nil
+	}
+
+	e.setEnabledLocked(true)
+
+	// Join the IPv6 All-Nodes Multicast group if the stack is configured to
+	// use IPv6. This is required to ensure that this node properly receives
+	// and responds to the various NDP messages that are destined to the
+	// all-nodes multicast address. An example is the Neighbor Advertisement
+	// when we perform Duplicate Address Detection, or Router Advertisement
+	// when we do Router Discovery. See RFC 4862, section 5.4.2 and RFC 4861
+	// section 4.2 for more information.
+	//
+	// Also auto-generate an IPv6 link-local address based on the NIC's
+	// link address if it is configured to do so. Note, each interface is
+	// required to have IPv6 link-local unicast address, as per RFC 4291
+	// section 2.1.
+
+	// Join the All-Nodes multicast group before starting DAD as responses to DAD
+	// (NDP NS) messages may be sent to the All-Nodes multicast group if the
+	// source address of the NDP NS is the unspecified address, as per RFC 4861
+	// section 7.2.4.
+	if _, err := e.mu.groupAddressableEndpoint.JoinGroup(header.IPv6AllNodesMulticastAddress); err != nil {
+		return err
+	}
+
+	// Perform DAD on the all the unicast IPv6 endpoints that are in the permanent
+	// state.
+	//
+	// Addresses may have aleady completed DAD but in the time since the NIC was
+	// last enabled, other devices may have acquired the same addresses.
+	var err *tcpip.Error
+	e.mu.addressableEndpoint.ReadOnly().ForEach(func(r stack.AddressEndpoint) bool {
+		addr := r.AddressWithPrefix().Address
+		if k := r.GetKind(); (k != stack.Permanent && k != stack.PermanentTentative) || !header.IsV6UnicastAddress(addr) {
+			return true
+		}
+
+		r.SetKind(stack.PermanentTentative)
+		err = e.mu.ndp.startDuplicateAddressDetection(addr, r)
+		return err == nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Do not auto-generate an IPv6 link-local address for loopback devices.
+	if e.protocol.autoGenIPv6LinkLocal /* && !e.nic.IsLoopback() */ {
+		// The valid and preferred lifetime is infinite for the auto-generated
+		// link-local address.
+		e.mu.ndp.doSLAAC(header.IPv6LinkLocalPrefix.Subnet(), header.NDPInfiniteLifetime, header.NDPInfiniteLifetime)
+	}
+
+	// If we are operating as a router, then do not solicit routers since we
+	// won't process the RAs anyways.
+	//
+	// Routers do not process Router Advertisements (RA) the same way a host
+	// does. That is, routers do not learn from RAs (e.g. on-link prefixes
+	// and default routers). Therefore, soliciting RAs from other routers on
+	// a link is unnecessary for routers.
+	if !e.protocol.Forwarding() {
+		e.mu.ndp.startSolicitingRouters()
+	}
+
+	return nil
+}
+
+// Enabled implements stack.NetworkEndpoint.
+func (e *endpoint) Enabled() bool {
+	return e.nic.Enabled() && e.enabled()
+}
+
+// enabled returns true if the endpoint is enabled, regardless of the
+// enabled status of the NIC.
+func (e *endpoint) enabled() bool {
+	return atomic.LoadUint32(&e.atomics.enabled) == 1
+}
+
+// setEnabledLocked sets the enabled status for the endpoint.
+//
+// Precondition: e.mu must be write locked.
+func (e *endpoint) setEnabledLocked(v bool) {
+	if v {
+		atomic.StoreUint32(&e.atomics.enabled, 1)
+	} else {
+		atomic.StoreUint32(&e.atomics.enabled, 0)
+	}
+}
+
+// Disable implements stack.NetworkEndpoint.
+func (e *endpoint) Disable() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.disableLocked()
+}
+
+func (e *endpoint) disableLocked() *tcpip.Error {
+	if !e.enabled() {
+		return nil
+	}
+
+	e.mu.ndp.stopSolicitingRouters()
+	e.mu.ndp.cleanupState(false /* hostOnly */)
+	e.stopDADForAllPermanentAddressesLocked()
+
+	// The NIC may have already left the multicast group.
+	if _, err := e.mu.groupAddressableEndpoint.LeaveGroup(header.IPv6AllNodesMulticastAddress); err != nil && err != tcpip.ErrBadLocalAddress {
+		return err
+	}
+
+	e.setEnabledLocked(false)
+	return nil
+}
+
+// stopDADForAllPermanentAddressesLocked stops DAD for all permaneent addresses.
+//
+// Precondition: e.mu must be write locked.
+func (e *endpoint) stopDADForAllPermanentAddressesLocked() {
+	// Stop DAD for all the unicast IPv6 endpoints that are in the
+	// permanentTentative state.
+	e.mu.addressableEndpoint.ReadOnly().ForEach(func(r stack.AddressEndpoint) bool {
+		if addr := r.AddressWithPrefix().Address; r.GetKind() == stack.PermanentTentative && header.IsV6UnicastAddress(addr) {
+			e.mu.ndp.stopDuplicateAddressDetection(addr)
+		}
+
+		return true
+	})
 }
 
 // DefaultTTL is the default hop limit for this endpoint.
@@ -68,10 +354,10 @@ func (e *endpoint) MTU() uint32 {
 
 // NICID returns the ID of the NIC this endpoint belongs to.
 func (e *endpoint) NICID() tcpip.NICID {
-	return e.nicID
+	return e.nic.ID()
 }
 
-// Capabilities implements stack.NetworkEndpoint.Capabilities.
+// Capabilities implements stack.NetworkEndpoint.
 func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return e.linkEP.Capabilities()
 }
@@ -224,6 +510,10 @@ func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuff
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
+	if !e.enabled() {
+		return
+	}
+
 	h := header.IPv6(pkt.NetworkHeader().View())
 	if !h.IsValid(pkt.Data.Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
@@ -497,19 +787,354 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 }
 
 // Close cleans up resources associated with the endpoint.
-func (*endpoint) Close() {}
+func (e *endpoint) Close() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	_ = e.disableLocked()
+	_ = e.mu.groupAddressableEndpoint.LeaveAllGroups()
+	_ = e.removeAllPermanentAddressesLocked()
+
+	e.protocol.forgetEndpoint(e)
+}
 
 // NetworkProtocolNumber implements stack.NetworkEndpoint.NetworkProtocolNumber.
 func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return e.protocol.Number()
 }
 
+// AddPermanentAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AddPermanentAddress(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, *tcpip.Error) {
+	// TODO: add checks here after making sure we will no longer receive an empty
+	// address (b/140943433).
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.addPermanentAddressLocked(addr, peb, configType, deprecated)
+}
+
+// addPermanentAddressLocked is like AddPermanentAddress but with locking
+// requirements.
+//
+// addPermanentAddressLocked will also join the passed address's solicited-node
+// multicast group and start duplicate address detection.
+//
+// Precondition: e.mu must be write locked.
+func (e *endpoint) addPermanentAddressLocked(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, *tcpip.Error) {
+	nep, err := e.mu.addressableEndpoint.AddPermanentAddress(addr, peb, configType, deprecated)
+	if err != nil {
+		return nil, err
+	}
+
+	if !header.IsV6UnicastAddress(addr.Address) {
+		return nep, nil
+	}
+
+	snmc := header.SolicitedNodeAddr(addr.Address)
+	if _, err := e.mu.groupAddressableEndpoint.JoinGroup(snmc); err != nil {
+		return nil, err
+	}
+
+	nep.SetKind(stack.PermanentTentative)
+
+	if e.Enabled() {
+		if err := e.mu.ndp.startDuplicateAddressDetection(addr.Address, nep); err != nil {
+			return nil, err
+		}
+	}
+
+	return nep, nil
+}
+
+// RemovePermanentAddress implements stack.AddressableEndpoint.
+func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.removePermanentAddressLocked(addr)
+}
+
+// removePermanentAddressLocked is like RemovePermanentAddress but with locking
+// requirements.
+//
+// Precondition: e.mu must be write locked.
+func (e *endpoint) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
+	r := e.getAddressRLocked(addr)
+	if r == nil || !r.GetKind().IsPermanent() {
+		return tcpip.ErrBadLocalAddress
+	}
+
+	return e.removePermanentEndpointLocked(r, true)
+}
+
+// removePermanentEndpointLocked is like removePermanentAddressLocked except
+// it works with a stack.AddressEndpoint.
+//
+// Precondition: e.mu must be write locked.
+func (e *endpoint) removePermanentEndpointLocked(r stack.AddressEndpoint, allowSLAACInvalidation bool) *tcpip.Error {
+	addr := r.AddressWithPrefix()
+	unicast := header.IsV6UnicastAddress(addr.Address)
+	if unicast {
+		e.mu.ndp.stopDuplicateAddressDetection(addr.Address)
+
+		// If we are removing an address generated via SLAAC, cleanup
+		// its SLAAC resources and notify the integrator.
+		switch r.ConfigType() {
+		case stack.AddressConfigSlaac:
+			e.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
+		case stack.AddressConfigSlaacTemp:
+			e.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
+		}
+	}
+
+	if err := e.mu.addressableEndpoint.RemovePermanentEndpoint(r); err != nil {
+		return err
+	}
+
+	if !unicast {
+		return nil
+	}
+
+	snmc := header.SolicitedNodeAddr(addr.Address)
+	if _, err := e.mu.groupAddressableEndpoint.LeaveGroup(snmc); err != nil && err != tcpip.ErrBadLocalAddress {
+		return err
+	}
+
+	return nil
+}
+
+// hasPermanentAddressLocked returns true if the endpoint has a permanent
+// address equal to the passed address.
+//
+// Precondition: e.mu must be read or write locked.
+func (e *endpoint) hasPermanentAddressRLocked(addr tcpip.Address) bool {
+	r := e.getAddressRLocked(addr)
+	if r == nil {
+		return false
+	}
+
+	return r.GetKind().IsPermanent()
+}
+
+// getAddressRLocked returns the endpoint for the passed address.
+//
+// Precondition: e.mu must be read or write locked.
+func (e *endpoint) getAddressRLocked(localAddr tcpip.Address) stack.AddressEndpoint {
+	return e.mu.addressableEndpoint.ReadOnly().Lookup(localAddr)
+}
+
+// AcquireAssignedAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.getRefOrCreateTempLocked(localAddr, allowTemp, tempPEB)
+}
+
+func (e *endpoint) getRefOrCreateTempLocked(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
+	return e.mu.addressableEndpoint.AcquireAssignedAddress(localAddr, allowTemp, tempPEB)
+}
+
+// AcquirePrimaryAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AcquirePrimaryAddress(remoteAddr tcpip.Address, spoofingOrPromiscuous bool) stack.AddressEndpoint {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.primaryEndpointRLocked(remoteAddr, spoofingOrPromiscuous)
+}
+
+func (e *endpoint) primaryEndpointRLocked(remoteAddr tcpip.Address, spoofingOrPromiscuous bool) stack.AddressEndpoint {
+	// ipv6AddrCandidate is an IPv6 candidate for Source Address Selection (RFC
+	// 6724 section 5).
+	type ipv6AddrCandidate struct {
+		ref   stack.AddressEndpoint
+		scope header.IPv6AddressScope
+	}
+
+	if len(remoteAddr) == 0 {
+		return e.mu.addressableEndpoint.AcquirePrimaryAddress(remoteAddr, spoofingOrPromiscuous)
+	}
+
+	// Create a candidate set of available addresses we can potentially use as a
+	// source address.
+	var cs []ipv6AddrCandidate
+	e.mu.addressableEndpoint.ReadOnly().ForEachPrimaryEndpoint(func(r stack.AddressEndpoint) {
+		// If r is not valid for outgoing connections, it is not a valid endpoint.
+		if !r.IsAssigned(spoofingOrPromiscuous) {
+			return
+		}
+
+		addr := r.AddressWithPrefix().Address
+		scope, err := header.ScopeForIPv6Address(addr)
+		if err != nil {
+			// Should never happen as we got r from the primary IPv6 endpoint list and
+			// ScopeForIPv6Address only returns an error if addr is not an IPv6
+			// address.
+			panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", addr, err))
+		}
+
+		cs = append(cs, ipv6AddrCandidate{
+			ref:   r,
+			scope: scope,
+		})
+	})
+
+	remoteScope, err := header.ScopeForIPv6Address(remoteAddr)
+	if err != nil {
+		// primaryIPv6Endpoint should never be called with an invalid IPv6 address.
+		panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", remoteAddr, err))
+	}
+
+	// Sort the addresses as per RFC 6724 section 5 rules 1-3.
+	//
+	// TODO(b/146021396): Implement rules 4-8 of RFC 6724 section 5.
+	sort.Slice(cs, func(i, j int) bool {
+		sa := cs[i]
+		sb := cs[j]
+
+		// Prefer same address as per RFC 6724 section 5 rule 1.
+		if sa.ref.AddressWithPrefix().Address == remoteAddr {
+			return true
+		}
+		if sb.ref.AddressWithPrefix().Address == remoteAddr {
+			return false
+		}
+
+		// Prefer appropriate scope as per RFC 6724 section 5 rule 2.
+		if sa.scope < sb.scope {
+			return sa.scope >= remoteScope
+		} else if sb.scope < sa.scope {
+			return sb.scope < remoteScope
+		}
+
+		// Avoid deprecated addresses as per RFC 6724 section 5 rule 3.
+		if saDep, sbDep := sa.ref.Deprecated(), sb.ref.Deprecated(); saDep != sbDep {
+			// If sa is not deprecated, it is preferred over sb.
+			return sbDep
+		}
+
+		// Prefer temporary addresses as per RFC 6724 section 5 rule 7.
+		if saTemp, sbTemp := sa.ref.ConfigType() == stack.AddressConfigSlaacTemp, sb.ref.ConfigType() == stack.AddressConfigSlaacTemp; saTemp != sbTemp {
+			return saTemp
+		}
+
+		// sa and sb are equal, return the endpoint that is closest to the front of
+		// the primary endpoint list.
+		return i < j
+	})
+
+	// Return the most preferred address that can have its reference count
+	// incremented.
+	for _, c := range cs {
+		if r := c.ref; r.IncRef() {
+			return r
+		}
+	}
+
+	return nil
+}
+
+// PrimaryAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) PrimaryAddresses() []tcpip.AddressWithPrefix {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpoint.PrimaryAddresses()
+}
+
+// AllPermanentAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) AllPermanentAddresses() []tcpip.AddressWithPrefix {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpoint.AllPermanentAddresses()
+}
+
+// RemoveAllPermanentAddresses implements stack.AddressableEndpoint.
+func (e *endpoint) RemoveAllPermanentAddresses() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.removeAllPermanentAddressesLocked()
+}
+
+func (e *endpoint) removeAllPermanentAddressesLocked() *tcpip.Error {
+	e.mu.ndp.removeSLAACAddresses(false /* keepLinkLocal */)
+	e.stopDADForAllPermanentAddressesLocked()
+	return e.mu.addressableEndpoint.RemoveAllPermanentAddresses()
+}
+
+// JoinGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) JoinGroup(addr tcpip.Address) (bool, *tcpip.Error) {
+	if !header.IsV6MulticastAddress(addr) {
+		return false, tcpip.ErrBadAddress
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.groupAddressableEndpoint.JoinGroup(addr)
+}
+
+// LeaveGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) LeaveGroup(addr tcpip.Address) (bool, *tcpip.Error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.groupAddressableEndpoint.LeaveGroup(addr)
+}
+
+// IsInGroup implements stack.GroupAddressableEndpoint.
+func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.groupAddressableEndpoint.IsInGroup(addr)
+}
+
+// LeaveAllGroups implements stack.GroupAddressableEndpoint.
+func (e *endpoint) LeaveAllGroups() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.groupAddressableEndpoint.LeaveAllGroups()
+}
+
+var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
+var _ stack.NetworkProtocol = (*protocol)(nil)
+
 type protocol struct {
-	// defaultTTL is the current default TTL for the protocol. Only the
-	// uint8 portion of it is meaningful and it must be accessed
-	// atomically.
-	defaultTTL    uint32
+	mu struct {
+		sync.RWMutex
+
+		eps map[*endpoint]struct{}
+	}
+
+	// atomics hold fields that must be accessed using atomic operations.
+	atomics struct {
+		// defaultTTL is the current default TTL for the protocol. Only the
+		// uint8 portion of it is meaningful.
+		defaultTTL uint32
+
+		// forwarding is set to 1 when the protocol has forwarding enabled and 0
+		// when it is disabled.
+		//
+		// May only be updated while mu is write locked. This is so that we can read
+		// the forwarding status without worrying about currently held locks and
+		// synchronize writes when enabling/disabling forwarding for the protocol.
+		forwarding uint32
+	}
+
 	fragmentation *fragmentation.Fragmentation
+
+	// ndpDisp is the NDP event dispatcher that is used to send the netstack
+	// integrator NDP related events.
+	ndpDisp NDPDispatcher
+
+	// ndpConfigs is the default NDP configurations used by an IPv6 endpoint.
+	ndpConfigs NDPConfigurations
+
+	// opaqueIIDOpts hold the options for generating opaque interface identifiers
+	// (IIDs) as outlined by RFC 7217.
+	opaqueIIDOpts OpaqueInterfaceIdentifierOptions
+
+	// tempIIDSeed is used to seed the initial temporary interface identifier
+	// history value used to generate IIDs for temporary SLAAC addresses.
+	tempIIDSeed []byte
+
+	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
+	// to auto-generate an IPv6 link-local address for newly enabled non-loopback
+	// NICs. See the AutoGenIPv6LinkLocal field of Options for more details.
+	autoGenIPv6LinkLocal bool
 }
 
 // Number returns the ipv6 protocol number.
@@ -534,9 +1159,9 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 }
 
 // NewEndpoint creates a new ipv6 endpoint.
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
-	return &endpoint{
-		nicID:         nicID,
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+	e := &endpoint{
+		nic:           nic,
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		nud:           nud,
@@ -544,6 +1169,28 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, linkAddrCache stack.LinkAddres
 		protocol:      p,
 		stack:         st,
 	}
+	e.mu.addressableEndpoint = stack.NewAddressableEndpointState(e)
+	e.mu.groupAddressableEndpoint = stack.NewGroupAddressableEndpointState(e.mu.addressableEndpoint)
+	e.mu.ndp = ndpState{
+		ep:             e,
+		configs:        p.ndpConfigs,
+		dad:            make(map[tcpip.Address]dadState),
+		defaultRouters: make(map[tcpip.Address]defaultRouterState),
+		onLinkPrefixes: make(map[tcpip.Subnet]onLinkPrefixState),
+		slaacPrefixes:  make(map[tcpip.Subnet]slaacPrefixState),
+	}
+	e.mu.ndp.initializeTempAddrState()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.mu.eps[e] = struct{}{}
+	return e
+}
+
+func (p *protocol) forgetEndpoint(e *endpoint) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.mu.eps, e)
 }
 
 // SetOption implements NetworkProtocol.SetOption.
@@ -570,16 +1217,18 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) *tcpip.Err
 
 // SetDefaultTTL sets the default TTL for endpoints created with this protocol.
 func (p *protocol) SetDefaultTTL(ttl uint8) {
-	atomic.StoreUint32(&p.defaultTTL, uint32(ttl))
+	atomic.StoreUint32(&p.atomics.defaultTTL, uint32(ttl))
 }
 
 // DefaultTTL returns the default TTL for endpoints created with this protocol.
 func (p *protocol) DefaultTTL() uint8 {
-	return uint8(atomic.LoadUint32(&p.defaultTTL))
+	return uint8(atomic.LoadUint32(&p.atomics.defaultTTL))
 }
 
 // Close implements stack.TransportProtocol.Close.
-func (*protocol) Close() {}
+func (*protocol) Close() {
+
+}
 
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
@@ -594,6 +1243,31 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	return proto, !fragMore && fragOffset == 0, true
 }
 
+// Forwarding implements stack.ForwardingNetworkProtocol.
+func (p *protocol) Forwarding() bool {
+	return uint8(atomic.LoadUint32(&p.atomics.forwarding)) == 1
+}
+
+// SetForwarding implements stack.ForwardingNetworkProtocol.
+func (p *protocol) SetForwarding(v bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.Forwarding() == v {
+		return
+	}
+
+	if v {
+		atomic.StoreUint32(&p.atomics.forwarding, 1)
+	} else {
+		atomic.StoreUint32(&p.atomics.forwarding, 0)
+	}
+
+	for ep := range p.mu.eps {
+		ep.setForwarding(v)
+	}
+}
+
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
 // payload mtu.
 func calculateMTU(mtu uint32) uint32 {
@@ -604,10 +1278,72 @@ func calculateMTU(mtu uint32) uint32 {
 	return maxPayloadSize
 }
 
-// NewProtocol returns an IPv6 network protocol.
-func NewProtocol() stack.NetworkProtocol {
-	return &protocol{
-		defaultTTL:    DefaultTTL,
+// Options holds options to configure a new protocol.
+type Options struct {
+	// NDPConfigs is the default NDP configurations used by interfaces.
+	//
+	// By default, NDPConfigs will have a zero value for its
+	// DupAddrDetectTransmits field, implying that DAD will not be performed
+	// before assigning an address to a NIC.
+	NDPConfigs NDPConfigurations
+
+	// AutoGenIPv6LinkLocal determines whether or not the stack will attempt to
+	// auto-generate an IPv6 link-local address for newly enabled non-loopback
+	// NICs.
+	//
+	// Note, setting this to true does not mean that a link-local address
+	// will be assigned right away, or at all. If Duplicate Address Detection
+	// is enabled, an address will only be assigned if it successfully resolves.
+	// If it fails, no further attempt will be made to auto-generate an IPv6
+	// link-local address.
+	//
+	// The generated link-local address will follow RFC 4291 Appendix A
+	// guidelines.
+	AutoGenIPv6LinkLocal bool
+
+	// NDPDisp is the NDP event dispatcher that an integrator can provide to
+	// receive NDP related events.
+	NDPDisp NDPDispatcher
+
+	// OpaqueIIDOpts hold the options for generating opaque interface
+	// identifiers (IIDs) as outlined by RFC 7217.
+	OpaqueIIDOpts OpaqueInterfaceIdentifierOptions
+
+	// TempIIDSeed is used to seed the initial temporary interface identifier
+	// history value used to generate IIDs for temporary SLAAC addresses.
+	//
+	// Temporary SLAAC adresses are short-lived addresses which are unpredictable
+	// and random from the perspective of other nodes on the network. It is
+	// recommended that the seed be a random byte buffer of at least
+	// header.IIDSize bytes to make sure that temporary SLAAC addresses are
+	// sufficiently random. It should follow minimum randomness requirements for
+	// security as outlined by RFC 4086.
+	//
+	// Note: using a nil value, the same seed across netstack program runs, or a
+	// seed that is too small would reduce randomness and increase predictability,
+	// defeating the purpose of temporary SLAAC addresses.
+	TempIIDSeed []byte
+}
+
+// NewProtocolWithOptions returns an IPv6 network protocol.
+func NewProtocolWithOptions(opts Options) stack.NetworkProtocol {
+	opts.NDPConfigs.validate()
+
+	p := &protocol{
 		fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
+
+		ndpDisp:              opts.NDPDisp,
+		ndpConfigs:           opts.NDPConfigs,
+		opaqueIIDOpts:        opts.OpaqueIIDOpts,
+		tempIIDSeed:          opts.TempIIDSeed,
+		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 	}
+	p.mu.eps = make(map[*endpoint]struct{})
+	p.SetDefaultTTL(DefaultTTL)
+	return p
+}
+
+// NewProtocol is equivalent to NewProtocolWithOptions with an empty Options.
+func NewProtocol() stack.NetworkProtocol {
+	return NewProtocolWithOptions(Options{})
 }

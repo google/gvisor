@@ -207,14 +207,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			return
 		}
 
-		s := r.Stack()
-		if isTentative, err := s.IsAddrTentative(e.nicID, targetAddr); err != nil {
-			// We will only get an error if the NIC is unrecognized, which should not
-			// happen. For now, drop this packet.
-			//
-			// TODO(b/141002840): Handle this better?
-			return
-		} else if isTentative {
+		if e.isAddrTentative(targetAddr) {
 			// If the target address is tentative and the source of the packet is a
 			// unicast (specified) address, then the source of the packet is
 			// attempting to perform address resolution on the target. In this case,
@@ -227,7 +220,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			// stack know so it can handle such a scenario and do nothing further with
 			// the NS.
 			if r.RemoteAddress == header.IPv6Any {
-				s.DupTentativeAddrDetected(e.nicID, targetAddr)
+				_ = e.dupTentativeAddrDetected(targetAddr)
 			}
 
 			// Do not handle neighbor solicitations targeted to an address that is
@@ -240,7 +233,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// section 5.4.3.
 
 		// Is the NS targeting us?
-		if s.CheckLocalAddress(e.nicID, ProtocolNumber, targetAddr) == 0 {
+		if r.Stack().CheckLocalAddress(e.NICID(), ProtocolNumber, targetAddr) == 0 {
 			return
 		}
 
@@ -275,7 +268,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		} else if e.nud != nil {
 			e.nud.HandleProbe(r.RemoteAddress, r.LocalAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		} else {
-			e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, sourceLinkAddr)
+			e.linkAddrCache.AddLinkAddress(e.NICID(), r.RemoteAddress, sourceLinkAddr)
 		}
 
 		// ICMPv6 Neighbor Solicit messages are always sent to
@@ -352,20 +345,12 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// NDP datagrams are very small and ToView() will not incur allocations.
 		na := header.NDPNeighborAdvert(payload.ToView())
 		targetAddr := na.TargetAddress()
-		s := r.Stack()
-
-		if isTentative, err := s.IsAddrTentative(e.nicID, targetAddr); err != nil {
-			// We will only get an error if the NIC is unrecognized, which should not
-			// happen. For now short-circuit this packet.
-			//
-			// TODO(b/141002840): Handle this better?
-			return
-		} else if isTentative {
+		if e.isAddrTentative(targetAddr) {
 			// We just got an NA from a node that owns an address we are performing
 			// DAD on, implying the address is not unique. In this case we let the
 			// stack know so it can handle such a scenario and do nothing furthur with
 			// the NDP NA.
-			s.DupTentativeAddrDetected(e.nicID, targetAddr)
+			_ = e.dupTentativeAddrDetected(targetAddr)
 			return
 		}
 
@@ -395,7 +380,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// address cache with the link address for the target of the message.
 		if len(targetLinkAddr) != 0 {
 			if e.nud == nil {
-				e.linkAddrCache.AddLinkAddress(e.nicID, targetAddr, targetLinkAddr)
+				e.linkAddrCache.AddLinkAddress(e.NICID(), targetAddr, targetLinkAddr)
 				return
 			}
 
@@ -566,9 +551,10 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			e.nud.HandleProbe(routerAddr, r.LocalAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 
-		// Tell the NIC to handle the RA.
-		stack := r.Stack()
-		stack.HandleNDPRA(e.nicID, routerAddr, ra)
+		// Handle the RA.
+		e.mu.Lock()
+		e.mu.ndp.handleRA(routerAddr, ra)
+		e.mu.Unlock()
 
 	case header.ICMPv6RedirectMsg:
 		// TODO(gvisor.dev/issue/2285): Call `e.nud.HandleProbe` after validating
