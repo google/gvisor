@@ -48,6 +48,11 @@ std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
 class MonotonicVDSOClockTest : public ::testing::TestWithParam<clockid_t> {};
 
 TEST_P(MonotonicVDSOClockTest, IsCorrect) {
+  // The VDSO implementation of clock_gettime() uses the TSC. On KVM, sentry and
+  // application TSCs can be very desynchronized; see
+  // sentry/platform/kvm/kvm.vCPU.setSystemTime().
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   // Check that when we alternate readings from the clock_gettime syscall and
   // the VDSO's implementation, we observe the combined sequence as being
   // monotonic.
