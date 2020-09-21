@@ -817,7 +817,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// per-interface basis; it is a stack-wide configuration, so we check
 	// stack's forwarding flag to determine if the NIC is a routing
 	// interface.
-	if !ndp.configs.HandleRAs || ndp.nic.stack.forwarding {
+	if !ndp.configs.HandleRAs || ndp.nic.stack.Forwarding(header.IPv6ProtocolNumber) {
 		return
 	}
 

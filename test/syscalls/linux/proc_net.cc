@@ -39,6 +39,7 @@ namespace testing {
 namespace {
 
 constexpr const char kProcNet[] = "/proc/net";
+constexpr const char kIpForward[] = "/proc/sys/net/ipv4/ip_forward";
 
 TEST(ProcNetSymlinkTarget, FileMode) {
   struct stat s;
@@ -515,6 +516,43 @@ TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
               SyscallSucceedsWithValue(sizeof(kMessage)));
   EXPECT_EQ(strcmp(buf, "100\n"), 0);
 }
+
+TEST(ProcSysNetIpv4IpForward, Exists) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDONLY));
+}
+
+TEST(ProcSysNetIpv4IpForward, DefaultValueEqZero) {
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDONLY));
+
+  char buf = 101;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_EQ(buf, '0') << "unexpected ip_forward: " << buf;
+}
+
+TEST(ProcSysNetIpv4IpForward, CanReadAndWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDWR));
+
+  char buf;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_TRUE(buf == '0' || buf == '1') << "unexpected ip_forward: " << buf;
+
+  // constexpr char to_write = '1';
+  char to_write = (buf == '1') ? '0' : '1';
+  EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
+              SyscallSucceedsWithValue(sizeof(to_write)));
+
+  buf = 0;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(buf, to_write);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

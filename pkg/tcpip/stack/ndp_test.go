@@ -1120,7 +1120,7 @@ func TestNoRouterDiscovery(t *testing.T) {
 				},
 				NDPDisp: &ndpDisp,
 			})
-			s.SetForwarding(forwarding)
+			s.SetForwarding(ipv6.ProtocolNumber, forwarding)
 
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(1) = %s", err)
@@ -1365,7 +1365,7 @@ func TestNoPrefixDiscovery(t *testing.T) {
 				},
 				NDPDisp: &ndpDisp,
 			})
-			s.SetForwarding(forwarding)
+			s.SetForwarding(ipv6.ProtocolNumber, forwarding)
 
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(1) = %s", err)
@@ -1723,7 +1723,7 @@ func TestNoAutoGenAddr(t *testing.T) {
 				},
 				NDPDisp: &ndpDisp,
 			})
-			s.SetForwarding(forwarding)
+			s.SetForwarding(ipv6.ProtocolNumber, forwarding)
 
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(1) = %s", err)
@@ -4640,7 +4640,7 @@ func TestCleanupNDPState(t *testing.T) {
 			name: "Enable forwarding",
 			cleanupFn: func(t *testing.T, s *stack.Stack) {
 				t.Helper()
-				s.SetForwarding(true)
+				s.SetForwarding(ipv6.ProtocolNumber, true)
 			},
 			keepAutoGenLinkLocal: true,
 			maxAutoGenAddrEvents: 4,
@@ -5286,11 +5286,11 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			name: "Enable and disable forwarding",
 			startFn: func(t *testing.T, s *stack.Stack) {
 				t.Helper()
-				s.SetForwarding(false)
+				s.SetForwarding(ipv6.ProtocolNumber, false)
 			},
 			stopFn: func(t *testing.T, s *stack.Stack, _ bool) {
 				t.Helper()
-				s.SetForwarding(true)
+				s.SetForwarding(ipv6.ProtocolNumber, true)
 			},
 		},
 

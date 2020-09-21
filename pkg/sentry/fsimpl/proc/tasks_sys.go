@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -67,6 +68,7 @@ func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) *ke
 				"tcp_rmem":     fs.newDentry(root, fs.NextIno(), 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
 				"tcp_sack":     fs.newDentry(root, fs.NextIno(), 0644, &tcpSackData{stack: stack}),
 				"tcp_wmem":     fs.newDentry(root, fs.NextIno(), 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
+				"ip_forward":   fs.newDentry(root, fs.NextIno(), 0444, &ipForwarding{stack: stack}),
 
 				// The following files are simple stubs until they are implemented in
 				// netstack, most of these files are configuration related. We use the
@@ -353,4 +355,64 @@ func (d *tcpMemData) writeSizeLocked(size inet.TCPBufferSize) error {
 	default:
 		panic(fmt.Sprintf("unknown tcpMemFile type: %v", d.dir))
 	}
+}
+
+// ipForwarding implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/ip_forwarding.
+//
+// +stateify savable
+type ipForwarding struct {
+	kernfs.DynamicBytesFile
+
+	stack   inet.Stack `state:"wait"`
+	enabled *bool
+}
+
+var _ vfs.WritableDynamicBytesSource = (*ipForwarding)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if ipf.enabled == nil {
+		enabled := ipf.stack.Forwarding(ipv4.ProtocolNumber)
+		ipf.enabled = &enabled
+	}
+
+	val := "0\n"
+	if *ipf.enabled {
+		// Technically, this is not quite compatible with Linux. Linux stores these
+		// as an integer, so if you write "2" into tcp_sack, you should get 2 back.
+		// Tough luck.
+		val = "1\n"
+	}
+	buf.WriteString(val)
+
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (ipf *ipForwarding) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, syserror.EINVAL
+	}
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit input size so as not to impact performance if input size is large.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+	if ipf.enabled == nil {
+		ipf.enabled = new(bool)
+	}
+	*ipf.enabled = v != 0
+	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, *ipf.enabled); err != nil {
+		return 0, err
+	}
+	return n, nil
 }

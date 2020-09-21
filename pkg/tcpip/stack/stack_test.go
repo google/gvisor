@@ -2091,7 +2091,7 @@ func TestNICForwarding(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 			})
-			s.SetForwarding(true)
+			s.SetForwarding(fakeNetNumber, true)
 
 			ep1 := channel.New(10, defaultMTU, "")
 			if err := s.CreateNIC(nicID1, ep1); err != nil {

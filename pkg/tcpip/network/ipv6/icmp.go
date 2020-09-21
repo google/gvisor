@@ -477,7 +477,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		stack := r.Stack()
 
 		// Is the networking stack operating as a router?
-		if !stack.Forwarding() {
+		if !stack.Forwarding(ProtocolNumber) {
 			// ... No, silently drop the packet.
 			received.RouterOnlyPacketsDroppedByHost.Increment()
 			return
