@@ -2413,6 +2413,7 @@ cc_library(
         ":socket_test_util",
         "@com_google_absl//absl/memory",
         gtest,
+        "//test/util:posix_error",
         "//test/util:test_util",
     ],
     alwayslink = 1,
