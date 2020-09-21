@@ -753,6 +753,19 @@ PosixErrorOr<int> SendMsg(int sock, msghdr* msg, char buf[], int buf_size) {
   return ret;
 }
 
+PosixErrorOr<int> RecvMsgTimeout(int sock, char buf[], int buf_size,
+                                 int timeout) {
+  fd_set rfd;
+  struct timeval to = {.tv_sec = timeout, .tv_usec = 0};
+  FD_ZERO(&rfd);
+  FD_SET(sock, &rfd);
+
+  int ret;
+  RETURN_ERROR_IF_SYSCALL_FAIL(ret = select(1, &rfd, NULL, NULL, &to));
+  RETURN_ERROR_IF_SYSCALL_FAIL(ret = recv(sock, buf, buf_size, MSG_DONTWAIT));
+  return ret;
+}
+
 void RecvNoData(int sock) {
   char data = 0;
   struct iovec iov;
