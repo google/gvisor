@@ -15,95 +15,38 @@
 package stack
 
 import (
-	"math"
 	"testing"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-var _ LinkEndpoint = (*testLinkEndpoint)(nil)
-
-// A LinkEndpoint that throws away outgoing packets.
-//
-// We use this instead of the channel endpoint as the channel package depends on
-// the stack package which this test lives in, causing a cyclic dependency.
-type testLinkEndpoint struct {
-	dispatcher NetworkDispatcher
-}
-
-// Attach implements LinkEndpoint.Attach.
-func (e *testLinkEndpoint) Attach(dispatcher NetworkDispatcher) {
-	e.dispatcher = dispatcher
-}
-
-// IsAttached implements LinkEndpoint.IsAttached.
-func (e *testLinkEndpoint) IsAttached() bool {
-	return e.dispatcher != nil
-}
-
-// MTU implements LinkEndpoint.MTU.
-func (*testLinkEndpoint) MTU() uint32 {
-	return math.MaxUint16
-}
-
-// Capabilities implements LinkEndpoint.Capabilities.
-func (*testLinkEndpoint) Capabilities() LinkEndpointCapabilities {
-	return CapabilityResolutionRequired
-}
-
-// MaxHeaderLength implements LinkEndpoint.MaxHeaderLength.
-func (*testLinkEndpoint) MaxHeaderLength() uint16 {
-	return 0
-}
-
-// LinkAddress returns the link address of this endpoint.
-func (*testLinkEndpoint) LinkAddress() tcpip.LinkAddress {
-	return ""
-}
-
-// Wait implements LinkEndpoint.Wait.
-func (*testLinkEndpoint) Wait() {}
-
-// WritePacket implements LinkEndpoint.WritePacket.
-func (e *testLinkEndpoint) WritePacket(*Route, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error {
-	return nil
-}
-
-// WritePackets implements LinkEndpoint.WritePackets.
-func (e *testLinkEndpoint) WritePackets(*Route, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	// Our tests don't use this so we don't support it.
-	return 0, tcpip.ErrNotSupported
-}
-
-// WriteRawPacket implements LinkEndpoint.WriteRawPacket.
-func (e *testLinkEndpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {
-	// Our tests don't use this so we don't support it.
-	return tcpip.ErrNotSupported
-}
-
-// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
-func (*testLinkEndpoint) ARPHardwareType() header.ARPHardwareType {
-	panic("not implemented")
-}
-
-// AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *testLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-	panic("not implemented")
-}
-
+var _ GroupAddressableEndpoint = (*testIPv6Endpoint)(nil)
+var _ AddressableEndpoint = (*testIPv6Endpoint)(nil)
 var _ NetworkEndpoint = (*testIPv6Endpoint)(nil)
+var _ NDPEndpoint = (*testIPv6Endpoint)(nil)
 
 // An IPv6 NetworkEndpoint that throws away outgoing packets.
 //
 // We use this instead of ipv6.endpoint because the ipv6 package depends on
 // the stack package which this test lives in, causing a cyclic dependency.
 type testIPv6Endpoint struct {
+	*AddressableEndpointState
+
 	nicID    tcpip.NICID
 	linkEP   LinkEndpoint
 	protocol *testIPv6Protocol
+
+	invalidatedRtr tcpip.Address
+}
+
+func (*testIPv6Endpoint) Enable() *tcpip.Error {
+	return nil
+}
+
+func (*testIPv6Endpoint) Disable() *tcpip.Error {
+	return nil
 }
 
 // DefaultTTL implements NetworkEndpoint.DefaultTTL.
@@ -154,11 +97,33 @@ func (*testIPv6Endpoint) HandlePacket(*Route, *PacketBuffer) {
 }
 
 // Close implements NetworkEndpoint.Close.
-func (*testIPv6Endpoint) Close() {}
+func (e *testIPv6Endpoint) Close() {
+	_ = e.AddressableEndpointState.RemoveAllPermanentAddresses()
+}
 
 // NetworkProtocolNumber implements NetworkEndpoint.NetworkProtocolNumber.
 func (*testIPv6Endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return header.IPv6ProtocolNumber
+}
+
+func (*testIPv6Endpoint) JoinGroup(tcpip.Address) (bool, *tcpip.Error) {
+	return false, nil
+}
+
+func (*testIPv6Endpoint) LeaveGroup(tcpip.Address) (bool, *tcpip.Error) {
+	return false, nil
+}
+
+func (*testIPv6Endpoint) IsInGroup(tcpip.Address) bool {
+	return false
+}
+
+func (*testIPv6Endpoint) LeaveAllGroups() *tcpip.Error {
+	return nil
+}
+
+func (e *testIPv6Endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
+	e.invalidatedRtr = rtr
 }
 
 var _ NetworkProtocol = (*testIPv6Protocol)(nil)
@@ -192,11 +157,12 @@ func (*testIPv6Protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) 
 }
 
 // NewEndpoint implements NetworkProtocol.NewEndpoint.
-func (p *testIPv6Protocol) NewEndpoint(nicID tcpip.NICID, _ LinkAddressCache, _ NUDHandler, _ TransportDispatcher, linkEP LinkEndpoint, _ *Stack) NetworkEndpoint {
+func (p *testIPv6Protocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, _ TransportDispatcher, linkEP LinkEndpoint, _ *Stack) NetworkEndpoint {
 	return &testIPv6Endpoint{
-		nicID:    nicID,
-		linkEP:   linkEP,
-		protocol: p,
+		AddressableEndpointState: NewAddressableEndpointState(),
+		nicID:                    nic.ID(),
+		linkEP:                   linkEP,
+		protocol:                 p,
 	}
 }
 
@@ -239,38 +205,6 @@ func (*testIPv6Protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAdd
 		return header.EthernetAddressFromMulticastIPv6Address(addr), true
 	}
 	return "", false
-}
-
-// Test the race condition where a NIC is removed and an RS timer fires at the
-// same time.
-func TestRemoveNICWhileHandlingRSTimer(t *testing.T) {
-	const (
-		nicID = 1
-
-		maxRtrSolicitations = 5
-	)
-
-	e := testLinkEndpoint{}
-	s := New(Options{
-		NetworkProtocols: []NetworkProtocol{&testIPv6Protocol{}},
-		NDPConfigs: NDPConfigurations{
-			MaxRtrSolicitations:     maxRtrSolicitations,
-			RtrSolicitationInterval: minimumRtrSolicitationInterval,
-		},
-	})
-
-	if err := s.CreateNIC(nicID, &e); err != nil {
-		t.Fatalf("s.CreateNIC(%d, _) = %s", nicID, err)
-	}
-
-	s.mu.Lock()
-	// Wait for the router solicitation timer to fire and block trying to obtain
-	// the stack lock when doing link address resolution.
-	time.Sleep(minimumRtrSolicitationInterval * 2)
-	if err := s.removeNICLocked(nicID); err != nil {
-		t.Fatalf("s.removeNICLocked(%d) = %s", nicID, err)
-	}
-	s.mu.Unlock()
 }
 
 func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {

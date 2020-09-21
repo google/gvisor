@@ -27,6 +27,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 const (
@@ -233,16 +234,14 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 		},
 	}
 
+	proto := &testIPv6Protocol{}
+	nic.networkEndpoints = make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint)
+	nic.networkEndpoints[header.IPv6ProtocolNumber] = proto.NewEndpoint(&nic, nil, nil, nil, nil, nil)
+
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	nudState := NewNUDState(c, rng)
 	linkRes := entryTestLinkResolver{}
 	entry := newNeighborEntry(&nic, entryTestAddr1 /* remoteAddr */, entryTestAddr2 /* localAddr */, nudState, &linkRes)
-
-	// Stub out ndpState to verify modification of default routers.
-	nic.mu.ndp = ndpState{
-		nic:            &nic,
-		defaultRouters: make(map[tcpip.Address]defaultRouterState),
-	}
 
 	// Stub out the neighbor cache to verify deletion from the cache.
 	nic.neigh = &neighborCache{
@@ -816,7 +815,11 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
+	ipv6EP := e.nic.networkEndpoints[header.IPv6ProtocolNumber].(*testIPv6Endpoint)
+
 	e.mu.Lock()
+	e.protocol = header.IPv6ProtocolNumber
+	ipv6EP.invalidatedRtr = ""
 	e.handlePacketQueuedLocked()
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: true,
@@ -829,9 +832,7 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	if got, want := e.isRouter, true; got != want {
 		t.Errorf("got e.isRouter = %t, want = %t", got, want)
 	}
-	e.nic.mu.ndp.defaultRouters[entryTestAddr1] = defaultRouterState{
-		invalidationJob: e.nic.stack.newJob(&testLocker{}, func() {}),
-	}
+
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  false,
@@ -840,9 +841,10 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	if got, want := e.isRouter, false; got != want {
 		t.Errorf("got e.isRouter = %t, want = %t", got, want)
 	}
-	if _, ok := e.nic.mu.ndp.defaultRouters[entryTestAddr1]; ok {
-		t.Errorf("unexpected defaultRouter for %s", entryTestAddr1)
+	if ipv6EP.invalidatedRtr != e.neigh.Addr {
+		t.Errorf("got ipv6EP.invalidatedRtr = %s, want = %s", ipv6EP.invalidatedRtr, e.neigh.Addr)
 	}
+	ipv6EP.invalidatedRtr = ""
 	e.mu.Unlock()
 
 	wantProbes := []entryTestProbeInfo{

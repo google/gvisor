@@ -17,6 +17,7 @@ package stack
 import (
 	"encoding/binary"
 	"math"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,6 +46,8 @@ const (
 // use the first three: destination address, source address, and transport
 // protocol. They're all one byte fields to simplify parsing.
 type fwdTestNetworkEndpoint struct {
+	*AddressableEndpointState
+
 	nicID      tcpip.NICID
 	proto      *fwdTestNetworkProtocol
 	dispatcher TransportDispatcher
@@ -52,6 +55,14 @@ type fwdTestNetworkEndpoint struct {
 }
 
 var _ NetworkEndpoint = (*fwdTestNetworkEndpoint)(nil)
+
+func (*fwdTestNetworkEndpoint) Enable() *tcpip.Error {
+	return nil
+}
+
+func (*fwdTestNetworkEndpoint) Disable() *tcpip.Error {
+	return nil
+}
 
 func (f *fwdTestNetworkEndpoint) MTU() uint32 {
 	return f.ep.MTU() - uint32(f.MaxHeaderLength())
@@ -106,7 +117,9 @@ func (*fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBu
 	return tcpip.ErrNotSupported
 }
 
-func (*fwdTestNetworkEndpoint) Close() {}
+func (f *fwdTestNetworkEndpoint) Close() {
+	f.AddressableEndpointState.RemoveAllPermanentAddresses()
+}
 
 // fwdTestNetworkProtocol is a network-layer protocol that implements Address
 // resolution.
@@ -116,6 +129,13 @@ type fwdTestNetworkProtocol struct {
 	addrResolveDelay       time.Duration
 	onLinkAddressResolved  func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress)
 	onResolveStaticAddress func(tcpip.Address) (tcpip.LinkAddress, bool)
+
+	// atomics hold fields that must be accessed using atomic operations.
+	atomics struct {
+		// forwarding is set to 1 when the protocol has forwarding enabled and 0
+		// when it is disabled.
+		forwarding uint32
+	}
 }
 
 var _ NetworkProtocol = (*fwdTestNetworkProtocol)(nil)
@@ -145,12 +165,13 @@ func (*fwdTestNetworkProtocol) Parse(pkt *PacketBuffer) (tcpip.TransportProtocol
 	return tcpip.TransportProtocolNumber(netHeader[protocolNumberOffset]), true, true
 }
 
-func (f *fwdTestNetworkProtocol) NewEndpoint(nicID tcpip.NICID, _ LinkAddressCache, _ NUDHandler, dispatcher TransportDispatcher, ep LinkEndpoint, _ *Stack) NetworkEndpoint {
+func (f *fwdTestNetworkProtocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, dispatcher TransportDispatcher, ep LinkEndpoint, _ *Stack) NetworkEndpoint {
 	return &fwdTestNetworkEndpoint{
-		nicID:      nicID,
-		proto:      f,
-		dispatcher: dispatcher,
-		ep:         ep,
+		AddressableEndpointState: NewAddressableEndpointState(),
+		nicID:                    nic.ID(),
+		proto:                    f,
+		dispatcher:               dispatcher,
+		ep:                       ep,
 	}
 }
 
@@ -184,6 +205,20 @@ func (f *fwdTestNetworkProtocol) ResolveStaticAddress(addr tcpip.Address) (tcpip
 
 func (*fwdTestNetworkProtocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 	return fwdTestNetNumber
+}
+
+// Forwarding implements stack.ForwardingNetworkProtocol.
+func (f *fwdTestNetworkProtocol) Forwarding() bool {
+	return uint8(atomic.LoadUint32(&f.atomics.forwarding)) == 1
+}
+
+// SetForwarding implements stack.ForwardingNetworkProtocol.
+func (f *fwdTestNetworkProtocol) SetForwarding(v bool) {
+	if v {
+		atomic.StoreUint32(&f.atomics.forwarding, 1)
+	} else {
+		atomic.StoreUint32(&f.atomics.forwarding, 0)
+	}
 }
 
 // fwdTestPacketInfo holds all the information about an outbound packet.
