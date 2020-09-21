@@ -15,7 +15,10 @@
 // Package inet defines semantics for IP stacks.
 package inet
 
-import "gvisor.dev/gvisor/pkg/tcpip/stack"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+)
 
 // Stack represents a TCP/IP stack.
 type Stack interface {
@@ -80,6 +83,12 @@ type Stack interface {
 	// RestoreCleanupEndpoints adds endpoints to cleanup tracking. This is useful
 	// for restoring a stack after a save.
 	RestoreCleanupEndpoints([]stack.TransportEndpoint)
+
+	// Forwarding returns if packet forwarding between NICs is enabled.
+	Forwarding(protocol tcpip.NetworkProtocolNumber) bool
+
+	// SetForwarding enables or disables packet forwarding between NICs.
+	SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error
 }
 
 // Interface contains information about a network interface.

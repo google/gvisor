@@ -1376,6 +1376,35 @@ func (x *tcpMemData) StateLoad(m state.Source) {
 	m.LoadWait(2, &x.stack)
 }
 
+func (x *ipForwarding) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.ipForwarding"
+}
+
+func (x *ipForwarding) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"stack",
+		"enabled",
+	}
+}
+
+func (x *ipForwarding) beforeSave() {}
+
+func (x *ipForwarding) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.DynamicBytesFile)
+	m.Save(1, &x.stack)
+	m.Save(2, &x.enabled)
+}
+
+func (x *ipForwarding) afterLoad() {}
+
+func (x *ipForwarding) StateLoad(m state.Source) {
+	m.Load(0, &x.DynamicBytesFile)
+	m.LoadWait(1, &x.stack)
+	m.Load(2, &x.enabled)
+}
+
 func init() {
 	state.Register((*fdDirInodeRefs)(nil))
 	state.Register((*fdInfoDirInodeRefs)(nil))
@@ -1425,4 +1454,5 @@ func init() {
 	state.Register((*tcpSackData)(nil))
 	state.Register((*tcpRecoveryData)(nil))
 	state.Register((*tcpMemData)(nil))
+	state.Register((*ipForwarding)(nil))
 }
