@@ -14,6 +14,9 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+
+#include <ctime>
+
 #ifdef __linux__
 #include <linux/errqueue.h>
 #include <linux/filter.h>
@@ -834,8 +837,9 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
 
   // Receive the data. It works because it was sent before the connect.
   char received[sizeof(buf)];
-  EXPECT_THAT(recv(bind_.get(), received, sizeof(received), 0),
-              SyscallSucceedsWithValue(sizeof(received)));
+  EXPECT_THAT(
+      RecvMsgTimeout(bind_.get(), received, sizeof(received), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(received)));
   EXPECT_EQ(memcmp(buf, received, sizeof(buf)), 0);
 
   // Send again. This time it should not be received.
@@ -924,7 +928,9 @@ TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
               SyscallSucceedsWithValue(1));
 
   // We should get the data even though read has been shutdown.
-  EXPECT_THAT(recv(bind_.get(), received, 2, 0), SyscallSucceedsWithValue(2));
+  EXPECT_THAT(
+      RecvMsgTimeout(bind_.get(), received, 2 /*buf_size*/, 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(2));
 
   // Because we read less than the entire packet length, since it's a packet
   // based socket any subsequent reads should return EWOULDBLOCK.
@@ -1692,9 +1698,9 @@ TEST_P(UdpSocketTest, RecvBufLimitsEmptyRcvBuf) {
         sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
         SyscallSucceedsWithValue(buf.size()));
     std::vector<char> received(buf.size());
-    EXPECT_THAT(
-        recv(bind_.get(), received.data(), received.size(), MSG_DONTWAIT),
-        SyscallSucceedsWithValue(received.size()));
+    EXPECT_THAT(RecvMsgTimeout(bind_.get(), received.data(), received.size(),
+                               1 /*timeout*/),
+                IsPosixErrorOkAndHolds(received.size()));
   }
 
   {
@@ -1708,9 +1714,9 @@ TEST_P(UdpSocketTest, RecvBufLimitsEmptyRcvBuf) {
         SyscallSucceedsWithValue(buf.size()));
 
     std::vector<char> received(buf.size());
-    EXPECT_THAT(
-        recv(bind_.get(), received.data(), received.size(), MSG_DONTWAIT),
-        SyscallSucceedsWithValue(received.size()));
+    ASSERT_THAT(RecvMsgTimeout(bind_.get(), received.data(), received.size(),
+                               1 /*timeout*/),
+                IsPosixErrorOkAndHolds(received.size()));
   }
 }
 
@@ -1779,9 +1785,9 @@ TEST_P(UdpSocketTest, RecvBufLimits) {
     for (int i = 0; i < sent - 1; i++) {
       // Receive the data.
       std::vector<char> received(buf.size());
-      EXPECT_THAT(
-          recv(bind_.get(), received.data(), received.size(), MSG_DONTWAIT),
-          SyscallSucceedsWithValue(received.size()));
+      EXPECT_THAT(RecvMsgTimeout(bind_.get(), received.data(), received.size(),
+                                 1 /*timeout*/),
+                  IsPosixErrorOkAndHolds(received.size()));
       EXPECT_EQ(memcmp(buf.data(), received.data(), buf.size()), 0);
     }
 
