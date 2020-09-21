@@ -27,6 +27,7 @@
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -73,9 +74,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNoGroup) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that not setting a default send interface prevents multicast packets
@@ -207,8 +208,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackAddr) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -262,8 +264,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNic) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -317,8 +320,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddr) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -372,8 +376,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNic) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -431,8 +436,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrConnect) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -490,8 +496,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicConnect) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -545,8 +552,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelf) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -600,8 +608,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelf) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -659,9 +668,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfConnect) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that multicast works when the default send interface is configured by
@@ -717,9 +726,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfConnect) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that multicast works when the default send interface is configured by
@@ -775,8 +784,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfNoLoop) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -834,8 +844,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfNoLoop) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -907,9 +918,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastDropAddr) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that dropping a group membership prevents multicast packets from being
@@ -965,9 +976,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastDropNic) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIfZero) {
@@ -1319,9 +1330,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionOnTwoSockets) {
     // Check that we received the multicast packet on both sockets.
     for (auto& sockets : socket_pairs) {
       char recv_buf[sizeof(send_buf)] = {};
-      ASSERT_THAT(
-          RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf), 0),
-          SyscallSucceedsWithValue(sizeof(recv_buf)));
+      ASSERT_THAT(RecvMsgTimeout(sockets->second_fd(), recv_buf,
+                                 sizeof(recv_buf), 1 /*timeout*/),
+                  IsPosixErrorOkAndHolds(sizeof(recv_buf)));
       EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
     }
   }
@@ -1398,9 +1409,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
     // Check that we received the multicast packet on both sockets.
     for (auto& sockets : socket_pairs) {
       char recv_buf[sizeof(send_buf)] = {};
-      ASSERT_THAT(
-          RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf), 0),
-          SyscallSucceedsWithValue(sizeof(recv_buf)));
+      ASSERT_THAT(RecvMsgTimeout(sockets->second_fd(), recv_buf,
+                                 sizeof(recv_buf), 1 /*timeout*/),
+                  IsPosixErrorOkAndHolds(sizeof(recv_buf)));
       EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
     }
   }
@@ -1421,9 +1432,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
 
     char recv_buf[sizeof(send_buf)] = {};
     for (auto& sockets : socket_pairs) {
-      ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf,
-                                   sizeof(recv_buf), MSG_DONTWAIT),
-                  SyscallFailsWithErrno(EAGAIN));
+      ASSERT_THAT(RecvMsgTimeout(sockets->second_fd(), recv_buf,
+                                 sizeof(recv_buf), 1 /*timeout*/),
+                  PosixErrorIs(EAGAIN, ::testing::_));
     }
   }
 }
@@ -1474,9 +1485,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenJoinThenReceive) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
@@ -1518,9 +1529,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenNoJoinThenNoReceive) {
 
   // Check that we don't receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that a socket can bind to a multicast address and still send out
@@ -1568,9 +1579,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenSend) {
 
   // Check that we received the packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
@@ -1615,9 +1626,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToBcastThenReceive) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
@@ -1666,9 +1677,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToBcastThenSend) {
 
   // Check that we received the packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
@@ -1726,17 +1737,17 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution_NoRandomSave) {
     // of the other sockets to have received it, but we will check that later.
     char recv_buf[sizeof(send_buf)] = {};
     EXPECT_THAT(
-        RetryEINTR(recv)(last->get(), recv_buf, sizeof(recv_buf), MSG_DONTWAIT),
-        SyscallSucceedsWithValue(sizeof(send_buf)));
+        RecvMsgTimeout(last->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+        IsPosixErrorOkAndHolds(sizeof(send_buf)));
     EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
   }
 
   // Verify that no other messages were received.
   for (auto& socket : sockets) {
     char recv_buf[kMessageSize] = {};
-    EXPECT_THAT(RetryEINTR(recv)(socket->get(), recv_buf, sizeof(recv_buf),
-                                 MSG_DONTWAIT),
-                SyscallFailsWithErrno(EAGAIN));
+    EXPECT_THAT(RecvMsgTimeout(socket->get(), recv_buf, sizeof(recv_buf),
+                               1 /*timeout*/),
+                PosixErrorIs(EAGAIN, ::testing::_));
   }
 }
 
@@ -2113,12 +2124,12 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
   // balancing (REUSEPORT) instead of the most recently bound socket
   // (REUSEADDR).
   char recv_buf[kMessageSize] = {};
-  EXPECT_THAT(RetryEINTR(recv)(receiver1->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(kMessageSize));
-  EXPECT_THAT(RetryEINTR(recv)(receiver2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(kMessageSize));
+  EXPECT_THAT(RecvMsgTimeout(receiver1->get(), recv_buf, sizeof(recv_buf),
+                             1 /*timeout*/),
+              IsPosixErrorOkAndHolds(kMessageSize));
+  EXPECT_THAT(RecvMsgTimeout(receiver2->get(), recv_buf, sizeof(recv_buf),
+                             1 /*timeout*/),
+              IsPosixErrorOkAndHolds(kMessageSize));
 }
 
 // Test that socket will receive packet info control message.
