@@ -293,7 +293,7 @@ func (s *Stat) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Stat) MarshalUnsafe(dst []byte) {
-    if s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
+    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         // Type Stat doesn't have a packed layout in memory, fallback to MarshalBytes.
@@ -344,7 +344,7 @@ func (s *Stat) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (s *Stat) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if !s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
