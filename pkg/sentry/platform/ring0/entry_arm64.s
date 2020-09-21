@@ -27,8 +27,15 @@
 
 // ERET returns using the ELR and SPSR for the current exception level.
 #define ERET() \
-  WORD $0xd69f03e0; \
-  DSB $7; \
+  WORD $0xd69f03e0;
+
+// SBARRIER is the speculation barrier.
+// Notice: a new speculation barrier is introduced in v8.5A.
+// Please see the related code in Linux as reference:
+// arch/arm64/include/asm/assembler.h:sb()
+// Currently we use dsb/isb instead.
+#define SBARRIER() \
+  DSB $7; \ // dsb nsh
   ISB $15;
 
 // RSV_REG is a register that holds el1 information temporarily.
@@ -509,6 +516,7 @@ do_exit_to_el0:
 	ADD $STACK_FRAME_SIZE, RSP, RSP
 
 	ERET()
+	SBARRIER()
 
 // kernelExitToEl1 is the entrypoint for sentry in guest_el1.
 // Prepare the vcpu environment for sentry.
@@ -534,6 +542,7 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 	MOVD CPU_REGISTERS+PTRACE_R9(RSV_REG), RSV_REG_APP
 
 	ERET()
+	SBARRIER()
 
 // Start is the CPU entrypoint.
 TEXT ·Start(SB),NOSPLIT,$0
