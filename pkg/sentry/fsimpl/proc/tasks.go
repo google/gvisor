@@ -38,7 +38,6 @@ const (
 // +stateify savable
 type tasksInode struct {
 	implStatFS
-	kernfs.AlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
@@ -99,26 +98,26 @@ func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *tasksInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
+func (i *tasksInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, bool, error) {
 	// Try to lookup a corresponding task.
 	tid, err := strconv.ParseUint(name, 10, 64)
 	if err != nil {
 		// If it failed to parse, check if it's one of the special handled files.
 		switch name {
 		case selfName:
-			return i.selfSymlink, nil
+			return i.selfSymlink, false, nil
 		case threadSelfName:
-			return i.threadSelfSymlink, nil
+			return i.threadSelfSymlink, false, nil
 		}
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 
 	task := i.pidns.TaskWithID(kernel.ThreadID(tid))
 	if task == nil {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 
-	return i.fs.newTaskInode(task, i.pidns, true, i.cgroupControllers), nil
+	return i.fs.newTaskInode(task, i.pidns, true, i.cgroupControllers), false, nil
 }
 
 // IterDirents implements kernfs.inodeDynamicLookup.IterDirents.

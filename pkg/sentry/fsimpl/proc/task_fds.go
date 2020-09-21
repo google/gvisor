@@ -108,7 +108,6 @@ type fdDirInode struct {
 	fdDir
 	fdDirInodeRefs
 	implStatFS
-	kernfs.AlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
@@ -136,16 +135,16 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) *kernfs.Dentry {
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *fdDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
+func (i *fdDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, bool, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 	fd := int32(fdInt)
 	if !taskFDExists(ctx, i.task, fd) {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
-	return i.fs.newFDSymlink(i.task, fd, i.fs.NextIno()), nil
+	return i.fs.newFDSymlink(i.task, fd, i.fs.NextIno()), false, nil
 }
 
 // Open implements kernfs.Inode.Open.
@@ -242,7 +241,6 @@ type fdInfoDirInode struct {
 	fdDir
 	fdInfoDirInodeRefs
 	implStatFS
-	kernfs.AlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
@@ -269,20 +267,20 @@ func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) *kernfs.Dentry {
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
+func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, bool, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 	fd := int32(fdInt)
 	if !taskFDExists(ctx, i.task, fd) {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 	data := &fdInfoData{
 		task: i.task,
 		fd:   fd,
 	}
-	return i.fs.newTaskOwnedFile(i.task, i.fs.NextIno(), 0444, data), nil
+	return i.fs.newTaskOwnedFile(i.task, i.fs.NextIno(), 0444, data), false, nil
 }
 
 // Open implements kernfs.Inode.Open.

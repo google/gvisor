@@ -443,17 +443,14 @@ type inodeDynamicLookup interface {
 	// contains a static set of children, the implementer can unconditionally
 	// return an appropriate error (ENOTDIR and ENOENT respectively).
 	//
-	// The child returned by Lookup will be hashed into the VFS dentry tree. Its
-	// lifetime can be controlled by the filesystem implementation with an
+	// The child returned by Lookup will be hashed into the VFS dentry tree.
+	// Its lifetime can be controlled by the filesystem implementation with an
 	// appropriate implementation of Valid.
 	//
-	// Lookup returns the child with an extra reference and the caller owns this
-	// reference.
-	Lookup(ctx context.Context, name string) (*Dentry, error)
-
-	// Valid should return true if this inode is still valid, or needs to
-	// be resolved again by a call to Lookup.
-	Valid(ctx context.Context) bool
+	// Lookup returns the child with an extra reference and the caller owns
+	// this reference. Lookup also returns a boolean indicating whether this
+	// dentry should be inserted in the dentry tree or not.
+	Lookup(ctx context.Context, name string) (*Dentry, bool, error)
 
 	// IterDirents is used to iterate over dynamically created entries. It invokes
 	// cb on each entry in the directory represented by the Inode.

@@ -402,9 +402,10 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 }
 
 // Lookup implements kernfs.Inode.Lookup.
-func (i *inode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
+func (i *inode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, bool, error) {
 	in := linux.FUSELookupIn{Name: name}
-	return i.newEntry(ctx, name, 0, linux.FUSE_LOOKUP, &in)
+	d, err := i.newEntry(ctx, name, 0, linux.FUSE_LOOKUP, &in)
+	return d, true, err
 }
 
 // IterDirents implements kernfs.Inode.IterDirents.
@@ -489,7 +490,7 @@ func (i *inode) Unlink(ctx context.Context, name string, child *vfs.Dentry) erro
 	if err := res.Error(); err != nil {
 		return err
 	}
-	return i.dentry.RemoveChildLocked(name, child)
+	return i.dentry.RemoveChild(name, child)
 }
 
 // NewDir implements kernfs.Inode.NewDir.

@@ -130,18 +130,13 @@ func (InodeNotDirectory) Rename(context.Context, string, string, *vfs.Dentry, *v
 }
 
 // Lookup implements Inode.Lookup.
-func (InodeNotDirectory) Lookup(ctx context.Context, name string) (*Dentry, error) {
+func (InodeNotDirectory) Lookup(ctx context.Context, name string) (*Dentry, bool, error) {
 	panic("Lookup called on non-directory inode")
 }
 
 // IterDirents implements Inode.IterDirents.
 func (InodeNotDirectory) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
 	panic("IterDirents called on non-directory inode")
-}
-
-// Valid implements Inode.Valid.
-func (InodeNotDirectory) Valid(context.Context) bool {
-	return true
 }
 
 // InodeNoDynamicLookup partially implements the Inode interface, specifically
@@ -152,18 +147,13 @@ func (InodeNotDirectory) Valid(context.Context) bool {
 type InodeNoDynamicLookup struct{}
 
 // Lookup implements Inode.Lookup.
-func (InodeNoDynamicLookup) Lookup(ctx context.Context, name string) (*Dentry, error) {
-	return nil, syserror.ENOENT
+func (InodeNoDynamicLookup) Lookup(ctx context.Context, name string) (*Dentry, bool, error) {
+	return nil, true, syserror.ENOENT
 }
 
 // IterDirents implements Inode.IterDirents.
 func (InodeNoDynamicLookup) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	return offset, nil
-}
-
-// Valid implements Inode.Valid.
-func (InodeNoDynamicLookup) Valid(ctx context.Context) bool {
-	return true
 }
 
 // InodeNotSymlink partially implements the Inode interface, specifically the
@@ -611,14 +601,6 @@ func (*StaticDirectory) SetStat(context.Context, *vfs.Filesystem, *auth.Credenti
 // DecRef implements kernfs.Inode.DecRef.
 func (s *StaticDirectory) DecRef(context.Context) {
 	s.StaticDirectoryRefs.DecRef(s.Destroy)
-}
-
-// AlwaysValid partially implements kernfs.inodeDynamicLookup.
-type AlwaysValid struct{}
-
-// Valid implements kernfs.inodeDynamicLookup.Valid.
-func (*AlwaysValid) Valid(context.Context) bool {
-	return true
 }
 
 // InodeNoStatFS partially implements the Inode interface, where the client

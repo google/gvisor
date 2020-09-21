@@ -66,15 +66,6 @@ func (si *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *v
 
 }
 
-// Valid implements kernfs.Inode.Valid.
-func (si *replicaInode) Valid(context.Context) bool {
-	// Return valid if the replica still exists.
-	si.root.mu.Lock()
-	defer si.root.mu.Unlock()
-	_, ok := si.root.replicas[si.t.n]
-	return ok
-}
-
 // Stat implements kernfs.Inode.Stat.
 func (si *replicaInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	statx, err := si.InodeAttrs.Stat(ctx, vfsfs, opts)

@@ -112,7 +112,6 @@ func (fs *filesystem) Release(ctx context.Context) {
 // rootInode is the root directory inode for the devpts mounts.
 type rootInode struct {
 	implStatFS
-	kernfs.AlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
@@ -180,9 +179,11 @@ func (i *rootInode) masterClose(t *Terminal) {
 	defer i.mu.Unlock()
 
 	// Sanity check that replica with idx exists.
-	if _, ok := i.replicas[t.n]; !ok {
+	ri, ok := i.replicas[t.n]
+	if !ok {
 		panic(fmt.Sprintf("pty with index %d does not exist", t.n))
 	}
+	i.dentry.RemoveChild(strconv.FormatUint(uint64(t.n), 10), ri.dentry.VFSDentry())
 	delete(i.replicas, t.n)
 }
 
@@ -198,19 +199,18 @@ func (i *rootInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.D
 }
 
 // Lookup implements kernfs.Inode.Lookup.
-func (i *rootInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
+func (i *rootInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, bool, error) {
 	idx, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if si, ok := i.replicas[uint32(idx)]; ok {
-		si.dentry.IncRef()
-		return &si.dentry, nil
-
+	if ri, ok := i.replicas[uint32(idx)]; ok {
+		ri.dentry.IncRef()
+		return &ri.dentry, true, nil
 	}
-	return nil, syserror.ENOENT
+	return nil, false, syserror.ENOENT
 }
 
 // IterDirents implements kernfs.Inode.IterDirents.

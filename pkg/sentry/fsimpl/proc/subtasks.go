@@ -32,7 +32,6 @@ import (
 // +stateify savable
 type subtasksInode struct {
 	implStatFS
-	kernfs.AlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
@@ -69,20 +68,20 @@ func (fs *filesystem) newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace,
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *subtasksInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
+func (i *subtasksInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, bool, error) {
 	tid, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 
 	subTask := i.pidns.TaskWithID(kernel.ThreadID(tid))
 	if subTask == nil {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 	if subTask.ThreadGroup() != i.task.ThreadGroup() {
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
-	return i.fs.newTaskInode(subTask, i.pidns, false, i.cgroupControllers), nil
+	return i.fs.newTaskInode(subTask, i.pidns, false, i.cgroupControllers), false, nil
 }
 
 // IterDirents implements kernfs.inodeDynamicLookup.IterDirents.

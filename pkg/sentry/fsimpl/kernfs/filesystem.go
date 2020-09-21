@@ -117,24 +117,19 @@ afterSymlink:
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *Dentry, name string, child *Dentry) (*Dentry, error) {
-	if child != nil {
-		// Cached dentry exists, revalidate.
-		if !child.inode.Valid(ctx) {
-			delete(parent.children, name)
-			vfsObj.InvalidateDentry(ctx, &child.vfsd)
-			fs.deferDecRef(&child.vfsd) // Reference from Lookup.
-			child = nil
-		}
-	}
 	if child == nil {
 		// Dentry isn't cached; it either doesn't exist or failed revalidation.
 		// Attempt to resolve it via Lookup.
-		c, err := parent.inode.Lookup(ctx, name)
+		c, keep, err := parent.inode.Lookup(ctx, name)
 		if err != nil {
 			return nil, err
 		}
-		// Reference on childVFSD dropped by a corresponding Valid.
-		parent.InsertChildLocked(name, c)
+		if keep {
+			parent.InsertChildLocked(name, c)
+		} else {
+			// FIXME(ayushranjan): two decrefs?
+			fs.deferDecRef(c.VFSDentry())
+		}
 		child = c
 	}
 	return child, nil
