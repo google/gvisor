@@ -30,6 +30,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -59,6 +62,8 @@ type Stack struct {
 	tcpSACKEnabled bool
 	netDevFile     *os.File
 	netSNMPFile    *os.File
+	ipv4Forwarding bool
+	ipv6Forwarding bool
 }
 
 // NewStack returns an empty Stack containing no configuration.
@@ -116,6 +121,13 @@ func (s *Stack) Configure() error {
 		log.Warningf("Failed to open /proc/net/snmp: %v", err)
 	} else {
 		s.netSNMPFile = f
+	}
+
+	s.ipv6Forwarding = false
+	if ipForwarding, err := ioutil.ReadFile("/proc/sys/net/ipv6/conf/all/forwarding"); err == nil {
+		s.ipv6Forwarding = strings.TrimSpace(string(ipForwarding)) != "0"
+	} else {
+		log.Warningf("Failed to read if ipv6 forwarding is enabled, setting to false")
 	}
 
 	return nil
@@ -468,3 +480,21 @@ func (s *Stack) CleanupEndpoints() []stack.TransportEndpoint { return nil }
 
 // RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
 func (s *Stack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
+
+// Forwarding implements inet.Stack.Forwarding.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	switch protocol {
+	case ipv4.ProtocolNumber:
+		return s.ipv4Forwarding
+	case ipv6.ProtocolNumber:
+		return s.ipv6Forwarding
+	default:
+		log.Warningf("Forwarding(%v) failed: unsupported protocol", protocol)
+		return false
+	}
+}
+
+// SetForwarding implements inet.Stack.SetForwarding.
+func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	return syserror.EACCES
+}

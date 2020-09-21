@@ -14,7 +14,11 @@
 
 package proc
 
-import "fmt"
+import (
+	"fmt"
+
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+)
 
 // beforeSave is invoked by stateify.
 func (t *tcpMemInode) beforeSave() {
@@ -37,6 +41,15 @@ func (s *tcpSack) afterLoad() {
 	if s.enabled != nil {
 		if err := s.stack.SetTCPSACKEnabled(*s.enabled); err != nil {
 			panic(fmt.Sprintf("failed to set previous TCP sack configuration [%v]: %v", *s.enabled, err))
+		}
+	}
+}
+
+// afterLoad is invoked by stateify.
+func (ipf *ipForwarding) afterLoad() {
+	if ipf.enabled != nil {
+		if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, *ipf.enabled); err != nil {
+			panic(fmt.Sprintf("failed to set IPv4 forwarding [%v]: %v", *ipf.enabled, err))
 		}
 	}
 }

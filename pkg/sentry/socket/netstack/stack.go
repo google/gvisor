@@ -412,3 +412,24 @@ func (s *Stack) CleanupEndpoints() []stack.TransportEndpoint {
 func (s *Stack) RestoreCleanupEndpoints(es []stack.TransportEndpoint) {
 	s.Stack.RestoreCleanupEndpoints(es)
 }
+
+// Forwarding implements inet.Stack.Forwarding.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	switch protocol {
+	case ipv4.ProtocolNumber, ipv6.ProtocolNumber:
+		return s.Stack.Forwarding(protocol)
+	default:
+		panic(fmt.Sprintf("Forwarding(%v) failed: unsupported protocol", protocol))
+	}
+}
+
+// SetForwarding implements inet.Stack.SetForwarding.
+func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	switch protocol {
+	case ipv4.ProtocolNumber, ipv6.ProtocolNumber:
+		s.Stack.SetForwarding(protocol, enable)
+	default:
+		panic(fmt.Sprintf("SetForwarding(%v) failed: unsupported protocol", protocol))
+	}
+	return nil
+}

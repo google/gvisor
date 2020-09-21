@@ -405,6 +405,13 @@ type Stack struct {
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
 	linkAddrResolvers  map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
+	// forwarding contains the whether packet forwarding is enabled or not for
+	// different network protocols.
+	forwarding struct {
+		sync.RWMutex
+		protocols map[tcpip.NetworkProtocolNumber]bool
+	}
+
 	// rawFactory creates raw endpoints. If nil, raw endpoints are
 	// disabled. It is set during Stack creation and is immutable.
 	rawFactory RawFactory
@@ -415,9 +422,8 @@ type Stack struct {
 
 	linkAddrCache *linkAddrCache
 
-	mu         sync.RWMutex
-	nics       map[tcpip.NICID]*NIC
-	forwarding bool
+	mu   sync.RWMutex
+	nics map[tcpip.NICID]*NIC
 
 	// cleanupEndpointsMu protects cleanupEndpoints.
 	cleanupEndpointsMu sync.Mutex
@@ -749,6 +755,7 @@ func New(opts Options) *Stack {
 			Max:     DefaultMaxBufferSize,
 		},
 	}
+	s.forwarding.protocols = make(map[tcpip.NetworkProtocolNumber]bool)
 
 	// Add specified network protocols.
 	for _, netProto := range opts.NetworkProtocols {
@@ -866,46 +873,42 @@ func (s *Stack) Stats() tcpip.Stats {
 	return s.stats
 }
 
-// SetForwarding enables or disables the packet forwarding between NICs.
-//
-// When forwarding becomes enabled, any host-only state on all NICs will be
-// cleaned up and if IPv6 is enabled, NDP Router Solicitations will be started.
-// When forwarding becomes disabled and if IPv6 is enabled, NDP Router
-// Solicitations will be stopped.
-func (s *Stack) SetForwarding(enable bool) {
-	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// SetForwarding enables or disables packet forwarding between NICs.
+func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) {
+	s.forwarding.Lock()
+	defer s.forwarding.Unlock()
 
-	// If forwarding status didn't change, do nothing further.
-	if s.forwarding == enable {
+	// If this stack does not support the protocol, do nothing.
+	if _, ok := s.networkProtocols[protocol]; !ok {
 		return
 	}
 
-	s.forwarding = enable
-
-	// If this stack does not support IPv6, do nothing further.
-	if _, ok := s.networkProtocols[header.IPv6ProtocolNumber]; !ok {
+	// If the forwarding value for this protocol hasn't changed then do
+	// nothing.
+	if forwarding := s.forwarding.protocols[protocol]; forwarding == enable {
 		return
 	}
 
-	if enable {
-		for _, nic := range s.nics {
-			nic.becomeIPv6Router()
-		}
-	} else {
-		for _, nic := range s.nics {
-			nic.becomeIPv6Host()
+	s.forwarding.protocols[protocol] = enable
+
+	if protocol == header.IPv6ProtocolNumber {
+		if enable {
+			for _, nic := range s.nics {
+				nic.becomeIPv6Router()
+			}
+		} else {
+			for _, nic := range s.nics {
+				nic.becomeIPv6Host()
+			}
 		}
 	}
 }
 
-// Forwarding returns if the packet forwarding between NICs is enabled.
-func (s *Stack) Forwarding() bool {
-	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.forwarding
+// Forwarding returns if packet forwarding between NICs is enabled.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	s.forwarding.RLock()
+	defer s.forwarding.RUnlock()
+	return s.forwarding.protocols[protocol]
 }
 
 // SetRouteTable assigns the route table to be used by this stack. It
