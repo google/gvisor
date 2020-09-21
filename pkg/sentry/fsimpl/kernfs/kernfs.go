@@ -449,7 +449,7 @@ type inodeDynamicLookup interface {
 	//
 	// Lookup returns the child with an extra reference and the caller owns this
 	// reference.
-	Lookup(ctx context.Context, name string) (*vfs.Dentry, error)
+	Lookup(ctx context.Context, name string) (*Dentry, error)
 
 	// Valid should return true if this inode is still valid, or needs to
 	// be resolved again by a call to Lookup.

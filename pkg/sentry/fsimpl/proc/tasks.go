@@ -52,8 +52,8 @@ type tasksInode struct {
 
 	// '/proc/self' and '/proc/thread-self' have custom directory offsets in
 	// Linux. So handle them outside of OrderedChildren.
-	selfSymlink       *vfs.Dentry
-	threadSelfSymlink *vfs.Dentry
+	selfSymlink       *kernfs.Dentry
+	threadSelfSymlink *kernfs.Dentry
 
 	// cgroupControllers is a map of controller name to directory in the
 	// cgroup hierarchy. These controllers are immutable and will be listed
@@ -81,8 +81,8 @@ func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace
 	inode := &tasksInode{
 		pidns:             pidns,
 		fs:                fs,
-		selfSymlink:       fs.newSelfSymlink(root, fs.NextIno(), pidns).VFSDentry(),
-		threadSelfSymlink: fs.newThreadSelfSymlink(root, fs.NextIno(), pidns).VFSDentry(),
+		selfSymlink:       fs.newSelfSymlink(root, fs.NextIno(), pidns),
+		threadSelfSymlink: fs.newThreadSelfSymlink(root, fs.NextIno(), pidns),
 		cgroupControllers: cgroupControllers,
 	}
 	inode.InodeAttrs.Init(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
@@ -99,7 +99,7 @@ func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *tasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (i *tasksInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	// Try to lookup a corresponding task.
 	tid, err := strconv.ParseUint(name, 10, 64)
 	if err != nil {
@@ -118,8 +118,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 		return nil, syserror.ENOENT
 	}
 
-	taskDentry := i.fs.newTaskInode(task, i.pidns, true, i.cgroupControllers)
-	return taskDentry.VFSDentry(), nil
+	return i.fs.newTaskInode(task, i.pidns, true, i.cgroupControllers), nil
 }
 
 // IterDirents implements kernfs.inodeDynamicLookup.IterDirents.
