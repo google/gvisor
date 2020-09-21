@@ -50,6 +50,7 @@ go_library(
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/network/ipv4",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

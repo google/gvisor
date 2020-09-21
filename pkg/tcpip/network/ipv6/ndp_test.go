@@ -958,7 +958,7 @@ func TestNDPValidation(t *testing.T) {
 
 								if isRouter {
 									// Enabling forwarding makes the stack act as a router.
-									s.SetForwarding(true)
+									s.SetForwarding(ProtocolNumber, true)
 								}
 
 								stats := s.Stats().ICMP.V6PacketsReceived
