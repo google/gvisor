@@ -121,8 +121,13 @@ smoke-tests: ## Runs a simple smoke test after build runsc.
 	@$(call submake,run DOCKER_PRIVILEGED="" ARGS="--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true")
 .PHONY: smoke-tests
 
+fuse-tests:
+	@$(call submake,test OPTIONS="--test_tag_filters fuse" TARGETS="test/fuse/...")
+.PHONY: fuse-tests
+
 unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
 	@$(call submake,test TARGETS="pkg/... runsc/... tools/...")
+.PHONY: unit-tests
 
 tests: ## Runs all unit tests and syscall tests.
 tests: unit-tests
