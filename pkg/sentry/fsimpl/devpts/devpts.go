@@ -198,7 +198,7 @@ func (i *rootInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.D
 }
 
 // Lookup implements kernfs.Inode.Lookup.
-func (i *rootInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (i *rootInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	idx, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
 		return nil, syserror.ENOENT
@@ -207,7 +207,7 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error
 	defer i.mu.Unlock()
 	if si, ok := i.replicas[uint32(idx)]; ok {
 		si.dentry.IncRef()
-		return si.dentry.VFSDentry(), nil
+		return &si.dentry, nil
 
 	}
 	return nil, syserror.ENOENT

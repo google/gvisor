@@ -130,7 +130,7 @@ func (InodeNotDirectory) Rename(context.Context, string, string, *vfs.Dentry, *v
 }
 
 // Lookup implements Inode.Lookup.
-func (InodeNotDirectory) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (InodeNotDirectory) Lookup(ctx context.Context, name string) (*Dentry, error) {
 	panic("Lookup called on non-directory inode")
 }
 
@@ -152,7 +152,7 @@ func (InodeNotDirectory) Valid(context.Context) bool {
 type InodeNoDynamicLookup struct{}
 
 // Lookup implements Inode.Lookup.
-func (InodeNoDynamicLookup) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (InodeNoDynamicLookup) Lookup(ctx context.Context, name string) (*Dentry, error) {
 	return nil, syserror.ENOENT
 }
 

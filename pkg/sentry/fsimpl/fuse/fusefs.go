@@ -402,7 +402,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 }
 
 // Lookup implements kernfs.Inode.Lookup.
-func (i *inode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (i *inode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	in := linux.FUSELookupIn{Name: name}
 	return i.newEntry(ctx, name, 0, linux.FUSE_LOOKUP, &in)
 }
@@ -432,7 +432,11 @@ func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) 
 		},
 		Name: name,
 	}
-	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
+	d, err := i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
+	if err != nil {
+		return nil, err
+	}
+	return d.VFSDentry(), nil
 }
 
 // NewNode implements kernfs.Inode.NewNode.
@@ -445,7 +449,11 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 		},
 		Name: name,
 	}
-	return i.newEntry(ctx, name, opts.Mode.FileType(), linux.FUSE_MKNOD, &in)
+	d, err := i.newEntry(ctx, name, opts.Mode.FileType(), linux.FUSE_MKNOD, &in)
+	if err != nil {
+		return nil, err
+	}
+	return d.VFSDentry(), nil
 }
 
 // NewSymlink implements kernfs.Inode.NewSymlink.
@@ -454,7 +462,11 @@ func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentr
 		Name:   name,
 		Target: target,
 	}
-	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
+	d, err := i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
+	if err != nil {
+		return nil, err
+	}
+	return d.VFSDentry(), nil
 }
 
 // Unlink implements kernfs.Inode.Unlink.
@@ -489,7 +501,11 @@ func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) 
 		},
 		Name: name,
 	}
-	return i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
+	d, err := i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
+	if err != nil {
+		return nil, err
+	}
+	return d.VFSDentry(), nil
 }
 
 // RmDir implements kernfs.Inode.RmDir.
@@ -521,7 +537,7 @@ func (i *inode) RmDir(ctx context.Context, name string, child *vfs.Dentry) error
 
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
 // Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and FUSE_LOOKUP.
-func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*vfs.Dentry, error) {
+func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*kernfs.Dentry, error) {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
 		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
@@ -551,7 +567,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	} else {
 		i.dentry.InsertChild(name, child)
 	}
-	return child.VFSDentry(), nil
+	return child, nil
 }
 
 // Getlink implements kernfs.Inode.Getlink.

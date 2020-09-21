@@ -69,7 +69,7 @@ func (fs *filesystem) newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace,
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *subtasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (i *subtasksInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	tid, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
 		return nil, syserror.ENOENT
@@ -82,9 +82,7 @@ func (i *subtasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, e
 	if subTask.ThreadGroup() != i.task.ThreadGroup() {
 		return nil, syserror.ENOENT
 	}
-
-	subTaskDentry := i.fs.newTaskInode(subTask, i.pidns, false, i.cgroupControllers)
-	return subTaskDentry.VFSDentry(), nil
+	return i.fs.newTaskInode(subTask, i.pidns, false, i.cgroupControllers), nil
 }
 
 // IterDirents implements kernfs.inodeDynamicLookup.IterDirents.

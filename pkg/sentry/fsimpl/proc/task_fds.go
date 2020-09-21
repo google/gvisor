@@ -136,7 +136,7 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) *kernfs.Dentry {
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *fdDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (i *fdDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
 		return nil, syserror.ENOENT
@@ -145,8 +145,7 @@ func (i *fdDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 	if !taskFDExists(ctx, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
-	taskDentry := i.fs.newFDSymlink(i.task, fd, i.fs.NextIno())
-	return taskDentry.VFSDentry(), nil
+	return i.fs.newFDSymlink(i.task, fd, i.fs.NextIno()), nil
 }
 
 // Open implements kernfs.Inode.Open.
@@ -270,7 +269,7 @@ func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) *kernfs.Dentry {
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.Lookup.
-func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
 		return nil, syserror.ENOENT
@@ -283,8 +282,7 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, 
 		task: i.task,
 		fd:   fd,
 	}
-	dentry := i.fs.newTaskOwnedFile(i.task, i.fs.NextIno(), 0444, data)
-	return dentry.VFSDentry(), nil
+	return i.fs.newTaskOwnedFile(i.task, i.fs.NextIno(), 0444, data), nil
 }
 
 // Open implements kernfs.Inode.Open.
