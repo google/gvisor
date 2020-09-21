@@ -42,7 +42,7 @@ PosixError PopulateNlmsghdr(LinkAddrModification modification,
       return NoError();
     case LinkAddrModification::kDelete:
       hdr->nlmsg_type = RTM_DELADDR;
-      hdr->nlmsg_flags = NLM_F_REQUEST;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
       return NoError();
   }
 
