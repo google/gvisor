@@ -350,7 +350,7 @@ type Inode interface {
 	//
 	// Precondition: rp.Done(). vfsd.Impl() must be the kernfs Dentry containing
 	// the inode on which Open() is being called.
-	Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
+	Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
 
 	// StatFS returns filesystem statistics for the client filesystem. This
 	// corresponds to vfs.FilesystemImpl.StatFSAt. If the client filesystem

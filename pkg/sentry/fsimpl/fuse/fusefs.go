@@ -299,7 +299,7 @@ func (fs *filesystem) newInode(nodeID uint64, attr linux.FUSEAttr) *kernfs.Dentr
 }
 
 // Open implements kernfs.Inode.Open.
-func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	isDir := i.InodeAttrs.Mode().IsDir()
 	// return error if specified to open directory but inode is not a directory.
 	if !isDir && opts.Mode.IsDir() {
@@ -395,7 +395,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		i.attributeTime = 0
 	}
 
-	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
+	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), d.VFSDentry(), fdOptions); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil

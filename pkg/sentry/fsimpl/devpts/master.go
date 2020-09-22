@@ -50,7 +50,7 @@ type masterInode struct {
 var _ kernfs.Inode = (*masterInode)(nil)
 
 // Open implements kernfs.Inode.Open.
-func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	t, err := mi.root.allocateTerminal(rp.Credentials())
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vf
 		t:     t,
 	}
 	fd.LockFD.Init(&mi.locks)
-	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		mi.DecRef(ctx)
 		return nil, err
 	}

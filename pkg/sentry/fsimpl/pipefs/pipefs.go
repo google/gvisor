@@ -144,8 +144,8 @@ func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.
 }
 
 // Open implements kernfs.Inode.Open.
-func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	return i.pipe.Open(ctx, rp.Mount(), vfsd, opts.Flags, &i.locks)
+func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	return i.pipe.Open(ctx, rp.Mount(), d.VFSDentry(), opts.Flags, &i.locks)
 }
 
 // StatFS implements kernfs.Inode.StatFS.
