@@ -257,6 +257,8 @@ func (l *LeakMode) Get() interface{} {
 // String implements flag.Value.
 func (l *LeakMode) String() string {
 	switch *l {
+	case UninitializedLeakChecking:
+		return "uninitialized"
 	case NoLeakChecking:
 		return "disabled"
 	case LeaksLogWarning:
@@ -264,7 +266,7 @@ func (l *LeakMode) String() string {
 	case LeaksLogTraces:
 		return "log-traces"
 	}
-	panic(fmt.Sprintf("invalid ref leak mode %q", *l))
+	panic(fmt.Sprintf("invalid ref leak mode %d", *l))
 }
 
 // leakMode stores the current mode for the reference leak checker.
