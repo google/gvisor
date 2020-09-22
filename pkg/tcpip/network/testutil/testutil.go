@@ -22,46 +22,98 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
-	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// TestEndpoint is an endpoint used for testing, it stores packets written to it
-// and can mock errors.
-type TestEndpoint struct {
-	*channel.Endpoint
-
-	// WrittenPackets is where we store packets written via WritePacket().
+// MockLinkEndpoint is an endpoint used for testing, it stores packets written
+// to it and can mock errors.
+type MockLinkEndpoint struct {
+	// WrittenPackets is where packets written to the endpoint are stored.
 	WrittenPackets []*stack.PacketBuffer
 
-	packetCollectorErrors []*tcpip.Error
+	mtu          uint32
+	err          *tcpip.Error
+	allowPackets int
 }
 
-// NewTestEndpoint creates a new TestEndpoint endpoint.
+// NewMockLinkEndpoint creates a new MockLinkEndpoint.
 //
-// packetCollectorErrors can be used to set error values and each call to
-// WritePacket will remove the first one from the slice and return it until
-// the slice is empty - at that point it will return nil every time.
-func NewTestEndpoint(ep *channel.Endpoint, packetCollectorErrors []*tcpip.Error) *TestEndpoint {
-	return &TestEndpoint{
-		Endpoint:              ep,
-		WrittenPackets:        make([]*stack.PacketBuffer, 0),
-		packetCollectorErrors: packetCollectorErrors,
+// err is the error that will be returned once allowPackets packets are written
+// to the endpoint.
+func NewMockLinkEndpoint(mtu uint32, err *tcpip.Error, allowPackets int) *MockLinkEndpoint {
+	return &MockLinkEndpoint{
+		mtu:          mtu,
+		err:          err,
+		allowPackets: allowPackets,
 	}
 }
 
-// WritePacket stores outbound packets and may return an error if one was
-// injected.
-func (e *TestEndpoint) WritePacket(_ *stack.Route, _ *stack.GSO, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	e.WrittenPackets = append(e.WrittenPackets, pkt)
+// MTU implements LinkEndpoint.MTU.
+func (ep *MockLinkEndpoint) MTU() uint32 { return ep.mtu }
 
-	if len(e.packetCollectorErrors) > 0 {
-		nextError := e.packetCollectorErrors[0]
-		e.packetCollectorErrors = e.packetCollectorErrors[1:]
-		return nextError
+// Capabilities implements LinkEndpoint.Capabilities.
+func (*MockLinkEndpoint) Capabilities() stack.LinkEndpointCapabilities { return 0 }
+
+// MaxHeaderLength implements LinkEndpoint.MaxHeaderLength.
+func (*MockLinkEndpoint) MaxHeaderLength() uint16 { return 0 }
+
+// LinkAddress implements LinkEndpoint.LinkAddress.
+func (*MockLinkEndpoint) LinkAddress() tcpip.LinkAddress { return "" }
+
+// WritePacket implements LinkEndpoint.WritePacket.
+func (ep *MockLinkEndpoint) WritePacket(_ *stack.Route, _ *stack.GSO, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	if ep.allowPackets == 0 {
+		return ep.err
 	}
+	ep.allowPackets--
+	ep.WrittenPackets = append(ep.WrittenPackets, pkt)
+	return nil
+}
+
+// WritePackets implements LinkEndpoint.WritePackets.
+func (ep *MockLinkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	var n int
+
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		if err := ep.WritePacket(r, gso, protocol, pkt); err != nil {
+			return n, err
+		}
+		n++
+	}
+
+	return n, nil
+}
+
+// WriteRawPacket implements LinkEndpoint.WriteRawPacket.
+func (ep *MockLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+	if ep.allowPackets == 0 {
+		return ep.err
+	}
+	ep.allowPackets--
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: vv,
+	})
+	ep.WrittenPackets = append(ep.WrittenPackets, pkt)
 
 	return nil
+}
+
+// Attach implements LinkEndpoint.Attach.
+func (*MockLinkEndpoint) Attach(stack.NetworkDispatcher) {}
+
+// IsAttached implements LinkEndpoint.IsAttached.
+func (*MockLinkEndpoint) IsAttached() bool { return false }
+
+// Wait implements LinkEndpoint.Wait.
+func (*MockLinkEndpoint) Wait() {}
+
+// ARPHardwareType implements LinkEndpoint.ARPHardwareType.
+func (*MockLinkEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
+
+// AddHeader implements LinkEndpoint.AddHeader.
+func (*MockLinkEndpoint) AddHeader(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, _ *stack.PacketBuffer) {
 }
 
 // MakeRandPkt generates a randomized packet. transportHeaderLength indicates
