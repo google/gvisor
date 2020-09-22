@@ -138,7 +138,6 @@ go_test(
     name = "stack_test",
     size = "small",
     srcs = [
-        "fake_time_test.go",
         "forwarder_test.go",
         "linkaddrcache_test.go",
         "neighbor_cache_test.go",
@@ -152,8 +151,8 @@ go_test(
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
-        "@com_github_dpjacques_clockwork//:go_default_library",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
     ],
