@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
 
 const (
@@ -239,7 +240,7 @@ type entryEvent struct {
 func TestNeighborCacheGetConfig(t *testing.T) {
 	nudDisp := testNUDDispatcher{}
 	c := DefaultNUDConfigurations()
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, c, clock)
 
 	if got, want := neigh.config(), c; got != want {
@@ -257,7 +258,7 @@ func TestNeighborCacheGetConfig(t *testing.T) {
 func TestNeighborCacheSetConfig(t *testing.T) {
 	nudDisp := testNUDDispatcher{}
 	c := DefaultNUDConfigurations()
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, c, clock)
 
 	c.MinRandomFactor = 1
@@ -279,7 +280,7 @@ func TestNeighborCacheSetConfig(t *testing.T) {
 func TestNeighborCacheEntry(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, c, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -298,7 +299,7 @@ func TestNeighborCacheEntry(t *testing.T) {
 		t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
 
-	clock.advance(typicalLatency)
+	clock.Advance(typicalLatency)
 
 	wantEvents := []testEntryEventInfo{
 		{
@@ -339,7 +340,7 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -358,7 +359,7 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 		t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
 
-	clock.advance(typicalLatency)
+	clock.Advance(typicalLatency)
 
 	wantEvents := []testEntryEventInfo{
 		{
@@ -409,7 +410,7 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 }
 
 type testContext struct {
-	clock   *fakeClock
+	clock   *faketime.ManualClock
 	neigh   *neighborCache
 	store   *testEntryStore
 	linkRes *testNeighborResolver
@@ -418,7 +419,7 @@ type testContext struct {
 
 func newTestContext(c NUDConfigurations) testContext {
 	nudDisp := &testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(nudDisp, c, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -454,7 +455,7 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 		if _, _, err := c.neigh.entry(entry.Addr, entry.LocalAddr, c.linkRes, nil); err != tcpip.ErrWouldBlock {
 			return fmt.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 		}
-		c.clock.advance(c.neigh.config().RetransmitTimer)
+		c.clock.Advance(c.neigh.config().RetransmitTimer)
 
 		var wantEvents []testEntryEventInfo
 
@@ -567,7 +568,7 @@ func TestNeighborCacheRemoveEntryThenOverflow(t *testing.T) {
 	if err != tcpip.ErrWouldBlock {
 		t.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
-	c.clock.advance(c.neigh.config().RetransmitTimer)
+	c.clock.Advance(c.neigh.config().RetransmitTimer)
 	wantEvents := []testEntryEventInfo{
 		{
 			EventType: entryTestAdded,
@@ -803,7 +804,7 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 	if err != tcpip.ErrWouldBlock {
 		t.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
-	c.clock.advance(typicalLatency)
+	c.clock.Advance(typicalLatency)
 	wantEvents := []testEntryEventInfo{
 		{
 			EventType: entryTestAdded,
@@ -876,7 +877,7 @@ func TestNeighborCacheNotifiesWaker(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -902,7 +903,7 @@ func TestNeighborCacheNotifiesWaker(t *testing.T) {
 	if doneCh == nil {
 		t.Fatalf("expected done channel from neigh.entry(%s, %s, _, _)", entry.Addr, entry.LocalAddr)
 	}
-	clock.advance(typicalLatency)
+	clock.Advance(typicalLatency)
 
 	select {
 	case <-doneCh:
@@ -944,7 +945,7 @@ func TestNeighborCacheRemoveWaker(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -974,7 +975,7 @@ func TestNeighborCacheRemoveWaker(t *testing.T) {
 	// Remove the waker before the neighbor cache has the opportunity to send a
 	// notification.
 	neigh.removeWaker(entry.Addr, &w)
-	clock.advance(typicalLatency)
+	clock.Advance(typicalLatency)
 
 	select {
 	case <-doneCh:
@@ -1073,7 +1074,7 @@ func TestNeighborCacheClear(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -1092,7 +1093,7 @@ func TestNeighborCacheClear(t *testing.T) {
 	if err != tcpip.ErrWouldBlock {
 		t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
-	clock.advance(typicalLatency)
+	clock.Advance(typicalLatency)
 
 	wantEvents := []testEntryEventInfo{
 		{
@@ -1188,7 +1189,7 @@ func TestNeighborCacheClearThenOverflow(t *testing.T) {
 	if err != tcpip.ErrWouldBlock {
 		t.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
-	c.clock.advance(typicalLatency)
+	c.clock.Advance(typicalLatency)
 	wantEvents := []testEntryEventInfo{
 		{
 			EventType: entryTestAdded,
@@ -1249,7 +1250,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	config.MaxRandomFactor = 1
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -1277,7 +1278,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		if err != tcpip.ErrWouldBlock {
 			t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 		}
-		clock.advance(typicalLatency)
+		clock.Advance(typicalLatency)
 		select {
 		case <-doneCh:
 		default:
@@ -1325,7 +1326,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		if err != tcpip.ErrWouldBlock {
 			t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 		}
-		clock.advance(typicalLatency)
+		clock.Advance(typicalLatency)
 		select {
 		case <-doneCh:
 		default:
@@ -1412,7 +1413,7 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -1440,7 +1441,7 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 		wg.Wait()
 
 		// Process all the requests for a single entry concurrently
-		clock.advance(typicalLatency)
+		clock.Advance(typicalLatency)
 	}
 
 	// All goroutines add in the same order and add more values than can fit in
@@ -1472,7 +1473,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -1491,7 +1492,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 	if err != tcpip.ErrWouldBlock {
 		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
-	clock.advance(typicalLatency)
+	clock.Advance(typicalLatency)
 	select {
 	case <-doneCh:
 	default:
@@ -1541,7 +1542,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 		if err != tcpip.ErrWouldBlock {
 			t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 		}
-		clock.advance(config.DelayFirstProbeTime + typicalLatency)
+		clock.Advance(config.DelayFirstProbeTime + typicalLatency)
 		select {
 		case <-doneCh:
 		default:
@@ -1552,7 +1553,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 	// Verify the entry's new link address
 	{
 		e, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
-		clock.advance(typicalLatency)
+		clock.Advance(typicalLatency)
 		if err != nil {
 			t.Errorf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
 		}
@@ -1572,7 +1573,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
 	nudDisp := testNUDDispatcher{}
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(&nudDisp, config, clock)
 	store := newTestEntryStore()
 
@@ -1595,7 +1596,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
-	clock.advance(typicalLatency)
+	clock.Advance(typicalLatency)
 	got, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
 	if err != nil {
 		t.Fatalf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
@@ -1618,7 +1619,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
 	waitFor := config.DelayFirstProbeTime + typicalLatency*time.Duration(config.MaxMulticastProbes)
-	clock.advance(waitFor)
+	clock.Advance(waitFor)
 	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrNoLinkAddress {
 		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrNoLinkAddress)
 	}
@@ -1636,7 +1637,7 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 	config := DefaultNUDConfigurations()
 	config.RetransmitTimer = time.Millisecond // small enough to cause timeout
 
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(nil, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
@@ -1654,7 +1655,7 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
 	}
 	waitFor := config.RetransmitTimer * time.Duration(config.MaxMulticastProbes)
-	clock.advance(waitFor)
+	clock.Advance(waitFor)
 	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrNoLinkAddress {
 		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrNoLinkAddress)
 	}
@@ -1664,7 +1665,7 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 // resolved immediately and don't send resolution requests.
 func TestNeighborCacheStaticResolution(t *testing.T) {
 	config := DefaultNUDConfigurations()
-	clock := newFakeClock()
+	clock := faketime.NewManualClock()
 	neigh := newTestNeighborCache(nil, config, clock)
 	store := newTestEntryStore()
 	linkRes := &testNeighborResolver{
