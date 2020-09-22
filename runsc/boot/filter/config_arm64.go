@@ -24,8 +24,6 @@ import (
 
 func init() {
 	allowedSyscalls[syscall.SYS_CLONE] = []seccomp.Rule{
-		// parent_tidptr and child_tidptr are always 0 because neither
-		// CLONE_PARENT_SETTID nor CLONE_CHILD_SETTID are used.
 		{
 			seccomp.EqualTo(
 				syscall.CLONE_VM |
