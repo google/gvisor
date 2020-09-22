@@ -60,8 +60,8 @@ func (dir *syntheticDirectory) Init(creds *auth.Credentials, devMajor, devMinor 
 }
 
 // Open implements Inode.Open.
-func (dir *syntheticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := NewGenericDirectoryFD(rp.Mount(), vfsd, &dir.OrderedChildren, &dir.locks, &opts, GenericDirectoryFDOptions{})
+func (dir *syntheticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	fd, err := NewGenericDirectoryFD(rp.Mount(), d, &dir.OrderedChildren, &dir.locks, &opts, GenericDirectoryFDOptions{})
 	if err != nil {
 		return nil, err
 	}

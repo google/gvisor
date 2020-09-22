@@ -126,7 +126,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	// For simplicity, fileDescription.offset is set to 0. Technically, we
 	// should only set to 0 on files that are not seekable (sockets, pipes,
 	// etc.), and use the offset from the host fd otherwise when importing.
-	return i.open(ctx, d.VFSDentry(), mnt, flags)
+	return i.open(ctx, d, mnt, flags)
 }
 
 // ImportFD sets up and returns a vfs.FileDescription from a donated fd.
@@ -458,15 +458,15 @@ func (i *inode) DecRef(ctx context.Context) {
 }
 
 // Open implements kernfs.Inode.Open.
-func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	// Once created, we cannot re-open a socket fd through /proc/[pid]/fd/.
 	if i.Mode().FileType() == linux.S_IFSOCK {
 		return nil, syserror.ENXIO
 	}
-	return i.open(ctx, vfsd, rp.Mount(), opts.Flags)
+	return i.open(ctx, d, rp.Mount(), opts.Flags)
 }
 
-func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, error) {
+func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, error) {
 	var s syscall.Stat_t
 	if err := syscall.Fstat(i.hostFD, &s); err != nil {
 		return nil, err
@@ -490,7 +490,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 			return nil, err
 		}
 		// Currently, we only allow Unix sockets to be imported.
-		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d, &i.locks)
+		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d.VFSDentry(), &i.locks)
 
 	case syscall.S_IFREG, syscall.S_IFIFO, syscall.S_IFCHR:
 		if i.isTTY {
@@ -500,7 +500,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 			}
 			fd.LockFD.Init(&i.locks)
 			vfsfd := &fd.vfsfd
-			if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+			if err := vfsfd.Init(fd, flags, mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 				return nil, err
 			}
 			return vfsfd, nil
@@ -509,7 +509,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 		fd := &fileDescription{inode: i}
 		fd.LockFD.Init(&i.locks)
 		vfsfd := &fd.vfsfd
-		if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := vfsfd.Init(fd, flags, mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return vfsfd, nil
