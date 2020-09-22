@@ -16,6 +16,31 @@
 
 package filter
 
-// Reserve for future customization.
+import (
+	"syscall"
+
+	"gvisor.dev/gvisor/pkg/seccomp"
+)
+
 func init() {
+	allowedSyscalls[syscall.SYS_CLONE] = []seccomp.Rule{
+		// parent_tidptr and child_tidptr are always 0 because neither
+		// CLONE_PARENT_SETTID nor CLONE_CHILD_SETTID are used.
+		{
+			seccomp.EqualTo(
+				syscall.CLONE_VM |
+					syscall.CLONE_FS |
+					syscall.CLONE_FILES |
+					syscall.CLONE_SIGHAND |
+					syscall.CLONE_SYSVSEM |
+					syscall.CLONE_THREAD),
+			seccomp.MatchAny{}, // newsp
+			// These arguments are left uninitialized by the Go
+			// runtime, so they may be anything (and are unused by
+			// the host).
+			seccomp.MatchAny{}, // parent_tidptr
+			seccomp.MatchAny{}, // tls
+			seccomp.MatchAny{}, // child_tidptr
+		},
+	}
 }

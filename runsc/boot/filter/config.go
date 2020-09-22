@@ -27,19 +27,8 @@ import (
 // allowedSyscalls is the set of syscalls executed by the Sentry to the host OS.
 var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_CLOCK_GETTIME: {},
-	syscall.SYS_CLONE: []seccomp.Rule{
-		{
-			seccomp.EqualTo(
-				syscall.CLONE_VM |
-					syscall.CLONE_FS |
-					syscall.CLONE_FILES |
-					syscall.CLONE_SIGHAND |
-					syscall.CLONE_SYSVSEM |
-					syscall.CLONE_THREAD),
-		},
-	},
-	syscall.SYS_CLOSE: {},
-	syscall.SYS_DUP:   {},
+	syscall.SYS_CLOSE:         {},
+	syscall.SYS_DUP:           {},
 	syscall.SYS_DUP3: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
