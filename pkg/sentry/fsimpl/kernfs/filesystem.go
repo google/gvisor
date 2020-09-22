@@ -148,20 +148,20 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 // Preconditions: Filesystem.mu must be locked for at least reading.
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
-func (fs *Filesystem) walkExistingLocked(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, Inode, error) {
+func (fs *Filesystem) walkExistingLocked(ctx context.Context, rp *vfs.ResolvingPath) (*Dentry, error) {
 	vfsd := rp.Start()
 	for !rp.Done() {
 		var err error
 		vfsd, err = fs.stepExistingLocked(ctx, rp, vfsd, true /* mayFollowSymlinks */)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 	d := vfsd.Impl().(*Dentry)
 	if rp.MustBeDir() && !d.isDir() {
-		return nil, nil, syserror.ENOTDIR
+		return nil, syserror.ENOTDIR
 	}
-	return vfsd, d.inode, nil
+	return d, nil
 }
 
 // walkParentDirLocked resolves all but the last path component of rp to an
@@ -223,8 +223,8 @@ func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parentVFSD *v
 // checkDeleteLocked checks that the file represented by vfsd may be deleted.
 //
 // Preconditions: Filesystem.mu must be locked for at least reading.
-func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry) error {
-	parent := vfsd.Impl().(*Dentry).parent
+func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) error {
+	parent := d.parent
 	if parent == nil {
 		return syserror.EBUSY
 	}
@@ -253,11 +253,11 @@ func (fs *Filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()
 
-	_, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
 		return err
 	}
-	return inode.CheckPermissions(ctx, creds, ats)
+	return d.inode.CheckPermissions(ctx, creds, ats)
 }
 
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.
@@ -265,20 +265,20 @@ func (fs *Filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()
-	vfsd, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
 		return nil, err
 	}
 
 	if opts.CheckSearchable {
-		d := vfsd.Impl().(*Dentry)
 		if !d.isDir() {
 			return nil, syserror.ENOTDIR
 		}
-		if err := inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
+		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
 		}
 	}
+	vfsd := d.VFSDentry()
 	vfsd.IncRef() // Ownership transferred to caller.
 	return vfsd, nil
 }
@@ -404,28 +404,27 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// Do not create new file.
 	if opts.Flags&linux.O_CREAT == 0 {
 		fs.mu.RLock()
-		vfsd, inode, err := fs.walkExistingLocked(ctx, rp)
+		d, err := fs.walkExistingLocked(ctx, rp)
 		if err != nil {
 			fs.mu.RUnlock()
 			fs.processDeferredDecRefs(ctx)
 			return nil, err
 		}
-		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			fs.mu.RUnlock()
 			fs.processDeferredDecRefs(ctx)
 			return nil, err
 		}
-		inode.IncRef()
-		defer inode.DecRef(ctx)
+		d.inode.IncRef()
+		defer d.inode.DecRef(ctx)
 		fs.mu.RUnlock()
 		fs.processDeferredDecRefs(ctx)
-		return inode.Open(ctx, rp, vfsd, opts)
+		return d.inode.Open(ctx, rp, d, opts)
 	}
 
 	// May create new file.
 	mustCreate := opts.Flags&linux.O_EXCL != 0
-	vfsd := rp.Start()
-	inode := vfsd.Impl().(*Dentry).inode
+	d := rp.Start().Impl().(*Dentry)
 	fs.mu.Lock()
 	unlocked := false
 	unlock := func() {
@@ -442,13 +441,13 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		inode.IncRef()
-		defer inode.DecRef(ctx)
+		d.inode.IncRef()
+		defer d.inode.DecRef(ctx)
 		unlock()
-		return inode.Open(ctx, rp, vfsd, opts)
+		return d.inode.Open(ctx, rp, d, opts)
 	}
 afterTrailingSymlink:
 	parentVFSD, parentInode, err := fs.walkParentDirLocked(ctx, rp)
@@ -492,7 +491,7 @@ afterTrailingSymlink:
 		child.inode.IncRef()
 		defer child.inode.DecRef(ctx)
 		unlock()
-		return child.inode.Open(ctx, rp, childVFSD, opts)
+		return child.inode.Open(ctx, rp, child, opts)
 	}
 	if err != nil {
 		return nil, err
@@ -528,22 +527,22 @@ afterTrailingSymlink:
 	child.inode.IncRef()
 	defer child.inode.DecRef(ctx)
 	unlock()
-	return child.inode.Open(ctx, rp, &child.vfsd, opts)
+	return child.inode.Open(ctx, rp, child, opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
 func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
 	fs.mu.RLock()
-	d, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return "", err
 	}
-	if !d.Impl().(*Dentry).isSymlink() {
+	if !d.isSymlink() {
 		return "", syserror.EINVAL
 	}
-	return inode.Readlink(ctx, rp.Mount())
+	return d.inode.Readlink(ctx, rp.Mount())
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
@@ -582,10 +581,9 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err != nil {
 		return err
 	}
-	srcVFSD := &src.vfsd
 
 	// Can we remove the src dentry?
-	if err := checkDeleteLocked(ctx, rp, srcVFSD); err != nil {
+	if err := checkDeleteLocked(ctx, rp, src); err != nil {
 		return err
 	}
 
@@ -625,6 +623,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		defer dstDir.dirMu.Unlock()
 	}
 
+	srcVFSD := src.VFSDentry()
 	if err := virtfs.PrepareRenameDentry(mntns, srcVFSD, dstVFSD); err != nil {
 		return err
 	}
@@ -653,7 +652,7 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	vfsd, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
@@ -662,14 +661,13 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	if err := checkDeleteLocked(ctx, rp, vfsd); err != nil {
+	if err := checkDeleteLocked(ctx, rp, d); err != nil {
 		return err
 	}
-	d := vfsd.Impl().(*Dentry)
 	if !d.isDir() {
 		return syserror.ENOTDIR
 	}
-	if inode.HasChildren() {
+	if d.inode.HasChildren() {
 		return syserror.ENOTEMPTY
 	}
 	virtfs := rp.VirtualFilesystem()
@@ -679,11 +677,12 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
+	vfsd := d.VFSDentry()
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
 
-	if err := parentDentry.inode.RmDir(ctx, d.name, vfsd); err != nil {
+	if err := parentDentry.inode.RmDir(ctx, d.name, d.VFSDentry()); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
@@ -694,7 +693,7 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
 func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	fs.mu.RLock()
-	_, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
@@ -703,31 +702,31 @@ func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
-	return inode.SetStat(ctx, fs.VFSFilesystem(), rp.Credentials(), opts)
+	return d.inode.SetStat(ctx, fs.VFSFilesystem(), rp.Credentials(), opts)
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	fs.mu.RLock()
-	_, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	return inode.Stat(ctx, fs.VFSFilesystem(), opts)
+	return d.inode.Stat(ctx, fs.VFSFilesystem(), opts)
 }
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
 func (fs *Filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
-	_, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return linux.Statfs{}, err
 	}
-	return inode.StatFS(ctx, fs.VFSFilesystem())
+	return d.inode.StatFS(ctx, fs.VFSFilesystem())
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
@@ -763,7 +762,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	vfsd, _, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
@@ -772,10 +771,9 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	if err := checkDeleteLocked(ctx, rp, vfsd); err != nil {
+	if err := checkDeleteLocked(ctx, rp, d); err != nil {
 		return err
 	}
-	d := vfsd.Impl().(*Dentry)
 	if d.isDir() {
 		return syserror.EISDIR
 	}
@@ -785,10 +783,11 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	defer parentDentry.dirMu.Unlock()
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
+	vfsd := d.VFSDentry()
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
-	if err := parentDentry.inode.Unlink(ctx, d.name, vfsd); err != nil {
+	if err := parentDentry.inode.Unlink(ctx, d.name, d.VFSDentry()); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
@@ -799,13 +798,13 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 // BoundEndpointAt implements vfs.FilesystemImpl.BoundEndpointAt.
 func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	fs.mu.RLock()
-	_, inode, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
+	if err := d.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
 	return nil, syserror.ECONNREFUSED
@@ -814,7 +813,7 @@ func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
 func (fs *Filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	fs.mu.RLock()
-	_, _, err := fs.walkExistingLocked(ctx, rp)
+	_, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
@@ -827,7 +826,7 @@ func (fs *Filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
 func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	fs.mu.RLock()
-	_, _, err := fs.walkExistingLocked(ctx, rp)
+	_, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
@@ -840,7 +839,7 @@ func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
 func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	fs.mu.RLock()
-	_, _, err := fs.walkExistingLocked(ctx, rp)
+	_, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
@@ -853,7 +852,7 @@ func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
 func (fs *Filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	fs.mu.RLock()
-	_, _, err := fs.walkExistingLocked(ctx, rp)
+	_, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs(ctx)
 	if err != nil {
