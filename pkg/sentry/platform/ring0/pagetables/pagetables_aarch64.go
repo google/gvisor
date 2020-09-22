@@ -78,7 +78,7 @@ const (
 
 const (
 	executeDisable = xn
-	optionMask     = 0xfff | 0xfff<<48
+	optionMask     = 0xfff | 0xffff<<48
 	protDefault    = accessed | shared
 )
 
@@ -188,7 +188,7 @@ func (p *PTE) Set(addr uintptr, opts MapOpts) {
 		v |= mtNormal
 	} else {
 		v = v &^ user
-		v |= mtDevicenGnRE // Strong order for the addresses with ring0.KernelStartAddress.
+		v |= mtNormal
 	}
 	atomic.StoreUintptr((*uintptr)(p), v)
 }
