@@ -56,9 +56,9 @@ func (f *DynamicBytesFile) Init(creds *auth.Credentials, devMajor, devMinor uint
 }
 
 // Open implements Inode.Open.
-func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &DynamicBytesFD{}
-	if err := fd.Init(rp.Mount(), vfsd, f.data, &f.locks, opts.Flags); err != nil {
+	if err := fd.Init(rp.Mount(), d.VFSDentry(), f.data, &f.locks, opts.Flags); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil

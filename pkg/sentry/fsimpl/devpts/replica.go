@@ -52,13 +52,13 @@ type replicaInode struct {
 var _ kernfs.Inode = (*replicaInode)(nil)
 
 // Open implements kernfs.Inode.Open.
-func (si *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (si *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	si.IncRef()
 	fd := &replicaFileDescription{
 		inode: si,
 	}
 	fd.LockFD.Init(&si.locks)
-	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		si.DecRef(ctx)
 		return nil, err
 	}
