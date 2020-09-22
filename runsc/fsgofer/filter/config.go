@@ -27,20 +27,9 @@ import (
 var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_ACCEPT:        {},
 	syscall.SYS_CLOCK_GETTIME: {},
-	syscall.SYS_CLONE: []seccomp.Rule{
-		{
-			seccomp.EqualTo(
-				syscall.CLONE_VM |
-					syscall.CLONE_FS |
-					syscall.CLONE_FILES |
-					syscall.CLONE_SIGHAND |
-					syscall.CLONE_SYSVSEM |
-					syscall.CLONE_THREAD),
-		},
-	},
-	syscall.SYS_CLOSE:     {},
-	syscall.SYS_DUP:       {},
-	syscall.SYS_EPOLL_CTL: {},
+	syscall.SYS_CLOSE:         {},
+	syscall.SYS_DUP:           {},
+	syscall.SYS_EPOLL_CTL:     {},
 	syscall.SYS_EPOLL_PWAIT: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
