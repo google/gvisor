@@ -246,11 +246,12 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		d.touchCMtime()
 	}
 	buf := make([]byte, src.NumBytes())
-	// Don't do partial writes if we get a partial read from src.
-	if _, err := src.CopyIn(ctx, buf); err != nil {
-		return 0, offset, err
+	copied, copyErr := src.CopyIn(ctx, buf)
+	if copied == 0 && copyErr != nil {
+		// Only return the error if we didn't get any data.
+		return 0, offset, copyErr
 	}
-	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
+	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:copied])), uint64(offset))
 	if err == syserror.EAGAIN {
 		err = syserror.ErrWouldBlock
 	}
@@ -267,7 +268,10 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 			atomic.StoreUint64(&d.size, uint64(offset))
 		}
 	}
-	return int64(n), offset, err
+	if err != nil {
+		return int64(n), offset, err
+	}
+	return int64(n), offset, copyErr
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
