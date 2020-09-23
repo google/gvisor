@@ -388,6 +388,10 @@ func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.Netw
 		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
 	}
 
+	if got, want := p.Pkt.TransportProtocolNumber, header.UDPProtocolNumber; got != want {
+		c.t.Errorf("got p.Pkt.TransportProtocolNumber = %d, want = %d", got, want)
+	}
+
 	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
 	b := vv.ToView()
 

@@ -125,6 +125,26 @@ type PacketEndpoint interface {
 	HandlePacket(nicID tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
+// UnknownDestinationPacketDisposition enumerates the possible return vaues from
+// HandleUnknownDestinationPacket().
+type UnknownDestinationPacketDisposition int
+
+const (
+	// UnknownDestinationPacketMalformed denotes that the packet was malformed
+	// and no further processing should be attempted other than updating
+	// statistics.
+	UnknownDestinationPacketMalformed UnknownDestinationPacketDisposition = iota
+
+	// UnknownDestinationPacketUnhandled tells the caller that the packet was
+	// well formed but that the issue was not handled and the stack should take
+	// the default action.
+	UnknownDestinationPacketUnhandled
+
+	// UnknownDestinationPacketHandled tells the caller that it should do
+	// no further processing.
+	UnknownDestinationPacketHandled
+)
+
 // TransportProtocol is the interface that needs to be implemented by transport
 // protocols (e.g., tcp, udp) that want to be part of the networking stack.
 type TransportProtocol interface {
@@ -147,14 +167,12 @@ type TransportProtocol interface {
 	ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error)
 
 	// HandleUnknownDestinationPacket handles packets targeted at this
-	// protocol but that don't match any existing endpoint. For example,
-	// it is targeted at a port that have no listeners.
+	// protocol that don't match any existing endpoint. For example,
+	// it is targeted at a port that has no listeners.
 	//
-	// The return value indicates whether the packet was well-formed (for
-	// stats purposes only).
-	//
-	// HandleUnknownDestinationPacket takes ownership of pkt.
-	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, pkt *PacketBuffer) bool
+	// HandleUnknownDestinationPacket takes ownership of pkt if it handles
+	// the issue.
+	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, pkt *PacketBuffer) UnknownDestinationPacketDisposition
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -324,6 +342,19 @@ type NetworkProtocol interface {
 	//   does not encapsulate anything).
 	// - Whether pkt.Data was large enough to parse and set pkt.NetworkHeader.
 	Parse(pkt *PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool)
+
+	// ReturnError attempts to send a suitable error message to the sender
+	// of a received packet.
+	// - pkt holds the problematic packet.
+	// - reason indicates what the reason for wanting a message is.
+	// - route is the routing information for the received packet
+	// ReturnError returns an error if the send failed and nil on success.
+	// Note that deciding to deliberately send no message is a success.
+	//
+	// TODO(gvisor.dev/issues/3871): This method should be removed or simplified
+	// after all (or all but one) of the ICMP error dispatch occurs through the
+	// protocol specific modules. May become SendPortNotFound(r, pkt).
+	ReturnError(r *Route, reason tcpip.ICMPReason, pkt *PacketBuffer) *tcpip.Error
 }
 
 // NetworkDispatcher contains the methods used by the network stack to deliver
