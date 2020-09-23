@@ -20,6 +20,7 @@ package gomarshal
 import (
 	"fmt"
 	"go/ast"
+	"sort"
 	"strings"
 )
 
@@ -40,6 +41,8 @@ func (g *interfaceGenerator) areFieldsPackedExpression() (string, bool) {
 	for accessor, _ := range g.as {
 		cs = append(cs, fmt.Sprintf("%s.Packed()", accessor))
 	}
+	// Sort expressions for determinstic build outputs.
+	sort.Strings(cs)
 	return strings.Join(cs, " && "), true
 }
 

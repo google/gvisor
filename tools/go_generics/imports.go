@@ -21,6 +21,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"sort"
 	"strconv"
 
 	"gvisor.dev/gvisor/tools/go_generics/globals"
@@ -132,10 +133,17 @@ func updateImports(maps []mapValue, imports mapValue) (ast.Decl, error) {
 	if len(importsUsed) == 0 {
 		return nil, nil
 	}
+	var names []string
+	for n := range importsUsed {
+		names = append(names, n)
+	}
+	// Sort the new imports for deterministic build outputs.
+	sort.Strings(names)
 
 	// Create spec array for each new import.
 	specs := make([]ast.Spec, 0, len(importsUsed))
-	for _, i := range importsUsed {
+	for _, n := range names {
+		i := importsUsed[n]
 		specs = append(specs, &ast.ImportSpec{
 			Name: &ast.Ident{Name: i.newName},
 			Path: &ast.BasicLit{Value: i.path},
