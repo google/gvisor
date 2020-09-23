@@ -318,6 +318,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6NeighborAdvertMinimumSize + int(optsSerializer.Length()),
 		})
 		packet := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6NeighborAdvertSize))
+		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		packet.SetType(header.ICMPv6NeighborAdvert)
 		na := header.NDPNeighborAdvert(packet.NDPPayload())
 		na.SetSolicitedFlag(solicited)
@@ -438,6 +439,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			Data:               pkt.Data,
 		})
 		packet := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
+		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		copy(packet, icmpHdr)
 		packet.SetType(header.ICMPv6EchoReply)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, pkt.Data))
@@ -637,6 +639,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAdd
 		ReserveHeaderBytes: int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize,
 	})
 	icmpHdr := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6NeighborAdvertSize))
+	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 	icmpHdr.SetType(header.ICMPv6NeighborSolicit)
 	copy(icmpHdr[icmpV6OptOffset-len(addr):], addr)
 	icmpHdr[icmpV6OptOffset] = ndpOptSrcLinkAddr
@@ -664,4 +667,124 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 		return header.EthernetAddressFromMulticastIPv6Address(addr), true
 	}
 	return tcpip.LinkAddress([]byte(nil)), false
+}
+
+// ======= ICMP Error packet generation =========
+
+// ReturnError implements stack.TransportProtocol.ReturnError.
+func (p *protocol) ReturnError(r *stack.Route, reason tcpip.ICMPReason, pkt *stack.PacketBuffer) *tcpip.Error {
+	switch reason.(type) {
+	case *tcpip.ICMPReasonPortUnreachable:
+		return returnError(r, &icmpReasonPortUnreachable{}, pkt)
+	default:
+		return tcpip.ErrNotSupported
+	}
+}
+
+// icmpReason is a marker interface for IPv6 specific ICMP errors.
+type icmpReason interface {
+	isICMPReason()
+}
+
+// icmpReasonPortUnreachable is an error where the transport protocol has no
+// listener and no alternative means to inform the sender.
+type icmpReasonPortUnreachable struct{}
+
+func (*icmpReasonPortUnreachable) isICMPReason() {}
+
+// returnError takes an error descriptor and generates the appropriate ICMP
+// error packet for IPv6 and sends it.
+func returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+	stats := r.Stats().ICMP
+	sent := stats.V6PacketsSent
+	if !r.Stack().AllowICMPMessage() {
+		sent.RateLimited.Increment()
+		return nil
+	}
+
+	// Only send ICMP error if the address is not a multicast v6
+	// address and the source is not the unspecified address.
+	//
+	// TODO(b/164522993) There are exceptions to this rule.
+	// See: point e.3) RFC 4443 section-2.4
+	//
+	//	 (e) An ICMPv6 error message MUST NOT be originated as a result of
+	//       receiving the following:
+	//
+	//       (e.1) An ICMPv6 error message.
+	//
+	//       (e.2) An ICMPv6 redirect message [IPv6-DISC].
+	//
+	//       (e.3) A packet destined to an IPv6 multicast address.  (There are
+	//             two exceptions to this rule: (1) the Packet Too Big Message
+	//             (Section 3.2) to allow Path MTU discovery to work for IPv6
+	//             multicast, and (2) the Parameter Problem Message, Code 2
+	//             (Section 3.4) reporting an unrecognized IPv6 option (see
+	//             Section 4.2 of [IPv6]) that has the Option Type highest-
+	//             order two bits set to 10).
+	//
+	if header.IsV6MulticastAddress(r.LocalAddress) || r.RemoteAddress == header.IPv6Any {
+		return nil
+	}
+
+	network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
+
+	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {
+		// TODO(gvisor.dev/issues/3810): Sort this out when ICMP headers are stored.
+		// Unfortunately at this time ICMP Packets do not have a transport
+		// header separated out. It is in the Data part so we need to
+		// separate it out now. We will just pretend it is a minimal length
+		// ICMP packet as we don't really care if any later bits of a
+		// larger ICMP packet are in the header view or in the Data view.
+		transport, ok := pkt.TransportHeader().Consume(header.ICMPv6MinimumSize)
+		if !ok {
+			return nil
+		}
+		typ := header.ICMPv6(transport).Type()
+		if typ.IsErrorType() || typ == header.ICMPv6RedirectMsg {
+			return nil
+		}
+	}
+
+	// As per RFC 4443 section 2.4
+	//
+	//    (c) Every ICMPv6 error message (type < 128) MUST include
+	//    as much of the IPv6 offending (invoking) packet (the
+	//    packet that caused the error) as possible without making
+	//    the error message packet exceed the minimum IPv6 MTU
+	//    [IPv6].
+	mtu := int(r.MTU())
+	if mtu > header.IPv6MinimumMTU {
+		mtu = header.IPv6MinimumMTU
+	}
+	headerLen := int(r.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize
+	available := int(mtu) - headerLen
+	if available < header.IPv6MinimumSize {
+		return nil
+	}
+	payloadLen := network.Size() + transport.Size() + pkt.Data.Size()
+	if payloadLen > available {
+		payloadLen = available
+	}
+	payload := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+	payload.CapLength(payloadLen)
+
+	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: headerLen,
+		Data:               payload,
+	})
+	newPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+
+	icmpHdr := header.ICMPv6(newPkt.TransportHeader().Push(header.ICMPv6DstUnreachableMinimumSize))
+	icmpHdr.SetCode(header.ICMPv6PortUnreachable)
+	icmpHdr.SetType(header.ICMPv6DstUnreachable)
+	icmpHdr.SetChecksum(header.ICMPv6Checksum(icmpHdr, r.LocalAddress, r.RemoteAddress, newPkt.Data))
+	counter := sent.DstUnreachable
+	err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, newPkt)
+	if err != nil {
+		sent.Dropped.Increment()
+		return err
+	}
+	counter.Increment()
+	return nil
 }

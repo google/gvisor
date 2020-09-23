@@ -1242,9 +1242,9 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		local = n.linkEP.LinkAddress()
 	}
 
-	// Are any packet sockets listening for this network protocol?
+	// Are any packet type sockets listening for this network protocol?
 	packetEPs := n.mu.packetEPs[protocol]
-	// Add any other packet sockets that maybe listening for all protocols.
+	// Add any other packet type sockets that may be listening for all protocols.
 	packetEPs = append(packetEPs, n.mu.packetEPs[header.EthernetProtocolAll]...)
 	n.mu.RUnlock()
 	for _, ep := range packetEPs {
@@ -1265,6 +1265,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		return
 	}
 	if hasTransportHdr {
+		pkt.TransportProtocolNumber = transProtoNum
 		// Parse the transport header if present.
 		if state, ok := n.stack.transportProtocols[transProtoNum]; ok {
 			state.proto.Parse(pkt)
@@ -1453,10 +1454,28 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 		}
 	}
 
-	// We could not find an appropriate destination for this packet, so
-	// deliver it to the global handler.
-	if !transProto.HandleUnknownDestinationPacket(r, id, pkt) {
+	// We could not find an appropriate destination for this packet so
+	// give the protocol specific error handler a chance to handle it.
+	// If it doesn't handle it then we should do so.
+	switch transProto.HandleUnknownDestinationPacket(r, id, pkt) {
+	case UnknownDestinationPacketMalformed:
 		n.stack.stats.MalformedRcvdPackets.Increment()
+	case UnknownDestinationPacketUnhandled:
+		// As per RFC: 1122 Section 3.2.2.1 A host SHOULD generate Destination
+		//   Unreachable messages with code:
+		//     3 (Port Unreachable), when the designated transport protocol
+		//     (e.g., UDP) is unable to demultiplex the datagram but has no
+		//     protocol mechanism to inform the sender.
+		np, ok := n.stack.networkProtocols[r.NetProto]
+		if !ok {
+			// For this to happen stack.makeRoute() must have been called with the
+			// incorrect protocol number. Since we have successfully completed
+			// network layer processing this should be impossible.
+			panic(fmt.Sprintf("expected stack to have a NetworkProtocol for proto = %d", r.NetProto))
+		}
+
+		_ = np.ReturnError(r, &tcpip.ICMPReasonPortUnreachable{}, pkt)
+	case UnknownDestinationPacketHandled:
 	}
 }
 
