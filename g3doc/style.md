@@ -46,6 +46,30 @@ protected.
 Each field or variable protected by a mutex should state as such in a comment on
 the field or variable declaration.
 
+#### Mutex embedded struct
+
+Mutexes may be embedded in a struct to make it clear to readers and developers
+that all accesses to fields in the struct must be protected by the mutex. The
+mutex must be embedded at the top of the struct declaration.
+
+##### Example
+
+```go
+type Counter struct {
+  mu struct {
+    sync.Mutex
+
+    count uint32
+  }
+}
+
+func (c *Counter) Increment() {
+  c.mu.Lock()
+  defer c.mu.Unlock()
+  c.mu.count++
+}
+```
+
 ### Function comments
 
 Functions with special entry conditions (e.g., a lock must be held) should state
