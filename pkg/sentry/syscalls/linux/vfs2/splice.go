@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
+	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -146,11 +147,6 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			panic("at least one end of splice must be a pipe")
 		}
 
-		if n == 0 && err == io.EOF {
-			// We reached the end of the file. Eat the error and exit the loop.
-			err = nil
-			break
-		}
 		if n != 0 || err != syserror.ErrWouldBlock || nonBlock {
 			break
 		}
@@ -171,15 +167,16 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 	}
 
-	if n == 0 {
-		return 0, nil, err
+	if n != 0 {
+		// On Linux, inotify behavior is not very consistent with splice(2). We try
+		// our best to emulate Linux for very basic calls to splice, where for some
+		// reason, events are generated for output files, but not input files.
+		outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 	}
 
-	// On Linux, inotify behavior is not very consistent with splice(2). We try
-	// our best to emulate Linux for very basic calls to splice, where for some
-	// reason, events are generated for output files, but not input files.
-	outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
-	return uintptr(n), nil, nil
+	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
+	// This is used only for debugging purposes.
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "splice", outFile)
 }
 
 // Tee implements Linux syscall tee(2).
@@ -251,11 +248,20 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 			break
 		}
 	}
-	if n == 0 {
-		return 0, nil, err
+
+	if n != 0 {
+		outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
+
+		// If a partial write is completed, the error is dropped. Log it here.
+		if err != nil && err != io.EOF && err != syserror.ErrWouldBlock {
+			log.Debugf("tee completed a partial write with error: %v", err)
+			err = nil
+		}
 	}
-	outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
-	return uintptr(n), nil, nil
+
+	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
+	// This is used only for debugging purposes.
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "tee", inFile)
 }
 
 // Sendfile implements linux system call sendfile(2).
@@ -348,11 +354,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		for n < count {
 			var spliceN int64
 			spliceN, err = outPipeFD.SpliceFromNonPipe(t, inFile, offset, count)
-			if spliceN == 0 && err == io.EOF {
-				// We reached the end of the file. Eat the error and exit the loop.
-				err = nil
-				break
-			}
 			if offset != -1 {
 				offset += spliceN
 			}
@@ -374,13 +375,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				offset += readN
 			} else {
 				readN, err = inFile.Read(t, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
-			}
-			if readN == 0 && err != nil {
-				if err == io.EOF {
-					// We reached the end of the file. Eat the error before exiting the loop.
-					err = nil
-				}
-				break
 			}
 			n += readN
 
@@ -432,13 +426,20 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 	}
 
-	if n == 0 {
-		return 0, nil, err
+	if n != 0 {
+		inFile.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+		outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
+
+		if err != nil && err != io.EOF && err != syserror.ErrWouldBlock {
+			// If a partial write is completed, the error is dropped. Log it here.
+			log.Debugf("sendfile completed a partial write with error: %v", err)
+			err = nil
+		}
 	}
 
-	inFile.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
-	outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
-	return uintptr(n), nil, nil
+	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
+	// This is used only for debugging purposes.
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "sendfile", inFile)
 }
 
 // dualWaiter is used to wait on one or both vfs.FileDescriptions. It is not
