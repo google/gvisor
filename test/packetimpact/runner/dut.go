@@ -69,8 +69,8 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&native, "native", false, "whether the test should be run natively")
 	fs.StringVar(&testbenchBinary, "testbench_binary", "", "path to the testbench binary")
 	fs.BoolVar(&tshark, "tshark", false, "use more verbose tshark in logs instead of tcpdump")
-	flag.Var(&extraTestArgs, "extra_test_arg", "extra arguments to pass to the testbench")
-	flag.BoolVar(&expectFailure, "expect_failure", false, "expect that the test will fail when run")
+	fs.Var(&extraTestArgs, "extra_test_arg", "extra arguments to pass to the testbench")
+	fs.BoolVar(&expectFailure, "expect_failure", false, "expect that the test will fail when run")
 }
 
 // CtrlPort is the port that posix_server listens on.
