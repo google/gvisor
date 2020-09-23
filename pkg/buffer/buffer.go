@@ -14,36 +14,26 @@
 
 // Package buffer provides the implementation of a buffer view.
 //
-// A view is an flexible buffer, backed by a pool, supporting the safecopy
-// operations natively as well as the ability to grow via either prepend or
-// append, as well as shrink.
+// A view is an flexible buffer, supporting the safecopy operations natively as
+// well as the ability to grow via either prepend or append, as well as shrink.
 package buffer
-
-import (
-	"sync"
-)
-
-const bufferSize = 8144 // See below.
 
 // buffer encapsulates a queueable byte buffer.
 //
-// Note that the total size is slightly less than two pages. This is done
-// intentionally to ensure that the buffer object aligns with runtime
-// internals. We have no hard size or alignment requirements. This two page
-// size will effectively minimize internal fragmentation, but still have a
-// large enough chunk to limit excessive segmentation.
-//
 // +stateify savable
 type buffer struct {
-	data  [bufferSize]byte
+	data  []byte
 	read  int
 	write int
 	bufferEntry
 }
 
-// reset resets internal data.
-//
-// This must be called before returning the buffer to the pool.
+// init performs in-place initialization for zero value.
+func (b *buffer) init(size int) {
+	b.data = make([]byte, size)
+}
+
+// Reset resets read and write locations, effectively emptying the buffer.
 func (b *buffer) Reset() {
 	b.read = 0
 	b.write = 0
@@ -84,11 +74,4 @@ func (b *buffer) WriteMove(n int) {
 // WriteSlice returns the write slice for this buffer.
 func (b *buffer) WriteSlice() []byte {
 	return b.data[b.write:]
-}
-
-// bufferPool is a pool for buffers.
-var bufferPool = sync.Pool{
-	New: func() interface{} {
-		return new(buffer)
-	},
 }

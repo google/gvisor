@@ -44,7 +44,7 @@ func (v *View) WriteFromSafememReader(r safemem.Reader, count uint64) (uint64, e
 	// Need at least one buffer.
 	firstBuf := v.data.Back()
 	if firstBuf == nil {
-		firstBuf = bufferPool.Get().(*buffer)
+		firstBuf = v.pool.get()
 		v.data.PushBack(firstBuf)
 	}
 
@@ -56,7 +56,7 @@ func (v *View) WriteFromSafememReader(r safemem.Reader, count uint64) (uint64, e
 		count -= l
 		blocks = append(blocks, firstBuf.WriteBlock())
 		for count > 0 {
-			emptyBuf := bufferPool.Get().(*buffer)
+			emptyBuf := v.pool.get()
 			v.data.PushBack(emptyBuf)
 			block := emptyBuf.WriteBlock().TakeFirst64(count)
 			count -= uint64(block.Len())

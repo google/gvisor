@@ -90,6 +90,31 @@ func (x *bufferEntry) StateLoad(m state.Source) {
 	m.Load(1, &x.prev)
 }
 
+func (x *pool) StateTypeName() string {
+	return "pkg/buffer.pool"
+}
+
+func (x *pool) StateFields() []string {
+	return []string{
+		"bufferSize",
+		"embeddedStorage",
+	}
+}
+
+func (x *pool) beforeSave() {}
+
+func (x *pool) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.bufferSize)
+	m.Save(1, &x.embeddedStorage)
+}
+
+func (x *pool) StateLoad(m state.Source) {
+	m.Load(0, &x.bufferSize)
+	m.LoadWait(1, &x.embeddedStorage)
+	m.AfterLoad(x.afterLoad)
+}
+
 func (x *View) StateTypeName() string {
 	return "pkg/buffer.View"
 }
@@ -98,6 +123,7 @@ func (x *View) StateFields() []string {
 	return []string{
 		"data",
 		"size",
+		"pool",
 	}
 }
 
@@ -107,6 +133,7 @@ func (x *View) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.data)
 	m.Save(1, &x.size)
+	m.Save(2, &x.pool)
 }
 
 func (x *View) afterLoad() {}
@@ -114,11 +141,13 @@ func (x *View) afterLoad() {}
 func (x *View) StateLoad(m state.Source) {
 	m.Load(0, &x.data)
 	m.Load(1, &x.size)
+	m.Load(2, &x.pool)
 }
 
 func init() {
 	state.Register((*buffer)(nil))
 	state.Register((*bufferList)(nil))
 	state.Register((*bufferEntry)(nil))
+	state.Register((*pool)(nil))
 	state.Register((*View)(nil))
 }
