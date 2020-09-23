@@ -348,7 +348,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 					it, done, err := it.Next()
 					if err != nil {
 						r.Stats().IP.MalformedPacketsReceived.Increment()
-						r.Stats().IP.MalformedPacketsReceived.Increment()
+						r.Stats().IP.MalformedFragmentsReceived.Increment()
 						return
 					}
 					if done {
@@ -476,6 +476,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			pkt.Data = extHdr.Buf
 
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
+				pkt.TransportProtocolNumber = p
 				e.handleICMP(r, pkt, hasFragmentHeader)
 			} else {
 				r.Stats().IP.PacketsDelivered.Increment()

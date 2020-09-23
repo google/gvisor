@@ -80,10 +80,16 @@ type PacketBuffer struct {
 	// data are held in the same underlying buffer storage.
 	header buffer.Prependable
 
-	// NetworkProtocolNumber is only valid when NetworkHeader is set.
+	// NetworkProtocolNumber is only valid when NetworkHeader().View().IsEmpty()
+	// returns false.
 	// TODO(gvisor.dev/issue/3574): Remove the separately passed protocol
 	// numbers in registration APIs that take a PacketBuffer.
 	NetworkProtocolNumber tcpip.NetworkProtocolNumber
+
+	// TransportProtocol is only valid if it is non zero.
+	// TODO(gvisor.dev/issue/3810): This and the network protocol number should
+	// be moved into the headerinfo. This should resolve the validity issue.
+	TransportProtocolNumber tcpip.TransportProtocolNumber
 
 	// Hash is the transport layer hash of this packet. A value of zero
 	// indicates no valid hash has been set.
@@ -234,16 +240,17 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v buffer.View, consum
 // underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk := &PacketBuffer{
-		PacketBufferEntry:     pk.PacketBufferEntry,
-		Data:                  pk.Data.Clone(nil),
-		headers:               pk.headers,
-		header:                pk.header,
-		Hash:                  pk.Hash,
-		Owner:                 pk.Owner,
-		EgressRoute:           pk.EgressRoute,
-		GSOOptions:            pk.GSOOptions,
-		NetworkProtocolNumber: pk.NetworkProtocolNumber,
-		NatDone:               pk.NatDone,
+		PacketBufferEntry:       pk.PacketBufferEntry,
+		Data:                    pk.Data.Clone(nil),
+		headers:                 pk.headers,
+		header:                  pk.header,
+		Hash:                    pk.Hash,
+		Owner:                   pk.Owner,
+		EgressRoute:             pk.EgressRoute,
+		GSOOptions:              pk.GSOOptions,
+		NetworkProtocolNumber:   pk.NetworkProtocolNumber,
+		NatDone:                 pk.NatDone,
+		TransportProtocolNumber: pk.TransportProtocolNumber,
 	}
 	return newPk
 }

@@ -455,6 +455,10 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	}
 	p := h.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {
+		// TODO(gvisor.dev/issues/3810): when we sort out ICMP and transport
+		// headers, the setting of the transport number here should be
+		// unnecessary and removed.
+		pkt.TransportProtocolNumber = p
 		e.handleICMP(r, pkt)
 		return
 	}
