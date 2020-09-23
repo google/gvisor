@@ -20,7 +20,7 @@
             "command": "bazel test //...",
             "group": {
                 "kind": "test",
-                "isDefault": true,
+                "isDefault": true
             },
             "presentation": {
             "reveal": "always",
