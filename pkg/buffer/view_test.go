@@ -16,10 +16,15 @@ package buffer
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
+
+const bufferSize = defaultBufferSize
 
 func fillAppend(v *View, data []byte) {
 	v.Append(data)
@@ -48,6 +53,30 @@ var fillFuncs = map[string]func(*View, []byte){
 	"appendEnd":          fillAppendEnd,
 	"writeFromReader":    fillWriteFromReader,
 	"writeFromReaderEnd": fillWriteFromReaderEnd,
+}
+
+func BenchmarkReadAt(b *testing.B) {
+	b.ReportAllocs()
+	var v View
+	v.Append(make([]byte, 100))
+
+	buf := make([]byte, 10)
+	for i := 0; i < b.N; i++ {
+		v.ReadAt(buf, 0)
+	}
+}
+
+func BenchmarkWriteRead(b *testing.B) {
+	b.ReportAllocs()
+	var v View
+	sz := 1000
+	wbuf := make([]byte, sz)
+	rbuf := bytes.NewBuffer(make([]byte, sz))
+	for i := 0; i < b.N; i++ {
+		v.Append(wbuf)
+		rbuf.Reset()
+		v.ReadToWriter(rbuf, int64(sz))
+	}
 }
 
 func testReadAt(t *testing.T, v *View, offset int64, n int, wantStr string, wantErr error) {
@@ -463,5 +492,53 @@ func TestView(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func doSaveAndLoad(t *testing.T, toSave, toLoad *View) {
+	t.Helper()
+	var buf bytes.Buffer
+	ctx := context.Background()
+	if _, err := state.Save(ctx, &buf, toSave); err != nil {
+		t.Fatal("state.Save:", err)
+	}
+	if _, err := state.Load(ctx, bytes.NewReader(buf.Bytes()), toLoad); err != nil {
+		t.Fatal("state.Load:", err)
+	}
+}
+
+func TestSaveRestoreViewEmpty(t *testing.T) {
+	var toSave View
+	var v View
+	doSaveAndLoad(t, &toSave, &v)
+
+	if got := v.pool.avail; got != nil {
+		t.Errorf("pool is not in zero state: v.pool.avail = %v, want nil", got)
+	}
+	if got := v.Flatten(); len(got) != 0 {
+		t.Errorf("v.Flatten() = %x, want []", got)
+	}
+}
+
+func TestSaveRestoreView(t *testing.T) {
+	// Create data that fits 2.5 slots.
+	data := bytes.Join([][]byte{
+		bytes.Repeat([]byte{1, 2}, defaultBufferSize),
+		bytes.Repeat([]byte{3}, defaultBufferSize/2),
+	}, nil)
+
+	var toSave View
+	toSave.Append(data)
+
+	var v View
+	doSaveAndLoad(t, &toSave, &v)
+
+	// Next available slot at index 3; 0-2 slot are used.
+	i := 3
+	if got, want := &v.pool.avail[0], &v.pool.embeddedStorage[i]; got != want {
+		t.Errorf("next available buffer points to %p, want %p (&v.pool.embeddedStorage[%d])", got, want, i)
+	}
+	if got := v.Flatten(); !bytes.Equal(got, data) {
+		t.Errorf("v.Flatten() = %x, want %x", got, data)
 	}
 }

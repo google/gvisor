@@ -23,6 +23,8 @@ import (
 )
 
 func TestSafemem(t *testing.T) {
+	const bufferSize = defaultBufferSize
+
 	testCases := []struct {
 		name    string
 		input   string
