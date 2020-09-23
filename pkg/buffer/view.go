@@ -27,6 +27,7 @@ import (
 type View struct {
 	data bufferList
 	size int64
+	pool pool
 }
 
 // TrimFront removes the first count bytes from the buffer.
@@ -81,7 +82,7 @@ func (v *View) advanceRead(count int64) {
 		buf = buf.Next() // Iterate.
 		v.data.Remove(oldBuf)
 		oldBuf.Reset()
-		bufferPool.Put(oldBuf)
+		v.pool.put(oldBuf)
 
 		// Update counts.
 		count -= sz
@@ -118,7 +119,7 @@ func (v *View) Truncate(length int64) {
 		// Drop the buffer completely; see above.
 		v.data.Remove(buf)
 		buf.Reset()
-		bufferPool.Put(buf)
+		v.pool.put(buf)
 		v.size -= sz
 	}
 }
@@ -137,7 +138,7 @@ func (v *View) Grow(length int64, zero bool) {
 
 		// Is there some space in the last buffer?
 		if buf == nil || buf.Full() {
-			buf = bufferPool.Get().(*buffer)
+			buf = v.pool.get()
 			v.data.PushBack(buf)
 		}
 
@@ -181,7 +182,7 @@ func (v *View) Prepend(data []byte) {
 
 	for len(data) > 0 {
 		// Do we need an empty buffer?
-		buf := bufferPool.Get().(*buffer)
+		buf := v.pool.get()
 		v.data.PushFront(buf)
 
 		// The buffer is empty; copy last chunk.
@@ -211,7 +212,7 @@ func (v *View) Append(data []byte) {
 
 		// Ensure there's a buffer with space.
 		if buf == nil || buf.Full() {
-			buf = bufferPool.Get().(*buffer)
+			buf = v.pool.get()
 			v.data.PushBack(buf)
 		}
 
@@ -297,7 +298,7 @@ func (v *View) WriteFromReader(r io.Reader, count int64) (int64, error) {
 
 		// Ensure we have an empty buffer.
 		if buf == nil || buf.Full() {
-			buf = bufferPool.Get().(*buffer)
+			buf = v.pool.get()
 			v.data.PushBack(buf)
 		}
 

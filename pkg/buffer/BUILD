@@ -20,6 +20,7 @@ go_library(
     srcs = [
         "buffer.go",
         "buffer_list.go",
+        "pool.go",
         "safemem.go",
         "view.go",
         "view_unsafe.go",
@@ -37,9 +38,13 @@ go_test(
     name = "buffer_test",
     size = "small",
     srcs = [
+        "pool_test.go",
         "safemem_test.go",
         "view_test.go",
     ],
     library = ":buffer",
-    deps = ["//pkg/safemem"],
+    deps = [
+        "//pkg/safemem",
+        "//pkg/state",
+    ],
 )
