@@ -240,6 +240,38 @@ func TestTCPResetsSentIncrement(t *testing.T) {
 	}
 }
 
+// TestTCPResetsSentNoICMP confirms that we don't get an ICMP
+// DstUnreachable packet when we try send a packet which is not part
+// of an active session.
+func TestTCPResetsSentNoICMP(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+	stats := c.Stack().Stats()
+
+	// Send a SYN request for a closed port. This should elicit an RST
+	// but NOT an ICMPv4 DstUnreachable packet.
+	iss := seqnum.Value(789)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  iss,
+	})
+
+	// Receive whatever comes back.
+	b := c.GetPacket()
+	ipHdr := header.IPv4(b)
+	if got, want := ipHdr.Protocol(), uint8(header.TCPProtocolNumber); got != want {
+		t.Errorf("unexpected protocol, got = %d, want = %d", got, want)
+	}
+
+	// Read outgoing ICMP stats and check no ICMP DstUnreachable was recorded.
+	sent := stats.ICMP.V4PacketsSent
+	if got, want := sent.DstUnreachable.Value(), uint64(0); got != want {
+		t.Errorf("got ICMP DstUnreachable.Value() = %d, want = %d", got, want)
+	}
+}
+
 // TestTCPResetSentForACKWhenNotUsingSynCookies checks that the stack generates
 // a RST if an ACK is received on the listening socket for which there is no
 // active handshake in progress and we are not using SYN cookies.

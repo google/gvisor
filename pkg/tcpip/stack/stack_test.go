@@ -216,13 +216,18 @@ func (f *fakeNetworkProtocol) Option(option tcpip.GettableNetworkProtocolOption)
 	}
 }
 
-// Close implements TransportProtocol.Close.
+// ReturnError implements NetworkProtocol.ReturnError
+func (*fakeNetworkProtocol) ReturnError(*stack.Route, tcpip.ICMPReason, *stack.PacketBuffer) *tcpip.Error {
+	return nil
+}
+
+// Close implements NetworkProtocol.Close.
 func (*fakeNetworkProtocol) Close() {}
 
-// Wait implements TransportProtocol.Wait.
+// Wait implements NetworkProtocol.Wait.
 func (*fakeNetworkProtocol) Wait() {}
 
-// Parse implements TransportProtocol.Parse.
+// Parse implements NetworkProtocol.Parse.
 func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
 	hdr, ok := pkt.NetworkHeader().Consume(fakeNetHeaderLen)
 	if !ok {

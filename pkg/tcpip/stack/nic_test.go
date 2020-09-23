@@ -221,6 +221,11 @@ func (*testIPv6Protocol) Parse(*PacketBuffer) (tcpip.TransportProtocolNumber, bo
 	return 0, false, false
 }
 
+// ReturnError implements NetworkProtocol.ReturnError.
+func (*testIPv6Protocol) ReturnError(*Route, tcpip.ICMPReason, *PacketBuffer) *tcpip.Error {
+	return nil
+}
+
 var _ LinkAddressResolver = (*testIPv6Protocol)(nil)
 
 // LinkAddressProtocol implements LinkAddressResolver.
