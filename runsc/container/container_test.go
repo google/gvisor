@@ -1843,8 +1843,9 @@ func TestUserLog(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
-	// sched_rr_get_interval = 148 - not implemented in gvisor.
-	spec := testutil.NewSpecWithArgs(app, "syscall", "--syscall=148")
+	// sched_rr_get_interval - not implemented in gvisor.
+	num := strconv.Itoa(syscall.SYS_SCHED_RR_GET_INTERVAL)
+	spec := testutil.NewSpecWithArgs(app, "syscall", "--syscall="+num)
 	conf := testutil.TestConfig(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
