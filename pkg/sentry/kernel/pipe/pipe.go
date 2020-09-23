@@ -17,6 +17,7 @@ package pipe
 
 import (
 	"fmt"
+	"io"
 	"sync/atomic"
 	"syscall"
 
@@ -215,7 +216,7 @@ func (p *Pipe) readLocked(ctx context.Context, ops readOps) (int64, error) {
 	if p.view.Size() == 0 {
 		if !p.HasWriters() {
 			// There are no writers, return EOF.
-			return 0, nil
+			return 0, io.EOF
 		}
 		return 0, syserror.ErrWouldBlock
 	}
