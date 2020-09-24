@@ -163,6 +163,8 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 // PathOperation is passed to VFS methods by pointer to reduce memory copying:
 // it's somewhat large and should never escape. (Options structs are passed by
 // pointer to VFS and FileDescription methods for the same reason.)
+//
+// +stateify savable
 type PathOperation struct {
 	// Root is the VFS root. References on Root are borrowed from the provider
 	// of the PathOperation.

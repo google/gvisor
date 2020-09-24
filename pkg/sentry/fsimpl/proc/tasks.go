@@ -236,6 +236,8 @@ func (i *tasksInode) DecRef(context.Context) {
 // staticFileSetStat implements a special static file that allows inode
 // attributes to be set. This is to support /proc files that are readonly, but
 // allow attributes to be set.
+//
+// +stateify savable
 type staticFileSetStat struct {
 	dynamicBytesFileSetAttr
 	vfs.StaticData

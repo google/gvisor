@@ -41,8 +41,11 @@ const Name = "fuse"
 const maxActiveRequestsDefault = 10000
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
+// +stateify savable
 type filesystemOptions struct {
 	// userID specifies the numeric uid of the mount owner.
 	// This option should not be specified by the filesystem owner.
@@ -73,6 +76,8 @@ type filesystemOptions struct {
 }
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	kernfs.Filesystem
 	devMinor uint32
@@ -240,6 +245,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 }
 
 // inode implements kernfs.Inode.
+//
+// +stateify savable
 type inode struct {
 	inodeRefs
 	kernfs.InodeAttrs

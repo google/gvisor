@@ -116,6 +116,7 @@ func (i *subtasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallb
 	return offset, nil
 }
 
+// +stateify savable
 type subtasksFD struct {
 	kernfs.GenericDirectoryFD
 

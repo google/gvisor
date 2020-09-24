@@ -506,6 +506,8 @@ type FilesystemImpl interface {
 
 // PrependPathAtVFSRootError is returned by implementations of
 // FilesystemImpl.PrependPath() when they encounter the contextual VFS root.
+//
+// +stateify savable
 type PrependPathAtVFSRootError struct{}
 
 // Error implements error.Error.
@@ -516,6 +518,8 @@ func (PrependPathAtVFSRootError) Error() string {
 // PrependPathAtNonMountRootError is returned by implementations of
 // FilesystemImpl.PrependPath() when they encounter an independent ancestor
 // Dentry that is not the Mount root.
+//
+// +stateify savable
 type PrependPathAtNonMountRootError struct{}
 
 // Error implements error.Error.
@@ -526,6 +530,8 @@ func (PrependPathAtNonMountRootError) Error() string {
 // PrependPathSyntheticError is returned by implementations of
 // FilesystemImpl.PrependPath() for which prepended names do not represent real
 // paths.
+//
+// +stateify savable
 type PrependPathSyntheticError struct{}
 
 // Error implements error.Error.

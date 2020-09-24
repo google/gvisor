@@ -616,6 +616,7 @@ type netSnmpData struct {
 
 var _ dynamicInode = (*netSnmpData)(nil)
 
+// +stateify savable
 type snmpLine struct {
 	prefix string
 	header string

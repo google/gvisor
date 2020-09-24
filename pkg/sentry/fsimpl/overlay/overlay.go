@@ -51,6 +51,8 @@ import (
 const Name = "overlay"
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // Name implements vfs.FilesystemType.Name.
@@ -60,6 +62,8 @@ func (FilesystemType) Name() string {
 
 // FilesystemOptions may be passed as vfs.GetFilesystemOptions.InternalData to
 // FilesystemType.GetFilesystem.
+//
+// +stateify savable
 type FilesystemOptions struct {
 	// Callers passing FilesystemOptions to
 	// overlay.FilesystemType.GetFilesystem() are responsible for ensuring that
@@ -76,6 +80,8 @@ type FilesystemOptions struct {
 }
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
@@ -98,7 +104,7 @@ type filesystem struct {
 	// renameMu synchronizes renaming with non-renaming operations in order to
 	// ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
-	renameMu sync.RWMutex
+	renameMu sync.RWMutex `state:"nosave"`
 
 	// lastDirIno is the last inode number assigned to a directory. lastDirIno
 	// is accessed using atomic memory operations.
@@ -367,6 +373,8 @@ func (fs *filesystem) newDirIno() uint64 {
 }
 
 // dentry implements vfs.DentryImpl.
+//
+// +stateify savable
 type dentry struct {
 	vfsd vfs.Dentry
 
@@ -399,7 +407,7 @@ type dentry struct {
 	// and dirents (if not nil) is a cache of dirents as returned by
 	// directoryFDs representing this directory. children is protected by
 	// dirMu.
-	dirMu    sync.Mutex
+	dirMu    sync.Mutex `state:"nosave"`
 	children map[string]*dentry
 	dirents  []vfs.Dirent
 
@@ -409,7 +417,7 @@ type dentry struct {
 	// If !upperVD.Ok(), it can transition to a valid vfs.VirtualDentry (i.e.
 	// be copied up) with copyMu locked for writing; otherwise, it is
 	// immutable. lowerVDs is always immutable.
-	copyMu   sync.RWMutex
+	copyMu   sync.RWMutex `state:"nosave"`
 	upperVD  vfs.VirtualDentry
 	lowerVDs []vfs.VirtualDentry
 
@@ -652,6 +660,8 @@ func (d *dentry) updateAfterSetStatLocked(opts *vfs.SetStatOptions) {
 
 // fileDescription is embedded by overlay implementations of
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

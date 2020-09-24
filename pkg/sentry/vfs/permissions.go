@@ -26,6 +26,8 @@ import (
 )
 
 // AccessTypes is a bitmask of Unix file permissions.
+//
+// +stateify savable
 type AccessTypes uint16
 
 // Bits in AccessTypes.

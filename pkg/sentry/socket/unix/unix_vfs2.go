@@ -37,6 +37,8 @@ import (
 
 // SocketVFS2 implements socket.SocketVFS2 (and by extension,
 // vfs.FileDescriptionImpl) for Unix sockets.
+//
+// +stateify savable
 type SocketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

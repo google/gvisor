@@ -28,6 +28,8 @@ import (
 
 // TimerFileDescription implements vfs.FileDescriptionImpl for timer fds. It also
 // implements ktime.TimerListener.
+//
+// +stateify savable
 type TimerFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

@@ -31,6 +31,8 @@ import (
 const fuseDevMinor = 229
 
 // fuseDevice implements vfs.Device for /dev/fuse.
+//
+// +stateify savable
 type fuseDevice struct{}
 
 // Open implements vfs.Device.Open.
@@ -49,6 +51,8 @@ func (fuseDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, op
 }
 
 // DeviceFD implements vfs.FileDescriptionImpl for /dev/fuse.
+//
+// +stateify savable
 type DeviceFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
@@ -79,7 +83,7 @@ type DeviceFD struct {
 	writeCursorFR *futureResponse
 
 	// mu protects all the queues, maps, buffers and cursors and nextOpID.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// waitQueue is used to notify interested parties when the device becomes
 	// readable or writable.
@@ -88,10 +92,18 @@ type DeviceFD struct {
 	// fullQueueCh is a channel used to synchronize the readers with the writers.
 	// Writers (inbound requests to the filesystem) block if there are too many
 	// unprocessed in-flight requests.
-	fullQueueCh chan struct{}
+	fullQueueCh chan struct{} `state:".(int)"`
 
 	// fs is the FUSE filesystem that this FD is being used for.
 	fs *filesystem
+}
+
+func (fd *DeviceFD) saveFullQueueCh() int {
+	return cap(fd.fullQueueCh)
+}
+
+func (fd *DeviceFD) loadFullQueueCh(capacity int) {
+	fd.fullQueueCh = make(chan struct{}, capacity)
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

@@ -89,6 +89,8 @@ func (d *Dentry) Impl() DentryImpl {
 // DentryImpl contains implementation details for a Dentry. Implementations of
 // DentryImpl should contain their associated Dentry by value as their first
 // field.
+//
+// +stateify savable
 type DentryImpl interface {
 	// IncRef increments the Dentry's reference count. A Dentry with a non-zero
 	// reference count must remain coherent with the state of the filesystem.

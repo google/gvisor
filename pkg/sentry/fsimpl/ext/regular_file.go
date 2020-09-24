@@ -31,6 +31,8 @@ import (
 // regularFile represents a regular file's inode. This too follows the
 // inheritance pattern prevelant in the vfs layer described in
 // pkg/sentry/vfs/README.md.
+//
+// +stateify savable
 type regularFile struct {
 	inode inode
 
@@ -67,6 +69,8 @@ func (in *inode) isRegular() bool {
 
 // directoryFD represents a directory file description. It implements
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type regularFileFD struct {
 	fileDescription
 	vfs.LockFD
@@ -75,7 +79,7 @@ type regularFileFD struct {
 	off int64
 
 	// offMu serializes operations that may mutate off.
-	offMu sync.Mutex
+	offMu sync.Mutex `state:"nosave"`
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

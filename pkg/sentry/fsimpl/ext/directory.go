@@ -28,6 +28,8 @@ import (
 )
 
 // directory represents a directory inode. It holds the childList in memory.
+//
+// +stateify savable
 type directory struct {
 	inode inode
 
@@ -39,7 +41,7 @@ type directory struct {
 	// Lock Order (outermost locks must be taken first):
 	//   directory.mu
 	//     filesystem.mu
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// childList is a list containing (1) child dirents and (2) fake dirents
 	// (with diskDirent == nil) that represent the iteration position of
@@ -120,6 +122,8 @@ func (i *inode) isDir() bool {
 }
 
 // dirent is the directory.childList node.
+//
+// +stateify savable
 type dirent struct {
 	diskDirent disklayout.Dirent
 
@@ -129,6 +133,8 @@ type dirent struct {
 
 // directoryFD represents a directory file description. It implements
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl

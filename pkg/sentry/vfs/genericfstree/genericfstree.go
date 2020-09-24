@@ -27,6 +27,8 @@ import (
 )
 
 // Dentry is a required type parameter that is a struct with the given fields.
+//
+// +stateify savable
 type Dentry struct {
 	// vfsd is the embedded vfs.Dentry corresponding to this vfs.DentryImpl.
 	vfsd vfs.Dentry

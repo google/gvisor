@@ -36,6 +36,8 @@ import (
 )
 
 // regularFile is a regular (=S_IFREG) tmpfs file.
+//
+// +stateify savable
 type regularFile struct {
 	inode inode
 
@@ -66,7 +68,7 @@ type regularFile struct {
 	writableMappingPages uint64
 
 	// dataMu protects the fields below.
-	dataMu sync.RWMutex
+	dataMu sync.RWMutex `state:"nosave"`
 
 	// data maps offsets into the file to offsets into memFile that store
 	// the file's data.
@@ -325,13 +327,14 @@ func (*regularFile) InvalidateUnsavable(context.Context) error {
 	return nil
 }
 
+// +stateify savable
 type regularFileFD struct {
 	fileDescription
 
 	// off is the file offset. off is accessed using atomic memory operations.
 	// offMu serializes operations that may mutate off.
 	off   int64
-	offMu sync.Mutex
+	offMu sync.Mutex `state:"nosave"`
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

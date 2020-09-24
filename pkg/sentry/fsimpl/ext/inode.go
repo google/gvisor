@@ -37,6 +37,8 @@ import (
 //           |-- regular--
 //                       |-- extent file
 //                       |-- block map file
+//
+// +stateify savable
 type inode struct {
 	// refs is a reference count. refs is accessed using atomic memory operations.
 	refs int64

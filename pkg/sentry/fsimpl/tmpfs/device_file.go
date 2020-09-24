@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// +stateify savable
 type deviceFile struct {
 	inode inode
 	kind  vfs.DeviceKind

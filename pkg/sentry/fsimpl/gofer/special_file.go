@@ -34,11 +34,13 @@ import (
 // special files, and (when filesystemOptions.regularFilesUseSpecialFileFD is
 // in effect) regular files. specialFileFD differs from regularFileFD by using
 // per-FD handles instead of shared per-dentry handles, and never buffering I/O.
+//
+// +stateify savable
 type specialFileFD struct {
 	fileDescription
 
 	// handle is used for file I/O. handle is immutable.
-	handle handle
+	handle handle `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 
 	// isRegularFile is true if this FD represents a regular file which is only
 	// possible when filesystemOptions.regularFilesUseSpecialFileFD is in
@@ -56,7 +58,7 @@ type specialFileFD struct {
 	queue     waiter.Queue
 
 	// If seekable is true, off is the file offset. off is protected by mu.
-	mu  sync.Mutex
+	mu  sync.Mutex `state:"nosave"`
 	off int64
 }
 

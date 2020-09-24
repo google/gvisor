@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// +stateify savable
 type selfSymlink struct {
 	implStatFS
 	kernfs.InodeAttrs
@@ -74,6 +75,7 @@ func (*selfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials,
 	return syserror.EPERM
 }
 
+// +stateify savable
 type threadSelfSymlink struct {
 	implStatFS
 	kernfs.InodeAttrs
@@ -121,6 +123,8 @@ func (*threadSelfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Creden
 // dynamicBytesFileSetAttr implements a special file that allows inode
 // attributes to be set. This is to support /proc files that are readonly, but
 // allow attributes to be set.
+//
+// +stateify savable
 type dynamicBytesFileSetAttr struct {
 	kernfs.DynamicBytesFile
 }
@@ -131,6 +135,8 @@ func (d *dynamicBytesFileSetAttr) SetStat(ctx context.Context, fs *vfs.Filesyste
 }
 
 // cpuStats contains the breakdown of CPU time for /proc/stat.
+//
+// +stateify savable
 type cpuStats struct {
 	// user is time spent in userspace tasks with non-positive niceness.
 	user uint64

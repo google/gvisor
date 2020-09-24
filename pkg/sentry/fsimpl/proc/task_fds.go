@@ -51,6 +51,7 @@ func taskFDExists(ctx context.Context, t *kernel.Task, fd int32) bool {
 	return true
 }
 
+// +stateify savable
 type fdDir struct {
 	locks vfs.FileLocks
 
