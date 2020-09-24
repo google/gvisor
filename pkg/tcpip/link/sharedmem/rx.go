@@ -114,7 +114,7 @@ func (r *rx) cleanup() {
 // that were read as well.
 //
 // This function will block if there aren't any available packets.
-func (r *rx) postAndReceive(b []queue.RxBuffer, stopRequested *uint32) ([]queue.RxBuffer, uint32) {
+func (r *rx) postAndReceive(b []queue.RxBuffer, e *endpoint) ([]queue.RxBuffer, uint32) {
 	// Post the buffers first. If we cannot post, sleep until we can. We
 	// never post more than will fit concurrently, so it's safe to wait
 	// until enough room is available.
@@ -123,7 +123,7 @@ func (r *rx) postAndReceive(b []queue.RxBuffer, stopRequested *uint32) ([]queue.
 		for !r.q.PostBuffers(b) {
 			var tmp [8]byte
 			rawfile.BlockingRead(r.eventFD, tmp[:])
-			if atomic.LoadUint32(stopRequested) != 0 {
+			if atomic.LoadUint32(&e.stopRequested) != 0 {
 				r.q.DisableNotification()
 				return nil, 0
 			}
@@ -148,7 +148,7 @@ func (r *rx) postAndReceive(b []queue.RxBuffer, stopRequested *uint32) ([]queue.
 		// Wait for notification.
 		var tmp [8]byte
 		rawfile.BlockingRead(r.eventFD, tmp[:])
-		if atomic.LoadUint32(stopRequested) != 0 {
+		if atomic.LoadUint32(&e.stopRequested) != 0 {
 			r.q.DisableNotification()
 			return nil, 0
 		}

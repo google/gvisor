@@ -39,6 +39,8 @@ type machine struct {
 	//
 	// This must be accessed atomically. If nextSlot is ^uint32(0), then
 	// slots are currently being updated, and the caller should retry.
+	//
+	// +checkatomic
 	nextSlot uint32
 
 	// upperSharedPageTables tracks the read-only shared upper of all the pagetables.
@@ -71,6 +73,8 @@ type machine struct {
 	usedSlots []uintptr
 
 	// nextID is the next vCPU ID.
+	//
+	// +checkatomic
 	nextID uint32
 }
 
@@ -105,20 +109,30 @@ type vCPU struct {
 	fd int
 
 	// tid is the last set tid.
+	//
+	// +checkatomic
 	tid uint64
 
 	// userExits is the count of user exits.
+	//
+	// +checkatomic
 	userExits uint64
 
 	// guestExits is the count of guest to host world switches.
+	//
+	// +checkatomic
 	guestExits uint64
 
 	// faults is a count of world faults (informational only).
+	//
+	// +checkatomic
 	faults uint32
 
 	// state is the vCPU state.
 	//
 	// This is a bitmask of the three fields (vCPU*) described above.
+	//
+	// +checkatomic
 	state uint32
 
 	// runData for this vCPU.
@@ -420,8 +434,7 @@ func (m *machine) Get() *vCPU {
 		}
 
 		// Create a new vCPU (maybe).
-		if int(m.nextID) < m.maxVCPUs {
-			c := m.newVCPU()
+		if c := m.newVCPU(); c != nil {
 			c.lock()
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()

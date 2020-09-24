@@ -78,20 +78,20 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 			srcLock = false // Only need one unlock.
 		}
 		// Use both offsets (locked).
-		opts.DstStart = dst.offset
-		opts.SrcStart = src.offset
+		opts.DstStart = atomic.LoadInt64(&dst.offset)
+		opts.SrcStart = atomic.LoadInt64(&src.offset)
 	case dstLock:
 		// Acquire only dst.
 		if !dst.mu.Lock(ctx) {
 			return 0, syserror.ErrInterrupted
 		}
-		opts.DstStart = dst.offset // Safe: locked.
+		opts.DstStart = atomic.LoadInt64(&dst.offset) // Safe: locked.
 	case srcLock:
 		// Acquire only src.
 		if !src.mu.Lock(ctx) {
 			return 0, syserror.ErrInterrupted
 		}
-		opts.SrcStart = src.offset // Safe: locked.
+		opts.SrcStart = atomic.LoadInt64(&src.offset) // Safe: locked.
 	}
 
 	var err error
@@ -100,7 +100,7 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		defer unlock()
 
 		// Figure out the appropriate offset to use.
-		err = dst.offsetForAppend(ctx, &opts.DstStart)
+		opts.DstStart, err = dst.offsetForAppend(ctx)
 	}
 	if err == nil && !dstPipe {
 		// Enforce file limits.
@@ -162,10 +162,10 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 	// Update offsets, if required.
 	if n > 0 {
 		if !dstPipe && !opts.DstOffset {
-			atomic.StoreInt64(&dst.offset, dst.offset+n)
+			atomic.StoreInt64(&dst.offset, opts.DstStart+n)
 		}
 		if !srcPipe && !opts.SrcOffset {
-			atomic.StoreInt64(&src.offset, src.offset+n)
+			atomic.StoreInt64(&src.offset, opts.SrcStart+n)
 		}
 	}
 

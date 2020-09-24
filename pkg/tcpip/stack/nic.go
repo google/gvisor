@@ -62,6 +62,8 @@ type nic struct {
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
 	//
 	// Must be accessed using atomic operations.
+	//
+	// +checkatomic
 	enabled uint32
 
 	// linkResQueue holds packets that are waiting for link resolution to

@@ -37,6 +37,8 @@ import (
 type Registry struct {
 	// lastAnonDeviceMinor is the last minor device number used for an anonymous
 	// device. Must be accessed atomically.
+	//
+	// +checkatomic
 	lastAnonDeviceMinor uint64
 
 	// mu protects the fields below.
@@ -138,6 +140,8 @@ type Device struct {
 	ID
 
 	// last is the last generated inode.
+	//
+	// +checkatomic
 	last uint64
 }
 

@@ -49,6 +49,8 @@ type Refs struct {
 	// Speculative references are used for TryIncRef, to avoid a CompareAndSwap
 	// loop. See IncRef, DecRef and TryIncRef for details of how these fields are
 	// used.
+	//
+	// +checkatomic
 	refCount int64
 }
 

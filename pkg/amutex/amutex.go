@@ -49,13 +49,14 @@ func Block(sleeper Sleeper, ch <-chan struct{}) error {
 // AbortableMutex is an abortable mutex. It allows Lock() to be aborted while it
 // waits to acquire the mutex.
 type AbortableMutex struct {
+	// +checkatomic
 	v  int32
 	ch chan struct{}
 }
 
 // Init initializes the abortable mutex.
 func (m *AbortableMutex) Init() {
-	m.v = 1
+	atomic.StoreInt32(&m.v, 1)
 	m.ch = make(chan struct{}, 1)
 }
 

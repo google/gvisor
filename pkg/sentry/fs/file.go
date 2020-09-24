@@ -98,6 +98,8 @@ type File struct {
 
 	// offset is the File's offset. Updating offset is protected by mu but
 	// can be read atomically via File.Offset() outside of mu.
+	//
+	// +checkatomic
 	offset int64
 }
 
@@ -242,7 +244,7 @@ func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error)
 	}
 
 	fsmetric.Reads.Increment()
-	n, err := f.FileOperations.Read(ctx, f, dst, f.offset)
+	n, err := f.FileOperations.Read(ctx, f, dst, atomic.LoadInt64(&f.offset))
 	if n > 0 && !f.flags.NonSeekable {
 		atomic.AddInt64(&f.offset, n)
 	}
@@ -282,17 +284,26 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 		return 0, syserror.ErrInterrupted
 	}
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
+
 	// Handle append mode.
+	var offset int64
 	if f.Flags().Append {
-		if err := f.offsetForAppend(ctx, &f.offset); err != nil {
+		var err error
+		offset, err = f.offsetForAppend(ctx)
+		if err != nil {
 			unlockAppendMu()
 			f.mu.Unlock()
 			return 0, err
 		}
+		// Update the offset.
+		atomic.StoreInt64(&f.offset, offset)
+	} else {
+		// Read the existing offset.
+		offset = atomic.LoadInt64(&f.offset)
 	}
 
 	// Enforce file limits.
-	limit, ok := f.checkLimit(ctx, f.offset)
+	limit, ok := f.checkLimit(ctx, offset)
 	switch {
 	case ok && limit == 0:
 		unlockAppendMu()
@@ -303,9 +314,9 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	}
 
 	// We must hold the lock during the write.
-	n, err := f.FileOperations.Write(ctx, f, src, f.offset)
+	n, err := f.FileOperations.Write(ctx, f, src, offset)
 	if n >= 0 && !f.flags.NonSeekable {
-		atomic.StoreInt64(&f.offset, f.offset+n)
+		atomic.StoreInt64(&offset, offset+n)
 	}
 	unlockAppendMu()
 	f.mu.Unlock()
@@ -326,7 +337,9 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	defer unlockAppendMu()
 	if f.Flags().Append {
-		if err := f.offsetForAppend(ctx, &offset); err != nil {
+		var err error
+		offset, err = f.offsetForAppend(ctx)
+		if err != nil {
 			return 0, err
 		}
 	}
@@ -347,18 +360,15 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 //
 // Precondition: the file.Dirent.Inode.appendMu mutex should be held for
 // writing.
-func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
+func (f *File) offsetForAppend(ctx context.Context) (int64, error) {
 	uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
 	if err != nil {
 		// This is an odd error, we treat it as evidence that
 		// something is terribly wrong with the filesystem.
-		return syserror.EIO
+		return 0, syserror.EIO
 	}
 
-	// Update the offset.
-	atomic.StoreInt64(offset, uattr.Size)
-
-	return nil
+	return uattr.Size, nil
 }
 
 // checkLimit checks the offset that the write will be performed at. The

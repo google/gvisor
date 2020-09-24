@@ -44,6 +44,8 @@ type fileDescription struct {
 	OpenFlag uint32
 
 	// off is the file offset.
+	//
+	// +checkatomic
 	off int64
 }
 

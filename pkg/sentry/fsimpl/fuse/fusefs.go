@@ -282,9 +282,13 @@ type inode struct {
 	locks vfs.FileLocks
 
 	// size of the file.
+	//
+	// +checkatomic
 	size uint64
 
 	// attributeVersion is the version of inode's attributes.
+	//
+	// +checkatomic
 	attributeVersion uint64
 
 	// attributeTime is the remaining vaild time of attributes.
@@ -404,8 +408,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	// by setting the file size to 0.
 	if i.fs.conn.atomicOTrunc && opts.Flags&linux.O_TRUNC != 0 {
 		i.fs.conn.mu.Lock()
-		i.fs.conn.attributeVersion++
-		i.attributeVersion = i.fs.conn.attributeVersion
+		atomic.StoreUint64(&i.attributeVersion, atomic.AddUint64(&i.fs.conn.attributeVersion, 1))
 		atomic.StoreUint64(&i.size, 0)
 		i.fs.conn.mu.Unlock()
 		i.attributeTime = 0

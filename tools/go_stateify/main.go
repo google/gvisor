@@ -353,20 +353,20 @@ func main() {
 						fmt.Fprintf(outputFile, "	stateSourceObject.LoadValue(%d, new(%s), func(y interface{}) { %s.load%s(y.(%s)) })\n", fields[name], typName, recv, camelCased(name), typName)
 					}
 					emitLoad := func(name string) {
-						fmt.Fprintf(outputFile, "	stateSourceObject.Load(%d, &%s.%s)\n", fields[name], recv, name)
+						fmt.Fprintf(outputFile, "	stateSourceObject.Load(%d, &%s.%s) // checkatomic: allowed.\n", fields[name], recv, name)
 					}
 					emitLoadWait := func(name string) {
-						fmt.Fprintf(outputFile, "	stateSourceObject.LoadWait(%d, &%s.%s)\n", fields[name], recv, name)
+						fmt.Fprintf(outputFile, "	stateSourceObject.LoadWait(%d, &%s.%s) // checkatomic: allowed.\n", fields[name], recv, name)
 					}
 					emitSaveValue := func(name, typName string) {
 						fmt.Fprintf(outputFile, "	var %sValue %s = %s.save%s()\n", name, typName, recv, camelCased(name))
-						fmt.Fprintf(outputFile, "	stateSinkObject.SaveValue(%d, %sValue)\n", fields[name], name)
+						fmt.Fprintf(outputFile, "	stateSinkObject.SaveValue(%d, %sValue) // checkatomic: allowed.\n", fields[name], name)
 					}
 					emitSave := func(name string) {
 						fmt.Fprintf(outputFile, "	stateSinkObject.Save(%d, &%s.%s)\n", fields[name], recv, name)
 					}
 					emitZeroCheck := func(name string) {
-						fmt.Fprintf(outputFile, "	if !%sIsZeroValue(&%s.%s) { %sFailf(\"%s is %%#v, expected zero\", &%s.%s) }\n", statePrefix, recv, name, statePrefix, name, recv, name)
+						fmt.Fprintf(outputFile, "	if !%sIsZeroValue(&%s.%s) { %sFailf(\"%s is %%#v, expected zero\", &%s.%s) } // checkatomic: allowed.\n", statePrefix, recv, name, statePrefix, name, recv, name)
 					}
 
 					// Generate the type name method.

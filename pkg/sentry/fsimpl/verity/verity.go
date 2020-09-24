@@ -262,7 +262,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Construct the root dentry.
 	d := fs.newDentry()
-	d.refs = 1
+	d.refs = 1 // checkatomic: owned.
 	lowerVD := vfs.MakeVirtualDentry(mnt, mnt.Root())
 	lowerVD.IncRef()
 	d.lowerVD = lowerVD
@@ -424,6 +424,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 type dentry struct {
 	vfsd vfs.Dentry
 
+	// +checkatomic
 	refs int64
 
 	// fs is the owning filesystem. fs is immutable.

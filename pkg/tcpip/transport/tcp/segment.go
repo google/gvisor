@@ -42,6 +42,7 @@ const (
 // +stateify savable
 type segment struct {
 	segmentEntry
+	// +checkatomic
 	refCnt int32
 	ep     *endpoint
 	qFlags queueFlags

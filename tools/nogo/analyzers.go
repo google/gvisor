@@ -46,6 +46,7 @@ import (
 	"honnef.co/go/tools/staticcheck"
 	"honnef.co/go/tools/stylecheck"
 
+	"gvisor.dev/gvisor/tools/checkatomic"
 	"gvisor.dev/gvisor/tools/checkescape"
 	"gvisor.dev/gvisor/tools/checklocks"
 	"gvisor.dev/gvisor/tools/checkunsafe"
@@ -78,6 +79,7 @@ var AllAnalyzers = []*analysis.Analyzer{
 	unreachable.Analyzer,
 	unsafeptr.Analyzer,
 	unusedresult.Analyzer,
+	checkatomic.Analyzer,
 	checkescape.Analyzer,
 	checkunsafe.Analyzer,
 	checklocks.Analyzer,

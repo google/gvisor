@@ -48,6 +48,8 @@ type TimerOperations struct {
 	// val is the number of timer expirations since the last successful call to
 	// Readv, Preadv, or SetTime. val is accessed using atomic memory
 	// operations.
+	//
+	// +checkatomic
 	val uint64
 }
 

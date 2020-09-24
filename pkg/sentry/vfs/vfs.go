@@ -91,6 +91,8 @@ type VirtualFilesystem struct {
 
 	// lastMountID is the last allocated mount ID. lastMountID is accessed
 	// using atomic memory operations.
+	//
+	// +checkatomic
 	lastMountID uint64
 
 	// anonMount is a Mount, not included in mounts or mountpoints,

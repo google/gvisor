@@ -132,6 +132,8 @@ type filesystem struct {
 
 	// lastIno is the last inode number assigned to a file. lastIno is accessed
 	// using atomic memory operations.
+	//
+	// +checkatomic
 	lastIno uint64
 
 	// savedDentryRW records open read/write handles during save/restore.
@@ -139,6 +141,8 @@ type filesystem struct {
 
 	// released is nonzero once filesystem.Release has been called. It is accessed
 	// with atomic memory operations.
+	//
+	// +checkatomic
 	released int32
 }
 
@@ -461,7 +465,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Set the root's reference count to 2. One reference is returned to the
 	// caller, and the other is held by fs to prevent the root from being "cached"
 	// and subsequently evicted.
-	root.refs = 2
+	root.refs = 2 // checkatomic: owned.
 	fs.root = root
 
 	return &fs.vfsfs, &root.vfsd, nil
@@ -528,6 +532,18 @@ func (fs *filesystem) dial(ctx context.Context) error {
 	return nil
 }
 
+// closeAllFiles closes all descriptors.
+func (d *dentry) closeAllFiles() {
+	atomic.StoreInt32(&d.mmapFD, -1)
+	readFD := atomic.SwapInt32(&d.readFD, -1)
+	if writeFD := atomic.SwapInt32(&d.writeFD, -1); writeFD >= 0 && writeFD != readFD {
+		unix.Close(int(writeFD))
+	}
+	if readFD >= 0 {
+		unix.Close(int(readFD))
+	}
+}
+
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
 	atomic.StoreInt32(&fs.released, 1)
@@ -549,15 +565,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.dirty.RemoveAll()
 		d.dataMu.Unlock()
 		// Close host FDs if they exist.
-		if d.readFD >= 0 {
-			unix.Close(int(d.readFD))
-		}
-		if d.writeFD >= 0 && d.readFD != d.writeFD {
-			unix.Close(int(d.writeFD))
-		}
-		d.readFD = -1
-		d.writeFD = -1
-		d.mmapFD = -1
+		d.closeAllFiles()
 		d.handleMu.Unlock()
 	}
 	// There can't be any specialFileFDs still using fs, since each such
@@ -625,6 +633,8 @@ type dentry struct {
 	// reaches 0, the dentry may be added to the cache or destroyed. If refs ==
 	// -1, the dentry has already been destroyed. refs is accessed using atomic
 	// memory operations.
+	//
+	// +checkatomic
 	refs int64
 
 	// fs is the owning filesystem. fs is immutable.
@@ -652,6 +662,8 @@ type dentry struct {
 
 	// If deleted is non-zero, the file represented by this dentry has been
 	// deleted. deleted is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	deleted uint32
 
 	// If cached is true, dentryEntry links dentry into
@@ -694,15 +706,25 @@ type dentry struct {
 	//     have atomic readers that don't hold the lock.
 	metadataMu sync.Mutex `state:"nosave"`
 	ino        uint64     // immutable
-	mode       uint32     // type is immutable, perms are mutable
-	uid        uint32     // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid        uint32     // auth.KGID, but ...
-	blockSize  uint32     // 0 if unknown
+	// +checkatomic
+	mode uint32 // type is immutable, perms are mutable
+	// +checkatomic
+	uid uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
+	// +checkatomic
+	gid uint32 // auth.KGID, but ...
+	// +checkatomic
+	blockSize uint32 // 0 if unknown
+
 	// Timestamps, all nsecs from the Unix epoch.
+	// +checkatomic
 	atime int64
+	// +checkatomic
 	mtime int64
+	// +checkatomic
 	ctime int64
+	// +checkatomic
 	btime int64
+
 	// File size, which differs from other metadata in two ways:
 	//
 	// - We make a best-effort attempt to keep it up to date even if
@@ -710,17 +732,25 @@ type dentry struct {
 	//
 	// - size is protected by both metadataMu and dataMu (i.e. both must be
 	// locked to mutate it; locking either is sufficient to access it).
+	//
+	// +checkatomic:ignore
 	size uint64
+
 	// If this dentry does not represent a synthetic file, deleted is 0, and
 	// atimeDirty/mtimeDirty are non-zero, atime/mtime may have diverged from the
 	// remote file's timestamps, which should be updated when this dentry is
 	// evicted.
+	//
+	// +checkatomic
 	atimeDirty uint32
+	// +checkatomic
 	mtimeDirty uint32
 
 	// nlink counts the number of hard links to this dentry. It's updated and
 	// accessed using atomic operations. It's not protected by metadataMu like the
 	// other metadata fields.
+	//
+	// +checkatomic
 	nlink uint32
 
 	mapsMu sync.Mutex `state:"nosave"`
@@ -759,11 +789,14 @@ type dentry struct {
 	handleMu  sync.RWMutex `state:"nosave"`
 	readFile  p9file       `state:"nosave"`
 	writeFile p9file       `state:"nosave"`
-	readFD    int32        `state:"nosave"`
-	writeFD   int32        `state:"nosave"`
-	mmapFD    int32        `state:"nosave"`
+	dataMu    sync.RWMutex `state:"nosave"`
 
-	dataMu sync.RWMutex `state:"nosave"`
+	// +checkatomic
+	readFD int32 `state:"nosave"`
+	// +checkatomic
+	writeFD int32 `state:"nosave"`
+	// +checkatomic
+	mmapFD int32 `state:"nosave"`
 
 	// If this dentry represents a regular file that is client-cached, cache
 	// maps offsets into the cached file to offsets into
@@ -1165,7 +1198,7 @@ func (d *dentry) doAllocate(ctx context.Context, offset, length uint64, allocate
 func (d *dentry) updateSizeLocked(newSize uint64) {
 	d.dataMu.Lock()
 	oldSize := d.size
-	atomic.StoreUint64(&d.size, newSize)
+	d.size = newSize
 	// d.dataMu must be unlocked to lock d.mapsMu and invalidate mappings
 	// below. This allows concurrent calls to Read/Translate/etc. These
 	// functions synchronize with truncation by refusing to use cache
@@ -1504,15 +1537,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	}
 	d.readFile = p9file{}
 	d.writeFile = p9file{}
-	if d.readFD >= 0 {
-		unix.Close(int(d.readFD))
-	}
-	if d.writeFD >= 0 && d.readFD != d.writeFD {
-		unix.Close(int(d.writeFD))
-	}
-	d.readFD = -1
-	d.writeFD = -1
-	d.mmapFD = -1
+	d.closeAllFiles()
 	d.handleMu.Unlock()
 
 	if !d.file.isNil() {
@@ -1656,11 +1681,15 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			return err
 		}
 
+		oldReadFD := atomic.LoadInt32(&d.readFD)
+		oldWriteFD := atomic.LoadInt32(&d.writeFD)
+		oldMmapFD := atomic.LoadInt32(&d.mmapFD)
+
 		// Update d.readFD and d.writeFD.
 		if h.fd >= 0 {
-			if openReadable && openWritable && (d.readFD < 0 || d.writeFD < 0 || d.readFD != d.writeFD) {
+			if openReadable && openWritable && (oldReadFD < 0 || oldWriteFD < 0 || oldReadFD != oldWriteFD) {
 				// Replace existing FDs with this one.
-				if d.readFD >= 0 {
+				if oldReadFD >= 0 {
 					// We already have a readable FD that may be in use by
 					// concurrent callers of d.pf.FD().
 					if d.fs.opts.overlayfsStaleRead {
@@ -1674,7 +1703,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 							h.close(ctx)
 							return err
 						}
-						fdsToClose = append(fdsToClose, d.readFD)
+						fdsToClose = append(fdsToClose, oldReadFD)
 						invalidateTranslations = true
 						atomic.StoreInt32(&d.readFD, h.fd)
 					} else {
@@ -1686,25 +1715,24 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 						// may use the old or new file description, but this
 						// doesn't matter since they refer to the same file, and
 						// any racing mappings must be read-only.
-						if err := unix.Dup3(int(h.fd), int(d.readFD), unix.O_CLOEXEC); err != nil {
-							oldFD := d.readFD
+						if err := unix.Dup3(int(h.fd), int(oldReadFD), unix.O_CLOEXEC); err != nil {
 							d.handleMu.Unlock()
-							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
+							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldReadFD, err)
 							h.close(ctx)
 							return err
 						}
 						fdsToClose = append(fdsToClose, h.fd)
-						h.fd = d.readFD
+						h.fd = oldReadFD // Dupped above.
 					}
 				} else {
 					atomic.StoreInt32(&d.readFD, h.fd)
 				}
-				if d.writeFD != h.fd && d.writeFD >= 0 {
-					fdsToClose = append(fdsToClose, d.writeFD)
+				if oldWriteFD != h.fd && oldWriteFD >= 0 {
+					fdsToClose = append(fdsToClose, oldWriteFD)
 				}
 				atomic.StoreInt32(&d.writeFD, h.fd)
 				atomic.StoreInt32(&d.mmapFD, h.fd)
-			} else if openReadable && d.readFD < 0 {
+			} else if openReadable && oldReadFD < 0 {
 				atomic.StoreInt32(&d.readFD, h.fd)
 				// If the file has not been opened for writing, the new FD may
 				// be used for read-only memory mappings. If the file was
@@ -1715,9 +1743,9 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 					invalidateTranslations = !d.readFile.isNil()
 					atomic.StoreInt32(&d.mmapFD, h.fd)
 				}
-			} else if openWritable && d.writeFD < 0 {
+			} else if openWritable && oldWriteFD < 0 {
 				atomic.StoreInt32(&d.writeFD, h.fd)
-				if d.readFD >= 0 {
+				if oldReadFD >= 0 {
 					// We have an existing read-only FD, but the file has just
 					// been opened for writing, so we need to start supporting
 					// writable memory mappings. However, the new FD is not
@@ -1731,7 +1759,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 				// The new FD is not useful.
 				fdsToClose = append(fdsToClose, h.fd)
 			}
-		} else if openWritable && d.writeFD < 0 && d.mmapFD >= 0 {
+		} else if openWritable && oldWriteFD < 0 && oldMmapFD >= 0 {
 			// We have an existing read-only FD, but the file has just been
 			// opened for writing, so we need to start supporting writable
 			// memory mappings. However, we have no writable host FD. Switch to

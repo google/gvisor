@@ -73,6 +73,8 @@ type Socket struct {
 	//
 	// fd must be read atomically, and only remains valid if read while
 	// within gate.
+	//
+	// +checkatomic
 	fd int32
 
 	// efd is an event FD that is signaled when the socket is closing.

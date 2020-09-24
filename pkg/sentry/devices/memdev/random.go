@@ -56,6 +56,8 @@ type randomFD struct {
 
 	// off is the "file offset". off is accessed using atomic memory
 	// operations.
+	//
+	// +checkatomic
 	off int64
 }
 

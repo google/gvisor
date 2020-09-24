@@ -250,10 +250,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Construct the root dentry.
 	root := fs.newDentry()
-	root.refs = 1
+	root.refs = 1 // checkatomic: owned.
 	if fs.opts.UpperRoot.Ok() {
 		fs.opts.UpperRoot.IncRef()
-		root.copiedUp = 1
+		root.copiedUp = 1 // checkatomic: owned.
 		root.upperVD = fs.opts.UpperRoot
 	}
 	for _, lowerRoot := range fs.opts.LowerRoots {
@@ -285,19 +285,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, syserror.EINVAL
 	}
-	root.mode = uint32(rootStat.Mode)
-	root.uid = rootStat.UID
-	root.gid = rootStat.GID
-	root.devMajor = linux.UNNAMED_MAJOR
-	rootDevMinor, err := fs.getPrivateDevMinor(rootStat.DevMajor, rootStat.DevMinor)
+	root.mode = uint32(rootStat.Mode)                                                // checkatomic: owned.
+	root.uid = rootStat.UID                                                          // checkatomic: owned.
+	root.gid = rootStat.GID                                                          // checkatomic: owned.
+	root.devMajor = linux.UNNAMED_MAJOR                                              // checkatomic: owned.
+	rootDevMinor, err := fs.getPrivateDevMinor(rootStat.DevMajor, rootStat.DevMinor) // checkatomic: owned.
 	if err != nil {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to get device number for root: %v", err)
 		root.destroyLocked(ctx)
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
-	root.devMinor = rootDevMinor
-	root.ino = rootStat.Ino
+	root.devMinor = rootDevMinor // checkatomic: owned.
+	root.ino = rootStat.Ino      // checkatomic: owned.
 
 	return &fs.vfsfs, &root.vfsd, nil
 }
@@ -380,6 +380,7 @@ func (fs *filesystem) getPrivateDevMinor(layerMajor, layerMinor uint32) (uint32,
 type dentry struct {
 	vfsd vfs.Dentry
 
+	// +checkatomic
 	refs int64
 
 	// fs is the owning filesystem. fs is immutable.
@@ -389,12 +390,18 @@ type dentry struct {
 	// the topmost layer (and therefore the overlay file as well), and are used
 	// for permission checks on this dentry. These fields are protected by
 	// copyMu and accessed using atomic memory operations.
+	//
+	// +checkatomic
 	mode uint32
-	uid  uint32
-	gid  uint32
+	// +checkatomic
+	uid uint32
+	// +checkatomic
+	gid uint32
 
 	// copiedUp is 1 if this dentry has been copied-up (i.e. upperVD.Ok()) and
 	// 0 otherwise. copiedUp is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	copiedUp uint32
 
 	// parent is the dentry corresponding to this dentry's parent directory.
@@ -430,9 +437,13 @@ type dentry struct {
 	// devMajor, devMinor, and ino are the device major/minor and inode numbers
 	// used by this dentry. These fields are protected by copyMu and accessed
 	// using atomic memory operations.
+	//
+	// +checkatomic
 	devMajor uint32
+	// +checkatomic
 	devMinor uint32
-	ino      uint64
+	// +checkatomic
+	ino uint64
 
 	// If this dentry represents a regular file, then:
 	//
@@ -461,7 +472,8 @@ type dentry struct {
 	lowerMappings   memmap.MappingSet
 	dataMu          sync.RWMutex `state:"nosave"`
 	wrappedMappable memmap.Mappable
-	isMappable      uint32
+	// +checkatomic
+	isMappable uint32
 
 	locks vfs.FileLocks
 
@@ -729,7 +741,7 @@ func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat
 // Preconditions: d.copyMu must be locked for writing.
 func (d *dentry) updateAfterSetStatLocked(opts *vfs.SetStatOptions) {
 	if opts.Stat.Mask&linux.STATX_MODE != 0 {
-		atomic.StoreUint32(&d.mode, (d.mode&linux.S_IFMT)|uint32(opts.Stat.Mode&^linux.S_IFMT))
+		atomic.StoreUint32(&d.mode, (atomic.LoadUint32(&d.mode)&linux.S_IFMT)|uint32(opts.Stat.Mode&^linux.S_IFMT))
 	}
 	if opts.Stat.Mask&linux.STATX_UID != 0 {
 		atomic.StoreUint32(&d.uid, opts.Stat.UID)

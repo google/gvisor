@@ -90,7 +90,11 @@ type FDTable struct {
 	// used contains the number of non-nil entries. It must be accessed
 	// atomically. It may be read atomically without holding mu (but not
 	// written).
-	used int32
+	//
+	// This is not saved, as it is effectively a cache.
+	//
+	// +checkatomic
+	used int32 `state:"nosave"`
 
 	// descriptorTable holds descriptors.
 	descriptorTable `state:".(map[int32]descriptor)"`
@@ -111,7 +115,6 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 	ctx := context.Background()
 	f.initNoLeakCheck() // Initialize table.
-	f.used = 0
 	for fd, d := range m {
 		if file, fileVFS2 := f.setAll(ctx, fd, d.file, d.fileVFS2, d.flags); file != nil || fileVFS2 != nil {
 			panic("VFS1 or VFS2 files set")

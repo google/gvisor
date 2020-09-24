@@ -66,8 +66,10 @@ import (
 //	[...]
 //
 type Gate struct {
+	// +checkatomic
 	userCount int32
-	closingG  uintptr
+	// +checkatomic
+	closingG uintptr
 }
 
 const preparingG = 1
@@ -140,11 +142,11 @@ func (g *Gate) Close() {
 		return
 	}
 	// WaitReasonSemacquire/TraceEvGoBlockSync are consistent with WaitGroup.
-	gopark(gateCommit, gohacks.Noescape(unsafe.Pointer(&g.closingG)), WaitReasonSemacquire, TraceEvGoBlockSync, 0)
+	gopark(gateCommit, gohacks.Noescape(unsafe.Pointer(&g.closingG)), WaitReasonSemacquire, TraceEvGoBlockSync, 0) // checkatomic: safe.
 }
 
 //go:norace
 //go:nosplit
 func gateCommit(g uintptr, closingG unsafe.Pointer) bool {
-	return RaceUncheckedAtomicCompareAndSwapUintptr((*uintptr)(closingG), preparingG, g)
+	return RaceUncheckedAtomicCompareAndSwapUintptr((*uintptr)(closingG), preparingG, g) // checkatomic: still atomic.
 }

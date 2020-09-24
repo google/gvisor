@@ -89,6 +89,7 @@ func unmapRunData(r *runData) error {
 
 // atomicAddressSpace is an atomic address space pointer.
 type atomicAddressSpace struct {
+	// +checkatomic
 	pointer unsafe.Pointer
 }
 
@@ -117,7 +118,7 @@ func (a *atomicAddressSpace) get() *addressSpace {
 func (c *vCPU) notify() {
 	_, _, errno := unix.RawSyscall6( // escapes: no.
 		unix.SYS_FUTEX,
-		uintptr(unsafe.Pointer(&c.state)),
+		uintptr(unsafe.Pointer(&c.state)), // checkatomic: safe.
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
 		math.MaxInt32, // Number of waiters.
 		0, 0, 0)
@@ -135,7 +136,7 @@ func (c *vCPU) notify() {
 func (c *vCPU) waitUntilNot(state uint32) {
 	_, _, errno := unix.Syscall6(
 		unix.SYS_FUTEX,
-		uintptr(unsafe.Pointer(&c.state)),
+		uintptr(unsafe.Pointer(&c.state)), // checkatomic: safe.
 		linux.FUTEX_WAIT|linux.FUTEX_PRIVATE_FLAG,
 		uintptr(state),
 		0, 0, 0)

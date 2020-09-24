@@ -65,11 +65,15 @@ type Pipe struct {
 	// The number of active readers for this pipe.
 	//
 	// Access atomically.
+	//
+	// +checkatomic
 	readers int32
 
 	// The number of active writes for this pipe.
 	//
 	// Access atomically.
+	//
+	// +checkatomic
 	writers int32
 
 	// mu protects all pipe internal state below.

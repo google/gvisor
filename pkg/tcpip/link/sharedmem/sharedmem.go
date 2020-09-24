@@ -77,6 +77,8 @@ type endpoint struct {
 
 	// stopRequested is to be accessed atomically only, and determines if
 	// the worker goroutines should stop.
+	//
+	// +checkatomic
 	stopRequested uint32
 
 	// Wait group used to indicate that all workers have stopped.
@@ -247,7 +249,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 	var rxb []queue.RxBuffer
 	for atomic.LoadUint32(&e.stopRequested) == 0 {
 		var n uint32
-		rxb, n = e.rx.postAndReceive(rxb, &e.stopRequested)
+		rxb, n = e.rx.postAndReceive(rxb, e)
 
 		// Copy data from the shared area to its own buffer, then
 		// prepare to repost the buffer.

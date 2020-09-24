@@ -24,6 +24,7 @@ type Value struct{}
 //
 // +stateify savable
 type AtomicPtr struct {
+	// +checkatomic
 	ptr unsafe.Pointer `state:".(*Value)"`
 }
 

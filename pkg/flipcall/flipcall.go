@@ -54,6 +54,8 @@ type Endpoint struct {
 	// shutdown is non-zero if Endpoint.Shutdown() has been called, or if the
 	// Endpoint has acknowledged shutdown initiated by the peer. shutdown is
 	// accessed using atomic memory operations.
+	//
+	// +checkatomic
 	shutdown uint32
 
 	ctrl endpointControlImpl

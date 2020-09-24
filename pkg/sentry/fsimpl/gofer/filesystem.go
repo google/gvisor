@@ -761,10 +761,11 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
 			return err
 		}
-		if d.nlink == 0 {
+		nlink := atomic.LoadUint32(&d.nlink)
+		if nlink == 0 {
 			return syserror.ENOENT
 		}
-		if d.nlink == math.MaxUint32 {
+		if nlink == math.MaxUint32 {
 			return syserror.EMLINK
 		}
 		if err := parent.file.link(ctx, d.file, childName); err != nil {
@@ -1182,8 +1183,8 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		if vfs.MayReadFileWithOpenFlags(opts.Flags) {
 			child.readFile = openFile
 			if fdobj != nil {
-				child.readFD = openFD
-				child.mmapFD = openFD
+				child.readFD = openFD // checkatomic: owned.
+				child.mmapFD = openFD // checkatomic: owned.
 			}
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {

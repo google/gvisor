@@ -26,11 +26,13 @@ type CrossGoroutineRWMutex struct {
 	// We use CrossGoroutineMutex rather than Mutex because the lock
 	// annotation instrumentation in Mutex will trigger false positives in
 	// the race detector when called inside of RaceDisable.
-	w           CrossGoroutineMutex
-	writerSem   uint32 // semaphore for writers to wait for completing readers
-	readerSem   uint32 // semaphore for readers to wait for completing writers
-	readerCount int32  // number of pending readers
-	readerWait  int32  // number of departing readers
+	w         CrossGoroutineMutex
+	writerSem uint32 // semaphore for writers to wait for completing readers
+	readerSem uint32 // semaphore for readers to wait for completing writers
+	// +checkatomic
+	readerCount int32 // number of pending readers
+	// +checkatomic
+	readerWait int32 // number of departing readers
 }
 
 const rwmutexMaxReaders = 1 << 30

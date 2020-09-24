@@ -92,6 +92,8 @@ type Writer struct {
 	// errors counts failures to write log messages so it can be reported
 	// when writer start to work again. Needs to be accessed using atomics
 	// to make race detector happy because it's read outside the mutex.
+	//
+	// +checkatomic
 	errors int32
 }
 

@@ -471,6 +471,8 @@ func (q *QID) encode(b *buffer) {
 type QIDGenerator struct {
 	// uids is an ever increasing value that can be atomically incremented
 	// to provide unique Path values for QIDs.
+	//
+	// +checkatomic
 	uids uint64
 }
 

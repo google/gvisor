@@ -63,6 +63,8 @@ type clientFile struct {
 	fid FID
 
 	// closed indicates whether this file has been closed.
+	//
+	// +checkatomic
 	closed uint32
 }
 

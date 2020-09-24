@@ -31,8 +31,10 @@ import (
 //
 // This is explicitly not savable.
 type mountKey struct {
+	// +checkatomic:ignore
 	parent unsafe.Pointer // *Mount
-	point  unsafe.Pointer // *Dentry
+	// +checkatomic:ignore
+	point unsafe.Pointer // *Dentry
 }
 
 var (
@@ -92,8 +94,11 @@ type mountTable struct {
 	// anyway (cf. runtime.bucketShift()), and length isn't used by lookup;
 	// thus this bit packing gets us more bits for the length (vs. storing
 	// length and cap in separate uint32s) for ~free.
+	//
+	// +checkatomic:ignore
 	size uint64
 
+	// +checkatomic:ignore
 	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
 
@@ -102,8 +107,11 @@ type mountSlot struct {
 	// Mount.point directly. Any practical use of lookup will need to touch
 	// Mounts anyway, and comparing hashes means that false positives are
 	// extremely rare, so this isn't an extra cache line touch overall.
+	//
+	// +checkatomic:ignore
 	value unsafe.Pointer // *Mount
-	hash  uintptr
+	// +checkatomic:ignore
+	hash uintptr
 }
 
 const (
@@ -146,8 +154,8 @@ func init() {
 
 // Init must be called exactly once on each mountTable before use.
 func (mt *mountTable) Init() {
-	mt.size = mtInitOrder
-	mt.slots = newMountTableSlots(mtInitCap)
+	atomic.StoreUint64(&mt.size, mtInitOrder)
+	atomic.StorePointer(&mt.slots, newMountTableSlots(mtInitCap))
 }
 
 func newMountTableSlots(cap uintptr) unsafe.Pointer {

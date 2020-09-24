@@ -107,6 +107,8 @@ type Filesystem struct {
 
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
+	//
+	// +checkatomic
 	nextInoMinusOne uint64
 
 	// cachedDentries contains all dentries with 0 references. (Due to race
@@ -188,6 +190,8 @@ type Dentry struct {
 	// added to the cache or destroyed. If refs == -1, the dentry has already
 	// been destroyed. refs are allowed to go to 0 and increase again. refs is
 	// accessed using atomic memory operations.
+	//
+	// +checkatomic
 	refs int64
 
 	// fs is the owning filesystem. fs is immutable.
@@ -195,6 +199,8 @@ type Dentry struct {
 
 	// flags caches useful information about the dentry from the inode. See the
 	// dflags* consts above. Must be accessed by atomic ops.
+	//
+	// +checkatomic
 	flags uint32
 
 	parent *Dentry
@@ -432,10 +438,10 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	atomic.StoreInt64(&d.refs, 1)
 	ftype := inode.Mode().FileType()
 	if ftype == linux.ModeDirectory {
-		d.flags |= dflagsIsDir
+		d.flags |= dflagsIsDir // checkatomic: safe.
 	}
 	if ftype == linux.ModeSymlink {
-		d.flags |= dflagsIsSymlink
+		d.flags |= dflagsIsSymlink // checkatomic: safe.
 	}
 	refsvfs2.Register(d)
 }

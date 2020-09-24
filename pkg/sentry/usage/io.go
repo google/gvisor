@@ -23,28 +23,42 @@ import (
 // +stateify savable
 type IO struct {
 	// CharsRead is the number of bytes read by read syscalls.
+	//
+	// +checkatomic
 	CharsRead uint64
 
 	// CharsWritten is the number of bytes written by write syscalls.
+	//
+	// +checkatomic
 	CharsWritten uint64
 
 	// ReadSyscalls is the number of read syscalls.
+	//
+	// +checkatomic
 	ReadSyscalls uint64
 
 	// WriteSyscalls is the number of write syscalls.
+	//
+	// +checkatomic
 	WriteSyscalls uint64
 
 	// The following counter is only meaningful when Sentry has internal
 	// pagecache.
 
 	// BytesRead is the number of bytes actually read into pagecache.
+	//
+	// +checkatomic
 	BytesRead uint64
 
 	// BytesWritten is the number of bytes actually written from pagecache.
+	//
+	// +checkatomic
 	BytesWritten uint64
 
 	// BytesWriteCancelled is the number of bytes not written out due to
 	// truncation.
+	//
+	// +checkatomic
 	BytesWriteCancelled uint64
 }
 

@@ -207,7 +207,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	tg.activeTasks++
 
 	// Propagate external TaskSet stops to the new task.
-	t.stopCount = ts.stopCount
+	t.stopCount = ts.stopCount // checkatomic: no race possible.
 
 	t.mu.Lock()
 	defer t.mu.Unlock()

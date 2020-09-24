@@ -41,6 +41,8 @@ import (
 // +stateify savable
 type inode struct {
 	// refs is a reference count. refs is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	refs int64
 
 	// fs is the containing filesystem.

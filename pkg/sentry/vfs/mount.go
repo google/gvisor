@@ -76,6 +76,8 @@ type Mount struct {
 	// The lower 63 bits of refs are a reference count. The MSB of refs is set
 	// if the Mount has been eagerly umounted, as by umount(2) without the
 	// MNT_DETACH flag. refs is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	refs int64
 
 	// children is the set of all Mounts for which Mount.key.parent is this
@@ -91,6 +93,8 @@ type Mount struct {
 	// Mount.CheckBeginWrite() that have not yet been paired with a call to
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
 	// writers is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	writers int64
 }
 

@@ -432,6 +432,8 @@ type endpoint struct {
 	// the buffer not including any segment overheads.
 	//
 	// rcvMemUsed must be accessed atomically.
+	//
+	// +checkatomic
 	rcvMemUsed int32
 
 	// mu protects all endpoint fields unless documented otherwise. mu must
@@ -439,7 +441,8 @@ type endpoint struct {
 	//
 	// During handshake, mu is locked by the protocol listen goroutine and
 	// released by the handshake completion goroutine.
-	mu          sync.CrossGoroutineMutex `state:"nosave"`
+	mu sync.CrossGoroutineMutex `state:"nosave"`
+	// +checkatomic
 	ownedByUser uint32
 
 	// state must be read/set using the EndpointState()/setEndpointState()
@@ -521,6 +524,8 @@ type endpoint struct {
 	// delay enables Nagle's algorithm.
 	//
 	// delay is a boolean (0 is false) and must be accessed atomically.
+	//
+	// +checkatomic
 	delay uint32
 
 	// scoreboard holds TCP SACK Scoreboard information for this endpoint.
@@ -586,6 +591,8 @@ type endpoint struct {
 
 	// notifyFlags is a bitmask of flags used to indicate to the protocol
 	// goroutine what it was notified; this is only accessed atomically.
+	//
+	// +checkatomic
 	notifyFlags uint32 `state:"nosave"`
 
 	// keepalive manages TCP keepalive state. When the connection is idle

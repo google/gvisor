@@ -1204,6 +1204,7 @@ type NetworkProtocolNumber uint32
 
 // A StatCounter keeps track of a statistic.
 type StatCounter struct {
+	// +checkatomic
 	count uint64
 }
 

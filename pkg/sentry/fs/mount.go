@@ -124,6 +124,8 @@ type MountSource struct {
 	// walks to Dirents in this MountSource.
 	//
 	// direntRefs must be atomically changed.
+	//
+	// +checkatomic
 	direntRefs uint64
 }
 

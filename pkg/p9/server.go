@@ -75,10 +75,14 @@ type connState struct {
 
 	// messageSize is the maximum message size. The server does not
 	// do automatic splitting of messages.
+	//
+	// +checkatomic
 	messageSize uint32
 
 	// version is the agreed upon version X of 9P2000.L.Google.X.
 	// version 0 implies 9P2000.L.
+	//
+	// +checkatomic
 	version uint32
 
 	// reqGate counts requests that are still being handled.
@@ -92,6 +96,8 @@ type connState struct {
 	// recvIdle is the number of goroutines in handleRequests() attempting to
 	// lock recvMu so that they can receive from conn. recvIdle is accessed
 	// using atomic memory operations.
+	//
+	// +checkatomic
 	recvIdle int32
 
 	// If recvShutdown is true, at least one goroutine has observed a
@@ -132,6 +138,8 @@ type fidRef struct {
 	// refs is an active refence count.
 	//
 	// The node above will be closed only when refs reaches zero.
+	//
+	// +checkatomic
 	refs int64
 
 	// opened indicates whether this has been opened already.
@@ -175,6 +183,8 @@ type fidRef struct {
 	// deleted indicates that the backing file has been deleted. We stop
 	// many operations at the API level if they are incompatible with a
 	// file that has already been unlinked.
+	//
+	// +checkatomic
 	deleted uint32
 }
 

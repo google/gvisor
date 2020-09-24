@@ -444,11 +444,15 @@ type SendReceiveTimeout struct {
 	// send is length of the send timeout in nanoseconds.
 	//
 	// send must be accessed atomically.
+	//
+	// +checkatomic
 	send int64
 
 	// recv is length of the receive timeout in nanoseconds.
 	//
 	// recv must be accessed atomically.
+	//
+	// +checkatomic
 	recv int64
 }
 

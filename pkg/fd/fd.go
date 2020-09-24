@@ -29,6 +29,8 @@ import (
 // does not take ownership of fd.
 type ReadWriter struct {
 	// fd is accessed atomically so FD.Close/Release can swap it.
+	//
+	// +checkatomic
 	fd int64
 }
 
@@ -38,7 +40,9 @@ var _ io.WriterAt = (*ReadWriter)(nil)
 
 // NewReadWriter creates a ReadWriter for fd.
 func NewReadWriter(fd int) *ReadWriter {
-	return &ReadWriter{int64(fd)}
+	return &ReadWriter{
+		fd: int64(fd),
+	}
 }
 
 func fixCount(n int, err error) (int, error) {
@@ -152,9 +156,13 @@ type FD struct {
 // New takes ownership of fd.
 func New(fd int) *FD {
 	if fd < 0 {
-		return &FD{ReadWriter{-1}}
+		return &FD{ReadWriter{
+			fd: -1,
+		}}
 	}
-	f := &FD{ReadWriter{int64(fd)}}
+	f := &FD{ReadWriter{
+		fd: int64(fd),
+	}}
 	runtime.SetFinalizer(f, (*FD).Close)
 	return f
 }
@@ -173,7 +181,9 @@ func NewFromFile(file *os.File) (*FD, error) {
 	// Fd() returns.
 	runtime.KeepAlive(file)
 	if err != nil {
-		return &FD{ReadWriter{-1}}, err
+		return &FD{ReadWriter{
+			fd: -1,
+		}}, err
 	}
 	return New(fd), nil
 }

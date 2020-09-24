@@ -271,7 +271,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		childVD.IncRef()
 		if isUpper {
 			child.upperVD = childVD
-			child.copiedUp = 1
+			child.copiedUp = 1 // checkatomic: owned.
 		} else {
 			child.lowerVDs = append(child.lowerVDs, childVD)
 		}
@@ -281,12 +281,12 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			} else {
 				topLookupLayer = lookupLayerLower
 			}
-			child.mode = uint32(stat.Mode)
-			child.uid = stat.UID
-			child.gid = stat.GID
-			child.devMajor = stat.DevMajor
-			child.devMinor = stat.DevMinor
-			child.ino = stat.Ino
+			child.mode = uint32(stat.Mode) // checkatomic: owned.
+			child.uid = stat.UID           // checkatomic: owned.
+			child.gid = stat.GID           // checkatomic: owned.
+			child.devMajor = stat.DevMajor // checkatomic: owned.
+			child.devMinor = stat.DevMinor // checkatomic: owned.
+			child.ino = stat.Ino           // checkatomic: owned.
 		}
 
 		// For non-directory files, only the topmost layer that contains a file
@@ -318,14 +318,14 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 
 	// Device and inode numbers were copied from the topmost layer above. Remap
 	// the device number to an appropriate overlay-private one.
-	childDevMinor, err := fs.getPrivateDevMinor(child.devMajor, child.devMinor)
+	childDevMinor, err := fs.getPrivateDevMinor(child.devMajor, child.devMinor) // checkatomic: owned.
 	if err != nil {
-		ctx.Infof("overlay.filesystem.lookupLocked: failed to map layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor, child.devMinor, err)
+		ctx.Infof("overlay.filesystem.lookupLocked: failed to map layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor, child.devMinor, err) // checkatomic: owned.
 		child.destroyLocked(ctx)
 		return nil, topLookupLayer, err
 	}
-	child.devMajor = linux.UNNAMED_MAJOR
-	child.devMinor = childDevMinor
+	child.devMajor = linux.UNNAMED_MAJOR // checkatomic: owned.
+	child.devMinor = childDevMinor       // checkatomic: owned.
 
 	parent.IncRef()
 	child.parent = parent

@@ -68,6 +68,8 @@ type WeakRef struct {
 	weakRefEntry `state:"nosave"`
 
 	// obj is an atomic value that points to the refCounter.
+	//
+	// +checkatomic
 	obj atomic.Value `state:".(savedReference)"`
 
 	// user is notified when the weak ref is zapped by the object getting
@@ -193,6 +195,8 @@ type AtomicRefCount struct {
 	// Speculative references are used for TryIncRef, to avoid a
 	// CompareAndSwap loop. See IncRef, DecRef and TryIncRef for details of
 	// how these fields are used.
+	//
+	// +checkatomic
 	refCount int64
 
 	// name is the name of the type which owns this ref count.

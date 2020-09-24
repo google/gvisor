@@ -91,6 +91,8 @@ type PortManager struct {
 	//
 	// hint must be accessed using the portHint/incPortHint helpers.
 	// TODO(gvisor.dev/issue/940): S/R this field.
+	//
+	// +checkatomic
 	hint uint32
 }
 

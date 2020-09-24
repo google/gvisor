@@ -51,6 +51,8 @@ type Watch struct {
 
 	// Events being monitored via this watch. Must be accessed atomically,
 	// writes are protected by mu.
+	//
+	// +checkatomic
 	mask uint32
 
 	// pins is the set of dirents this watch is currently pinning in memory by

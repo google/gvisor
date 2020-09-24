@@ -174,18 +174,27 @@ func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, 
 //
 // +stateify savable
 type InodeAttrs struct {
-	devMajor  uint32
-	devMinor  uint32
-	ino       uint64
-	mode      uint32
-	uid       uint32
-	gid       uint32
-	nlink     uint32
+	devMajor uint32
+	devMinor uint32
+	// +checkatomic
+	ino uint64
+	// +checkatomic
+	mode uint32
+	// +checkatomic
+	uid uint32
+	// +checkatomic
+	gid uint32
+	// +checkatomic
+	nlink uint32
+	// +checkatomic
 	blockSize uint32
 
 	// Timestamps, all nsecs from the Unix epoch.
+	// +checkatomic
 	atime int64
+	// +checkatomic
 	mtime int64
+	// +checkatomic
 	ctime int64
 }
 

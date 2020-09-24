@@ -101,11 +101,11 @@ func (m *MemoryEvents) emit() {
 		return
 	}
 	snapshot, _ := usage.MemoryAccounting.Copy()
-	total := totalPlatform + snapshot.Mapped
+	total := totalPlatform + snapshot.Mapped // checkatomic: safe.
 
 	totalEvents.Increment()
 	eventchannel.Emit(&pb.MemoryUsageEvent{
-		Mapped: snapshot.Mapped,
+		Mapped: snapshot.Mapped, // checkatomic: safe.
 		Total:  total,
 	})
 }

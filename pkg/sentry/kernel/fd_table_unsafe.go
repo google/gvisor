@@ -28,6 +28,8 @@ type descriptorTable struct {
 	// *descriptor object, updated atomically.
 	//
 	// Changes to the slice itself requiring holding FDTable.mu.
+	//
+	// +checkatomic
 	slice unsafe.Pointer `state:".(map[int32]*descriptor)"`
 }
 

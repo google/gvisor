@@ -101,6 +101,8 @@ var (
 type Sleeper struct {
 	// sharedList is a "stack" of asserted wakers. They atomically add
 	// themselves to the front of this list as they become asserted.
+	//
+	// +checkatomic
 	sharedList unsafe.Pointer
 
 	// localList is a list of asserted wakers that is only accessible to the
@@ -116,6 +118,8 @@ type Sleeper struct {
 
 	// waitingG holds the G that is sleeping, if any. It is used by wakers
 	// to determine which G, if any, they should wake.
+	//
+	// +checkatomic
 	waitingG uintptr
 }
 
@@ -178,7 +182,7 @@ func (s *Sleeper) nextWaker(block bool) *Waker {
 			// See:runtime2.go in the go runtime package for
 			// the values to pass as the waitReason here.
 			const waitReasonSelect = 9
-			sync.Gopark(commitSleep, unsafe.Pointer(&s.waitingG), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0)
+			sync.Gopark(commitSleep, unsafe.Pointer(&s.waitingG), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0) // checkatomic: allowed.
 		}
 
 		// Pull the shared list out and reverse it in the local
@@ -341,6 +345,8 @@ type Waker struct {
 	// otherwise -- the waker is not asserted, and is associated with the
 	//     given sleeper. Once it transitions to asserted state, the
 	//     associated sleeper will be woken.
+	//
+	// +checkatomic
 	s unsafe.Pointer
 
 	// next is used to form a linked list of asserted wakers in a sleeper.

@@ -118,6 +118,8 @@ type Dirent struct {
 	parent *Dirent
 
 	// deleted may be set atomically when removed.
+	//
+	// +checkatomic
 	deleted int32
 
 	// mounted is true if Dirent is a mount point, similar to include/linux/dcache.h:DCACHE_MOUNTED.

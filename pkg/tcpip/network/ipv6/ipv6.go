@@ -185,6 +185,8 @@ type endpoint struct {
 	// disabled.
 	//
 	// Must be accessed using atomic operations.
+	//
+	// +checkatomic
 	enabled uint32
 
 	mu struct {
@@ -1767,12 +1769,16 @@ type protocol struct {
 	// uint8 portion of it is meaningful.
 	//
 	// Must be accessed using atomic operations.
+	//
+	// +checkatomic
 	defaultTTL uint32
 
 	// forwarding is set to 1 when the protocol has forwarding enabled and 0
 	// when it is disabled.
 	//
 	// Must be accessed using atomic operations.
+	//
+	// +checkatomic
 	forwarding uint32
 
 	fragmentation *fragmentation.Fragmentation

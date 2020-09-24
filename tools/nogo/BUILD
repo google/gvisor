@@ -34,6 +34,7 @@ go_library(
     nogo = False,
     visibility = ["//:sandbox"],
     deps = [
+        "//tools/checkatomic",
         "//tools/checkescape",
         "//tools/checklocks",
         "//tools/checkunsafe",

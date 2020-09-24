@@ -39,6 +39,7 @@ type fileDescription struct {
 // genCount contains the number of times its DynamicBytesSource.Generate()
 // implementation has been called.
 type genCount struct {
+	// +checkatomic
 	count uint64 // accessed using atomic memory ops
 }
 

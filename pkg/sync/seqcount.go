@@ -33,6 +33,8 @@ type SeqCount struct {
 	// if a writer critical section is active, and a read from data protected
 	// by this SeqCount is atomic iff epoch is the same even value before and
 	// after the read.
+	//
+	// +checkatomic
 	epoch uint32
 }
 

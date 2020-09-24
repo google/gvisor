@@ -62,6 +62,8 @@ type Task struct {
 	// but since it's used to detect cases where non-task goroutines
 	// incorrectly access state owned by, or exclusive to, the task goroutine,
 	// goid is always accessed using atomic memory operations.
+	//
+	// +checkatomic
 	goid int64 `state:"nosave"`
 
 	// runState is what the task goroutine is executing if it is not stopped.
@@ -73,6 +75,8 @@ type Task struct {
 	// used to avoid acquiring taskWorkMu when the queue is empty.
 	//
 	// Must accessed with atomic memory operations.
+	//
+	// +checkatomic
 	taskWorkCount int32
 
 	// taskWorkMu protects taskWork.
@@ -111,6 +115,8 @@ type Task struct {
 	//
 	// yieldCount is accessed using atomic memory operations. yieldCount is
 	// owned by the task goroutine.
+	//
+	// +checkatomic
 	yieldCount uint64
 
 	// pendingSignals is the set of pending signals that may be handled only by
@@ -128,6 +134,14 @@ type Task struct {
 	// signal mutex is locked or if atomic memory operations are used, while
 	// writing signalMask requires both). signalMask is owned by the task
 	// goroutine.
+	//
+	// Note that accesses to the signal mask are done without atomic
+	// operations by the goroutine itself because only the goroutine can
+	// change the value. It is possible to check the value via ptrace, but
+	// only when the task goroutine is stopped, therefore this cannot race
+	// with signal delivery.
+	//
+	// +checkatomic:ignore
 	signalMask linux.SignalSet
 
 	// If the task goroutine is currently executing Task.sigtimedwait,
@@ -218,6 +232,8 @@ type Task struct {
 	// stop; after a save/restore cycle, the restored sentry has no knowledge
 	// of the pre-save sentryctl command, and the stopped task would remain
 	// stopped forever.)
+	//
+	// +checkatomic
 	stopCount int32 `state:"nosave"`
 
 	// endStopCond is signaled when stopCount transitions to 0. The combination
@@ -330,6 +346,8 @@ type Task struct {
 	// operations. This allows paths that wouldn't otherwise lock the TaskSet
 	// mutex, notably the syscall path, to check if ptraceTracer is nil without
 	// additional synchronization.
+	//
+	// +checkatomic
 	ptraceTracer atomic.Value `state:".(*Task)"`
 
 	// ptraceTracees is the set of tasks that this task is ptrace-attached to.
@@ -416,6 +434,8 @@ type Task struct {
 
 	// logPrefix is a string containing the task's thread ID in the root PID
 	// namespace, and is prepended to log messages emitted by Task.Infof etc.
+	//
+	// +checkatomic
 	logPrefix atomic.Value `state:"nosave"`
 
 	// traceContext and traceTask are both used for tracing, and are
@@ -463,6 +483,8 @@ type Task struct {
 	// is []bpf.Program. Writing needs to be protected by the signal mutex.
 	//
 	// syscallFilters is owned by the task goroutine.
+	//
+	// +checkatomic
 	syscallFilters atomic.Value `state:".([]bpf.Program)"`
 
 	// If cleartid is non-zero, treat it as a pointer to a ThreadID in the
@@ -485,6 +507,8 @@ type Task struct {
 	// entirely if Kernel.useHostCores is true.
 	//
 	// cpu is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	cpu int32
 
 	// This is used to keep track of changes made to a process' priority/niceness.
@@ -614,7 +638,7 @@ func (t *Task) afterLoad() {
 	t.interruptChan = make(chan struct{}, 1)
 	t.gosched.State = TaskGoroutineNonexistent
 	if t.stop != nil {
-		t.stopCount = 1
+		t.stopCount = 1 // checkatomic: no race.
 	}
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.p = t.k.Platform.NewContext()

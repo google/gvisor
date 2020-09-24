@@ -405,6 +405,8 @@ type Stack struct {
 
 	// If not nil, then any new endpoints will have this probe function
 	// invoked everytime they receive a TCP segment.
+	//
+	// +checkatomic
 	tcpProbeFunc atomic.Value // TCPProbeFunc
 
 	// clock is used to generate user-visible times.

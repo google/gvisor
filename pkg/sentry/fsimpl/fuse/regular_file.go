@@ -163,7 +163,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	// be true before we switch out from kernfs.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
 		// Locking inode.metadataMu is sufficient for reading size
-		offset = int64(inode.size)
+		offset = int64(atomic.LoadUint64(&inode.size))
 	}
 
 	srclen := src.NumBytes()
@@ -221,7 +221,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	written = int64(n)
 	finalOff = offset + written
 
-	if finalOff > int64(inode.size) {
+	if finalOff > int64(atomic.LoadUint64(&inode.size)) {
 		atomic.StoreUint64(&inode.size, uint64(finalOff))
 		atomic.AddUint64(&inode.fs.conn.attributeVersion, 1)
 	}

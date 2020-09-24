@@ -69,6 +69,8 @@ type Dentry struct {
 
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
 	// mounts is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	mounts uint32
 
 	// impl is the DentryImpl associated with this Dentry. impl is immutable.

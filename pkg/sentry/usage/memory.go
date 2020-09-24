@@ -81,12 +81,17 @@ const (
 // through the provided methods. The public fields may be safely accessed
 // directly on a copy of the object obtained from Memory.Copy().
 type MemoryStats struct {
-	System    uint64
+	// +checkatomic
+	System uint64
+	// +checkatomic
 	Anonymous uint64
+	// +checkatomic
 	PageCache uint64
-	Tmpfs     uint64
-	// Lazily updated based on the value in RTMapped.
-	Mapped    uint64
+	// +checkatomic
+	Tmpfs uint64
+	// +checkatomic
+	Mapped uint64
+	// +checkatomic
 	Ramdiskfs uint64
 }
 
@@ -102,6 +107,7 @@ type MemoryStats struct {
 // initially zeroed. Any added field will be ignored by an older API and will be
 // zero if read by a newer API.
 type RTMemoryStats struct {
+	// +checkatomic
 	RTMapped uint64
 }
 
@@ -248,7 +254,7 @@ func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ms := m.MemoryStats
-	ms.Mapped = m.RTMapped
+	ms.Mapped = m.RTMapped // checkatomic: safe.
 	return ms, m.totalLocked()
 }
 

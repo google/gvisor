@@ -38,7 +38,9 @@ type Waiter struct {
 	//
 	// - Otherwise: g is a pointer to the runtime.g in state Gwaiting for the
 	// goroutine blocked in Wait, which can only be woken by calling goready.
-	g uintptr `state:"zerovalue"`
+	//
+	// +checkatomic
+	g unsafe.Pointer `state:"zerovalue"`
 }
 
 const preparingG = 1
@@ -93,7 +95,7 @@ func (w *Waiter) WaitFor(es Set) Set {
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
 		// called or has not reached atomic.SwapUintptr()), go to sleep until
 		// w.NotifyPending() => goready().
-		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0)
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0) // checkatomic: safe.
 	}
 }
 
@@ -139,7 +141,7 @@ func (w *Waiter) WaitAndAckAll() Set {
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
 		// called or has not reached atomic.SwapUintptr()), go to sleep until
 		// w.NotifyPending() => goready().
-		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0)
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0) // checkatomic: safe.
 
 		// Check for pending events. We call PendingAndAckAll() directly now since
 		// we only expect to be woken after events become pending.

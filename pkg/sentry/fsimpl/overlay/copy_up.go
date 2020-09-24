@@ -122,7 +122,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		defer oldFD.DecRef(ctx)
 		newFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &newpop, &vfs.OpenOptions{
 			Flags: linux.O_WRONLY | linux.O_CREAT | linux.O_EXCL,
-			Mode:  linux.FileMode(d.mode &^ linux.S_IFMT),
+			Mode:  linux.FileMode(atomic.LoadUint32(&d.mode) &^ linux.S_IFMT),
 		})
 		if err != nil {
 			return err
@@ -154,8 +154,8 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		if err := newFD.SetStat(ctx, vfs.SetStatOptions{
 			Stat: linux.Statx{
 				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				UID:   d.uid,
-				GID:   d.gid,
+				UID:   atomic.LoadUint32(&d.uid),
+				GID:   atomic.LoadUint32(&d.gid),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
@@ -168,15 +168,15 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 
 	case linux.S_IFDIR:
 		if err := vfsObj.MkdirAt(ctx, d.fs.creds, &newpop, &vfs.MkdirOptions{
-			Mode: linux.FileMode(d.mode &^ linux.S_IFMT),
+			Mode: linux.FileMode(atomic.LoadUint32(&d.mode) &^ linux.S_IFMT),
 		}); err != nil {
 			return err
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
 				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				UID:   d.uid,
-				GID:   d.gid,
+				UID:   atomic.LoadUint32(&d.uid),
+				GID:   atomic.LoadUint32(&d.gid),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
@@ -202,9 +202,9 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
 				Mask:  linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				Mode:  uint16(d.mode),
-				UID:   d.uid,
-				GID:   d.gid,
+				Mode:  uint16(atomic.LoadUint32(&d.mode)),
+				UID:   atomic.LoadUint32(&d.uid),
+				GID:   atomic.LoadUint32(&d.gid),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
@@ -221,7 +221,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 
 	case linux.S_IFBLK, linux.S_IFCHR:
 		if err := vfsObj.MknodAt(ctx, d.fs.creds, &newpop, &vfs.MknodOptions{
-			Mode:     linux.FileMode(d.mode),
+			Mode:     linux.FileMode(atomic.LoadUint32(&d.mode)),
 			DevMajor: oldStat.RdevMajor,
 			DevMinor: oldStat.RdevMinor,
 		}); err != nil {
@@ -230,8 +230,8 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
 				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				UID:   d.uid,
-				GID:   d.gid,
+				UID:   atomic.LoadUint32(&d.uid),
+				GID:   atomic.LoadUint32(&d.gid),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},

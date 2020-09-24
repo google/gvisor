@@ -279,7 +279,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 			sh = sh.Fork()
 		}
 		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, opts.TerminationSignal, tg.limits.GetCopy())
-		tg.oomScoreAdj = atomic.LoadInt32(&t.tg.oomScoreAdj)
+		tg.oomScoreAdj = atomic.LoadInt32(&t.tg.oomScoreAdj) // checkatomic: owned.
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature
 	}

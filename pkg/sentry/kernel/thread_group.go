@@ -186,6 +186,8 @@ type ThreadGroup struct {
 	//
 	// cpuTimersEnabled is protected by the signal mutex. cpuTimersEnabled is
 	// accessed using atomic memory operations.
+	//
+	// +checkatomic
 	cpuTimersEnabled uint32
 
 	// timers is the thread group's POSIX interval timers. nextTimerID is the
@@ -240,6 +242,8 @@ type ThreadGroup struct {
 	execed bool
 
 	// oldRSeqCritical is the thread group's old rseq critical region.
+	//
+	// +checkatomic
 	oldRSeqCritical atomic.Value `state:".(*OldRSeqCriticalRegion)"`
 
 	// mounts is the thread group's mount namespace. This does not really
@@ -261,6 +265,8 @@ type ThreadGroup struct {
 	// TODO(gvisor.dev/issue/1967)
 	//
 	// oomScoreAdj is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	oomScoreAdj int32
 }
 

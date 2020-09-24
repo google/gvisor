@@ -78,6 +78,8 @@ type MemoryManager struct {
 	// unmapped.
 	//
 	// users is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	users int32
 
 	// mappingMu is analogous to Linux's struct mm_struct::mmap_sem.
@@ -165,8 +167,9 @@ type MemoryManager struct {
 	// operations; transitions to and from zero are additionally protected by
 	// activeMu. (This is because such transitions may need to be atomic with
 	// changes to as.)
-	as     platform.AddressSpace `state:"nosave"`
-	active int32                 `state:"zerovalue"`
+	as platform.AddressSpace `state:"nosave"`
+	// +checkatomic
+	active int32 `state:"zerovalue"`
 
 	// unmapAllOnActivate indicates that the next Activate call should activate
 	// an empty AddressSpace.

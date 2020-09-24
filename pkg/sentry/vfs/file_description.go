@@ -51,6 +51,8 @@ type FileDescription struct {
 	// modified by fcntl()" - fcntl(2). statusFlags can be read using atomic
 	// memory operations when it does not need to be synchronized with an
 	// access to asyncHandler.
+	//
+	// +checkatomic:ignore
 	statusFlags uint32
 
 	// saved is true after beforeSave is called. This is used to prevent
@@ -89,6 +91,7 @@ type FileDescription struct {
 	// writable is analogous to Linux's FMODE_WRITE.
 	writable bool
 
+	// +checkatomic
 	usedLockBSD uint32
 
 	// impl is the FileDescriptionImpl associated with this Filesystem. impl is

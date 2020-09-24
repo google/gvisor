@@ -52,6 +52,8 @@ type connection struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// attributeVersion is the version of connection's attributes.
+	//
+	// +checkatomic
 	attributeVersion uint64
 
 	// We target FUSE 7.23.
@@ -74,6 +76,8 @@ type connection struct {
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
 	// Use SetInitialized() and IsInitialized() for atomic access.
+	//
+	// +checkatomic
 	initialized int32
 
 	// initializedChan is used to block requests before initialization.

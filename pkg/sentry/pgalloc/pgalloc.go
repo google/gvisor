@@ -131,7 +131,8 @@ type MemoryFile struct {
 	// operations. This allows MemoryFile.MapInternal to avoid locking in the
 	// common case where chunk mappings already exist.
 	mappingsMu sync.Mutex
-	mappings   atomic.Value
+	// +checkatomic
+	mappings atomic.Value
 
 	// destroyed is set by Destroy to instruct the reclaimer goroutine to
 	// release resources and exit. destroyed is protected by mu.

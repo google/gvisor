@@ -92,7 +92,7 @@ type createSyntheticOpts struct {
 func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	now := d.fs.clock.Now().Nanoseconds()
 	child := &dentry{
-		refs:      1, // held by d
+		refs:      1, // held by d.
 		fs:        d.fs,
 		ino:       d.fs.nextIno(),
 		mode:      uint32(opts.mode),

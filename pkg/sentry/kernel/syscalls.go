@@ -122,6 +122,8 @@ type SyscallFlagsTable struct {
 	enable []uint32
 
 	// missingEnable contains the enable bits for missing syscalls.
+	//
+	// +checkatomic
 	missingEnable uint32
 }
 

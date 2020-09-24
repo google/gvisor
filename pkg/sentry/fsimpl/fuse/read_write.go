@@ -138,9 +138,8 @@ func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off u
 		// Update existing size.
 		newSize := off + uint64(sizeRead)
 		fs.conn.mu.Lock()
-		if attributeVersion == i.attributeVersion && newSize < atomic.LoadUint64(&i.size) {
-			fs.conn.attributeVersion++
-			i.attributeVersion = i.fs.conn.attributeVersion
+		if attributeVersion == atomic.LoadUint64(&i.attributeVersion) && newSize < atomic.LoadUint64(&i.size) {
+			atomic.StoreUint64(&i.attributeVersion, atomic.AddUint64(&fs.conn.attributeVersion, 1))
 			atomic.StoreUint64(&i.size, newSize)
 		}
 		fs.conn.mu.Unlock()

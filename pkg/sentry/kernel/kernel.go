@@ -166,6 +166,8 @@ type Kernel struct {
 	//
 	// runningTasks must be accessed atomically. Increments from 0 to 1 are
 	// further protected by runningTasksMu (see incRunningTasks).
+	//
+	// +checkatomic
 	runningTasks int64
 
 	// cpuClock is incremented every linux.ClockTick. cpuClock is used to
@@ -178,6 +180,8 @@ type Kernel struct {
 	// doesn't provide this information.
 	//
 	// cpuClock is mutable, and is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	cpuClock uint64
 
 	// cpuClockTicker increments cpuClock.
@@ -202,6 +206,8 @@ type Kernel struct {
 	// uniqueID is used to generate unique identifiers.
 	//
 	// uniqueID is mutable, and is accessed using atomic memory operations.
+	//
+	// +checkatomic
 	uniqueID uint64
 
 	// nextInotifyCookie is a monotonically increasing counter used for
@@ -209,6 +215,8 @@ type Kernel struct {
 	//
 	// nextInotifyCookie is mutable, and is accessed using atomic memory
 	// operations.
+	//
+	// +checkatomic
 	nextInotifyCookie uint32
 
 	// netlinkPorts manages allocation of netlink socket port IDs.

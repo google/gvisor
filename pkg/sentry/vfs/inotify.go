@@ -558,11 +558,15 @@ type Watch struct {
 
 	// Events being monitored via this watch. Must be accessed with atomic
 	// memory operations.
+	//
+	// +checkatomic
 	mask uint32
 
 	// expired is set to 1 to indicate that this watch is a one-shot that has
 	// already sent a notification and therefore can be removed. Must be accessed
 	// with atomic memory operations.
+	//
+	// +checkatomic
 	expired int32
 }
 

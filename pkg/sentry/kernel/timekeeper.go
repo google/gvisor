@@ -50,6 +50,8 @@ type Timekeeper struct {
 	monotonicOffset int64 `state:"nosave"`
 
 	// monotonicLowerBound is the lowerBound for monotonic time.
+	//
+	// +checkatomic
 	monotonicLowerBound int64 `state:"nosave"`
 
 	// restored, if non-nil, indicates that this Timekeeper was restored

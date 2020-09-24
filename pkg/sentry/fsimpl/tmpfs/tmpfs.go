@@ -363,16 +363,24 @@ type inode struct {
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, othewise atomic operations can be used.
-	mu    sync.Mutex `state:"nosave"`
-	mode  uint32     // file type and mode
-	nlink uint32     // protected by filesystem.mu instead of inode.mu
-	uid   uint32     // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid   uint32     // auth.KGID, but ...
-	ino   uint64     // immutable
+	mu sync.Mutex `state:"nosave"`
+	// +checkatomic
+	mode uint32 // file type and mode
+	// +checkatomic
+	nlink uint32 // protected by filesystem.mu instead of inode.mu
+	// +checkatomic
+	uid uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
+	// +checkatomic
+	gid uint32 // auth.KGID, but ...
+	// +checkatomic
+	ino uint64 // immutable
 
 	// Linux's tmpfs has no concept of btime.
+	// +checkatomic
 	atime int64 // nanoseconds
+	// +checkatomic
 	ctime int64 // nanoseconds
+	// +checkatomic
 	mtime int64 // nanoseconds
 
 	locks vfs.FileLocks
@@ -391,23 +399,23 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 	}
 
 	// Inherit the group and setgid bit as in fs/inode.c:inode_init_owner().
-	if parentDir != nil && parentDir.inode.mode&linux.S_ISGID == linux.S_ISGID {
-		kgid = auth.KGID(parentDir.inode.gid)
+	if parentDir != nil && atomic.LoadUint32(&parentDir.inode.mode)&linux.S_ISGID == linux.S_ISGID {
+		kgid = auth.KGID(atomic.LoadUint32(&parentDir.inode.gid))
 		if mode&linux.S_IFDIR == linux.S_IFDIR {
 			mode |= linux.S_ISGID
 		}
 	}
 
 	i.fs = fs
-	i.mode = uint32(mode)
-	i.uid = uint32(kuid)
-	i.gid = uint32(kgid)
-	i.ino = atomic.AddUint64(&fs.nextInoMinusOne, 1)
+	i.mode = uint32(mode)                            // checkatomic: owned.
+	i.uid = uint32(kuid)                             // checkatomic: owned.
+	i.gid = uint32(kgid)                             // checkatomic: owned.
+	i.ino = atomic.AddUint64(&fs.nextInoMinusOne, 1) // checkatomic: owned.
 	// Tmpfs creation sets atime, ctime, and mtime to current time.
 	now := fs.clock.Now().Nanoseconds()
-	i.atime = now
-	i.ctime = now
-	i.mtime = now
+	i.atime = now // checkatomic: owned.
+	i.ctime = now // checkatomic: owned.
+	i.mtime = now // checkatomic: owned.
 	// i.nlink initialized by caller
 	i.impl = impl
 	i.refs.InitRefs()
@@ -420,13 +428,13 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 // * i.nlink != 0.
 // * i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
-	if i.nlink == 0 {
+	newLinks := atomic.AddUint32(&i.nlink, 1)
+	if newLinks == 1 {
 		panic("tmpfs.inode.incLinksLocked() called with no existing links")
 	}
-	if i.nlink == maxLinks {
+	if newLinks > maxLinks || newLinks == 0 { // Overflow.
 		panic("tmpfs.inode.incLinksLocked() called with maximum link count")
 	}
-	atomic.AddUint32(&i.nlink, 1)
 }
 
 // decLinksLocked decrements i's link count. If the link count reaches 0, we
@@ -436,10 +444,11 @@ func (i *inode) incLinksLocked() {
 // * filesystem.mu must be locked for writing.
 // * i.nlink != 0.
 func (i *inode) decLinksLocked(ctx context.Context) {
-	if i.nlink == 0 {
+	newLinks := atomic.AddUint32(&i.nlink, ^uint32(0))
+	if newLinks >= maxLinks { // Underflow.
 		panic("tmpfs.inode.decLinksLocked() called with no existing links")
 	}
-	if atomic.AddUint32(&i.nlink, ^uint32(0)) == 0 {
+	if newLinks == 0 {
 		i.decRef(ctx)
 	}
 }
@@ -485,7 +494,7 @@ func (i *inode) statTo(stat *linux.Statx) {
 	stat.UID = atomic.LoadUint32(&i.uid)
 	stat.GID = atomic.LoadUint32(&i.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&i.mode))
-	stat.Ino = i.ino
+	stat.Ino = atomic.LoadUint64(&i.ino)
 	stat.Atime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.atime))
 	stat.Ctime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.ctime))
 	stat.Mtime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.mtime))

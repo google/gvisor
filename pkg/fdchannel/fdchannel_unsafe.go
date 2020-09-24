@@ -20,6 +20,7 @@ package fdchannel
 
 import (
 	"fmt"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -41,6 +42,7 @@ func NewConnectedSockets() ([2]int, error) {
 //
 // Endpoint is not copyable or movable by value.
 type Endpoint struct {
+	// +checkatomic
 	sockfd int32
 	msghdr unix.Msghdr
 	cmsg   *unix.Cmsghdr // followed by sizeofInt32 bytes of data
@@ -55,7 +57,7 @@ func (ep *Endpoint) Init(sockfd int) {
 	// sendmsg+recvmsg for a single byte over a stream socket.
 	cmsgSlice := make([]byte, unix.CmsgSpace(sizeofInt32))
 	cmsgSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&cmsgSlice))
-	ep.sockfd = int32(sockfd)
+	atomic.StoreInt32(&ep.sockfd, int32(sockfd))
 	ep.msghdr.Control = (*byte)(cmsgSliceHdr.Data)
 	ep.cmsg = (*unix.Cmsghdr)(cmsgSliceHdr.Data)
 	// ep.msghdr.Controllen and ep.cmsg.* are mutated by recvmsg(2), so they're
@@ -73,8 +75,9 @@ func NewEndpoint(sockfd int) *Endpoint {
 // Destroy releases resources owned by ep. No other Endpoint methods may be
 // called after Destroy.
 func (ep *Endpoint) Destroy() {
-	unix.Close(int(ep.sockfd))
-	ep.sockfd = -1
+	if sockfd := atomic.SwapInt32(&ep.sockfd, -1); sockfd >= 0 {
+		unix.Close(int(sockfd))
+	}
 }
 
 // Shutdown causes concurrent and future calls to ep.SendFD(), ep.RecvFD(), and
@@ -84,7 +87,7 @@ func (ep *Endpoint) Destroy() {
 // Shutdown is the only Endpoint method that may be called concurrently with
 // other methods.
 func (ep *Endpoint) Shutdown() {
-	unix.Shutdown(int(ep.sockfd), unix.SHUT_RDWR)
+	unix.Shutdown(int(atomic.LoadInt32(&ep.sockfd)), unix.SHUT_RDWR)
 }
 
 // SendFD sends the open file description represented by the given file
@@ -96,7 +99,7 @@ func (ep *Endpoint) SendFD(fd int) error {
 	ep.cmsg.SetLen(cmsgLen)
 	*ep.cmsgData() = int32(fd)
 	ep.msghdr.SetControllen(cmsgLen)
-	_, _, e := unix.Syscall(unix.SYS_SENDMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), 0)
+	_, _, e := unix.Syscall(unix.SYS_SENDMSG, uintptr(atomic.LoadInt32(&ep.sockfd)), uintptr(unsafe.Pointer(&ep.msghdr)), 0)
 	if e != 0 {
 		return e
 	}
@@ -122,9 +125,9 @@ func (ep *Endpoint) recvFD(nonblock bool) (int, error) {
 	ep.msghdr.SetControllen(cmsgLen)
 	var e unix.Errno
 	if nonblock {
-		_, _, e = unix.RawSyscall(unix.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), unix.MSG_TRUNC|unix.MSG_DONTWAIT)
+		_, _, e = unix.RawSyscall(unix.SYS_RECVMSG, uintptr(atomic.LoadInt32(&ep.sockfd)), uintptr(unsafe.Pointer(&ep.msghdr)), unix.MSG_TRUNC|unix.MSG_DONTWAIT)
 	} else {
-		_, _, e = unix.Syscall(unix.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), unix.MSG_TRUNC)
+		_, _, e = unix.Syscall(unix.SYS_RECVMSG, uintptr(atomic.LoadInt32(&ep.sockfd)), uintptr(unsafe.Pointer(&ep.msghdr)), unix.MSG_TRUNC)
 	}
 	if e != 0 {
 		return -1, e
