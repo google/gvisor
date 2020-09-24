@@ -17,5 +17,5 @@
 // docker, containerd, and crictl installed. To run these tests from the
 // project root directory:
 //
-//     ./scripts/root_tests.sh
+//     make root-tests
 package root
