@@ -159,6 +159,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// verity, and should not be exposed or connected.
 	mopts := &vfs.MountOptions{
 		GetFilesystemOptions: iopts.LowerGetFSOptions,
+		InternalMount:        true,
 	}
 	mnt, err := vfsObj.MountDisconnected(ctx, creds, "", iopts.LowerName, mopts)
 	if err != nil {
