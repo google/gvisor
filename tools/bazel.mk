@@ -131,7 +131,7 @@ bazel-server-start: bazel-image ## Starts the bazel server.
 		--workdir "$(CURDIR)" \
 		$(FULL_DOCKER_RUN_OPTIONS) \
 		$(BUILDER_IMAGE) \
-		sh -c "tail -f --pid=\$$($(BAZEL) info server_pid)"
+		sh -c "tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
 .PHONY: bazel-server-start
 
 bazel-shutdown: ## Shuts down a running bazel server.
