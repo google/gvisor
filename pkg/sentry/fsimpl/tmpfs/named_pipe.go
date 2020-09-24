@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// +stateify savable
 type namedPipe struct {
 	inode inode
 

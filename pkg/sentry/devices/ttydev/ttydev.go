@@ -30,6 +30,8 @@ const (
 )
 
 // ttyDevice implements vfs.Device for /dev/tty.
+//
+// +stateify savable
 type ttyDevice struct{}
 
 // Open implements vfs.Device.Open.

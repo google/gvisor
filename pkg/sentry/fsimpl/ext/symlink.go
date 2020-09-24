@@ -23,6 +23,8 @@ import (
 )
 
 // symlink represents a symlink inode.
+//
+// +stateify savable
 type symlink struct {
 	inode  inode
 	target string // immutable
@@ -64,6 +66,8 @@ func (in *inode) isSymlink() bool {
 // symlinkFD represents a symlink file description and implements
 // vfs.FileDescriptionImpl. which may only be used if open options contains
 // O_PATH. For this reason most of the functions return EBADF.
+//
+// +stateify savable
 type symlinkFD struct {
 	fileDescription
 	vfs.NoLockFD

@@ -62,9 +62,13 @@ import (
 const Name = "9p"
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
@@ -77,7 +81,7 @@ type filesystem struct {
 	iopts InternalFilesystemOptions
 
 	// client is the client used by this filesystem. client is immutable.
-	client *p9.Client
+	client *p9.Client `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock ktime.Clock
@@ -95,7 +99,7 @@ type filesystem struct {
 	// reference count (such that it is usable as vfs.ResolvingPath.Start() or
 	// is reachable from its children), or if it is a child dentry (such that
 	// it is reachable from its parent).
-	renameMu sync.RWMutex
+	renameMu sync.RWMutex `state:"nosave"`
 
 	// cachedDentries contains all dentries with 0 references. (Due to race
 	// conditions, it may also contain dentries with non-zero references.)
@@ -107,7 +111,7 @@ type filesystem struct {
 	// syncableDentries contains all dentries in this filesystem for which
 	// !dentry.file.isNil(). specialFileFDs contains all open specialFileFDs.
 	// These fields are protected by syncMu.
-	syncMu           sync.Mutex
+	syncMu           sync.Mutex `state:"nosave"`
 	syncableDentries map[*dentry]struct{}
 	specialFileFDs   map[*specialFileFD]struct{}
 
@@ -120,6 +124,8 @@ type filesystem struct {
 // dentries, it comes from QID.Path from the 9P server. Synthetic dentries
 // have have their inodeNumber generated sequentially, with the MSB reserved to
 // prevent conflicts with regular dentries.
+//
+// +stateify savable
 type inodeNumber uint64
 
 // Reserve MSB for synthetic mounts.
@@ -132,6 +138,7 @@ func inoFromPath(path uint64) inodeNumber {
 	return inodeNumber(path &^ syntheticInoMask)
 }
 
+// +stateify savable
 type filesystemOptions struct {
 	// "Standard" 9P options.
 	fd      int
@@ -177,6 +184,8 @@ type filesystemOptions struct {
 
 // InteropMode controls the client's interaction with other remote filesystem
 // users.
+//
+// +stateify savable
 type InteropMode uint32
 
 const (
@@ -235,6 +244,8 @@ const (
 
 // InternalFilesystemOptions may be passed as
 // vfs.GetFilesystemOptions.InternalData to FilesystemType.GetFilesystem.
+//
+// +stateify savable
 type InternalFilesystemOptions struct {
 	// If LeakConnection is true, do not close the connection to the server
 	// when the Filesystem is released. This is necessary for deployments in
@@ -534,6 +545,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 }
 
 // dentry implements vfs.DentryImpl.
+//
+// +stateify savable
 type dentry struct {
 	vfsd vfs.Dentry
 
@@ -563,7 +576,7 @@ type dentry struct {
 	// If file.isNil(), this dentry represents a synthetic file, i.e. a file
 	// that does not exist on the remote filesystem. As of this writing, the
 	// only files that can be synthetic are sockets, pipes, and directories.
-	file p9file
+	file p9file `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 
 	// If deleted is non-zero, the file represented by this dentry has been
 	// deleted. deleted is accessed using atomic memory operations.
@@ -575,7 +588,7 @@ type dentry struct {
 	cached bool
 	dentryEntry
 
-	dirMu sync.Mutex
+	dirMu sync.Mutex `state:"nosave"`
 
 	// If this dentry represents a directory, children contains:
 	//
@@ -607,7 +620,7 @@ type dentry struct {
 	// To mutate:
 	//   - Lock metadataMu and use atomic operations to update because we might
 	//     have atomic readers that don't hold the lock.
-	metadataMu sync.Mutex
+	metadataMu sync.Mutex  `state:"nosave"`
 	ino        inodeNumber // immutable
 	mode       uint32      // type is immutable, perms are mutable
 	uid        uint32      // auth.KUID, but stored as raw uint32 for sync/atomic
@@ -638,7 +651,7 @@ type dentry struct {
 	// other metadata fields.
 	nlink uint32
 
-	mapsMu sync.Mutex
+	mapsMu sync.Mutex `state:"nosave"`
 
 	// If this dentry represents a regular file, mappings tracks mappings of
 	// the file into memmap.MappingSpaces. mappings is protected by mapsMu.
@@ -662,12 +675,12 @@ type dentry struct {
 	// either p9.File transitions from closed (isNil() == true) to open
 	// (isNil() == false), it may be mutated with handleMu locked, but cannot
 	// be closed until the dentry is destroyed.
-	handleMu  sync.RWMutex
-	readFile  p9file
-	writeFile p9file
+	handleMu  sync.RWMutex `state:"nosave"`
+	readFile  p9file       `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
+	writeFile p9file       `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 	hostFD    int32
 
-	dataMu sync.RWMutex
+	dataMu sync.RWMutex `state:"nosave"`
 
 	// If this dentry represents a regular file that is client-cached, cache
 	// maps offsets into the cached file to offsets into
@@ -1627,12 +1640,14 @@ func (d *dentry) decLinks() {
 
 // fileDescription is embedded by gofer implementations of
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
 
-	lockLogging sync.Once
+	lockLogging sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 }
 
 func (fd *fileDescription) filesystem() *filesystem {

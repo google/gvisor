@@ -27,6 +27,8 @@ import (
 var epollCycleMu sync.Mutex
 
 // EpollInstance represents an epoll instance, as described by epoll(7).
+//
+// +stateify savable
 type EpollInstance struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
@@ -38,11 +40,11 @@ type EpollInstance struct {
 
 	// interest is the set of file descriptors that are registered with the
 	// EpollInstance for monitoring. interest is protected by interestMu.
-	interestMu sync.Mutex
+	interestMu sync.Mutex `state:"nosave"`
 	interest   map[epollInterestKey]*epollInterest
 
 	// mu protects fields in registered epollInterests.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// ready is the set of file descriptors that may be "ready" for I/O. Note
 	// that this must be an ordered list, not a map: "If more than maxevents
@@ -55,6 +57,7 @@ type EpollInstance struct {
 	ready epollInterestList
 }
 
+// +stateify savable
 type epollInterestKey struct {
 	// file is the registered FileDescription. No reference is held on file;
 	// instead, when the last reference is dropped, FileDescription.DecRef()
@@ -67,6 +70,8 @@ type epollInterestKey struct {
 }
 
 // epollInterest represents an EpollInstance's interest in a file descriptor.
+//
+// +stateify savable
 type epollInterest struct {
 	// epoll is the owning EpollInstance. epoll is immutable.
 	epoll *EpollInstance

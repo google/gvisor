@@ -21,6 +21,8 @@ import (
 )
 
 // socketFile is a socket (=S_IFSOCK) tmpfs file.
+//
+// +stateify savable
 type socketFile struct {
 	inode inode
 	ep    transport.BoundEndpoint

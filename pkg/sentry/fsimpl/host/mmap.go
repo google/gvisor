@@ -27,11 +27,13 @@ import (
 // cannot implement both kernfs.Inode.IncRef and memmap.File.IncRef.
 //
 // inodePlatformFile should only be used if inode.canMap is true.
+//
+// +stateify savable
 type inodePlatformFile struct {
 	*inode
 
 	// fdRefsMu protects fdRefs.
-	fdRefsMu sync.Mutex
+	fdRefsMu sync.Mutex `state:"nosave"`
 
 	// fdRefs counts references on memmap.File offsets. It is used solely for
 	// memory accounting.
@@ -41,7 +43,7 @@ type inodePlatformFile struct {
 	fileMapper fsutil.HostFileMapper
 
 	// fileMapperInitOnce is used to lazily initialize fileMapper.
-	fileMapperInitOnce sync.Once
+	fileMapperInitOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 }
 
 // IncRef implements memmap.File.IncRef.

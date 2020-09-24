@@ -34,6 +34,8 @@ import (
 const Name = "ext"
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // Compiles only if FilesystemType implements vfs.FilesystemType.

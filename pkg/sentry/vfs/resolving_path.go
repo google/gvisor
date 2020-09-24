@@ -35,6 +35,8 @@ import (
 // FilesystemImpl methods.
 //
 // ResolvingPath is loosely analogous to Linux's struct nameidata.
+//
+// +stateify savable
 type ResolvingPath struct {
 	vfs   *VirtualFilesystem
 	root  VirtualDentry // refs borrowed from PathOperation
@@ -88,6 +90,7 @@ func init() {
 // so error "constants" are really mutable vars, necessitating somewhat
 // expensive interface object comparisons.
 
+// +stateify savable
 type resolveMountRootOrJumpError struct{}
 
 // Error implements error.Error.
@@ -95,6 +98,7 @@ func (resolveMountRootOrJumpError) Error() string {
 	return "resolving mount root or jump"
 }
 
+// +stateify savable
 type resolveMountPointError struct{}
 
 // Error implements error.Error.
@@ -102,6 +106,7 @@ func (resolveMountPointError) Error() string {
 	return "resolving mount point"
 }
 
+// +stateify savable
 type resolveAbsSymlinkError struct{}
 
 // Error implements error.Error.

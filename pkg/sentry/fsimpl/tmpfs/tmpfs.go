@@ -51,9 +51,13 @@ import (
 const Name = "tmpfs"
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
@@ -67,7 +71,7 @@ type filesystem struct {
 	devMinor uint32
 
 	// mu serializes changes to the Dentry tree.
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	nextInoMinusOne uint64 // accessed using atomic memory operations
 }
@@ -78,6 +82,8 @@ func (FilesystemType) Name() string {
 }
 
 // FilesystemOpts is used to pass configuration data to tmpfs.
+//
+// +stateify savable
 type FilesystemOpts struct {
 	// RootFileType is the FileType of the filesystem root. Valid values
 	// are: S_IFDIR, S_IFREG, and S_IFLNK. Defaults to S_IFDIR.
@@ -221,6 +227,8 @@ var globalStatfs = linux.Statfs{
 }
 
 // dentry implements vfs.DentryImpl.
+//
+// +stateify savable
 type dentry struct {
 	vfsd vfs.Dentry
 
@@ -300,6 +308,8 @@ func (d *dentry) Watches() *vfs.Watches {
 func (d *dentry) OnZeroWatches(context.Context) {}
 
 // inode represents a filesystem object.
+//
+// +stateify savable
 type inode struct {
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
@@ -316,12 +326,12 @@ type inode struct {
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, othewise atomic operations can be used.
-	mu    sync.Mutex
-	mode  uint32 // file type and mode
-	nlink uint32 // protected by filesystem.mu instead of inode.mu
-	uid   uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid   uint32 // auth.KGID, but ...
-	ino   uint64 // immutable
+	mu    sync.Mutex `state:"nosave"`
+	mode  uint32     // file type and mode
+	nlink uint32     // protected by filesystem.mu instead of inode.mu
+	uid   uint32     // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid   uint32     // auth.KGID, but ...
+	ino   uint64     // immutable
 
 	// Linux's tmpfs has no concept of btime.
 	atime int64 // nanoseconds
@@ -668,6 +678,8 @@ func (i *inode) checkXattrPermissions(creds *auth.Credentials, name string, ats 
 
 // fileDescription is embedded by tmpfs implementations of
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

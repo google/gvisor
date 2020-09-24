@@ -36,6 +36,8 @@ func (fs *filesystem) newKcovFile(ctx context.Context, creds *auth.Credentials) 
 }
 
 // kcovInode implements kernfs.Inode.
+//
+// +stateify savable
 type kcovInode struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
@@ -63,6 +65,7 @@ func (i *kcovInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.D
 	return &fd.vfsfd, nil
 }
 
+// +stateify savable
 type kcovFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.NoLockFD

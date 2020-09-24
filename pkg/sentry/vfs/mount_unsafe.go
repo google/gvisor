@@ -34,6 +34,8 @@ import (
 // structurally identical to VirtualDentry, but stores its fields as
 // unsafe.Pointer since mutators synchronize with VFS path traversal using
 // seqcounts.
+//
+// This is explicitly not savable.
 type mountKey struct {
 	parent unsafe.Pointer // *Mount
 	point  unsafe.Pointer // *Dentry
@@ -47,18 +49,22 @@ func (mnt *Mount) point() *Dentry {
 	return (*Dentry)(atomic.LoadPointer(&mnt.key.point))
 }
 
-func (mnt *Mount) loadKey() VirtualDentry {
+func (mnt *Mount) getKey() VirtualDentry {
 	return VirtualDentry{
 		mount:  mnt.parent(),
 		dentry: mnt.point(),
 	}
 }
 
+func (mnt *Mount) saveKey() VirtualDentry { return mnt.getKey() }
+
 // Invariant: mnt.key.parent == nil. vd.Ok().
-func (mnt *Mount) storeKey(vd VirtualDentry) {
+func (mnt *Mount) setKey(vd VirtualDentry) {
 	atomic.StorePointer(&mnt.key.parent, unsafe.Pointer(vd.mount))
 	atomic.StorePointer(&mnt.key.point, unsafe.Pointer(vd.dentry))
 }
+
+func (mnt *Mount) loadKey(vd VirtualDentry) { mnt.setKey(vd) }
 
 // mountTable maps (mount parent, mount point) pairs to mounts. It supports
 // efficient concurrent lookup, even in the presence of concurrent mutators
@@ -92,6 +98,7 @@ type mountTable struct {
 	// length and cap in separate uint32s) for ~free.
 	size uint64
 
+	// FIXME(gvisor.dev/issue/1663): Slots need to be saved.
 	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
 

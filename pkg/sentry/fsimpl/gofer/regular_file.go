@@ -39,11 +39,12 @@ func (d *dentry) isRegularFile() bool {
 	return d.fileType() == linux.S_IFREG
 }
 
+// +stateify savable
 type regularFileFD struct {
 	fileDescription
 
 	// off is the file offset. off is protected by mu.
-	mu  sync.Mutex
+	mu  sync.Mutex `state:"nosave"`
 	off int64
 }
 
@@ -898,6 +899,8 @@ func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 // dentryPlatformFile is only used when a host FD representing the remote file
 // is available (i.e. dentry.hostFD >= 0), and that FD is used for application
 // memory mappings (i.e. !filesystem.opts.forcePageCache).
+//
+// +stateify savable
 type dentryPlatformFile struct {
 	*dentry
 
@@ -910,7 +913,7 @@ type dentryPlatformFile struct {
 	hostFileMapper fsutil.HostFileMapper
 
 	// hostFileMapperInitOnce is used to lazily initialize hostFileMapper.
-	hostFileMapperInitOnce sync.Once
+	hostFileMapperInitOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 }
 
 // IncRef implements memmap.File.IncRef.

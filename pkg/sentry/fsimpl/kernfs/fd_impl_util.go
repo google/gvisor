@@ -29,6 +29,8 @@ import (
 )
 
 // SeekEndConfig describes the SEEK_END behaviour for FDs.
+//
+// +stateify savable
 type SeekEndConfig int
 
 // Constants related to SEEK_END behaviour for FDs.
@@ -41,6 +43,8 @@ const (
 )
 
 // GenericDirectoryFDOptions contains configuration for a GenericDirectoryFD.
+//
+// +stateify savable
 type GenericDirectoryFDOptions struct {
 	SeekEnd SeekEndConfig
 }
@@ -56,6 +60,8 @@ type GenericDirectoryFDOptions struct {
 // Must be initialize with Init before first use.
 //
 // Lock ordering: mu => children.mu.
+//
+// +stateify savable
 type GenericDirectoryFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DirectoryFileDescriptionDefaultImpl
@@ -68,7 +74,7 @@ type GenericDirectoryFD struct {
 	children *OrderedChildren
 
 	// mu protects the fields below.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// off is the current directory offset. Protected by "mu".
 	off int64

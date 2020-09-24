@@ -24,6 +24,8 @@ import (
 const fullDevMinor = 7
 
 // fullDevice implements vfs.Device for /dev/full.
+//
+// +stateify savable
 type fullDevice struct{}
 
 // Open implements vfs.Device.Open.
@@ -38,6 +40,8 @@ func (fullDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, op
 }
 
 // fullFD implements vfs.FileDescriptionImpl for /dev/full.
+//
+// +stateify savable
 type fullFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

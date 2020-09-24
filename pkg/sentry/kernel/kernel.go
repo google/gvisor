@@ -507,6 +507,10 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 // flushMountSourceRefs flushes the MountSources for all mounted filesystems
 // and open FDs.
 func (k *Kernel) flushMountSourceRefs(ctx context.Context) error {
+	if VFS2Enabled {
+		return nil // Not relevant.
+	}
+
 	// Flush all mount sources for currently mounted filesystems in each task.
 	flushed := make(map[*fs.MountNamespace]struct{})
 	k.tasks.mu.RLock()
@@ -533,11 +537,6 @@ func (k *Kernel) flushMountSourceRefs(ctx context.Context) error {
 //
 // Precondition: Must be called with the kernel paused.
 func (ts *TaskSet) forEachFDPaused(ctx context.Context, f func(*fs.File, *vfs.FileDescription) error) (err error) {
-	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
-	if VFS2Enabled {
-		return nil
-	}
-
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
@@ -556,6 +555,10 @@ func (ts *TaskSet) forEachFDPaused(ctx context.Context, f func(*fs.File, *vfs.Fi
 
 func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
 	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
+	if VFS2Enabled {
+		return nil
+	}
+
 	return ts.forEachFDPaused(ctx, func(file *fs.File, _ *vfs.FileDescription) error {
 		if flags := file.Flags(); !flags.Write {
 			return nil

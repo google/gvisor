@@ -38,11 +38,13 @@ var (
 )
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
 	// mu serializes changes to the Dentry tree.
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	// dev represents the underlying fs device. It does not require protection
 	// because io.ReaderAt permits concurrent read calls to it. It translates to

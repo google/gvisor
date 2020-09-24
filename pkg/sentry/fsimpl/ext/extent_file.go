@@ -24,6 +24,8 @@ import (
 )
 
 // extentFile is a type of regular file which uses extents to store file data.
+//
+// +stateify savable
 type extentFile struct {
 	regFile regularFile
 

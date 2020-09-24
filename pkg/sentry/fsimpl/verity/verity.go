@@ -74,9 +74,13 @@ var noCrashOnVerificationFailure bool
 var verityMu sync.RWMutex
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
@@ -101,11 +105,13 @@ type filesystem struct {
 	// renameMu synchronizes renaming with non-renaming operations in order
 	// to ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
-	renameMu sync.RWMutex
+	renameMu sync.RWMutex `state:"nosave"`
 }
 
 // InternalFilesystemOptions may be passed as
 // vfs.GetFilesystemOptions.InternalData to FilesystemType.GetFilesystem.
+//
+// +stateify savable
 type InternalFilesystemOptions struct {
 	// RootMerkleFileName is the name of the verity root Merkle tree file.
 	RootMerkleFileName string
@@ -259,6 +265,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 }
 
 // dentry implements vfs.DentryImpl.
+//
+// +stateify savable
 type dentry struct {
 	vfsd vfs.Dentry
 
@@ -285,7 +293,7 @@ type dentry struct {
 	// and dirents (if not nil) is a cache of dirents as returned by
 	// directoryFDs representing this directory. children is protected by
 	// dirMu.
-	dirMu    sync.Mutex
+	dirMu    sync.Mutex `state:"nosave"`
 	children map[string]*dentry
 
 	// lowerVD is the VirtualDentry in the underlying file system.
@@ -429,6 +437,8 @@ func (d *dentry) readlink(ctx context.Context) (string, error) {
 // FileDescription is a wrapper of the underlying lowerFD, with support to build
 // Merkle trees through the Linux fs-verity API to verify contents read from
 // lowerFD.
+//
+// +stateify savable
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

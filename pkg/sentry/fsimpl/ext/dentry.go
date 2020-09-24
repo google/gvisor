@@ -20,6 +20,8 @@ import (
 )
 
 // dentry implements vfs.DentryImpl.
+//
+// +stateify savable
 type dentry struct {
 	vfsd vfs.Dentry
 
