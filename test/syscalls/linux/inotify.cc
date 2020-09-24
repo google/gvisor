@@ -465,7 +465,9 @@ TEST(Inotify, ConcurrentFileDeletionAndWatchRemoval) {
     for (int i = 0; i < 100; ++i) {
       FileDescriptor file_fd =
           ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_CREAT, S_IRUSR | S_IWUSR));
-      file_fd.reset();  // Close before unlinking (although save is disabled).
+      // Close before unlinking (although S/R is disabled). Some filesystems
+      // cannot restore an open fd on an unlinked file.
+      file_fd.reset();
       EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
     }
   };
@@ -1256,10 +1258,7 @@ TEST(Inotify, MknodGeneratesCreateEvent) {
       InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
 
   const TempPath file1(root.path() + "/file1");
-  const int rc = mknod(file1.path().c_str(), S_IFREG, 0);
-  // mknod(2) is only supported on tmpfs in the sandbox.
-  SKIP_IF(IsRunningOnGvisor() && rc != 0);
-  ASSERT_THAT(rc, SyscallSucceeds());
+  ASSERT_THAT(mknod(file1.path().c_str(), S_IFREG, 0), SyscallSucceeds());
 
   const std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
@@ -1289,6 +1288,10 @@ TEST(Inotify, SymlinkGeneratesCreateEvent) {
 }
 
 TEST(Inotify, LinkGeneratesAttribAndCreateEvents) {
+  // Inotify does not work properly with hard links in gofer and overlay fs.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
+
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath file1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
@@ -1301,11 +1304,8 @@ TEST(Inotify, LinkGeneratesAttribAndCreateEvents) {
   const int file1_wd = ASSERT_NO_ERRNO_AND_VALUE(
       InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
 
-  const int rc = link(file1.path().c_str(), link1.path().c_str());
-  // NOTE(b/34861058): link(2) is only supported on tmpfs in the sandbox.
-  SKIP_IF(IsRunningOnGvisor() && rc != 0 &&
-          (errno == EPERM || errno == ENOENT));
-  ASSERT_THAT(rc, SyscallSucceeds());
+  ASSERT_THAT(link(file1.path().c_str(), link1.path().c_str()),
+              SyscallSucceeds());
 
   const std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
@@ -1334,68 +1334,70 @@ TEST(Inotify, UtimesGeneratesAttribEvent) {
 }
 
 TEST(Inotify, HardlinksReuseSameWatch) {
+  // Inotify does not work properly with hard links in gofer and overlay fs.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
+
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  TempPath file1 =
+  TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
-  TempPath link1(root.path() + "/link1");
-  const int rc = link(file1.path().c_str(), link1.path().c_str());
-  // link(2) is only supported on tmpfs in the sandbox.
-  SKIP_IF(IsRunningOnGvisor() && rc != 0 &&
-          (errno == EPERM || errno == ENOENT));
-  ASSERT_THAT(rc, SyscallSucceeds());
+
+  TempPath file2(root.path() + "/file2");
+  ASSERT_THAT(link(file.path().c_str(), file2.path().c_str()),
+              SyscallSucceeds());
 
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
 
   const int root_wd = ASSERT_NO_ERRNO_AND_VALUE(
       InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
-  const int file1_wd = ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
-  const int link1_wd = ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), link1.path(), IN_ALL_EVENTS));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), file.path(), IN_ALL_EVENTS));
+  const int file2_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), file2.path(), IN_ALL_EVENTS));
 
   // The watch descriptors for watches on different links to the same file
   // should be identical.
-  EXPECT_NE(root_wd, file1_wd);
-  EXPECT_EQ(file1_wd, link1_wd);
+  EXPECT_NE(root_wd, file_wd);
+  EXPECT_EQ(file_wd, file2_wd);
 
-  FileDescriptor file1_fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_WRONLY));
+  FileDescriptor file_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
 
   std::vector<Event> events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
   ASSERT_THAT(events,
-              AreUnordered({Event(IN_OPEN, root_wd, Basename(file1.path())),
-                            Event(IN_OPEN, file1_wd)}));
+              AreUnordered({Event(IN_OPEN, root_wd, Basename(file.path())),
+                            Event(IN_OPEN, file_wd)}));
 
   // For the next step, we want to ensure all fds to the file are closed. Do
   // that now and drain the resulting events.
-  file1_fd.reset();
+  file_fd.reset();
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
   ASSERT_THAT(
       events,
-      AreUnordered({Event(IN_CLOSE_WRITE, root_wd, Basename(file1.path())),
-                    Event(IN_CLOSE_WRITE, file1_wd)}));
+      AreUnordered({Event(IN_CLOSE_WRITE, root_wd, Basename(file.path())),
+                    Event(IN_CLOSE_WRITE, file_wd)}));
 
   // Try removing the link and let's see what events show up. Note that after
   // this, we still have a link to the file so the watch shouldn't be
   // automatically removed.
-  const std::string link1_path = link1.reset();
+  const std::string file2_path = file2.reset();
 
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
   ASSERT_THAT(events,
-              AreUnordered({Event(IN_ATTRIB, link1_wd),
-                            Event(IN_DELETE, root_wd, Basename(link1_path))}));
+              AreUnordered({Event(IN_ATTRIB, file2_wd),
+                            Event(IN_DELETE, root_wd, Basename(file2_path))}));
 
   // Now remove the other link. Since this is the last link to the file, the
   // watch should be automatically removed.
-  const std::string file1_path = file1.reset();
+  const std::string file_path = file.reset();
 
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
   ASSERT_THAT(
       events,
-      AreUnordered({Event(IN_ATTRIB, file1_wd), Event(IN_DELETE_SELF, file1_wd),
-                    Event(IN_IGNORED, file1_wd),
-                    Event(IN_DELETE, root_wd, Basename(file1_path))}));
+      AreUnordered({Event(IN_ATTRIB, file_wd), Event(IN_DELETE_SELF, file_wd),
+                    Event(IN_IGNORED, file_wd),
+                    Event(IN_DELETE, root_wd, Basename(file_path))}));
 }
 
 // Calling mkdir within "parent/child" should generate an event for child, but
@@ -1806,17 +1808,17 @@ TEST(Inotify, SpliceOnInotifyFD) {
 // Watches on a parent should not be triggered by actions on a hard link to one
 // of its children that has a different parent.
 TEST(Inotify, LinkOnOtherParent) {
+  // Inotify does not work properly with hard links in gofer and overlay fs.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
+
   const TempPath dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir1.path()));
   std::string link_path = NewTempAbsPathInDir(dir2.path());
 
-  const int rc = link(file.path().c_str(), link_path.c_str());
-  // NOTE(b/34861058): link(2) is only supported on tmpfs in the sandbox.
-  SKIP_IF(IsRunningOnGvisor() && rc != 0 &&
-          (errno == EPERM || errno == ENOENT));
-  ASSERT_THAT(rc, SyscallSucceeds());
+  ASSERT_THAT(link(file.path().c_str(), link_path.c_str()), SyscallSucceeds());
 
   const FileDescriptor inotify_fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
@@ -1825,13 +1827,18 @@ TEST(Inotify, LinkOnOtherParent) {
 
   // Perform various actions on the link outside of dir1, which should trigger
   // no inotify events.
-  const FileDescriptor fd =
+  FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(link_path.c_str(), O_RDWR));
   int val = 0;
   ASSERT_THAT(write(fd.get(), &val, sizeof(val)), SyscallSucceeds());
   ASSERT_THAT(read(fd.get(), &val, sizeof(val)), SyscallSucceeds());
   ASSERT_THAT(ftruncate(fd.get(), 12345), SyscallSucceeds());
+
+  // Close before unlinking; some filesystems cannot restore an open fd on an
+  // unlinked file.
+  fd.reset();
   ASSERT_THAT(unlink(link_path.c_str()), SyscallSucceeds());
+
   const std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
   EXPECT_THAT(events, Are({}));
@@ -2055,21 +2062,21 @@ TEST(Inotify, ExcludeUnlinkDirectory_NoRandomSave) {
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
 TEST(Inotify, ExcludeUnlinkMultipleChildren_NoRandomSave) {
-  const DisableSave ds;
+  // Inotify does not work properly with hard links in gofer and overlay fs.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
   // TODO(gvisor.dev/issue/1624): This test fails on VFS1.
   SKIP_IF(IsRunningWithVFS1());
+
+  const DisableSave ds;
 
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
   std::string path1 = file.path();
   std::string path2 = NewTempAbsPathInDir(dir.path());
+  ASSERT_THAT(link(path1.c_str(), path2.c_str()), SyscallSucceeds());
 
-  const int rc = link(path1.c_str(), path2.c_str());
-  // NOTE(b/34861058): link(2) is only supported on tmpfs in the sandbox.
-  SKIP_IF(IsRunningOnGvisor() && rc != 0 &&
-          (errno == EPERM || errno == ENOENT));
-  ASSERT_THAT(rc, SyscallSucceeds());
   const FileDescriptor fd1 =
       ASSERT_NO_ERRNO_AND_VALUE(Open(path1.c_str(), O_RDWR));
   const FileDescriptor fd2 =
@@ -2101,6 +2108,15 @@ TEST(Inotify, ExcludeUnlinkMultipleChildren_NoRandomSave) {
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
 TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
+  // TODO(gvisor.dev/issue/1624): Fails on VFS1.
+  SKIP_IF(IsRunningWithVFS1());
+
+  // NOTE(gvisor.dev/issue/3654): In the gofer filesystem, we do not allow
+  // setting attributes through an fd if the file at the open path has been
+  // deleted.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
+
   const DisableSave ds;
 
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -2109,18 +2125,6 @@ TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
 
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_RDWR));
-
-  // NOTE(b/157163751): Create another link before unlinking. This is needed for
-  // the gofer filesystem in gVisor, where open fds will not work once the link
-  // count hits zero. In VFS2, we end up skipping the gofer test anyway, because
-  // hard links are not supported for gofer fs.
-  if (IsRunningOnGvisor()) {
-    std::string link_path = NewTempAbsPath();
-    const int rc = link(file.path().c_str(), link_path.c_str());
-    // NOTE(b/34861058): link(2) is only supported on tmpfs in the sandbox.
-    SKIP_IF(rc != 0 && (errno == EPERM || errno == ENOENT));
-    ASSERT_THAT(rc, SyscallSucceeds());
-  }
 
   const FileDescriptor inotify_fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
