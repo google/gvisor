@@ -224,9 +224,9 @@ type Kernel struct {
 	// extMu.
 	sockets socketList
 
-	// nextSocketEntry is the next entry number to use in sockets. Protected
+	// nextSocketRecord is the next entry number to use in sockets. Protected
 	// by extMu.
-	nextSocketEntry uint64
+	nextSocketRecord uint64
 
 	// deviceRegistry is used to save/restore device.SimpleDevices.
 	deviceRegistry struct{} `state:".(*device.Registry)"`
@@ -1509,11 +1509,11 @@ func (k *Kernel) SupervisorContext() context.Context {
 	}
 }
 
-// SocketEntry represents a socket recorded in Kernel.sockets. It implements
+// SocketRecord represents a socket recorded in Kernel.sockets. It implements
 // refs.WeakRefUser for sockets stored in the socket table.
 //
 // +stateify savable
-type SocketEntry struct {
+type SocketRecord struct {
 	socketEntry
 	k        *Kernel
 	Sock     *refs.WeakRef
@@ -1522,7 +1522,7 @@ type SocketEntry struct {
 }
 
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
-func (s *SocketEntry) WeakRefGone(context.Context) {
+func (s *SocketRecord) WeakRefGone(context.Context) {
 	s.k.extMu.Lock()
 	s.k.sockets.Remove(s)
 	s.k.extMu.Unlock()
@@ -1533,9 +1533,9 @@ func (s *SocketEntry) WeakRefGone(context.Context) {
 // Precondition: Caller must hold a reference to sock.
 func (k *Kernel) RecordSocket(sock *fs.File) {
 	k.extMu.Lock()
-	id := k.nextSocketEntry
-	k.nextSocketEntry++
-	s := &SocketEntry{k: k, ID: id}
+	id := k.nextSocketRecord
+	k.nextSocketRecord++
+	s := &SocketRecord{k: k, ID: id}
 	s.Sock = refs.NewWeakRef(sock, s)
 	k.sockets.PushBack(s)
 	k.extMu.Unlock()
@@ -1550,9 +1550,9 @@ func (k *Kernel) RecordSocket(sock *fs.File) {
 // vfs.FileDescription, because we do not support weak refs on VFS2 files.
 func (k *Kernel) RecordSocketVFS2(sock *vfs.FileDescription) {
 	k.extMu.Lock()
-	id := k.nextSocketEntry
-	k.nextSocketEntry++
-	s := &SocketEntry{
+	id := k.nextSocketRecord
+	k.nextSocketRecord++
+	s := &SocketRecord{
 		k:        k,
 		ID:       id,
 		SockVFS2: sock,
@@ -1563,11 +1563,11 @@ func (k *Kernel) RecordSocketVFS2(sock *vfs.FileDescription) {
 
 // ListSockets returns a snapshot of all sockets.
 //
-// Callers of ListSockets() in VFS2 should use SocketEntry.SockVFS2.TryIncRef()
+// Callers of ListSockets() in VFS2 should use SocketRecord.SockVFS2.TryIncRef()
 // to get a reference on a socket in the table.
-func (k *Kernel) ListSockets() []*SocketEntry {
+func (k *Kernel) ListSockets() []*SocketRecord {
 	k.extMu.Lock()
-	var socks []*SocketEntry
+	var socks []*SocketRecord
 	for s := k.sockets.Front(); s != nil; s = s.Next() {
 		socks = append(socks, s)
 	}
