@@ -41,12 +41,12 @@ type syntheticDirectory struct {
 
 var _ Inode = (*syntheticDirectory)(nil)
 
-func newSyntheticDirectory(creds *auth.Credentials, perm linux.FileMode) *vfs.Dentry {
+func newSyntheticDirectory(creds *auth.Credentials, perm linux.FileMode) *Dentry {
 	inode := &syntheticDirectory{}
 	inode.Init(creds, 0 /* devMajor */, 0 /* devMinor */, 0 /* ino */, perm)
 	d := &Dentry{}
 	d.Init(inode)
-	return &d.vfsd
+	return d
 }
 
 func (dir *syntheticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
@@ -69,12 +69,12 @@ func (dir *syntheticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, 
 }
 
 // NewFile implements Inode.NewFile.
-func (dir *syntheticDirectory) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*vfs.Dentry, error) {
+func (dir *syntheticDirectory) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
 // NewDir implements Inode.NewDir.
-func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
+func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*Dentry, error) {
 	if !opts.ForSyntheticMountpoint {
 		return nil, syserror.EPERM
 	}
@@ -87,16 +87,16 @@ func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs
 }
 
 // NewLink implements Inode.NewLink.
-func (dir *syntheticDirectory) NewLink(ctx context.Context, name string, target Inode) (*vfs.Dentry, error) {
+func (dir *syntheticDirectory) NewLink(ctx context.Context, name string, target Inode) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
 // NewSymlink implements Inode.NewSymlink.
-func (dir *syntheticDirectory) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentry, error) {
+func (dir *syntheticDirectory) NewSymlink(ctx context.Context, name, target string) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
 // NewNode implements Inode.NewNode.
-func (dir *syntheticDirectory) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error) {
+func (dir *syntheticDirectory) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*Dentry, error) {
 	return nil, syserror.EPERM
 }

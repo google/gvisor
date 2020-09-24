@@ -57,27 +57,27 @@ func (InodeNoopRefCount) TryIncRef() bool {
 type InodeDirectoryNoNewChildren struct{}
 
 // NewFile implements Inode.NewFile.
-func (InodeDirectoryNoNewChildren) NewFile(context.Context, string, vfs.OpenOptions) (*vfs.Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewFile(context.Context, string, vfs.OpenOptions) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
 // NewDir implements Inode.NewDir.
-func (InodeDirectoryNoNewChildren) NewDir(context.Context, string, vfs.MkdirOptions) (*vfs.Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewDir(context.Context, string, vfs.MkdirOptions) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
 // NewLink implements Inode.NewLink.
-func (InodeDirectoryNoNewChildren) NewLink(context.Context, string, Inode) (*vfs.Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewLink(context.Context, string, Inode) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
 // NewSymlink implements Inode.NewSymlink.
-func (InodeDirectoryNoNewChildren) NewSymlink(context.Context, string, string) (*vfs.Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewSymlink(context.Context, string, string) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
 // NewNode implements Inode.NewNode.
-func (InodeDirectoryNoNewChildren) NewNode(context.Context, string, vfs.MknodOptions) (*vfs.Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewNode(context.Context, string, vfs.MknodOptions) (*Dentry, error) {
 	return nil, syserror.EPERM
 }
 
@@ -96,42 +96,42 @@ func (InodeNotDirectory) HasChildren() bool {
 }
 
 // NewFile implements Inode.NewFile.
-func (InodeNotDirectory) NewFile(context.Context, string, vfs.OpenOptions) (*vfs.Dentry, error) {
+func (InodeNotDirectory) NewFile(context.Context, string, vfs.OpenOptions) (*Dentry, error) {
 	panic("NewFile called on non-directory inode")
 }
 
 // NewDir implements Inode.NewDir.
-func (InodeNotDirectory) NewDir(context.Context, string, vfs.MkdirOptions) (*vfs.Dentry, error) {
+func (InodeNotDirectory) NewDir(context.Context, string, vfs.MkdirOptions) (*Dentry, error) {
 	panic("NewDir called on non-directory inode")
 }
 
 // NewLink implements Inode.NewLinkink.
-func (InodeNotDirectory) NewLink(context.Context, string, Inode) (*vfs.Dentry, error) {
+func (InodeNotDirectory) NewLink(context.Context, string, Inode) (*Dentry, error) {
 	panic("NewLink called on non-directory inode")
 }
 
 // NewSymlink implements Inode.NewSymlink.
-func (InodeNotDirectory) NewSymlink(context.Context, string, string) (*vfs.Dentry, error) {
+func (InodeNotDirectory) NewSymlink(context.Context, string, string) (*Dentry, error) {
 	panic("NewSymlink called on non-directory inode")
 }
 
 // NewNode implements Inode.NewNode.
-func (InodeNotDirectory) NewNode(context.Context, string, vfs.MknodOptions) (*vfs.Dentry, error) {
+func (InodeNotDirectory) NewNode(context.Context, string, vfs.MknodOptions) (*Dentry, error) {
 	panic("NewNode called on non-directory inode")
 }
 
 // Unlink implements Inode.Unlink.
-func (InodeNotDirectory) Unlink(context.Context, string, *vfs.Dentry) error {
+func (InodeNotDirectory) Unlink(context.Context, string, *Dentry) error {
 	panic("Unlink called on non-directory inode")
 }
 
 // RmDir implements Inode.RmDir.
-func (InodeNotDirectory) RmDir(context.Context, string, *vfs.Dentry) error {
+func (InodeNotDirectory) RmDir(context.Context, string, *Dentry) error {
 	panic("RmDir called on non-directory inode")
 }
 
 // Rename implements Inode.Rename.
-func (InodeNotDirectory) Rename(context.Context, string, string, *vfs.Dentry, *vfs.Dentry) (*vfs.Dentry, error) {
+func (InodeNotDirectory) Rename(context.Context, string, string, *Dentry, *Dentry) (*Dentry, error) {
 	panic("Rename called on non-directory inode")
 }
 
@@ -345,7 +345,7 @@ func (a *InodeAttrs) DecLinks() {
 // +stateify savable
 type slot struct {
 	Name   string
-	Dentry *vfs.Dentry
+	Dentry *Dentry
 	slotEntry
 }
 
@@ -407,7 +407,7 @@ func (o *OrderedChildren) Populate(d *Dentry, children map[string]*Dentry) uint3
 		if child.isDir() {
 			links++
 		}
-		if err := o.Insert(name, child.VFSDentry()); err != nil {
+		if err := o.Insert(name, child); err != nil {
 			panic(fmt.Sprintf("Collision when attempting to insert child %q (%+v) into %+v", name, child, d))
 		}
 		d.InsertChild(name, child)
@@ -424,7 +424,7 @@ func (o *OrderedChildren) HasChildren() bool {
 
 // Insert inserts child into o. This ignores the writability of o, as this is
 // not part of the vfs.FilesystemImpl interface, and is a lower-level operation.
-func (o *OrderedChildren) Insert(name string, child *vfs.Dentry) error {
+func (o *OrderedChildren) Insert(name string, child *Dentry) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if _, ok := o.set[name]; ok {
@@ -448,10 +448,10 @@ func (o *OrderedChildren) removeLocked(name string) {
 }
 
 // Precondition: caller must hold o.mu for writing.
-func (o *OrderedChildren) replaceChildLocked(name string, new *vfs.Dentry) *vfs.Dentry {
+func (o *OrderedChildren) replaceChildLocked(name string, new *Dentry) *Dentry {
 	if s, ok := o.set[name]; ok {
 		// Existing slot with given name, simply replace the dentry.
-		var old *vfs.Dentry
+		var old *Dentry
 		old, s.Dentry = s.Dentry, new
 		return old
 	}
@@ -467,7 +467,7 @@ func (o *OrderedChildren) replaceChildLocked(name string, new *vfs.Dentry) *vfs.
 }
 
 // Precondition: caller must hold o.mu for reading or writing.
-func (o *OrderedChildren) checkExistingLocked(name string, child *vfs.Dentry) error {
+func (o *OrderedChildren) checkExistingLocked(name string, child *Dentry) error {
 	s, ok := o.set[name]
 	if !ok {
 		return syserror.ENOENT
@@ -479,7 +479,7 @@ func (o *OrderedChildren) checkExistingLocked(name string, child *vfs.Dentry) er
 }
 
 // Unlink implements Inode.Unlink.
-func (o *OrderedChildren) Unlink(ctx context.Context, name string, child *vfs.Dentry) error {
+func (o *OrderedChildren) Unlink(ctx context.Context, name string, child *Dentry) error {
 	if !o.writable {
 		return syserror.EPERM
 	}
@@ -495,7 +495,7 @@ func (o *OrderedChildren) Unlink(ctx context.Context, name string, child *vfs.De
 }
 
 // Rmdir implements Inode.Rmdir.
-func (o *OrderedChildren) RmDir(ctx context.Context, name string, child *vfs.Dentry) error {
+func (o *OrderedChildren) RmDir(ctx context.Context, name string, child *Dentry) error {
 	// We're not responsible for checking that child is a directory, that it's
 	// empty, or updating any link counts; so this is the same as unlink.
 	return o.Unlink(ctx, name, child)
@@ -517,8 +517,8 @@ func (renameAcrossDifferentImplementationsError) Error() string {
 // that will support Rename.
 //
 // Postcondition: reference on any replaced dentry transferred to caller.
-func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, child, dstDir *vfs.Dentry) (*vfs.Dentry, error) {
-	dst, ok := dstDir.Impl().(*Dentry).inode.(interface{}).(*OrderedChildren)
+func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, child, dstDir *Dentry) (*Dentry, error) {
+	dst, ok := dstDir.inode.(interface{}).(*OrderedChildren)
 	if !ok {
 		return nil, renameAcrossDifferentImplementationsError{}
 	}
