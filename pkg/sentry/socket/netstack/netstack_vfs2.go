@@ -79,6 +79,13 @@ func NewVFS2(t *kernel.Task, family int, skType linux.SockType, protocol int, qu
 	return vfsfd, nil
 }
 
+// Release implements vfs.FileDescriptionImpl.Release.
+func (s *SocketVFS2) Release(ctx context.Context) {
+	t := kernel.TaskFromContext(ctx)
+	t.Kernel().DeleteSocketVFS2(&s.vfsfd)
+	s.socketOpsCommon.Release(ctx)
+}
+
 // Readiness implements waiter.Waitable.Readiness.
 func (s *SocketVFS2) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return s.socketOpsCommon.Readiness(mask)
