@@ -73,8 +73,7 @@ const (
 type neighborEntry struct {
 	neighborEntryEntry
 
-	nic      *NIC
-	protocol tcpip.NetworkProtocolNumber
+	nic *NIC
 
 	// linkRes provides the functionality to send reachability probes, used in
 	// Neighbor Unreachability Detection.
