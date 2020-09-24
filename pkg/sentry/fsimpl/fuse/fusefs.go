@@ -280,6 +280,7 @@ func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode)
 	i := &inode{fs: fs}
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	i.EnableLeakCheck()
 	i.dentry.Init(i)
 	i.nodeID = 1
 
