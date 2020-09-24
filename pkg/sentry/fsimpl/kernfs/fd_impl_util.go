@@ -201,8 +201,7 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	// these.
 	childIdx := fd.off - 2
 	for it := fd.children.nthLocked(childIdx); it != nil; it = it.Next() {
-		inode := it.Dentry.Impl().(*Dentry).inode
-		stat, err := inode.Stat(ctx, fd.filesystem(), opts)
+		stat, err := it.Dentry.inode.Stat(ctx, fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
