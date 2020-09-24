@@ -574,6 +574,7 @@ var _ Inode = (*StaticDirectory)(nil)
 func NewStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]*Dentry, fdOpts GenericDirectoryFDOptions) *Dentry {
 	inode := &StaticDirectory{}
 	inode.Init(creds, devMajor, devMinor, ino, perm, fdOpts)
+	inode.EnableLeakCheck()
 
 	dentry := &Dentry{}
 	dentry.Init(inode)

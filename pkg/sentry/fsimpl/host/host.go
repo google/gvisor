@@ -58,7 +58,7 @@ func newInode(fs *filesystem, hostFD int, fileType linux.FileMode, isTTY bool) (
 		canMap: fileType == linux.S_IFREG,
 	}
 	i.pf.inode = i
-	i.refs.EnableLeakCheck()
+	i.EnableLeakCheck()
 
 	// Non-seekable files can't be memory mapped, assert this.
 	if !i.seekable && i.canMap {
@@ -193,7 +193,7 @@ type inode struct {
 	locks vfs.FileLocks
 
 	// When the reference count reaches zero, the host fd is closed.
-	refs inodeRefs
+	inodeRefs
 
 	// hostFD contains the host fd that this file was originally created from,
 	// which must be available at time of restore.
@@ -435,19 +435,9 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	return nil
 }
 
-// IncRef implements kernfs.Inode.IncRef.
-func (i *inode) IncRef() {
-	i.refs.IncRef()
-}
-
-// TryIncRef implements kernfs.Inode.TryIncRef.
-func (i *inode) TryIncRef() bool {
-	return i.refs.TryIncRef()
-}
-
 // DecRef implements kernfs.Inode.DecRef.
 func (i *inode) DecRef(ctx context.Context) {
-	i.refs.DecRef(func() {
+	i.inodeRefs.DecRef(func() {
 		if i.wouldBlock {
 			fdnotifier.RemoveFD(int32(i.hostFD))
 		}
