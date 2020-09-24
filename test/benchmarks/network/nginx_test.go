@@ -36,50 +36,63 @@ var nginxDocs = map[string]string{
 func BenchmarkNginxConcurrency(b *testing.B) {
 	concurrency := []int{1, 25, 100, 1000}
 	for _, c := range concurrency {
-		b.Run(fmt.Sprintf("%d", c), func(b *testing.B) {
-			hey := &tools.Hey{
-				Requests:    c * b.N,
-				Concurrency: c,
-				Doc:         nginxDocs["10kb"], // see Dockerfile '//images/benchmarks/nginx' and httpd_test.
+		for _, tmpfs := range []bool{true, false} {
+			fs := "Gofer"
+			if tmpfs {
+				fs = "Tmpfs"
 			}
-			runNginx(b, hey, false /* reverse */)
-		})
+			name := fmt.Sprintf("%d_%s", c, fs)
+			b.Run(name, func(b *testing.B) {
+				hey := &tools.Hey{
+					Requests:    c * b.N,
+					Concurrency: c,
+					Doc:         nginxDocs["10kb"], // see Dockerfile '//images/benchmarks/nginx' and httpd_test.
+				}
+				runNginx(b, hey, false /* reverse */, tmpfs /* tmpfs */)
+			})
+		}
+
 	}
 }
 
 // BenchmarkNginxDocSize iterates over different sized payloads, testing how
 // well the runtime handles sending different payload sizes.
 func BenchmarkNginxDocSize(b *testing.B) {
-	benchmarkHttpdDocSize(b, false /* reverse */)
+	benchmarkNginxDocSize(b, false /* reverse */, true /* tmpfs */)
+	benchmarkNginxDocSize(b, false /* reverse */, false /* tmpfs */)
 }
 
 // BenchmarkReverseNginxDocSize iterates over different sized payloads, testing
 // how well the runtime handles receiving different payload sizes.
 func BenchmarkReverseNginxDocSize(b *testing.B) {
-	benchmarkHttpdDocSize(b, true /* reverse */)
+	benchmarkNginxDocSize(b, true /* reverse */, true /* tmpfs */)
 }
 
 // benchmarkNginxDocSize iterates through all doc sizes, running subbenchmarks
 // for each size.
-func benchmarkNginxDocSize(b *testing.B, reverse bool) {
-	b.Helper()
+func benchmarkNginxDocSize(b *testing.B, reverse, tmpfs bool) {
 	for name, filename := range nginxDocs {
 		concurrency := []int{1, 25, 50, 100, 1000}
 		for _, c := range concurrency {
-			b.Run(fmt.Sprintf("%s_%d", name, c), func(b *testing.B) {
+			fs := "Gofer"
+			if tmpfs {
+				fs = "Tmpfs"
+			}
+			benchName := fmt.Sprintf("%s_%d_%s", name, c, fs)
+			b.Run(benchName, func(b *testing.B) {
 				hey := &tools.Hey{
 					Requests:    c * b.N,
 					Concurrency: c,
 					Doc:         filename,
 				}
-				runNginx(b, hey, reverse)
+				runNginx(b, hey, reverse, tmpfs)
 			})
 		}
 	}
 }
 
 // runNginx configures the static serving methods to run httpd.
-func runNginx(b *testing.B, hey *tools.Hey, reverse bool) {
+func runNginx(b *testing.B, hey *tools.Hey, reverse, tmpfs bool) {
 	// nginx runs on port 80.
 	port := 80
 	nginxRunOpts := dockerutil.RunOpts{
@@ -87,7 +100,11 @@ func runNginx(b *testing.B, hey *tools.Hey, reverse bool) {
 		Ports: []int{port},
 	}
 
+	nginxCmd := []string{"nginx", "-c", "/etc/nginx/nginx_gofer.conf"}
+	if tmpfs {
+		nginxCmd = []string{"sh", "-c", "mkdir -p /tmp/html && cp -a /local/* /tmp/html && nginx -c /etc/nginx/nginx.conf"}
+	}
+
 	// Command copies nginxDocs to tmpfs serving directory and runs nginx.
-	nginxCmd := []string{"sh", "-c", "mkdir -p /tmp/html && cp -a /local/* /tmp/html && nginx"}
 	runStaticServer(b, nginxRunOpts, nginxCmd, port, hey, reverse)
 }

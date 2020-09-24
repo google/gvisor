@@ -64,6 +64,7 @@ func BenchmarkStartupNginx(b *testing.B) {
 			machine: machine,
 			runOpts: runOpts,
 			port:    80,
+			cmd:     []string{"nginx", "-c", "/etc/nginx/nginx_gofer.conf"},
 		})
 }
 
@@ -123,8 +124,6 @@ func redisInstance(ctx context.Context, b *testing.B, machine harness.Machine) (
 // runServerWorkload runs a server workload defined by 'runOpts' and 'cmd'.
 // 'clientMachine' is used to connect to the server on 'serverMachine'.
 func runServerWorkload(ctx context.Context, b *testing.B, args serverArgs) {
-	b.Helper()
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if err := func() error {
