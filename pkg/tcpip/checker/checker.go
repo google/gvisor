@@ -339,7 +339,7 @@ func NoChecksum(noChecksum bool) TransportChecker {
 
 		udp, ok := h.(header.UDP)
 		if !ok {
-			return
+			t.Fatalf("UDP header not found in h: %T", h)
 		}
 
 		if b := udp.Checksum() == 0; b != noChecksum {
@@ -348,14 +348,14 @@ func NoChecksum(noChecksum bool) TransportChecker {
 	}
 }
 
-// SeqNum creates a checker that checks the sequence number.
-func SeqNum(seq uint32) TransportChecker {
+// TCPSeqNum creates a checker that checks the sequence number.
+func TCPSeqNum(seq uint32) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
 		tcp, ok := h.(header.TCP)
 		if !ok {
-			return
+			t.Fatalf("TCP header not found in h: %T", h)
 		}
 
 		if s := tcp.SequenceNumber(); s != seq {
@@ -364,14 +364,14 @@ func SeqNum(seq uint32) TransportChecker {
 	}
 }
 
-// AckNum creates a checker that checks the ack number.
-func AckNum(seq uint32) TransportChecker {
+// TCPAckNum creates a checker that checks the ack number.
+func TCPAckNum(seq uint32) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
 		tcp, ok := h.(header.TCP)
 		if !ok {
-			return
+			t.Fatalf("TCP header not found in h: %T", h)
 		}
 
 		if s := tcp.AckNumber(); s != seq {
@@ -380,18 +380,52 @@ func AckNum(seq uint32) TransportChecker {
 	}
 }
 
-// Window creates a checker that checks the tcp window.
-func Window(window uint16) TransportChecker {
+// TCPWindow creates a checker that checks the tcp window.
+func TCPWindow(window uint16) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
 		tcp, ok := h.(header.TCP)
 		if !ok {
-			return
+			t.Fatalf("TCP header not found in hdr : %T", h)
 		}
 
 		if w := tcp.WindowSize(); w != window {
-			t.Errorf("Bad window, got 0x%x, want 0x%x", w, window)
+			t.Errorf("Bad window, got %d, want %d", w, window)
+		}
+	}
+}
+
+// TCPWindowGreaterThanEq creates a checker that checks that the TCP window
+// is greater than or equal to the provided value.
+func TCPWindowGreaterThanEq(window uint16) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		tcp, ok := h.(header.TCP)
+		if !ok {
+			t.Fatalf("TCP header not found in h: %T", h)
+		}
+
+		if w := tcp.WindowSize(); w < window {
+			t.Errorf("Bad window, got %d, want > %d", w, window)
+		}
+	}
+}
+
+// TCPWindowLessThanEq creates a checker that checks that the tcp window
+// is less than or equal to the provided value.
+func TCPWindowLessThanEq(window uint16) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		tcp, ok := h.(header.TCP)
+		if !ok {
+			t.Fatalf("TCP header not found in h: %T", h)
+		}
+
+		if w := tcp.WindowSize(); w > window {
+			t.Errorf("Bad window, got %d, want < %d", w, window)
 		}
 	}
 }
@@ -403,7 +437,7 @@ func TCPFlags(flags uint8) TransportChecker {
 
 		tcp, ok := h.(header.TCP)
 		if !ok {
-			return
+			t.Fatalf("TCP header not found in h: %T", h)
 		}
 
 		if f := tcp.Flags(); f != flags {
@@ -420,7 +454,7 @@ func TCPFlagsMatch(flags, mask uint8) TransportChecker {
 
 		tcp, ok := h.(header.TCP)
 		if !ok {
-			return
+			t.Fatalf("TCP header not found in h: %T", h)
 		}
 
 		if f := tcp.Flags(); (f & mask) != (flags & mask) {

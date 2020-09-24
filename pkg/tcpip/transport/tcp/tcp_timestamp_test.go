@@ -159,9 +159,9 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 		checker.PayloadLen(len(data)+header.TCPMinimumSize+12),
 		checker.TCP(
 			checker.DstPort(context.TestPort),
-			checker.SeqNum(uint32(c.IRS)+1),
-			checker.AckNum(790),
-			checker.Window(wndSize),
+			checker.TCPSeqNum(uint32(c.IRS)+1),
+			checker.TCPAckNum(790),
+			checker.TCPWindow(wndSize),
 			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
 			checker.TCPTimestampChecker(true, 0, tsVal+1),
 		),
@@ -181,7 +181,8 @@ func TestTimeStampEnabledAccept(t *testing.T) {
 		wndSize       uint16
 	}{
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		{false, 5, 0x8000}, // DefaultReceiveBufferSize is 1MB >> 5.
+		// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be 1/2 of that.
+		{false, 5, 0x4000},
 	}
 	for _, tc := range testCases {
 		timeStampEnabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
@@ -219,9 +220,9 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 		checker.PayloadLen(len(data)+header.TCPMinimumSize),
 		checker.TCP(
 			checker.DstPort(context.TestPort),
-			checker.SeqNum(uint32(c.IRS)+1),
-			checker.AckNum(790),
-			checker.Window(wndSize),
+			checker.TCPSeqNum(uint32(c.IRS)+1),
+			checker.TCPAckNum(790),
+			checker.TCPWindow(wndSize),
 			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
 			checker.TCPTimestampChecker(false, 0, 0),
 		),
@@ -237,7 +238,9 @@ func TestTimeStampDisabledAccept(t *testing.T) {
 		wndSize       uint16
 	}{
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		{false, 5, 0x8000}, // DefaultReceiveBufferSize is 1MB >> 5.
+		// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be half of
+		// that.
+		{false, 5, 0x4000},
 	}
 	for _, tc := range testCases {
 		timeStampDisabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
