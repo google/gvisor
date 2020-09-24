@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,15 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+)
+
+// queueFlags are used to indicate which queue of an endpoint a particular segment
+// belongs to. This is used to track memory accounting correctly.
+type queueFlags uint8
+
+const (
+	recvQ queueFlags = 1 << iota
+	sendQ
 )
 
 // segment represents a TCP segment. It holds the payload and parsed TCP segment
@@ -32,6 +42,8 @@ import (
 type segment struct {
 	segmentEntry
 	refCnt int32
+	ep     *endpoint
+	qFlags queueFlags
 	id     stack.TransportEndpointID `state:"manual"`
 	route  stack.Route               `state:"manual"`
 	data   buffer.VectorisedView     `state:".(buffer.VectorisedView)"`
@@ -100,6 +112,8 @@ func (s *segment) clone() *segment {
 		rcvdTime:       s.rcvdTime,
 		xmitTime:       s.xmitTime,
 		xmitCount:      s.xmitCount,
+		ep:             s.ep,
+		qFlags:         s.qFlags,
 	}
 	t.data = s.data.Clone(t.views[:])
 	return t
@@ -115,8 +129,34 @@ func (s *segment) flagsAreSet(flags uint8) bool {
 	return s.flags&flags == flags
 }
 
+// setOwner sets the owning endpoint for this segment. Its required
+// to be called to ensure memory accounting for receive/send buffer
+// queues is done properly.
+func (s *segment) setOwner(ep *endpoint, qFlags queueFlags) {
+	switch qFlags {
+	case recvQ:
+		ep.updateReceiveMemUsed(s.segMemSize())
+	case sendQ:
+		// no memory account for sendQ yet.
+	default:
+		panic(fmt.Sprintf("unexpected queue flag %b", qFlags))
+	}
+	s.ep = ep
+	s.qFlags = qFlags
+}
+
 func (s *segment) decRef() {
 	if atomic.AddInt32(&s.refCnt, -1) == 0 {
+		if s.ep != nil {
+			switch s.qFlags {
+			case recvQ:
+				s.ep.updateReceiveMemUsed(-s.segMemSize())
+			case sendQ:
+				// no memory accounting for sendQ yet.
+			default:
+				panic(fmt.Sprintf("unexpected queue flag %b set for segment", s.qFlags))
+			}
+		}
 		s.route.Release()
 	}
 }
@@ -136,6 +176,11 @@ func (s *segment) logicalLen() seqnum.Size {
 		l++
 	}
 	return l
+}
+
+// payloadSize is the size of s.data.
+func (s *segment) payloadSize() int {
+	return s.data.Size()
 }
 
 // segMemSize is the amount of memory used to hold the segment data and
