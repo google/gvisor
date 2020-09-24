@@ -105,11 +105,13 @@ TEST(MknodTest, UnimplementedTypesReturnError) {
 }
 
 TEST(MknodTest, Socket) {
-  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
-
   SKIP_IF(IsRunningOnGvisor() && IsRunningWithVFS1());
 
-  ASSERT_THAT(mknod("./file0", S_IFSOCK | S_IRUSR | S_IWUSR, 0),
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+
+  auto filename = NewTempRelPath();
+
+  ASSERT_THAT(mknod(filename.c_str(), S_IFSOCK | S_IRUSR | S_IWUSR, 0),
               SyscallSucceeds());
 
   int sk;
@@ -117,9 +119,10 @@ TEST(MknodTest, Socket) {
   FileDescriptor fd(sk);
 
   struct sockaddr_un addr = {.sun_family = AF_UNIX};
-  absl::SNPrintF(addr.sun_path, sizeof(addr.sun_path), "./file0");
+  absl::SNPrintF(addr.sun_path, sizeof(addr.sun_path), "%s", filename.c_str());
   ASSERT_THAT(connect(sk, (struct sockaddr *)&addr, sizeof(addr)),
               SyscallFailsWithErrno(ECONNREFUSED));
+  ASSERT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }
 
 TEST(MknodTest, Fifo) {
