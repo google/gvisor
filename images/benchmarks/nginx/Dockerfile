@@ -9,3 +9,4 @@ RUN mkdir -p /local && \
 RUN touch /local/index.html
 
 COPY ./nginx.conf /etc/nginx/nginx.conf
+COPY ./nginx_gofer.conf /etc/nginx/nginx_gofer.conf

@@ -25,7 +25,6 @@ import (
 
 // runStaticServer runs static serving workloads (httpd, nginx).
 func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []string, port int, hey *tools.Hey, reverse bool) {
-	b.Helper()
 	ctx := context.Background()
 
 	// Get two machines: a client and server.

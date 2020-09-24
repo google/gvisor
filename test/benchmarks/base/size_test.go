@@ -105,6 +105,7 @@ func BenchmarkSizeNginx(b *testing.B) {
 			machine: machine,
 			port:    port,
 			runOpts: runOpts,
+			cmd:     []string{"nginx", "-c", "/etc/nginx/nginx_gofer.conf"},
 		})
 	defer cleanUpContainers(ctx, servers)
 
