@@ -76,7 +76,7 @@ type Filesystem struct {
 	// droppedDentries is a list of dentries waiting to be DecRef()ed. This is
 	// used to defer dentry destruction until mu can be acquired for
 	// writing. Protected by droppedDentriesMu.
-	droppedDentries []*vfs.Dentry
+	droppedDentries []*Dentry
 
 	// mu synchronizes the lifetime of Dentries on this filesystem. Holding it
 	// for reading guarantees continued existence of any resolved dentries, but
@@ -110,7 +110,7 @@ type Filesystem struct {
 // processDeferredDecRefs{,Locked}. See comment on Filesystem.mu.
 //
 // Precondition: d must not already be pending destruction.
-func (fs *Filesystem) deferDecRef(d *vfs.Dentry) {
+func (fs *Filesystem) deferDecRef(d *Dentry) {
 	fs.droppedDentriesMu.Lock()
 	fs.droppedDentries = append(fs.droppedDentries, d)
 	fs.droppedDentriesMu.Unlock()
@@ -277,7 +277,7 @@ func (d *Dentry) InsertChildLocked(name string, child *Dentry) {
 // isn't sufficient to remove a child from a directory.
 //
 // Precondition: d must represent a directory inode.
-func (d *Dentry) RemoveChild(name string, child *vfs.Dentry) error {
+func (d *Dentry) RemoveChild(name string, child *Dentry) error {
 	d.dirMu.Lock()
 	defer d.dirMu.Unlock()
 	return d.RemoveChildLocked(name, child)
@@ -287,7 +287,7 @@ func (d *Dentry) RemoveChild(name string, child *vfs.Dentry) error {
 // preconditions.
 //
 // Precondition: d.dirMu must be locked.
-func (d *Dentry) RemoveChildLocked(name string, child *vfs.Dentry) error {
+func (d *Dentry) RemoveChildLocked(name string, child *Dentry) error {
 	if !d.isDir() {
 		panic(fmt.Sprintf("RemoveChild called on non-directory Dentry: %+v.", d))
 	}
@@ -295,7 +295,7 @@ func (d *Dentry) RemoveChildLocked(name string, child *vfs.Dentry) error {
 	if !ok {
 		return syserror.ENOENT
 	}
-	if &c.vfsd != child {
+	if c != child {
 		panic(fmt.Sprintf("Dentry hashed into inode doesn't match what vfs thinks! Child: %+v, vfs: %+v", c, child))
 	}
 	delete(d.children, name)
@@ -404,30 +404,30 @@ type inodeDirectory interface {
 	HasChildren() bool
 
 	// NewFile creates a new regular file inode.
-	NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*vfs.Dentry, error)
+	NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*Dentry, error)
 
 	// NewDir creates a new directory inode.
-	NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error)
+	NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*Dentry, error)
 
 	// NewLink creates a new hardlink to a specified inode in this
 	// directory. Implementations should create a new kernfs Dentry pointing to
 	// target, and update target's link count.
-	NewLink(ctx context.Context, name string, target Inode) (*vfs.Dentry, error)
+	NewLink(ctx context.Context, name string, target Inode) (*Dentry, error)
 
 	// NewSymlink creates a new symbolic link inode.
-	NewSymlink(ctx context.Context, name, target string) (*vfs.Dentry, error)
+	NewSymlink(ctx context.Context, name, target string) (*Dentry, error)
 
 	// NewNode creates a new filesystem node for a mknod syscall.
-	NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error)
+	NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*Dentry, error)
 
 	// Unlink removes a child dentry from this directory inode.
-	Unlink(ctx context.Context, name string, child *vfs.Dentry) error
+	Unlink(ctx context.Context, name string, child *Dentry) error
 
 	// RmDir removes an empty child directory from this directory
 	// inode. Implementations must update the parent directory's link count,
 	// if required. Implementations are not responsible for checking that child
 	// is a directory, checking for an empty directory.
-	RmDir(ctx context.Context, name string, child *vfs.Dentry) error
+	RmDir(ctx context.Context, name string, child *Dentry) error
 
 	// Rename is called on the source directory containing an inode being
 	// renamed. child should point to the resolved child in the source
@@ -435,7 +435,7 @@ type inodeDirectory interface {
 	// should return the replaced dentry or nil otherwise.
 	//
 	// Precondition: Caller must serialize concurrent calls to Rename.
-	Rename(ctx context.Context, oldname, newname string, child, dstDir *vfs.Dentry) (replaced *vfs.Dentry, err error)
+	Rename(ctx context.Context, oldname, newname string, child, dstDir *Dentry) (replaced *Dentry, err error)
 }
 
 type inodeDynamicLookup interface {
