@@ -144,10 +144,7 @@ type TCPReceiverState struct {
 
 	// PendingBufUsed is the number of bytes pending in the receive
 	// queue.
-	PendingBufUsed seqnum.Size
-
-	// PendingBufSize is the size of the socket receive buffer.
-	PendingBufSize seqnum.Size
+	PendingBufUsed int
 }
 
 // TCPSenderState holds a copy of the internal state of the sender for
