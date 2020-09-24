@@ -132,7 +132,8 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 		if err != nil {
 			return nil, err
 		}
-		// Reference on childVFSD dropped by a corresponding Valid.
+		// Reference on c (provided by Lookup) will be dropped when the dentry
+		// fails validation.
 		parent.InsertChildLocked(name, c)
 		child = c
 	}
