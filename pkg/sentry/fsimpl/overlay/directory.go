@@ -100,12 +100,13 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 	return whiteouts, readdirErr
 }
 
+// +stateify savable
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 
-	mu      sync.Mutex
+	mu      sync.Mutex `state:"nosave"`
 	off     int64
 	dirents []vfs.Dirent
 }

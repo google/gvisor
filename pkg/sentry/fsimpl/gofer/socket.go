@@ -36,12 +36,14 @@ func (d *dentry) isSocket() bool {
 // An endpoint's lifetime is the time between when filesystem.BoundEndpointAt()
 // is called and either BoundEndpoint.BidirectionalConnect or
 // BoundEndpoint.UnidirectionalConnect is called.
+//
+// +stateify savable
 type endpoint struct {
 	// dentry is the filesystem dentry which produced this endpoint.
 	dentry *dentry
 
 	// file is the p9 file that contains a single unopened fid.
-	file p9.File
+	file p9.File `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 
 	// path is the sentry path where this endpoint is bound.
 	path string

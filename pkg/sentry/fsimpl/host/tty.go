@@ -30,6 +30,8 @@ import (
 
 // TTYFileDescription implements vfs.FileDescriptionImpl for a host file
 // descriptor that wraps a TTY FD.
+//
+// +stateify savable
 type TTYFileDescription struct {
 	fileDescription
 

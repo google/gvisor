@@ -33,6 +33,8 @@ import (
 // EventFileDescription implements vfs.FileDescriptionImpl for file-based event
 // notification (eventfd). Eventfds are usually internal to the Sentry but in
 // certain situations they may be converted into a host-backed eventfd.
+//
+// +stateify savable
 type EventFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

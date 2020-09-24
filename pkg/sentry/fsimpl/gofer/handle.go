@@ -25,6 +25,8 @@ import (
 
 // handle represents a remote "open file descriptor", consisting of an opened
 // fid (p9.File) and optionally a host file descriptor.
+//
+// These are explicitly not savable.
 type handle struct {
 	file p9file
 	fd   int32 // -1 if unavailable

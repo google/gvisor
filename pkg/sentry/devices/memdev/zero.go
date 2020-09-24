@@ -27,6 +27,8 @@ import (
 const zeroDevMinor = 5
 
 // zeroDevice implements vfs.Device for /dev/zero.
+//
+// +stateify savable
 type zeroDevice struct{}
 
 // Open implements vfs.Device.Open.
@@ -41,6 +43,8 @@ func (zeroDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, op
 }
 
 // zeroFD implements vfs.FileDescriptionImpl for /dev/zero.
+//
+// +stateify savable
 type zeroFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

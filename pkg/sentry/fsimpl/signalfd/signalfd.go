@@ -27,6 +27,8 @@ import (
 )
 
 // SignalFileDescription implements vfs.FileDescriptionImpl for signal fds.
+//
+// +stateify savable
 type SignalFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
@@ -43,7 +45,7 @@ type SignalFileDescription struct {
 	target *kernel.Task
 
 	// mu protects mask.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// mask is the signal mask. Protected by mu.
 	mask linux.SignalSet

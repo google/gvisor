@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// +stateify savable
 type tcpMemDir int
 
 const (

@@ -6,6 +6,332 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *connection) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.connection"
+}
+
+func (x *connection) StateFields() []string {
+	return []string{
+		"fd",
+		"attributeVersion",
+		"initialized",
+		"initializedChan",
+		"connected",
+		"connInitError",
+		"connInitSuccess",
+		"aborted",
+		"numWaiting",
+		"asyncNum",
+		"asyncCongestionThreshold",
+		"asyncNumMax",
+		"maxRead",
+		"maxWrite",
+		"maxPages",
+		"minor",
+		"atomicOTrunc",
+		"asyncRead",
+		"writebackCache",
+		"bigWrites",
+		"dontMask",
+		"noOpen",
+	}
+}
+
+func (x *connection) beforeSave() {}
+
+func (x *connection) StateSave(m state.Sink) {
+	x.beforeSave()
+	var initializedChan bool = x.saveInitializedChan()
+	m.SaveValue(3, initializedChan)
+	m.Save(0, &x.fd)
+	m.Save(1, &x.attributeVersion)
+	m.Save(2, &x.initialized)
+	m.Save(4, &x.connected)
+	m.Save(5, &x.connInitError)
+	m.Save(6, &x.connInitSuccess)
+	m.Save(7, &x.aborted)
+	m.Save(8, &x.numWaiting)
+	m.Save(9, &x.asyncNum)
+	m.Save(10, &x.asyncCongestionThreshold)
+	m.Save(11, &x.asyncNumMax)
+	m.Save(12, &x.maxRead)
+	m.Save(13, &x.maxWrite)
+	m.Save(14, &x.maxPages)
+	m.Save(15, &x.minor)
+	m.Save(16, &x.atomicOTrunc)
+	m.Save(17, &x.asyncRead)
+	m.Save(18, &x.writebackCache)
+	m.Save(19, &x.bigWrites)
+	m.Save(20, &x.dontMask)
+	m.Save(21, &x.noOpen)
+}
+
+func (x *connection) afterLoad() {}
+
+func (x *connection) StateLoad(m state.Source) {
+	m.Load(0, &x.fd)
+	m.Load(1, &x.attributeVersion)
+	m.Load(2, &x.initialized)
+	m.Load(4, &x.connected)
+	m.Load(5, &x.connInitError)
+	m.Load(6, &x.connInitSuccess)
+	m.Load(7, &x.aborted)
+	m.Load(8, &x.numWaiting)
+	m.Load(9, &x.asyncNum)
+	m.Load(10, &x.asyncCongestionThreshold)
+	m.Load(11, &x.asyncNumMax)
+	m.Load(12, &x.maxRead)
+	m.Load(13, &x.maxWrite)
+	m.Load(14, &x.maxPages)
+	m.Load(15, &x.minor)
+	m.Load(16, &x.atomicOTrunc)
+	m.Load(17, &x.asyncRead)
+	m.Load(18, &x.writebackCache)
+	m.Load(19, &x.bigWrites)
+	m.Load(20, &x.dontMask)
+	m.Load(21, &x.noOpen)
+	m.LoadValue(3, new(bool), func(y interface{}) { x.loadInitializedChan(y.(bool)) })
+}
+
+func (x *fuseDevice) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.fuseDevice"
+}
+
+func (x *fuseDevice) StateFields() []string {
+	return []string{}
+}
+
+func (x *fuseDevice) beforeSave() {}
+
+func (x *fuseDevice) StateSave(m state.Sink) {
+	x.beforeSave()
+}
+
+func (x *fuseDevice) afterLoad() {}
+
+func (x *fuseDevice) StateLoad(m state.Source) {
+}
+
+func (x *DeviceFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.DeviceFD"
+}
+
+func (x *DeviceFD) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"NoLockFD",
+		"nextOpID",
+		"queue",
+		"numActiveRequests",
+		"completions",
+		"writeCursor",
+		"writeBuf",
+		"writeCursorFR",
+		"waitQueue",
+		"fullQueueCh",
+		"fs",
+	}
+}
+
+func (x *DeviceFD) beforeSave() {}
+
+func (x *DeviceFD) StateSave(m state.Sink) {
+	x.beforeSave()
+	var fullQueueCh int = x.saveFullQueueCh()
+	m.SaveValue(12, fullQueueCh)
+	m.Save(0, &x.vfsfd)
+	m.Save(1, &x.FileDescriptionDefaultImpl)
+	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
+	m.Save(3, &x.NoLockFD)
+	m.Save(4, &x.nextOpID)
+	m.Save(5, &x.queue)
+	m.Save(6, &x.numActiveRequests)
+	m.Save(7, &x.completions)
+	m.Save(8, &x.writeCursor)
+	m.Save(9, &x.writeBuf)
+	m.Save(10, &x.writeCursorFR)
+	m.Save(11, &x.waitQueue)
+	m.Save(13, &x.fs)
+}
+
+func (x *DeviceFD) afterLoad() {}
+
+func (x *DeviceFD) StateLoad(m state.Source) {
+	m.Load(0, &x.vfsfd)
+	m.Load(1, &x.FileDescriptionDefaultImpl)
+	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
+	m.Load(3, &x.NoLockFD)
+	m.Load(4, &x.nextOpID)
+	m.Load(5, &x.queue)
+	m.Load(6, &x.numActiveRequests)
+	m.Load(7, &x.completions)
+	m.Load(8, &x.writeCursor)
+	m.Load(9, &x.writeBuf)
+	m.Load(10, &x.writeCursorFR)
+	m.Load(11, &x.waitQueue)
+	m.Load(13, &x.fs)
+	m.LoadValue(12, new(int), func(y interface{}) { x.loadFullQueueCh(y.(int)) })
+}
+
+func (x *FilesystemType) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.FilesystemType"
+}
+
+func (x *FilesystemType) StateFields() []string {
+	return []string{}
+}
+
+func (x *FilesystemType) beforeSave() {}
+
+func (x *FilesystemType) StateSave(m state.Sink) {
+	x.beforeSave()
+}
+
+func (x *FilesystemType) afterLoad() {}
+
+func (x *FilesystemType) StateLoad(m state.Source) {
+}
+
+func (x *filesystemOptions) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.filesystemOptions"
+}
+
+func (x *filesystemOptions) StateFields() []string {
+	return []string{
+		"userID",
+		"groupID",
+		"rootMode",
+		"maxActiveRequests",
+		"maxRead",
+	}
+}
+
+func (x *filesystemOptions) beforeSave() {}
+
+func (x *filesystemOptions) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.userID)
+	m.Save(1, &x.groupID)
+	m.Save(2, &x.rootMode)
+	m.Save(3, &x.maxActiveRequests)
+	m.Save(4, &x.maxRead)
+}
+
+func (x *filesystemOptions) afterLoad() {}
+
+func (x *filesystemOptions) StateLoad(m state.Source) {
+	m.Load(0, &x.userID)
+	m.Load(1, &x.groupID)
+	m.Load(2, &x.rootMode)
+	m.Load(3, &x.maxActiveRequests)
+	m.Load(4, &x.maxRead)
+}
+
+func (x *filesystem) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.filesystem"
+}
+
+func (x *filesystem) StateFields() []string {
+	return []string{
+		"Filesystem",
+		"devMinor",
+		"conn",
+		"opts",
+		"umounted",
+	}
+}
+
+func (x *filesystem) beforeSave() {}
+
+func (x *filesystem) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Filesystem)
+	m.Save(1, &x.devMinor)
+	m.Save(2, &x.conn)
+	m.Save(3, &x.opts)
+	m.Save(4, &x.umounted)
+}
+
+func (x *filesystem) afterLoad() {}
+
+func (x *filesystem) StateLoad(m state.Source) {
+	m.Load(0, &x.Filesystem)
+	m.Load(1, &x.devMinor)
+	m.Load(2, &x.conn)
+	m.Load(3, &x.opts)
+	m.Load(4, &x.umounted)
+}
+
+func (x *inode) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.inode"
+}
+
+func (x *inode) StateFields() []string {
+	return []string{
+		"inodeRefs",
+		"InodeAttrs",
+		"InodeDirectoryNoNewChildren",
+		"InodeNoDynamicLookup",
+		"InodeNotSymlink",
+		"OrderedChildren",
+		"dentry",
+		"fs",
+		"metadataMu",
+		"nodeID",
+		"locks",
+		"size",
+		"attributeVersion",
+		"attributeTime",
+		"version",
+		"link",
+	}
+}
+
+func (x *inode) beforeSave() {}
+
+func (x *inode) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.inodeRefs)
+	m.Save(1, &x.InodeAttrs)
+	m.Save(2, &x.InodeDirectoryNoNewChildren)
+	m.Save(3, &x.InodeNoDynamicLookup)
+	m.Save(4, &x.InodeNotSymlink)
+	m.Save(5, &x.OrderedChildren)
+	m.Save(6, &x.dentry)
+	m.Save(7, &x.fs)
+	m.Save(8, &x.metadataMu)
+	m.Save(9, &x.nodeID)
+	m.Save(10, &x.locks)
+	m.Save(11, &x.size)
+	m.Save(12, &x.attributeVersion)
+	m.Save(13, &x.attributeTime)
+	m.Save(14, &x.version)
+	m.Save(15, &x.link)
+}
+
+func (x *inode) afterLoad() {}
+
+func (x *inode) StateLoad(m state.Source) {
+	m.Load(0, &x.inodeRefs)
+	m.Load(1, &x.InodeAttrs)
+	m.Load(2, &x.InodeDirectoryNoNewChildren)
+	m.Load(3, &x.InodeNoDynamicLookup)
+	m.Load(4, &x.InodeNotSymlink)
+	m.Load(5, &x.OrderedChildren)
+	m.Load(6, &x.dentry)
+	m.Load(7, &x.fs)
+	m.Load(8, &x.metadataMu)
+	m.Load(9, &x.nodeID)
+	m.Load(10, &x.locks)
+	m.Load(11, &x.size)
+	m.Load(12, &x.attributeVersion)
+	m.Load(13, &x.attributeTime)
+	m.Load(14, &x.version)
+	m.Load(15, &x.link)
+}
+
 func (x *inodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/fuse.inodeRefs"
 }
@@ -187,6 +513,13 @@ func (x *Response) StateLoad(m state.Source) {
 }
 
 func init() {
+	state.Register((*connection)(nil))
+	state.Register((*fuseDevice)(nil))
+	state.Register((*DeviceFD)(nil))
+	state.Register((*FilesystemType)(nil))
+	state.Register((*filesystemOptions)(nil))
+	state.Register((*filesystem)(nil))
+	state.Register((*inode)(nil))
 	state.Register((*inodeRefs)(nil))
 	state.Register((*requestList)(nil))
 	state.Register((*requestEntry)(nil))

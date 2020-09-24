@@ -22,6 +22,8 @@ import (
 )
 
 // DeviceKind indicates whether a device is a block or character device.
+//
+// +stateify savable
 type DeviceKind uint32
 
 const (
@@ -44,6 +46,7 @@ func (kind DeviceKind) String() string {
 	}
 }
 
+// +stateify savable
 type devTuple struct {
 	kind  DeviceKind
 	major uint32

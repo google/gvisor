@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// +stateify savable
 type directory struct {
 	// Since directories can't be hard-linked, each directory can only be
 	// associated with a single dentry, which we can store in the directory
@@ -44,7 +45,7 @@ type directory struct {
 	// (with inode == nil) that represent the iteration position of
 	// directoryFDs. childList is used to support directoryFD.IterDirents()
 	// efficiently. childList is protected by iterMu.
-	iterMu    sync.Mutex
+	iterMu    sync.Mutex `state:"nosave"`
 	childList dentryList
 }
 
@@ -86,6 +87,7 @@ func (dir *directory) mayDelete(creds *auth.Credentials, child *dentry) error {
 	return vfs.CheckDeleteSticky(creds, linux.FileMode(atomic.LoadUint32(&dir.inode.mode)), auth.KUID(atomic.LoadUint32(&child.inode.uid)))
 }
 
+// +stateify savable
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl

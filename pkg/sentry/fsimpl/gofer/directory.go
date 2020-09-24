@@ -117,11 +117,12 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	d.syntheticChildren++
 }
 
+// +stateify savable
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl
 
-	mu      sync.Mutex
+	mu      sync.Mutex `state:"nosave"`
 	off     int64
 	dirents []vfs.Dirent
 }

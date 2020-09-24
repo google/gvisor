@@ -107,6 +107,14 @@ func lookupNameFields(typ reflect.Type) (string, []string, bool) {
 		}
 		return name, nil, true
 	}
+	// Sanity check the type.
+	if raceEnabled {
+		if _, ok := reverseTypeDatabase[typ]; !ok {
+			// The type was not registered? Must be an embedded
+			// structure or something else.
+			return "", nil, false
+		}
+	}
 	// Extract the name from the object.
 	name := t.StateTypeName()
 	fields := t.StateFields()
@@ -313,6 +321,9 @@ var primitiveTypeDatabase = func() map[string]reflect.Type {
 // globalTypeDatabase is used for dispatching interfaces on decode.
 var globalTypeDatabase = map[string]reflect.Type{}
 
+// reverseTypeDatabase is a reverse mapping.
+var reverseTypeDatabase = map[reflect.Type]string{}
+
 // Register registers a type.
 //
 // This must be called on init and only done once.
@@ -358,4 +369,7 @@ func Register(t Type) {
 		Failf("conflicting name for %T: matches interfaceType", t)
 	}
 	globalTypeDatabase[name] = typ
+	if raceEnabled {
+		reverseTypeDatabase[typ] = name
+	}
 }

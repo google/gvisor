@@ -129,6 +129,8 @@ func (i *taskInode) DecRef(context.Context) {
 
 // taskOwnedInode implements kernfs.Inode and overrides inode owner with task
 // effective user and group.
+//
+// +stateify savable
 type taskOwnedInode struct {
 	kernfs.Inode
 
