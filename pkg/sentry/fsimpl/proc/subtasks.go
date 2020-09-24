@@ -63,7 +63,7 @@ func (fs *filesystem) newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace,
 
 	inode := &taskOwnedInode{Inode: subInode, owner: task}
 	dentry := &kernfs.Dentry{}
-	dentry.Init(inode)
+	dentry.Init(inode, fs.VFSFilesystem())
 
 	return dentry
 }

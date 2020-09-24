@@ -38,12 +38,12 @@ type StaticSymlink struct {
 var _ Inode = (*StaticSymlink)(nil)
 
 // NewStaticSymlink creates a new symlink file pointing to 'target'.
-func NewStaticSymlink(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, target string) *Dentry {
+func NewStaticSymlink(creds *auth.Credentials, fs *vfs.Filesystem, devMajor, devMinor uint32, ino uint64, target string) *Dentry {
 	inode := &StaticSymlink{}
 	inode.Init(creds, devMajor, devMinor, ino, target)
 
 	d := &Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs)
 	return d
 }
 

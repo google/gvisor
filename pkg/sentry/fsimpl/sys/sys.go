@@ -141,7 +141,7 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 	d.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	d.EnableLeakCheck()
-	d.dentry.Init(d)
+	d.dentry.Init(d, fs.VFSFilesystem())
 
 	d.IncLinks(d.OrderedChildren.Populate(&d.dentry, contents))
 
@@ -194,7 +194,7 @@ func (fs *filesystem) newCPUFile(creds *auth.Credentials, maxCores uint, mode li
 	c := &cpuFile{maxCores: maxCores}
 	c.DynamicBytesFile.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), c, mode)
 	d := &kernfs.Dentry{}
-	d.Init(c)
+	d.Init(c, fs.VFSFilesystem())
 	return d
 }
 

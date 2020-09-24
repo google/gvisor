@@ -78,7 +78,7 @@ func (fs *filesystem) newFile(creds *auth.Credentials, content string) *kernfs.D
 	f.DynamicBytesFile.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), f, 0777)
 
 	d := &kernfs.Dentry{}
-	d.Init(f)
+	d.Init(f, fs.VFSFilesystem())
 	return d
 }
 
@@ -114,7 +114,7 @@ func (fs *filesystem) newReadonlyDir(creds *auth.Credentials, mode linux.FileMod
 	dir.attrs.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	dir.EnableLeakCheck()
-	dir.dentry.Init(dir)
+	dir.dentry.Init(dir, fs.VFSFilesystem())
 
 	dir.IncLinks(dir.OrderedChildren.Populate(&dir.dentry, contents))
 
@@ -155,7 +155,7 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 	dir.attrs.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 	dir.EnableLeakCheck()
-	dir.dentry.Init(dir)
+	dir.dentry.Init(dir, fs.VFSFilesystem())
 
 	dir.IncLinks(dir.OrderedChildren.Populate(&dir.dentry, contents))
 

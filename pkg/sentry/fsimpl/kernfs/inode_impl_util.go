@@ -591,13 +591,13 @@ type StaticDirectory struct {
 var _ Inode = (*StaticDirectory)(nil)
 
 // NewStaticDir creates a new static directory and returns its dentry.
-func NewStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]*Dentry, fdOpts GenericDirectoryFDOptions) *Dentry {
+func NewStaticDir(creds *auth.Credentials, fs *vfs.Filesystem, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]*Dentry, fdOpts GenericDirectoryFDOptions) *Dentry {
 	inode := &StaticDirectory{}
 	inode.Init(creds, devMajor, devMinor, ino, perm, fdOpts)
 	inode.EnableLeakCheck()
 
 	dentry := &Dentry{}
-	dentry.Init(inode)
+	dentry.Init(inode, fs)
 
 	inode.OrderedChildren.Init(OrderedChildrenOptions{})
 	links := inode.OrderedChildren.Populate(dentry, children)

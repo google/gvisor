@@ -91,7 +91,7 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 
 	inode := &taskOwnedInode{Inode: taskInode, owner: task}
 	dentry := &kernfs.Dentry{}
-	dentry.Init(inode)
+	dentry.Init(inode, fs.VFSFilesystem())
 
 	taskInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	links := taskInode.OrderedChildren.Populate(dentry, contents)
@@ -147,7 +147,7 @@ func (fs *filesystem) newTaskOwnedFile(task *kernel.Task, ino uint64, perm linux
 
 	taskInode := &taskOwnedInode{Inode: inode, owner: task}
 	d := &kernfs.Dentry{}
-	d.Init(taskInode)
+	d.Init(taskInode, fs.VFSFilesystem())
 	return d
 }
 
@@ -162,7 +162,7 @@ func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.
 
 	inode := &taskOwnedInode{Inode: dir, owner: task}
 	d := &kernfs.Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs.VFSFilesystem())
 
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	links := dir.OrderedChildren.Populate(d, children)

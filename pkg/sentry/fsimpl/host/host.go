@@ -118,7 +118,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	if err != nil {
 		return nil, err
 	}
-	d.Init(i)
+	d.Init(i, fs.VFSFilesystem())
 
 	// i.open will take a reference on d.
 	defer d.DecRef(ctx)

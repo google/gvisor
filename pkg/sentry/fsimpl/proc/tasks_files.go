@@ -48,7 +48,7 @@ func (fs *filesystem) newSelfSymlink(creds *auth.Credentials, ino uint64, pidns 
 	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs.VFSFilesystem())
 	return d
 }
 
@@ -92,7 +92,7 @@ func (fs *filesystem) newThreadSelfSymlink(creds *auth.Credentials, ino uint64, 
 	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs.VFSFilesystem())
 	return d
 }
 

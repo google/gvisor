@@ -130,7 +130,7 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) *kernfs.Dentry {
 	inode.EnableLeakCheck()
 
 	dentry := &kernfs.Dentry{}
-	dentry.Init(inode)
+	dentry.Init(inode, fs.VFSFilesystem())
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 
 	return dentry
@@ -210,7 +210,7 @@ func (fs *filesystem) newFDSymlink(task *kernel.Task, fd int32, ino uint64) *ker
 	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs.VFSFilesystem())
 	return d
 }
 
@@ -263,7 +263,7 @@ func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) *kernfs.Dentry {
 	inode.EnableLeakCheck()
 
 	dentry := &kernfs.Dentry{}
-	dentry.Init(inode)
+	dentry.Init(inode, fs.VFSFilesystem())
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 
 	return dentry

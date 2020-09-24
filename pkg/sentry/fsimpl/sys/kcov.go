@@ -31,7 +31,7 @@ func (fs *filesystem) newKcovFile(ctx context.Context, creds *auth.Credentials) 
 	k := &kcovInode{}
 	k.InodeAttrs.Init(creds, 0, 0, fs.NextIno(), linux.S_IFREG|0600)
 	d := &kernfs.Dentry{}
-	d.Init(k)
+	d.Init(k, fs.VFSFilesystem())
 	return d
 }
 

@@ -36,16 +36,17 @@ type syntheticDirectory struct {
 	InodeNotSymlink
 	OrderedChildren
 
+	fs    *vfs.Filesystem
 	locks vfs.FileLocks
 }
 
 var _ Inode = (*syntheticDirectory)(nil)
 
-func newSyntheticDirectory(creds *auth.Credentials, perm linux.FileMode) *Dentry {
-	inode := &syntheticDirectory{}
+func newSyntheticDirectory(creds *auth.Credentials, fs *vfs.Filesystem, perm linux.FileMode) *Dentry {
+	inode := &syntheticDirectory{fs: fs}
 	inode.Init(creds, 0 /* devMajor */, 0 /* devMinor */, 0 /* ino */, perm)
 	d := &Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs)
 	return d
 }
 
@@ -78,7 +79,7 @@ func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs
 	if !opts.ForSyntheticMountpoint {
 		return nil, syserror.EPERM
 	}
-	subdird := newSyntheticDirectory(auth.CredentialsFromContext(ctx), opts.Mode&linux.PermissionsMask)
+	subdird := newSyntheticDirectory(auth.CredentialsFromContext(ctx), dir.fs, opts.Mode&linux.PermissionsMask)
 	if err := dir.OrderedChildren.Insert(name, subdird); err != nil {
 		subdird.DecRef(ctx)
 		return nil, err

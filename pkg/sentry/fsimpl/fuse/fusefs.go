@@ -288,7 +288,7 @@ func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode)
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.EnableLeakCheck()
-	i.dentry.Init(i)
+	i.dentry.Init(i, fs.VFSFilesystem())
 	i.nodeID = 1
 
 	return &i.dentry
@@ -301,7 +301,7 @@ func (fs *filesystem) newInode(nodeID uint64, attr linux.FUSEAttr) *kernfs.Dentr
 	atomic.StoreUint64(&i.size, attr.Size)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.EnableLeakCheck()
-	i.dentry.Init(i)
+	i.dentry.Init(i, fs.VFSFilesystem())
 
 	return &i.dentry
 }

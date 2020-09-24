@@ -169,6 +169,9 @@ type Dentry struct {
 
 	vfsd vfs.Dentry
 
+	// fs is the owning filesystem. fs is immutable.
+	fs *vfs.Filesystem
+
 	// flags caches useful information about the dentry from the inode. See the
 	// dflags* consts above. Must be accessed by atomic ops.
 	flags uint32
@@ -192,8 +195,9 @@ type Dentry struct {
 // Precondition: Caller must hold a reference on inode.
 //
 // Postcondition: Caller's reference on inode is transferred to the dentry.
-func (d *Dentry) Init(inode Inode) {
+func (d *Dentry) Init(inode Inode, fs *vfs.Filesystem) {
 	d.vfsd.Init(d)
+	d.fs = fs
 	d.inode = inode
 	ftype := inode.Mode().FileType()
 	if ftype == linux.ModeDirectory {

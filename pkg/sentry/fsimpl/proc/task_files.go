@@ -252,7 +252,7 @@ func (fs *filesystem) newComm(task *kernel.Task, ino uint64, perm linux.FileMode
 	inode.DynamicBytesFile.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, &commData{task: task}, perm)
 
 	d := &kernfs.Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs.VFSFilesystem())
 	return d
 }
 
@@ -663,7 +663,7 @@ func (fs *filesystem) newExeSymlink(task *kernel.Task, ino uint64) *kernfs.Dentr
 	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs.VFSFilesystem())
 	return d
 }
 
@@ -863,7 +863,7 @@ func (fs *filesystem) newNamespaceSymlink(task *kernel.Task, ino uint64, ns stri
 
 	taskInode := &taskOwnedInode{Inode: inode, owner: task}
 	d := &kernfs.Dentry{}
-	d.Init(taskInode)
+	d.Init(taskInode, fs.VFSFilesystem())
 	return d
 }
 
@@ -883,7 +883,7 @@ func (s *namespaceSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vir
 
 	// Create a synthetic inode to represent the namespace.
 	dentry := &kernfs.Dentry{}
-	dentry.Init(&namespaceInode{})
+	dentry.Init(&namespaceInode{}, mnt.Filesystem())
 	vd := vfs.MakeVirtualDentry(mnt, dentry.VFSDentry())
 	vd.IncRef()
 	dentry.DecRef(ctx)

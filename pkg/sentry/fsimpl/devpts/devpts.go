@@ -87,7 +87,7 @@ func (fstype FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds 
 	root.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|0555)
 	root.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	root.EnableLeakCheck()
-	root.dentry.Init(root)
+	root.dentry.Init(root, fs.VFSFilesystem())
 
 	// Construct the pts master inode and dentry. Linux always uses inode
 	// id 2 for ptmx. See fs/devpts/inode.c:mknod_ptmx.
@@ -95,7 +95,7 @@ func (fstype FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds 
 		root: root,
 	}
 	master.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|0666)
-	master.dentry.Init(master)
+	master.dentry.Init(master, fs.VFSFilesystem())
 
 	// Add the master as a child of the root.
 	links := root.OrderedChildren.Populate(&root.dentry, map[string]*kernfs.Dentry{
@@ -150,7 +150,7 @@ type rootInode struct {
 var _ kernfs.Inode = (*rootInode)(nil)
 
 // allocateTerminal creates a new Terminal and installs a pts node for it.
-func (i *rootInode) allocateTerminal(creds *auth.Credentials) (*Terminal, error) {
+func (i *rootInode) allocateTerminal(creds *auth.Credentials, fs *vfs.Filesystem) (*Terminal, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.nextIdx == math.MaxUint32 {
@@ -173,7 +173,7 @@ func (i *rootInode) allocateTerminal(creds *auth.Credentials) (*Terminal, error)
 	// Linux always uses pty index + 3 as the inode id. See
 	// fs/devpts/inode.c:devpts_pty_new().
 	replica.InodeAttrs.Init(creds, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|0600)
-	replica.dentry.Init(replica)
+	replica.dentry.Init(replica, fs)
 	i.replicas[idx] = replica
 
 	return t, nil

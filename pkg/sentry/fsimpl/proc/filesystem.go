@@ -98,7 +98,7 @@ func (fs *filesystem) newDentry(creds *auth.Credentials, ino uint64, perm linux.
 	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, inode, perm)
 
 	d := &kernfs.Dentry{}
-	d.Init(inode)
+	d.Init(inode, fs.VFSFilesystem())
 	return d
 }
 
@@ -114,8 +114,8 @@ func newStaticFile(data string) *staticFile {
 	return &staticFile{StaticData: vfs.StaticData{Data: data}}
 }
 
-func newStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]*kernfs.Dentry) *kernfs.Dentry {
-	return kernfs.NewStaticDir(creds, devMajor, devMinor, ino, perm, children, kernfs.GenericDirectoryFDOptions{
+func (fs *filesystem) newStaticDir(creds *auth.Credentials, children map[string]*kernfs.Dentry) *kernfs.Dentry {
+	return kernfs.NewStaticDir(creds, fs.VFSFilesystem(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, children, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndZero,
 	})
 }

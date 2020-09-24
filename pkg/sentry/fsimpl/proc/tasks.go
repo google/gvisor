@@ -71,8 +71,8 @@ func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace
 		"loadavg":     fs.newDentry(root, fs.NextIno(), 0444, &loadavgData{}),
 		"sys":         fs.newSysDir(root, k),
 		"meminfo":     fs.newDentry(root, fs.NextIno(), 0444, &meminfoData{}),
-		"mounts":      kernfs.NewStaticSymlink(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/mounts"),
-		"net":         kernfs.NewStaticSymlink(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/net"),
+		"mounts":      kernfs.NewStaticSymlink(root, fs.VFSFilesystem(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/mounts"),
+		"net":         kernfs.NewStaticSymlink(root, fs.VFSFilesystem(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/net"),
 		"stat":        fs.newDentry(root, fs.NextIno(), 0444, &statData{}),
 		"uptime":      fs.newDentry(root, fs.NextIno(), 0444, &uptimeData{}),
 		"version":     fs.newDentry(root, fs.NextIno(), 0444, &versionData{}),
@@ -89,7 +89,7 @@ func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace
 	inode.EnableLeakCheck()
 
 	dentry := &kernfs.Dentry{}
-	dentry.Init(inode)
+	dentry.Init(inode, fs.VFSFilesystem())
 
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	links := inode.OrderedChildren.Populate(dentry, contents)
