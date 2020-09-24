@@ -115,7 +115,7 @@ const (
 
 // Constants from uapi/linux/fs.h.
 const (
-	FS_IOC_GETFLAGS = 2147771905
+	FS_IOC_GETFLAGS = 2148034049
 	FS_VERITY_FL    = 1048576
 )
 
