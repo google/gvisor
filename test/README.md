@@ -24,11 +24,11 @@ also used to run these tests in `kokoro`.
 
 To run image and integration tests, run:
 
-`./scripts/docker_tests.sh`
+`make docker-tests`
 
 To run root tests, run:
 
-`./scripts/root_tests.sh`
+`make root-tests`
 
 There are a few other interesting variations for image and integration tests:
 
