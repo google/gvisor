@@ -44,7 +44,7 @@ func (e *endpoint) drainSegmentLocked() {
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
 	// Stop incoming packets.
-	e.segmentQueue.setLimit(0)
+	e.segmentQueue.freeze()
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -178,7 +178,7 @@ func (e *endpoint) afterLoad() {
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
 	e.stack = s
-	e.segmentQueue.setLimit(MaxUnprocessedSegments)
+	e.segmentQueue.thaw()
 	epState := e.origEndpointState
 	switch epState {
 	case StateInitial, StateBound, StateListen, StateConnecting, StateEstablished:

@@ -340,3 +340,13 @@ packetimpact_go_test(
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
+
+packetimpact_go_test(
+    name = "tcp_rcv_buf_space",
+    srcs = ["tcp_rcv_buf_space_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)

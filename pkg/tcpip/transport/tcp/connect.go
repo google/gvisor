@@ -898,7 +898,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 // sendRaw sends a TCP segment to the endpoint's peer.
 func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
 	var sackBlocks []header.SACKBlock
-	if e.EndpointState() == StateEstablished && e.rcv.pendingBufSize > 0 && (flags&header.TCPFlagAck != 0) {
+	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && (flags&header.TCPFlagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
@@ -1003,9 +1003,8 @@ func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
 	// (indicated by a negative send window scale).
 	e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
 
-	rcvBufSize := seqnum.Size(e.receiveBufferSize())
 	e.rcvListMu.Lock()
-	e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale(), rcvBufSize)
+	e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale())
 	// Bootstrap the auto tuning algorithm. Starting at zero will
 	// result in a really large receive window after the first auto
 	// tuning adjustment.
@@ -1136,12 +1135,11 @@ func (e *endpoint) handleSegments(fastPath bool) *tcpip.Error {
 		}
 
 		cont, err := e.handleSegment(s)
+		s.decRef()
 		if err != nil {
-			s.decRef()
 			return err
 		}
 		if !cont {
-			s.decRef()
 			return nil
 		}
 	}
@@ -1221,6 +1219,12 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err *tcpip.Error) {
 			return true, nil
 		}
 
+		// Increase counter if after processing the segment we would potentially
+		// advertise a zero window.
+		if crossed, above := e.windowCrossedACKThresholdLocked(-s.segMemSize()); crossed && !above {
+			e.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
+		}
+
 		// Now check if the received segment has caused us to transition
 		// to a CLOSED state, if yes then terminate processing and do
 		// not invoke the sender.
@@ -1233,7 +1237,6 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err *tcpip.Error) {
 			// or a notification from the protocolMainLoop (caller goroutine).
 			// This means that with this return, the segment dequeue below can
 			// never occur on a closed endpoint.
-			s.decRef()
 			return false, nil
 		}
 
@@ -1423,10 +1426,6 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 				n := e.fetchNotifications()
 				if n&notifyNonZeroReceiveWindow != 0 {
 					e.rcv.nonZeroWindow()
-				}
-
-				if n&notifyReceiveWindowChanged != 0 {
-					e.rcv.pendingBufSize = seqnum.Size(e.receiveBufferSize())
 				}
 
 				if n&notifyMTUChanged != 0 {

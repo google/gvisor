@@ -78,8 +78,8 @@ func testV4Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	ackCheckers := append(checkers, checker.TCP(
 		checker.DstPort(context.TestPort),
 		checker.TCPFlags(header.TCPFlagAck),
-		checker.SeqNum(uint32(c.IRS)+1),
-		checker.AckNum(uint32(iss)+1),
+		checker.TCPSeqNum(uint32(c.IRS)+1),
+		checker.TCPAckNum(uint32(iss)+1),
 	))
 	checker.IPv4(t, c.GetPacket(), ackCheckers...)
 
@@ -185,8 +185,8 @@ func testV6Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	ackCheckers := append(checkers, checker.TCP(
 		checker.DstPort(context.TestPort),
 		checker.TCPFlags(header.TCPFlagAck),
-		checker.SeqNum(uint32(c.IRS)+1),
-		checker.AckNum(uint32(iss)+1),
+		checker.TCPSeqNum(uint32(c.IRS)+1),
+		checker.TCPAckNum(uint32(iss)+1),
 	))
 	checker.IPv6(t, c.GetV6Packet(), ackCheckers...)
 
@@ -283,7 +283,7 @@ func TestV4RefuseOnV6Only(t *testing.T) {
 			checker.SrcPort(context.StackPort),
 			checker.DstPort(context.TestPort),
 			checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
-			checker.AckNum(uint32(irs)+1),
+			checker.TCPAckNum(uint32(irs)+1),
 		),
 	)
 }
@@ -319,7 +319,7 @@ func TestV6RefuseOnBoundToV4Mapped(t *testing.T) {
 			checker.SrcPort(context.StackPort),
 			checker.DstPort(context.TestPort),
 			checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
-			checker.AckNum(uint32(irs)+1),
+			checker.TCPAckNum(uint32(irs)+1),
 		),
 	)
 }
@@ -352,7 +352,7 @@ func testV4Accept(t *testing.T, c *context.Context) {
 			checker.SrcPort(context.StackPort),
 			checker.DstPort(context.TestPort),
 			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
-			checker.AckNum(uint32(irs)+1),
+			checker.TCPAckNum(uint32(irs)+1),
 		),
 	)
 
@@ -492,7 +492,7 @@ func TestV6AcceptOnV6(t *testing.T) {
 			checker.SrcPort(context.StackPort),
 			checker.DstPort(context.TestPort),
 			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
-			checker.AckNum(uint32(irs)+1),
+			checker.TCPAckNum(uint32(irs)+1),
 		),
 	)
 
