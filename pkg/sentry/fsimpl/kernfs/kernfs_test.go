@@ -176,38 +176,36 @@ func (d *dir) DecRef(context.Context) {
 	d.dirRefs.DecRef(d.Destroy)
 }
 
-func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
+func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*kernfs.Dentry, error) {
 	creds := auth.CredentialsFromContext(ctx)
 	dir := d.fs.newDir(creds, opts.Mode, nil)
-	dirVFSD := dir.VFSDentry()
-	if err := d.OrderedChildren.Insert(name, dirVFSD); err != nil {
+	if err := d.OrderedChildren.Insert(name, dir); err != nil {
 		dir.DecRef(ctx)
 		return nil, err
 	}
 	d.IncLinks(1)
-	return dirVFSD, nil
+	return dir, nil
 }
 
-func (d *dir) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*vfs.Dentry, error) {
+func (d *dir) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*kernfs.Dentry, error) {
 	creds := auth.CredentialsFromContext(ctx)
 	f := d.fs.newFile(creds, "")
-	fVFSD := f.VFSDentry()
-	if err := d.OrderedChildren.Insert(name, fVFSD); err != nil {
+	if err := d.OrderedChildren.Insert(name, f); err != nil {
 		f.DecRef(ctx)
 		return nil, err
 	}
-	return fVFSD, nil
+	return f, nil
 }
 
-func (*dir) NewLink(context.Context, string, kernfs.Inode) (*vfs.Dentry, error) {
+func (*dir) NewLink(context.Context, string, kernfs.Inode) (*kernfs.Dentry, error) {
 	return nil, syserror.EPERM
 }
 
-func (*dir) NewSymlink(context.Context, string, string) (*vfs.Dentry, error) {
+func (*dir) NewSymlink(context.Context, string, string) (*kernfs.Dentry, error) {
 	return nil, syserror.EPERM
 }
 
-func (*dir) NewNode(context.Context, string, vfs.MknodOptions) (*vfs.Dentry, error) {
+func (*dir) NewNode(context.Context, string, vfs.MknodOptions) (*kernfs.Dentry, error) {
 	return nil, syserror.EPERM
 }
 

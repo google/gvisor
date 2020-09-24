@@ -426,7 +426,7 @@ func (*inode) Valid(ctx context.Context) bool {
 }
 
 // NewFile implements kernfs.Inode.NewFile.
-func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*vfs.Dentry, error) {
+func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*kernfs.Dentry, error) {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
 		log.Warningf("fusefs.Inode.NewFile: couldn't get kernel task from context", i.nodeID)
@@ -440,15 +440,11 @@ func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) 
 		},
 		Name: name,
 	}
-	d, err := i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
-	if err != nil {
-		return nil, err
-	}
-	return d.VFSDentry(), nil
+	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
 }
 
 // NewNode implements kernfs.Inode.NewNode.
-func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error) {
+func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*kernfs.Dentry, error) {
 	in := linux.FUSEMknodIn{
 		MknodMeta: linux.FUSEMknodMeta{
 			Mode:  uint32(opts.Mode),
@@ -457,28 +453,20 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 		},
 		Name: name,
 	}
-	d, err := i.newEntry(ctx, name, opts.Mode.FileType(), linux.FUSE_MKNOD, &in)
-	if err != nil {
-		return nil, err
-	}
-	return d.VFSDentry(), nil
+	return i.newEntry(ctx, name, opts.Mode.FileType(), linux.FUSE_MKNOD, &in)
 }
 
 // NewSymlink implements kernfs.Inode.NewSymlink.
-func (i *inode) NewSymlink(ctx context.Context, name, target string) (*vfs.Dentry, error) {
+func (i *inode) NewSymlink(ctx context.Context, name, target string) (*kernfs.Dentry, error) {
 	in := linux.FUSESymLinkIn{
 		Name:   name,
 		Target: target,
 	}
-	d, err := i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
-	if err != nil {
-		return nil, err
-	}
-	return d.VFSDentry(), nil
+	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
 }
 
 // Unlink implements kernfs.Inode.Unlink.
-func (i *inode) Unlink(ctx context.Context, name string, child *vfs.Dentry) error {
+func (i *inode) Unlink(ctx context.Context, name string, child *kernfs.Dentry) error {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
 		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
@@ -501,7 +489,7 @@ func (i *inode) Unlink(ctx context.Context, name string, child *vfs.Dentry) erro
 }
 
 // NewDir implements kernfs.Inode.NewDir.
-func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
+func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*kernfs.Dentry, error) {
 	in := linux.FUSEMkdirIn{
 		MkdirMeta: linux.FUSEMkdirMeta{
 			Mode:  uint32(opts.Mode),
@@ -509,15 +497,11 @@ func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) 
 		},
 		Name: name,
 	}
-	d, err := i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
-	if err != nil {
-		return nil, err
-	}
-	return d.VFSDentry(), nil
+	return i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
 }
 
 // RmDir implements kernfs.Inode.RmDir.
-func (i *inode) RmDir(ctx context.Context, name string, child *vfs.Dentry) error {
+func (i *inode) RmDir(ctx context.Context, name string, child *kernfs.Dentry) error {
 	fusefs := i.fs
 	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
 
