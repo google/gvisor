@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
+// +stateify savable
 type symlink struct {
 	inode  inode
 	target string // immutable

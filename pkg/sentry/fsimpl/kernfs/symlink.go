@@ -24,6 +24,8 @@ import (
 
 // StaticSymlink provides an Inode implementation for symlinks that point to
 // a immutable target.
+//
+// +stateify savable
 type StaticSymlink struct {
 	InodeAttrs
 	InodeNoopRefCount

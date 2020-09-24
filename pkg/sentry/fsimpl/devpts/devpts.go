@@ -35,6 +35,8 @@ import (
 const Name = "devpts"
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // Name implements vfs.FilesystemType.Name.
@@ -58,6 +60,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	return fs.Filesystem.VFSFilesystem(), root.VFSDentry(), nil
 }
 
+// +stateify savable
 type filesystem struct {
 	kernfs.Filesystem
 
@@ -110,6 +113,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 }
 
 // rootInode is the root directory inode for the devpts mounts.
+//
+// +stateify savable
 type rootInode struct {
 	implStatFS
 	kernfs.AlwaysValid
@@ -131,7 +136,7 @@ type rootInode struct {
 	root *rootInode
 
 	// mu protects the fields below.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// replicas maps pty ids to replica inodes.
 	replicas map[uint32]*replicaInode
@@ -242,6 +247,7 @@ func (i *rootInode) DecRef(context.Context) {
 	i.rootInodeRefs.DecRef(i.Destroy)
 }
 
+// +stateify savable
 type implStatFS struct{}
 
 // StatFS implements kernfs.Inode.StatFS.

@@ -31,6 +31,8 @@ import (
 // count for inodes, performing no extra actions when references are obtained or
 // released. This is suitable for simple file inodes that don't reference any
 // resources.
+//
+// +stateify savable
 type InodeNoopRefCount struct {
 }
 
@@ -50,6 +52,8 @@ func (InodeNoopRefCount) TryIncRef() bool {
 // InodeDirectoryNoNewChildren partially implements the Inode interface.
 // InodeDirectoryNoNewChildren represents a directory inode which does not
 // support creation of new children.
+//
+// +stateify savable
 type InodeDirectoryNoNewChildren struct{}
 
 // NewFile implements Inode.NewFile.
@@ -81,6 +85,8 @@ func (InodeDirectoryNoNewChildren) NewNode(context.Context, string, vfs.MknodOpt
 // inodeDirectory and inodeDynamicDirectory sub interfaces. Inodes that do not
 // represent directories can embed this to provide no-op implementations for
 // directory-related functions.
+//
+// +stateify savable
 type InodeNotDirectory struct {
 }
 
@@ -149,6 +155,8 @@ func (InodeNotDirectory) Valid(context.Context) bool {
 // dymanic entries (i.e. entries that are not "hashed" into the
 // vfs.Dentry.children) can embed this to provide no-op implementations for
 // functions related to dynamic entries.
+//
+// +stateify savable
 type InodeNoDynamicLookup struct{}
 
 // Lookup implements Inode.Lookup.
@@ -169,6 +177,8 @@ func (InodeNoDynamicLookup) Valid(ctx context.Context) bool {
 // InodeNotSymlink partially implements the Inode interface, specifically the
 // inodeSymlink sub interface. All inodes that are not symlinks may embed this
 // to return the appropriate errors from symlink-related functions.
+//
+// +stateify savable
 type InodeNotSymlink struct{}
 
 // Readlink implements Inode.Readlink.
@@ -186,6 +196,8 @@ func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, 
 // inode attributes.
 //
 // Must be initialized by Init prior to first use.
+//
+// +stateify savable
 type InodeAttrs struct {
 	devMajor uint32
 	devMinor uint32
@@ -330,6 +342,7 @@ func (a *InodeAttrs) DecLinks() {
 	}
 }
 
+// +stateify savable
 type slot struct {
 	Name   string
 	Dentry *vfs.Dentry
@@ -337,6 +350,8 @@ type slot struct {
 }
 
 // OrderedChildrenOptions contains initialization options for OrderedChildren.
+//
+// +stateify savable
 type OrderedChildrenOptions struct {
 	// Writable indicates whether vfs.FilesystemImpl methods implemented by
 	// OrderedChildren may modify the tracked children. This applies to
@@ -352,12 +367,14 @@ type OrderedChildrenOptions struct {
 // directories.
 //
 // Must be initialize with Init before first use.
+//
+// +stateify savable
 type OrderedChildren struct {
 	// Can children be modified by user syscalls? It set to false, interface
 	// methods that would modify the children return EPERM. Immutable.
 	writable bool
 
-	mu    sync.RWMutex
+	mu    sync.RWMutex `state:"nosave"`
 	order slotList
 	set   map[string]*slot
 }
@@ -484,6 +501,7 @@ func (o *OrderedChildren) RmDir(ctx context.Context, name string, child *vfs.Den
 	return o.Unlink(ctx, name, child)
 }
 
+// +stateify savable
 type renameAcrossDifferentImplementationsError struct{}
 
 func (renameAcrossDifferentImplementationsError) Error() string {
@@ -542,6 +560,8 @@ func (o *OrderedChildren) nthLocked(i int64) *slot {
 }
 
 // InodeSymlink partially implements Inode interface for symlinks.
+//
+// +stateify savable
 type InodeSymlink struct {
 	InodeNotDirectory
 }
@@ -615,6 +635,8 @@ func (s *StaticDirectory) DecRef(context.Context) {
 }
 
 // AlwaysValid partially implements kernfs.inodeDynamicLookup.
+//
+// +stateify savable
 type AlwaysValid struct{}
 
 // Valid implements kernfs.inodeDynamicLookup.Valid.
@@ -624,6 +646,8 @@ func (*AlwaysValid) Valid(context.Context) bool {
 
 // InodeNoStatFS partially implements the Inode interface, where the client
 // filesystem doesn't support statfs(2).
+//
+// +stateify savable
 type InodeNoStatFS struct{}
 
 // StatFS implements Inode.StatFS.

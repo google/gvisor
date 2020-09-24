@@ -39,15 +39,18 @@ const (
 )
 
 // connection is the struct by which the sentry communicates with the FUSE server daemon.
+//
 // Lock order:
 // - conn.fd.mu
 // - conn.mu
 // - conn.asyncMu
+//
+// +stateify savable
 type connection struct {
 	fd *DeviceFD
 
 	// mu protects access to struct memebers.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// attributeVersion is the version of connection's attributes.
 	attributeVersion uint64
@@ -75,7 +78,7 @@ type connection struct {
 	initialized int32
 
 	// initializedChan is used to block requests before initialization.
-	initializedChan chan struct{}
+	initializedChan chan struct{} `state:".(bool)"`
 
 	// connected (connection established) when a new FUSE file system is created.
 	// Set to false when:
@@ -113,7 +116,7 @@ type connection struct {
 	// i.e. `!request.noReply`
 
 	// asyncMu protects the async request fields.
-	asyncMu sync.Mutex
+	asyncMu sync.Mutex `state:"nosave"`
 
 	// asyncNum is the number of async requests.
 	// Protected by asyncMu.
@@ -172,6 +175,22 @@ type connection struct {
 	// noOpen if FUSE server doesn't support open operation.
 	// This flag only influence performance, not correctness of the program.
 	noOpen bool
+}
+
+func (conn *connection) saveInitializedChan() bool {
+	select {
+	case <-conn.initializedChan:
+		return true // Closed.
+	default:
+		return false // Not closed.
+	}
+}
+
+func (conn *connection) loadInitializedChan(closed bool) {
+	conn.initializedChan = make(chan struct{}, 1)
+	if closed {
+		close(conn.initializedChan)
+	}
 }
 
 // newFUSEConnection creates a FUSE connection to fd.

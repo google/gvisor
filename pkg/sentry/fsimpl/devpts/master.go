@@ -31,6 +31,8 @@ import (
 )
 
 // masterInode is the inode for the master end of the Terminal.
+//
+// +stateify savable
 type masterInode struct {
 	implStatFS
 	kernfs.InodeAttrs
@@ -89,6 +91,7 @@ func (mi *masterInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds
 	return mi.InodeAttrs.SetStat(ctx, vfsfs, creds, opts)
 }
 
+// +stateify savable
 type masterFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

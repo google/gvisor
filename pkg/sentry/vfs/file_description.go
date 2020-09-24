@@ -37,11 +37,13 @@ import (
 // FileDescription methods require that a reference is held.
 //
 // FileDescription is analogous to Linux's struct file.
+//
+// +stateify savable
 type FileDescription struct {
 	FileDescriptionRefs
 
 	// flagsMu protects statusFlags and asyncHandler below.
-	flagsMu sync.Mutex
+	flagsMu sync.Mutex `state:"nosave"`
 
 	// statusFlags contains status flags, "initialized by open(2) and possibly
 	// modified by fcntl()" - fcntl(2). statusFlags can be read using atomic
@@ -56,7 +58,7 @@ type FileDescription struct {
 
 	// epolls is the set of epollInterests registered for this FileDescription.
 	// epolls is protected by epollMu.
-	epollMu sync.Mutex
+	epollMu sync.Mutex `state:"nosave"`
 	epolls  map[*epollInterest]struct{}
 
 	// vd is the filesystem location at which this FileDescription was opened.
@@ -88,6 +90,8 @@ type FileDescription struct {
 }
 
 // FileDescriptionOptions contains options to FileDescription.Init().
+//
+// +stateify savable
 type FileDescriptionOptions struct {
 	// If AllowDirectIO is true, allow O_DIRECT to be set on the file.
 	AllowDirectIO bool
@@ -451,6 +455,8 @@ type FileDescriptionImpl interface {
 }
 
 // Dirent holds the information contained in struct linux_dirent64.
+//
+// +stateify savable
 type Dirent struct {
 	// Name is the filename.
 	Name string

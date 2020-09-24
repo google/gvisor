@@ -33,6 +33,8 @@ import (
 // Note that in Linux these two types of locks are _not_ cooperative, because
 // race and deadlock conditions make merging them prohibitive. We do the same
 // and keep them oblivious to each other.
+//
+// +stateify savable
 type FileLocks struct {
 	// bsd is a set of BSD-style advisory file wide locks, see flock(2).
 	bsd fslock.Locks

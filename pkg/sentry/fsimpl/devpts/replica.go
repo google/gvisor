@@ -30,6 +30,8 @@ import (
 )
 
 // replicaInode is the inode for the replica end of the Terminal.
+//
+// +stateify savable
 type replicaInode struct {
 	implStatFS
 	kernfs.InodeAttrs
@@ -95,6 +97,7 @@ func (si *replicaInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, cred
 	return si.InodeAttrs.SetStat(ctx, vfsfs, creds, opts)
 }
 
+// +stateify savable
 type replicaFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

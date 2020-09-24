@@ -37,6 +37,8 @@ const inotifyEventBaseSize = 16
 //
 // The way events are labelled appears somewhat arbitrary, but they must match
 // Linux so that IN_EXCL_UNLINK behaves as it does in Linux.
+//
+// +stateify savable
 type EventType uint8
 
 // PathEvent and InodeEvent correspond to FSNOTIFY_EVENT_PATH and

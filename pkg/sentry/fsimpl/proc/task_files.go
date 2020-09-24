@@ -785,6 +785,7 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
+// +stateify savable
 type namespaceSymlink struct {
 	kernfs.StaticSymlink
 
@@ -832,6 +833,8 @@ func (s *namespaceSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vir
 
 // namespaceInode is a synthetic inode created to represent a namespace in
 // /proc/[pid]/ns/*.
+//
+// +stateify savable
 type namespaceInode struct {
 	implStatFS
 	kernfs.InodeAttrs
@@ -865,6 +868,8 @@ func (i *namespaceInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *ker
 
 // namespace FD is a synthetic file that represents a namespace in
 // /proc/[pid]/ns/*.
+//
+// +stateify savable
 type namespaceFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD

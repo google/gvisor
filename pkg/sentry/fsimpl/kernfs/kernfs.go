@@ -66,10 +66,12 @@ import (
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
 // filesystem. Concrete implementations are expected to embed this in their own
 // Filesystem type.
+//
+// +stateify savable
 type Filesystem struct {
 	vfsfs vfs.Filesystem
 
-	droppedDentriesMu sync.Mutex
+	droppedDentriesMu sync.Mutex `state:"nosave"`
 
 	// droppedDentries is a list of dentries waiting to be DecRef()ed. This is
 	// used to defer dentry destruction until mu can be acquired for
@@ -97,7 +99,7 @@ type Filesystem struct {
 	//   defer fs.mu.RUnlock()
 	//   ...
 	//   fs.deferDecRef(dentry)
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
@@ -160,6 +162,8 @@ const (
 // to, and child dentries hold a reference on their parent.
 //
 // Must be initialized by Init prior to first use.
+//
+// +stateify savable
 type Dentry struct {
 	DentryRefs
 
@@ -173,7 +177,7 @@ type Dentry struct {
 	name   string
 
 	// dirMu protects children and the names of child Dentries.
-	dirMu    sync.Mutex
+	dirMu    sync.Mutex `state:"nosave"`
 	children map[string]*Dentry
 
 	inode Inode

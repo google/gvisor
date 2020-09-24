@@ -52,6 +52,8 @@ const (
 )
 
 // anonFilesystemType implements FilesystemType.
+//
+// +stateify savable
 type anonFilesystemType struct{}
 
 // GetFilesystem implements FilesystemType.GetFilesystem.
@@ -69,12 +71,15 @@ func (anonFilesystemType) Name() string {
 //
 // Since all Dentries in anonFilesystem are non-directories, all FilesystemImpl
 // methods that would require an anonDentry to be a directory return ENOTDIR.
+//
+// +stateify savable
 type anonFilesystem struct {
 	vfsfs Filesystem
 
 	devMinor uint32
 }
 
+// +stateify savable
 type anonDentry struct {
 	vfsd Dentry
 

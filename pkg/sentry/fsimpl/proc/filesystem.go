@@ -41,6 +41,7 @@ func (FilesystemType) Name() string {
 	return Name
 }
 
+// +stateify savable
 type filesystem struct {
 	kernfs.Filesystem
 
@@ -84,6 +85,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // dynamicInode is an overfitted interface for common Inodes with
 // dynamicByteSource types used in procfs.
+//
+// +stateify savable
 type dynamicInode interface {
 	kernfs.Inode
 	vfs.DynamicBytesSource
@@ -99,6 +102,7 @@ func (fs *filesystem) newDentry(creds *auth.Credentials, ino uint64, perm linux.
 	return d
 }
 
+// +stateify savable
 type staticFile struct {
 	kernfs.DynamicBytesFile
 	vfs.StaticData
@@ -118,10 +122,13 @@ func newStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64
 
 // InternalData contains internal data passed in to the procfs mount via
 // vfs.GetFilesystemOptions.InternalData.
+//
+// +stateify savable
 type InternalData struct {
 	Cgroups map[string]string
 }
 
+// +stateify savable
 type implStatFS struct{}
 
 // StatFS implements kernfs.Inode.StatFS.

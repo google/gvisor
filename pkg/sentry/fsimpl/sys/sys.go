@@ -34,9 +34,13 @@ const Name = "sysfs"
 const defaultSysDirMode = linux.FileMode(0755)
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	kernfs.Filesystem
 
@@ -117,6 +121,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 }
 
 // dir implements kernfs.Inode.
+//
+// +stateify savable
 type dir struct {
 	dirRefs
 	kernfs.InodeAttrs
@@ -169,6 +175,8 @@ func (d *dir) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, err
 }
 
 // cpuFile implements kernfs.Inode.
+//
+// +stateify savable
 type cpuFile struct {
 	implStatFS
 	kernfs.DynamicBytesFile
@@ -190,6 +198,7 @@ func (fs *filesystem) newCPUFile(creds *auth.Credentials, maxCores uint, mode li
 	return d
 }
 
+// +stateify savable
 type implStatFS struct{}
 
 // StatFS implements kernfs.Inode.StatFS.
