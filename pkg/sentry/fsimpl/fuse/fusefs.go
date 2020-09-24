@@ -528,12 +528,7 @@ func (i *inode) RmDir(ctx context.Context, name string, child *vfs.Dentry) error
 		return err
 	}
 
-	// TODO(Before merging): When creating new nodes, should we add nodes to the ordered children?
-	// If so we'll probably need to call this. We will also need to add them with the writable flag when
-	// appropriate.
-	// return i.OrderedChildren.RmDir(ctx, name, child)
-
-	return nil
+	return i.dentry.RemoveChildLocked(name, child)
 }
 
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
@@ -563,11 +558,6 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 		return nil, syserror.EIO
 	}
 	child := i.fs.newInode(out.NodeID, out.Attr)
-	if opcode == linux.FUSE_LOOKUP {
-		i.dentry.InsertChildLocked(name, child)
-	} else {
-		i.dentry.InsertChild(name, child)
-	}
 	return child, nil
 }
 
