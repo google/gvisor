@@ -573,24 +573,24 @@ func (i *SyscallInfo) printEnter(t *kernel.Task, args arch.SyscallArguments) []s
 
 	switch len(output) {
 	case 0:
-		t.Infof("%s E %s()", t.Name(), i.name)
+		t.Debugf("%s E %s()", t.Name(), i.name)
 	case 1:
-		t.Infof("%s E %s(%s)", t.Name(), i.name,
+		t.Debugf("%s E %s(%s)", t.Name(), i.name,
 			output[0])
 	case 2:
-		t.Infof("%s E %s(%s, %s)", t.Name(), i.name,
+		t.Debugf("%s E %s(%s, %s)", t.Name(), i.name,
 			output[0], output[1])
 	case 3:
-		t.Infof("%s E %s(%s, %s, %s)", t.Name(), i.name,
+		t.Debugf("%s E %s(%s, %s, %s)", t.Name(), i.name,
 			output[0], output[1], output[2])
 	case 4:
-		t.Infof("%s E %s(%s, %s, %s, %s)", t.Name(), i.name,
+		t.Debugf("%s E %s(%s, %s, %s, %s)", t.Name(), i.name,
 			output[0], output[1], output[2], output[3])
 	case 5:
-		t.Infof("%s E %s(%s, %s, %s, %s, %s)", t.Name(), i.name,
+		t.Debugf("%s E %s(%s, %s, %s, %s, %s)", t.Name(), i.name,
 			output[0], output[1], output[2], output[3], output[4])
 	case 6:
-		t.Infof("%s E %s(%s, %s, %s, %s, %s, %s)", t.Name(), i.name,
+		t.Debugf("%s E %s(%s, %s, %s, %s, %s, %s)", t.Name(), i.name,
 			output[0], output[1], output[2], output[3], output[4], output[5])
 	}
 
@@ -610,25 +610,25 @@ func (i *SyscallInfo) printExit(t *kernel.Task, elapsed time.Duration, output []
 
 	switch len(output) {
 	case 0:
-		t.Infof("%s X %s() = %s", t.Name(), i.name,
+		t.Debugf("%s X %s() = %s", t.Name(), i.name,
 			rval)
 	case 1:
-		t.Infof("%s X %s(%s) = %s", t.Name(), i.name,
+		t.Debugf("%s X %s(%s) = %s", t.Name(), i.name,
 			output[0], rval)
 	case 2:
-		t.Infof("%s X %s(%s, %s) = %s", t.Name(), i.name,
+		t.Debugf("%s X %s(%s, %s) = %s", t.Name(), i.name,
 			output[0], output[1], rval)
 	case 3:
-		t.Infof("%s X %s(%s, %s, %s) = %s", t.Name(), i.name,
+		t.Debugf("%s X %s(%s, %s, %s) = %s", t.Name(), i.name,
 			output[0], output[1], output[2], rval)
 	case 4:
-		t.Infof("%s X %s(%s, %s, %s, %s) = %s", t.Name(), i.name,
+		t.Debugf("%s X %s(%s, %s, %s, %s) = %s", t.Name(), i.name,
 			output[0], output[1], output[2], output[3], rval)
 	case 5:
-		t.Infof("%s X %s(%s, %s, %s, %s, %s) = %s", t.Name(), i.name,
+		t.Debugf("%s X %s(%s, %s, %s, %s, %s) = %s", t.Name(), i.name,
 			output[0], output[1], output[2], output[3], output[4], rval)
 	case 6:
-		t.Infof("%s X %s(%s, %s, %s, %s, %s, %s) = %s", t.Name(), i.name,
+		t.Debugf("%s X %s(%s, %s, %s, %s, %s, %s) = %s", t.Name(), i.name,
 			output[0], output[1], output[2], output[3], output[4], output[5], rval)
 	}
 }
