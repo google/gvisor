@@ -19,12 +19,12 @@ sandboxed process:
 
 Much like a Virtual Machine (VM), a gVisor sandbox appears as an opaque process
 on the system. Processes within the sandbox do not manifest as processes on the
-host system, and process-level interactions within the sandbox requires entering
+host system, and process-level interactions within the sandbox require entering
 the sandbox (e.g. via a [Docker exec][exec]).
 
 ## Networking
 
-The sandbox attaches a network endpoint to the system, but runs it's own network
+The sandbox attaches a network endpoint to the system, but runs its own network
 stack. All network resources, other than packets in flight on the host, exist
 only inside the sandbox, bound by relevant resource limits.
 
