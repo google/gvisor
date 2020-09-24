@@ -350,7 +350,7 @@ type Inode interface {
 
 	// Open creates a file description for the filesystem object represented by
 	// this inode. The returned file description should hold a reference on the
-	// inode for its lifetime.
+	// dentry for its lifetime.
 	//
 	// Precondition: rp.Done(). vfsd.Impl() must be the kernfs Dentry containing
 	// the inode on which Open() is being called.
