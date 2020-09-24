@@ -30,7 +30,7 @@ is distinct from **structural costs**. Improvements here are ongoing and driven
 by the workloads that matter to gVisor users and contributors.
 
 This page provides a guide for understanding baseline performance, and calls out
-distint **structural costs** and **implementation costs**, highlighting where
+distinct **structural costs** and **implementation costs**, highlighting where
 improvements are possible and not possible.
 
 While we include a variety of workloads here, it’s worth emphasizing that gVisor
@@ -211,7 +211,7 @@ url="/performance/applications.csv" title="perf.py http.(node|ruby)
 
 The above figure shows the result of simple `node` and `ruby` web services that
 render a template upon receiving a request. Because these synthetic benchmarks
-do minimal work per request, must like the `redis` case, they suffer from high
+do minimal work per request, much like the `redis` case, they suffer from high
 overheads. In practice, the more work an application does the smaller the impact
 of **structural costs** become.
 
