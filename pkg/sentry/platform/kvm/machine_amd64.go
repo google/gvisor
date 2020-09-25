@@ -153,8 +153,8 @@ func (c *vCPU) initArchState() error {
 	}
 
 	// Set the user registers.
-	if err := c.setUserRegisters(&kernelUserRegs); err != nil {
-		return err
+	if errno := c.setUserRegisters(&kernelUserRegs); errno != 0 {
+		return fmt.Errorf("error setting user registers: %v", errno)
 	}
 
 	// Allocate some floating point state save area for the local vCPU.
