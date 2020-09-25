@@ -1,9 +1,11 @@
 test name,bug id,comment
 com/sun/crypto/provider/Cipher/PBE/PKCS12Cipher.java,,Fails in Docker
+com/sun/jdi/InvokeHangTest.java,https://bugs.openjdk.java.net/browse/JDK-8218463,
 com/sun/jdi/NashornPopFrameTest.java,,
 com/sun/jdi/ProcessAttachTest.java,,
 com/sun/management/HotSpotDiagnosticMXBean/CheckOrigin.java,,Fails in Docker
 com/sun/management/OperatingSystemMXBean/GetCommittedVirtualMemorySize.java,,
+com/sun/management/ThreadMXBean/ThreadCpuTimeArray.java,,Test assumes high CPU clock precision
 com/sun/management/UnixOperatingSystemMXBean/GetMaxFileDescriptorCount.sh,,
 com/sun/tools/attach/AttachSelf.java,,
 com/sun/tools/attach/BasicTests.java,,
