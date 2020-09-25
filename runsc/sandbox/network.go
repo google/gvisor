@@ -309,11 +309,20 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	const bufSize = 4 << 20 // 4MB.
 
 	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, bufSize); err != nil {
-		return nil, fmt.Errorf("failed to increase socket rcv buffer to %d: %v", bufSize, err)
+		syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, bufSize)
+		sz, _ := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF)
+
+		if sz < bufSize {
+			log.Warningf("Failed to increase rcv buffer to %d on SOCK_RAW on %s. Current buffer %d: %v", bufSize, iface.Name, sz, err)
+		}
 	}
 
 	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUFFORCE, bufSize); err != nil {
-		return nil, fmt.Errorf("failed to increase socket snd buffer to %d: %v", bufSize, err)
+		syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, bufSize)
+		sz, _ := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF)
+		if sz < bufSize {
+			log.Warningf("Failed to increase snd buffer to %d on SOCK_RAW on %s. Curent buffer %d: %v", bufSize, iface.Name, sz, err)
+		}
 	}
 
 	return &socketEntry{deviceFile, gsoMaxSize}, nil
