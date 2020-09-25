@@ -169,7 +169,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "open", nil),
+			input:    testInput(nativeArchAuditNo, "openat", nil),
 			expected: uint32(allowAction),
 		},
 		{
