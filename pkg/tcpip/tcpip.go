@@ -1987,14 +1987,3 @@ func DeleteDanglingEndpoint(e Endpoint) {
 // AsyncLoading is the global barrier for asynchronous endpoint loading
 // activities.
 var AsyncLoading sync.WaitGroup
-
-// ICMPReason is a marker interface for network protocol agnostic ICMP errors.
-type ICMPReason interface {
-	isICMP()
-}
-
-// ICMPReasonPortUnreachable is an error where the transport protocol has no
-// listener and no alternative means to inform the sender.
-type ICMPReasonPortUnreachable struct{}
-
-func (*ICMPReasonPortUnreachable) isICMP() {}

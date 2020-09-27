@@ -200,16 +200,6 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {
 
 // ======= ICMP Error packet generation =========
 
-// ReturnError implements stack.TransportProtocol.ReturnError.
-func (p *protocol) ReturnError(r *stack.Route, reason tcpip.ICMPReason, pkt *stack.PacketBuffer) *tcpip.Error {
-	switch reason.(type) {
-	case *tcpip.ICMPReasonPortUnreachable:
-		return returnError(r, &icmpReasonPortUnreachable{}, pkt)
-	default:
-		return tcpip.ErrNotSupported
-	}
-}
-
 // icmpReason is a marker interface for IPv4 specific ICMP errors.
 type icmpReason interface {
 	isICMPReason()
