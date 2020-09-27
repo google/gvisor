@@ -36,12 +36,13 @@ TEST(KcovTest, Kcov) {
   constexpr int kSize = 4096;
   constexpr int KCOV_INIT_TRACE = 0x80086301;
   constexpr int KCOV_ENABLE = 0x6364;
+  constexpr int KCOV_DISABLE = 0x6365;
 
   int fd;
   ASSERT_THAT(fd = open("/sys/kernel/debug/kcov", O_RDWR),
               AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(ENOENT)));
 
-  // Kcov not enabled.
+  // Kcov not available.
   SKIP_IF(errno == ENOENT);
 
   ASSERT_THAT(ioctl(fd, KCOV_INIT_TRACE, kSize), SyscallSucceeds());
@@ -62,6 +63,8 @@ TEST(KcovTest, Kcov) {
     // Verify that PCs are in the standard kernel range.
     EXPECT_GT(area[i], 0xffffffff7fffffffL);
   }
+
+  ASSERT_THAT(ioctl(fd, KCOV_DISABLE, 0), SyscallSucceeds());
 }
 
 }  // namespace
