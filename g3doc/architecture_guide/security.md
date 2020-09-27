@@ -246,7 +246,7 @@ time-of-check, time-of-use race conditions without disabling multi-threading.
 In gVisor, the platforms that use ptrace operate differently. The stubs that are
 traced are never allowed to continue execution into the host kernel and complete
 a call directly. Instead, all system calls are interpreted and handled by the
-Sentry itself, who reflects resulting register state back into the tracee before
+Sentry itself, who reflects resulting register state back into the trace before
 continuing execution in userspace. This is very similar to the mechanism used by
 User-Mode Linux (UML).
 
