@@ -238,12 +238,6 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	return 0, false, parse.ARP(pkt)
 }
 
-// ReturnError implements stack.TransportProtocol.ReturnError.
-func (*protocol) ReturnError(*stack.Route, tcpip.ICMPReason, *stack.PacketBuffer) *tcpip.Error {
-	// In ARP, there is no such response so do nothing.
-	return nil
-}
-
 // NewProtocol returns an ARP network protocol.
 func NewProtocol() stack.NetworkProtocol {
 	return &protocol{}

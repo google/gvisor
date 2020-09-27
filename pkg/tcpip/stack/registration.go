@@ -197,6 +197,21 @@ type TransportProtocol interface {
 	Parse(pkt *PacketBuffer) (ok bool)
 }
 
+// TransportPacketDisposition is the result from attempting to deliver a packet
+// to the transport layer.
+type TransportPacketDisposition int
+
+const (
+	// TransportPacketHandled indicates that a transport packet was handled by the
+	// transport layer and callers need not take any further action.
+	TransportPacketHandled TransportPacketDisposition = iota
+
+	// TransportPacketDestinationPortUnreachable indicates that there weren't any
+	// listeners interested in the packet and the transport protocol has no means
+	// to notify the sender.
+	TransportPacketDestinationPortUnreachable
+)
+
 // TransportDispatcher contains the methods used by the network stack to deliver
 // packets to the appropriate transport endpoint after it has been handled by
 // the network layer.
@@ -207,7 +222,7 @@ type TransportDispatcher interface {
 	// pkt.NetworkHeader must be set before calling DeliverTransportPacket.
 	//
 	// DeliverTransportPacket takes ownership of pkt.
-	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer)
+	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) TransportPacketDisposition
 
 	// DeliverTransportControlPacket delivers control packets to the
 	// appropriate transport protocol endpoint.
@@ -342,19 +357,6 @@ type NetworkProtocol interface {
 	//   does not encapsulate anything).
 	// - Whether pkt.Data was large enough to parse and set pkt.NetworkHeader.
 	Parse(pkt *PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool)
-
-	// ReturnError attempts to send a suitable error message to the sender
-	// of a received packet.
-	// - pkt holds the problematic packet.
-	// - reason indicates what the reason for wanting a message is.
-	// - route is the routing information for the received packet
-	// ReturnError returns an error if the send failed and nil on success.
-	// Note that deciding to deliberately send no message is a success.
-	//
-	// TODO(gvisor.dev/issues/3871): This method should be removed or simplified
-	// after all (or all but one) of the ICMP error dispatch occurs through the
-	// protocol specific modules. May become SendPortNotFound(r, pkt).
-	ReturnError(r *Route, reason tcpip.ICMPReason, pkt *PacketBuffer) *tcpip.Error
 }
 
 // NetworkDispatcher contains the methods used by the network stack to deliver

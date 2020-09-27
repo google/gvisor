@@ -216,11 +216,6 @@ func (f *fakeNetworkProtocol) Option(option tcpip.GettableNetworkProtocolOption)
 	}
 }
 
-// ReturnError implements NetworkProtocol.ReturnError
-func (*fakeNetworkProtocol) ReturnError(*stack.Route, tcpip.ICMPReason, *stack.PacketBuffer) *tcpip.Error {
-	return nil
-}
-
 // Close implements NetworkProtocol.Close.
 func (*fakeNetworkProtocol) Close() {}
 
