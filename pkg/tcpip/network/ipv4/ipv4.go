@@ -21,6 +21,7 @@
 package ipv4
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -463,7 +464,19 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		return
 	}
 	r.Stats().IP.PacketsDelivered.Increment()
-	e.dispatcher.DeliverTransportPacket(r, p, pkt)
+
+	switch res := e.dispatcher.DeliverTransportPacket(r, p, pkt); res {
+	case stack.TransportPacketHandled:
+	case stack.TransportPacketDestinationPortUnreachable:
+		// As per RFC: 1122 Section 3.2.2.1 A host SHOULD generate Destination
+		//   Unreachable messages with code:
+		//     3 (Port Unreachable), when the designated transport protocol
+		//     (e.g., UDP) is unable to demultiplex the datagram but has no
+		//     protocol mechanism to inform the sender.
+		_ = returnError(r, &icmpReasonPortUnreachable{}, pkt)
+	default:
+		panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
+	}
 }
 
 // Close cleans up resources associated with the endpoint.

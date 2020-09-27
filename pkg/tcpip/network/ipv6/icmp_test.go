@@ -75,7 +75,8 @@ type stubDispatcher struct {
 	stack.TransportDispatcher
 }
 
-func (*stubDispatcher) DeliverTransportPacket(*stack.Route, tcpip.TransportProtocolNumber, *stack.PacketBuffer) {
+func (*stubDispatcher) DeliverTransportPacket(*stack.Route, tcpip.TransportProtocolNumber, *stack.PacketBuffer) stack.TransportPacketDisposition {
+	return stack.TransportPacketHandled
 }
 
 type stubLinkAddressCache struct {

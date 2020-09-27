@@ -482,7 +482,18 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				r.Stats().IP.PacketsDelivered.Increment()
 				// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
 				// in response to unrecognized next header values.
-				e.dispatcher.DeliverTransportPacket(r, p, pkt)
+				switch res := e.dispatcher.DeliverTransportPacket(r, p, pkt); res {
+				case stack.TransportPacketHandled:
+				case stack.TransportPacketDestinationPortUnreachable:
+					// As per RFC 4443 section 3.1:
+					//   A destination node SHOULD originate a Destination Unreachable
+					//   message with Code 4 in response to a packet for which the
+					//   transport protocol (e.g., UDP) has no listener, if that transport
+					//   protocol has no alternative means to inform the sender.
+					_ = returnError(r, &icmpReasonPortUnreachable{}, pkt)
+				default:
+					panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
+				}
 			}
 
 		default:
