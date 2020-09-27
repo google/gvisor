@@ -207,7 +207,6 @@ func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parent *Dentr
 	if len(pc) > linux.NAME_MAX {
 		return "", syserror.ENAMETOOLONG
 	}
-	// FIXME(gvisor.dev/issue/1193): Data race due to not holding dirMu.
 	if _, ok := parent.children[pc]; ok {
 		return "", syserror.EEXIST
 	}
@@ -305,6 +304,9 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if err != nil {
 		return err
 	}
+
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
 	pc, err := checkCreateLocked(ctx, rp, parent)
 	if err != nil {
 		return err
@@ -326,7 +328,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if err != nil {
 		return err
 	}
-	parent.InsertChild(pc, child)
+	parent.InsertChildLocked(pc, child)
 	return nil
 }
 
@@ -342,6 +344,9 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if err != nil {
 		return err
 	}
+
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
 	pc, err := checkCreateLocked(ctx, rp, parent)
 	if err != nil {
 		return err
@@ -357,7 +362,7 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		}
 		child = newSyntheticDirectory(rp.Credentials(), opts.Mode)
 	}
-	parent.InsertChild(pc, child)
+	parent.InsertChildLocked(pc, child)
 	return nil
 }
 
@@ -373,6 +378,9 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if err != nil {
 		return err
 	}
+
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
 	pc, err := checkCreateLocked(ctx, rp, parent)
 	if err != nil {
 		return err
@@ -385,7 +393,7 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if err != nil {
 		return err
 	}
-	parent.InsertChild(pc, newD)
+	parent.InsertChildLocked(pc, newD)
 	return nil
 }
 
@@ -483,6 +491,9 @@ afterTrailingSymlink:
 		if err != nil {
 			return nil, err
 		}
+		// FIXME(gvisor.dev/issue/1193): Race between checking existence with
+		// fs.stepExistingLocked and parent.InsertChild. If possible, we should hold
+		// dirMu from one to the other.
 		parent.InsertChild(pc, child)
 		child.inode.IncRef()
 		defer child.inode.DecRef(ctx)
@@ -739,6 +750,9 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	if err != nil {
 		return err
 	}
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
+
 	pc, err := checkCreateLocked(ctx, rp, parent)
 	if err != nil {
 		return err
@@ -751,7 +765,7 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	if err != nil {
 		return err
 	}
-	parent.InsertChild(pc, child)
+	parent.InsertChildLocked(pc, child)
 	return nil
 }
 
