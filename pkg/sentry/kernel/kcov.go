@@ -89,6 +89,10 @@ func (kcov *Kcov) TaskWork(t *Task) {
 	kcov.mu.Lock()
 	defer kcov.mu.Unlock()
 
+	if kcov.mode != linux.KCOV_TRACE_PC {
+		return
+	}
+
 	rw := &kcovReadWriter{
 		mf: kcov.mfp.MemoryFile(),
 		fr: kcov.mappable.FileRange(),
