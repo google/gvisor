@@ -100,12 +100,9 @@ var coveragePool = sync.Pool{
 // instrumentation_filter.
 //
 // Note that we "consume", i.e. clear, coverdata when this function is run, to
-// ensure that each event is only reported once.
-//
-// TODO(b/160639712): evaluate whether it is ok to reset the global coverage
-// data every time this function is run. We could technically have each thread
-// store a local snapshot against which we compare the most recent coverdata so
-// that separate threads do not affect each other's view of the data.
+// ensure that each event is only reported once. Due to the limitations of Go
+// coverage tools, we reset the global coverage data every time this function is
+// run.
 func ConsumeCoverageData(w io.Writer) int {
 	once.Do(initCoverageData)
 
@@ -117,23 +114,23 @@ func ConsumeCoverageData(w io.Writer) int {
 	for fileIndex, file := range globalData.files {
 		counters := coverdata.Cover.Counters[file]
 		for index := 0; index < len(counters); index++ {
-			val := atomic.SwapUint32(&counters[index], 0)
-			if val != 0 {
-				// Calculate the synthetic PC.
-				pc := globalData.syntheticPCs[fileIndex][index]
-
-				usermem.ByteOrder.PutUint64(pcBuffer[:], pc)
-				n, err := w.Write(pcBuffer[:])
-				if err != nil {
-					if err == io.EOF {
-						// Simply stop writing if we encounter EOF; it's ok if we attempted to
-						// write more than we can hold.
-						return total + n
-					}
-					panic(fmt.Sprintf("Internal error writing PCs to kcov area: %v", err))
-				}
-				total += n
+			if atomic.LoadUint32(&counters[index]) == 0 {
+				continue
 			}
+			// Non-zero coverage data found; consume it and report as a PC.
+			atomic.StoreUint32(&counters[index], 0)
+			pc := globalData.syntheticPCs[fileIndex][index]
+			usermem.ByteOrder.PutUint64(pcBuffer[:], pc)
+			n, err := w.Write(pcBuffer[:])
+			if err != nil {
+				if err == io.EOF {
+					// Simply stop writing if we encounter EOF; it's ok if we attempted to
+					// write more than we can hold.
+					return total + n
+				}
+				panic(fmt.Sprintf("Internal error writing PCs to kcov area: %v", err))
+			}
+			total += n
 		}
 	}
 
