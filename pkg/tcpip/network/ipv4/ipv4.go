@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ipv4 contains the implementation of the ipv4 network protocol. To use
-// it in the networking stack, this package must be added to the project, and
-// activated on the stack by passing ipv4.NewProtocol() as one of the network
-// protocols when calling stack.New(). Then endpoints can be created by passing
-// ipv4.ProtocolNumber as the network protocol number when calling
-// Stack.NewEndpoint().
+// Package ipv4 contains the implementation of the ipv4 network protocol.
 package ipv4
 
 import (
@@ -584,7 +579,7 @@ func hashRoute(r *stack.Route, protocol tcpip.TransportProtocolNumber, hashIV ui
 }
 
 // NewProtocol returns an IPv4 network protocol.
-func NewProtocol() stack.NetworkProtocol {
+func NewProtocol(*stack.Stack) stack.NetworkProtocol {
 	ids := make([]uint32, buckets)
 
 	// Randomly initialize hashIV and the ids.

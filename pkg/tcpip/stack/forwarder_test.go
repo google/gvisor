@@ -307,7 +307,7 @@ func (e *fwdTestLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protoco
 func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborCache bool) (ep1, ep2 *fwdTestLinkEndpoint) {
 	// Create a stack with the network protocol and two NICs.
 	s := New(Options{
-		NetworkProtocols: []NetworkProtocol{proto},
+		NetworkProtocols: []NetworkProtocolFactory{func(*Stack) NetworkProtocol { return proto }},
 		UseNeighborCache: useNeighborCache,
 	})
 

@@ -294,8 +294,8 @@ type testContext struct {
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
 	return newDualTestContextWithOptions(t, mtu, stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	})
 }
 
@@ -532,8 +532,8 @@ func newMinPayload(minSize int) []byte {
 
 func TestBindToDeviceOption(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol}})
 
 	ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
 	if err != nil {
@@ -807,8 +807,8 @@ func TestV4ReadSelfSource(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newDualTestContextWithOptions(t, defaultMTU, stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				HandleLocal:        tt.handleLocal,
 			})
 			defer c.cleanup()
@@ -1485,13 +1485,13 @@ func TestTTL(t *testing.T) {
 			} else {
 				var p stack.NetworkProtocol
 				if flow.isV4() {
-					p = ipv4.NewProtocol()
+					p = ipv4.NewProtocol(nil)
 				} else {
-					p = ipv6.NewProtocol()
+					p = ipv6.NewProtocol(nil)
 				}
 				ep := p.NewEndpoint(0, nil, nil, nil, nil, stack.New(stack.Options{
-					NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-					TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				}))
 				wantTTL = ep.DefaultTTL()
 				ep.Close()
@@ -2345,9 +2345,8 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			e := channel.New(0, defaultMTU, "")
 			if err := s.CreateNIC(nicID1, e); err != nil {

@@ -35,8 +35,8 @@ func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address, useNeig
 	t.Helper()
 
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 		UseNeighborCache:   useNeighborCache,
 	})
 
@@ -98,7 +98,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
 			e := channel.New(0, 1280, linkAddr0)
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -202,7 +202,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 				UseNeighborCache: true,
 			})
 			e := channel.New(0, 1280, linkAddr0)
@@ -475,7 +475,7 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
 					s := stack.New(stack.Options{
-						NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+						NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 						UseNeighborCache: stackTyp.useNeighborCache,
 					})
 					e := channel.New(1, 1280, nicLinkAddr)
@@ -596,7 +596,7 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
 			e := channel.New(0, 1280, linkAddr0)
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -707,7 +707,7 @@ func TestNeighorAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *test
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 				UseNeighborCache: true,
 			})
 			e := channel.New(0, 1280, linkAddr0)
@@ -1172,7 +1172,7 @@ func TestRouterAdvertValidation(t *testing.T) {
 					e := channel.New(10, 1280, linkAddr1)
 					e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 					s := stack.New(stack.Options{
-						NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+						NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 						UseNeighborCache: stackTyp.useNeighborCache,
 					})
 

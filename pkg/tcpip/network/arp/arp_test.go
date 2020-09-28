@@ -176,8 +176,8 @@ func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
 	}
 
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), arp.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol4()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
 		NUDConfigs:         c,
 		NUDDisp:            &d,
 		UseNeighborCache:   useNeighborCache,
@@ -442,7 +442,7 @@ func TestLinkAddressRequest(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		p := arp.NewProtocol()
+		p := arp.NewProtocol(nil)
 		linkRes, ok := p.(stack.LinkAddressResolver)
 		if !ok {
 			t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")

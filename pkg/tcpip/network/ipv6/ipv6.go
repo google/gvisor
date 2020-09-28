@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ipv6 contains the implementation of the ipv6 network protocol. To use
-// it in the networking stack, this package must be added to the project, and
-// activated on the stack by passing ipv6.NewProtocol() as one of the network
-// protocols when calling stack.New(). Then endpoints can be created by passing
-// ipv6.ProtocolNumber as the network protocol number when calling
-// Stack.NewEndpoint().
+// Package ipv6 contains the implementation of the ipv6 network protocol.
 package ipv6
 
 import (
@@ -617,7 +612,7 @@ func calculateMTU(mtu uint32) uint32 {
 }
 
 // NewProtocol returns an IPv6 network protocol.
-func NewProtocol() stack.NetworkProtocol {
+func NewProtocol(*stack.Stack) stack.NetworkProtocol {
 	return &protocol{
 		defaultTTL:    DefaultTTL,
 		fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),

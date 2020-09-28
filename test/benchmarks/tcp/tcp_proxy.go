@@ -174,8 +174,8 @@ func newNetstackImpl(mode string) (impl, error) {
 	}
 
 	// Create a new network stack.
-	netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), arp.NewProtocol()}
-	transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol()}
+	netProtos := []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol}
+	transProtos := []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol}
 	s := stack.New(stack.Options{
 		NetworkProtocols:   netProtos,
 		TransportProtocols: transProtos,

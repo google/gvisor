@@ -112,8 +112,8 @@ func main() {
 	// Create the stack with ip and tcp protocols, then add a tun-based
 	// NIC and address.
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 	})
 
 	mtu, err := rawfile.GetMTU(tunName)

@@ -51,8 +51,8 @@ type testContext struct {
 // newDualTestContextMultiNIC creates the testing context and also linkEpIDs NICs.
 func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICID) *testContext {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	})
 	linkEps := make(map[tcpip.NICID]*channel.Endpoint)
 	for _, linkEpID := range linkEpIDs {
@@ -182,8 +182,8 @@ func TestTransportDemuxerRegister(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			var wq waiter.Queue
 			ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
