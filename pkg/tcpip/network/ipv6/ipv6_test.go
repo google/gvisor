@@ -141,18 +141,18 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 	tests := []struct {
 		name            string
-		protocolFactory stack.TransportProtocol
+		protocolFactory stack.TransportProtocolFactory
 		rxf             func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
 	}{
-		{"ICMP", icmp.NewProtocol6(), testReceiveICMP},
-		{"UDP", udp.NewProtocol(), testReceiveUDP},
+		{"ICMP", icmp.NewProtocol6, testReceiveICMP},
+		{"UDP", udp.NewProtocol, testReceiveUDP},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{test.protocolFactory},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{test.protocolFactory},
 			})
 			e := channel.New(10, 1280, linkAddr1)
 			if err := s.CreateNIC(1, e); err != nil {
@@ -174,11 +174,11 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		protocolFactory stack.TransportProtocol
+		protocolFactory stack.TransportProtocolFactory
 		rxf             func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
 	}{
-		{"ICMP", icmp.NewProtocol6(), testReceiveICMP},
-		{"UDP", udp.NewProtocol(), testReceiveUDP},
+		{"ICMP", icmp.NewProtocol6, testReceiveICMP},
+		{"UDP", udp.NewProtocol, testReceiveUDP},
 	}
 
 	snmc := header.SolicitedNodeAddr(addr2)
@@ -186,8 +186,8 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{test.protocolFactory},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{test.protocolFactory},
 			})
 			e := channel.New(1, 1280, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -273,7 +273,7 @@ func TestAddIpv6Address(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
 			if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
@@ -579,8 +579,8 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			e := channel.New(0, 1280, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -1549,8 +1549,8 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			e := channel.New(0, 1280, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -1668,8 +1668,8 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{
-					NewProtocol(),
+				NetworkProtocols: []stack.NetworkProtocolFactory{
+					NewProtocol,
 				},
 			})
 			e := channel.New(0, 1500, linkAddr1)
@@ -1847,7 +1847,7 @@ func TestWriteStats(t *testing.T) {
 
 func buildRoute(t *testing.T, ep stack.LinkEndpoint) stack.Route {
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 	})
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC(1, _) failed: %s", err)

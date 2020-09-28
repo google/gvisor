@@ -326,15 +326,15 @@ func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
 	return ok
 }
 
-func fakeTransFactory() stack.TransportProtocol {
+func fakeTransFactory(*stack.Stack) stack.TransportProtocol {
 	return &fakeTransportProtocol{}
 }
 
 func TestTransportReceive(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
@@ -404,8 +404,8 @@ func TestTransportReceive(t *testing.T) {
 func TestTransportControlReceive(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
@@ -481,8 +481,8 @@ func TestTransportControlReceive(t *testing.T) {
 func TestTransportSend(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
@@ -527,8 +527,8 @@ func TestTransportSend(t *testing.T) {
 
 func TestTransportOptions(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 
 	v := tcpip.TCPModerateReceiveBufferOption(true)
@@ -546,8 +546,8 @@ func TestTransportOptions(t *testing.T) {
 
 func TestTransportForwarding(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 	s.SetForwarding(fakeNetNumber, true)
 

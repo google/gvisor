@@ -241,6 +241,10 @@ func (*testIPv6Protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAdd
 	return "", false
 }
 
+func newTestIPv6Protocol(*Stack) NetworkProtocol {
+	return &testIPv6Protocol{}
+}
+
 // Test the race condition where a NIC is removed and an RS timer fires at the
 // same time.
 func TestRemoveNICWhileHandlingRSTimer(t *testing.T) {
@@ -252,7 +256,7 @@ func TestRemoveNICWhileHandlingRSTimer(t *testing.T) {
 
 	e := testLinkEndpoint{}
 	s := New(Options{
-		NetworkProtocols: []NetworkProtocol{&testIPv6Protocol{}},
+		NetworkProtocols: []NetworkProtocolFactory{newTestIPv6Protocol},
 		NDPConfigs: NDPConfigurations{
 			MaxRtrSolicitations:     maxRtrSolicitations,
 			RtrSolicitationInterval: minimumRtrSolicitationInterval,

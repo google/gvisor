@@ -36,8 +36,8 @@ import (
 
 func TestExcludeBroadcast(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	})
 
 	const defaultMTU = 65536
@@ -517,8 +517,8 @@ func TestInvalidFragments(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{
-					ipv4.NewProtocol(),
+				NetworkProtocols: []stack.NetworkProtocolFactory{
+					ipv4.NewProtocol,
 				},
 			})
 			e := channel.New(0, 1500, linkAddr)
@@ -929,8 +929,8 @@ func TestReceiveFragments(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			// Setup a stack and endpoint.
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			e := channel.New(0, 1280, tcpip.LinkAddress("\xf0\x00"))
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -1140,7 +1140,7 @@ func TestWriteStats(t *testing.T) {
 
 func buildRoute(t *testing.T, ep stack.LinkEndpoint) stack.Route {
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 	})
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC(1, _) failed: %s", err)

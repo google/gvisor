@@ -121,8 +121,8 @@ func TestICMPCounts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 				UseNeighborCache:   test.useNeighborCache,
 			})
 			{
@@ -259,8 +259,8 @@ func TestICMPCounts(t *testing.T) {
 
 func TestICMPCountsWithNeighborCache(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 		UseNeighborCache:   true,
 	})
 	{
@@ -424,12 +424,12 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 func newTestContext(t *testing.T) *testContext {
 	c := &testContext{
 		s0: stack.New(stack.Options{
-			NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-			TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+			NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 		}),
 		s1: stack.New(stack.Options{
-			NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
-			TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+			NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 		}),
 	}
 
@@ -724,7 +724,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 						e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 
 						s := stack.New(stack.Options{
-							NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+							NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 							UseNeighborCache: test.useNeighborCache,
 						})
 						if isRouter {
@@ -920,7 +920,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 		t.Run(typ.name, func(t *testing.T) {
 			e := channel.New(10, 1280, linkAddr0)
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(_, _) = %s", err)
@@ -1098,7 +1098,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 		t.Run(typ.name, func(t *testing.T) {
 			e := channel.New(10, 1280, linkAddr0)
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -1204,7 +1204,7 @@ func TestLinkAddressRequest(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		p := NewProtocol()
+		p := NewProtocol(nil)
 		linkRes, ok := p.(stack.LinkAddressResolver)
 		if !ok {
 			t.Fatalf("expected IPv6 protocol to implement stack.LinkAddressResolver")
