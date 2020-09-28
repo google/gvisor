@@ -184,6 +184,9 @@ func (fd *nonDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) 
 		return err
 	}
 	d.updateAfterSetStatLocked(&opts)
+	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
+	}
 	return nil
 }
 

@@ -499,7 +499,13 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if err := create(parent, name, childLayer == lookupLayerUpperWhiteout); err != nil {
 		return err
 	}
+
 	parent.dirents = nil
+	ev := linux.IN_CREATE
+	if dir {
+		ev |= linux.IN_ISDIR
+	}
+	parent.watches.Notify(ctx, name, uint32(ev), 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
 	return nil
 }
 
@@ -631,6 +637,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			}
 			return err
 		}
+		old.watches.Notify(ctx, "", linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	})
 }
@@ -975,6 +982,7 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		// just can't open it anymore for some reason.
 		return nil, err
 	}
+	parent.watches.Notify(ctx, childName, linux.IN_CREATE, 0 /* cookie */, vfs.PathEvent, false /* unlinked */)
 	return &fd.vfsfd, nil
 }
 
@@ -1236,6 +1244,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}
 
+	vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
 	return nil
 }
 
@@ -1352,6 +1361,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	delete(parent.children, name)
 	ds = appendDentry(ds, child)
 	parent.dirents = nil
+	parent.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0 /* cookie */, vfs.InodeEvent, true /* unlinked */)
 	return nil
 }
 
@@ -1359,12 +1369,25 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+		return err
+	}
+	err = d.setStatLocked(ctx, rp, opts)
+	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	if err != nil {
 		return err
 	}
 
+	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+		d.InotifyWithParent(ctx, ev, 0 /* cookie */, vfs.InodeEvent)
+	}
+	return nil
+}
+
+// Precondition: d.fs.renameMu must be held for reading.
+func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
 	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
 		return err
@@ -1555,11 +1578,14 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout during UnlinkAt: %v", err))
 	}
 
+	var cw *vfs.Watches
 	if child != nil {
 		vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 		delete(parent.children, name)
 		ds = appendDentry(ds, child)
+		cw = &child.watches
 	}
+	vfs.InotifyRemoveChild(ctx, cw, &parent.watches, name)
 	parent.dirents = nil
 	return nil
 }
@@ -1636,13 +1662,20 @@ func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Crede
 func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+		return err
+	}
+
+	err = fs.setXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), &opts)
+	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	if err != nil {
 		return err
 	}
 
-	return fs.setXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), &opts)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
+	return nil
 }
 
 // Precondition: fs.renameMu must be locked.
@@ -1673,13 +1706,20 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+		return err
+	}
+
+	err = fs.removeXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), name)
+	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	if err != nil {
 		return err
 	}
 
-	return fs.removeXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), name)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
+	return nil
 }
 
 // Precondition: fs.renameMu must be locked.

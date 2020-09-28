@@ -185,6 +185,7 @@ func (x *dentry) StateFields() []string {
 		"wrappedMappable",
 		"isMappable",
 		"locks",
+		"watches",
 	}
 }
 
@@ -215,6 +216,7 @@ func (x *dentry) StateSave(m state.Sink) {
 	m.Save(20, &x.wrappedMappable)
 	m.Save(21, &x.isMappable)
 	m.Save(22, &x.locks)
+	m.Save(23, &x.watches)
 }
 
 func (x *dentry) afterLoad() {}
@@ -243,6 +245,7 @@ func (x *dentry) StateLoad(m state.Source) {
 	m.Load(20, &x.wrappedMappable)
 	m.Load(21, &x.isMappable)
 	m.Load(22, &x.locks)
+	m.Load(23, &x.watches)
 }
 
 func (x *fileDescription) StateTypeName() string {
