@@ -251,3 +251,20 @@ func TestTCPLingerShutdownSendNonZeroTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestTCPLingerNonEstablished(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	newFD := dut.Socket(t, unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_TCP)
+	dut.SetSockLingerOption(t, newFD, lingerDuration, true)
+
+	// As the socket is in the initial state, Close() should not linger
+	// and return immediately.
+	start := time.Now()
+	dut.CloseWithErrno(context.Background(), t, newFD)
+	diff := time.Since(start)
+
+	if diff > lingerDuration {
+		t.Errorf("expected close to return within %s, but returned after %s", lingerDuration, diff)
+	}
+	dut.TearDown()
+}
