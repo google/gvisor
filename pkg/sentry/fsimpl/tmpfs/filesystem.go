@@ -673,11 +673,11 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		fs.mu.RUnlock()
 		return err
 	}
-	if err := d.inode.setStat(ctx, rp.Credentials(), &opts); err != nil {
-		fs.mu.RUnlock()
+	err = d.inode.setStat(ctx, rp.Credentials(), &opts)
+	fs.mu.RUnlock()
+	if err != nil {
 		return err
 	}
-	fs.mu.RUnlock()
 
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
 		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
@@ -822,11 +822,11 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		fs.mu.RUnlock()
 		return err
 	}
-	if err := d.inode.setXattr(rp.Credentials(), &opts); err != nil {
-		fs.mu.RUnlock()
+	err = d.inode.setXattr(rp.Credentials(), &opts)
+	fs.mu.RUnlock()
+	if err != nil {
 		return err
 	}
-	fs.mu.RUnlock()
 
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
@@ -840,11 +840,11 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		fs.mu.RUnlock()
 		return err
 	}
-	if err := d.inode.removeXattr(rp.Credentials(), name); err != nil {
-		fs.mu.RUnlock()
+	err = d.inode.removeXattr(rp.Credentials(), name)
+	fs.mu.RUnlock()
+	if err != nil {
 		return err
 	}
-	fs.mu.RUnlock()
 
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil

@@ -1416,11 +1416,11 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
-	if err := d.setStat(ctx, rp.Credentials(), &opts, rp.Mount()); err != nil {
-		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	err = d.setStat(ctx, rp.Credentials(), &opts, rp.Mount())
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	if err != nil {
 		return err
 	}
-	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
 		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
@@ -1556,11 +1556,11 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
-	if err := d.setXattr(ctx, rp.Credentials(), &opts); err != nil {
-		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	err = d.setXattr(ctx, rp.Credentials(), &opts)
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	if err != nil {
 		return err
 	}
-	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
@@ -1575,11 +1575,11 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
-	if err := d.removeXattr(ctx, rp.Credentials(), name); err != nil {
-		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	err = d.removeXattr(ctx, rp.Credentials(), name)
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	if err != nil {
 		return err
 	}
-	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
