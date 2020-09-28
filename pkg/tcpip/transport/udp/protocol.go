@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package udp contains the implementation of the UDP transport protocol. To use
-// it in the networking stack, this package must be added to the project, and
-// activated on the stack by passing udp.NewProtocol() as one of the
-// transport protocols when calling stack.New(). Then endpoints can be created
-// by passing udp.ProtocolNumber as the transport protocol number when calling
-// Stack.NewEndpoint().
+// Package udp contains the implementation of the UDP transport protocol.
 package udp
 
 import (
@@ -119,6 +114,6 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 }
 
 // NewProtocol returns a UDP transport protocol.
-func NewProtocol() stack.TransportProtocol {
+func NewProtocol(*stack.Stack) stack.TransportProtocol {
 	return &protocol{}
 }
