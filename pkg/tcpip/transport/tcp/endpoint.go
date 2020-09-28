@@ -927,7 +927,12 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	result := waiter.EventMask(0)
 
 	switch e.EndpointState() {
-	case StateInitial, StateBound, StateConnecting, StateSynSent, StateSynRecv:
+	case StateInitial, StateBound:
+		// This prevents blocking of new sockets which are not
+		// connected when SO_LINGER is set.
+		result |= waiter.EventHUp
+
+	case StateConnecting, StateSynSent, StateSynRecv:
 		// Ready for nothing.
 
 	case StateClose, StateError, StateTimeWait:
@@ -1098,6 +1103,8 @@ func (e *endpoint) closeNoShutdownLocked() {
 		e.notifyProtocolGoroutine(notifyClose)
 	} else {
 		e.transitionToStateCloseLocked()
+		// Notify that the endpoint is closed.
+		e.waiterQueue.Notify(waiter.EventHUp)
 	}
 }
 
