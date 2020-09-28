@@ -15,14 +15,6 @@
 // Package arp implements the ARP network protocol. It is used to resolve
 // IPv4 addresses into link-local MAC addresses, and advertises IPv4
 // addresses of its stack with the local network.
-//
-// To use it in the networking stack, pass arp.NewProtocol() as one of the
-// network protocols when calling stack.New. Then add an "arp" address to every
-// NIC on the stack that should respond to ARP requests. That is:
-//
-//	if err := s.AddAddress(1, arp.ProtocolNumber, "arp"); err != nil {
-//		// handle err
-//	}
 package arp
 
 import (
@@ -239,6 +231,10 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 }
 
 // NewProtocol returns an ARP network protocol.
-func NewProtocol() stack.NetworkProtocol {
+//
+// Note, to make sure that the ARP endpoint receives ARP packets, the "arp"
+// address must be added to every NIC that should respond to ARP requests. See
+// ProtocolAddress for more details.
+func NewProtocol(*stack.Stack) stack.NetworkProtocol {
 	return &protocol{}
 }

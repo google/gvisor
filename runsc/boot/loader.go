@@ -1059,8 +1059,8 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 }
 
 func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (inet.Stack, error) {
-	netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
-	transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
+	netProtos := []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol}
+	transProtos := []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4}
 	s := netstack.Stack{stack.New(stack.Options{
 		NetworkProtocols:   netProtos,
 		TransportProtocols: transProtos,
