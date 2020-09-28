@@ -238,7 +238,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    add_overlay = False,  # TODO(gvisor.dev/issue/317): enable when fixed.
+    add_overlay = True,
     test = "//test/syscalls/linux:inotify_test",
 )
 
