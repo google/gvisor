@@ -26,25 +26,34 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
 const (
-	localIpv4Addr      = "\x0a\x00\x00\x01"
-	localIpv4PrefixLen = 24
-	remoteIpv4Addr     = "\x0a\x00\x00\x02"
-	ipv4SubnetAddr     = "\x0a\x00\x00\x00"
-	ipv4SubnetMask     = "\xff\xff\xff\x00"
-	ipv4Gateway        = "\x0a\x00\x00\x03"
-	localIpv6Addr      = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	localIpv6PrefixLen = 120
-	remoteIpv6Addr     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
-	ipv6SubnetAddr     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-	ipv6SubnetMask     = "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00"
-	ipv6Gateway        = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
-	nicID              = 1
+	localIPv4Addr  = "\x0a\x00\x00\x01"
+	remoteIPv4Addr = "\x0a\x00\x00\x02"
+	ipv4SubnetAddr = "\x0a\x00\x00\x00"
+	ipv4SubnetMask = "\xff\xff\xff\x00"
+	ipv4Gateway    = "\x0a\x00\x00\x03"
+	localIPv6Addr  = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+	remoteIPv6Addr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	ipv6SubnetAddr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	ipv6SubnetMask = "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00"
+	ipv6Gateway    = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
+	nicID          = 1
 )
+
+var localIPv4AddrWithPrefix = tcpip.AddressWithPrefix{
+	Address:   localIPv4Addr,
+	PrefixLen: 24,
+}
+
+var localIPv6AddrWithPrefix = tcpip.AddressWithPrefix{
+	Address:   localIPv6Addr,
+	PrefixLen: 120,
+}
 
 // testObject implements two interfaces: LinkEndpoint and TransportDispatcher.
 // The former is used to pretend that it's a link endpoint so that we can
@@ -226,7 +235,7 @@ func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	return s.FindRoute(nicID, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
 }
 
-func buildDummyStack(t *testing.T) *stack.Stack {
+func buildDummyStackWithLinkEndpoint(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	t.Helper()
 
 	s := stack.New(stack.Options{
@@ -238,14 +247,23 @@ func buildDummyStack(t *testing.T) *stack.Stack {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	if err := s.AddAddress(nicID, header.IPv4ProtocolNumber, localIpv4Addr); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, localIpv4Addr, err)
+	v4Addr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: localIPv4AddrWithPrefix}
+	if err := s.AddProtocolAddress(nicID, v4Addr); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %#v) = %s", nicID, v4Addr, err)
 	}
 
-	if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, localIpv6Addr); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, localIpv6Addr, err)
+	v6Addr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: localIPv6AddrWithPrefix}
+	if err := s.AddProtocolAddress(nicID, v6Addr); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %#v) = %s", nicID, v6Addr, err)
 	}
 
+	return s, e
+}
+
+func buildDummyStack(t *testing.T) *stack.Stack {
+	t.Helper()
+
+	s, _ := buildDummyStackWithLinkEndpoint(t)
 	return s
 }
 
@@ -286,6 +304,131 @@ func (t *testInterface) setEnabled(v bool) {
 
 func (t *testInterface) LinkEndpoint() stack.LinkEndpoint {
 	return &t.tester
+}
+
+func TestSourceAddressValidation(t *testing.T) {
+	rxIPv4ICMP := func(e *channel.Endpoint, src tcpip.Address) {
+		totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
+		hdr := buffer.NewPrependable(totalLen)
+		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+		pkt.SetType(header.ICMPv4Echo)
+		pkt.SetCode(0)
+		pkt.SetChecksum(0)
+		pkt.SetChecksum(^header.Checksum(pkt, 0))
+		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+		ip.Encode(&header.IPv4Fields{
+			IHL:         header.IPv4MinimumSize,
+			TotalLength: uint16(totalLen),
+			Protocol:    uint8(icmp.ProtocolNumber4),
+			TTL:         ipv4.DefaultTTL,
+			SrcAddr:     src,
+			DstAddr:     localIPv4Addr,
+		})
+
+		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: hdr.View().ToVectorisedView(),
+		}))
+	}
+
+	rxIPv6ICMP := func(e *channel.Endpoint, src tcpip.Address) {
+		totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+		hdr := buffer.NewPrependable(totalLen)
+		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+		pkt.SetType(header.ICMPv6EchoRequest)
+		pkt.SetCode(0)
+		pkt.SetChecksum(0)
+		pkt.SetChecksum(header.ICMPv6Checksum(pkt, src, localIPv6Addr, buffer.VectorisedView{}))
+		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+		ip.Encode(&header.IPv6Fields{
+			PayloadLength: header.ICMPv6MinimumSize,
+			NextHeader:    uint8(icmp.ProtocolNumber6),
+			HopLimit:      ipv6.DefaultTTL,
+			SrcAddr:       src,
+			DstAddr:       localIPv6Addr,
+		})
+
+		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: hdr.View().ToVectorisedView(),
+		}))
+	}
+
+	tests := []struct {
+		name       string
+		srcAddress tcpip.Address
+		rxICMP     func(*channel.Endpoint, tcpip.Address)
+		valid      bool
+	}{
+		{
+			name:       "IPv4 valid",
+			srcAddress: "\x01\x02\x03\x04",
+			rxICMP:     rxIPv4ICMP,
+			valid:      true,
+		},
+		{
+			name:       "IPv6 valid",
+			srcAddress: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10",
+			rxICMP:     rxIPv6ICMP,
+			valid:      true,
+		},
+		{
+			name:       "IPv4 unspecified",
+			srcAddress: header.IPv4Any,
+			rxICMP:     rxIPv4ICMP,
+			valid:      true,
+		},
+		{
+			name:       "IPv6 unspecified",
+			srcAddress: header.IPv4Any,
+			rxICMP:     rxIPv6ICMP,
+			valid:      true,
+		},
+		{
+			name:       "IPv4 multicast",
+			srcAddress: "\xe0\x00\x00\x01",
+			rxICMP:     rxIPv4ICMP,
+			valid:      false,
+		},
+		{
+			name:       "IPv6 multicast",
+			srcAddress: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			rxICMP:     rxIPv6ICMP,
+			valid:      false,
+		},
+		{
+			name:       "IPv4 broadcast",
+			srcAddress: header.IPv4Broadcast,
+			rxICMP:     rxIPv4ICMP,
+			valid:      false,
+		},
+		{
+			name: "IPv4 subnet broadcast",
+			srcAddress: func() tcpip.Address {
+				subnet := localIPv4AddrWithPrefix.Subnet()
+				return subnet.Broadcast()
+			}(),
+			rxICMP: rxIPv4ICMP,
+			valid:  false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s, e := buildDummyStackWithLinkEndpoint(t)
+			test.rxICMP(e, test.srcAddress)
+
+			var wantValid uint64
+			if test.valid {
+				wantValid = 1
+			}
+
+			if got, want := s.Stats().IP.InvalidSourceAddressesReceived.Value(), 1-wantValid; got != want {
+				t.Errorf("got s.Stats().IP.InvalidSourceAddressesReceived.Value() = %d, want = %d", got, want)
+			}
+			if got := s.Stats().IP.PacketsDelivered.Value(); got != wantValid {
+				t.Errorf("got s.Stats().IP.PacketsDelivered.Value() = %d, want = %d", got, wantValid)
+			}
+		})
+	}
 }
 
 func TestEnableWhenNICDisabled(t *testing.T) {
@@ -396,11 +539,11 @@ func TestIPv4Send(t *testing.T) {
 
 	// Issue the write.
 	nic.tester.protocol = 123
-	nic.tester.srcAddr = localIpv4Addr
-	nic.tester.dstAddr = remoteIpv4Addr
+	nic.tester.srcAddr = localIPv4Addr
+	nic.tester.dstAddr = remoteIPv4Addr
 	nic.tester.contents = payload
 
-	r, err := buildIPv4Route(localIpv4Addr, remoteIpv4Addr)
+	r, err := buildIPv4Route(localIPv4Addr, remoteIPv4Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
@@ -437,8 +580,8 @@ func TestIPv4Receive(t *testing.T) {
 		TotalLength: uint16(totalLen),
 		TTL:         20,
 		Protocol:    10,
-		SrcAddr:     remoteIpv4Addr,
-		DstAddr:     localIpv4Addr,
+		SrcAddr:     remoteIPv4Addr,
+		DstAddr:     localIPv4Addr,
 	})
 
 	// Make payload be non-zero.
@@ -448,11 +591,11 @@ func TestIPv4Receive(t *testing.T) {
 
 	// Give packet to ipv4 endpoint, dispatcher will validate that it's ok.
 	nic.tester.protocol = 10
-	nic.tester.srcAddr = remoteIpv4Addr
-	nic.tester.dstAddr = localIpv4Addr
+	nic.tester.srcAddr = remoteIPv4Addr
+	nic.tester.dstAddr = localIPv4Addr
 	nic.tester.contents = view[header.IPv4MinimumSize:totalLen]
 
-	r, err := buildIPv4Route(localIpv4Addr, remoteIpv4Addr)
+	r, err := buildIPv4Route(localIPv4Addr, remoteIPv4Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
@@ -488,7 +631,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		{"Non-zero fragment offset", 0, 100, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 0},
 		{"Zero-length packet", 0, 0, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 2*header.IPv4MinimumSize + header.ICMPv4MinimumSize + 8},
 	}
-	r, err := buildIPv4Route(localIpv4Addr, "\x0a\x00\x00\xbb")
+	r, err := buildIPv4Route(localIPv4Addr, "\x0a\x00\x00\xbb")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +662,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 				TTL:         20,
 				Protocol:    uint8(header.ICMPv4ProtocolNumber),
 				SrcAddr:     "\x0a\x00\x00\xbb",
-				DstAddr:     localIpv4Addr,
+				DstAddr:     localIPv4Addr,
 			})
 
 			// Create the ICMP header.
@@ -537,8 +680,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 				TTL:            20,
 				Protocol:       10,
 				FragmentOffset: c.fragmentOffset,
-				SrcAddr:        localIpv4Addr,
-				DstAddr:        remoteIpv4Addr,
+				SrcAddr:        localIPv4Addr,
+				DstAddr:        remoteIPv4Addr,
 			})
 
 			// Make payload be non-zero.
@@ -549,8 +692,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			// Give packet to IPv4 endpoint, dispatcher will validate that
 			// it's ok.
 			nic.tester.protocol = 10
-			nic.tester.srcAddr = remoteIpv4Addr
-			nic.tester.dstAddr = localIpv4Addr
+			nic.tester.srcAddr = remoteIPv4Addr
+			nic.tester.dstAddr = localIPv4Addr
 			nic.tester.contents = view[dataOffset:]
 			nic.tester.typ = c.expectedTyp
 			nic.tester.extra = c.expectedExtra
@@ -590,8 +733,8 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 		Protocol:       10,
 		FragmentOffset: 0,
 		Flags:          header.IPv4FlagMoreFragments,
-		SrcAddr:        remoteIpv4Addr,
-		DstAddr:        localIpv4Addr,
+		SrcAddr:        remoteIPv4Addr,
+		DstAddr:        localIPv4Addr,
 	})
 	// Make payload be non-zero.
 	for i := header.IPv4MinimumSize; i < totalLen; i++ {
@@ -606,8 +749,8 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 		TTL:            20,
 		Protocol:       10,
 		FragmentOffset: 24,
-		SrcAddr:        remoteIpv4Addr,
-		DstAddr:        localIpv4Addr,
+		SrcAddr:        remoteIPv4Addr,
+		DstAddr:        localIPv4Addr,
 	})
 	// Make payload be non-zero.
 	for i := header.IPv4MinimumSize; i < totalLen; i++ {
@@ -616,11 +759,11 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 
 	// Give packet to ipv4 endpoint, dispatcher will validate that it's ok.
 	nic.tester.protocol = 10
-	nic.tester.srcAddr = remoteIpv4Addr
-	nic.tester.dstAddr = localIpv4Addr
+	nic.tester.srcAddr = remoteIPv4Addr
+	nic.tester.dstAddr = localIPv4Addr
 	nic.tester.contents = append(frag1[header.IPv4MinimumSize:totalLen], frag2[header.IPv4MinimumSize:totalLen]...)
 
-	r, err := buildIPv4Route(localIpv4Addr, remoteIpv4Addr)
+	r, err := buildIPv4Route(localIPv4Addr, remoteIPv4Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
@@ -679,11 +822,11 @@ func TestIPv6Send(t *testing.T) {
 
 	// Issue the write.
 	nic.tester.protocol = 123
-	nic.tester.srcAddr = localIpv6Addr
-	nic.tester.dstAddr = remoteIpv6Addr
+	nic.tester.srcAddr = localIPv6Addr
+	nic.tester.dstAddr = remoteIPv6Addr
 	nic.tester.contents = payload
 
-	r, err := buildIPv6Route(localIpv6Addr, remoteIpv6Addr)
+	r, err := buildIPv6Route(localIPv6Addr, remoteIPv6Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
@@ -718,8 +861,8 @@ func TestIPv6Receive(t *testing.T) {
 		PayloadLength: uint16(totalLen - header.IPv6MinimumSize),
 		NextHeader:    10,
 		HopLimit:      20,
-		SrcAddr:       remoteIpv6Addr,
-		DstAddr:       localIpv6Addr,
+		SrcAddr:       remoteIPv6Addr,
+		DstAddr:       localIPv6Addr,
 	})
 
 	// Make payload be non-zero.
@@ -729,11 +872,11 @@ func TestIPv6Receive(t *testing.T) {
 
 	// Give packet to ipv6 endpoint, dispatcher will validate that it's ok.
 	nic.tester.protocol = 10
-	nic.tester.srcAddr = remoteIpv6Addr
-	nic.tester.dstAddr = localIpv6Addr
+	nic.tester.srcAddr = remoteIPv6Addr
+	nic.tester.dstAddr = localIPv6Addr
 	nic.tester.contents = view[header.IPv6MinimumSize:totalLen]
 
-	r, err := buildIPv6Route(localIpv6Addr, remoteIpv6Addr)
+	r, err := buildIPv6Route(localIPv6Addr, remoteIPv6Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
@@ -777,7 +920,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 		{"Zero-length packet", 0, nil, header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, stack.ControlPortUnreachable, 0, 2*header.IPv6MinimumSize + header.ICMPv6DstUnreachableMinimumSize + 8},
 	}
 	r, err := buildIPv6Route(
-		localIpv6Addr,
+		localIPv6Addr,
 		"\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa",
 	)
 	if err != nil {
@@ -812,7 +955,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 				HopLimit:      20,
 				SrcAddr:       outerSrcAddr,
-				DstAddr:       localIpv6Addr,
+				DstAddr:       localIPv6Addr,
 			})
 
 			// Create the ICMP header.
@@ -828,8 +971,8 @@ func TestIPv6ReceiveControl(t *testing.T) {
 				PayloadLength: 100,
 				NextHeader:    10,
 				HopLimit:      20,
-				SrcAddr:       localIpv6Addr,
-				DstAddr:       remoteIpv6Addr,
+				SrcAddr:       localIPv6Addr,
+				DstAddr:       remoteIPv6Addr,
 			})
 
 			// Build the fragmentation header if needed.
@@ -852,14 +995,14 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Give packet to IPv6 endpoint, dispatcher will validate that
 			// it's ok.
 			nic.tester.protocol = 10
-			nic.tester.srcAddr = remoteIpv6Addr
-			nic.tester.dstAddr = localIpv6Addr
+			nic.tester.srcAddr = remoteIPv6Addr
+			nic.tester.dstAddr = localIPv6Addr
 			nic.tester.contents = view[dataOffset:]
 			nic.tester.typ = c.expectedTyp
 			nic.tester.extra = c.expectedExtra
 
 			// Set ICMPv6 checksum.
-			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIpv6Addr, buffer.VectorisedView{}))
+			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIPv6Addr, buffer.VectorisedView{}))
 
 			ep.HandlePacket(&r, truncatedPacket(view, c.trunc, header.IPv6MinimumSize))
 			if want := c.expectedCount; nic.tester.controlCalls != want {

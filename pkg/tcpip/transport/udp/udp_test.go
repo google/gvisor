@@ -928,42 +928,6 @@ func TestReadFromMulticast(t *testing.T) {
 	}
 }
 
-// TestReadFromMulticaststats checks that a discarded packet
-// that that was sent with multicast SOURCE address increments
-// the correct counters and that a regular packet does not.
-func TestReadFromMulticastStats(t *testing.T) {
-	t.Helper()
-	for _, flow := range []testFlow{reverseMulticast4, reverseMulticast6, unicastV4} {
-		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
-			c := newDualTestContext(t, defaultMTU)
-			defer c.cleanup()
-
-			c.createEndpointForFlow(flow)
-
-			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-				t.Fatalf("Bind failed: %s", err)
-			}
-
-			payload := newPayload()
-			c.injectPacket(flow, payload, false)
-
-			var want uint64 = 0
-			if flow.isReverseMulticast() {
-				want = 1
-			}
-			if got := c.s.Stats().IP.InvalidSourceAddressesReceived.Value(); got != want {
-				t.Errorf("got stats.IP.InvalidSourceAddressesReceived.Value() = %d, want = %d", got, want)
-			}
-			if got := c.s.Stats().UDP.InvalidSourceAddress.Value(); got != want {
-				t.Errorf("got stats.UDP.InvalidSourceAddress.Value() = %d, want = %d", got, want)
-			}
-			if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.MalformedPacketsReceived.Value(); got != want {
-				t.Errorf("got EP Stats.ReceiveErrors.MalformedPacketsReceived stats = %d, want = %d", got, want)
-			}
-		})
-	}
-}
-
 // TestV4ReadBroadcastOnBoundToWildcard checks that an endpoint can bind to ANY
 // and receive broadcast and unicast data.
 func TestV4ReadBroadcastOnBoundToWildcard(t *testing.T) {
