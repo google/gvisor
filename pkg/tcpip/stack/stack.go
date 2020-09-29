@@ -837,7 +837,7 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 		return nil, tcpip.ErrUnknownProtocol
 	}
 
-	return t.proto.NewEndpoint(s, network, waiterQueue)
+	return t.proto.NewEndpoint(network, waiterQueue)
 }
 
 // NewRawEndpoint creates a new raw transport layer endpoint of the given
@@ -857,7 +857,7 @@ func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network 
 		return nil, tcpip.ErrUnknownProtocol
 	}
 
-	return t.proto.NewRawEndpoint(s, network, waiterQueue)
+	return t.proto.NewRawEndpoint(network, waiterQueue)
 }
 
 // NewPacketEndpoint creates a new packet endpoint listening for the given
