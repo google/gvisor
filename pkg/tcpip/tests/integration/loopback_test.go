@@ -16,6 +16,7 @@ package integration_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -28,6 +29,69 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+var _ ipv6.NDPDispatcher = (*ndpDispatcher)(nil)
+
+type ndpDispatcher struct{}
+
+func (*ndpDispatcher) OnDuplicateAddressDetectionStatus(tcpip.NICID, tcpip.Address, bool, *tcpip.Error) {
+}
+
+func (*ndpDispatcher) OnDefaultRouterDiscovered(tcpip.NICID, tcpip.Address) bool {
+	return false
+}
+
+func (*ndpDispatcher) OnDefaultRouterInvalidated(tcpip.NICID, tcpip.Address) {}
+
+func (*ndpDispatcher) OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) bool {
+	return false
+}
+
+func (*ndpDispatcher) OnOnLinkPrefixInvalidated(tcpip.NICID, tcpip.Subnet) {}
+
+func (*ndpDispatcher) OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) bool {
+	return true
+}
+
+func (*ndpDispatcher) OnAutoGenAddressDeprecated(tcpip.NICID, tcpip.AddressWithPrefix) {}
+
+func (*ndpDispatcher) OnAutoGenAddressInvalidated(tcpip.NICID, tcpip.AddressWithPrefix) {}
+
+func (*ndpDispatcher) OnRecursiveDNSServerOption(tcpip.NICID, []tcpip.Address, time.Duration) {}
+
+func (*ndpDispatcher) OnDNSSearchListOption(tcpip.NICID, []string, time.Duration) {}
+
+func (*ndpDispatcher) OnDHCPv6Configuration(tcpip.NICID, ipv6.DHCPv6ConfigurationFromNDPRA) {}
+
+// TestInitialLoopbackAddresses tests that the loopback interface does not
+// auto-generate a link-local address when it is brought up.
+func TestInitialLoopbackAddresses(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPDisp:              &ndpDispatcher{},
+			AutoGenIPv6LinkLocal: true,
+			OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: func(nicID tcpip.NICID, nicName string) string {
+					t.Fatalf("should not attempt to get name for NIC with ID = %d; nicName = %s", nicID, nicName)
+					return ""
+				},
+			},
+		})},
+	})
+
+	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+
+	nicsInfo := s.NICInfo()
+	if nicInfo, ok := nicsInfo[nicID]; !ok {
+		t.Fatalf("did not find NIC with ID = %d in s.NICInfo() = %#v", nicID, nicsInfo)
+	} else if got := len(nicInfo.ProtocolAddresses); got != 0 {
+		t.Fatalf("got len(nicInfo.ProtocolAddresses) = %d, want = 0; nicInfo.ProtocolAddresses = %#v", got, nicInfo.ProtocolAddresses)
+	}
+}
 
 // TestLoopbackAcceptAllInSubnet tests that a loopback interface considers
 // itself bound to all addresses in the subnet of an assigned address.
