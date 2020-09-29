@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package github implements reviver.Bugger interface on top of Github issues.
-package github
+package reviver
 
 import (
 	"context"
@@ -23,12 +22,10 @@ import (
 	"time"
 
 	"github.com/google/go-github/github"
-	"golang.org/x/oauth2"
-	"gvisor.dev/gvisor/tools/issue_reviver/reviver"
 )
 
-// Bugger implements reviver.Bugger interface for github issues.
-type Bugger struct {
+// GitHubBugger implements Bugger interface for github issues.
+type GitHubBugger struct {
 	owner  string
 	repo   string
 	dryRun bool
@@ -37,36 +34,25 @@ type Bugger struct {
 	issues map[int]*github.Issue
 }
 
-// NewBugger creates a new Bugger.
-func NewBugger(token, owner, repo string, dryRun bool) (*Bugger, error) {
-	b := &Bugger{
+// NewGitHubBugger creates a new GitHubBugger.
+func NewGitHubBugger(client *github.Client, owner, repo string, dryRun bool) (*GitHubBugger, error) {
+	b := &GitHubBugger{
 		owner:  owner,
 		repo:   repo,
 		dryRun: dryRun,
 		issues: map[int]*github.Issue{},
+		client: client,
 	}
-	if err := b.load(token); err != nil {
+	if err := b.load(); err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
-func (b *Bugger) load(token string) error {
-	ctx := context.Background()
-	if len(token) == 0 {
-		fmt.Print("No OAUTH token provided, using unauthenticated account.\n")
-		b.client = github.NewClient(nil)
-	} else {
-		ts := oauth2.StaticTokenSource(
-			&oauth2.Token{AccessToken: token},
-		)
-		tc := oauth2.NewClient(ctx, ts)
-		b.client = github.NewClient(tc)
-	}
-
+func (b *GitHubBugger) load() error {
 	err := processAllPages(func(listOpts github.ListOptions) (*github.Response, error) {
 		opts := &github.IssueListByRepoOptions{State: "open", ListOptions: listOpts}
-		tmps, resp, err := b.client.Issues.ListByRepo(ctx, b.owner, b.repo, opts)
+		tmps, resp, err := b.client.Issues.ListByRepo(context.Background(), b.owner, b.repo, opts)
 		if err != nil {
 			return resp, err
 		}
@@ -83,8 +69,8 @@ func (b *Bugger) load(token string) error {
 	return nil
 }
 
-// Activate implements reviver.Bugger.
-func (b *Bugger) Activate(todo *reviver.Todo) (bool, error) {
+// Activate implements Bugger.Activate.
+func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 	id, err := parseIssueNo(todo.Issue)
 	if err != nil {
 		return true, err
