@@ -26,6 +26,9 @@ var (
 	// and should not have any special prefix applied.
 	internalPrefix = fmt.Sprintf("^")
 
+	// internalDefault is applied when no paths are provided.
+	internalDefault = fmt.Sprintf("%s/.*", notPath("external"))
+
 	// externalPrefix is external workspace packages.
 	externalPrefix = "^external/"
 )

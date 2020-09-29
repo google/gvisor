@@ -16,7 +16,6 @@ package nogo
 
 import (
 	"go/token"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -44,9 +43,28 @@ type pathRegexps struct {
 func buildRegexps(prefix string, args ...string) []*regexp.Regexp {
 	result := make([]*regexp.Regexp, 0, len(args))
 	for _, arg := range args {
-		result = append(result, regexp.MustCompile(filepath.Join(prefix, arg)))
+		result = append(result, regexp.MustCompile(prefix+arg))
 	}
 	return result
+}
+
+// notPath works around the lack of backtracking.
+//
+// It is used to construct a regular expression for non-matching components.
+func notPath(name string) string {
+	sb := strings.Builder{}
+	sb.WriteString("(")
+	for i := range name {
+		if i > 0 {
+			sb.WriteString("|")
+		}
+		sb.WriteString(name[:i])
+		sb.WriteString("[^")
+		sb.WriteByte(name[i])
+		sb.WriteString("/][^/]*")
+	}
+	sb.WriteString(")")
+	return sb.String()
 }
 
 // ShouldReport implements matcher.ShouldReport.
@@ -79,7 +97,7 @@ func externalExcluded(paths ...string) *pathRegexps {
 // internalMatches returns a path matcher for internal packages.
 func internalMatches() *pathRegexps {
 	return &pathRegexps{
-		expr:    buildRegexps(internalPrefix, ".*"),
+		expr:    buildRegexps(internalPrefix, internalDefault),
 		include: true,
 	}
 }

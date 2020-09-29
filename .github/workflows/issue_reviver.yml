@@ -9,7 +9,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       if: github.repository == 'google/gvisor'
-    - run: make run TARGETS="//tools/issue_reviver"
+    - run: make run TARGETS="//tools/github" ARGS="revive"
       if: github.repository == 'google/gvisor'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

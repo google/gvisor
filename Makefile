@@ -379,3 +379,8 @@ configure: ## Configures a single runtime. Requires sudo. Typically called from 
 test-runtime: ## A convenient wrapper around test that provides the runtime argument. Target must still be provided.
 	@$(call submake,test OPTIONS="$(OPTIONS) --test_arg=--runtime=$(RUNTIME)")
 .PHONY: test-runtime
+
+nogo: ## Surfaces all nogo findings.
+	@$(call submake,build OPTIONS="--build_tag_filters nogo" TARGETS="//...")
+	@$(call submake,run TARGETS="//tools/github" ARGS="-path=$(BUILD_ROOT) -dry-run nogo")
+.PHONY: nogo
