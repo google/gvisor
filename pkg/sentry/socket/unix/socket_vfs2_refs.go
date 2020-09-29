@@ -11,7 +11,7 @@ import (
 
 // ownerType is used to customize logging. Note that we use a pointer to T so
 // that we do not copy the entire object when passed as a format parameter.
-var socketOperationsownerType *SocketOperations
+var socketVFS2ownerType *SocketVFS2
 
 // Refs implements refs.RefCounter. It keeps a reference count using atomic
 // operations and calls the destructor when the count reaches zero.
@@ -25,7 +25,7 @@ var socketOperationsownerType *SocketOperations
 // without growing the size of Refs.
 //
 // +stateify savable
-type socketOperationsRefs struct {
+type socketVFS2Refs struct {
 	// refCount is composed of two fields:
 	//
 	//	[32-bit speculative references]:[32-bit real references]
@@ -36,7 +36,7 @@ type socketOperationsRefs struct {
 	refCount int64
 }
 
-func (r *socketOperationsRefs) finalize() {
+func (r *socketVFS2Refs) finalize() {
 	var note string
 	switch refs_vfs1.GetLeakMode() {
 	case refs_vfs1.NoLeakChecking:
@@ -45,20 +45,20 @@ func (r *socketOperationsRefs) finalize() {
 		note = "(Leak checker uninitialized): "
 	}
 	if n := r.ReadRefs(); n != 0 {
-		log.Warningf("%sRefs %p owned by %T garbage collected with ref count of %d (want 0)", note, r, socketOperationsownerType, n)
+		log.Warningf("%sRefs %p owned by %T garbage collected with ref count of %d (want 0)", note, r, socketVFS2ownerType, n)
 	}
 }
 
 // EnableLeakCheck checks for reference leaks when Refs gets garbage collected.
-func (r *socketOperationsRefs) EnableLeakCheck() {
+func (r *socketVFS2Refs) EnableLeakCheck() {
 	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking {
-		runtime.SetFinalizer(r, (*socketOperationsRefs).finalize)
+		runtime.SetFinalizer(r, (*socketVFS2Refs).finalize)
 	}
 }
 
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
-func (r *socketOperationsRefs) ReadRefs() int64 {
+func (r *socketVFS2Refs) ReadRefs() int64 {
 
 	return atomic.LoadInt64(&r.refCount) + 1
 }
@@ -66,9 +66,9 @@ func (r *socketOperationsRefs) ReadRefs() int64 {
 // IncRef implements refs.RefCounter.IncRef.
 //
 //go:nosplit
-func (r *socketOperationsRefs) IncRef() {
+func (r *socketVFS2Refs) IncRef() {
 	if v := atomic.AddInt64(&r.refCount, 1); v <= 0 {
-		panic(fmt.Sprintf("Incrementing non-positive ref count %p owned by %T", r, socketOperationsownerType))
+		panic(fmt.Sprintf("Incrementing non-positive ref count %p owned by %T", r, socketVFS2ownerType))
 	}
 }
 
@@ -79,7 +79,7 @@ func (r *socketOperationsRefs) IncRef() {
 // other TryIncRef calls from genuine references held.
 //
 //go:nosplit
-func (r *socketOperationsRefs) TryIncRef() bool {
+func (r *socketVFS2Refs) TryIncRef() bool {
 	const speculativeRef = 1 << 32
 	v := atomic.AddInt64(&r.refCount, speculativeRef)
 	if int32(v) < 0 {
@@ -104,10 +104,10 @@ func (r *socketOperationsRefs) TryIncRef() bool {
 //	A: TryIncRef [transform speculative to real]
 //
 //go:nosplit
-func (r *socketOperationsRefs) DecRef(destroy func()) {
+func (r *socketVFS2Refs) DecRef(destroy func()) {
 	switch v := atomic.AddInt64(&r.refCount, -1); {
 	case v < -1:
-		panic(fmt.Sprintf("Decrementing non-positive ref count %p, owned by %T", r, socketOperationsownerType))
+		panic(fmt.Sprintf("Decrementing non-positive ref count %p, owned by %T", r, socketVFS2ownerType))
 
 	case v == -1:
 

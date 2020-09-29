@@ -13,7 +13,7 @@ type socketElementMapper struct{}
 // This default implementation should be inlined.
 //
 //go:nosplit
-func (socketElementMapper) linkerFor(elem *SocketEntry) *SocketEntry { return elem }
+func (socketElementMapper) linkerFor(elem *SocketRecordVFS1) *SocketRecordVFS1 { return elem }
 
 // List is an intrusive list. Entries can be added to or removed from the list
 // in O(1) time and with no additional memory allocations.
@@ -27,8 +27,8 @@ func (socketElementMapper) linkerFor(elem *SocketEntry) *SocketEntry { return el
 //
 // +stateify savable
 type socketList struct {
-	head *SocketEntry
-	tail *SocketEntry
+	head *SocketRecordVFS1
+	tail *SocketRecordVFS1
 }
 
 // Reset resets list l to the empty state.
@@ -43,12 +43,12 @@ func (l *socketList) Empty() bool {
 }
 
 // Front returns the first element of list l or nil.
-func (l *socketList) Front() *SocketEntry {
+func (l *socketList) Front() *SocketRecordVFS1 {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
-func (l *socketList) Back() *SocketEntry {
+func (l *socketList) Back() *SocketRecordVFS1 {
 	return l.tail
 }
 
@@ -63,7 +63,7 @@ func (l *socketList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
-func (l *socketList) PushFront(e *SocketEntry) {
+func (l *socketList) PushFront(e *SocketRecordVFS1) {
 	linker := socketElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
 	linker.SetPrev(nil)
@@ -77,7 +77,7 @@ func (l *socketList) PushFront(e *SocketEntry) {
 }
 
 // PushBack inserts the element e at the back of list l.
-func (l *socketList) PushBack(e *SocketEntry) {
+func (l *socketList) PushBack(e *SocketRecordVFS1) {
 	linker := socketElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
 	linker.SetPrev(l.tail)
@@ -106,7 +106,7 @@ func (l *socketList) PushBackList(m *socketList) {
 }
 
 // InsertAfter inserts e after b.
-func (l *socketList) InsertAfter(b, e *SocketEntry) {
+func (l *socketList) InsertAfter(b, e *SocketRecordVFS1) {
 	bLinker := socketElementMapper{}.linkerFor(b)
 	eLinker := socketElementMapper{}.linkerFor(e)
 
@@ -124,7 +124,7 @@ func (l *socketList) InsertAfter(b, e *SocketEntry) {
 }
 
 // InsertBefore inserts e before a.
-func (l *socketList) InsertBefore(a, e *SocketEntry) {
+func (l *socketList) InsertBefore(a, e *SocketRecordVFS1) {
 	aLinker := socketElementMapper{}.linkerFor(a)
 	eLinker := socketElementMapper{}.linkerFor(e)
 
@@ -141,7 +141,7 @@ func (l *socketList) InsertBefore(a, e *SocketEntry) {
 }
 
 // Remove removes e from l.
-func (l *socketList) Remove(e *SocketEntry) {
+func (l *socketList) Remove(e *SocketRecordVFS1) {
 	linker := socketElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
 	next := linker.Next()
@@ -168,26 +168,26 @@ func (l *socketList) Remove(e *SocketEntry) {
 //
 // +stateify savable
 type socketEntry struct {
-	next *SocketEntry
-	prev *SocketEntry
+	next *SocketRecordVFS1
+	prev *SocketRecordVFS1
 }
 
 // Next returns the entry that follows e in the list.
-func (e *socketEntry) Next() *SocketEntry {
+func (e *socketEntry) Next() *SocketRecordVFS1 {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
-func (e *socketEntry) Prev() *SocketEntry {
+func (e *socketEntry) Prev() *SocketRecordVFS1 {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
-func (e *socketEntry) SetNext(elem *SocketEntry) {
+func (e *socketEntry) SetNext(elem *SocketRecordVFS1) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
-func (e *socketEntry) SetPrev(elem *SocketEntry) {
+func (e *socketEntry) SetPrev(elem *SocketRecordVFS1) {
 	e.prev = elem
 }
