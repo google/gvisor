@@ -892,6 +892,41 @@ func (x *exeSymlink) StateLoad(m state.Source) {
 	m.Load(4, &x.task)
 }
 
+func (x *cwdSymlink) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.cwdSymlink"
+}
+
+func (x *cwdSymlink) StateFields() []string {
+	return []string{
+		"implStatFS",
+		"InodeAttrs",
+		"InodeNoopRefCount",
+		"InodeSymlink",
+		"task",
+	}
+}
+
+func (x *cwdSymlink) beforeSave() {}
+
+func (x *cwdSymlink) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.implStatFS)
+	m.Save(1, &x.InodeAttrs)
+	m.Save(2, &x.InodeNoopRefCount)
+	m.Save(3, &x.InodeSymlink)
+	m.Save(4, &x.task)
+}
+
+func (x *cwdSymlink) afterLoad() {}
+
+func (x *cwdSymlink) StateLoad(m state.Source) {
+	m.Load(0, &x.implStatFS)
+	m.Load(1, &x.InodeAttrs)
+	m.Load(2, &x.InodeNoopRefCount)
+	m.Load(3, &x.InodeSymlink)
+	m.Load(4, &x.task)
+}
+
 func (x *mountInfoData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.mountInfoData"
 }
@@ -1913,6 +1948,7 @@ func init() {
 	state.Register((*ioData)(nil))
 	state.Register((*oomScoreAdj)(nil))
 	state.Register((*exeSymlink)(nil))
+	state.Register((*cwdSymlink)(nil))
 	state.Register((*mountInfoData)(nil))
 	state.Register((*mountsData)(nil))
 	state.Register((*namespaceSymlink)(nil))

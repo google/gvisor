@@ -53,6 +53,7 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 		"auxv":      fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &auxvData{task: task}),
 		"cmdline":   fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
 		"comm":      fs.newComm(task, fs.NextIno(), 0444),
+		"cwd":       fs.newCwdSymlink(task, fs.NextIno()),
 		"environ":   fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: environDataArg}),
 		"exe":       fs.newExeSymlink(task, fs.NextIno()),
 		"fd":        fs.newFDDirInode(task),

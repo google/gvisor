@@ -1037,6 +1037,32 @@ func (x *exe) StateLoad(m state.Source) {
 	m.Load(1, &x.t)
 }
 
+func (x *cwd) StateTypeName() string {
+	return "pkg/sentry/fs/proc.cwd"
+}
+
+func (x *cwd) StateFields() []string {
+	return []string{
+		"Symlink",
+		"t",
+	}
+}
+
+func (x *cwd) beforeSave() {}
+
+func (x *cwd) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Symlink)
+	m.Save(1, &x.t)
+}
+
+func (x *cwd) afterLoad() {}
+
+func (x *cwd) StateLoad(m state.Source) {
+	m.Load(0, &x.Symlink)
+	m.Load(1, &x.t)
+}
+
 func (x *namespaceSymlink) StateTypeName() string {
 	return "pkg/sentry/fs/proc.namespaceSymlink"
 }
@@ -1527,6 +1553,7 @@ func init() {
 	state.Register((*subtasks)(nil))
 	state.Register((*subtasksFile)(nil))
 	state.Register((*exe)(nil))
+	state.Register((*cwd)(nil))
 	state.Register((*namespaceSymlink)(nil))
 	state.Register((*mapsData)(nil))
 	state.Register((*smapsData)(nil))
