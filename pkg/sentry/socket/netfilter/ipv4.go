@@ -181,18 +181,23 @@ func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 			nflog("entry doesn't have enough room for its target (only %d bytes remain)", len(optVal))
 			return nil, syserr.ErrInvalidArgument
 		}
-		target, err := parseTarget(filter, optVal[:targetSize])
-		if err != nil {
-			nflog("failed to parse target: %v", err)
-			return nil, syserr.ErrInvalidArgument
+
+		rule := stack.Rule{
+			Filter:   filter,
+			Matchers: matchers,
+		}
+
+		{
+			target, err := parseTarget(filter, optVal[:targetSize], false /* ipv6 */)
+			if err != nil {
+				nflog("failed to parse target: %v", err)
+				return nil, err
+			}
+			rule.Target = target
 		}
 		optVal = optVal[targetSize:]
 
-		table.Rules = append(table.Rules, stack.Rule{
-			Filter:   filter,
-			Target:   target,
-			Matchers: matchers,
-		})
+		table.Rules = append(table.Rules, rule)
 		offsets[offset] = int(entryIdx)
 		offset += uint32(entry.NextOffset)
 

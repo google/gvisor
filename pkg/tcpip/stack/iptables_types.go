@@ -104,8 +104,20 @@ type IPTables struct {
 	reaperDone chan struct{}
 }
 
-// A Table defines a set of chains and hooks into the network stack. It is
-// really just a list of rules.
+// A Table defines a set of chains and hooks into the network stack.
+//
+// It is a list of Rules, entry points (BuiltinChains), and error handlers
+// (Underflows). As packets traverse netstack, they hit hooks. When a packet
+// hits a hook, iptables compares it to Rules starting from that hook's entry
+// point. So if a packet hits the Input hook, we look up the corresponding
+// entry point in BuiltinChains and jump to that point.
+//
+// If the Rule doesn't match the packet, iptables continues to the next Rule.
+// If a Rule does match, it can issue a verdict on the packet (e.g. RuleAccept
+// or RuleDrop) that causes the packet to stop traversing iptables. It can also
+// jump to other rules or perform custom actions based on Rule.Target.
+//
+// Underflow Rules are invoked when a chain returns without reaching a verdict.
 //
 // +stateify savable
 type Table struct {
@@ -260,6 +272,18 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, nicName string) boo
 	return true
 }
 
+// NetworkProtocol returns the protocol (IPv4 or IPv6) on to which the header
+// applies.
+func (fl IPHeaderFilter) NetworkProtocol() tcpip.NetworkProtocolNumber {
+	switch len(fl.Src) {
+	case header.IPv4AddressSize:
+		return header.IPv4ProtocolNumber
+	case header.IPv6AddressSize:
+		return header.IPv6ProtocolNumber
+	}
+	panic(fmt.Sprintf("invalid address in IPHeaderFilter: %s", fl.Src))
+}
+
 // filterAddress returns whether addr matches the filter.
 func filterAddress(addr, mask, filterAddr tcpip.Address, invert bool) bool {
 	matches := true
@@ -285,8 +309,23 @@ type Matcher interface {
 	Match(hook Hook, packet *PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
 }
 
+// A TargetID uniquely identifies a target.
+type TargetID struct {
+	// Name is the target name as stored in the xt_entry_target struct.
+	Name string
+
+	// NetworkProtocol is the protocol to which the target applies.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+
+	// Revision is the version of the target.
+	Revision uint8
+}
+
 // A Target is the interface for taking an action for a packet.
 type Target interface {
+	// ID uniquely identifies the Target.
+	ID() TargetID
+
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
 	// Jump, it also returns the index of the rule to jump to.
