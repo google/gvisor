@@ -24,6 +24,26 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// NullClock implements a clock that never advances.
+type NullClock struct{}
+
+var _ tcpip.Clock = (*NullClock)(nil)
+
+// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
+func (*NullClock) NowNanoseconds() int64 {
+	return 0
+}
+
+// NowMonotonic implements tcpip.Clock.NowMonotonic.
+func (*NullClock) NowMonotonic() int64 {
+	return 0
+}
+
+// AfterFunc implements tcpip.Clock.AfterFunc.
+func (*NullClock) AfterFunc(time.Duration, func()) tcpip.Timer {
+	return nil
+}
+
 // ManualClock implements tcpip.Clock and only advances manually with Advance
 // method.
 type ManualClock struct {

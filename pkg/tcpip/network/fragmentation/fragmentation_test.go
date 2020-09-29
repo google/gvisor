@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
 
 // vv is a helper to build VectorisedView from different strings.
@@ -95,7 +96,7 @@ var processTestCases = []struct {
 func TestFragmentationProcess(t *testing.T) {
 	for _, c := range processTestCases {
 		t.Run(c.comment, func(t *testing.T) {
-			f := NewFragmentation(minBlockSize, 1024, 512, DefaultReassembleTimeout)
+			f := NewFragmentation(minBlockSize, 1024, 512, DefaultReassembleTimeout, &faketime.NullClock{})
 			firstFragmentProto := c.in[0].proto
 			for i, in := range c.in {
 				vv, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.vv)
@@ -131,25 +132,126 @@ func TestFragmentationProcess(t *testing.T) {
 }
 
 func TestReassemblingTimeout(t *testing.T) {
-	timeout := time.Millisecond
-	f := NewFragmentation(minBlockSize, 1024, 512, timeout)
-	// Send first fragment with id = 0, first = 0, last = 0, and more = true.
-	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"))
-	// Sleep more than the timeout.
-	time.Sleep(2 * timeout)
-	// Send another fragment that completes a packet.
-	// However, no packet should be reassembled because the fragment arrived after the timeout.
-	_, _, done, err := f.Process(FragmentID{}, 1, 1, false, 0xFF, vv(1, "1"))
-	if err != nil {
-		t.Fatalf("f.Process(0, 1, 1, false, 0xFF, vv(1, \"1\")) failed: %v", err)
+	const (
+		reassemblyTimeout = time.Millisecond
+		protocol          = 0xff
+	)
+
+	type fragment struct {
+		first uint16
+		last  uint16
+		more  bool
+		data  string
 	}
-	if done {
-		t.Errorf("Fragmentation does not respect the reassembling timeout.")
+
+	type event struct {
+		// name is a nickname of this event.
+		name string
+
+		// clockAdvance is a duration to advance the clock. The clock advances
+		// before a fragment specified in the fragment field is processed.
+		clockAdvance time.Duration
+
+		// fragment is a fragment to process. This can be nil if there is no
+		// fragment to process.
+		fragment *fragment
+
+		// expectDone is true if the fragmentation instance should report the
+		// reassembly is done after the fragment is processd.
+		expectDone bool
+
+		// sizeAfterEvent is the expected size of the fragmentation instance after
+		// the event.
+		sizeAfterEvent int
+	}
+
+	half1 := &fragment{first: 0, last: 0, more: true, data: "0"}
+	half2 := &fragment{first: 1, last: 1, more: false, data: "1"}
+
+	tests := []struct {
+		name   string
+		events []event
+	}{
+		{
+			name: "half1 and half2 are reassembled successfully",
+			events: []event{
+				{
+					name:           "half1",
+					fragment:       half1,
+					expectDone:     false,
+					sizeAfterEvent: 1,
+				},
+				{
+					name:           "half2",
+					fragment:       half2,
+					expectDone:     true,
+					sizeAfterEvent: 0,
+				},
+			},
+		},
+		{
+			name: "half1 timeout, half2 timeout",
+			events: []event{
+				{
+					name:           "half1",
+					fragment:       half1,
+					expectDone:     false,
+					sizeAfterEvent: 1,
+				},
+				{
+					name:           "half1 just before reassembly timeout",
+					clockAdvance:   reassemblyTimeout - 1,
+					sizeAfterEvent: 1,
+				},
+				{
+					name:           "half1 reassembly timeout",
+					clockAdvance:   1,
+					sizeAfterEvent: 0,
+				},
+				{
+					name:           "half2",
+					fragment:       half2,
+					expectDone:     false,
+					sizeAfterEvent: 1,
+				},
+				{
+					name:           "half2 just before reassembly timeout",
+					clockAdvance:   reassemblyTimeout - 1,
+					sizeAfterEvent: 1,
+				},
+				{
+					name:           "half2 reassembly timeout",
+					clockAdvance:   1,
+					sizeAfterEvent: 0,
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassemblyTimeout, clock)
+			for _, event := range test.events {
+				clock.Advance(event.clockAdvance)
+				if frag := event.fragment; frag != nil {
+					_, _, done, err := f.Process(FragmentID{}, frag.first, frag.last, frag.more, protocol, vv(len(frag.data), frag.data))
+					if err != nil {
+						t.Fatalf("%s: f.Process failed: %s", event.name, err)
+					}
+					if done != event.expectDone {
+						t.Fatalf("%s: got done = %t, want = %t", event.name, done, event.expectDone)
+					}
+				}
+				if got, want := f.size, event.sizeAfterEvent; got != want {
+					t.Errorf("%s: got f.size = %d, want = %d", event.name, got, want)
+				}
+			}
+		})
 	}
 }
 
 func TestMemoryLimits(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 3, 1, DefaultReassembleTimeout)
+	f := NewFragmentation(minBlockSize, 3, 1, DefaultReassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, vv(1, "0"))
 	// Send first fragment with id = 1.
@@ -173,7 +275,7 @@ func TestMemoryLimits(t *testing.T) {
 }
 
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 1, 0, DefaultReassembleTimeout)
+	f := NewFragmentation(minBlockSize, 1, 0, DefaultReassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"))
 	// Send the same packet again.
@@ -268,7 +370,7 @@ func TestErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, DefaultReassembleTimeout)
+			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, DefaultReassembleTimeout, &faketime.NullClock{})
 			_, _, done, err := f.Process(FragmentID{}, test.first, test.last, test.more, 0, vv(len(test.data), test.data))
 			if !errors.Is(err, test.err) {
 				t.Errorf("got Process(_, %d, %d, %t, _, %q) = (_, _, _, %v), want = (_, _, _, %v)", test.first, test.last, test.more, test.data, err, test.err)
