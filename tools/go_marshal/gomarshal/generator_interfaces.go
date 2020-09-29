@@ -43,8 +43,8 @@ type interfaceGenerator struct {
 	// of t's interfaces.
 	ms map[string]struct{}
 
-	// as records embedded fields in t that are potentially not packed. The key
-	// is the accessor for the field.
+	// as records fields in t that are potentially not packed. The key is the
+	// accessor for the field.
 	as map[string]struct{}
 }
 

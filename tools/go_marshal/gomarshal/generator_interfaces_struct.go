@@ -51,12 +51,6 @@ func (g *interfaceGenerator) areFieldsPackedExpression() (string, bool) {
 // later.
 func (g *interfaceGenerator) validateStruct(ts *ast.TypeSpec, st *ast.StructType) {
 	forEachStructField(st, func(f *ast.Field) {
-		if len(f.Names) == 0 {
-			g.abortAt(f.Pos(), "Cannot marshal structs with embedded fields, give the field a name; use '_' for anonymous fields such as padding fields")
-		}
-	})
-
-	forEachStructField(st, func(f *ast.Field) {
 		fieldDispatcher{
 			primitive: func(_, t *ast.Ident) {
 				g.validatePrimitiveNewtype(t)
@@ -101,7 +95,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 		var dynamicSizeTerms []string
 
 		forEachStructField(st, fieldDispatcher{
-			primitive: func(n, t *ast.Ident) {
+			primitive: func(_, t *ast.Ident) {
 				if size, dynamic := g.scalarSize(t); !dynamic {
 					primitiveSize += size
 				} else {
@@ -109,13 +103,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", t.Name))
 				}
 			},
-			selector: func(n, tX, tSel *ast.Ident) {
+			selector: func(_, tX, tSel *ast.Ident) {
 				tName := fmt.Sprintf("%s.%s", tX.Name, tSel.Name)
 				g.recordUsedImport(tX.Name)
 				g.recordUsedMarshallable(tName)
 				dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", tName))
 			},
-			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+			array: func(_ *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
 				lenExpr := g.arrayLenExpr(a)
 				if size, dynamic := g.scalarSize(t); !dynamic {
 					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%d*%s", size, lenExpr))

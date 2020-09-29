@@ -113,3 +113,18 @@ The following are some guidelines for modifying the `go_marshal` tool:
 -   No runtime reflection in the code generated for the marshallable interface.
     The entire point of the tool is to avoid runtime reflection. The generated
     tests may use reflection.
+
+## Debugging
+
+To enable debugging output from the go-marshal tool, use one of the following
+options, depending on how go-marshal is being invoked:
+
+-   Pass `--define gomarshal=verbose` to the bazel command. Note that this can
+    generate a lot of output depending on what's being compiled, as this will
+    enable debugging for all packages built by the command.
+
+-   Set `marshal_debug = True` on the top-level `go_library` BUILD rule.
+
+-   Set `debug = True` on the `go_marshal` BUILD rule.
+
+-   Pass `-debug` to the go-marshal tool invocation.
