@@ -144,6 +144,7 @@ func (c *vCPU) initArchState() error {
 	// Set the entrypoint for the kernel.
 	kernelUserRegs.RIP = uint64(reflect.ValueOf(ring0.Start).Pointer())
 	kernelUserRegs.RAX = uint64(reflect.ValueOf(&c.CPU).Pointer())
+	kernelUserRegs.RSP = c.StackTop()
 	kernelUserRegs.RFLAGS = ring0.KernelFlagsSet
 
 	// Set the system registers.
@@ -344,4 +345,44 @@ func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
 
 func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 	return physicalRegions
+}
+
+var execRegions []region
+
+func init() {
+	applyVirtualRegions(func(vr virtualRegion) {
+		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
+			return
+		}
+
+		if vr.accessType.Execute {
+			execRegions = append(execRegions, vr.region)
+		}
+	})
+}
+
+func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
+	for _, r := range execRegions {
+		physical, length, ok := translateToPhysical(r.virtual)
+		if !ok || length < r.length {
+			panic("impossilbe translation")
+		}
+		pageTable.Map(
+			usermem.Addr(ring0.KernelStartAddress|r.virtual),
+			r.length,
+			pagetables.MapOpts{AccessType: usermem.Execute},
+			physical)
+	}
+	for start, end := range m.kernel.EntryRegions() {
+		regionLen := end - start
+		physical, length, ok := translateToPhysical(start)
+		if !ok || length < regionLen {
+			panic("impossible translation")
+		}
+		pageTable.Map(
+			usermem.Addr(ring0.KernelStartAddress|start),
+			regionLen,
+			pagetables.MapOpts{AccessType: usermem.ReadWrite},
+			physical)
+	}
 }
