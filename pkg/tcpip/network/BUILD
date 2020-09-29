@@ -9,6 +9,7 @@ go_test(
         "ip_test.go",
     ],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
