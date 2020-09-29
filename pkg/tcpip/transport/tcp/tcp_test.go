@@ -5435,8 +5435,8 @@ func TestListenNoAcceptNonUnicastV4(t *testing.T) {
 // TestListenNoAcceptMulticastBroadcastV6 makes sure that TCP segments with a
 // non unicast IPv6 address are not accepted.
 func TestListenNoAcceptNonUnicastV6(t *testing.T) {
-	multicastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01")
-	otherMulticastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02")
+	multicastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01")
+	otherMulticastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02")
 
 	tests := []struct {
 		name    string
@@ -6182,7 +6182,9 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 
 	rawEP := c.CreateConnectedWithOptions(header.TCPSynOptions{TS: true, WS: 4})
 	tsVal := uint32(rawEP.TSVal)
-	rawEP.SendPacketWithTS([]byte{1}, tsVal)
+	rawEP.NextSeqNum--
+	rawEP.SendPacketWithTS(nil, tsVal)
+	rawEP.NextSeqNum++
 	pkt := rawEP.VerifyAndReturnACKWithTS(tsVal)
 	curRcvWnd := int(header.TCP(header.IPv4(pkt).Payload()).WindowSize()) << c.WindowScale
 	scaleRcvWnd := func(rcvWnd int) uint16 {
