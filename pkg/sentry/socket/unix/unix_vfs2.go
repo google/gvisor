@@ -45,6 +45,7 @@ type SocketVFS2 struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.LockFD
 
+	socketVFS2Refs
 	socketOpsCommon
 }
 
@@ -89,6 +90,25 @@ func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint3
 		return nil, err
 	}
 	return vfsfd, nil
+}
+
+// DecRef implements RefCounter.DecRef.
+func (s *SocketVFS2) DecRef(ctx context.Context) {
+	s.socketVFS2Refs.DecRef(func() {
+		t := kernel.TaskFromContext(ctx)
+		t.Kernel().DeleteSocketVFS2(&s.vfsfd)
+		s.ep.Close(ctx)
+		if s.abstractNamespace != nil {
+			s.abstractNamespace.Remove(s.abstractName, s)
+		}
+	})
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (s *SocketVFS2) Release(ctx context.Context) {
+	// Release only decrements a reference on s because s may be referenced in
+	// the abstract socket namespace.
+	s.DecRef(ctx)
 }
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by

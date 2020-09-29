@@ -69,8 +69,8 @@ go_template_instance(
     prefix = "socket",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*SocketEntry",
-        "Linker": "*SocketEntry",
+        "Element": "*SocketRecordVFS1",
+        "Linker": "*SocketRecordVFS1",
     },
 )
 

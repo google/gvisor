@@ -7,10 +7,21 @@ go_template_instance(
     name = "socket_refs",
     out = "socket_refs.go",
     package = "unix",
-    prefix = "socketOpsCommon",
+    prefix = "socketOperations",
     template = "//pkg/refs_vfs2:refs_template",
     types = {
-        "T": "socketOpsCommon",
+        "T": "SocketOperations",
+    },
+)
+
+go_template_instance(
+    name = "socket_vfs2_refs",
+    out = "socket_vfs2_refs.go",
+    package = "unix",
+    prefix = "socketVFS2",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "SocketVFS2",
     },
 )
 
@@ -20,6 +31,7 @@ go_library(
         "device.go",
         "io.go",
         "socket_refs.go",
+        "socket_vfs2_refs.go",
         "unix.go",
         "unix_vfs2.go",
     ],
