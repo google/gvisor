@@ -1236,7 +1236,10 @@ func TestLinkAddressRequest(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		p := NewProtocol(nil)
+		s := stack.New(stack.Options{
+			NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
+		})
+		p := s.NetworkProtocolInstance(ProtocolNumber)
 		linkRes, ok := p.(stack.LinkAddressResolver)
 		if !ok {
 			t.Fatalf("expected IPv6 protocol to implement stack.LinkAddressResolver")

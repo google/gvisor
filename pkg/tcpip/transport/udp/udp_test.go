@@ -1507,13 +1507,19 @@ func TestTTL(t *testing.T) {
 			if flow.isMulticast() {
 				wantTTL = multicastTTL
 			} else {
-				var p stack.NetworkProtocol
+				var p stack.NetworkProtocolFactory
+				var n tcpip.NetworkProtocolNumber
 				if flow.isV4() {
-					p = ipv4.NewProtocol(nil)
+					p = ipv4.NewProtocol
+					n = ipv4.ProtocolNumber
 				} else {
-					p = ipv6.NewProtocol(nil)
+					p = ipv6.NewProtocol
+					n = ipv6.ProtocolNumber
 				}
-				ep := p.NewEndpoint(&testInterface{}, nil, nil, nil)
+				s := stack.New(stack.Options{
+					NetworkProtocols: []stack.NetworkProtocolFactory{p},
+				})
+				ep := s.NetworkProtocolInstance(n).NewEndpoint(&testInterface{}, nil, nil, nil)
 				wantTTL = ep.DefaultTTL()
 				ep.Close()
 			}
