@@ -70,10 +70,6 @@ func (f *fwdTestNetworkEndpoint) MTU() uint32 {
 	return f.ep.MTU() - uint32(f.MaxHeaderLength())
 }
 
-func (f *fwdTestNetworkEndpoint) NICID() tcpip.NICID {
-	return f.nicID
-}
-
 func (*fwdTestNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
@@ -89,10 +85,6 @@ func (f *fwdTestNetworkEndpoint) MaxHeaderLength() uint16 {
 
 func (f *fwdTestNetworkEndpoint) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, dstAddr tcpip.Address) uint16 {
 	return 0
-}
-
-func (f *fwdTestNetworkEndpoint) Capabilities() LinkEndpointCapabilities {
-	return f.ep.Capabilities()
 }
 
 func (f *fwdTestNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
@@ -165,12 +157,12 @@ func (*fwdTestNetworkProtocol) Parse(pkt *PacketBuffer) (tcpip.TransportProtocol
 	return tcpip.TransportProtocolNumber(netHeader[protocolNumberOffset]), true, true
 }
 
-func (f *fwdTestNetworkProtocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, dispatcher TransportDispatcher, ep LinkEndpoint, _ *Stack) NetworkEndpoint {
+func (f *fwdTestNetworkProtocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, dispatcher TransportDispatcher) NetworkEndpoint {
 	e := &fwdTestNetworkEndpoint{
 		nicID:      nic.ID(),
 		proto:      f,
 		dispatcher: dispatcher,
-		ep:         ep,
+		ep:         nic.LinkEndpoint(),
 	}
 	e.AddressableEndpointState.Init(e)
 	return e

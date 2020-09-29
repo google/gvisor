@@ -1901,7 +1901,7 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 	})
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
-	ep := proto.NewEndpoint(&testInterface{}, nil, nil, nil, nil, nil).(*endpoint)
+	ep := proto.NewEndpoint(&testInterface{}, nil, nil, nil).(*endpoint)
 	{
 		proto.mu.Lock()
 		_, hasEP := proto.mu.eps[ep]
