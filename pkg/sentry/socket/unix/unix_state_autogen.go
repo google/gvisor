@@ -6,26 +6,49 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *socketOpsCommonRefs) StateTypeName() string {
-	return "pkg/sentry/socket/unix.socketOpsCommonRefs"
+func (x *socketOperationsRefs) StateTypeName() string {
+	return "pkg/sentry/socket/unix.socketOperationsRefs"
 }
 
-func (x *socketOpsCommonRefs) StateFields() []string {
+func (x *socketOperationsRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (x *socketOpsCommonRefs) beforeSave() {}
+func (x *socketOperationsRefs) beforeSave() {}
 
-func (x *socketOpsCommonRefs) StateSave(m state.Sink) {
+func (x *socketOperationsRefs) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.refCount)
 }
 
-func (x *socketOpsCommonRefs) afterLoad() {}
+func (x *socketOperationsRefs) afterLoad() {}
 
-func (x *socketOpsCommonRefs) StateLoad(m state.Source) {
+func (x *socketOperationsRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
+func (x *socketVFS2Refs) StateTypeName() string {
+	return "pkg/sentry/socket/unix.socketVFS2Refs"
+}
+
+func (x *socketVFS2Refs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *socketVFS2Refs) beforeSave() {}
+
+func (x *socketVFS2Refs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *socketVFS2Refs) afterLoad() {}
+
+func (x *socketVFS2Refs) StateLoad(m state.Source) {
 	m.Load(0, &x.refCount)
 }
 
@@ -35,6 +58,7 @@ func (x *SocketOperations) StateTypeName() string {
 
 func (x *SocketOperations) StateFields() []string {
 	return []string{
+		"socketOperationsRefs",
 		"socketOpsCommon",
 	}
 }
@@ -43,13 +67,15 @@ func (x *SocketOperations) beforeSave() {}
 
 func (x *SocketOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.socketOpsCommon)
+	m.Save(0, &x.socketOperationsRefs)
+	m.Save(1, &x.socketOpsCommon)
 }
 
 func (x *SocketOperations) afterLoad() {}
 
 func (x *SocketOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.socketOpsCommon)
+	m.Load(0, &x.socketOperationsRefs)
+	m.Load(1, &x.socketOpsCommon)
 }
 
 func (x *socketOpsCommon) StateTypeName() string {
@@ -58,7 +84,6 @@ func (x *socketOpsCommon) StateTypeName() string {
 
 func (x *socketOpsCommon) StateFields() []string {
 	return []string{
-		"socketOpsCommonRefs",
 		"SendReceiveTimeout",
 		"ep",
 		"stype",
@@ -71,23 +96,21 @@ func (x *socketOpsCommon) beforeSave() {}
 
 func (x *socketOpsCommon) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.socketOpsCommonRefs)
-	m.Save(1, &x.SendReceiveTimeout)
-	m.Save(2, &x.ep)
-	m.Save(3, &x.stype)
-	m.Save(4, &x.abstractName)
-	m.Save(5, &x.abstractNamespace)
+	m.Save(0, &x.SendReceiveTimeout)
+	m.Save(1, &x.ep)
+	m.Save(2, &x.stype)
+	m.Save(3, &x.abstractName)
+	m.Save(4, &x.abstractNamespace)
 }
 
 func (x *socketOpsCommon) afterLoad() {}
 
 func (x *socketOpsCommon) StateLoad(m state.Source) {
-	m.Load(0, &x.socketOpsCommonRefs)
-	m.Load(1, &x.SendReceiveTimeout)
-	m.Load(2, &x.ep)
-	m.Load(3, &x.stype)
-	m.Load(4, &x.abstractName)
-	m.Load(5, &x.abstractNamespace)
+	m.Load(0, &x.SendReceiveTimeout)
+	m.Load(1, &x.ep)
+	m.Load(2, &x.stype)
+	m.Load(3, &x.abstractName)
+	m.Load(4, &x.abstractNamespace)
 }
 
 func (x *SocketVFS2) StateTypeName() string {
@@ -100,6 +123,7 @@ func (x *SocketVFS2) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"LockFD",
+		"socketVFS2Refs",
 		"socketOpsCommon",
 	}
 }
@@ -112,7 +136,8 @@ func (x *SocketVFS2) StateSave(m state.Sink) {
 	m.Save(1, &x.FileDescriptionDefaultImpl)
 	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
 	m.Save(3, &x.LockFD)
-	m.Save(4, &x.socketOpsCommon)
+	m.Save(4, &x.socketVFS2Refs)
+	m.Save(5, &x.socketOpsCommon)
 }
 
 func (x *SocketVFS2) afterLoad() {}
@@ -122,11 +147,13 @@ func (x *SocketVFS2) StateLoad(m state.Source) {
 	m.Load(1, &x.FileDescriptionDefaultImpl)
 	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
 	m.Load(3, &x.LockFD)
-	m.Load(4, &x.socketOpsCommon)
+	m.Load(4, &x.socketVFS2Refs)
+	m.Load(5, &x.socketOpsCommon)
 }
 
 func init() {
-	state.Register((*socketOpsCommonRefs)(nil))
+	state.Register((*socketOperationsRefs)(nil))
+	state.Register((*socketVFS2Refs)(nil))
 	state.Register((*SocketOperations)(nil))
 	state.Register((*socketOpsCommon)(nil))
 	state.Register((*SocketVFS2)(nil))

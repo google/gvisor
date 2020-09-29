@@ -297,7 +297,8 @@ func (x *Kernel) StateFields() []string {
 		"netlinkPorts",
 		"danglingEndpoints",
 		"sockets",
-		"nextSocketEntry",
+		"socketsVFS2",
+		"nextSocketRecord",
 		"deviceRegistry",
 		"DirentCacheLimiter",
 		"SpecialOpts",
@@ -317,7 +318,7 @@ func (x *Kernel) StateSave(m state.Sink) {
 	var danglingEndpoints []tcpip.Endpoint = x.saveDanglingEndpoints()
 	m.SaveValue(24, danglingEndpoints)
 	var deviceRegistry *device.Registry = x.saveDeviceRegistry()
-	m.SaveValue(27, deviceRegistry)
+	m.SaveValue(28, deviceRegistry)
 	m.Save(0, &x.featureSet)
 	m.Save(1, &x.timekeeper)
 	m.Save(2, &x.tasks)
@@ -343,15 +344,16 @@ func (x *Kernel) StateSave(m state.Sink) {
 	m.Save(22, &x.nextInotifyCookie)
 	m.Save(23, &x.netlinkPorts)
 	m.Save(25, &x.sockets)
-	m.Save(26, &x.nextSocketEntry)
-	m.Save(28, &x.DirentCacheLimiter)
-	m.Save(29, &x.SpecialOpts)
-	m.Save(30, &x.vfs)
-	m.Save(31, &x.hostMount)
-	m.Save(32, &x.pipeMount)
-	m.Save(33, &x.shmMount)
-	m.Save(34, &x.socketMount)
-	m.Save(35, &x.SleepForAddressSpaceActivation)
+	m.Save(26, &x.socketsVFS2)
+	m.Save(27, &x.nextSocketRecord)
+	m.Save(29, &x.DirentCacheLimiter)
+	m.Save(30, &x.SpecialOpts)
+	m.Save(31, &x.vfs)
+	m.Save(32, &x.hostMount)
+	m.Save(33, &x.pipeMount)
+	m.Save(34, &x.shmMount)
+	m.Save(35, &x.socketMount)
+	m.Save(36, &x.SleepForAddressSpaceActivation)
 }
 
 func (x *Kernel) afterLoad() {}
@@ -382,26 +384,26 @@ func (x *Kernel) StateLoad(m state.Source) {
 	m.Load(22, &x.nextInotifyCookie)
 	m.Load(23, &x.netlinkPorts)
 	m.Load(25, &x.sockets)
-	m.Load(26, &x.nextSocketEntry)
-	m.Load(28, &x.DirentCacheLimiter)
-	m.Load(29, &x.SpecialOpts)
-	m.Load(30, &x.vfs)
-	m.Load(31, &x.hostMount)
-	m.Load(32, &x.pipeMount)
-	m.Load(33, &x.shmMount)
-	m.Load(34, &x.socketMount)
-	m.Load(35, &x.SleepForAddressSpaceActivation)
+	m.Load(26, &x.socketsVFS2)
+	m.Load(27, &x.nextSocketRecord)
+	m.Load(29, &x.DirentCacheLimiter)
+	m.Load(30, &x.SpecialOpts)
+	m.Load(31, &x.vfs)
+	m.Load(32, &x.hostMount)
+	m.Load(33, &x.pipeMount)
+	m.Load(34, &x.shmMount)
+	m.Load(35, &x.socketMount)
+	m.Load(36, &x.SleepForAddressSpaceActivation)
 	m.LoadValue(24, new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
-	m.LoadValue(27, new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
+	m.LoadValue(28, new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
 }
 
-func (x *SocketEntry) StateTypeName() string {
-	return "pkg/sentry/kernel.SocketEntry"
+func (x *SocketRecord) StateTypeName() string {
+	return "pkg/sentry/kernel.SocketRecord"
 }
 
-func (x *SocketEntry) StateFields() []string {
+func (x *SocketRecord) StateFields() []string {
 	return []string{
-		"socketEntry",
 		"k",
 		"Sock",
 		"SockVFS2",
@@ -409,25 +411,49 @@ func (x *SocketEntry) StateFields() []string {
 	}
 }
 
-func (x *SocketEntry) beforeSave() {}
+func (x *SocketRecord) beforeSave() {}
 
-func (x *SocketEntry) StateSave(m state.Sink) {
+func (x *SocketRecord) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.socketEntry)
-	m.Save(1, &x.k)
-	m.Save(2, &x.Sock)
-	m.Save(3, &x.SockVFS2)
-	m.Save(4, &x.ID)
+	m.Save(0, &x.k)
+	m.Save(1, &x.Sock)
+	m.Save(2, &x.SockVFS2)
+	m.Save(3, &x.ID)
 }
 
-func (x *SocketEntry) afterLoad() {}
+func (x *SocketRecord) afterLoad() {}
 
-func (x *SocketEntry) StateLoad(m state.Source) {
+func (x *SocketRecord) StateLoad(m state.Source) {
+	m.Load(0, &x.k)
+	m.Load(1, &x.Sock)
+	m.Load(2, &x.SockVFS2)
+	m.Load(3, &x.ID)
+}
+
+func (x *SocketRecordVFS1) StateTypeName() string {
+	return "pkg/sentry/kernel.SocketRecordVFS1"
+}
+
+func (x *SocketRecordVFS1) StateFields() []string {
+	return []string{
+		"socketEntry",
+		"SocketRecord",
+	}
+}
+
+func (x *SocketRecordVFS1) beforeSave() {}
+
+func (x *SocketRecordVFS1) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.socketEntry)
+	m.Save(1, &x.SocketRecord)
+}
+
+func (x *SocketRecordVFS1) afterLoad() {}
+
+func (x *SocketRecordVFS1) StateLoad(m state.Source) {
 	m.Load(0, &x.socketEntry)
-	m.Load(1, &x.k)
-	m.Load(2, &x.Sock)
-	m.Load(3, &x.SockVFS2)
-	m.Load(4, &x.ID)
+	m.Load(1, &x.SocketRecord)
 }
 
 func (x *pendingSignals) StateTypeName() string {
@@ -2264,7 +2290,8 @@ func init() {
 	state.Register((*FSContextRefs)(nil))
 	state.Register((*IPCNamespace)(nil))
 	state.Register((*Kernel)(nil))
-	state.Register((*SocketEntry)(nil))
+	state.Register((*SocketRecord)(nil))
+	state.Register((*SocketRecordVFS1)(nil))
 	state.Register((*pendingSignals)(nil))
 	state.Register((*pendingSignalQueue)(nil))
 	state.Register((*pendingSignal)(nil))
