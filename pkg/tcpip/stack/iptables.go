@@ -60,11 +60,11 @@ func DefaultTables() *IPTables {
 		v4Tables: [numTables]Table{
 			natID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  0,
@@ -83,9 +83,9 @@ func DefaultTables() *IPTables {
 			},
 			mangleID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting: 0,
@@ -101,10 +101,10 @@ func DefaultTables() *IPTables {
 			},
 			filterID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  HookUnset,
@@ -125,11 +125,11 @@ func DefaultTables() *IPTables {
 		v6Tables: [numTables]Table{
 			natID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  0,
@@ -148,9 +148,9 @@ func DefaultTables() *IPTables {
 			},
 			mangleID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting: 0,
@@ -166,10 +166,10 @@ func DefaultTables() *IPTables {
 			},
 			filterID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  HookUnset,

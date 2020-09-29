@@ -1719,6 +1719,26 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		}
 		return &entries, nil
 
+	case linux.IPT_SO_GET_REVISION_TARGET:
+		if outLen < linux.SizeOfXTGetRevision {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		// Only valid for raw IPv4 sockets.
+		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
+			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		stack := inet.StackFromContext(t)
+		if stack == nil {
+			return nil, syserr.ErrNoDevice
+		}
+		ret, err := netfilter.TargetRevision(t, outPtr, header.IPv4ProtocolNumber)
+		if err != nil {
+			return nil, err
+		}
+		return &ret, nil
+
 	default:
 		emitUnimplementedEventIP(t, name)
 	}

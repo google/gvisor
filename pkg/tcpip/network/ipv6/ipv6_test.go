@@ -1748,7 +1748,7 @@ func TestWriteStats(t *testing.T) {
 					t.Fatalf("failed to find filter table")
 				}
 				ruleIdx := filter.BuiltinChains[stack.Output]
-				filter.Rules[ruleIdx].Target = stack.DropTarget{}
+				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				if err := ipt.ReplaceTable(stack.FilterTable, filter, true /* ipv6 */); err != nil {
 					t.Fatalf("failed to replace table: %v", err)
 				}
@@ -1770,10 +1770,10 @@ func TestWriteStats(t *testing.T) {
 				}
 				// We'll match and DROP the last packet.
 				ruleIdx := filter.BuiltinChains[stack.Output]
-				filter.Rules[ruleIdx].Target = stack.DropTarget{}
+				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&limitedMatcher{nPackets - 1}}
 				// Make sure the next rule is ACCEPT.
-				filter.Rules[ruleIdx+1].Target = stack.AcceptTarget{}
+				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterTable, filter, true /* ipv6 */); err != nil {
 					t.Fatalf("failed to replace table: %v", err)
 				}
