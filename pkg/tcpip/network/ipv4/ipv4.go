@@ -59,7 +59,6 @@ type endpoint struct {
 	linkEP     stack.LinkEndpoint
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
-	stack      *stack.Stack
 
 	// enabled is set to 1 when the enpoint is enabled and 0 when it is
 	// disabled.
@@ -75,13 +74,12 @@ type endpoint struct {
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
-func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &endpoint{
 		nic:        nic,
-		linkEP:     linkEP,
+		linkEP:     nic.LinkEndpoint(),
 		dispatcher: dispatcher,
 		protocol:   p,
-		stack:      st,
 	}
 	e.mu.addressableEndpointState.Init(e)
 	return e
@@ -171,16 +169,6 @@ func (e *endpoint) DefaultTTL() uint8 {
 // the network layer max header length.
 func (e *endpoint) MTU() uint32 {
 	return calculateMTU(e.linkEP.MTU())
-}
-
-// Capabilities implements stack.NetworkEndpoint.
-func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return e.linkEP.Capabilities()
-}
-
-// NICID returns the ID of the NIC this endpoint belongs to.
-func (e *endpoint) NICID() tcpip.NICID {
-	return e.nic.ID()
 }
 
 // MaxHeaderLength returns the maximum length needed by ipv4 headers (and
@@ -324,8 +312,8 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 
 	// iptables filtering. All packets that reach here are locally
 	// generated.
-	nicName := e.stack.FindNICNameFromID(e.NICID())
-	ipt := e.stack.IPTables()
+	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
+	ipt := e.protocol.stack.IPTables()
 	if ok := ipt.Check(stack.Output, pkt, gso, r, "", nicName); !ok {
 		// iptables is telling us to drop the packet.
 		r.Stats().IP.IPTablesOutputDropped.Increment()
@@ -341,7 +329,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	// short circuits broadcasts before they are sent out to other hosts.
 	if pkt.NatDone {
 		netHeader := header.IPv4(pkt.NetworkHeader().View())
-		ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
+		ep, err := e.protocol.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
 		if err == nil {
 			route := r.ReverseRoute(netHeader.SourceAddress(), netHeader.DestinationAddress())
 			ep.HandlePacket(&route, pkt)
@@ -381,10 +369,10 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		pkt = pkt.Next()
 	}
 
-	nicName := e.stack.FindNICNameFromID(e.NICID())
+	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
 	// iptables filtering. All packets that reach here are locally
 	// generated.
-	ipt := e.stack.IPTables()
+	ipt := e.protocol.stack.IPTables()
 	dropped, natPkts := ipt.CheckPackets(stack.Output, pkts, gso, r, nicName)
 	if len(dropped) == 0 && len(natPkts) == 0 {
 		// Fast path: If no packets are to be dropped then we can just invoke the
@@ -404,7 +392,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		}
 		if _, ok := natPkts[pkt]; ok {
 			netHeader := header.IPv4(pkt.NetworkHeader().View())
-			if ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress()); err == nil {
+			if ep, err := e.protocol.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress()); err == nil {
 				src := netHeader.SourceAddress()
 				dst := netHeader.DestinationAddress()
 				route := r.ReverseRoute(src, dst)
@@ -493,7 +481,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
-	ipt := e.stack.IPTables()
+	ipt := e.protocol.stack.IPTables()
 	if ok := ipt.Check(stack.Input, pkt, nil, nil, "", ""); !ok {
 		// iptables is telling us to drop the packet.
 		r.Stats().IP.IPTablesInputDropped.Increment()
@@ -677,6 +665,8 @@ var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
 var _ stack.NetworkProtocol = (*protocol)(nil)
 
 type protocol struct {
+	stack *stack.Stack
+
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful.
 	//
@@ -799,7 +789,7 @@ func hashRoute(r *stack.Route, protocol tcpip.TransportProtocolNumber, hashIV ui
 }
 
 // NewProtocol returns an IPv4 network protocol.
-func NewProtocol(*stack.Stack) stack.NetworkProtocol {
+func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 	ids := make([]uint32, buckets)
 
 	// Randomly initialize hashIV and the ids.
@@ -810,6 +800,7 @@ func NewProtocol(*stack.Stack) stack.NetworkProtocol {
 	hashIV := r[buckets]
 
 	return &protocol{
+		stack:         s,
 		ids:           ids,
 		hashIV:        hashIV,
 		defaultTTL:    DefaultTTL,

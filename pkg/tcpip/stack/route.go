@@ -72,17 +72,18 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		loop |= PacketLoop
 	}
 
+	linkEP := nic.LinkEndpoint()
 	r := Route{
 		NetProto:         netProto,
 		LocalAddress:     localAddr,
-		LocalLinkAddress: nic.linkEP.LinkAddress(),
+		LocalLinkAddress: linkEP.LinkAddress(),
 		RemoteAddress:    remoteAddr,
 		addressEndpoint:  addressEndpoint,
 		nic:              nic,
 		Loop:             loop,
 	}
 
-	if nic := r.nic; nic.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
+	if nic := r.nic; linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
 		if linkRes, ok := nic.stack.linkAddrResolvers[r.NetProto]; ok {
 			r.linkRes = linkRes
 			r.linkCache = nic.stack
@@ -94,7 +95,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 
 // NICID returns the id of the NIC from which this route originates.
 func (r *Route) NICID() tcpip.NICID {
-	return r.addressEndpoint.NetworkEndpoint().NICID()
+	return r.nic.ID()
 }
 
 // MaxHeaderLength forwards the call to the network endpoint's implementation.
@@ -115,7 +116,7 @@ func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, tot
 
 // Capabilities returns the link-layer capabilities of the route.
 func (r *Route) Capabilities() LinkEndpointCapabilities {
-	return r.addressEndpoint.NetworkEndpoint().Capabilities()
+	return r.nic.LinkEndpoint().Capabilities()
 }
 
 // GSOMaxSize returns the maximum GSO packet size.

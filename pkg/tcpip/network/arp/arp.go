@@ -96,14 +96,6 @@ func (e *endpoint) MTU() uint32 {
 	return lmtu - uint32(e.MaxHeaderLength())
 }
 
-func (e *endpoint) NICID() tcpip.NICID {
-	return e.nic.ID()
-}
-
-func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return e.linkEP.Capabilities()
-}
-
 func (e *endpoint) MaxHeaderLength() uint16 {
 	return e.linkEP.MaxHeaderLength() + header.ARPSize
 }
@@ -145,15 +137,15 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		localAddr := tcpip.Address(h.ProtocolAddressTarget())
 
 		if e.nud == nil {
-			if e.linkAddrCache.CheckLocalAddress(e.NICID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+			if e.linkAddrCache.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
 				return // we have no useful answer, ignore the request
 			}
 
 			addr := tcpip.Address(h.ProtocolAddressSender())
 			linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
-			e.linkAddrCache.AddLinkAddress(e.NICID(), addr, linkAddr)
+			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
 		} else {
-			if r.Stack().CheckLocalAddress(e.NICID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+			if r.Stack().CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
 				return // we have no useful answer, ignore the request
 			}
 
@@ -179,7 +171,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
 		if e.nud == nil {
-			e.linkAddrCache.AddLinkAddress(e.NICID(), addr, linkAddr)
+			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
 			return
 		}
 
@@ -211,11 +203,11 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
 }
 
-func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &endpoint{
 		protocol:      p,
 		nic:           nic,
-		linkEP:        sender,
+		linkEP:        nic.LinkEndpoint(),
 		linkAddrCache: linkAddrCache,
 		nud:           nud,
 	}

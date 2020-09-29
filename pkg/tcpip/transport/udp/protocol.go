@@ -45,6 +45,7 @@ const (
 )
 
 type protocol struct {
+	stack *stack.Stack
 }
 
 // Number returns the udp protocol number.
@@ -53,14 +54,14 @@ func (*protocol) Number() tcpip.TransportProtocolNumber {
 }
 
 // NewEndpoint creates a new udp endpoint.
-func (*protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return newEndpoint(stack, netProto, waiterQueue), nil
+func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return newEndpoint(p.stack, netProto, waiterQueue), nil
 }
 
 // NewRawEndpoint creates a new raw UDP endpoint. It implements
 // stack.TransportProtocol.NewRawEndpoint.
-func (p *protocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return raw.NewEndpoint(stack, netProto, header.UDPProtocolNumber, waiterQueue)
+func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return raw.NewEndpoint(p.stack, netProto, header.UDPProtocolNumber, waiterQueue)
 }
 
 // MinimumPacketSize returns the minimum valid udp packet size.
@@ -114,6 +115,6 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 }
 
 // NewProtocol returns a UDP transport protocol.
-func NewProtocol(*stack.Stack) stack.TransportProtocol {
-	return &protocol{}
+func NewProtocol(s *stack.Stack) stack.TransportProtocol {
+	return &protocol{stack: s}
 }
