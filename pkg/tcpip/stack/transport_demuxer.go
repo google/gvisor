@@ -544,9 +544,11 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 		return true
 	}
 
-	// If the packet is a TCP packet with a non-unicast source or destination
-	// address, then do nothing further and instruct the caller to do the same.
-	if protocol == header.TCPProtocolNumber && (!isInboundUnicast(r) || !isOutboundUnicast(r)) {
+	// If the packet is a TCP packet with a unspecified source or non-unicast
+	// destination address, then do nothing further and instruct the caller to do
+	// the same. The network layer handles address validation for specified source
+	// addresses.
+	if protocol == header.TCPProtocolNumber && (!isSpecified(r.LocalAddress) || !isSpecified(r.RemoteAddress) || isInboundMulticastOrBroadcast(r)) {
 		// TCP can only be used to communicate between a single source and a
 		// single destination; the addresses must be unicast.
 		r.Stats().TCP.InvalidSegmentsReceived.Increment()
@@ -681,10 +683,6 @@ func isInboundMulticastOrBroadcast(r *Route) bool {
 	return r.IsInboundBroadcast() || header.IsV4MulticastAddress(r.LocalAddress) || header.IsV6MulticastAddress(r.LocalAddress)
 }
 
-func isInboundUnicast(r *Route) bool {
-	return r.LocalAddress != header.IPv4Any && r.LocalAddress != header.IPv6Any && !isInboundMulticastOrBroadcast(r)
-}
-
-func isOutboundUnicast(r *Route) bool {
-	return r.RemoteAddress != header.IPv4Any && r.RemoteAddress != header.IPv6Any && !r.IsOutboundBroadcast() && !header.IsV4MulticastAddress(r.RemoteAddress) && !header.IsV6MulticastAddress(r.RemoteAddress)
+func isSpecified(addr tcpip.Address) bool {
+	return addr != header.IPv4Any && addr != header.IPv6Any
 }

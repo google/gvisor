@@ -509,6 +509,14 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		return
 	}
 
+	// As per RFC 4291 section 2.7:
+	//   Multicast addresses must not be used as source addresses in IPv6
+	//   packets or appear in any Routing header.
+	if header.IsV6MulticastAddress(r.RemoteAddress) {
+		r.Stats().IP.InvalidSourceAddressesReceived.Increment()
+		return
+	}
+
 	// vv consists of:
 	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
 	// - The transport header, if present.
@@ -754,11 +762,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			extHdr.Buf.TrimFront(pkt.TransportHeader().View().Size())
 			pkt.Data = extHdr.Buf
 
+			r.Stats().IP.PacketsDelivered.Increment()
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
 				pkt.TransportProtocolNumber = p
 				e.handleICMP(r, pkt, hasFragmentHeader)
 			} else {
-				r.Stats().IP.PacketsDelivered.Increment()
 				// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
 				// in response to unrecognized next header values.
 				switch res := e.dispatcher.DeliverTransportPacket(r, p, pkt); res {
