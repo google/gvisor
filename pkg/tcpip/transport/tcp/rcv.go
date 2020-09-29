@@ -88,6 +88,13 @@ func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 // segments to send.
 func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	avail := wndFromSpace(r.ep.receiveBufferAvailable())
+	if avail == 0 {
+		// We have no space available to accept any data, move to zero window
+		// state.
+		r.rcvWnd = 0
+		return r.rcvNxt, 0
+	}
+
 	acc := r.rcvNxt.Add(seqnum.Size(avail))
 	newWnd := r.rcvNxt.Size(acc)
 	curWnd := r.rcvNxt.Size(r.rcvAcc)
