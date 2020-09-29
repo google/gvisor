@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -68,11 +69,23 @@ const (
 // use the first three: destination address, source address, and transport
 // protocol. They're all one byte fields to simplify parsing.
 type fakeNetworkEndpoint struct {
+	stack.AddressableEndpointState
+
 	nicID      tcpip.NICID
 	proto      *fakeNetworkProtocol
 	dispatcher stack.TransportDispatcher
 	ep         stack.LinkEndpoint
 }
+
+func (*fakeNetworkEndpoint) Enable() *tcpip.Error {
+	return nil
+}
+
+func (*fakeNetworkEndpoint) Enabled() bool {
+	return true
+}
+
+func (*fakeNetworkEndpoint) Disable() {}
 
 func (f *fakeNetworkEndpoint) MTU() uint32 {
 	return f.ep.MTU() - uint32(f.MaxHeaderLength())
@@ -156,7 +169,9 @@ func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack
 	return tcpip.ErrNotSupported
 }
 
-func (*fakeNetworkEndpoint) Close() {}
+func (f *fakeNetworkEndpoint) Close() {
+	f.AddressableEndpointState.Cleanup()
+}
 
 // fakeNetworkProtocol is a network-layer protocol descriptor. It aggregates the
 // number of packets sent and received via endpoints of this protocol. The index
@@ -165,6 +180,11 @@ type fakeNetworkProtocol struct {
 	packetCount     [10]int
 	sendPacketCount [10]int
 	defaultTTL      uint8
+
+	mu struct {
+		sync.RWMutex
+		forwarding bool
+	}
 }
 
 func (f *fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -187,13 +207,15 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
-func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
-	return &fakeNetworkEndpoint{
-		nicID:      nicID,
+func (f *fakeNetworkProtocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
+	e := &fakeNetworkEndpoint{
+		nicID:      nic.ID(),
 		proto:      f,
 		dispatcher: dispatcher,
 		ep:         ep,
 	}
+	e.AddressableEndpointState.Init(e)
+	return e
 }
 
 func (f *fakeNetworkProtocol) SetOption(option tcpip.SettableNetworkProtocolOption) *tcpip.Error {
@@ -229,6 +251,20 @@ func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProto
 		return 0, false, false
 	}
 	return tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]), true, true
+}
+
+// Forwarding implements stack.ForwardingNetworkProtocol.
+func (f *fakeNetworkProtocol) Forwarding() bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.mu.forwarding
+}
+
+// SetForwarding implements stack.ForwardingNetworkProtocol.
+func (f *fakeNetworkProtocol) SetForwarding(v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mu.forwarding = v
 }
 
 func fakeNetFactory(*stack.Stack) stack.NetworkProtocol {
@@ -2213,7 +2249,7 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 		nicName      string
 		autoGen      bool
 		linkAddr     tcpip.LinkAddress
-		iidOpts      stack.OpaqueInterfaceIdentifierOptions
+		iidOpts      ipv6.OpaqueInterfaceIdentifierOptions
 		shouldGen    bool
 		expectedAddr tcpip.Address
 	}{
@@ -2229,7 +2265,7 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 			nicName:  "nic1",
 			autoGen:  false,
 			linkAddr: linkAddr1,
-			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+			iidOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: nicNameFunc,
 				SecretKey:     secretKey[:],
 			},
@@ -2274,7 +2310,7 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 			nicName:  "nic1",
 			autoGen:  true,
 			linkAddr: linkAddr1,
-			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+			iidOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: nicNameFunc,
 				SecretKey:     secretKey[:],
 			},
@@ -2286,7 +2322,7 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 		{
 			name:    "OIID Empty MAC and empty nicName",
 			autoGen: true,
-			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+			iidOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: nicNameFunc,
 				SecretKey:     secretKey[:1],
 			},
@@ -2298,7 +2334,7 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 			nicName:  "test",
 			autoGen:  true,
 			linkAddr: "\x01\x02\x03",
-			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+			iidOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: nicNameFunc,
 				SecretKey:     secretKey[:2],
 			},
@@ -2310,7 +2346,7 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 			nicName:  "test2",
 			autoGen:  true,
 			linkAddr: "\x01\x02\x03\x04\x05\x06",
-			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+			iidOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: nicNameFunc,
 				SecretKey:     secretKey[:3],
 			},
@@ -2322,7 +2358,7 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 			nicName:  "test3",
 			autoGen:  true,
 			linkAddr: "\x00\x00\x00\x00\x00\x00",
-			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+			iidOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: nicNameFunc,
 			},
 			shouldGen:    true,
@@ -2336,10 +2372,11 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
 			}
 			opts := stack.Options{
-				NetworkProtocols:     []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-				AutoGenIPv6LinkLocal: test.autoGen,
-				NDPDisp:              &ndpDisp,
-				OpaqueIIDOpts:        test.iidOpts,
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+					AutoGenIPv6LinkLocal: test.autoGen,
+					NDPDisp:              &ndpDisp,
+					OpaqueIIDOpts:        test.iidOpts,
+				})},
 			}
 
 			e := channel.New(0, 1280, test.linkAddr)
@@ -2411,15 +2448,15 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		opaqueIIDOpts stack.OpaqueInterfaceIdentifierOptions
+		opaqueIIDOpts ipv6.OpaqueInterfaceIdentifierOptions
 	}{
 		{
 			name:          "IID From MAC",
-			opaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{},
+			opaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{},
 		},
 		{
 			name: "Opaque IID",
-			opaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
+			opaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: func(_ tcpip.NICID, nicName string) string {
 					return nicName
 				},
@@ -2430,9 +2467,10 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			opts := stack.Options{
-				NetworkProtocols:     []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-				AutoGenIPv6LinkLocal: true,
-				OpaqueIIDOpts:        test.opaqueIIDOpts,
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+					AutoGenIPv6LinkLocal: true,
+					OpaqueIIDOpts:        test.opaqueIIDOpts,
+				})},
 			}
 
 			e := loopback.New()
@@ -2461,12 +2499,13 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 	ndpDisp := ndpDispatcher{
 		dadC: make(chan ndpDADEvent),
 	}
-	ndpConfigs := stack.DefaultNDPConfigurations()
+	ndpConfigs := ipv6.DefaultNDPConfigurations()
 	opts := stack.Options{
-		NetworkProtocols:     []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-		NDPConfigs:           ndpConfigs,
-		AutoGenIPv6LinkLocal: true,
-		NDPDisp:              &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs:           ndpConfigs,
+			AutoGenIPv6LinkLocal: true,
+			NDPDisp:              &ndpDisp,
+		})},
 	}
 
 	e := channel.New(int(ndpConfigs.DupAddrDetectTransmits), 1280, linkAddr1)
@@ -2813,14 +2852,15 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ipv6.NDPConfigurations{
+						HandleRAs:                  true,
+						AutoGenGlobalAddresses:     true,
+						AutoGenTempGlobalAddresses: true,
+					},
+					NDPDisp: &ndpDispatcher{},
+				})},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-				NDPConfigs: stack.NDPConfigurations{
-					HandleRAs:                  true,
-					AutoGenGlobalAddresses:     true,
-					AutoGenTempGlobalAddresses: true,
-				},
-				NDPDisp: &ndpDispatcher{},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -3059,12 +3099,13 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 		dadC: make(chan ndpDADEvent),
 	}
 	opts := stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-		NDPConfigs: stack.NDPConfigurations{
-			DupAddrDetectTransmits: dadTransmits,
-			RetransmitTimer:        retransmitTimer,
-		},
-		NDPDisp: &ndpDisp,
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				DupAddrDetectTransmits: dadTransmits,
+				RetransmitTimer:        retransmitTimer,
+			},
+			NDPDisp: &ndpDisp,
+		})},
 	}
 
 	e := channel.New(dadTransmits, 1280, linkAddr1)
@@ -3497,5 +3538,93 @@ func TestResolveWith(t *testing.T) {
 	r.ResolveWith("\x01")
 	if r.IsResolutionRequired() {
 		t.Fatal("got r.IsResolutionRequired() = true, want = false")
+	}
+}
+
+// TestRouteReleaseAfterAddrRemoval tests that releasing a Route after its
+// associated address is removed should not cause a panic.
+func TestRouteReleaseAfterAddrRemoval(t *testing.T) {
+	const (
+		nicID      = 1
+		localAddr  = tcpip.Address("\x01")
+		remoteAddr = tcpip.Address("\x02")
+	)
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
+	})
+
+	ep := channel.New(0, defaultMTU, "")
+	if err := s.CreateNIC(nicID, ep); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+	if err := s.AddAddress(nicID, fakeNetNumber, localAddr); err != nil {
+		t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, fakeNetNumber, localAddr, err)
+	}
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
+
+	r, err := s.FindRoute(nicID, localAddr, remoteAddr, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, localAddr, remoteAddr, fakeNetNumber, err)
+	}
+	// Should not panic.
+	defer r.Release()
+
+	// Check that removing the same address fails.
+	if err := s.RemoveAddress(nicID, localAddr); err != nil {
+		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, localAddr, err)
+	}
+}
+
+func TestGetNetworkEndpoint(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name         string
+		protoFactory stack.NetworkProtocolFactory
+		protoNum     tcpip.NetworkProtocolNumber
+	}{
+		{
+			name:         "IPv4",
+			protoFactory: ipv4.NewProtocol,
+			protoNum:     ipv4.ProtocolNumber,
+		},
+		{
+			name:         "IPv6",
+			protoFactory: ipv6.NewProtocol,
+			protoNum:     ipv6.ProtocolNumber,
+		},
+	}
+
+	factories := make([]stack.NetworkProtocolFactory, 0, len(tests))
+	for _, test := range tests {
+		factories = append(factories, test.protoFactory)
+	}
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: factories,
+	})
+
+	if err := s.CreateNIC(nicID, channel.New(0, defaultMTU, "")); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ep, err := s.GetNetworkEndpoint(nicID, test.protoNum)
+			if err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, test.protoNum, err)
+			}
+
+			if got := ep.NetworkProtocolNumber(); got != test.protoNum {
+				t.Fatalf("got ep.NetworkProtocolNumber() = %d, want = %d", got, test.protoNum)
+			}
+		})
 	}
 }

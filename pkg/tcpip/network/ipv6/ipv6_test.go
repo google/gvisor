@@ -1895,3 +1895,30 @@ func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string) (bool, 
 	lm.limit--
 	return false, false
 }
+
+func TestClearEndpointFromProtocolOnClose(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
+	})
+	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
+	ep := proto.NewEndpoint(&testInterface{}, nil, nil, nil, nil, nil).(*endpoint)
+	{
+		proto.mu.Lock()
+		_, hasEP := proto.mu.eps[ep]
+		proto.mu.Unlock()
+		if !hasEP {
+			t.Fatalf("expected protocol to have ep = %p in set of endpoints", ep)
+		}
+	}
+
+	ep.Close()
+
+	{
+		proto.mu.Lock()
+		_, hasEP := proto.mu.eps[ep]
+		proto.mu.Unlock()
+		if hasEP {
+			t.Fatalf("unexpectedly found ep = %p in set of protocol's endpoints", ep)
+		}
+	}
+}

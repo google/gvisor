@@ -1466,6 +1466,26 @@ func TestNoChecksum(t *testing.T) {
 	}
 }
 
+var _ stack.NetworkInterface = (*testInterface)(nil)
+
+type testInterface struct{}
+
+func (*testInterface) ID() tcpip.NICID {
+	return 0
+}
+
+func (*testInterface) IsLoopback() bool {
+	return false
+}
+
+func (*testInterface) Name() string {
+	return ""
+}
+
+func (*testInterface) Enabled() bool {
+	return true
+}
+
 func TestTTL(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
@@ -1489,7 +1509,7 @@ func TestTTL(t *testing.T) {
 				} else {
 					p = ipv6.NewProtocol(nil)
 				}
-				ep := p.NewEndpoint(0, nil, nil, nil, nil, stack.New(stack.Options{
+				ep := p.NewEndpoint(&testInterface{}, nil, nil, nil, nil, stack.New(stack.Options{
 					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				}))

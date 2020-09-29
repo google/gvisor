@@ -17,6 +17,7 @@ package ip_test
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -248,11 +249,126 @@ func buildDummyStack(t *testing.T) *stack.Stack {
 	return s
 }
 
+var _ stack.NetworkInterface = (*testInterface)(nil)
+
+type testInterface struct {
+	mu struct {
+		sync.RWMutex
+		disabled bool
+	}
+}
+
+func (*testInterface) ID() tcpip.NICID {
+	return nicID
+}
+
+func (*testInterface) IsLoopback() bool {
+	return false
+}
+
+func (*testInterface) Name() string {
+	return ""
+}
+
+func (t *testInterface) Enabled() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return !t.mu.disabled
+}
+
+func (t *testInterface) setEnabled(v bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.mu.disabled = !v
+}
+
+func TestEnableWhenNICDisabled(t *testing.T) {
+	tests := []struct {
+		name            string
+		protocolFactory stack.NetworkProtocolFactory
+		protoNum        tcpip.NetworkProtocolNumber
+	}{
+		{
+			name:            "IPv4",
+			protocolFactory: ipv4.NewProtocol,
+			protoNum:        ipv4.ProtocolNumber,
+		},
+		{
+			name:            "IPv6",
+			protocolFactory: ipv6.NewProtocol,
+			protoNum:        ipv6.ProtocolNumber,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var nic testInterface
+			nic.setEnabled(false)
+
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{test.protocolFactory},
+			})
+			p := s.NetworkProtocolInstance(test.protoNum)
+
+			// We pass nil for all parameters except the NetworkInterface and Stack
+			// since Enable only depends on these.
+			ep := p.NewEndpoint(&nic, nil, nil, nil, nil, s)
+
+			// The endpoint should initially be disabled, regardless the NIC's enabled
+			// status.
+			if ep.Enabled() {
+				t.Fatal("got ep.Enabled() = true, want = false")
+			}
+			nic.setEnabled(true)
+			if ep.Enabled() {
+				t.Fatal("got ep.Enabled() = true, want = false")
+			}
+
+			// Attempting to enable the endpoint while the NIC is disabled should
+			// fail.
+			nic.setEnabled(false)
+			if err := ep.Enable(); err != tcpip.ErrNotPermitted {
+				t.Fatalf("got ep.Enable() = %s, want = %s", err, tcpip.ErrNotPermitted)
+			}
+			// ep should consider the NIC's enabled status when determining its own
+			// enabled status so we "enable" the NIC to read just the endpoint's
+			// enabled status.
+			nic.setEnabled(true)
+			if ep.Enabled() {
+				t.Fatal("got ep.Enabled() = true, want = false")
+			}
+
+			// Enabling the interface after the NIC has been enabled should succeed.
+			if err := ep.Enable(); err != nil {
+				t.Fatalf("ep.Enable(): %s", err)
+			}
+			if !ep.Enabled() {
+				t.Fatal("got ep.Enabled() = false, want = true")
+			}
+
+			// ep should consider the NIC's enabled status when determining its own
+			// enabled status.
+			nic.setEnabled(false)
+			if ep.Enabled() {
+				t.Fatal("got ep.Enabled() = true, want = false")
+			}
+
+			// Disabling the endpoint when the NIC is enabled should make the endpoint
+			// disabled.
+			nic.setEnabled(true)
+			ep.Disable()
+			if ep.Enabled() {
+				t.Fatal("got ep.Enabled() = true, want = false")
+			}
+		})
+	}
+}
+
 func TestIPv4Send(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
-	ep := proto.NewEndpoint(nicID, nil, nil, nil, &o, s)
+	ep := proto.NewEndpoint(&testInterface{}, nil, nil, nil, &o, s)
 	defer ep.Close()
 
 	// Allocate and initialize the payload view.
@@ -290,8 +406,12 @@ func TestIPv4Receive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
-	ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, s)
+	ep := proto.NewEndpoint(&testInterface{}, nil, nil, &o, nil, s)
 	defer ep.Close()
+
+	if err := ep.Enable(); err != nil {
+		t.Fatalf("ep.Enable(): %s", err)
+	}
 
 	totalLen := header.IPv4MinimumSize + 30
 	view := buffer.NewView(totalLen)
@@ -361,8 +481,12 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			o := testObject{t: t}
 			s := buildDummyStack(t)
 			proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
-			ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, s)
+			ep := proto.NewEndpoint(&testInterface{}, nil, nil, &o, nil, s)
 			defer ep.Close()
+
+			if err := ep.Enable(); err != nil {
+				t.Fatalf("ep.Enable(): %s", err)
+			}
 
 			const dataOffset = header.IPv4MinimumSize*2 + header.ICMPv4MinimumSize
 			view := buffer.NewView(dataOffset + 8)
@@ -423,8 +547,12 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
-	ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, s)
+	ep := proto.NewEndpoint(&testInterface{}, nil, nil, &o, nil, s)
 	defer ep.Close()
+
+	if err := ep.Enable(); err != nil {
+		t.Fatalf("ep.Enable(): %s", err)
+	}
 
 	totalLen := header.IPv4MinimumSize + 24
 
@@ -501,8 +629,12 @@ func TestIPv6Send(t *testing.T) {
 	o := testObject{t: t}
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
-	ep := proto.NewEndpoint(nicID, nil, nil, &o, channel.New(0, 1280, ""), s)
+	ep := proto.NewEndpoint(&testInterface{}, nil, nil, &o, channel.New(0, 1280, ""), s)
 	defer ep.Close()
+
+	if err := ep.Enable(); err != nil {
+		t.Fatalf("ep.Enable(): %s", err)
+	}
 
 	// Allocate and initialize the payload view.
 	payload := buffer.NewView(100)
@@ -539,8 +671,12 @@ func TestIPv6Receive(t *testing.T) {
 	o := testObject{t: t}
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
-	ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, s)
+	ep := proto.NewEndpoint(&testInterface{}, nil, nil, &o, nil, s)
 	defer ep.Close()
+
+	if err := ep.Enable(); err != nil {
+		t.Fatalf("ep.Enable(): %s", err)
+	}
 
 	totalLen := header.IPv6MinimumSize + 30
 	view := buffer.NewView(totalLen)
@@ -619,8 +755,12 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			o := testObject{t: t}
 			s := buildDummyStack(t)
 			proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
-			ep := proto.NewEndpoint(nicID, nil, nil, &o, nil, s)
+			ep := proto.NewEndpoint(&testInterface{}, nil, nil, &o, nil, s)
 			defer ep.Close()
+
+			if err := ep.Enable(); err != nil {
+				t.Fatalf("ep.Enable(): %s", err)
+			}
 
 			dataOffset := header.IPv6MinimumSize*2 + header.ICMPv6MinimumSize
 			if c.fragmentOffset != nil {
