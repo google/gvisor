@@ -67,6 +67,7 @@ var (
 	taskStaticFiles = map[string]testutil.DirentType{
 		"auxv":          linux.DT_REG,
 		"cgroup":        linux.DT_REG,
+		"cwd":           linux.DT_LNK,
 		"cmdline":       linux.DT_REG,
 		"comm":          linux.DT_REG,
 		"environ":       linux.DT_REG,
