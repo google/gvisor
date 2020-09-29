@@ -258,7 +258,7 @@ func (e *endpoint) Enable() *tcpip.Error {
 	}
 
 	// Do not auto-generate an IPv6 link-local address for loopback devices.
-	if e.protocol.autoGenIPv6LinkLocal {
+	if e.protocol.autoGenIPv6LinkLocal && !e.nic.IsLoopback() {
 		// The valid and preferred lifetime is infinite for the auto-generated
 		// link-local address.
 		e.mu.ndp.doSLAAC(header.IPv6LinkLocalPrefix.Subnet(), header.NDPInfiniteLifetime, header.NDPInfiniteLifetime)
