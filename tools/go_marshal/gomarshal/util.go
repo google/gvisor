@@ -79,7 +79,7 @@ type fieldDispatcher struct {
 }
 
 // Precondition: All dispatch callbacks that will be invoked must be
-// provided. Embedded fields are not allowed, len(f.Names) >= 1.
+// provided.
 func (fd fieldDispatcher) dispatch(f *ast.Field) {
 	// Each field declaration may actually be multiple declarations of the same
 	// type. For example, consider:
@@ -88,12 +88,24 @@ func (fd fieldDispatcher) dispatch(f *ast.Field) {
 	//     x, y, z int
 	// }
 	//
-	// We invoke the call-backs once per such instance. Embedded fields are not
-	// allowed, and results in a panic.
+	// We invoke the call-backs once per such instance.
+
+	// Handle embedded fields. Embedded fields have no names, but can be
+	// referenced by the type name.
 	if len(f.Names) < 1 {
-		panic("Precondition not met: attempted to dispatch on embedded field")
+		switch v := f.Type.(type) {
+		case *ast.Ident:
+			fd.primitive(v, v)
+		case *ast.SelectorExpr:
+			fd.selector(v.Sel, v.X.(*ast.Ident), v.Sel)
+		default:
+			// Note: Arrays can't be embedded, which is handled here.
+			panic(fmt.Sprintf("Attempted to dispatch on embedded field of unsupported kind: %#v", f.Type))
+		}
+		return
 	}
 
+	// Non-embedded field.
 	for _, name := range f.Names {
 		switch v := f.Type.(type) {
 		case *ast.Ident:
