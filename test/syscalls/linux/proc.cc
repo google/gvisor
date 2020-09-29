@@ -47,6 +47,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/node_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
@@ -721,8 +722,8 @@ static void CheckFdDirGetdentsDuplicates(const std::string& path) {
   EXPECT_GE(newfd, 1024);
   auto fd_closer = Cleanup([newfd]() { close(newfd); });
   auto fd_files = ASSERT_NO_ERRNO_AND_VALUE(ListDir(path.c_str(), false));
-  std::unordered_set<std::string> fd_files_dedup(fd_files.begin(),
-                                                 fd_files.end());
+  absl::node_hash_set<std::string> fd_files_dedup(fd_files.begin(),
+                                                  fd_files.end());
   EXPECT_EQ(fd_files.size(), fd_files_dedup.size());
 }
 
