@@ -265,6 +265,18 @@ type KernelXTEntryMatch struct {
 	Data []byte
 }
 
+// XTGetRevision corresponds to xt_get_revision in
+// include/uapi/linux/netfilter/x_tables.h
+//
+// +marshal
+type XTGetRevision struct {
+	Name     ExtensionName
+	Revision uint8
+}
+
+// SizeOfXTGetRevision is the size of an XTGetRevision.
+const SizeOfXTGetRevision = 30
+
 // XTEntryTarget holds a target for a rule. For example, it can specify that
 // packets matching the rule should DROP, ACCEPT, or use an extension target.
 // iptables-extension(8) has a list of possible targets.
@@ -284,6 +296,13 @@ type XTEntryTarget struct {
 
 // SizeOfXTEntryTarget is the size of an XTEntryTarget.
 const SizeOfXTEntryTarget = 32
+
+// KernelXTEntryTarget is identical to XTEntryTarget, but contains a
+// variable-length Data field.
+type KernelXTEntryTarget struct {
+	XTEntryTarget
+	Data []byte
+}
 
 // XTStandardTarget is a built-in target, one of ACCEPT, DROP, JUMP, QUEUE,
 // RETURN, or jump. It corresponds to struct xt_standard_target in
@@ -510,6 +529,8 @@ type IPTReplace struct {
 const SizeOfIPTReplace = 96
 
 // ExtensionName holds the name of a netfilter extension.
+//
+// +marshal
 type ExtensionName [XT_EXTENSION_MAXNAMELEN]byte
 
 // String implements fmt.Stringer.

@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -199,7 +200,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 
 	// Check the user chains.
 	for ruleIdx, rule := range table.Rules {
-		if _, ok := rule.Target.(stack.UserChainTarget); !ok {
+		if _, ok := rule.Target.(*stack.UserChainTarget); !ok {
 			continue
 		}
 
@@ -220,7 +221,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	// Set each jump to point to the appropriate rule. Right now they hold byte
 	// offsets.
 	for ruleIdx, rule := range table.Rules {
-		jump, ok := rule.Target.(JumpTarget)
+		jump, ok := rule.Target.(*JumpTarget)
 		if !ok {
 			continue
 		}
@@ -311,7 +312,7 @@ func validUnderflow(rule stack.Rule, ipv6 bool) bool {
 		return false
 	}
 	switch rule.Target.(type) {
-	case stack.AcceptTarget, stack.DropTarget:
+	case *stack.AcceptTarget, *stack.DropTarget:
 		return true
 	default:
 		return false
@@ -322,7 +323,7 @@ func isUnconditionalAccept(rule stack.Rule, ipv6 bool) bool {
 	if !validUnderflow(rule, ipv6) {
 		return false
 	}
-	_, ok := rule.Target.(stack.AcceptTarget)
+	_, ok := rule.Target.(*stack.AcceptTarget)
 	return ok
 }
 
@@ -340,4 +341,21 @@ func hookFromLinux(hook int) stack.Hook {
 		return stack.Postrouting
 	}
 	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain", hook))
+}
+
+// TargetRevision returns a linux.XTGetRevision for a given target. It sets
+// Revision to the highest supported value, unless the provided revision number
+// is larger.
+func TargetRevision(t *kernel.Task, revPtr usermem.Addr, netProto tcpip.NetworkProtocolNumber) (linux.XTGetRevision, *syserr.Error) {
+	// Read in the target name and version.
+	var rev linux.XTGetRevision
+	if _, err := rev.CopyIn(t, revPtr); err != nil {
+		return linux.XTGetRevision{}, syserr.FromError(err)
+	}
+	maxSupported, ok := targetRevision(rev.Name.String(), netProto, rev.Revision)
+	if !ok {
+		return linux.XTGetRevision{}, syserr.ErrProtocolNotSupported
+	}
+	rev.Revision = maxSupported
+	return rev, nil
 }
