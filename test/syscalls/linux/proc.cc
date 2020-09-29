@@ -780,8 +780,12 @@ TEST(ProcSelfFdInfo, Flags) {
 }
 
 TEST(ProcSelfExe, Absolute) {
-  auto exe = ASSERT_NO_ERRNO_AND_VALUE(
-      ReadLink(absl::StrCat("/proc/", getpid(), "/exe")));
+  auto exe = ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/self/exe"));
+  EXPECT_EQ(exe[0], '/');
+}
+
+TEST(ProcSelfCwd, Absolute) {
+  auto exe = ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/self/cwd"));
   EXPECT_EQ(exe[0], '/');
 }
 
@@ -1471,6 +1475,16 @@ TEST(ProcPidExe, Subprocess) {
   ASSERT_THAT(ReadlinkWhileRunning("exe", actual, sizeof(actual)),
               SyscallSucceedsWithValue(Gt(0)));
   EXPECT_EQ(actual, expected_absolute_path);
+}
+
+// /proc/PID/cwd points to the correct directory.
+TEST(ProcPidCwd, Subprocess) {
+  auto want = ASSERT_NO_ERRNO_AND_VALUE(GetCWD());
+
+  char got[PATH_MAX + 1] = {};
+  ASSERT_THAT(ReadlinkWhileRunning("cwd", got, sizeof(got)),
+              SyscallSucceedsWithValue(Gt(0)));
+  EXPECT_EQ(got, want);
 }
 
 // Test whether /proc/PID/ files can be read for a running process.
