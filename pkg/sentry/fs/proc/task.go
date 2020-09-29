@@ -84,6 +84,7 @@ func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bo
 		"auxv":          newAuxvec(t, msrc),
 		"cmdline":       newExecArgInode(t, msrc, cmdlineExecArg),
 		"comm":          newComm(t, msrc),
+		"cwd":           newCwd(t, msrc),
 		"environ":       newExecArgInode(t, msrc, environExecArg),
 		"exe":           newExe(t, msrc),
 		"fd":            newFdDir(t, msrc),
@@ -298,6 +299,49 @@ func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	defer exec.DecRef(ctx)
 
 	return exec.PathnameWithDeleted(ctx), nil
+}
+
+// cwd is an fs.InodeOperations symlink for the /proc/PID/cwd file.
+//
+// +stateify savable
+type cwd struct {
+	ramfs.Symlink
+
+	t *kernel.Task
+}
+
+func newCwd(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	cwdSymlink := &cwd{
+		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, ""),
+		t:       t,
+	}
+	return newProcInode(t, cwdSymlink, msrc, fs.Symlink, t)
+}
+
+// Readlink implements fs.InodeOperations.
+func (e *cwd) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
+	if !kernel.ContextCanTrace(ctx, e.t, false) {
+		return "", syserror.EACCES
+	}
+	if err := checkTaskState(e.t); err != nil {
+		return "", err
+	}
+	cwd := e.t.FSContext().WorkingDirectory()
+	if cwd == nil {
+		// It could have raced with process deletion.
+		return "", syserror.ESRCH
+	}
+	defer cwd.DecRef(ctx)
+
+	root := fs.RootFromContext(ctx)
+	if root == nil {
+		// It could have raced with process deletion.
+		return "", syserror.ESRCH
+	}
+	defer root.DecRef(ctx)
+
+	name, _ := cwd.FullName(root)
+	return name, nil
 }
 
 // namespaceSymlink represents a symlink in the namespacefs, such as the files

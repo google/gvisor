@@ -669,18 +669,22 @@ func (fs *filesystem) newExeSymlink(task *kernel.Task, ino uint64) *kernfs.Dentr
 
 // Readlink implements kernfs.Inode.Readlink.
 func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
-	if !kernel.ContextCanTrace(ctx, s.task, false) {
-		return "", syserror.EACCES
-	}
-
-	// Pull out the executable for /proc/[pid]/exe.
-	exec, err := s.executable()
+	exec, _, err := s.Getlink(ctx, nil)
 	if err != nil {
 		return "", err
 	}
 	defer exec.DecRef(ctx)
 
-	return exec.PathnameWithDeleted(ctx), nil
+	root := vfs.RootFromContext(ctx)
+	if !root.Ok() {
+		// It could have raced with process deletion.
+		return "", syserror.ESRCH
+	}
+	defer root.DecRef(ctx)
+
+	vfsObj := exec.Mount().Filesystem().VirtualFilesystem()
+	name, _ := vfsObj.PathnameWithDeleted(ctx, root, exec)
+	return name, nil
 }
 
 // Getlink implements kernfs.Inode.Getlink.
@@ -688,23 +692,12 @@ func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return vfs.VirtualDentry{}, "", syserror.EACCES
 	}
-
-	exec, err := s.executable()
-	if err != nil {
+	if err := checkTaskState(s.task); err != nil {
 		return vfs.VirtualDentry{}, "", err
 	}
-	defer exec.DecRef(ctx)
 
-	vd := exec.(*fsbridge.VFSFile).FileDescription().VirtualDentry()
-	vd.IncRef()
-	return vd, "", nil
-}
-
-func (s *exeSymlink) executable() (file fsbridge.File, err error) {
-	if err := checkTaskState(s.task); err != nil {
-		return nil, err
-	}
-
+	var err error
+	var exec fsbridge.File
 	s.task.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
@@ -715,12 +708,78 @@ func (s *exeSymlink) executable() (file fsbridge.File, err error) {
 		// The MemoryManager may be destroyed, in which case
 		// MemoryManager.destroy will simply set the executable to nil
 		// (with locks held).
-		file = mm.Executable()
-		if file == nil {
+		exec = mm.Executable()
+		if exec == nil {
 			err = syserror.ESRCH
 		}
 	})
-	return
+	if err != nil {
+		return vfs.VirtualDentry{}, "", err
+	}
+	defer exec.DecRef(ctx)
+
+	vd := exec.(*fsbridge.VFSFile).FileDescription().VirtualDentry()
+	vd.IncRef()
+	return vd, "", nil
+}
+
+// cwdSymlink is an symlink for the /proc/[pid]/cwd file.
+//
+// +stateify savable
+type cwdSymlink struct {
+	implStatFS
+	kernfs.InodeAttrs
+	kernfs.InodeNoopRefCount
+	kernfs.InodeSymlink
+
+	task *kernel.Task
+}
+
+var _ kernfs.Inode = (*cwdSymlink)(nil)
+
+func (fs *filesystem) newCwdSymlink(task *kernel.Task, ino uint64) *kernfs.Dentry {
+	inode := &cwdSymlink{task: task}
+	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+
+	d := &kernfs.Dentry{}
+	d.Init(inode)
+	return d
+}
+
+// Readlink implements kernfs.Inode.Readlink.
+func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
+	cwd, _, err := s.Getlink(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer cwd.DecRef(ctx)
+
+	root := vfs.RootFromContext(ctx)
+	if !root.Ok() {
+		// It could have raced with process deletion.
+		return "", syserror.ESRCH
+	}
+	defer root.DecRef(ctx)
+
+	vfsObj := cwd.Mount().Filesystem().VirtualFilesystem()
+	name, _ := vfsObj.PathnameWithDeleted(ctx, root, cwd)
+	return name, nil
+}
+
+// Getlink implements kernfs.Inode.Getlink.
+func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
+	if !kernel.ContextCanTrace(ctx, s.task, false) {
+		return vfs.VirtualDentry{}, "", syserror.EACCES
+	}
+	if err := checkTaskState(s.task); err != nil {
+		return vfs.VirtualDentry{}, "", err
+	}
+	cwd := s.task.FSContext().WorkingDirectoryVFS2()
+	if !cwd.Ok() {
+		// It could have raced with process deletion.
+		return vfs.VirtualDentry{}, "", syserror.ESRCH
+	}
+	return cwd, "", nil
 }
 
 // mountInfoData is used to implement /proc/[pid]/mountinfo.
