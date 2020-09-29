@@ -1397,15 +1397,6 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		return
 	}
 
-	// Never receive from a multicast address.
-	if header.IsV4MulticastAddress(id.RemoteAddress) ||
-		header.IsV6MulticastAddress(id.RemoteAddress) {
-		e.stack.Stats().UDP.InvalidSourceAddress.Increment()
-		e.stack.Stats().IP.InvalidSourceAddressesReceived.Increment()
-		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
-		return
-	}
-
 	if !verifyChecksum(r, hdr, pkt) {
 		// Checksum Error.
 		e.stack.Stats().UDP.ChecksumErrors.Increment()

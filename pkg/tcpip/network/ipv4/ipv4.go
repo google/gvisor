@@ -479,6 +479,15 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		return
 	}
 
+	// As per RFC 1122 section 3.2.1.3:
+	//   When a host sends any datagram, the IP source address MUST
+	//   be one of its own IP addresses (but not a broadcast or
+	//   multicast address).
+	if r.IsOutboundBroadcast() || header.IsV4MulticastAddress(r.RemoteAddress) {
+		r.Stats().IP.InvalidSourceAddressesReceived.Increment()
+		return
+	}
+
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
 	ipt := e.protocol.stack.IPTables()
@@ -537,6 +546,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			return
 		}
 	}
+
+	r.Stats().IP.PacketsDelivered.Increment()
 	p := h.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {
 		// TODO(gvisor.dev/issues/3810): when we sort out ICMP and transport
@@ -546,7 +557,6 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		e.handleICMP(r, pkt)
 		return
 	}
-	r.Stats().IP.PacketsDelivered.Increment()
 
 	switch res := e.dispatcher.DeliverTransportPacket(r, p, pkt); res {
 	case stack.TransportPacketHandled:
