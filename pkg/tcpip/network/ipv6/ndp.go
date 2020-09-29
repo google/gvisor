@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package stack
+package ipv6
 
 import (
 	"fmt"
@@ -23,9 +23,27 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 const (
+	// defaultRetransmitTimer is the default amount of time to wait between
+	// sending reachability probes.
+	//
+	// Default taken from RETRANS_TIMER of RFC 4861 section 10.
+	defaultRetransmitTimer = time.Second
+
+	// minimumRetransmitTimer is the minimum amount of time to wait between
+	// sending reachability probes.
+	//
+	// Note, RFC 4861 does not impose a minimum Retransmit Timer, but we do here
+	// to make sure the messages are not sent all at once. We also come to this
+	// value because in the RetransmitTimer field of a Router Advertisement, a
+	// value of 0 means unspecified, so the smallest valid value is 1. Note, the
+	// unit of the RetransmitTimer field in the Router Advertisement is
+	// milliseconds.
+	minimumRetransmitTimer = time.Millisecond
+
 	// defaultDupAddrDetectTransmits is the default number of NDP Neighbor
 	// Solicitation messages to send when doing Duplicate Address Detection
 	// for a tentative address.
@@ -34,7 +52,7 @@ const (
 	defaultDupAddrDetectTransmits = 1
 
 	// defaultMaxRtrSolicitations is the default number of Router
-	// Solicitation messages to send when a NIC becomes enabled.
+	// Solicitation messages to send when an IPv6 endpoint becomes enabled.
 	//
 	// Default = 3 (from RFC 4861 section 10).
 	defaultMaxRtrSolicitations = 3
@@ -131,7 +149,7 @@ const (
 	minRegenAdvanceDuration = time.Duration(0)
 
 	// maxSLAACAddrLocalRegenAttempts is the maximum number of times to attempt
-	// SLAAC address regenerations in response to a NIC-local conflict.
+	// SLAAC address regenerations in response to an IPv6 endpoint-local conflict.
 	maxSLAACAddrLocalRegenAttempts = 10
 )
 
@@ -163,7 +181,7 @@ var (
 	// This is exported as a variable (instead of a constant) so tests
 	// can update it to a smaller value.
 	//
-	// This value guarantees that a temporary address will be preferred for at
+	// This value guarantees that a temporary address is preferred for at
 	// least 1hr if the SLAAC prefix is valid for at least that time.
 	MinMaxTempAddrPreferredLifetime = defaultRegenAdvanceDuration + MaxDesyncFactor + time.Hour
 
@@ -173,10 +191,16 @@ var (
 	// This is exported as a variable (instead of a constant) so tests
 	// can update it to a smaller value.
 	//
-	// This value guarantees that a temporary address will be valid for at least
+	// This value guarantees that a temporary address is valid for at least
 	// 2hrs if the SLAAC prefix is valid for at least that time.
 	MinMaxTempAddrValidLifetime = 2 * time.Hour
 )
+
+// NDPEndpoint is an endpoint that supports NDP.
+type NDPEndpoint interface {
+	// SetNDPConfigurations sets the NDP configurations.
+	SetNDPConfigurations(NDPConfigurations)
+}
 
 // DHCPv6ConfigurationFromNDPRA is a configuration available via DHCPv6 that an
 // NDP Router Advertisement informed the Stack about.
@@ -192,7 +216,7 @@ const (
 	// DHCPv6ManagedAddress indicates that addresses are available via DHCPv6.
 	//
 	// DHCPv6ManagedAddress also implies DHCPv6OtherConfigurations because DHCPv6
-	// will return all available configuration information.
+	// returns all available configuration information when serving addresses.
 	DHCPv6ManagedAddress
 
 	// DHCPv6OtherConfigurations indicates that other configuration information is
@@ -207,19 +231,18 @@ const (
 // NDPDispatcher is the interface integrators of netstack must implement to
 // receive and handle NDP related events.
 type NDPDispatcher interface {
-	// OnDuplicateAddressDetectionStatus will be called when the DAD process
-	// for an address (addr) on a NIC (with ID nicID) completes. resolved
-	// will be set to true if DAD completed successfully (no duplicate addr
-	// detected); false otherwise (addr was detected to be a duplicate on
-	// the link the NIC is a part of, or it was stopped for some other
-	// reason, such as the address being removed). If an error occured
-	// during DAD, err will be set and resolved must be ignored.
+	// OnDuplicateAddressDetectionStatus is called when the DAD process for an
+	// address (addr) on a NIC (with ID nicID) completes. resolved is set to true
+	// if DAD completed successfully (no duplicate addr detected); false otherwise
+	// (addr was detected to be a duplicate on the link the NIC is a part of, or
+	// it was stopped for some other reason, such as the address being removed).
+	// If an error occured during DAD, err is set and resolved must be ignored.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
 	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
 
-	// OnDefaultRouterDiscovered will be called when a new default router is
+	// OnDefaultRouterDiscovered is called when a new default router is
 	// discovered. Implementations must return true if the newly discovered
 	// router should be remembered.
 	//
@@ -227,56 +250,55 @@ type NDPDispatcher interface {
 	// is also not permitted to call into the stack.
 	OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.Address) bool
 
-	// OnDefaultRouterInvalidated will be called when a discovered default
-	// router that was remembered is invalidated.
+	// OnDefaultRouterInvalidated is called when a discovered default router that
+	// was remembered is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
 	OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address)
 
-	// OnOnLinkPrefixDiscovered will be called when a new on-link prefix is
-	// discovered. Implementations must return true if the newly discovered
-	// on-link prefix should be remembered.
+	// OnOnLinkPrefixDiscovered is called when a new on-link prefix is discovered.
+	// Implementations must return true if the newly discovered on-link prefix
+	// should be remembered.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
 	OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip.Subnet) bool
 
-	// OnOnLinkPrefixInvalidated will be called when a discovered on-link
-	// prefix that was remembered is invalidated.
+	// OnOnLinkPrefixInvalidated is called when a discovered on-link prefix that
+	// was remembered is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
 	OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet)
 
-	// OnAutoGenAddress will be called when a new prefix with its
-	// autonomous address-configuration flag set has been received and SLAAC
-	// has been performed. Implementations may prevent the stack from
-	// assigning the address to the NIC by returning false.
+	// OnAutoGenAddress is called when a new prefix with its autonomous address-
+	// configuration flag set is received and SLAAC was performed. Implementations
+	// may prevent the stack from assigning the address to the NIC by returning
+	// false.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
 	OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) bool
 
-	// OnAutoGenAddressDeprecated will be called when an auto-generated
-	// address (as part of SLAAC) has been deprecated, but is still
-	// considered valid. Note, if an address is invalidated at the same
-	// time it is deprecated, the deprecation event MAY be omitted.
+	// OnAutoGenAddressDeprecated is called when an auto-generated address (SLAAC)
+	// is deprecated, but is still considered valid. Note, if an address is
+	// invalidated at the same ime it is deprecated, the deprecation event may not
+	// be received.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
 	OnAutoGenAddressDeprecated(tcpip.NICID, tcpip.AddressWithPrefix)
 
-	// OnAutoGenAddressInvalidated will be called when an auto-generated
-	// address (as part of SLAAC) has been invalidated.
+	// OnAutoGenAddressInvalidated is called when an auto-generated address
+	// (SLAAC) is invalidated.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
 	OnAutoGenAddressInvalidated(tcpip.NICID, tcpip.AddressWithPrefix)
 
-	// OnRecursiveDNSServerOption will be called when an NDP option with
-	// recursive DNS servers has been received. Note, addrs may contain
-	// link-local addresses.
+	// OnRecursiveDNSServerOption is called when the stack learns of DNS servers
+	// through NDP. Note, the addresses may contain link-local addresses.
 	//
 	// It is up to the caller to use the DNS Servers only for their valid
 	// lifetime. OnRecursiveDNSServerOption may be called for new or
@@ -288,8 +310,8 @@ type NDPDispatcher interface {
 	// call functions on the stack itself.
 	OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tcpip.Address, lifetime time.Duration)
 
-	// OnDNSSearchListOption will be called when an NDP option with a DNS
-	// search list has been received.
+	// OnDNSSearchListOption is called when the stack learns of DNS search lists
+	// through NDP.
 	//
 	// It is up to the caller to use the domain names in the search list
 	// for only their valid lifetime. OnDNSSearchListOption may be called
@@ -298,8 +320,8 @@ type NDPDispatcher interface {
 	// be increased, decreased or completely invalidated when lifetime = 0.
 	OnDNSSearchListOption(nicID tcpip.NICID, domainNames []string, lifetime time.Duration)
 
-	// OnDHCPv6Configuration will be called with an updated configuration that is
-	// available via DHCPv6 for a specified NIC.
+	// OnDHCPv6Configuration is called with an updated configuration that is
+	// available via DHCPv6 for the passed NIC.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
@@ -320,7 +342,7 @@ type NDPConfigurations struct {
 	// Must be greater than or equal to 1ms.
 	RetransmitTimer time.Duration
 
-	// The number of Router Solicitation messages to send when the NIC
+	// The number of Router Solicitation messages to send when the IPv6 endpoint
 	// becomes enabled.
 	MaxRtrSolicitations uint8
 
@@ -335,24 +357,22 @@ type NDPConfigurations struct {
 	// Must be greater than or equal to 0s.
 	MaxRtrSolicitationDelay time.Duration
 
-	// HandleRAs determines whether or not Router Advertisements will be
-	// processed.
+	// HandleRAs determines whether or not Router Advertisements are processed.
 	HandleRAs bool
 
-	// DiscoverDefaultRouters determines whether or not default routers will
-	// be discovered from Router Advertisements. This configuration is
-	// ignored if HandleRAs is false.
+	// DiscoverDefaultRouters determines whether or not default routers are
+	// discovered from Router Advertisements, as per RFC 4861 section 6. This
+	// configuration is ignored if HandleRAs is false.
 	DiscoverDefaultRouters bool
 
-	// DiscoverOnLinkPrefixes determines whether or not on-link prefixes
-	// will be discovered from Router Advertisements' Prefix Information
-	// option. This configuration is ignored if HandleRAs is false.
+	// DiscoverOnLinkPrefixes determines whether or not on-link prefixes are
+	// discovered from Router Advertisements' Prefix Information option, as per
+	// RFC 4861 section 6. This configuration is ignored if HandleRAs is false.
 	DiscoverOnLinkPrefixes bool
 
-	// AutoGenGlobalAddresses determines whether or not global IPv6
-	// addresses will be generated for a NIC in response to receiving a new
-	// Prefix Information option with its Autonomous Address
-	// AutoConfiguration flag set, as a host, as per RFC 4862 (SLAAC).
+	// AutoGenGlobalAddresses determines whether or not an IPv6 endpoint performs
+	// SLAAC to auto-generate global SLAAC addresses in response to Prefix
+	// Information options, as per RFC 4862.
 	//
 	// Note, if an address was already generated for some unique prefix, as
 	// part of SLAAC, this option does not affect whether or not the
@@ -366,12 +386,12 @@ type NDPConfigurations struct {
 	//
 	// If the method used to generate the address does not support creating
 	// alternative addresses (e.g. IIDs based on the modified EUI64 of a NIC's
-	// MAC address), then no attempt will be made to resolve the conflict.
+	// MAC address), then no attempt is made to resolve the conflict.
 	AutoGenAddressConflictRetries uint8
 
 	// AutoGenTempGlobalAddresses determines whether or not temporary SLAAC
-	// addresses will be generated for a NIC as part of SLAAC privacy extensions,
-	// RFC 4941.
+	// addresses are generated for an IPv6 endpoint as part of SLAAC privacy
+	// extensions, as per RFC 4941.
 	//
 	// Ignored if AutoGenGlobalAddresses is false.
 	AutoGenTempGlobalAddresses bool
@@ -410,7 +430,7 @@ func DefaultNDPConfigurations() NDPConfigurations {
 }
 
 // validate modifies an NDPConfigurations with valid values. If invalid values
-// are present in c, the corresponding default values will be used instead.
+// are present in c, the corresponding default values are used instead.
 func (c *NDPConfigurations) validate() {
 	if c.RetransmitTimer < minimumRetransmitTimer {
 		c.RetransmitTimer = defaultRetransmitTimer
@@ -439,8 +459,8 @@ func (c *NDPConfigurations) validate() {
 
 // ndpState is the per-interface NDP state.
 type ndpState struct {
-	// The NIC this ndpState is for.
-	nic *NIC
+	// The IPv6 endpoint this ndpState is for.
+	ep *endpoint
 
 	// configs is the per-interface NDP configurations.
 	configs NDPConfigurations
@@ -458,8 +478,8 @@ type ndpState struct {
 		// Used to let the Router Solicitation timer know that it has been stopped.
 		//
 		// Must only be read from or written to while protected by the lock of
-		// the NIC this ndpState is associated with. MUST be set when the timer is
-		// set.
+		// the IPv6 endpoint this ndpState is associated with. MUST be set when the
+		// timer is set.
 		done *bool
 	}
 
@@ -492,7 +512,7 @@ type dadState struct {
 	// Used to let the DAD timer know that it has been stopped.
 	//
 	// Must only be read from or written to while protected by the lock of
-	// the NIC this dadState is associated with.
+	// the IPv6 endpoint this dadState is associated with.
 	done *bool
 }
 
@@ -537,7 +557,7 @@ type tempSLAACAddrState struct {
 	// The address's endpoint.
 	//
 	// Must not be nil.
-	ref *referencedNetworkEndpoint
+	addressEndpoint stack.AddressEndpoint
 
 	// Has a new temporary SLAAC address already been regenerated?
 	regenerated bool
@@ -567,10 +587,10 @@ type slaacPrefixState struct {
 		//
 		// May only be nil when the address is being (re-)generated. Otherwise,
 		// must not be nil as all SLAAC prefixes must have a stable address.
-		ref *referencedNetworkEndpoint
+		addressEndpoint stack.AddressEndpoint
 
-		// The number of times an address has been generated locally where the NIC
-		// already had the generated address.
+		// The number of times an address has been generated locally where the IPv6
+		// endpoint already had the generated address.
 		localGenerationFailures uint8
 	}
 
@@ -578,11 +598,12 @@ type slaacPrefixState struct {
 	tempAddrs map[tcpip.Address]tempSLAACAddrState
 
 	// The next two fields are used by both stable and temporary addresses
-	// generated for a SLAAC prefix. This is safe as only 1 address will be
-	// in the generation and DAD process at any time. That is, no two addresses
-	// will be generated at the same time for a given SLAAC prefix.
+	// generated for a SLAAC prefix. This is safe as only 1 address is in the
+	// generation and DAD process at any time. That is, no two addresses are
+	// generated at the same time for a given SLAAC prefix.
 
-	// The number of times an address has been generated and added to the NIC.
+	// The number of times an address has been generated and added to the IPv6
+	// endpoint.
 	//
 	// Addresses may be regenerated in reseponse to a DAD conflicts.
 	generationAttempts uint8
@@ -597,16 +618,16 @@ type slaacPrefixState struct {
 // This function must only be called by IPv6 addresses that are currently
 // tentative.
 //
-// The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *referencedNetworkEndpoint) *tcpip.Error {
+// The IPv6 endpoint that ndp belongs to MUST be locked.
+func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) *tcpip.Error {
 	// addr must be a valid unicast IPv6 address.
 	if !header.IsV6UnicastAddress(addr) {
 		return tcpip.ErrAddressFamilyNotSupported
 	}
 
-	if ref.getKind() != permanentTentative {
+	if addressEndpoint.GetKind() != stack.PermanentTentative {
 		// The endpoint should be marked as tentative since we are starting DAD.
-		panic(fmt.Sprintf("ndpdad: addr %s is not tentative on NIC(%d)", addr, ndp.nic.ID()))
+		panic(fmt.Sprintf("ndpdad: addr %s is not tentative on NIC(%d)", addr, ndp.ep.NICID()))
 	}
 
 	// Should not attempt to perform DAD on an address that is currently in the
@@ -617,18 +638,18 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		// existed, we would get an error since we attempted to add a duplicate
 		// address, or its reference count would have been increased without doing
 		// the work that would have been done for an address that was brand new.
-		// See NIC.addAddressLocked.
-		panic(fmt.Sprintf("ndpdad: already performing DAD for addr %s on NIC(%d)", addr, ndp.nic.ID()))
+		// See endpoint.addAddressLocked.
+		panic(fmt.Sprintf("ndpdad: already performing DAD for addr %s on NIC(%d)", addr, ndp.ep.NICID()))
 	}
 
 	remaining := ndp.configs.DupAddrDetectTransmits
 	if remaining == 0 {
-		ref.setKind(permanent)
+		addressEndpoint.SetKind(stack.Permanent)
 
 		// Consider DAD to have resolved even if no DAD messages were actually
 		// transmitted.
-		if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, true, nil)
+		if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.NICID(), addr, true, nil)
 		}
 
 		return nil
@@ -637,25 +658,25 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 	var done bool
 	var timer tcpip.Timer
 	// We initially start a timer to fire immediately because some of the DAD work
-	// cannot be done while holding the NIC's lock. This is effectively the same
-	// as starting a goroutine but we use a timer that fires immediately so we can
-	// reset it for the next DAD iteration.
-	timer = ndp.nic.stack.Clock().AfterFunc(0, func() {
-		ndp.nic.mu.Lock()
-		defer ndp.nic.mu.Unlock()
+	// cannot be done while holding the IPv6 endpoint's lock. This is effectively
+	// the same as starting a goroutine but we use a timer that fires immediately
+	// so we can reset it for the next DAD iteration.
+	timer = ndp.ep.stack.Clock().AfterFunc(0, func() {
+		ndp.ep.mu.Lock()
+		defer ndp.ep.mu.Unlock()
 
 		if done {
 			// If we reach this point, it means that the DAD timer fired after
-			// another goroutine already obtained the NIC lock and stopped DAD
-			// before this function obtained the NIC lock. Simply return here and do
-			// nothing further.
+			// another goroutine already obtained the IPv6 endpoint lock and stopped
+			// DAD before this function obtained the NIC lock. Simply return here and
+			// do nothing further.
 			return
 		}
 
-		if ref.getKind() != permanentTentative {
+		if addressEndpoint.GetKind() != stack.PermanentTentative {
 			// The endpoint should still be marked as tentative since we are still
 			// performing DAD on it.
-			panic(fmt.Sprintf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.nic.ID()))
+			panic(fmt.Sprintf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.ep.NICID()))
 		}
 
 		dadDone := remaining == 0
@@ -663,33 +684,34 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		var err *tcpip.Error
 		if !dadDone {
 			// Use the unspecified address as the source address when performing DAD.
-			ref := ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint)
+			addressEndpoint := ndp.ep.acquireAddressOrCreateTempLocked(header.IPv6Any, true /* createTemp */, stack.NeverPrimaryEndpoint)
 
 			// Do not hold the lock when sending packets which may be a long running
 			// task or may block link address resolution. We know this is safe
 			// because immediately after obtaining the lock again, we check if DAD
-			// has been stopped before doing any work with the NIC. Note, DAD would be
-			// stopped if the NIC was disabled or removed, or if the address was
-			// removed.
-			ndp.nic.mu.Unlock()
-			err = ndp.sendDADPacket(addr, ref)
-			ndp.nic.mu.Lock()
+			// has been stopped before doing any work with the IPv6 endpoint. Note,
+			// DAD would be stopped if the IPv6 endpoint was disabled or closed, or if
+			// the address was removed.
+			ndp.ep.mu.Unlock()
+			err = ndp.sendDADPacket(addr, addressEndpoint)
+			ndp.ep.mu.Lock()
+			addressEndpoint.DecRef()
 		}
 
 		if done {
 			// If we reach this point, it means that DAD was stopped after we released
-			// the NIC's read lock and before we obtained the write lock.
+			// the IPv6 endpoint's read lock and before we obtained the write lock.
 			return
 		}
 
 		if dadDone {
 			// DAD has resolved.
-			ref.setKind(permanent)
+			addressEndpoint.SetKind(stack.Permanent)
 		} else if err == nil {
 			// DAD is not done and we had no errors when sending the last NDP NS,
 			// schedule the next DAD timer.
 			remaining--
-			timer.Reset(ndp.nic.stack.ndpConfigs.RetransmitTimer)
+			timer.Reset(ndp.configs.RetransmitTimer)
 			return
 		}
 
@@ -698,16 +720,16 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		// integrator know DAD has completed.
 		delete(ndp.dad, addr)
 
-		if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, dadDone, err)
+		if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.NICID(), addr, dadDone, err)
 		}
 
 		// If DAD resolved for a stable SLAAC address, attempt generation of a
 		// temporary SLAAC address.
-		if dadDone && ref.configType == slaac {
+		if dadDone && addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
 			// Reset the generation attempts counter as we are starting the generation
 			// of a new address for the SLAAC prefix.
-			ndp.regenerateTempSLAACAddr(ref.addrWithPrefix().Subnet(), true /* resetGenAttempts */)
+			ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */)
 		}
 	})
 
@@ -722,28 +744,31 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 // sendDADPacket sends a NS message to see if any nodes on ndp's NIC's link owns
 // addr.
 //
-// addr must be a tentative IPv6 address on ndp's NIC.
+// addr must be a tentative IPv6 address on ndp's IPv6 endpoint.
 //
-// The NIC ndp belongs to MUST NOT be locked.
-func (ndp *ndpState) sendDADPacket(addr tcpip.Address, ref *referencedNetworkEndpoint) *tcpip.Error {
+// The IPv6 endpoint that ndp belongs to MUST NOT be locked.
+func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) *tcpip.Error {
 	snmc := header.SolicitedNodeAddr(addr)
 
-	r := makeRoute(header.IPv6ProtocolNumber, ref.address(), snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+	r, err := ndp.ep.stack.FindRoute(ndp.ep.NICID(), header.IPv6Any, snmc, ProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		return err
+	}
 	defer r.Release()
 
 	// Route should resolve immediately since snmc is a multicast address so a
 	// remote link address can be calculated without a resolution process.
 	if c, err := r.Resolve(nil); err != nil {
 		// Do not consider the NIC being unknown or disabled as a fatal error.
-		// Since this method is required to be called when the NIC is not locked,
-		// the NIC could have been disabled or removed by another goroutine.
+		// Since this method is required to be called when the IPv6 endpoint is not
+		// locked, the NIC could have been disabled or removed by another goroutine.
 		if err == tcpip.ErrUnknownNICID || err != tcpip.ErrInvalidEndpointState {
 			return err
 		}
 
-		panic(fmt.Sprintf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.nic.ID(), err))
+		panic(fmt.Sprintf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.ep.NICID(), err))
 	} else if c != nil {
-		panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.nic.ID()))
+		panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.ep.NICID()))
 	}
 
 	icmpData := header.ICMPv6(buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize))
@@ -752,17 +777,16 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address, ref *referencedNetworkEnd
 	ns.SetTargetAddress(addr)
 	icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-	pkt := NewPacketBuffer(PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               buffer.View(icmpData).ToVectorisedView(),
 	})
 
 	sent := r.Stats().ICMP.V6PacketsSent
 	if err := r.WritePacket(nil,
-		NetworkHeaderParams{
+		stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      header.NDPHopLimit,
-			TOS:      DefaultTOS,
 		}, pkt,
 	); err != nil {
 		sent.Dropped.Increment()
@@ -778,11 +802,9 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address, ref *referencedNetworkEnd
 // such a state forever, unless some other external event resolves the DAD
 // process (receiving an NA from the true owner of addr, or an NS for addr
 // (implying another node is attempting to use addr)). It is up to the caller
-// of this function to handle such a scenario. Normally, addr will be removed
-// from n right after this function returns or the address successfully
-// resolved.
+// of this function to handle such a scenario.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 	dad, ok := ndp.dad[addr]
 	if !ok {
@@ -801,30 +823,30 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 	delete(ndp.dad, addr)
 
 	// Let the integrator know DAD did not resolve.
-	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-		ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
+	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.NICID(), addr, false, nil)
 	}
 }
 
 // handleRA handles a Router Advertisement message that arrived on the NIC
 // this ndp is for. Does nothing if the NIC is configured to not handle RAs.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
-	// Is the NIC configured to handle RAs at all?
+	// Is the IPv6 endpoint configured to handle RAs at all?
 	//
 	// Currently, the stack does not determine router interface status on a
-	// per-interface basis; it is a stack-wide configuration, so we check
-	// stack's forwarding flag to determine if the NIC is a routing
-	// interface.
-	if !ndp.configs.HandleRAs || ndp.nic.stack.Forwarding(header.IPv6ProtocolNumber) {
+	// per-interface basis; it is a protocol-wide configuration, so we check the
+	// protocol's forwarding flag to determine if the IPv6 endpoint is forwarding
+	// packets.
+	if !ndp.configs.HandleRAs || ndp.ep.protocol.Forwarding() {
 		return
 	}
 
 	// Only worry about the DHCPv6 configuration if we have an NDPDispatcher as we
 	// only inform the dispatcher on configuration changes. We do nothing else
 	// with the information.
-	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
 		var configuration DHCPv6ConfigurationFromNDPRA
 		switch {
 		case ra.ManagedAddrConfFlag():
@@ -839,11 +861,11 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 
 		if ndp.dhcpv6Configuration != configuration {
 			ndp.dhcpv6Configuration = configuration
-			ndpDisp.OnDHCPv6Configuration(ndp.nic.ID(), configuration)
+			ndpDisp.OnDHCPv6Configuration(ndp.ep.NICID(), configuration)
 		}
 	}
 
-	// Is the NIC configured to discover default routers?
+	// Is the IPv6 endpoint configured to discover default routers?
 	if ndp.configs.DiscoverDefaultRouters {
 		rtr, ok := ndp.defaultRouters[ip]
 		rl := ra.RouterLifetime()
@@ -881,20 +903,20 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	for opt, done, _ := it.Next(); !done; opt, done, _ = it.Next() {
 		switch opt := opt.(type) {
 		case header.NDPRecursiveDNSServer:
-			if ndp.nic.stack.ndpDisp == nil {
+			if ndp.ep.protocol.ndpDisp == nil {
 				continue
 			}
 
 			addrs, _ := opt.Addresses()
-			ndp.nic.stack.ndpDisp.OnRecursiveDNSServerOption(ndp.nic.ID(), addrs, opt.Lifetime())
+			ndp.ep.protocol.ndpDisp.OnRecursiveDNSServerOption(ndp.ep.NICID(), addrs, opt.Lifetime())
 
 		case header.NDPDNSSearchList:
-			if ndp.nic.stack.ndpDisp == nil {
+			if ndp.ep.protocol.ndpDisp == nil {
 				continue
 			}
 
 			domainNames, _ := opt.DomainNames()
-			ndp.nic.stack.ndpDisp.OnDNSSearchListOption(ndp.nic.ID(), domainNames, opt.Lifetime())
+			ndp.ep.protocol.ndpDisp.OnDNSSearchListOption(ndp.ep.NICID(), domainNames, opt.Lifetime())
 
 		case header.NDPPrefixInformation:
 			prefix := opt.Subnet()
@@ -928,7 +950,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 
 // invalidateDefaultRouter invalidates a discovered default router.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 	rtr, ok := ndp.defaultRouters[ip]
 
@@ -942,32 +964,32 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 	delete(ndp.defaultRouters, ip)
 
 	// Let the integrator know a discovered default router is invalidated.
-	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-		ndpDisp.OnDefaultRouterInvalidated(ndp.nic.ID(), ip)
+	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnDefaultRouterInvalidated(ndp.ep.NICID(), ip)
 	}
 }
 
 // rememberDefaultRouter remembers a newly discovered default router with IPv6
 // link-local address ip with lifetime rl.
 //
-// The router identified by ip MUST NOT already be known by the NIC.
+// The router identified by ip MUST NOT already be known by the IPv6 endpoint.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
-	ndpDisp := ndp.nic.stack.ndpDisp
+	ndpDisp := ndp.ep.protocol.ndpDisp
 	if ndpDisp == nil {
 		return
 	}
 
 	// Inform the integrator when we discovered a default router.
-	if !ndpDisp.OnDefaultRouterDiscovered(ndp.nic.ID(), ip) {
+	if !ndpDisp.OnDefaultRouterDiscovered(ndp.ep.NICID(), ip) {
 		// Informed by the integrator to not remember the router, do
 		// nothing further.
 		return
 	}
 
 	state := defaultRouterState{
-		invalidationJob: ndp.nic.stack.newJob(&ndp.nic.mu, func() {
+		invalidationJob: ndp.ep.stack.NewJob(&ndp.ep.mu, func() {
 			ndp.invalidateDefaultRouter(ip)
 		}),
 	}
@@ -982,22 +1004,22 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 //
 // The prefix identified by prefix MUST NOT already be known.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) {
-	ndpDisp := ndp.nic.stack.ndpDisp
+	ndpDisp := ndp.ep.protocol.ndpDisp
 	if ndpDisp == nil {
 		return
 	}
 
 	// Inform the integrator when we discovered an on-link prefix.
-	if !ndpDisp.OnOnLinkPrefixDiscovered(ndp.nic.ID(), prefix) {
+	if !ndpDisp.OnOnLinkPrefixDiscovered(ndp.ep.NICID(), prefix) {
 		// Informed by the integrator to not remember the prefix, do
 		// nothing further.
 		return
 	}
 
 	state := onLinkPrefixState{
-		invalidationJob: ndp.nic.stack.newJob(&ndp.nic.mu, func() {
+		invalidationJob: ndp.ep.stack.NewJob(&ndp.ep.mu, func() {
 			ndp.invalidateOnLinkPrefix(prefix)
 		}),
 	}
@@ -1011,7 +1033,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 
 // invalidateOnLinkPrefix invalidates a discovered on-link prefix.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	s, ok := ndp.onLinkPrefixes[prefix]
 
@@ -1025,8 +1047,8 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	delete(ndp.onLinkPrefixes, prefix)
 
 	// Let the integrator know a discovered on-link prefix is invalidated.
-	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-		ndpDisp.OnOnLinkPrefixInvalidated(ndp.nic.ID(), prefix)
+	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnOnLinkPrefixInvalidated(ndp.ep.NICID(), prefix)
 	}
 }
 
@@ -1036,7 +1058,7 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 // handleOnLinkPrefixInformation assumes that the prefix this pi is for is
 // not the link-local prefix and the on-link flag is set.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) handleOnLinkPrefixInformation(pi header.NDPPrefixInformation) {
 	prefix := pi.Subnet()
 	prefixState, ok := ndp.onLinkPrefixes[prefix]
@@ -1089,7 +1111,7 @@ func (ndp *ndpState) handleOnLinkPrefixInformation(pi header.NDPPrefixInformatio
 // handleAutonomousPrefixInformation assumes that the prefix this pi is for is
 // not the link-local prefix and the autonomous flag is set.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInformation) {
 	vl := pi.ValidLifetime()
 	pl := pi.PreferredLifetime()
@@ -1125,7 +1147,7 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 //
 // pl is the new preferred lifetime. vl is the new valid lifetime.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	// If we do not already have an address for this prefix and the valid
 	// lifetime is 0, no need to do anything further, as per RFC 4862
@@ -1142,15 +1164,15 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	}
 
 	state := slaacPrefixState{
-		deprecationJob: ndp.nic.stack.newJob(&ndp.nic.mu, func() {
+		deprecationJob: ndp.ep.stack.NewJob(&ndp.ep.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the deprecated SLAAC prefix %s", prefix))
 			}
 
-			ndp.deprecateSLAACAddress(state.stableAddr.ref)
+			ndp.deprecateSLAACAddress(state.stableAddr.addressEndpoint)
 		}),
-		invalidationJob: ndp.nic.stack.newJob(&ndp.nic.mu, func() {
+		invalidationJob: ndp.ep.stack.NewJob(&ndp.ep.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the invalidated SLAAC prefix %s", prefix))
@@ -1189,7 +1211,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	}
 
 	// If the address is assigned (DAD resolved), generate a temporary address.
-	if state.stableAddr.ref.getKind() == permanent {
+	if state.stableAddr.addressEndpoint.GetKind() == stack.Permanent {
 		// Reset the generation attempts counter as we are starting the generation
 		// of a new address for the SLAAC prefix.
 		ndp.generateTempSLAACAddr(prefix, &state, true /* resetGenAttempts */)
@@ -1198,32 +1220,27 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	ndp.slaacPrefixes[prefix] = state
 }
 
-// addSLAACAddr adds a SLAAC address to the NIC.
+// addAndAcquireSLAACAddr adds a SLAAC address to the IPv6 endpoint.
 //
-// The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) addSLAACAddr(addr tcpip.AddressWithPrefix, configType networkEndpointConfigType, deprecated bool) *referencedNetworkEndpoint {
+// The IPv6 endpoint that ndp belongs to MUST be locked.
+func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, configType stack.AddressConfigType, deprecated bool) stack.AddressEndpoint {
 	// Inform the integrator that we have a new SLAAC address.
-	ndpDisp := ndp.nic.stack.ndpDisp
+	ndpDisp := ndp.ep.protocol.ndpDisp
 	if ndpDisp == nil {
 		return nil
 	}
 
-	if !ndpDisp.OnAutoGenAddress(ndp.nic.ID(), addr) {
+	if !ndpDisp.OnAutoGenAddress(ndp.ep.NICID(), addr) {
 		// Informed by the integrator not to add the address.
 		return nil
 	}
 
-	protocolAddr := tcpip.ProtocolAddress{
-		Protocol:          header.IPv6ProtocolNumber,
-		AddressWithPrefix: addr,
-	}
-
-	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, permanent, configType, deprecated)
+	addressEndpoint, err := ndp.ep.addAndAcquirePermanentAddressLocked(addr, stack.FirstPrimaryEndpoint, configType, deprecated)
 	if err != nil {
-		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", protocolAddr, err))
+		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", addr, err))
 	}
 
-	return ref
+	return addressEndpoint
 }
 
 // generateSLAACAddr generates a SLAAC address for prefix.
@@ -1232,10 +1249,10 @@ func (ndp *ndpState) addSLAACAddr(addr tcpip.AddressWithPrefix, configType netwo
 //
 // Panics if the prefix is not a SLAAC prefix or it already has an address.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixState) bool {
-	if r := state.stableAddr.ref; r != nil {
-		panic(fmt.Sprintf("ndp: SLAAC prefix %s already has a permenant address %s", prefix, r.addrWithPrefix()))
+	if addressEndpoint := state.stableAddr.addressEndpoint; addressEndpoint != nil {
+		panic(fmt.Sprintf("ndp: SLAAC prefix %s already has a permenant address %s", prefix, addressEndpoint.AddressWithPrefix()))
 	}
 
 	// If we have already reached the maximum address generation attempts for the
@@ -1255,11 +1272,11 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 		}
 
 		dadCounter := state.generationAttempts + state.stableAddr.localGenerationFailures
-		if oIID := ndp.nic.stack.opaqueIIDOpts; oIID.NICNameFromID != nil {
+		if oIID := ndp.ep.protocol.opaqueIIDOpts; oIID.NICNameFromID != nil {
 			addrBytes = header.AppendOpaqueInterfaceIdentifier(
 				addrBytes[:header.IIDOffsetInIPv6Address],
 				prefix,
-				oIID.NICNameFromID(ndp.nic.ID(), ndp.nic.name),
+				oIID.NICNameFromID(ndp.ep.NICID(), ndp.ep.nic.Name()),
 				dadCounter,
 				oIID.SecretKey,
 			)
@@ -1272,7 +1289,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 			//
 			// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
 			// LinkEndpoint.LinkAddress) before reaching this point.
-			linkAddr := ndp.nic.linkEP.LinkAddress()
+			linkAddr := ndp.ep.linkEP.LinkAddress()
 			if !header.IsValidUnicastEthernetAddress(linkAddr) {
 				return false
 			}
@@ -1291,15 +1308,15 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 			PrefixLen: validPrefixLenForAutoGen,
 		}
 
-		if !ndp.nic.hasPermanentAddrLocked(generatedAddr.Address) {
+		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Address) {
 			break
 		}
 
 		state.stableAddr.localGenerationFailures++
 	}
 
-	if ref := ndp.addSLAACAddr(generatedAddr, slaac, time.Since(state.preferredUntil) >= 0 /* deprecated */); ref != nil {
-		state.stableAddr.ref = ref
+	if addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, stack.AddressConfigSlaac, time.Since(state.preferredUntil) >= 0 /* deprecated */); addressEndpoint != nil {
+		state.stableAddr.addressEndpoint = addressEndpoint
 		state.generationAttempts++
 		return true
 	}
@@ -1309,10 +1326,9 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 
 // regenerateSLAACAddr regenerates an address for a SLAAC prefix.
 //
-// If generating a new address for the prefix fails, the prefix will be
-// invalidated.
+// If generating a new address for the prefix fails, the prefix is invalidated.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) regenerateSLAACAddr(prefix tcpip.Subnet) {
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
@@ -1332,7 +1348,7 @@ func (ndp *ndpState) regenerateSLAACAddr(prefix tcpip.Subnet) {
 
 // generateTempSLAACAddr generates a new temporary SLAAC address.
 //
-// If resetGenAttempts is true, the prefix's generation counter will be reset.
+// If resetGenAttempts is true, the prefix's generation counter is reset.
 //
 // Returns true if a new address was generated.
 func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *slaacPrefixState, resetGenAttempts bool) bool {
@@ -1353,7 +1369,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		return false
 	}
 
-	stableAddr := prefixState.stableAddr.ref.address()
+	stableAddr := prefixState.stableAddr.addressEndpoint.AddressWithPrefix().Address
 	now := time.Now()
 
 	// As per RFC 4941 section 3.3 step 4, the valid lifetime of a temporary
@@ -1392,7 +1408,8 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		return false
 	}
 
-	// Attempt to generate a new address that is not already assigned to the NIC.
+	// Attempt to generate a new address that is not already assigned to the IPv6
+	// endpoint.
 	var generatedAddr tcpip.AddressWithPrefix
 	for i := 0; ; i++ {
 		// If we were unable to generate an address after the maximum SLAAC address
@@ -1402,7 +1419,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		}
 
 		generatedAddr = header.GenerateTempIPv6SLAACAddr(ndp.temporaryIIDHistory[:], stableAddr)
-		if !ndp.nic.hasPermanentAddrLocked(generatedAddr.Address) {
+		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Address) {
 			break
 		}
 	}
@@ -1410,13 +1427,13 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	// As per RFC RFC 4941 section 3.3 step 5, we MUST NOT create a temporary
 	// address with a zero preferred lifetime. The checks above ensure this
 	// so we know the address is not deprecated.
-	ref := ndp.addSLAACAddr(generatedAddr, slaacTemp, false /* deprecated */)
-	if ref == nil {
+	addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, stack.AddressConfigSlaacTemp, false /* deprecated */)
+	if addressEndpoint == nil {
 		return false
 	}
 
 	state := tempSLAACAddrState{
-		deprecationJob: ndp.nic.stack.newJob(&ndp.nic.mu, func() {
+		deprecationJob: ndp.ep.stack.NewJob(&ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to deprecate temporary address %s", prefix, generatedAddr))
@@ -1427,9 +1444,9 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 				panic(fmt.Sprintf("ndp: must have a tempAddr entry to deprecate temporary address %s", generatedAddr))
 			}
 
-			ndp.deprecateSLAACAddress(tempAddrState.ref)
+			ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint)
 		}),
-		invalidationJob: ndp.nic.stack.newJob(&ndp.nic.mu, func() {
+		invalidationJob: ndp.ep.stack.NewJob(&ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to invalidate temporary address %s", prefix, generatedAddr))
@@ -1442,7 +1459,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 
 			ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState)
 		}),
-		regenJob: ndp.nic.stack.newJob(&ndp.nic.mu, func() {
+		regenJob: ndp.ep.stack.NewJob(&ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to regenerate temporary address after %s", prefix, generatedAddr))
@@ -1465,8 +1482,8 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 			prefixState.tempAddrs[generatedAddr.Address] = tempAddrState
 			ndp.slaacPrefixes[prefix] = prefixState
 		}),
-		createdAt: now,
-		ref:       ref,
+		createdAt:       now,
+		addressEndpoint: addressEndpoint,
 	}
 
 	state.deprecationJob.Schedule(pl)
@@ -1481,7 +1498,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 
 // regenerateTempSLAACAddr regenerates a temporary address for a SLAAC prefix.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttempts bool) {
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
@@ -1496,14 +1513,14 @@ func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttemp
 //
 // pl is the new preferred lifetime. vl is the new valid lifetime.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixState *slaacPrefixState, pl, vl time.Duration) {
 	// If the preferred lifetime is zero, then the prefix should be deprecated.
 	deprecated := pl == 0
 	if deprecated {
-		ndp.deprecateSLAACAddress(prefixState.stableAddr.ref)
+		ndp.deprecateSLAACAddress(prefixState.stableAddr.addressEndpoint)
 	} else {
-		prefixState.stableAddr.ref.deprecated = false
+		prefixState.stableAddr.addressEndpoint.SetDeprecated(false)
 	}
 
 	// If prefix was preferred for some finite lifetime before, cancel the
@@ -1565,7 +1582,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 
 	// If DAD is not yet complete on the stable address, there is no need to do
 	// work with temporary addresses.
-	if prefixState.stableAddr.ref.getKind() != permanent {
+	if prefixState.stableAddr.addressEndpoint.GetKind() != stack.Permanent {
 		return
 	}
 
@@ -1608,9 +1625,9 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 		newPreferredLifetime := preferredUntil.Sub(now)
 		tempAddrState.deprecationJob.Cancel()
 		if newPreferredLifetime <= 0 {
-			ndp.deprecateSLAACAddress(tempAddrState.ref)
+			ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint)
 		} else {
-			tempAddrState.ref.deprecated = false
+			tempAddrState.addressEndpoint.SetDeprecated(false)
 			tempAddrState.deprecationJob.Schedule(newPreferredLifetime)
 		}
 
@@ -1635,8 +1652,8 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 	// due to an update in preferred lifetime.
 	//
 	// If each temporay address has already been regenerated, no new temporary
-	// address will be generated. To ensure continuation of temporary SLAAC
-	// addresses, we manually try to regenerate an address here.
+	// address is generated. To ensure continuation of temporary SLAAC addresses,
+	// we manually try to regenerate an address here.
 	if len(regenForAddr) != 0 || allAddressesRegenerated {
 		// Reset the generation attempts counter as we are starting the generation
 		// of a new address for the SLAAC prefix.
@@ -1647,57 +1664,58 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 	}
 }
 
-// deprecateSLAACAddress marks ref as deprecated and notifies the stack's NDP
-// dispatcher that ref has been deprecated.
+// deprecateSLAACAddress marks the address as deprecated and notifies the NDP
+// dispatcher that address has been deprecated.
 //
-// deprecateSLAACAddress does nothing if ref is already deprecated.
+// deprecateSLAACAddress does nothing if the address is already deprecated.
 //
-// The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) deprecateSLAACAddress(ref *referencedNetworkEndpoint) {
-	if ref.deprecated {
+// The IPv6 endpoint that ndp belongs to MUST be locked.
+func (ndp *ndpState) deprecateSLAACAddress(addressEndpoint stack.AddressEndpoint) {
+	if addressEndpoint.Deprecated() {
 		return
 	}
 
-	ref.deprecated = true
-	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-		ndpDisp.OnAutoGenAddressDeprecated(ndp.nic.ID(), ref.addrWithPrefix())
+	addressEndpoint.SetDeprecated(true)
+	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnAutoGenAddressDeprecated(ndp.ep.NICID(), addressEndpoint.AddressWithPrefix())
 	}
 }
 
 // invalidateSLAACPrefix invalidates a SLAAC prefix.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefixState) {
-	if r := state.stableAddr.ref; r != nil {
+	ndp.cleanupSLAACPrefixResources(prefix, state)
+
+	if addressEndpoint := state.stableAddr.addressEndpoint; addressEndpoint != nil {
 		// Since we are already invalidating the prefix, do not invalidate the
 		// prefix when removing the address.
-		if err := ndp.nic.removePermanentIPv6EndpointLocked(r, false /* allowSLAACInvalidation */); err != nil {
-			panic(fmt.Sprintf("ndp: error removing stable SLAAC address %s: %s", r.addrWithPrefix(), err))
+		if err := ndp.ep.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */); err != nil {
+			panic(fmt.Sprintf("ndp: error removing stable SLAAC address %s: %s", addressEndpoint.AddressWithPrefix(), err))
 		}
 	}
-
-	ndp.cleanupSLAACPrefixResources(prefix, state)
 }
 
 // cleanupSLAACAddrResourcesAndNotify cleans up an invalidated SLAAC address's
 // resources.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidatePrefix bool) {
-	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-		ndpDisp.OnAutoGenAddressInvalidated(ndp.nic.ID(), addr)
+	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.NICID(), addr)
 	}
 
 	prefix := addr.Subnet()
 	state, ok := ndp.slaacPrefixes[prefix]
-	if !ok || state.stableAddr.ref == nil || addr.Address != state.stableAddr.ref.address() {
+	if !ok || state.stableAddr.addressEndpoint == nil || addr.Address != state.stableAddr.addressEndpoint.AddressWithPrefix().Address {
 		return
 	}
 
 	if !invalidatePrefix {
 		// If the prefix is not being invalidated, disassociate the address from the
 		// prefix and do nothing further.
-		state.stableAddr.ref = nil
+		state.stableAddr.addressEndpoint.DecRef()
+		state.stableAddr.addressEndpoint = nil
 		ndp.slaacPrefixes[prefix] = state
 		return
 	}
@@ -1709,14 +1727,17 @@ func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPr
 //
 // Panics if the SLAAC prefix is not known.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaacPrefixState) {
 	// Invalidate all temporary addresses.
 	for tempAddr, tempAddrState := range state.tempAddrs {
 		ndp.invalidateTempSLAACAddr(state.tempAddrs, tempAddr, tempAddrState)
 	}
 
-	state.stableAddr.ref = nil
+	if state.stableAddr.addressEndpoint != nil {
+		state.stableAddr.addressEndpoint.DecRef()
+		state.stableAddr.addressEndpoint = nil
+	}
 	state.deprecationJob.Cancel()
 	state.invalidationJob.Cancel()
 	delete(ndp.slaacPrefixes, prefix)
@@ -1724,12 +1745,12 @@ func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaa
 
 // invalidateTempSLAACAddr invalidates a temporary SLAAC address.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
 	// Since we are already invalidating the address, do not invalidate the
 	// address when removing the address.
-	if err := ndp.nic.removePermanentIPv6EndpointLocked(tempAddrState.ref, false /* allowSLAACInvalidation */); err != nil {
-		panic(fmt.Sprintf("error removing temporary SLAAC address %s: %s", tempAddrState.ref.addrWithPrefix(), err))
+	if err := ndp.ep.removePermanentEndpointLocked(tempAddrState.addressEndpoint, false /* allowSLAACInvalidation */); err != nil {
+		panic(fmt.Sprintf("error removing temporary SLAAC address %s: %s", tempAddrState.addressEndpoint.AddressWithPrefix(), err))
 	}
 
 	ndp.cleanupTempSLAACAddrResources(tempAddrs, tempAddr, tempAddrState)
@@ -1738,10 +1759,10 @@ func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLA
 // cleanupTempSLAACAddrResourcesAndNotify cleans up an invalidated temporary
 // SLAAC address's resources from ndp.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidateAddr bool) {
-	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
-		ndpDisp.OnAutoGenAddressInvalidated(ndp.nic.ID(), addr)
+	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.NICID(), addr)
 	}
 
 	if !invalidateAddr {
@@ -1765,35 +1786,29 @@ func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWi
 // cleanupTempSLAACAddrResourcesAndNotify cleans up a temporary SLAAC address's
 // jobs and entry.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupTempSLAACAddrResources(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
+	tempAddrState.addressEndpoint.DecRef()
+	tempAddrState.addressEndpoint = nil
 	tempAddrState.deprecationJob.Cancel()
 	tempAddrState.invalidationJob.Cancel()
 	tempAddrState.regenJob.Cancel()
 	delete(tempAddrs, tempAddr)
 }
 
-// cleanupState cleans up ndp's state.
+// removeSLAACAddresses removes all SLAAC addresses.
 //
-// If hostOnly is true, then only host-specific state will be cleaned up.
+// If keepLinkLocal is false, the SLAAC generated link-local address is removed.
 //
-// cleanupState MUST be called with hostOnly set to true when ndp's NIC is
-// transitioning from a host to a router. This function will invalidate all
-// discovered on-link prefixes, discovered routers, and auto-generated
-// addresses.
-//
-// If hostOnly is true, then the link-local auto-generated address will not be
-// invalidated as routers are also expected to generate a link-local address.
-//
-// The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) cleanupState(hostOnly bool) {
+// The IPv6 endpoint that ndp belongs to MUST be locked.
+func (ndp *ndpState) removeSLAACAddresses(keepLinkLocal bool) {
 	linkLocalSubnet := header.IPv6LinkLocalPrefix.Subnet()
-	linkLocalPrefixes := 0
+	var linkLocalPrefixes int
 	for prefix, state := range ndp.slaacPrefixes {
 		// RFC 4862 section 5 states that routers are also expected to generate a
 		// link-local address so we do not invalidate them if we are cleaning up
 		// host-only state.
-		if hostOnly && prefix == linkLocalSubnet {
+		if keepLinkLocal && prefix == linkLocalSubnet {
 			linkLocalPrefixes++
 			continue
 		}
@@ -1804,6 +1819,21 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 	if got := len(ndp.slaacPrefixes); got != linkLocalPrefixes {
 		panic(fmt.Sprintf("ndp: still have non-linklocal SLAAC prefixes after cleaning up; found = %d prefixes, of which %d are link-local", got, linkLocalPrefixes))
 	}
+}
+
+// cleanupState cleans up ndp's state.
+//
+// If hostOnly is true, then only host-specific state is cleaned up.
+//
+// This function invalidates all discovered on-link prefixes, discovered
+// routers, and auto-generated addresses.
+//
+// If hostOnly is true, then the link-local auto-generated address aren't
+// invalidated as routers are also expected to generate a link-local address.
+//
+// The IPv6 endpoint that ndp belongs to MUST be locked.
+func (ndp *ndpState) cleanupState(hostOnly bool) {
+	ndp.removeSLAACAddresses(hostOnly /* keepLinkLocal */)
 
 	for prefix := range ndp.onLinkPrefixes {
 		ndp.invalidateOnLinkPrefix(prefix)
@@ -1827,7 +1857,7 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 // startSolicitingRouters starts soliciting routers, as per RFC 4861 section
 // 6.3.7. If routers are already being solicited, this function does nothing.
 //
-// The NIC ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) startSolicitingRouters() {
 	if ndp.rtrSolicit.timer != nil {
 		// We are already soliciting routers.
@@ -1848,27 +1878,37 @@ func (ndp *ndpState) startSolicitingRouters() {
 
 	var done bool
 	ndp.rtrSolicit.done = &done
-	ndp.rtrSolicit.timer = ndp.nic.stack.Clock().AfterFunc(delay, func() {
-		ndp.nic.mu.Lock()
+	ndp.rtrSolicit.timer = ndp.ep.stack.Clock().AfterFunc(delay, func() {
+		ndp.ep.mu.Lock()
 		if done {
 			// If we reach this point, it means that the RS timer fired after another
-			// goroutine already obtained the NIC lock and stopped solicitations.
-			// Simply return here and do nothing further.
-			ndp.nic.mu.Unlock()
+			// goroutine already obtained the IPv6 endpoint lock and stopped
+			// solicitations. Simply return here and do nothing further.
+			ndp.ep.mu.Unlock()
 			return
 		}
 
 		// As per RFC 4861 section 4.1, the source of the RS is an address assigned
 		// to the sending interface, or the unspecified address if no address is
 		// assigned to the sending interface.
-		ref := ndp.nic.primaryIPv6EndpointRLocked(header.IPv6AllRoutersMulticastAddress)
-		if ref == nil {
-			ref = ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint)
+		addressEndpoint := ndp.ep.acquirePrimaryAddressRLocked(header.IPv6AllRoutersMulticastAddress, false)
+		if addressEndpoint == nil {
+			// Incase this ends up creating a new temporary address, we need to hold
+			// onto the endpoint until a route is obtained. If we decrement the
+			// reference count before obtaing a route, the address's resources would
+			// be released and attempting to obtain a route after would fail. Once a
+			// route is obtainted, it is safe to decrement the reference count since
+			// obtaining a route increments the address's reference count.
+			addressEndpoint = ndp.ep.acquireAddressOrCreateTempLocked(header.IPv6Any, true /* createTemp */, stack.NeverPrimaryEndpoint)
 		}
-		ndp.nic.mu.Unlock()
+		ndp.ep.mu.Unlock()
 
-		localAddr := ref.address()
-		r := makeRoute(header.IPv6ProtocolNumber, localAddr, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+		localAddr := addressEndpoint.AddressWithPrefix().Address
+		r, err := ndp.ep.stack.FindRoute(ndp.ep.NICID(), localAddr, header.IPv6AllRoutersMulticastAddress, ProtocolNumber, false /* multicastLoop */)
+		addressEndpoint.DecRef()
+		if err != nil {
+			return
+		}
 		defer r.Release()
 
 		// Route should resolve immediately since
@@ -1876,15 +1916,16 @@ func (ndp *ndpState) startSolicitingRouters() {
 		// remote link address can be calculated without a resolution process.
 		if c, err := r.Resolve(nil); err != nil {
 			// Do not consider the NIC being unknown or disabled as a fatal error.
-			// Since this method is required to be called when the NIC is not locked,
-			// the NIC could have been disabled or removed by another goroutine.
+			// Since this method is required to be called when the IPv6 endpoint is
+			// not locked, the IPv6 endpoint could have been disabled or removed by
+			// another goroutine.
 			if err == tcpip.ErrUnknownNICID || err == tcpip.ErrInvalidEndpointState {
 				return
 			}
 
-			panic(fmt.Sprintf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID(), err))
+			panic(fmt.Sprintf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.NICID(), err))
 		} else if c != nil {
-			panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID()))
+			panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.NICID()))
 		}
 
 		// As per RFC 4861 section 4.1, an NDP RS SHOULD include the source
@@ -1907,21 +1948,20 @@ func (ndp *ndpState) startSolicitingRouters() {
 		rs.Options().Serialize(optsSerializer)
 		icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-		pkt := NewPacketBuffer(PacketBufferOptions{
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
 			Data:               buffer.View(icmpData).ToVectorisedView(),
 		})
 
 		sent := r.Stats().ICMP.V6PacketsSent
 		if err := r.WritePacket(nil,
-			NetworkHeaderParams{
+			stack.NetworkHeaderParams{
 				Protocol: header.ICMPv6ProtocolNumber,
 				TTL:      header.NDPHopLimit,
-				TOS:      DefaultTOS,
 			}, pkt,
 		); err != nil {
 			sent.Dropped.Increment()
-			log.Printf("startSolicitingRouters: error writing NDP router solicit message on NIC(%d); err = %s", ndp.nic.ID(), err)
+			log.Printf("startSolicitingRouters: error writing NDP router solicit message on NIC(%d); err = %s", ndp.ep.NICID(), err)
 			// Don't send any more messages if we had an error.
 			remaining = 0
 		} else {
@@ -1929,19 +1969,19 @@ func (ndp *ndpState) startSolicitingRouters() {
 			remaining--
 		}
 
-		ndp.nic.mu.Lock()
+		ndp.ep.mu.Lock()
 		if done || remaining == 0 {
 			ndp.rtrSolicit.timer = nil
 			ndp.rtrSolicit.done = nil
 		} else if ndp.rtrSolicit.timer != nil {
 			// Note, we need to explicitly check to make sure that
 			// the timer field is not nil because if it was nil but
-			// we still reached this point, then we know the NIC
+			// we still reached this point, then we know the IPv6 endpoint
 			// was requested to stop soliciting routers so we don't
 			// need to send the next Router Solicitation message.
 			ndp.rtrSolicit.timer.Reset(ndp.configs.RtrSolicitationInterval)
 		}
-		ndp.nic.mu.Unlock()
+		ndp.ep.mu.Unlock()
 	})
 
 }
@@ -1949,7 +1989,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 // stopSolicitingRouters stops soliciting routers. If routers are not currently
 // being solicited, this function does nothing.
 //
-// The NIC ndp belongs to MUST be locked.
+// The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) stopSolicitingRouters() {
 	if ndp.rtrSolicit.timer == nil {
 		// Nothing to do.
@@ -1965,7 +2005,7 @@ func (ndp *ndpState) stopSolicitingRouters() {
 // initializeTempAddrState initializes state related to temporary SLAAC
 // addresses.
 func (ndp *ndpState) initializeTempAddrState() {
-	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.nic.stack.tempIIDSeed, ndp.nic.ID())
+	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.tempIIDSeed, ndp.ep.NICID())
 
 	if MaxDesyncFactor != 0 {
 		ndp.temporaryAddressDesyncFactor = time.Duration(rand.Int63n(int64(MaxDesyncFactor)))

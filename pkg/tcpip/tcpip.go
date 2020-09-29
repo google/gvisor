@@ -237,6 +237,14 @@ type Timer interface {
 // network node. Or, in the case of unix endpoints, it may represent a path.
 type Address string
 
+// WithPrefix returns the address with a prefix that represents a point subnet.
+func (a Address) WithPrefix() AddressWithPrefix {
+	return AddressWithPrefix{
+		Address:   a,
+		PrefixLen: len(a) * 8,
+	}
+}
+
 // AddressMask is a bitmask for an address.
 type AddressMask string
 

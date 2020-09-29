@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // NeighborEntry describes a neighboring device in the local network.
@@ -439,7 +440,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			e.notifyWakersLocked()
 		}
 
-		if e.isRouter && !flags.IsRouter {
+		if e.isRouter && !flags.IsRouter && header.IsV6UnicastAddress(e.neigh.Addr) {
 			// "In those cases where the IsRouter flag changes from TRUE to FALSE as
 			// a result of this update, the node MUST remove that router from the
 			// Default Router List and update the Destination Cache entries for all
@@ -447,9 +448,17 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			// 7.3.3.  This is needed to detect when a node that is used as a router
 			// stops forwarding packets due to being configured as a host."
 			//  - RFC 4861 section 7.2.5
-			e.nic.mu.Lock()
-			e.nic.mu.ndp.invalidateDefaultRouter(e.neigh.Addr)
-			e.nic.mu.Unlock()
+			//
+			// TODO(gvisor.dev/issue/4085): Remove the special casing we do for IPv6
+			// here.
+			ep, ok := e.nic.networkEndpoints[header.IPv6ProtocolNumber]
+			if !ok {
+				panic(fmt.Sprintf("have a neighbor entry for an IPv6 router but no IPv6 network endpoint"))
+			}
+
+			if ndpEP, ok := ep.(NDPEndpoint); ok {
+				ndpEP.InvalidateDefaultRouter(e.neigh.Addr)
+			}
 		}
 		e.isRouter = flags.IsRouter
 
