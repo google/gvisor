@@ -351,16 +351,6 @@ func (e *endpoint) MTU() uint32 {
 	return calculateMTU(e.linkEP.MTU())
 }
 
-// NICID returns the ID of the NIC this endpoint belongs to.
-func (e *endpoint) NICID() tcpip.NICID {
-	return e.nic.ID()
-}
-
-// Capabilities implements stack.NetworkEndpoint.
-func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return e.linkEP.Capabilities()
-}
-
 // MaxHeaderLength returns the maximum length needed by ipv6 headers (and
 // underlying protocols).
 func (e *endpoint) MaxHeaderLength() uint16 {
@@ -395,8 +385,8 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 
 	// iptables filtering. All packets that reach here are locally
 	// generated.
-	nicName := e.stack.FindNICNameFromID(e.NICID())
-	ipt := e.stack.IPTables()
+	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
+	ipt := e.protocol.stack.IPTables()
 	if ok := ipt.Check(stack.Output, pkt, gso, r, "", nicName); !ok {
 		// iptables is telling us to drop the packet.
 		r.Stats().IP.IPTablesOutputDropped.Increment()
@@ -412,7 +402,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	// short circuits broadcasts before they are sent out to other hosts.
 	if pkt.NatDone {
 		netHeader := header.IPv6(pkt.NetworkHeader().View())
-		if ep, err := e.stack.FindNetworkEndpoint(header.IPv6ProtocolNumber, netHeader.DestinationAddress()); err == nil {
+		if ep, err := e.protocol.stack.FindNetworkEndpoint(header.IPv6ProtocolNumber, netHeader.DestinationAddress()); err == nil {
 			route := r.ReverseRoute(netHeader.SourceAddress(), netHeader.DestinationAddress())
 			ep.HandlePacket(&route, pkt)
 			return nil
@@ -455,8 +445,8 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 
 	// iptables filtering. All packets that reach here are locally
 	// generated.
-	nicName := e.stack.FindNICNameFromID(e.NICID())
-	ipt := e.stack.IPTables()
+	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
+	ipt := e.protocol.stack.IPTables()
 	dropped, natPkts := ipt.CheckPackets(stack.Output, pkts, gso, r, nicName)
 	if len(dropped) == 0 && len(natPkts) == 0 {
 		// Fast path: If no packets are to be dropped then we can just invoke the
@@ -476,7 +466,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		}
 		if _, ok := natPkts[pkt]; ok {
 			netHeader := header.IPv6(pkt.NetworkHeader().View())
-			if ep, err := e.stack.FindNetworkEndpoint(header.IPv6ProtocolNumber, netHeader.DestinationAddress()); err == nil {
+			if ep, err := e.protocol.stack.FindNetworkEndpoint(header.IPv6ProtocolNumber, netHeader.DestinationAddress()); err == nil {
 				src := netHeader.SourceAddress()
 				dst := netHeader.DestinationAddress()
 				route := r.ReverseRoute(src, dst)
@@ -531,7 +521,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and need not be forwarded.
-	ipt := e.stack.IPTables()
+	ipt := e.protocol.stack.IPTables()
 	if ok := ipt.Check(stack.Input, pkt, nil, nil, "", ""); !ok {
 		// iptables is telling us to drop the packet.
 		r.Stats().IP.IPTablesInputDropped.Increment()
@@ -1084,6 +1074,8 @@ var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
 var _ stack.NetworkProtocol = (*protocol)(nil)
 
 type protocol struct {
+	stack *stack.Stack
+
 	mu struct {
 		sync.RWMutex
 
@@ -1147,15 +1139,14 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 }
 
 // NewEndpoint creates a new ipv6 endpoint.
-func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &endpoint{
 		nic:           nic,
-		linkEP:        linkEP,
+		linkEP:        nic.LinkEndpoint(),
 		linkAddrCache: linkAddrCache,
 		nud:           nud,
 		dispatcher:    dispatcher,
 		protocol:      p,
-		stack:         st,
 	}
 	e.mu.addressableEndpointState.Init(e)
 	e.mu.ndp = ndpState{
@@ -1312,8 +1303,9 @@ type Options struct {
 func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 	opts.NDPConfigs.validate()
 
-	return func(*stack.Stack) stack.NetworkProtocol {
+	return func(s *stack.Stack) stack.NetworkProtocol {
 		p := &protocol{
+			stack:         s,
 			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 
 			ndpDisp:              opts.NDPDisp,

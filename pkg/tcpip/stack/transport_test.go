@@ -39,7 +39,7 @@ const (
 // use it.
 type fakeTransportEndpoint struct {
 	stack.TransportEndpointInfo
-	stack    *stack.Stack
+
 	proto    *fakeTransportProtocol
 	peerAddr tcpip.Address
 	route    stack.Route
@@ -59,8 +59,8 @@ func (*fakeTransportEndpoint) Stats() tcpip.EndpointStats {
 
 func (*fakeTransportEndpoint) SetOwner(owner tcpip.PacketOwner) {}
 
-func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
-	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
+func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
+	return &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
 }
 
 func (f *fakeTransportEndpoint) Abort() {
@@ -143,7 +143,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	f.peerAddr = addr.Addr
 
 	// Find the route.
-	r, err := f.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
+	r, err := f.proto.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
 		return tcpip.ErrNoRoute
 	}
@@ -151,7 +151,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	// Try to register so that we can start receiving packets.
 	f.ID.RemoteAddress = addr.Addr
-	err = f.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, ports.Flags{}, 0 /* bindToDevice */)
+	err = f.proto.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, ports.Flags{}, 0 /* bindToDevice */)
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (f *fakeTransportEndpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *wai
 }
 
 func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress) *tcpip.Error {
-	if err := f.stack.RegisterTransportEndpoint(
+	if err := f.proto.stack.RegisterTransportEndpoint(
 		a.NIC,
 		[]tcpip.NetworkProtocolNumber{fakeNetNumber},
 		fakeTransNumber,
@@ -218,7 +218,6 @@ func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportE
 	f.proto.packetCount++
 	if f.acceptQueue != nil {
 		f.acceptQueue = append(f.acceptQueue, fakeTransportEndpoint{
-			stack: f.stack,
 			TransportEndpointInfo: stack.TransportEndpointInfo{
 				ID:       f.ID,
 				NetProto: f.NetProto,
@@ -262,6 +261,8 @@ type fakeTransportProtocolOptions struct {
 // fakeTransportProtocol is a transport-layer protocol descriptor. It
 // aggregates the number of packets received via endpoints of this protocol.
 type fakeTransportProtocol struct {
+	stack *stack.Stack
+
 	packetCount  int
 	controlCount int
 	opts         fakeTransportProtocolOptions
@@ -271,11 +272,11 @@ func (*fakeTransportProtocol) Number() tcpip.TransportProtocolNumber {
 	return fakeTransNumber
 }
 
-func (f *fakeTransportProtocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return newFakeTransportEndpoint(stack, f, netProto, stack.UniqueID()), nil
+func (f *fakeTransportProtocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return newFakeTransportEndpoint(f, netProto, f.stack.UniqueID()), nil
 }
 
-func (*fakeTransportProtocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (*fakeTransportProtocol) NewRawEndpoint(tcpip.NetworkProtocolNumber, *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	return nil, tcpip.ErrUnknownProtocol
 }
 
@@ -326,8 +327,8 @@ func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
 	return ok
 }
 
-func fakeTransFactory(*stack.Stack) stack.TransportProtocol {
-	return &fakeTransportProtocol{}
+func fakeTransFactory(s *stack.Stack) stack.TransportProtocol {
+	return &fakeTransportProtocol{stack: s}
 }
 
 func TestTransportReceive(t *testing.T) {

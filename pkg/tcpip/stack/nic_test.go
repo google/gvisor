@@ -60,11 +60,6 @@ func (e *testIPv6Endpoint) MTU() uint32 {
 	return e.linkEP.MTU() - header.IPv6MinimumSize
 }
 
-// Capabilities implements NetworkEndpoint.Capabilities.
-func (e *testIPv6Endpoint) Capabilities() LinkEndpointCapabilities {
-	return e.linkEP.Capabilities()
-}
-
 // MaxHeaderLength implements NetworkEndpoint.MaxHeaderLength.
 func (e *testIPv6Endpoint) MaxHeaderLength() uint16 {
 	return e.linkEP.MaxHeaderLength() + header.IPv6MinimumSize
@@ -86,11 +81,6 @@ func (*testIPv6Endpoint) WritePackets(*Route, *GSO, PacketBufferList, NetworkHea
 func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, *PacketBuffer) *tcpip.Error {
 	// Our tests don't use this so we don't support it.
 	return tcpip.ErrNotSupported
-}
-
-// NICID implements NetworkEndpoint.NICID.
-func (e *testIPv6Endpoint) NICID() tcpip.NICID {
-	return e.nicID
 }
 
 // HandlePacket implements NetworkEndpoint.HandlePacket.
@@ -142,10 +132,10 @@ func (*testIPv6Protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) 
 }
 
 // NewEndpoint implements NetworkProtocol.NewEndpoint.
-func (p *testIPv6Protocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, _ TransportDispatcher, linkEP LinkEndpoint, _ *Stack) NetworkEndpoint {
+func (p *testIPv6Protocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, _ TransportDispatcher) NetworkEndpoint {
 	e := &testIPv6Endpoint{
 		nicID:    nic.ID(),
-		linkEP:   linkEP,
+		linkEP:   nic.LinkEndpoint(),
 		protocol: p,
 	}
 	e.AddressableEndpointState.Init(e)

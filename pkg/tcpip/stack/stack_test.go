@@ -91,10 +91,6 @@ func (f *fakeNetworkEndpoint) MTU() uint32 {
 	return f.ep.MTU() - uint32(f.MaxHeaderLength())
 }
 
-func (f *fakeNetworkEndpoint) NICID() tcpip.NICID {
-	return f.nicID
-}
-
 func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
@@ -129,10 +125,6 @@ func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
 
 func (f *fakeNetworkEndpoint) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, dstAddr tcpip.Address) uint16 {
 	return 0
-}
-
-func (f *fakeNetworkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return f.ep.Capabilities()
 }
 
 func (f *fakeNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
@@ -207,12 +199,12 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
-func (f *fakeNetworkProtocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
+func (f *fakeNetworkProtocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &fakeNetworkEndpoint{
 		nicID:      nic.ID(),
 		proto:      f,
 		dispatcher: dispatcher,
-		ep:         ep,
+		ep:         nic.LinkEndpoint(),
 	}
 	e.AddressableEndpointState.Init(e)
 	return e

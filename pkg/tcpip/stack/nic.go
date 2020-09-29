@@ -124,7 +124,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = nil
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic, ep, stack)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic)
 	}
 
 	nic.linkEP.Attach(nic)
@@ -796,7 +796,7 @@ func (n *NIC) Name() string {
 	return n.name
 }
 
-// LinkEndpoint returns the link endpoint of n.
+// LinkEndpoint implements NetworkInterface.
 func (n *NIC) LinkEndpoint() LinkEndpoint {
 	return n.linkEP
 }

@@ -123,6 +123,10 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
+func (*testInterface) LinkEndpoint() stack.LinkEndpoint {
+	return nil
+}
+
 func TestICMPCounts(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -170,7 +174,7 @@ func TestICMPCounts(t *testing.T) {
 			if netProto == nil {
 				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 			}
-			ep := netProto.NewEndpoint(&testInterface{}, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{}, nil, s)
+			ep := netProto.NewEndpoint(&testInterface{}, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{})
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -312,7 +316,7 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 	if netProto == nil {
 		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 	}
-	ep := netProto.NewEndpoint(&testInterface{}, nil, &stubNUDHandler{}, &stubDispatcher{}, nil, s)
+	ep := netProto.NewEndpoint(&testInterface{}, nil, &stubNUDHandler{}, &stubDispatcher{})
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
