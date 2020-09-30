@@ -34,7 +34,7 @@ func (at *AcceptTarget) ID() TargetID {
 }
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleAccept, 0
 }
 
@@ -52,7 +52,7 @@ func (dt *DropTarget) ID() TargetID {
 }
 
 // Action implements Target.Action.
-func (DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
 
@@ -76,7 +76,7 @@ func (et *ErrorTarget) ID() TargetID {
 }
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*ErrorTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, 0
 }
@@ -99,7 +99,7 @@ func (uc *UserChainTarget) ID() TargetID {
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -118,7 +118,7 @@ func (rt *ReturnTarget) ID() TargetID {
 }
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
 
@@ -153,7 +153,7 @@ func (rt *RedirectTarget) ID() TargetID {
 // TODO(gvisor.dev/issue/170): Parse headers without copying. The current
 // implementation only works for PREROUTING and calls pkt.Clone(), neither
 // of which should be the case.
-func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso *GSO, r *Route, address tcpip.Address) (RuleVerdict, int) {
+func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso *GSO, r *Route, address tcpip.Address) (RuleVerdict, int) {
 	// Packet is already manipulated.
 	if pkt.NatDone {
 		return RuleAccept, 0

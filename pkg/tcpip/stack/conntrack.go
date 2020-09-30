@@ -268,7 +268,7 @@ func (ct *ConnTrack) connForTID(tid tupleID) (*conn, direction) {
 	return nil, dirOriginal
 }
 
-func (ct *ConnTrack) insertRedirectConn(pkt *PacketBuffer, hook Hook, rt RedirectTarget) *conn {
+func (ct *ConnTrack) insertRedirectConn(pkt *PacketBuffer, hook Hook, rt *RedirectTarget) *conn {
 	tid, err := packetToTupleID(pkt)
 	if err != nil {
 		return nil
