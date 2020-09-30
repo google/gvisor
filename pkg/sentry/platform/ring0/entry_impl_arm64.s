@@ -3,11 +3,17 @@
 // Automatically generated, do not edit.
 
 // CPU offsets.
-#define CPU_SELF             0x00
-#define CPU_REGISTERS        0x288
-#define CPU_STACK_TOP        0x110
-#define CPU_ERROR_CODE       0x110
-#define CPU_ERROR_TYPE       0x118
+#define CPU_REGISTERS        0x28
+#define CPU_ERROR_CODE       0x10
+#define CPU_ERROR_TYPE       0x18
+#define CPU_ENTRY            0x20
+
+// CPU entry offsets.
+#define ENTRY_SCRATCH0       0x100
+#define ENTRY_SCRATCH1       0x108
+#define ENTRY_STACK_TOP      0x110
+#define ENTRY_CPU_SELF       0x118
+#define ENTRY_KERNEL_CR3     0x120
 
 // Bits.
 #define _RFLAGS_IF           0x200
@@ -36,7 +42,7 @@
 #define VirtualizationException    0x14
 #define SecurityException          0x1e
 #define SyscallInt80               0x80
-#define Syscall                    0x81
+#define Syscall                    0x100
 
 // Ptrace registers.
 #define PTRACE_R15      0x00
