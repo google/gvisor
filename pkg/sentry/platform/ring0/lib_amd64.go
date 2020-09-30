@@ -61,20 +61,8 @@ func wrgsbase(addr uintptr)
 // wrgsmsr writes to the GS_BASE MSR.
 func wrgsmsr(addr uintptr)
 
-// writeCR3 writes the CR3 value.
-func writeCR3(phys uintptr)
-
-// readCR3 reads the current CR3 value.
-func readCR3() uintptr
-
 // readCR2 reads the current CR2 value.
 func readCR2() uintptr
-
-// jumpToKernel jumps to the kernel version of the current RIP.
-func jumpToKernel()
-
-// jumpToUser jumps to the user version of the current RIP.
-func jumpToUser()
 
 // fninit initializes the floating point unit.
 func fninit()

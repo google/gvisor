@@ -155,7 +155,7 @@ func (m *machine) newVCPU() *vCPU {
 		fd:      int(fd),
 		machine: m,
 	}
-	c.CPU.Init(&m.kernel, c)
+	c.CPU.Init(&m.kernel, c.id, c)
 	m.vCPUsByID[c.id] = c
 
 	// Ensure the signal mask is correct.
@@ -183,9 +183,6 @@ func newMachine(vm int) (*machine, error) {
 	// Create the machine.
 	m := &machine{fd: vm}
 	m.available.L = &m.mu
-	m.kernel.Init(ring0.KernelOpts{
-		PageTables: pagetables.New(newAllocator()),
-	})
 
 	// Pull the maximum vCPUs.
 	maxVCPUs, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
@@ -197,6 +194,9 @@ func newMachine(vm int) (*machine, error) {
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
 	m.vCPUsByTID = make(map[uint64]*vCPU)
 	m.vCPUsByID = make([]*vCPU, m.maxVCPUs)
+	m.kernel.Init(ring0.KernelOpts{
+		PageTables: pagetables.New(newAllocator()),
+	}, m.maxVCPUs)
 
 	// Pull the maximum slots.
 	maxSlots, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
@@ -219,15 +219,9 @@ func newMachine(vm int) (*machine, error) {
 			pagetables.MapOpts{AccessType: usermem.AnyAccess},
 			pr.physical)
 
-		// And keep everything in the upper half.
-		m.kernel.PageTables.Map(
-			usermem.Addr(ring0.KernelStartAddress|pr.virtual),
-			pr.length,
-			pagetables.MapOpts{AccessType: usermem.AnyAccess},
-			pr.physical)
-
 		return true // Keep iterating.
 	})
+	m.mapUpperHalf(m.kernel.PageTables)
 
 	var physicalRegionsReadOnly []physicalRegion
 	var physicalRegionsAvailable []physicalRegion
@@ -365,6 +359,11 @@ func (m *machine) Destroy() {
 // Get gets an available vCPU.
 //
 // This will return with the OS thread locked.
+//
+// It is guaranteed that if any OS thread TID is in guest, m.vCPUs[TID] points
+// to the vCPU in which the OS thread TID is running. So if Get() returns with
+// the corrent context in guest, the vCPU of it must be the same as what
+// Get() returns.
 func (m *machine) Get() *vCPU {
 	m.mu.RLock()
 	runtime.LockOSThread()
