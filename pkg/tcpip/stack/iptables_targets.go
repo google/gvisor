@@ -164,11 +164,15 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gs
 		return RuleDrop, 0
 	}
 
-	// Change the address to localhost (127.0.0.1) in Output and
-	// to primary address of the incoming interface in Prerouting.
+	// Change the address to localhost (127.0.0.1 or ::1) in Output and to
+	// the primary address of the incoming interface in Prerouting.
 	switch hook {
 	case Output:
-		rt.Addr = tcpip.Address([]byte{127, 0, 0, 1})
+		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+			rt.Addr = tcpip.Address([]byte{127, 0, 0, 1})
+		} else {
+			rt.Addr = header.IPv6Loopback
+		}
 	case Prerouting:
 		rt.Addr = address
 	default:
@@ -177,8 +181,7 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gs
 
 	// TODO(gvisor.dev/issue/170): Check Flags in RedirectTarget if
 	// we need to change dest address (for OUTPUT chain) or ports.
-	netHeader := header.IPv4(pkt.NetworkHeader().View())
-	switch protocol := netHeader.TransportProtocol(); protocol {
+	switch protocol := pkt.TransportProtocolNumber; protocol {
 	case header.UDPProtocolNumber:
 		udpHeader := header.UDP(pkt.TransportHeader().View())
 		udpHeader.SetDestinationPort(rt.Port)
@@ -186,10 +189,10 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gs
 		// Calculate UDP checksum and set it.
 		if hook == Output {
 			udpHeader.SetChecksum(0)
-			length := uint16(pkt.Size()) - uint16(netHeader.HeaderLength())
 
 			// Only calculate the checksum if offloading isn't supported.
 			if r.Capabilities()&CapabilityTXChecksumOffload == 0 {
+				length := uint16(pkt.Size()) - uint16(len(pkt.NetworkHeader().View()))
 				xsum := r.PseudoHeaderChecksum(protocol, length)
 				for _, v := range pkt.Data.Views() {
 					xsum = header.Checksum(v, xsum)
@@ -198,10 +201,15 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gs
 				udpHeader.SetChecksum(^udpHeader.CalculateChecksum(xsum))
 			}
 		}
-		// Change destination address.
-		netHeader.SetDestinationAddress(rt.Addr)
-		netHeader.SetChecksum(0)
-		netHeader.SetChecksum(^netHeader.CalculateChecksum())
+
+		pkt.Network().SetDestinationAddress(rt.Addr)
+
+		// After modification, IPv4 packets need a valid checksum.
+		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+			netHeader := header.IPv4(pkt.NetworkHeader().View())
+			netHeader.SetChecksum(0)
+			netHeader.SetChecksum(^netHeader.CalculateChecksum())
+		}
 		pkt.NatDone = true
 	case header.TCPProtocolNumber:
 		if ct == nil {
