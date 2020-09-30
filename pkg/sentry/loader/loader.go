@@ -122,7 +122,7 @@ func allocStack(ctx context.Context, m *mm.MemoryManager, a arch.Context) (*arch
 	if err != nil {
 		return nil, err
 	}
-	return &arch.Stack{a, m, ar.End}, nil
+	return &arch.Stack{Arch: a, IO: m, Bottom: ar.End}, nil
 }
 
 const (
@@ -247,20 +247,20 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	}
 
 	// Push the original filename to the stack, for AT_EXECFN.
-	execfn, err := stack.Push(args.Filename)
-	if err != nil {
+	if _, err := stack.PushNullTerminatedByteSlice([]byte(args.Filename)); err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to push exec filename: %v", err), syserr.FromError(err).ToLinux())
 	}
+	execfn := stack.Bottom
 
 	// Push 16 random bytes on the stack which AT_RANDOM will point to.
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to read random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
-	random, err := stack.Push(b)
-	if err != nil {
+	if _, err = stack.PushNullTerminatedByteSlice(b[:]); err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to push random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
+	random := stack.Bottom
 
 	c := auth.CredentialsFromContext(ctx)
 

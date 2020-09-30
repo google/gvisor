@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build arm64
+
 package arch
 
 import (
-	"encoding/binary"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -25,6 +26,8 @@ import (
 
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the
 // second argument to signal handlers set by signal(2).
+//
+// +marshal
 type SignalContext64 struct {
 	FaultAddr uint64
 	Regs      [31]uint64
@@ -36,6 +39,7 @@ type SignalContext64 struct {
 	Reserved  [3568]uint8
 }
 
+// +marshal
 type aarch64Ctx struct {
 	Magic uint32
 	Size  uint32
@@ -43,6 +47,8 @@ type aarch64Ctx struct {
 
 // FpsimdContext is equivalent to struct fpsimd_context on arm64
 // (arch/arm64/include/uapi/asm/sigcontext.h).
+//
+// +marshal
 type FpsimdContext struct {
 	Head  aarch64Ctx
 	Fpsr  uint32
@@ -51,13 +57,15 @@ type FpsimdContext struct {
 }
 
 // UContext64 is equivalent to ucontext on arm64(arch/arm64/include/uapi/asm/ucontext.h).
+//
+// +marshal
 type UContext64 struct {
 	Flags  uint64
 	Link   uint64
 	Stack  SignalStack
 	Sigset linux.SignalSet
 	// glibc uses a 1024-bit sigset_t
-	_pad [(1024 - 64) / 8]byte
+	_pad [120]byte // (1024 - 64) / 8 = 120
 	// sigcontext must be aligned to 16-byte
 	_pad2 [8]byte
 	// last for future expansion
@@ -94,11 +102,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 		},
 		Sigset: sigset,
 	}
-
-	ucSize := binary.Size(uc)
-	if ucSize < 0 {
-		panic("can't get size of UContext64")
-	}
+	ucSize := uc.SizeBytes()
 
 	// frameSize = ucSize + sizeof(siginfo).
 	// sizeof(siginfo) == 128.
@@ -119,14 +123,14 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	info.FixSignalCodeForUser()
 
 	// Set up the stack frame.
-	infoAddr, err := st.Push(info)
-	if err != nil {
+	if _, err := info.CopyOut(st, StackBottomMagic); err != nil {
 		return err
 	}
-	ucAddr, err := st.Push(uc)
-	if err != nil {
+	infoAddr := st.Bottom
+	if _, err := uc.CopyOut(st, StackBottomMagic); err != nil {
 		return err
 	}
+	ucAddr := st.Bottom
 
 	// Set up registers.
 	c.Regs.Sp = uint64(st.Bottom)
@@ -147,11 +151,11 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalStack, error) {
 	// Copy out the stack frame.
 	var uc UContext64
-	if _, err := st.Pop(&uc); err != nil {
+	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
 		return 0, SignalStack{}, err
 	}
 	var info SignalInfo
-	if _, err := st.Pop(&info); err != nil {
+	if _, err := info.CopyIn(st, StackBottomMagic); err != nil {
 		return 0, SignalStack{}, err
 	}
 

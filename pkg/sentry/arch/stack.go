@@ -15,14 +15,16 @@
 package arch
 
 import (
-	"encoding/binary"
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// Stack is a simple wrapper around a usermem.IO and an address.
+// Stack is a simple wrapper around a usermem.IO and an address. Stack
+// implements marshal.CopyContext, and marshallable values can be pushed or
+// popped from the stack through the marshal.Marshallable interface.
+//
+// Stack is not thread-safe.
 type Stack struct {
 	// Our arch info.
 	// We use this for automatic Native conversion of usermem.Addrs during
@@ -34,105 +36,60 @@ type Stack struct {
 
 	// Our current stack bottom.
 	Bottom usermem.Addr
+
+	// Scratch buffer used for marshalling to avoid having to repeatedly
+	// allocate scratch memory.
+	scratchBuf []byte
 }
 
-// Push pushes the given values on to the stack.
-//
-// (This method supports Addrs and treats them as native types.)
-func (s *Stack) Push(vals ...interface{}) (usermem.Addr, error) {
-	for _, v := range vals {
+// scratchBufLen is the default length of Stack.scratchBuf. The
+// largest structs the stack regularly serializes are arch.SignalInfo
+// and arch.UContext64. We'll set the default size as the larger of
+// the two, arch.UContext64.
+var scratchBufLen = (*UContext64)(nil).SizeBytes()
 
-		// We convert some types to well-known serializable quanities.
-		var norm interface{}
+// CopyScratchBuffer implements marshal.CopyContext.CopyScratchBuffer.
+func (s *Stack) CopyScratchBuffer(size int) []byte {
+	if len(s.scratchBuf) < size {
+		s.scratchBuf = make([]byte, size)
+	}
+	return s.scratchBuf[:size]
+}
 
-		// For array types, we will automatically add an appropriate
-		// terminal value. This is done simply to make the interface
-		// easier to use.
-		var term interface{}
+// StackBottomMagic is the special address callers must past to all stack
+// marshalling operations to cause the src/dst address to be computed based on
+// the current end of the stack.
+const StackBottomMagic = ^usermem.Addr(0) // usermem.Addr(-1)
 
-		switch v.(type) {
-		case string:
-			norm = []byte(v.(string))
-			term = byte(0)
-		case []int8, []uint8:
-			norm = v
-			term = byte(0)
-		case []int16, []uint16:
-			norm = v
-			term = uint16(0)
-		case []int32, []uint32:
-			norm = v
-			term = uint32(0)
-		case []int64, []uint64:
-			norm = v
-			term = uint64(0)
-		case []usermem.Addr:
-			// Special case: simply push recursively.
-			_, err := s.Push(s.Arch.Native(uintptr(0)))
-			if err != nil {
-				return 0, err
-			}
-			varr := v.([]usermem.Addr)
-			for i := len(varr) - 1; i >= 0; i-- {
-				_, err := s.Push(varr[i])
-				if err != nil {
-					return 0, err
-				}
-			}
-			continue
-		case usermem.Addr:
-			norm = s.Arch.Native(uintptr(v.(usermem.Addr)))
-		default:
-			norm = v
-		}
-
-		if term != nil {
-			_, err := s.Push(term)
-			if err != nil {
-				return 0, err
-			}
-		}
-
-		c := binary.Size(norm)
-		if c < 0 {
-			return 0, fmt.Errorf("bad binary.Size for %T", v)
-		}
-		n, err := usermem.CopyObjectOut(context.Background(), s.IO, s.Bottom-usermem.Addr(c), norm, usermem.IOOpts{})
-		if err != nil || c != n {
-			return 0, err
-		}
-
+// CopyOutBytes implements marshal.CopyContext.CopyOutBytes. CopyOutBytes
+// computes an appropriate address based on the current end of the
+// stack. Callers use the sentinel address StackBottomMagic to marshal methods
+// to indicate this.
+func (s *Stack) CopyOutBytes(sentinel usermem.Addr, b []byte) (int, error) {
+	if sentinel != StackBottomMagic {
+		panic("Attempted to copy out to stack with absolute address")
+	}
+	c := len(b)
+	n, err := s.IO.CopyOut(context.Background(), s.Bottom-usermem.Addr(c), b, usermem.IOOpts{})
+	if err == nil && n == c {
 		s.Bottom -= usermem.Addr(n)
 	}
-
-	return s.Bottom, nil
+	return n, err
 }
 
-// Pop pops the given values off the stack.
-//
-// (This method supports Addrs and treats them as native types.)
-func (s *Stack) Pop(vals ...interface{}) (usermem.Addr, error) {
-	for _, v := range vals {
-
-		vaddr, isVaddr := v.(*usermem.Addr)
-
-		var n int
-		var err error
-		if isVaddr {
-			value := s.Arch.Native(uintptr(0))
-			n, err = usermem.CopyObjectIn(context.Background(), s.IO, s.Bottom, value, usermem.IOOpts{})
-			*vaddr = usermem.Addr(s.Arch.Value(value))
-		} else {
-			n, err = usermem.CopyObjectIn(context.Background(), s.IO, s.Bottom, v, usermem.IOOpts{})
-		}
-		if err != nil {
-			return 0, err
-		}
-
+// CopyInBytes implements marshal.CopyContext.CopyInBytes. CopyInBytes computes
+// an appropriate address based on the current end of the stack. Callers must
+// use the sentinel address StackBottomMagic to marshal methods to indicate
+// this.
+func (s *Stack) CopyInBytes(sentinel usermem.Addr, b []byte) (int, error) {
+	if sentinel != StackBottomMagic {
+		panic("Attempted to copy in from stack with absolute address")
+	}
+	n, err := s.IO.CopyIn(context.Background(), s.Bottom, b, usermem.IOOpts{})
+	if err == nil {
 		s.Bottom += usermem.Addr(n)
 	}
-
-	return s.Bottom, nil
+	return n, err
 }
 
 // Align aligns the stack to the given offset.
@@ -140,6 +97,22 @@ func (s *Stack) Align(offset int) {
 	if s.Bottom%usermem.Addr(offset) != 0 {
 		s.Bottom -= (s.Bottom % usermem.Addr(offset))
 	}
+}
+
+// PushNullTerminatedByteSlice writes bs to the stack, followed by an extra null
+// byte at the end. On error, the contents of the stack and the bottom cursor
+// are undefined.
+func (s *Stack) PushNullTerminatedByteSlice(bs []byte) (int, error) {
+	// Note: Stack grows up, so write the terminal null byte first.
+	nNull, err := primitive.CopyUint8Out(s, StackBottomMagic, 0)
+	if err != nil {
+		return 0, err
+	}
+	n, err := primitive.CopyByteSliceOut(s, StackBottomMagic, bs)
+	if err != nil {
+		return 0, err
+	}
+	return n + nNull, nil
 }
 
 // StackLayout describes the location of the arguments and environment on the
@@ -177,11 +150,10 @@ func (s *Stack) Load(args []string, env []string, aux Auxv) (StackLayout, error)
 	l.EnvvEnd = s.Bottom
 	envAddrs := make([]usermem.Addr, len(env))
 	for i := len(env) - 1; i >= 0; i-- {
-		addr, err := s.Push(env[i])
-		if err != nil {
+		if _, err := s.PushNullTerminatedByteSlice([]byte(env[i])); err != nil {
 			return StackLayout{}, err
 		}
-		envAddrs[i] = addr
+		envAddrs[i] = s.Bottom
 	}
 	l.EnvvStart = s.Bottom
 
@@ -189,11 +161,10 @@ func (s *Stack) Load(args []string, env []string, aux Auxv) (StackLayout, error)
 	l.ArgvEnd = s.Bottom
 	argAddrs := make([]usermem.Addr, len(args))
 	for i := len(args) - 1; i >= 0; i-- {
-		addr, err := s.Push(args[i])
-		if err != nil {
+		if _, err := s.PushNullTerminatedByteSlice([]byte(args[i])); err != nil {
 			return StackLayout{}, err
 		}
-		argAddrs[i] = addr
+		argAddrs[i] = s.Bottom
 	}
 	l.ArgvStart = s.Bottom
 
@@ -222,26 +193,26 @@ func (s *Stack) Load(args []string, env []string, aux Auxv) (StackLayout, error)
 		auxv = append(auxv, usermem.Addr(a.Key), a.Value)
 	}
 	auxv = append(auxv, usermem.Addr(0))
-	_, err := s.Push(auxv)
+	_, err := s.pushAddrSliceAndTerminator(auxv)
 	if err != nil {
 		return StackLayout{}, err
 	}
 
 	// Push environment.
-	_, err = s.Push(envAddrs)
+	_, err = s.pushAddrSliceAndTerminator(envAddrs)
 	if err != nil {
 		return StackLayout{}, err
 	}
 
 	// Push args.
-	_, err = s.Push(argAddrs)
+	_, err = s.pushAddrSliceAndTerminator(argAddrs)
 	if err != nil {
 		return StackLayout{}, err
 	}
 
 	// Push arg count.
-	_, err = s.Push(usermem.Addr(len(args)))
-	if err != nil {
+	lenP := s.Arch.Native(uintptr(len(args)))
+	if _, err = lenP.CopyOut(s, StackBottomMagic); err != nil {
 		return StackLayout{}, err
 	}
 

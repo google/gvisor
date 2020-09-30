@@ -17,7 +17,6 @@
 package strace
 
 import (
-	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -294,7 +293,7 @@ func itimerval(t *kernel.Task, addr usermem.Addr) string {
 	}
 
 	interval := timeval(t, addr)
-	value := timeval(t, addr+usermem.Addr(binary.Size(linux.Timeval{})))
+	value := timeval(t, addr+usermem.Addr((*linux.Timeval)(nil).SizeBytes()))
 	return fmt.Sprintf("%#x {interval=%s, value=%s}", addr, interval, value)
 }
 
@@ -304,7 +303,7 @@ func itimerspec(t *kernel.Task, addr usermem.Addr) string {
 	}
 
 	interval := timespec(t, addr)
-	value := timespec(t, addr+usermem.Addr(binary.Size(linux.Timespec{})))
+	value := timespec(t, addr+usermem.Addr((*linux.Timespec)(nil).SizeBytes()))
 	return fmt.Sprintf("%#x {interval=%s, value=%s}", addr, interval, value)
 }
 
