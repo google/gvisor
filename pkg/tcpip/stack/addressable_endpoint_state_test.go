@@ -24,8 +24,13 @@ import (
 // TestAddressableEndpointStateCleanup tests that cleaning up an addressable
 // endpoint state removes permanent addresses and leaves groups.
 func TestAddressableEndpointStateCleanup(t *testing.T) {
+	var ep fakeNetworkEndpoint
+	if err := ep.Enable(); err != nil {
+		t.Fatalf("ep.Enable(): %s", err)
+	}
+
 	var s stack.AddressableEndpointState
-	s.Init(&fakeNetworkEndpoint{})
+	s.Init(&ep)
 
 	addr := tcpip.AddressWithPrefix{
 		Address:   "\x01",
@@ -43,7 +48,7 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 	{
 		ep := s.AcquireAssignedAddress(addr.Address, false /* allowTemp */, stack.NeverPrimaryEndpoint)
 		if ep == nil {
-			t.Fatalf("got s.AcquireAssignedAddress(%s) = nil, want = non-nil", addr.Address)
+			t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = nil, want = non-nil", addr.Address)
 		}
 		ep.DecRef()
 	}
@@ -63,7 +68,7 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 		ep := s.AcquireAssignedAddress(addr.Address, false /* allowTemp */, stack.NeverPrimaryEndpoint)
 		if ep != nil {
 			ep.DecRef()
-			t.Fatalf("got s.AcquireAssignedAddress(%s) = %s, want = nil", addr.Address, ep.AddressWithPrefix())
+			t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = %s, want = nil", addr.Address, ep.AddressWithPrefix())
 		}
 	}
 	if s.IsInGroup(group) {

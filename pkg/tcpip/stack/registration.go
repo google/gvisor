@@ -435,7 +435,10 @@ type AddressableEndpoint interface {
 	// permanent address.
 	RemovePermanentAddress(addr tcpip.Address) *tcpip.Error
 
-	// AcquireAssignedAddress returns an AddressEndpoint for the passed address
+	// MainAddress returns the endpoint's primary permanent address.
+	MainAddress() tcpip.AddressWithPrefix
+
+	// AcquireAssignedAddress returns an address endpoint for the passed address
 	// that is considered bound to the endpoint, optionally creating a temporary
 	// endpoint if requested and no existing address exists.
 	//
@@ -444,15 +447,15 @@ type AddressableEndpoint interface {
 	// Returns nil if the specified address is not local to this endpoint.
 	AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint
 
-	// AcquirePrimaryAddress returns a primary endpoint to use when communicating
-	// with the passed remote address.
+	// AcquireOutgoingPrimaryAddress returns a primary address that may be used as
+	// a source address when sending packets to the passed remote address.
 	//
 	// If allowExpired is true, expired addresses may be returned.
 	//
 	// The returned endpoint's reference count is incremented.
 	//
-	// Returns nil if a primary endpoint is not available.
-	AcquirePrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) AddressEndpoint
+	// Returns nil if a primary address is not available.
+	AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) AddressEndpoint
 
 	// PrimaryAddresses returns the primary addresses.
 	PrimaryAddresses() []tcpip.AddressWithPrefix

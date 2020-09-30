@@ -412,6 +412,60 @@ func (a *AddressableEndpointState) decAddressRefLocked(addrState *addressState) 
 	a.releaseAddressStateLocked(addrState)
 }
 
+// MainAddress implements AddressableEndpoint.
+func (a *AddressableEndpointState) MainAddress() tcpip.AddressWithPrefix {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	ep := a.acquirePrimaryAddressRLocked(func(ep *addressState) bool {
+		return ep.GetKind() == Permanent
+	})
+	if ep == nil {
+		return tcpip.AddressWithPrefix{}
+	}
+
+	addr := ep.AddressWithPrefix()
+	a.decAddressRefLocked(ep)
+	return addr
+}
+
+// acquirePrimaryAddressRLocked returns an acquired primary address that is
+// valid according to isValid.
+//
+// Precondition: e.mu must be read locked
+func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(isValid func(*addressState) bool) *addressState {
+	var deprecatedEndpoint *addressState
+	for _, ep := range a.mu.primary {
+		if !isValid(ep) {
+			continue
+		}
+
+		if !ep.Deprecated() {
+			if ep.IncRef() {
+				// ep is not deprecated, so return it immediately.
+				//
+				// If we kept track of a deprecated endpoint, decrement its reference
+				// count since it was incremented when we decided to keep track of it.
+				if deprecatedEndpoint != nil {
+					a.decAddressRefLocked(deprecatedEndpoint)
+					deprecatedEndpoint = nil
+				}
+
+				return ep
+			}
+		} else if deprecatedEndpoint == nil && ep.IncRef() {
+			// We prefer an endpoint that is not deprecated, but we keep track of
+			// ep in case a doesn't have any non-deprecated endpoints.
+			//
+			// If we end up finding a more preferred endpoint, ep's reference count
+			// will be decremented.
+			deprecatedEndpoint = ep
+		}
+	}
+
+	return deprecatedEndpoint
+}
+
 // AcquireAssignedAddress implements AddressableEndpoint.
 func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
 	a.mu.Lock()
@@ -461,47 +515,34 @@ func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Addres
 	return ep
 }
 
-// AcquirePrimaryAddress implements AddressableEndpoint.
-func (a *AddressableEndpointState) AcquirePrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) AddressEndpoint {
+// AcquireOutgoingPrimaryAddress implements AddressableEndpoint.
+func (a *AddressableEndpointState) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) AddressEndpoint {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	var deprecatedEndpoint *addressState
-	for _, ep := range a.mu.primary {
-		if !ep.IsAssigned(allowExpired) {
-			continue
-		}
+	ep := a.acquirePrimaryAddressRLocked(func(ep *addressState) bool {
+		return ep.IsAssigned(allowExpired)
+	})
 
-		if !ep.Deprecated() {
-			if ep.IncRef() {
-				// ep is not deprecated, so return it immediately.
-				//
-				// If we kept track of a deprecated endpoint, decrement its reference
-				// count since it was incremented when we decided to keep track of it.
-				if deprecatedEndpoint != nil {
-					a.decAddressRefLocked(deprecatedEndpoint)
-					deprecatedEndpoint = nil
-				}
-
-				return ep
-			}
-		} else if deprecatedEndpoint == nil && ep.IncRef() {
-			// We prefer an endpoint that is not deprecated, but we keep track of
-			// ep in case a doesn't have any non-deprecated endpoints.
-			//
-			// If we end up finding a more preferred endpoint, ep's reference count
-			// will be decremented.
-			deprecatedEndpoint = ep
-		}
-	}
-
-	// a doesn't have any valid non-deprecated endpoints, so return
-	// deprecatedEndpoint (which may be nil if a doesn't have any valid deprecated
-	// endpoints either).
-	if deprecatedEndpoint == nil {
+	// From https://golang.org/doc/faq#nil_error:
+	//
+	// Under the covers, interfaces are implemented as two elements, a type T and
+	// a value V.
+	//
+	// An interface value is nil only if the V and T are both unset, (T=nil, V is
+	// not set), In particular, a nil interface will always hold a nil type. If we
+	// store a nil pointer of type *int inside an interface value, the inner type
+	// will be *int regardless of the value of the pointer: (T=*int, V=nil). Such
+	// an interface value will therefore be non-nil even when the pointer value V
+	// inside is nil.
+	//
+	// Since acquirePrimaryAddressRLocked returns a nil value with a non-nil type,
+	// we need to explicitly return nil below if ep is (a typed) nil.
+	if ep == nil {
 		return nil
 	}
-	return deprecatedEndpoint
+
+	return ep
 }
 
 // PrimaryAddresses implements AddressableEndpoint.

@@ -71,21 +71,36 @@ const (
 type fakeNetworkEndpoint struct {
 	stack.AddressableEndpointState
 
+	mu struct {
+		sync.RWMutex
+
+		enabled bool
+	}
+
 	nicID      tcpip.NICID
 	proto      *fakeNetworkProtocol
 	dispatcher stack.TransportDispatcher
 	ep         stack.LinkEndpoint
 }
 
-func (*fakeNetworkEndpoint) Enable() *tcpip.Error {
+func (f *fakeNetworkEndpoint) Enable() *tcpip.Error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mu.enabled = true
 	return nil
 }
 
-func (*fakeNetworkEndpoint) Enabled() bool {
-	return true
+func (f *fakeNetworkEndpoint) Enabled() bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.mu.enabled
 }
 
-func (*fakeNetworkEndpoint) Disable() {}
+func (f *fakeNetworkEndpoint) Disable() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mu.enabled = false
+}
 
 func (f *fakeNetworkEndpoint) MTU() uint32 {
 	return f.ep.MTU() - uint32(f.MaxHeaderLength())
@@ -3618,5 +3633,45 @@ func TestGetNetworkEndpoint(t *testing.T) {
 				t.Fatalf("got ep.NetworkProtocolNumber() = %d, want = %d", got, test.protoNum)
 			}
 		})
+	}
+}
+
+func TestGetMainNICAddressWhenNICDisabled(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
+	})
+
+	if err := s.CreateNIC(nicID, channel.New(0, defaultMTU, "")); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+
+	protocolAddress := tcpip.ProtocolAddress{
+		Protocol: fakeNetNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   "\x01",
+			PrefixLen: 8,
+		},
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddress); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protocolAddress, err)
+	}
+
+	// Check that we get the right initial address and prefix length.
+	if gotAddr, err := s.GetMainNICAddress(nicID, fakeNetNumber); err != nil {
+		t.Fatalf("GetMainNICAddress(%d, %d): %s", nicID, fakeNetNumber, err)
+	} else if gotAddr != protocolAddress.AddressWithPrefix {
+		t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, gotAddr, protocolAddress.AddressWithPrefix)
+	}
+
+	// Should still get the address when the NIC is diabled.
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("DisableNIC(%d): %s", nicID, err)
+	}
+	if gotAddr, err := s.GetMainNICAddress(nicID, fakeNetNumber); err != nil {
+		t.Fatalf("GetMainNICAddress(%d, %d): %s", nicID, fakeNetNumber, err)
+	} else if gotAddr != protocolAddress.AddressWithPrefix {
+		t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, gotAddr, protocolAddress.AddressWithPrefix)
 	}
 }
