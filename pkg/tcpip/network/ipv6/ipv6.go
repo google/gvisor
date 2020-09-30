@@ -424,6 +424,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	}
 
 	if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
+		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
 	r.Stats().IP.PacketsSent.Increment()
@@ -453,6 +454,9 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		// faster WritePackets API directly.
 		n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
 		r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+		if err != nil {
+			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n))
+		}
 		return n, err
 	}
 	r.Stats().IP.IPTablesOutputDropped.IncrementBy(uint64(len(dropped)))
@@ -477,6 +481,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		}
 		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
 			r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n + len(dropped)))
 			// Dropped packets aren't errors, so include them in
 			// the return value.
 			return n + len(dropped), err

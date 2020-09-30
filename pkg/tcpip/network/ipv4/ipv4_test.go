@@ -450,6 +450,9 @@ func TestFragmentation(t *testing.T) {
 			if got, want := len(ep.WrittenPackets), int(r.Stats().IP.PacketsSent.Value()); got != want {
 				t.Errorf("no errors yet got len(ep.WrittenPackets) = %d, want = %d", got, want)
 			}
+			if got := r.Stats().IP.OutgoingPacketErrors.Value(); got != 0 {
+				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
+			}
 			compareFragments(t, ep.WrittenPackets, source, ft.mtu)
 		})
 	}
@@ -465,11 +468,44 @@ func TestFragmentationErrors(t *testing.T) {
 		payloadViewsSizes     []int
 		err                   *tcpip.Error
 		allowPackets          int
+		fragmentCount         int
 	}{
-		{"NoFrag", 2000, 0, []int{1000}, tcpip.ErrAborted, 0},
-		{"ErrorOnFirstFrag", 500, 0, []int{1000}, tcpip.ErrAborted, 0},
-		{"ErrorOnSecondFrag", 500, 0, []int{1000}, tcpip.ErrAborted, 1},
-		{"ErrorOnFirstFragMTUSmallerThanHeader", 500, 1000, []int{500}, tcpip.ErrAborted, 0},
+		{
+			description:           "NoFrag",
+			mtu:                   2000,
+			transportHeaderLength: 0,
+			payloadViewsSizes:     []int{1000},
+			err:                   tcpip.ErrAborted,
+			allowPackets:          0,
+			fragmentCount:         1,
+		},
+		{
+			description:           "ErrorOnFirstFrag",
+			mtu:                   500,
+			transportHeaderLength: 0,
+			payloadViewsSizes:     []int{1000},
+			err:                   tcpip.ErrAborted,
+			allowPackets:          0,
+			fragmentCount:         3,
+		},
+		{
+			description:           "ErrorOnSecondFrag",
+			mtu:                   500,
+			transportHeaderLength: 0,
+			payloadViewsSizes:     []int{1000},
+			err:                   tcpip.ErrAborted,
+			allowPackets:          1,
+			fragmentCount:         3,
+		},
+		{
+			description:           "ErrorOnFirstFragMTUSmallerThanHeader",
+			mtu:                   500,
+			transportHeaderLength: 1000,
+			payloadViewsSizes:     []int{500},
+			err:                   tcpip.ErrAborted,
+			allowPackets:          0,
+			fragmentCount:         4,
+		},
 	}
 
 	for _, ft := range fragTests {
@@ -487,6 +523,9 @@ func TestFragmentationErrors(t *testing.T) {
 			}
 			if got, want := len(ep.WrittenPackets), int(r.Stats().IP.PacketsSent.Value()); err != nil && got != want {
 				t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, want)
+			}
+			if got, want := int(r.Stats().IP.OutgoingPacketErrors.Value()), ft.fragmentCount-ft.allowPackets; got != want {
+				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = %d", got, want)
 			}
 		})
 	}
