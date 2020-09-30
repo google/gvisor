@@ -208,6 +208,10 @@ const (
 	// transport layer and callers need not take any further action.
 	TransportPacketHandled TransportPacketDisposition = iota
 
+	// TransportPacketProtocolUnreachable indicates that the transport
+	// protocol requested in the packet is not supported.
+	TransportPacketProtocolUnreachable
+
 	// TransportPacketDestinationPortUnreachable indicates that there weren't any
 	// listeners interested in the packet and the transport protocol has no means
 	// to notify the sender.

@@ -567,6 +567,12 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		//     (e.g., UDP) is unable to demultiplex the datagram but has no
 		//     protocol mechanism to inform the sender.
 		_ = returnError(r, &icmpReasonPortUnreachable{}, pkt)
+	case stack.TransportPacketProtocolUnreachable:
+		// As per RFC: 1122 Section 3.2.2.1
+		//   A host SHOULD generate Destination Unreachable messages with code:
+		//     2 (Protocol Unreachable), when the designated transport protocol
+		//     is not supported
+		_ = returnError(r, &icmpReasonProtoUnreachable{}, pkt)
 	default:
 		panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
 	}

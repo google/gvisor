@@ -156,9 +156,14 @@ const (
 
 // ICMP codes used with Parameter Problem (Type 4). As per RFC 4443 section 3.4.
 const (
+	// ICMPv6ErroneousHeader indicates an erroneous header field was encountered.
 	ICMPv6ErroneousHeader ICMPv6Code = 0
-	ICMPv6UnknownHeader   ICMPv6Code = 1
-	ICMPv6UnknownOption   ICMPv6Code = 2
+
+	// ICMPv6UnknownHeader indicates an unrecognized Next Header type encountered.
+	ICMPv6UnknownHeader ICMPv6Code = 1
+
+	// ICMPv6UnknownOption indicates an unrecognized IPv6 option was encountered.
+	ICMPv6UnknownOption ICMPv6Code = 2
 )
 
 // ICMPv6UnusedCode is the code value used with ICMPv6 messages which don't use
@@ -177,7 +182,12 @@ func (b ICMPv6) Code() ICMPv6Code { return ICMPv6Code(b[1]) }
 // SetCode sets the ICMP code field.
 func (b ICMPv6) SetCode(c ICMPv6Code) { b[1] = byte(c) }
 
-// SetTypeSpecific sets the full 32 bit type specific data field.
+// TypeSpecific returns the type specific data field.
+func (b ICMPv6) TypeSpecific() uint32 {
+	return binary.BigEndian.Uint32(b[icmpv6PointerOffset:])
+}
+
+// SetTypeSpecific sets the type specific data field.
 func (b ICMPv6) SetTypeSpecific(val uint32) {
 	binary.BigEndian.PutUint32(b[icmpv6PointerOffset:], val)
 }
