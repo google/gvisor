@@ -321,3 +321,16 @@ const (
 	// Enable all flags.
 	IP6T_INV_MASK = 0x7F
 )
+
+// NFNATRange corresponds to struct nf_nat_range in
+// include/uapi/linux/netfilter/nf_nat.h.
+type NFNATRange struct {
+	Flags    uint32
+	MinAddr  Inet6Addr
+	MaxAddr  Inet6Addr
+	MinProto uint16 // Network byte order.
+	MaxProto uint16 // Network byte order.
+}
+
+// SizeOfNFNATRange is the size of NFNATRange.
+const SizeOfNFNATRange = 40
