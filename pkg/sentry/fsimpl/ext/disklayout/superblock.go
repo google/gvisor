@@ -14,6 +14,10 @@
 
 package disklayout
 
+import (
+	"gvisor.dev/gvisor/pkg/marshal"
+)
+
 const (
 	// SbOffset is the absolute offset at which the superblock is placed.
 	SbOffset = 1024
@@ -38,6 +42,8 @@ const (
 //
 // See https://www.kernel.org/doc/html/latest/filesystems/ext4/globals.html#super-block.
 type SuperBlock interface {
+	marshal.Marshallable
+
 	// InodesCount returns the total number of inodes in this filesystem.
 	InodesCount() uint32
 

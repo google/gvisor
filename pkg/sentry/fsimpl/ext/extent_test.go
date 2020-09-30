@@ -21,7 +21,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 )
 
@@ -202,12 +201,13 @@ func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (*extentFile, []
 // writeTree writes the tree represented by `root` to the inode and disk. It
 // also writes random file data on disk.
 func writeTree(in *inode, disk []byte, root *disklayout.ExtentNode, mockExtentBlkSize uint64) []byte {
-	rootData := binary.Marshal(nil, binary.LittleEndian, root.Header)
+	rootData := in.diskInode.Data()
+	root.Header.MarshalBytes(rootData)
+	off := root.Header.SizeBytes()
 	for _, ep := range root.Entries {
-		rootData = binary.Marshal(rootData, binary.LittleEndian, ep.Entry)
+		ep.Entry.MarshalBytes(rootData[off:])
+		off += ep.Entry.SizeBytes()
 	}
-
-	copy(in.diskInode.Data(), rootData)
 
 	var fileData []byte
 	for _, ep := range root.Entries {
@@ -223,12 +223,13 @@ func writeTree(in *inode, disk []byte, root *disklayout.ExtentNode, mockExtentBl
 // writeTreeToDisk is the recursive step for writeTree which writes the tree
 // on the disk only. Also writes random file data on disk.
 func writeTreeToDisk(disk []byte, curNode disklayout.ExtentEntryPair) []byte {
-	nodeData := binary.Marshal(nil, binary.LittleEndian, curNode.Node.Header)
+	nodeData := disk[curNode.Entry.PhysicalBlock()*mockExtentBlkSize:]
+	curNode.Node.Header.MarshalBytes(nodeData)
+	off := curNode.Node.Header.SizeBytes()
 	for _, ep := range curNode.Node.Entries {
-		nodeData = binary.Marshal(nodeData, binary.LittleEndian, ep.Entry)
+		ep.Entry.MarshalBytes(nodeData[off:])
+		off += ep.Entry.SizeBytes()
 	}
-
-	copy(disk[curNode.Entry.PhysicalBlock()*mockExtentBlkSize:], nodeData)
 
 	var fileData []byte
 	for _, ep := range curNode.Node.Entries {

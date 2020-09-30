@@ -27,6 +27,8 @@ import "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 // are used to provide nanoscond precision. Hence, these timestamps will now
 // overflow in May 2446.
 // See https://www.kernel.org/doc/html/latest/filesystems/ext4/dynamic.html#inode-timestamps.
+//
+// +marshal
 type InodeNew struct {
 	InodeOld
 

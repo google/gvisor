@@ -16,6 +16,8 @@ package disklayout
 
 // SuperBlockOld implements SuperBlock and represents the old version of the
 // superblock struct. Should be used only if RevLevel = OldRev.
+//
+// +marshal
 type SuperBlockOld struct {
 	InodesCountRaw      uint32
 	BlocksCountLo       uint32

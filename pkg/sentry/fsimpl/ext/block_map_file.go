@@ -18,7 +18,7 @@ import (
 	"io"
 	"math"
 
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -34,19 +34,19 @@ type blockMapFile struct {
 
 	// directBlks are the direct blocks numbers. The physical blocks pointed by
 	// these holds file data. Contains file blocks 0 to 11.
-	directBlks [numDirectBlks]uint32
+	directBlks [numDirectBlks]primitive.Uint32
 
 	// indirectBlk is the physical block which contains (blkSize/4) direct block
 	// numbers (as uint32 integers).
-	indirectBlk uint32
+	indirectBlk primitive.Uint32
 
 	// doubleIndirectBlk is the physical block which contains (blkSize/4) indirect
 	// block numbers (as uint32 integers).
-	doubleIndirectBlk uint32
+	doubleIndirectBlk primitive.Uint32
 
 	// tripleIndirectBlk is the physical block which contains (blkSize/4) doubly
 	// indirect block numbers (as uint32 integers).
-	tripleIndirectBlk uint32
+	tripleIndirectBlk primitive.Uint32
 
 	// coverage at (i)th index indicates the amount of file data a node at
 	// height (i) covers. Height 0 is the direct block.
@@ -68,10 +68,12 @@ func newBlockMapFile(args inodeArgs) (*blockMapFile, error) {
 	}
 
 	blkMap := file.regFile.inode.diskInode.Data()
-	binary.Unmarshal(blkMap[:numDirectBlks*4], binary.LittleEndian, &file.directBlks)
-	binary.Unmarshal(blkMap[numDirectBlks*4:(numDirectBlks+1)*4], binary.LittleEndian, &file.indirectBlk)
-	binary.Unmarshal(blkMap[(numDirectBlks+1)*4:(numDirectBlks+2)*4], binary.LittleEndian, &file.doubleIndirectBlk)
-	binary.Unmarshal(blkMap[(numDirectBlks+2)*4:(numDirectBlks+3)*4], binary.LittleEndian, &file.tripleIndirectBlk)
+	for i := 0; i < numDirectBlks; i++ {
+		file.directBlks[i].UnmarshalBytes(blkMap[i*4 : (i+1)*4])
+	}
+	file.indirectBlk.UnmarshalBytes(blkMap[numDirectBlks*4 : (numDirectBlks+1)*4])
+	file.doubleIndirectBlk.UnmarshalBytes(blkMap[(numDirectBlks+1)*4 : (numDirectBlks+2)*4])
+	file.tripleIndirectBlk.UnmarshalBytes(blkMap[(numDirectBlks+2)*4 : (numDirectBlks+3)*4])
 	return file, nil
 }
 
@@ -117,16 +119,16 @@ func (f *blockMapFile) ReadAt(dst []byte, off int64) (int, error) {
 		switch {
 		case offset < dirBlksEnd:
 			// Direct block.
-			curR, err = f.read(f.directBlks[offset/f.regFile.inode.blkSize], offset%f.regFile.inode.blkSize, 0, dst[read:])
+			curR, err = f.read(uint32(f.directBlks[offset/f.regFile.inode.blkSize]), offset%f.regFile.inode.blkSize, 0, dst[read:])
 		case offset < indirBlkEnd:
 			// Indirect block.
-			curR, err = f.read(f.indirectBlk, offset-dirBlksEnd, 1, dst[read:])
+			curR, err = f.read(uint32(f.indirectBlk), offset-dirBlksEnd, 1, dst[read:])
 		case offset < doubIndirBlkEnd:
 			// Doubly indirect block.
-			curR, err = f.read(f.doubleIndirectBlk, offset-indirBlkEnd, 2, dst[read:])
+			curR, err = f.read(uint32(f.doubleIndirectBlk), offset-indirBlkEnd, 2, dst[read:])
 		default:
 			// Triply indirect block.
-			curR, err = f.read(f.tripleIndirectBlk, offset-doubIndirBlkEnd, 3, dst[read:])
+			curR, err = f.read(uint32(f.tripleIndirectBlk), offset-doubIndirBlkEnd, 3, dst[read:])
 		}
 
 		read += curR
@@ -174,13 +176,13 @@ func (f *blockMapFile) read(curPhyBlk uint32, relFileOff uint64, height uint, ds
 	read := 0
 	curChildOff := relFileOff % childCov
 	for i := startIdx; i < endIdx; i++ {
-		var childPhyBlk uint32
+		var childPhyBlk primitive.Uint32
 		err := readFromDisk(f.regFile.inode.fs.dev, curPhyBlkOff+int64(i*4), &childPhyBlk)
 		if err != nil {
 			return read, err
 		}
 
-		n, err := f.read(childPhyBlk, curChildOff, height-1, dst[read:])
+		n, err := f.read(uint32(childPhyBlk), curChildOff, height-1, dst[read:])
 		read += n
 		if err != nil {
 			return read, err

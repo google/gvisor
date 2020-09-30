@@ -21,6 +21,8 @@ import (
 // TestDirentSize tests that the dirent structs are of the correct
 // size.
 func TestDirentSize(t *testing.T) {
-	assertSize(t, DirentOld{}, uintptr(DirentSize))
-	assertSize(t, DirentNew{}, uintptr(DirentSize))
+	var dOld DirentOld
+	assertSize(t, &dOld, DirentSize)
+	var dNew DirentNew
+	assertSize(t, &dNew, DirentSize)
 }

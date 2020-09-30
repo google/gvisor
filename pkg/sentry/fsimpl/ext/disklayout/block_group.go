@@ -14,6 +14,10 @@
 
 package disklayout
 
+import (
+	"gvisor.dev/gvisor/pkg/marshal"
+)
+
 // BlockGroup represents a Linux ext block group descriptor. An ext file system
 // is split into a series of block groups. This provides an access layer to
 // information needed to access and use a block group.
@@ -30,6 +34,8 @@ package disklayout
 //
 // See https://www.kernel.org/doc/html/latest/filesystems/ext4/globals.html#block-group-descriptors.
 type BlockGroup interface {
+	marshal.Marshallable
+
 	// InodeTable returns the absolute block number of the block containing the
 	// inode table. This points to an array of Inode structs. Inode tables are
 	// statically allocated at mkfs time. The superblock records the number of

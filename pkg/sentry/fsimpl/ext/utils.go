@@ -17,21 +17,21 @@ package ext
 import (
 	"io"
 
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // readFromDisk performs a binary read from disk into the given struct from
 // the absolute offset provided.
-func readFromDisk(dev io.ReaderAt, abOff int64, v interface{}) error {
-	n := binary.Size(v)
+func readFromDisk(dev io.ReaderAt, abOff int64, v marshal.Marshallable) error {
+	n := v.SizeBytes()
 	buf := make([]byte, n)
 	if read, _ := dev.ReadAt(buf, abOff); read < int(n) {
 		return syserror.EIO
 	}
 
-	binary.Unmarshal(buf, binary.LittleEndian, v)
+	v.UnmarshalBytes(buf)
 	return nil
 }
 

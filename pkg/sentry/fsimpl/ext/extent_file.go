@@ -18,7 +18,6 @@ import (
 	"io"
 	"sort"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -60,7 +59,7 @@ func newExtentFile(args inodeArgs) (*extentFile, error) {
 func (f *extentFile) buildExtTree() error {
 	rootNodeData := f.regFile.inode.diskInode.Data()
 
-	binary.Unmarshal(rootNodeData[:disklayout.ExtentHeaderSize], binary.LittleEndian, &f.root.Header)
+	f.root.Header.UnmarshalBytes(rootNodeData[:disklayout.ExtentHeaderSize])
 
 	// Root node can not have more than 4 entries: 60 bytes = 1 header + 4 entries.
 	if f.root.Header.NumEntries > 4 {
@@ -79,7 +78,7 @@ func (f *extentFile) buildExtTree() error {
 			// Internal node.
 			curEntry = &disklayout.ExtentIdx{}
 		}
-		binary.Unmarshal(rootNodeData[off:off+disklayout.ExtentEntrySize], binary.LittleEndian, curEntry)
+		curEntry.UnmarshalBytes(rootNodeData[off : off+disklayout.ExtentEntrySize])
 		f.root.Entries[i].Entry = curEntry
 	}
 
