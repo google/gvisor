@@ -12,26 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package lib
 
 import (
-	"flag"
-	"os"
-	"testing"
+	"os/exec"
+	"regexp"
+	"strings"
 )
 
-func TestMain(m *testing.M) {
-	flag.Parse()
-	os.Exit(m.Run())
+var phpTestRegEx = regexp.MustCompile(`^.+\.phpt$`)
+
+// phpRunner implements TestRunner for PHP.
+type phpRunner struct{}
+
+var _ TestRunner = phpRunner{}
+
+// ListTests implements TestRunner.ListTests.
+func (phpRunner) ListTests() ([]string, error) {
+	testSlice, err := Search(".", phpTestRegEx)
+	if err != nil {
+		return nil, err
+	}
+	return testSlice, nil
 }
 
-// Test that the exclude file parses without error.
-func TestExcludelist(t *testing.T) {
-	ex, err := getExcludes()
-	if err != nil {
-		t.Fatalf("error parsing exclude file: %v", err)
-	}
-	if *excludeFile != "" && len(ex) == 0 {
-		t.Errorf("got empty excludes for file %q", *excludeFile)
-	}
+// TestCmds implements TestRunner.TestCmds.
+func (phpRunner) TestCmds(tests []string) []*exec.Cmd {
+	args := []string{"test", "TESTS=" + strings.Join(tests, " ")}
+	return []*exec.Cmd{exec.Command("make", args...)}
 }

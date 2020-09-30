@@ -12,24 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package lib
 
 import (
 	"os/exec"
+	"path/filepath"
 	"regexp"
-	"strings"
 )
 
-var phpTestRegEx = regexp.MustCompile(`^.+\.phpt$`)
+var nodejsTestRegEx = regexp.MustCompile(`^test-[^-].+\.js$`)
 
-// phpRunner implements TestRunner for PHP.
-type phpRunner struct{}
+// Location of nodejs tests relative to working dir.
+const nodejsTestDir = "test"
 
-var _ TestRunner = phpRunner{}
+// nodejsRunner implements TestRunner for NodeJS.
+type nodejsRunner struct{}
+
+var _ TestRunner = nodejsRunner{}
 
 // ListTests implements TestRunner.ListTests.
-func (phpRunner) ListTests() ([]string, error) {
-	testSlice, err := search(".", phpTestRegEx)
+func (nodejsRunner) ListTests() ([]string, error) {
+	testSlice, err := Search(nodejsTestDir, nodejsTestRegEx)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +40,7 @@ func (phpRunner) ListTests() ([]string, error) {
 }
 
 // TestCmds implements TestRunner.TestCmds.
-func (phpRunner) TestCmds(tests []string) []*exec.Cmd {
-	args := []string{"test", "TESTS=" + strings.Join(tests, " ")}
-	return []*exec.Cmd{exec.Command("make", args...)}
+func (nodejsRunner) TestCmds(tests []string) []*exec.Cmd {
+	args := append([]string{filepath.Join("tools", "test.py"), "--timeout=180"}, tests...)
+	return []*exec.Cmd{exec.Command("/usr/bin/python", args...)}
 }

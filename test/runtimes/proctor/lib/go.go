@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package lib
 
 import (
 	"fmt"
@@ -59,7 +59,7 @@ func (goRunner) ListTests() ([]string, error) {
 	}
 
 	// Go tests on disk.
-	diskSlice, err := search(goTestDir, goTestRegEx)
+	diskSlice, err := Search(goTestDir, goTestRegEx)
 	if err != nil {
 		return nil, err
 	}

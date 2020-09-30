@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary proctor runs the test for a particular runtime. It is meant to be
-// included in Docker images for all runtime tests.
-package main
+// Package lib contains proctor functions.
+package lib
 
 import (
-	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"syscall"
 )
 
@@ -42,66 +38,8 @@ type TestRunner interface {
 	TestCmds(tests []string) []*exec.Cmd
 }
 
-var (
-	runtime   = flag.String("runtime", "", "name of runtime")
-	list      = flag.Bool("list", false, "list all available tests")
-	testNames = flag.String("tests", "", "run a subset of the available tests")
-	pause     = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
-)
-
-func main() {
-	flag.Parse()
-
-	if *pause {
-		pauseAndReap()
-		panic("pauseAndReap should never return")
-	}
-
-	if *runtime == "" {
-		log.Fatalf("runtime flag must be provided")
-	}
-
-	tr, err := testRunnerForRuntime(*runtime)
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	// List tests.
-	if *list {
-		tests, err := tr.ListTests()
-		if err != nil {
-			log.Fatalf("failed to list tests: %v", err)
-		}
-		for _, test := range tests {
-			fmt.Println(test)
-		}
-		return
-	}
-
-	var tests []string
-	if *testNames == "" {
-		// Run every test.
-		tests, err = tr.ListTests()
-		if err != nil {
-			log.Fatalf("failed to get all tests: %v", err)
-		}
-	} else {
-		// Run subset of test.
-		tests = strings.Split(*testNames, ",")
-	}
-
-	// Run tests.
-	cmds := tr.TestCmds(tests)
-	for _, cmd := range cmds {
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("FAIL: %v", err)
-		}
-	}
-}
-
-// testRunnerForRuntime returns a new TestRunner for the given runtime.
-func testRunnerForRuntime(runtime string) (TestRunner, error) {
+// TestRunnerForRuntime returns a new TestRunner for the given runtime.
+func TestRunnerForRuntime(runtime string) (TestRunner, error) {
 	switch runtime {
 	case "go":
 		return goRunner{}, nil
@@ -117,8 +55,8 @@ func testRunnerForRuntime(runtime string) (TestRunner, error) {
 	return nil, fmt.Errorf("invalid runtime %q", runtime)
 }
 
-// pauseAndReap is like init. It runs forever and reaps any children.
-func pauseAndReap() {
+// PauseAndReap is like init. It runs forever and reaps any children.
+func PauseAndReap() {
 	// Get notified of any new children.
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGCHLD)
@@ -138,9 +76,9 @@ func pauseAndReap() {
 	}
 }
 
-// search is a helper function to find tests in the given directory that match
+// Search is a helper function to find tests in the given directory that match
 // the regex.
-func search(root string, testFilter *regexp.Regexp) ([]string, error) {
+func Search(root string, testFilter *regexp.Regexp) ([]string, error) {
 	var testSlice []string
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
