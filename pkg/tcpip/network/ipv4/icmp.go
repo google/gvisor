@@ -15,6 +15,8 @@
 package ipv4
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -211,6 +213,12 @@ type icmpReasonPortUnreachable struct{}
 
 func (*icmpReasonPortUnreachable) isICMPReason() {}
 
+// icmpReasonProtoUnreachable is an error where the transport protocol is
+// not supported.
+type icmpReasonProtoUnreachable struct{}
+
+func (*icmpReasonProtoUnreachable) isICMPReason() {}
+
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv4 and sends it back to the remote device that sent
 // the problematic packet. It incorporates as much of that packet as
@@ -287,8 +295,6 @@ func returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tc
 			// Assume any type we don't know about may be an error type.
 			return nil
 		}
-	} else if transportHeader.IsEmpty() {
-		return nil
 	}
 
 	// Now work out how much of the triggering packet we should return.
@@ -336,13 +342,21 @@ func returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tc
 		ReserveHeaderBytes: headerLen,
 		Data:               payload,
 	})
+
 	icmpPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 
 	icmpHdr := header.ICMPv4(icmpPkt.TransportHeader().Push(header.ICMPv4MinimumSize))
+	switch reason.(type) {
+	case *icmpReasonPortUnreachable:
+		icmpHdr.SetCode(header.ICMPv4PortUnreachable)
+	case *icmpReasonProtoUnreachable:
+		icmpHdr.SetCode(header.ICMPv4ProtoUnreachable)
+	default:
+		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
+	}
 	icmpHdr.SetType(header.ICMPv4DstUnreachable)
-	icmpHdr.SetCode(header.ICMPv4PortUnreachable)
-	counter := sent.DstUnreachable
 	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data))
+	counter := sent.DstUnreachable
 
 	if err := r.WritePacket(
 		nil, /* gso */

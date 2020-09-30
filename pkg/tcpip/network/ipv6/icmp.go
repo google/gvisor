@@ -690,6 +690,36 @@ type icmpReason interface {
 	isICMPReason()
 }
 
+// icmpReasonParameterProblem is an error during processing of extension headers
+// or the fixed header defined in RFC 4443 section 3.4.
+type icmpReasonParameterProblem struct {
+	code header.ICMPv6Code
+
+	// respondToMulticast indicates that we are sending a packet that falls under
+	// the exception outlined by RFC 4443 section 2.4 point e.3 exception 2:
+	//
+	//       (e.3) A packet destined to an IPv6 multicast address.  (There are
+	//             two exceptions to this rule: (1) the Packet Too Big Message
+	//             (Section 3.2) to allow Path MTU discovery to work for IPv6
+	//             multicast, and (2) the Parameter Problem Message, Code 2
+	//             (Section 3.4) reporting an unrecognized IPv6 option (see
+	//             Section 4.2 of [IPv6]) that has the Option Type highest-
+	//             order two bits set to 10).
+	respondToMulticast bool
+
+	// pointer is defined in the RFC 4443 setion 3.4 which reads:
+	//
+	//  Pointer         Identifies the octet offset within the invoking packet
+	//                  where the error was detected.
+	//
+	//                  The pointer will point beyond the end of the ICMPv6
+	//                  packet if the field in error is beyond what can fit
+	//                  in the maximum size of an ICMPv6 error message.
+	pointer uint32
+}
+
+func (*icmpReasonParameterProblem) isICMPReason() {}
+
 // icmpReasonPortUnreachable is an error where the transport protocol has no
 // listener and no alternative means to inform the sender.
 type icmpReasonPortUnreachable struct{}
@@ -709,7 +739,7 @@ func returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tc
 	// Only send ICMP error if the address is not a multicast v6
 	// address and the source is not the unspecified address.
 	//
-	// TODO(b/164522993) There are exceptions to this rule.
+	// There are exceptions to this rule.
 	// See: point e.3) RFC 4443 section-2.4
 	//
 	//	 (e) An ICMPv6 error message MUST NOT be originated as a result of
@@ -727,7 +757,12 @@ func returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tc
 	//             Section 4.2 of [IPv6]) that has the Option Type highest-
 	//             order two bits set to 10).
 	//
-	if header.IsV6MulticastAddress(r.LocalAddress) || r.RemoteAddress == header.IPv6Any {
+	var allowResponseToMulticast bool
+	if reason, ok := reason.(*icmpReasonParameterProblem); ok {
+		allowResponseToMulticast = reason.respondToMulticast
+	}
+
+	if (!allowResponseToMulticast && header.IsV6MulticastAddress(r.LocalAddress)) || r.RemoteAddress == header.IPv6Any {
 		return nil
 	}
 
@@ -780,10 +815,21 @@ func returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tc
 	newPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 
 	icmpHdr := header.ICMPv6(newPkt.TransportHeader().Push(header.ICMPv6DstUnreachableMinimumSize))
-	icmpHdr.SetCode(header.ICMPv6PortUnreachable)
-	icmpHdr.SetType(header.ICMPv6DstUnreachable)
+	var counter *tcpip.StatCounter
+	switch reason := reason.(type) {
+	case *icmpReasonParameterProblem:
+		icmpHdr.SetType(header.ICMPv6ParamProblem)
+		icmpHdr.SetCode(reason.code)
+		icmpHdr.SetTypeSpecific(reason.pointer)
+		counter = sent.ParamProblem
+	case *icmpReasonPortUnreachable:
+		icmpHdr.SetType(header.ICMPv6DstUnreachable)
+		icmpHdr.SetCode(header.ICMPv6PortUnreachable)
+		counter = sent.DstUnreachable
+	default:
+		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
+	}
 	icmpHdr.SetChecksum(header.ICMPv6Checksum(icmpHdr, r.LocalAddress, r.RemoteAddress, newPkt.Data))
-	counter := sent.DstUnreachable
 	err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, newPkt)
 	if err != nil {
 		sent.Dropped.Increment()
