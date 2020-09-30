@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi"
-	"gvisor.dev/gvisor/pkg/binary"
 )
 
 // Constants for open(2).
@@ -201,7 +200,7 @@ const (
 )
 
 // SizeOfStat is the size of a Stat struct.
-var SizeOfStat = binary.Size(Stat{})
+var SizeOfStat = (*Stat)(nil).SizeBytes()
 
 // Flags for statx.
 const (
@@ -268,7 +267,7 @@ type Statx struct {
 }
 
 // SizeOfStatx is the size of a Statx struct.
-var SizeOfStatx = binary.Size(Statx{})
+var SizeOfStatx = (*Statx)(nil).SizeBytes()
 
 // FileMode represents a mode_t.
 type FileMode uint16

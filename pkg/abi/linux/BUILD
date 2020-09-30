@@ -72,7 +72,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi",
-        "//pkg/binary",
         "//pkg/bits",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
@@ -85,7 +84,4 @@ go_test(
     size = "small",
     srcs = ["netfilter_test.go"],
     library = ":linux",
-    deps = [
-        "//pkg/binary",
-    ],
 )

@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -81,7 +80,7 @@ func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen
 		nflog("couldn't read entries: %v", err)
 		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
 	}
-	if binary.Size(entries) > uintptr(outLen) {
+	if entries.SizeBytes() > outLen {
 		nflog("insufficient GetEntries output size: %d", uintptr(outLen))
 		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
 	}
@@ -106,7 +105,7 @@ func GetEntries6(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen
 		nflog("couldn't read entries: %v", err)
 		return linux.KernelIP6TGetEntries{}, syserr.ErrInvalidArgument
 	}
-	if binary.Size(entries) > uintptr(outLen) {
+	if entries.SizeBytes() > outLen {
 		nflog("insufficient GetEntries output size: %d", uintptr(outLen))
 		return linux.KernelIP6TGetEntries{}, syserr.ErrInvalidArgument
 	}
@@ -139,7 +138,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	var replace linux.IPTReplace
 	replaceBuf := optVal[:linux.SizeOfIPTReplace]
 	optVal = optVal[linux.SizeOfIPTReplace:]
-	binary.Unmarshal(replaceBuf, usermem.ByteOrder, &replace)
+	replace.UnmarshalBytes(replaceBuf)
 
 	// TODO(gvisor.dev/issue/170): Support other tables.
 	var table stack.Table
@@ -270,8 +269,8 @@ func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher,
 			return nil, fmt.Errorf("optVal has insufficient size for entry match: %d", len(optVal))
 		}
 		var match linux.XTEntryMatch
-		buf := optVal[:linux.SizeOfXTEntryMatch]
-		binary.Unmarshal(buf, usermem.ByteOrder, &match)
+		buf := optVal[:match.SizeBytes()]
+		match.UnmarshalUnsafe(buf)
 		nflog("set entries: parsed entry match %q: %+v", match.Name.String(), match)
 
 		// Check some invariants.

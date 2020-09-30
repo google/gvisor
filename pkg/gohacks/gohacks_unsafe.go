@@ -16,6 +16,7 @@
 package gohacks
 
 import (
+	"fmt"
 	"reflect"
 	"unsafe"
 )
@@ -54,4 +55,85 @@ func StringFromImmutableBytes(bs []byte) string {
 	// reflect.SliceHeader, which as of this writing produces many dead stores
 	// of zeroes. Compare strings.Builder.String().
 	return *(*string)(unsafe.Pointer(&bs))
+}
+
+func primitiveKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Bool, reflect.Int, reflect.Uint, reflect.Int8, reflect.Uint8, reflect.Int16, reflect.Uint16, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64:
+		return true
+	default:
+		return false
+	}
+}
+
+// TransmutePrimitiveSlice unsafely moves the contents of a src slice to a dst
+// slice of a different type without copying memory.
+//
+// Caller should pass in a reflect.Value of a pointer to a slice for both src
+// and dst. Both slices should have primitive types as elements. The dst slice
+// should be empty.
+//
+// Example:
+//
+// type Int32 int32
+// xs := []int32{1, 2, 3}
+// var ys []Int32
+//
+// TransmutePrimitiveSlice(reflect.ValueOf(&xs), reflect.ValueOf(&ys))
+// // ys now contains the data from xs, xs is now uninitialized.
+//
+// Postcondition: src is uninitialized.
+func TransmutePrimitiveSlice(src reflect.Value, dst reflect.Value) {
+	if k := src.Kind(); k != reflect.Ptr {
+		panic(fmt.Sprintf("src (type = %v) not a pointer", k))
+	}
+	if k := dst.Kind(); k != reflect.Ptr {
+		panic(fmt.Sprintf("dst (type = %v) not a pointer", k))
+	}
+
+	srcT := src.Elem().Type()
+	dstT := dst.Elem().Type()
+
+	if srcT.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("*src (type = %v) not a slice", srcT))
+	}
+
+	if dstT.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("*dst (type = %v) not a slice", dstT))
+	}
+
+	srcElemT := srcT.Elem()
+	dstElemT := dstT.Elem()
+	srcElemSize := int(srcElemT.Size())
+	dstElemSize := int(dstElemT.Size())
+
+	if k := srcElemT.Kind(); !primitiveKind(k) {
+		panic(fmt.Sprintf("src elem type = %v is not a primitive", k))
+	}
+	if k := dstElemT.Kind(); !primitiveKind(k) {
+		panic(fmt.Sprintf("src elem type = %v is not a primitive", k))
+	}
+
+	srcHdr := (*reflect.SliceHeader)(unsafe.Pointer(src.Pointer()))
+	dstHdr := (*reflect.SliceHeader)(unsafe.Pointer(dst.Pointer()))
+
+	srcLenBytes := srcHdr.Len * srcElemSize
+	srcCapBytes := srcHdr.Cap * srcElemSize
+
+	// Make sure src fits in full multiples of dst's elem size.
+	if srcLenBytes%dstElemSize != 0 {
+		panic(fmt.Sprintf("src len (in bytes) %d doesn't fit in whole multiples of dst elem type %v with size %d", srcLenBytes, dstElemT, dstElemSize))
+	}
+	if srcCapBytes%dstElemSize != 0 {
+		panic(fmt.Sprintf("src capacity (in bytes) %d doesn't fit in whole multiples of dst elem type %v with size %d", srcCapBytes, dstElemT, dstElemSize))
+	}
+
+	dstHdr.Len = srcLenBytes / dstElemSize
+	dstHdr.Cap = srcCapBytes / dstElemSize
+	dstHdr.Data = srcHdr.Data
+
+	// Release src's ownership of its underlying data, so dst's lifetime becomes decoupled from src.
+	srcHdr.Len = 0
+	srcHdr.Cap = 0
+	srcHdr.Data = uintptr(0)
 }

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "marshal.go",
         "marshal_impl_util.go",
+        "util.go",
     ],
     visibility = [
         "//:sandbox",
