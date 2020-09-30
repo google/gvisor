@@ -568,7 +568,11 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO, arg
 	verityMu.Lock()
 	defer verityMu.Unlock()
 
-	if fd.lowerFD == nil || fd.merkleReader == nil || fd.merkleWriter == nil || fd.parentMerkleWriter == nil {
+	// In allowRuntimeEnable mode, the underlying fd and read/write fd for
+	// the Merkle tree file should have all been initialized. For any file
+	// or directory other than the root, the parent Merkle tree file should
+	// have also been initialized.
+	if fd.lowerFD == nil || fd.merkleReader == nil || fd.merkleWriter == nil || (fd.parentMerkleWriter == nil && fd.d != fd.d.fs.rootDentry) {
 		return 0, alertIntegrityViolation(syserror.EIO, "Unexpected verity fd: missing expected underlying fds")
 	}
 
@@ -577,26 +581,28 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO, arg
 		return 0, err
 	}
 
-	stat, err := fd.parentMerkleWriter.Stat(ctx, vfs.StatOptions{})
-	if err != nil {
-		return 0, err
-	}
+	if fd.parentMerkleWriter != nil {
+		stat, err := fd.parentMerkleWriter.Stat(ctx, vfs.StatOptions{})
+		if err != nil {
+			return 0, err
+		}
 
-	// Write the root hash of fd to the parent directory's Merkle tree
-	// file, as it should be part of the parent Merkle tree data.
-	// parentMerkleWriter is open with O_APPEND, so it should write
-	// directly to the end of the file.
-	if _, err = fd.parentMerkleWriter.Write(ctx, usermem.BytesIOSequence(rootHash), vfs.WriteOptions{}); err != nil {
-		return 0, err
-	}
+		// Write the root hash of fd to the parent directory's Merkle
+		// tree file, as it should be part of the parent Merkle tree
+		// data.  parentMerkleWriter is open with O_APPEND, so it
+		// should write directly to the end of the file.
+		if _, err = fd.parentMerkleWriter.Write(ctx, usermem.BytesIOSequence(rootHash), vfs.WriteOptions{}); err != nil {
+			return 0, err
+		}
 
-	// Record the offset of the root hash of fd in parent directory's
-	// Merkle tree file.
-	if err := fd.merkleWriter.SetXattr(ctx, &vfs.SetXattrOptions{
-		Name:  merkleOffsetInParentXattr,
-		Value: strconv.Itoa(int(stat.Size)),
-	}); err != nil {
-		return 0, err
+		// Record the offset of the root hash of fd in parent directory's
+		// Merkle tree file.
+		if err := fd.merkleWriter.SetXattr(ctx, &vfs.SetXattrOptions{
+			Name:  merkleOffsetInParentXattr,
+			Value: strconv.Itoa(int(stat.Size)),
+		}); err != nil {
+			return 0, err
+		}
 	}
 
 	// Record the size of the data being hashed for fd.

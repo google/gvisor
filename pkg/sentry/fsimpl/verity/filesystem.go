@@ -693,22 +693,24 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 		// be called if a verity FD is created successfully.
 		defer merkleWriter.DecRef(ctx)
 
-		parentMerkleWriter, err = rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  d.parent.lowerMerkleVD,
-			Start: d.parent.lowerMerkleVD,
-		}, &vfs.OpenOptions{
-			Flags: linux.O_WRONLY | linux.O_APPEND,
-		})
-		if err != nil {
-			if err == syserror.ENOENT {
-				parentPath, _ := d.fs.vfsfs.VirtualFilesystem().PathnameWithDeleted(ctx, d.fs.rootDentry.lowerVD, d.parent.lowerVD)
-				return nil, alertIntegrityViolation(err, fmt.Sprintf("Merkle file for %s expected but not found", parentPath))
+		if d.parent != nil {
+			parentMerkleWriter, err = rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
+				Root:  d.parent.lowerMerkleVD,
+				Start: d.parent.lowerMerkleVD,
+			}, &vfs.OpenOptions{
+				Flags: linux.O_WRONLY | linux.O_APPEND,
+			})
+			if err != nil {
+				if err == syserror.ENOENT {
+					parentPath, _ := d.fs.vfsfs.VirtualFilesystem().PathnameWithDeleted(ctx, d.fs.rootDentry.lowerVD, d.parent.lowerVD)
+					return nil, alertIntegrityViolation(err, fmt.Sprintf("Merkle file for %s expected but not found", parentPath))
+				}
+				return nil, err
 			}
-			return nil, err
+			// parentMerkleWriter is cleaned up if any error occurs. IncRef
+			// will be called if a verity FD is created successfully.
+			defer parentMerkleWriter.DecRef(ctx)
 		}
-		// parentMerkleWriter is cleaned up if any error occurs. IncRef
-		// will be called if a verity FD is created successfully.
-		defer parentMerkleWriter.DecRef(ctx)
 	}
 
 	fd := &fileDescription{
