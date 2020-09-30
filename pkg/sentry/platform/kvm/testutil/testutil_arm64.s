@@ -50,6 +50,22 @@ TEXT ·SpinLoop(SB),NOSPLIT,$0
 start:
 	B start
 
+TEXT ·TLSWorks(SB),NOSPLIT,$0-8
+        NO_LOCAL_POINTERS
+        MOVD $0x6789, R5
+        MSR R5, TPIDR_EL0
+        MOVD $SYS_GETPID, R8 // getpid
+        SVC
+        MRS TPIDR_EL0, R6
+        CMP R5, R6
+        BNE isNaN
+        MOVD $1, R0
+        MOVD R0, ret+0(FP)
+        RET
+isNaN:
+        MOVD $0, ret+0(FP)
+        RET
+
 TEXT ·FloatingPointWorks(SB),NOSPLIT,$0-8
 	NO_LOCAL_POINTERS
 	// gc will touch fpsimd, so we should test it.
