@@ -95,16 +95,10 @@ TEST(IP6TablesBasic, GetRevision) {
   };
   socklen_t rev_len = sizeof(rev);
 
-  // TODO(gvisor.dev/issue/3549): IPv6 redirect support.
-  const int retval =
-      getsockopt(sock, SOL_IPV6, IP6T_SO_GET_REVISION_TARGET, &rev, &rev_len);
-  if (IsRunningOnGvisor()) {
-    EXPECT_THAT(retval, SyscallFailsWithErrno(ENOPROTOOPT));
-    return;
-  }
-
   // Revision 0 exists.
-  EXPECT_THAT(retval, SyscallSucceeds());
+  EXPECT_THAT(
+      getsockopt(sock, SOL_IPV6, IP6T_SO_GET_REVISION_TARGET, &rev, &rev_len),
+      SyscallSucceeds());
   EXPECT_EQ(rev.revision, 0);
 
   // Revisions > 0 don't exist.

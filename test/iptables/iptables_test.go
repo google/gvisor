@@ -48,13 +48,6 @@ func singleTest(t *testing.T, test TestCase) {
 	}
 }
 
-// TODO(gvisor.dev/issue/3549): IPv6 NAT support.
-func ipv4Test(t *testing.T, test TestCase) {
-	t.Run("IPv4", func(t *testing.T) {
-		iptablesTest(t, test, false)
-	})
-}
-
 func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	if _, ok := Tests[test.Name()]; !ok {
 		t.Fatalf("no test found with name %q. Has it been registered?", test.Name())
@@ -325,66 +318,66 @@ func TestFilterOutputInvertDestination(t *testing.T) {
 }
 
 func TestNATPreRedirectUDPPort(t *testing.T) {
-	ipv4Test(t, NATPreRedirectUDPPort{})
+	singleTest(t, NATPreRedirectUDPPort{})
 }
 
 func TestNATPreRedirectTCPPort(t *testing.T) {
-	ipv4Test(t, NATPreRedirectTCPPort{})
+	singleTest(t, NATPreRedirectTCPPort{})
 }
 
 func TestNATPreRedirectTCPOutgoing(t *testing.T) {
-	ipv4Test(t, NATPreRedirectTCPOutgoing{})
+	singleTest(t, NATPreRedirectTCPOutgoing{})
 }
 
 func TestNATOutRedirectTCPIncoming(t *testing.T) {
-	ipv4Test(t, NATOutRedirectTCPIncoming{})
+	singleTest(t, NATOutRedirectTCPIncoming{})
 }
 func TestNATOutRedirectUDPPort(t *testing.T) {
-	ipv4Test(t, NATOutRedirectUDPPort{})
+	singleTest(t, NATOutRedirectUDPPort{})
 }
 
 func TestNATOutRedirectTCPPort(t *testing.T) {
-	ipv4Test(t, NATOutRedirectTCPPort{})
+	singleTest(t, NATOutRedirectTCPPort{})
 }
 
 func TestNATDropUDP(t *testing.T) {
-	ipv4Test(t, NATDropUDP{})
+	singleTest(t, NATDropUDP{})
 }
 
 func TestNATAcceptAll(t *testing.T) {
-	ipv4Test(t, NATAcceptAll{})
+	singleTest(t, NATAcceptAll{})
 }
 
 func TestNATOutRedirectIP(t *testing.T) {
-	ipv4Test(t, NATOutRedirectIP{})
+	singleTest(t, NATOutRedirectIP{})
 }
 
 func TestNATOutDontRedirectIP(t *testing.T) {
-	ipv4Test(t, NATOutDontRedirectIP{})
+	singleTest(t, NATOutDontRedirectIP{})
 }
 
 func TestNATOutRedirectInvert(t *testing.T) {
-	ipv4Test(t, NATOutRedirectInvert{})
+	singleTest(t, NATOutRedirectInvert{})
 }
 
 func TestNATPreRedirectIP(t *testing.T) {
-	ipv4Test(t, NATPreRedirectIP{})
+	singleTest(t, NATPreRedirectIP{})
 }
 
 func TestNATPreDontRedirectIP(t *testing.T) {
-	ipv4Test(t, NATPreDontRedirectIP{})
+	singleTest(t, NATPreDontRedirectIP{})
 }
 
 func TestNATPreRedirectInvert(t *testing.T) {
-	ipv4Test(t, NATPreRedirectInvert{})
+	singleTest(t, NATPreRedirectInvert{})
 }
 
 func TestNATRedirectRequiresProtocol(t *testing.T) {
-	ipv4Test(t, NATRedirectRequiresProtocol{})
+	singleTest(t, NATRedirectRequiresProtocol{})
 }
 
 func TestNATLoopbackSkipsPrerouting(t *testing.T) {
-	ipv4Test(t, NATLoopbackSkipsPrerouting{})
+	singleTest(t, NATLoopbackSkipsPrerouting{})
 }
 
 func TestInputSource(t *testing.T) {
@@ -421,9 +414,9 @@ func TestFilterAddrs(t *testing.T) {
 }
 
 func TestNATPreOriginalDst(t *testing.T) {
-	ipv4Test(t, NATPreOriginalDst{})
+	singleTest(t, NATPreOriginalDst{})
 }
 
 func TestNATOutOriginalDst(t *testing.T) {
-	ipv4Test(t, NATOutOriginalDst{})
+	singleTest(t, NATOutOriginalDst{})
 }
