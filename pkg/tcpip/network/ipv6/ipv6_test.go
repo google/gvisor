@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/testutil"
@@ -301,11 +302,18 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 		name         string
 		extHdr       func(nextHdr uint8) ([]byte, uint8)
 		shouldAccept bool
+		// Should we expect an ICMP response and if so, with what contents?
+		expectICMP bool
+		ICMPType   header.ICMPv6Type
+		ICMPCode   header.ICMPv6Code
+		pointer    uint32
+		multicast  bool
 	}{
 		{
 			name:         "None",
 			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{}, nextHdr },
 			shouldAccept: true,
+			expectICMP:   false,
 		},
 		{
 			name: "hopbyhop with unknown option skippable action",
@@ -336,9 +344,10 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}, hopByHopExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   false,
 		},
 		{
-			name: "hopbyhop with unknown option discard and send icmp action",
+			name: "hopbyhop with unknown option discard and send icmp action (unicast)",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
 				return []byte{
 					nextHdr, 1,
@@ -348,12 +357,38 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 					// Discard & send ICMP if option is unknown.
 					191, 6, 1, 2, 3, 4, 5, 6,
+					//^ Unknown option.
 				}, hopByHopExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownOption,
+			pointer:      header.IPv6FixedHeaderSize + 8,
 		},
 		{
-			name: "hopbyhop with unknown option discard and send icmp action unless multicast dest",
+			name: "hopbyhop with unknown option discard and send icmp action (multicast)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP if option is unknown.
+					191, 6, 1, 2, 3, 4, 5, 6,
+					//^ Unknown option.
+				}, hopByHopExtHdrID
+			},
+			multicast:    true,
+			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownOption,
+			pointer:      header.IPv6FixedHeaderSize + 8,
+		},
+		{
+			name: "hopbyhop with unknown option discard and send icmp action unless multicast dest (unicast)",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
 				return []byte{
 					nextHdr, 1,
@@ -364,39 +399,97 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 					// Discard & send ICMP unless packet is for multicast destination if
 					// option is unknown.
 					255, 6, 1, 2, 3, 4, 5, 6,
+					//^ Unknown option.
 				}, hopByHopExtHdrID
 			},
-			shouldAccept: false,
+			expectICMP: true,
+			ICMPType:   header.ICMPv6ParamProblem,
+			ICMPCode:   header.ICMPv6UnknownOption,
+			pointer:    header.IPv6FixedHeaderSize + 8,
 		},
 		{
-			name:         "routing with zero segments left",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{nextHdr, 0, 1, 0, 2, 3, 4, 5}, routingExtHdrID },
+			name: "hopbyhop with unknown option discard and send icmp action unless multicast dest (multicast)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP unless packet is for multicast destination if
+					// option is unknown.
+					255, 6, 1, 2, 3, 4, 5, 6,
+					//^ Unknown option.
+				}, hopByHopExtHdrID
+			},
+			multicast:    true,
+			shouldAccept: false,
+			expectICMP:   false,
+		},
+		{
+			name: "routing with zero segments left",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 0,
+					1, 0, 2, 3, 4, 5,
+				}, routingExtHdrID
+			},
 			shouldAccept: true,
 		},
 		{
-			name:         "routing with non-zero segments left",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{nextHdr, 0, 1, 1, 2, 3, 4, 5}, routingExtHdrID },
+			name: "routing with non-zero segments left",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 0,
+					1, 1, 2, 3, 4, 5,
+				}, routingExtHdrID
+			},
 			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6ErroneousHeader,
+			pointer:      header.IPv6FixedHeaderSize + 2,
 		},
 		{
-			name:         "atomic fragment with zero ID",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{nextHdr, 0, 0, 0, 0, 0, 0, 0}, fragmentExtHdrID },
+			name: "atomic fragment with zero ID",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 0,
+					0, 0, 0, 0, 0, 0,
+				}, fragmentExtHdrID
+			},
 			shouldAccept: true,
 		},
 		{
-			name:         "atomic fragment with non-zero ID",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{nextHdr, 0, 0, 0, 1, 2, 3, 4}, fragmentExtHdrID },
+			name: "atomic fragment with non-zero ID",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 0,
+					0, 0, 1, 2, 3, 4,
+				}, fragmentExtHdrID
+			},
 			shouldAccept: true,
+			expectICMP:   false,
 		},
 		{
-			name:         "fragment",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{nextHdr, 0, 1, 0, 1, 2, 3, 4}, fragmentExtHdrID },
+			name: "fragment",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 0,
+					1, 0, 1, 2, 3, 4,
+				}, fragmentExtHdrID
+			},
 			shouldAccept: false,
+			expectICMP:   false,
 		},
 		{
-			name:         "No next header",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{}, noNextHdrID },
+			name: "No next header",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{},
+					noNextHdrID
+			},
 			shouldAccept: false,
+			expectICMP:   false,
 		},
 		{
 			name: "destination with unknown option skippable action",
@@ -412,6 +505,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}, destinationExtHdrID
 			},
 			shouldAccept: true,
+			expectICMP:   false,
 		},
 		{
 			name: "destination with unknown option discard action",
@@ -427,9 +521,10 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}, destinationExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   false,
 		},
 		{
-			name: "destination with unknown option discard and send icmp action",
+			name: "destination with unknown option discard and send icmp action (unicast)",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
 				return []byte{
 					nextHdr, 1,
@@ -439,12 +534,38 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 					// Discard & send ICMP if option is unknown.
 					191, 6, 1, 2, 3, 4, 5, 6,
+					//^  191 is an unknown option.
 				}, destinationExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownOption,
+			pointer:      header.IPv6FixedHeaderSize + 8,
 		},
 		{
-			name: "destination with unknown option discard and send icmp action unless multicast dest",
+			name: "destination with unknown option discard and send icmp action (muilticast)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP if option is unknown.
+					191, 6, 1, 2, 3, 4, 5, 6,
+					//^  191 is an unknown option.
+				}, destinationExtHdrID
+			},
+			multicast:    true,
+			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownOption,
+			pointer:      header.IPv6FixedHeaderSize + 8,
+		},
+		{
+			name: "destination with unknown option discard and send icmp action unless multicast dest (unicast)",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
 				return []byte{
 					nextHdr, 1,
@@ -455,22 +576,33 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 					// Discard & send ICMP unless packet is for multicast destination if
 					// option is unknown.
 					255, 6, 1, 2, 3, 4, 5, 6,
+					//^ 255 is unknown.
 				}, destinationExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownOption,
+			pointer:      header.IPv6FixedHeaderSize + 8,
 		},
 		{
-			name: "routing - atomic fragment",
+			name: "destination with unknown option discard and send icmp action unless multicast dest (multicast)",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
 				return []byte{
-					// Routing extension header.
-					fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5,
+					nextHdr, 1,
 
-					// Fragment extension header.
-					nextHdr, 0, 0, 0, 1, 2, 3, 4,
-				}, routingExtHdrID
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP unless packet is for multicast destination if
+					// option is unknown.
+					255, 6, 1, 2, 3, 4, 5, 6,
+					//^ 255 is unknown.
+				}, destinationExtHdrID
 			},
-			shouldAccept: true,
+			shouldAccept: false,
+			expectICMP:   false,
+			multicast:    true,
 		},
 		{
 			name: "atomic fragment - routing",
@@ -504,12 +636,42 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				return []byte{
 					// Routing extension header.
 					hopByHopExtHdrID, 0, 1, 0, 2, 3, 4, 5,
+					// ^^^   The HopByHop extension header may not appear after the first
+					// extension header.
 
 					// Hop By Hop extension header with skippable unknown option.
 					nextHdr, 0, 62, 4, 1, 2, 3, 4,
 				}, routingExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownHeader,
+			pointer:      header.IPv6FixedHeaderSize,
+		},
+		{
+			name: "routing - hop by hop (with send icmp unknown)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					// Routing extension header.
+					hopByHopExtHdrID, 0, 1, 0, 2, 3, 4, 5,
+					// ^^^   The HopByHop extension header may not appear after the first
+					// extension header.
+
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Skippable unknown.
+					191, 6, 1, 2, 3, 4, 5, 6,
+				}, routingExtHdrID
+			},
+			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownHeader,
+			pointer:      header.IPv6FixedHeaderSize,
 		},
 		{
 			name:         "No next header",
@@ -553,6 +715,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}, hopByHopExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   false,
 		},
 		{
 			name: "hopbyhop (with skippable unknown) - routing - atomic fragment - destination (with discard unknown)",
@@ -573,6 +736,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}, hopByHopExtHdrID
 			},
 			shouldAccept: false,
+			expectICMP:   false,
 		},
 	}
 
@@ -582,13 +746,21 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
-			e := channel.New(0, 1280, linkAddr1)
+			e := channel.New(1, 1280, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 			if err := s.AddAddress(nicID, ProtocolNumber, addr2); err != nil {
 				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, addr2, err)
 			}
+
+			// Add a default route so that a return packet knows where to go.
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         nicID,
+				},
+			})
 
 			wq := waiter.Queue{}
 			we, ch := waiter.NewChannelEntry(nil)
@@ -631,12 +803,16 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			// Serialize IPv6 fixed header.
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+			dstAddr := tcpip.Address(addr2)
+			if test.multicast {
+				dstAddr = header.IPv6AllNodesMulticastAddress
+			}
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength: uint16(payloadLength),
 				NextHeader:    ipv6NextHdr,
 				HopLimit:      255,
 				SrcAddr:       addr1,
-				DstAddr:       addr2,
+				DstAddr:       dstAddr,
 			})
 
 			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -650,6 +826,44 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 					t.Errorf("got UDP Rx Packets = %d, want = 0", got)
 				}
 
+				if !test.expectICMP {
+					if p, ok := e.Read(); ok {
+						t.Fatalf("unexpected packet received: %#v", p)
+					}
+					return
+				}
+
+				// ICMP required.
+				p, ok := e.Read()
+				if !ok {
+					t.Fatalf("expected packet wasn't written out")
+				}
+
+				// Pack the output packet into a single buffer.View as the checkers
+				// assume that.
+				vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+				pkt := vv.ToView()
+				if got, want := len(pkt), header.IPv6FixedHeaderSize+header.ICMPv6MinimumSize+hdr.UsedLength(); got != want {
+					t.Fatalf("got an ICMP packet of size = %d, want = %d", got, want)
+				}
+
+				ipHdr := header.IPv6(pkt)
+				checker.IPv6(t, ipHdr, checker.ICMPv6(
+					checker.ICMPv6Type(test.ICMPType),
+					checker.ICMPv6Code(test.ICMPCode)))
+
+				// We know we are looking at no extension headers in the error ICMP
+				// packets.
+				icmpPkt := header.ICMPv6(ipHdr.Payload())
+				// We know we sent small packets that won't be truncated when reflected
+				// back to us.
+				originalPacket := icmpPkt.Payload()
+				if got, want := icmpPkt.TypeSpecific(), test.pointer; got != want {
+					t.Errorf("unexpected ICMPv6 pointer, got = %d, want = %d\n", got, want)
+				}
+				if diff := cmp.Diff(hdr.View(), buffer.View(originalPacket)); diff != "" {
+					t.Errorf("ICMPv6 payload mismatch (-want +got):\n%s", diff)
+				}
 				return
 			}
 

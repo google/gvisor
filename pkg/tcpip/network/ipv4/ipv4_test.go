@@ -18,17 +18,20 @@ import (
 	"bytes"
 	"encoding/hex"
 	"math"
+	"net"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -90,6 +93,246 @@ func TestExcludeBroadcast(t *testing.T) {
 			t.Errorf("Connect failed: %v", err)
 		}
 	})
+}
+
+// TestIPv4Sanity sends IP/ICMP packets with various problems to the stack and
+// checks the response.
+func TestIPv4Sanity(t *testing.T) {
+	const (
+		defaultMTU     = header.IPv6MinimumMTU
+		ttl            = 255
+		nicID          = 1
+		randomSequence = 123
+		randomIdent    = 42
+	)
+	var (
+		ipv4Addr = tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("192.168.1.58").To4()),
+			PrefixLen: 24,
+		}
+		remoteIPv4Addr = tcpip.Address(net.ParseIP("10.0.0.1").To4())
+	)
+
+	tests := []struct {
+		name              string
+		headerLength      uint8
+		minTotalLength    uint16
+		transportProtocol uint8
+		TTL               uint8
+		shouldFail        bool
+		expectICMP        bool
+		ICMPType          header.ICMPv4Type
+		ICMPCode          header.ICMPv4Code
+	}{
+		{
+			name:              "valid",
+			headerLength:      header.IPv4MinimumSize,
+			minTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			shouldFail:        false,
+		},
+		// The TTL tests check that we are not rejecting an incoming packet
+		// with a zero or one TTL, which has been a point of confusion in the
+		// past as RFC 791 says: "If this field contains the value zero, then the
+		// datagram must be destroyed". However RFC 1122 section 3.2.1.7 clarifies
+		// for the case of the destination host, stating as follows.
+		//
+		//      A host MUST NOT send a datagram with a Time-to-Live (TTL)
+		//      value of zero.
+		//
+		//      A host MUST NOT discard a datagram just because it was
+		//      received with TTL less than 2.
+		{
+			name:              "zero TTL",
+			headerLength:      header.IPv4MinimumSize,
+			minTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               0,
+			shouldFail:        false,
+		},
+		{
+			name:              "one TTL",
+			headerLength:      header.IPv4MinimumSize,
+			minTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               1,
+			shouldFail:        false,
+		},
+		{
+			name:              "bad header length",
+			headerLength:      header.IPv4MinimumSize - 1,
+			minTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			shouldFail:        true,
+			expectICMP:        false,
+		},
+		{
+			name:              "bad total length (0)",
+			headerLength:      header.IPv4MinimumSize,
+			minTotalLength:    0,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			shouldFail:        true,
+			expectICMP:        false,
+		},
+		{
+			name:              "bad total length (ip - 1)",
+			headerLength:      header.IPv4MinimumSize,
+			minTotalLength:    uint16(header.IPv4MinimumSize - 1),
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			shouldFail:        true,
+			expectICMP:        false,
+		},
+		{
+			name:              "bad total length (ip + icmp - 1)",
+			headerLength:      header.IPv4MinimumSize,
+			minTotalLength:    uint16(header.IPv4MinimumSize + header.ICMPv4MinimumSize - 1),
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			shouldFail:        true,
+			expectICMP:        false,
+		},
+		{
+			name:              "bad protocol",
+			headerLength:      header.IPv4MinimumSize,
+			minTotalLength:    defaultMTU,
+			transportProtocol: 99,
+			TTL:               ttl,
+			shouldFail:        true,
+			expectICMP:        true,
+			ICMPType:          header.ICMPv4DstUnreachable,
+			ICMPCode:          header.ICMPv4ProtoUnreachable,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
+			})
+			// We expect at most a single packet in response to our ICMP Echo Request.
+			e := channel.New(1, defaultMTU, "")
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+			ipv4ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: ipv4Addr}
+			if err := s.AddProtocolAddress(nicID, ipv4ProtoAddr); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv4ProtoAddr, err)
+			}
+
+			// Default routes for IPv4 so ICMP can find a route to the remote
+			// node when attempting to send the ICMP Echo Reply.
+			s.SetRouteTable([]tcpip.Route{
+				tcpip.Route{
+					Destination: header.IPv4EmptySubnet,
+					NIC:         nicID,
+				},
+			})
+
+			ipHeaderLength := header.IPv4MinimumSize
+			totalLen := uint16(ipHeaderLength + header.ICMPv4MinimumSize)
+			hdr := buffer.NewPrependable(int(totalLen))
+			icmp := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+
+			// Specify ident/seq to make sure we get the same in the response.
+			icmp.SetIdent(randomIdent)
+			icmp.SetSequence(randomSequence)
+			icmp.SetType(header.ICMPv4Echo)
+			icmp.SetCode(header.ICMPv4UnusedCode)
+			icmp.SetChecksum(0)
+			icmp.SetChecksum(^header.Checksum(icmp, 0))
+			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
+			if test.minTotalLength < totalLen {
+				totalLen = test.minTotalLength
+			}
+			ip.Encode(&header.IPv4Fields{
+				IHL:         test.headerLength,
+				TotalLength: totalLen,
+				Protocol:    test.transportProtocol,
+				TTL:         test.TTL,
+				SrcAddr:     remoteIPv4Addr,
+				DstAddr:     ipv4Addr.Address,
+			})
+			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: hdr.View().ToVectorisedView(),
+			})
+			e.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
+			reply, ok := e.Read()
+			if !ok {
+				if test.shouldFail {
+					if test.expectICMP {
+						t.Fatal("expected ICMP error response missing")
+					}
+					return // Expected silent failure.
+				}
+				t.Fatal("expected ICMP echo reply missing")
+			}
+
+			// Check the route that brought the packet to us.
+			if reply.Route.LocalAddress != ipv4Addr.Address {
+				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", reply.Route.LocalAddress, ipv4Addr.Address)
+			}
+			if reply.Route.RemoteAddress != remoteIPv4Addr {
+				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", reply.Route.RemoteAddress, remoteIPv4Addr)
+			}
+
+			// Make sure it's all in one buffer.
+			vv := buffer.NewVectorisedView(reply.Pkt.Size(), reply.Pkt.Views())
+			replyIPHeader := header.IPv4(vv.ToView())
+
+			// At this stage we only know it's an IP header so verify that much.
+			checker.IPv4(t, replyIPHeader,
+				checker.SrcAddr(ipv4Addr.Address),
+				checker.DstAddr(remoteIPv4Addr),
+			)
+
+			// All expected responses are ICMP packets.
+			if got, want := replyIPHeader.Protocol(), uint8(header.ICMPv4ProtocolNumber); got != want {
+				t.Fatalf("not ICMP response, got protocol %d, want = %d", got, want)
+			}
+			replyICMPHeader := header.ICMPv4(replyIPHeader.Payload())
+
+			// Sanity check the response.
+			switch replyICMPHeader.Type() {
+			case header.ICMPv4DstUnreachable:
+				checker.IPv4(t, replyIPHeader,
+					checker.IPFullLength(uint16(header.IPv4MinimumSize+header.ICMPv4MinimumSize+requestPkt.Size())),
+					checker.IPv4HeaderLength(ipHeaderLength),
+					checker.ICMPv4(
+						checker.ICMPv4Code(test.ICMPCode),
+						checker.ICMPv4Checksum(),
+						checker.ICMPv4Payload([]byte(hdr.View())),
+					),
+				)
+				if !test.shouldFail || !test.expectICMP {
+					t.Fatalf("unexpected packet rejection, got ICMP error packet type %d, code %d",
+						header.ICMPv4DstUnreachable, replyICMPHeader.Code())
+				}
+				return
+			case header.ICMPv4EchoReply:
+				checker.IPv4(t, replyIPHeader,
+					checker.IPv4HeaderLength(ipHeaderLength),
+					checker.IPFullLength(uint16(requestPkt.Size())),
+					checker.ICMPv4(
+						checker.ICMPv4Code(test.ICMPCode),
+						checker.ICMPv4Seq(randomSequence),
+						checker.ICMPv4Ident(randomIdent),
+						checker.ICMPv4Checksum(),
+					),
+				)
+				if test.shouldFail {
+					t.Fatalf("unexpected Echo Reply packet\n")
+				}
+			default:
+				t.Fatalf("unexpected ICMP response, got type %d, want = %d or %d",
+					replyICMPHeader.Type(), header.ICMPv4EchoReply, header.ICMPv4DstUnreachable)
+			}
+		})
+	}
 }
 
 // comparePayloads compared the contents of all the packets against the contents

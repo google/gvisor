@@ -126,15 +126,6 @@ func (b ICMPv4) Code() ICMPv4Code { return ICMPv4Code(b[1]) }
 // SetCode sets the ICMP code field.
 func (b ICMPv4) SetCode(c ICMPv4Code) { b[1] = byte(c) }
 
-// SetPointer sets the pointer field in a Parameter error packet.
-// This is the first byte of the type specific data field.
-func (b ICMPv4) SetPointer(c byte) { b[icmpv4PointerOffset] = c }
-
-// SetTypeSpecific sets the full 32 bit type specific data field.
-func (b ICMPv4) SetTypeSpecific(val uint32) {
-	binary.BigEndian.PutUint32(b[icmpv4PointerOffset:], val)
-}
-
 // Checksum is the ICMP checksum field.
 func (b ICMPv4) Checksum() uint16 {
 	return binary.BigEndian.Uint16(b[icmpv4ChecksumOffset:])

@@ -685,10 +685,8 @@ func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt 
 func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) TransportPacketDisposition {
 	state, ok := n.stack.transportProtocols[protocol]
 	if !ok {
-		// TODO(gvisor.dev/issue/4365): Let the caller know that the transport
-		// protocol is unrecognized.
 		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
-		return TransportPacketHandled
+		return TransportPacketProtocolUnreachable
 	}
 
 	transProto := state.proto
