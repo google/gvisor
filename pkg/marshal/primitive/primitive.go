@@ -19,6 +19,7 @@ package primitive
 import (
 	"io"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -125,6 +126,46 @@ var _ marshal.Marshallable = (*ByteSlice)(nil)
 
 // Below, we define some convenience functions for marshalling primitive types
 // using the newtypes above, without requiring superfluous casts.
+
+// 8-bit integers
+
+// CopyInt8In is a convenient wrapper for copying in an int8 from the task's
+// memory.
+func CopyInt8In(cc marshal.CopyContext, addr usermem.Addr, dst *int8) (int, error) {
+	var buf Int8
+	n, err := buf.CopyIn(cc, addr)
+	if err != nil {
+		return n, err
+	}
+	*dst = int8(buf)
+	return n, nil
+}
+
+// CopyInt8Out is a convenient wrapper for copying out an int8 to the task's
+// memory.
+func CopyInt8Out(cc marshal.CopyContext, addr usermem.Addr, src int8) (int, error) {
+	srcP := Int8(src)
+	return srcP.CopyOut(cc, addr)
+}
+
+// CopyUint8In is a convenient wrapper for copying in a uint8 from the task's
+// memory.
+func CopyUint8In(cc marshal.CopyContext, addr usermem.Addr, dst *uint8) (int, error) {
+	var buf Uint8
+	n, err := buf.CopyIn(cc, addr)
+	if err != nil {
+		return n, err
+	}
+	*dst = uint8(buf)
+	return n, nil
+}
+
+// CopyUint8Out is a convenient wrapper for copying out a uint8 to the task's
+// memory.
+func CopyUint8Out(cc marshal.CopyContext, addr usermem.Addr, src uint8) (int, error) {
+	srcP := Uint8(src)
+	return srcP.CopyOut(cc, addr)
+}
 
 // 16-bit integers
 
@@ -244,4 +285,65 @@ func CopyUint64In(cc marshal.CopyContext, addr usermem.Addr, dst *uint64) (int, 
 func CopyUint64Out(cc marshal.CopyContext, addr usermem.Addr, src uint64) (int, error) {
 	srcP := Uint64(src)
 	return srcP.CopyOut(cc, addr)
+}
+
+// CopyByteSliceIn is a convenient wrapper for copying in a []byte from the
+// task's memory.
+func CopyByteSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst *[]byte) (int, error) {
+	var buf ByteSlice
+	n, err := buf.CopyIn(cc, addr)
+	if err != nil {
+		return n, err
+	}
+	*dst = []byte(buf)
+	return n, nil
+}
+
+// CopyByteSliceOut is a convenient wrapper for copying out a []byte to the
+// task's memory.
+func CopyByteSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []byte) (int, error) {
+	srcP := ByteSlice(src)
+	return srcP.CopyOut(cc, addr)
+}
+
+// CopyStringIn is a convenient wrapper for copying in a string from the
+// task's memory.
+func CopyStringIn(cc marshal.CopyContext, addr usermem.Addr, dst *string) (int, error) {
+	var buf ByteSlice
+	n, err := buf.CopyIn(cc, addr)
+	if err != nil {
+		return n, err
+	}
+	*dst = string(buf)
+	return n, nil
+}
+
+// CopyStringOut is a convenient wrapper for copying out a string to the task's
+// memory.
+func CopyStringOut(cc marshal.CopyContext, addr usermem.Addr, src string) (int, error) {
+	srcP := ByteSlice(src)
+	return srcP.CopyOut(cc, addr)
+}
+
+// IOCopyContext wraps an object implementing usermem.IO to implement
+// marshal.CopyContext.
+type IOCopyContext struct {
+	Ctx  context.Context
+	IO   usermem.IO
+	Opts usermem.IOOpts
+}
+
+// CopyScratchBuffer implements marshal.CopyContext.CopyScratchBuffer.
+func (i *IOCopyContext) CopyScratchBuffer(size int) []byte {
+	return make([]byte, size)
+}
+
+// CopyOutBytes implements marshal.CopyContext.CopyOutBytes.
+func (i *IOCopyContext) CopyOutBytes(addr usermem.Addr, b []byte) (int, error) {
+	return i.IO.CopyOut(i.Ctx, addr, b, i.Opts)
+}
+
+// CopyInBytes implements marshal.CopyContext.CopyInBytes.
+func (i *IOCopyContext) CopyInBytes(addr usermem.Addr, b []byte) (int, error) {
+	return i.IO.CopyIn(i.Ctx, addr, b, i.Opts)
 }

@@ -17,17 +17,19 @@
 package arch
 
 import (
-	"encoding/binary"
 	"math"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the
 // second argument to signal handlers set by signal(2).
+//
+// +marshal
 type SignalContext64 struct {
 	R8      uint64
 	R9      uint64
@@ -68,6 +70,8 @@ const (
 )
 
 // UContext64 is equivalent to ucontext_t on 64-bit x86.
+//
+// +marshal
 type UContext64 struct {
 	Flags    uint64
 	Link     uint64
@@ -172,12 +176,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 
 	// "... the value (%rsp+8) is always a multiple of 16 (...) when
 	// control is transferred to the function entry point." - AMD64 ABI
-	ucSize := binary.Size(uc)
-	if ucSize < 0 {
-		// This can only happen if we've screwed up the definition of
-		// UContext64.
-		panic("can't get size of UContext64")
-	}
+	ucSize := uc.SizeBytes()
 	// st.Arch.Width() is for the restorer address. sizeof(siginfo) == 128.
 	frameSize := int(st.Arch.Width()) + ucSize + 128
 	frameBottom := (sp-usermem.Addr(frameSize)) & ^usermem.Addr(15) - 8
@@ -195,18 +194,18 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	info.FixSignalCodeForUser()
 
 	// Set up the stack frame.
-	infoAddr, err := st.Push(info)
-	if err != nil {
+	if _, err := info.CopyOut(st, StackBottomMagic); err != nil {
 		return err
 	}
-	ucAddr, err := st.Push(uc)
-	if err != nil {
+	infoAddr := st.Bottom
+	if _, err := uc.CopyOut(st, StackBottomMagic); err != nil {
 		return err
 	}
+	ucAddr := st.Bottom
 	if act.HasRestorer() {
 		// Push the restorer return address.
 		// Note that this doesn't need to be popped.
-		if _, err := st.Push(usermem.Addr(act.Restorer)); err != nil {
+		if _, err := primitive.CopyUint64Out(st, StackBottomMagic, act.Restorer); err != nil {
 			return err
 		}
 	} else {
@@ -240,11 +239,11 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalStack, error) {
 	// Copy out the stack frame.
 	var uc UContext64
-	if _, err := st.Pop(&uc); err != nil {
+	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
 		return 0, SignalStack{}, err
 	}
 	var info SignalInfo
-	if _, err := st.Pop(&info); err != nil {
+	if _, err := info.CopyIn(st, StackBottomMagic); err != nil {
 		return 0, SignalStack{}, err
 	}
 
