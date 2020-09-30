@@ -22,6 +22,7 @@ go_library(
         "signal_info.go",
         "signal_stack.go",
         "stack.go",
+        "stack_unsafe.go",
         "syscalls_amd64.go",
         "syscalls_arm64.go",
     ],
