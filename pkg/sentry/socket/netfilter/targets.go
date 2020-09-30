@@ -194,11 +194,9 @@ func (*redirectTargetMaker) marshal(target stack.Target) []byte {
 
 	ret := make([]byte, 0, linux.SizeOfXTRedirectTarget)
 	xt.NfRange.RangeSize = 1
-	if rt.RangeProtoSpecified {
-		xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
-	}
-	xt.NfRange.RangeIPV4.MinPort = htons(rt.MinPort)
-	xt.NfRange.RangeIPV4.MaxPort = htons(rt.MaxPort)
+	xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	xt.NfRange.RangeIPV4.MinPort = htons(rt.Port)
+	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
 	return binary.Marshal(ret, usermem.ByteOrder, xt)
 }
 
@@ -231,23 +229,23 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	// Also check if we need to map ports or IP.
 	// For now, redirect target only supports destination port change.
 	// Port range and IP range are not supported yet.
-	if nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED == 0 {
+	if nfRange.RangeIPV4.Flags != linux.NF_NAT_RANGE_PROTO_SPECIFIED {
 		nflog("redirectTargetMaker: invalid range flags %d", nfRange.RangeIPV4.Flags)
 		return nil, syserr.ErrInvalidArgument
 	}
-	target.RangeProtoSpecified = true
-
-	target.MinIP = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
-	target.MaxIP = tcpip.Address(nfRange.RangeIPV4.MaxIP[:])
 
 	// TODO(gvisor.dev/issue/170): Port range is not supported yet.
 	if nfRange.RangeIPV4.MinPort != nfRange.RangeIPV4.MaxPort {
 		nflog("redirectTargetMaker: MinPort != MaxPort (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
 		return nil, syserr.ErrInvalidArgument
 	}
+	if nfRange.RangeIPV4.MinIP != nfRange.RangeIPV4.MaxIP {
+		nflog("redirectTargetMaker: MinIP != MaxIP (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
+		return nil, syserr.ErrInvalidArgument
+	}
 
-	target.MinPort = ntohs(nfRange.RangeIPV4.MinPort)
-	target.MaxPort = ntohs(nfRange.RangeIPV4.MaxPort)
+	target.Addr = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
+	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
 
 	return &target, nil
 }
