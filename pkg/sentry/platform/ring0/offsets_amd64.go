@@ -30,11 +30,18 @@ func Emit(w io.Writer) {
 
 	c := &CPU{}
 	fmt.Fprintf(w, "\n// CPU offsets.\n")
-	fmt.Fprintf(w, "#define CPU_SELF             0x%02x\n", reflect.ValueOf(&c.self).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_REGISTERS        0x%02x\n", reflect.ValueOf(&c.registers).Pointer()-reflect.ValueOf(c).Pointer())
-	fmt.Fprintf(w, "#define CPU_STACK_TOP        0x%02x\n", reflect.ValueOf(&c.stack[0]).Pointer()-reflect.ValueOf(c).Pointer()+uintptr(len(c.stack)))
 	fmt.Fprintf(w, "#define CPU_ERROR_CODE       0x%02x\n", reflect.ValueOf(&c.errorCode).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_ERROR_TYPE       0x%02x\n", reflect.ValueOf(&c.errorType).Pointer()-reflect.ValueOf(c).Pointer())
+	fmt.Fprintf(w, "#define CPU_ENTRY            0x%02x\n", reflect.ValueOf(&c.kernelEntry).Pointer()-reflect.ValueOf(c).Pointer())
+
+	e := &kernelEntry{}
+	fmt.Fprintf(w, "\n// CPU entry offsets.\n")
+	fmt.Fprintf(w, "#define ENTRY_SCRATCH0       0x%02x\n", reflect.ValueOf(&e.scratch0).Pointer()-reflect.ValueOf(e).Pointer())
+	fmt.Fprintf(w, "#define ENTRY_SCRATCH1       0x%02x\n", reflect.ValueOf(&e.scratch1).Pointer()-reflect.ValueOf(e).Pointer())
+	fmt.Fprintf(w, "#define ENTRY_STACK_TOP      0x%02x\n", reflect.ValueOf(&e.stackTop).Pointer()-reflect.ValueOf(e).Pointer())
+	fmt.Fprintf(w, "#define ENTRY_CPU_SELF       0x%02x\n", reflect.ValueOf(&e.cpuSelf).Pointer()-reflect.ValueOf(e).Pointer())
+	fmt.Fprintf(w, "#define ENTRY_KERNEL_CR3     0x%02x\n", reflect.ValueOf(&e.kernelCR3).Pointer()-reflect.ValueOf(e).Pointer())
 
 	fmt.Fprintf(w, "\n// Bits.\n")
 	fmt.Fprintf(w, "#define _RFLAGS_IF           0x%02x\n", _RFLAGS_IF)
