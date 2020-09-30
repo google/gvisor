@@ -558,7 +558,7 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 
 // enableVerity enables verity features on fd by generating a Merkle tree file
 // and stores its root hash in its parent directory's Merkle tree.
-func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (uintptr, error) {
 	if !fd.d.fs.allowRuntimeEnable {
 		return 0, syserror.EPERM
 	}
@@ -616,7 +616,45 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO, arg
 	return 0, nil
 }
 
-func (fd *fileDescription) getFlags(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+// measureVerity returns the root hash of fd, saved in args[2].
+func (fd *fileDescription) measureVerity(ctx context.Context, uio usermem.IO, verityDigest usermem.Addr) (uintptr, error) {
+	t := kernel.TaskFromContext(ctx)
+	var metadata linux.DigestMetadata
+
+	// If allowRuntimeEnable is true, an empty fd.d.rootHash indicates that
+	// verity is not enabled for the file. If allowRuntimeEnable is false,
+	// this is an integrity violation because all files should have verity
+	// enabled, in which case fd.d.rootHash should be set.
+	if len(fd.d.rootHash) == 0 {
+		if fd.d.fs.allowRuntimeEnable {
+			return 0, syserror.ENODATA
+		}
+		return 0, alertIntegrityViolation(syserror.ENODATA, "Ioctl measureVerity: no root hash found")
+	}
+
+	// The first part of VerityDigest is the metadata.
+	if _, err := metadata.CopyIn(t, verityDigest); err != nil {
+		return 0, err
+	}
+	if metadata.DigestSize < uint16(len(fd.d.rootHash)) {
+		return 0, syserror.EOVERFLOW
+	}
+
+	// Populate the output digest size, since DigestSize is both input and
+	// output.
+	metadata.DigestSize = uint16(len(fd.d.rootHash))
+
+	// First copy the metadata.
+	if _, err := metadata.CopyOut(t, verityDigest); err != nil {
+		return 0, err
+	}
+
+	// Now copy the root hash bytes to the memory after metadata.
+	_, err := t.CopyOutBytes(usermem.Addr(uintptr(verityDigest)+linux.SizeOfDigestMetadata), fd.d.rootHash)
+	return 0, err
+}
+
+func (fd *fileDescription) verityFlags(ctx context.Context, uio usermem.IO, flags usermem.Addr) (uintptr, error) {
 	f := int32(0)
 
 	// All enabled files should store a root hash. This flag is not settable
@@ -626,8 +664,7 @@ func (fd *fileDescription) getFlags(ctx context.Context, uio usermem.IO, args ar
 	}
 
 	t := kernel.TaskFromContext(ctx)
-	addr := args[2].Pointer()
-	_, err := primitive.CopyInt32Out(t, addr, f)
+	_, err := primitive.CopyInt32Out(t, flags, f)
 	return 0, err
 }
 
@@ -635,11 +672,15 @@ func (fd *fileDescription) getFlags(ctx context.Context, uio usermem.IO, args ar
 func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch cmd := args[1].Uint(); cmd {
 	case linux.FS_IOC_ENABLE_VERITY:
-		return fd.enableVerity(ctx, uio, args)
+		return fd.enableVerity(ctx, uio)
+	case linux.FS_IOC_MEASURE_VERITY:
+		return fd.measureVerity(ctx, uio, args[2].Pointer())
 	case linux.FS_IOC_GETFLAGS:
-		return fd.getFlags(ctx, uio, args)
+		return fd.verityFlags(ctx, uio, args[2].Pointer())
 	default:
-		return fd.lowerFD.Ioctl(ctx, uio, args)
+		// TODO(b/169682228): Investigate which ioctl commands should
+		// be allowed.
+		return 0, syserror.ENOSYS
 	}
 }
 
