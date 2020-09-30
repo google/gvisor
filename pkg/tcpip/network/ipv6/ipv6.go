@@ -922,6 +922,13 @@ func (e *endpoint) getAddressRLocked(localAddr tcpip.Address) stack.AddressEndpo
 	return e.mu.addressableEndpointState.ReadOnly().Lookup(localAddr)
 }
 
+// MainAddress implements stack.AddressableEndpoint.
+func (e *endpoint) MainAddress() tcpip.AddressWithPrefix {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpointState.MainAddress()
+}
+
 // AcquireAssignedAddress implements stack.AddressableEndpoint.
 func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
 	e.mu.Lock()
@@ -937,18 +944,18 @@ func (e *endpoint) acquireAddressOrCreateTempLocked(localAddr tcpip.Address, all
 	return e.mu.addressableEndpointState.AcquireAssignedAddress(localAddr, allowTemp, tempPEB)
 }
 
-// AcquirePrimaryAddress implements stack.AddressableEndpoint.
-func (e *endpoint) AcquirePrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
+// AcquireOutgoingPrimaryAddress implements stack.AddressableEndpoint.
+func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.acquirePrimaryAddressRLocked(remoteAddr, allowExpired)
+	return e.acquireOutgoingPrimaryAddressRLocked(remoteAddr, allowExpired)
 }
 
-// acquirePrimaryAddressRLocked is like AcquirePrimaryAddress but with locking
-// requirements.
+// acquireOutgoingPrimaryAddressRLocked is like AcquireOutgoingPrimaryAddress
+// but with locking requirements.
 //
 // Precondition: e.mu must be read locked.
-func (e *endpoint) acquirePrimaryAddressRLocked(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
+func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	// addrCandidate is a candidate for Source Address Selection, as per
 	// RFC 6724 section 5.
 	type addrCandidate struct {
@@ -957,7 +964,7 @@ func (e *endpoint) acquirePrimaryAddressRLocked(remoteAddr tcpip.Address, allowE
 	}
 
 	if len(remoteAddr) == 0 {
-		return e.mu.addressableEndpointState.AcquirePrimaryAddress(remoteAddr, allowExpired)
+		return e.mu.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
 	}
 
 	// Create a candidate set of available addresses we can potentially use as a
