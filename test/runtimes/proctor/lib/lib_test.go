@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package lib
 
 import (
 	"io/ioutil"
@@ -47,7 +47,7 @@ func TestSearchEmptyDir(t *testing.T) {
 	var want []string
 
 	testFilter := regexp.MustCompile(`^test-[^-].+\.tc$`)
-	got, err := search(td, testFilter)
+	got, err := Search(td, testFilter)
 	if err != nil {
 		t.Errorf("search error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	testFilter := regexp.MustCompile(`^test-[^-].+\.tc$`)
-	got, err := search(td, testFilter)
+	got, err := Search(td, testFilter)
 	if err != nil {
 		t.Errorf("search error: %v", err)
 	}
