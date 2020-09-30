@@ -126,7 +126,11 @@ func (t *Task) SyscallTable() *SyscallTable {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) Stack() *arch.Stack {
-	return &arch.Stack{t.Arch(), t.MemoryManager(), usermem.Addr(t.Arch().Stack())}
+	return &arch.Stack{
+		Arch:   t.Arch(),
+		IO:     t.MemoryManager(),
+		Bottom: usermem.Addr(t.Arch().Stack()),
+	}
 }
 
 // LoadTaskImage loads a specified file into a new TaskContext.

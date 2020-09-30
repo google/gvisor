@@ -21,7 +21,6 @@ import (
 	"io"
 	"strconv"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -182,51 +181,6 @@ func (rw *IOReadWriter) Write(src []byte) (int, error) {
 		}
 	}
 	return n, err
-}
-
-// CopyObjectOut copies a fixed-size value or slice of fixed-size values from
-// src to the memory mapped at addr in uio. It returns the number of bytes
-// copied.
-//
-// CopyObjectOut must use reflection to encode src; performance-sensitive
-// clients should do encoding manually and use uio.CopyOut directly.
-//
-// Preconditions: Same as IO.CopyOut.
-func CopyObjectOut(ctx context.Context, uio IO, addr Addr, src interface{}, opts IOOpts) (int, error) {
-	w := &IOReadWriter{
-		Ctx:  ctx,
-		IO:   uio,
-		Addr: addr,
-		Opts: opts,
-	}
-	// Allocate a byte slice the size of the object being marshaled. This
-	// adds an extra reflection call, but avoids needing to grow the slice
-	// during encoding, which can result in many heap-allocated slices.
-	b := make([]byte, 0, binary.Size(src))
-	return w.Write(binary.Marshal(b, ByteOrder, src))
-}
-
-// CopyObjectIn copies a fixed-size value or slice of fixed-size values from
-// the memory mapped at addr in uio to dst. It returns the number of bytes
-// copied.
-//
-// CopyObjectIn must use reflection to decode dst; performance-sensitive
-// clients should use uio.CopyIn directly and do decoding manually.
-//
-// Preconditions: Same as IO.CopyIn.
-func CopyObjectIn(ctx context.Context, uio IO, addr Addr, dst interface{}, opts IOOpts) (int, error) {
-	r := &IOReadWriter{
-		Ctx:  ctx,
-		IO:   uio,
-		Addr: addr,
-		Opts: opts,
-	}
-	buf := make([]byte, binary.Size(dst))
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return 0, err
-	}
-	binary.Unmarshal(buf, ByteOrder, dst)
-	return int(r.Addr - addr), nil
 }
 
 // CopyStringIn tuning parameters, defined outside that function for tests.

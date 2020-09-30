@@ -21,6 +21,7 @@ go_library(
         "//pkg/amutex",
         "//pkg/buffer",
         "//pkg/context",
+        "//pkg/marshal/primitive",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",

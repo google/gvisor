@@ -16,7 +16,6 @@ package usermem
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"reflect"
 	"strings"
@@ -172,23 +171,6 @@ type testStruct struct {
 	Uint32 uint32
 	Int64  int64
 	Uint64 uint64
-}
-
-func TestCopyObject(t *testing.T) {
-	wantObj := testStruct{1, 2, 3, 4, 5, 6, 7, 8}
-	wantN := binary.Size(wantObj)
-	b := &BytesIO{make([]byte, wantN)}
-	ctx := newContext()
-	if n, err := CopyObjectOut(ctx, b, 0, &wantObj, IOOpts{}); n != wantN || err != nil {
-		t.Fatalf("CopyObjectOut: got (%v, %v), wanted (%v, nil)", n, err, wantN)
-	}
-	var gotObj testStruct
-	if n, err := CopyObjectIn(ctx, b, 0, &gotObj, IOOpts{}); n != wantN || err != nil {
-		t.Errorf("CopyObjectIn: got (%v, %v), wanted (%v, nil)", n, err, wantN)
-	}
-	if gotObj != wantObj {
-		t.Errorf("CopyObject round trip: got %+v, wanted %+v", gotObj, wantObj)
-	}
 }
 
 func TestCopyStringInShort(t *testing.T) {

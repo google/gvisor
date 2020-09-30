@@ -259,7 +259,11 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	// Set up the signal handler. If we have a saved signal mask, the signal
 	// handler should run with the current mask, but sigreturn should restore
 	// the saved one.
-	st := &arch.Stack{t.Arch(), mm, sp}
+	st := &arch.Stack{
+		Arch:   t.Arch(),
+		IO:     mm,
+		Bottom: sp,
+	}
 	mask := t.signalMask
 	if t.haveSavedSignalMask {
 		mask = t.savedSignalMask
