@@ -214,7 +214,10 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
         for (suffix, _) in marshal_sets.items():
             _go_test(
                 name = name + suffix + "_abi_autogen_test",
-                srcs = [name + suffix + "_abi_autogen_test.go"],
+                srcs = [
+                    name + suffix + "_abi_autogen_test.go",
+                    name + suffix + "_abi_autogen_unconditional_test.go",
+                ],
                 library = ":" + name,
                 deps = marshal_test_deps,
                 **kwargs
