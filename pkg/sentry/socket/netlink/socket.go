@@ -19,7 +19,6 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -227,7 +226,7 @@ func ExtractSockAddr(b []byte) (*linux.SockAddrNetlink, *syserr.Error) {
 	}
 
 	var sa linux.SockAddrNetlink
-	binary.Unmarshal(b[:linux.SockAddrNetlinkSize], usermem.ByteOrder, &sa)
+	sa.UnmarshalUnsafe(b[:sa.SizeBytes()])
 
 	if sa.Family != linux.AF_NETLINK {
 		return nil, syserr.ErrInvalidArgument
@@ -342,16 +341,14 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 			}
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			sendBufferSizeP := primitive.Int32(s.sendBufferSize)
-			return &sendBufferSizeP, nil
+			return primitive.AllocateInt32(int32(s.sendBufferSize)), nil
 
 		case linux.SO_RCVBUF:
 			if outLen < sizeOfInt32 {
 				return nil, syserr.ErrInvalidArgument
 			}
 			// We don't have limit on receiving size.
-			recvBufferSizeP := primitive.Int32(math.MaxInt32)
-			return &recvBufferSizeP, nil
+			return primitive.AllocateInt32(math.MaxInt32), nil
 
 		case linux.SO_PASSCRED:
 			if outLen < sizeOfInt32 {
@@ -490,7 +487,7 @@ func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *
 		Family: linux.AF_NETLINK,
 		PortID: uint32(s.portID),
 	}
-	return sa, uint32(binary.Size(sa)), nil
+	return sa, uint32(sa.SizeBytes()), nil
 }
 
 // GetPeerName implements socket.Socket.GetPeerName.
@@ -501,7 +498,7 @@ func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *
 		// must be the kernel.
 		PortID: 0,
 	}
-	return sa, uint32(binary.Size(sa)), nil
+	return sa, uint32(sa.SizeBytes()), nil
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
@@ -510,7 +507,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 		Family: linux.AF_NETLINK,
 		PortID: 0,
 	}
-	fromLen := uint32(binary.Size(from))
+	fromLen := uint32(from.SizeBytes())
 
 	trunc := flags&linux.MSG_TRUNC != 0
 
@@ -646,7 +643,7 @@ func (s *socketOpsCommon) sendResponse(ctx context.Context, ms *MessageSet) *sys
 		})
 
 		// Add the dump_done_errno payload.
-		m.Put(int64(0))
+		m.Put(primitive.AllocateInt64(0))
 
 		_, notify, err := s.connection.Send(ctx, [][]byte{m.Finalize()}, cms, tcpip.FullAddress{})
 		if err != nil && err != syserr.ErrWouldBlock {
@@ -664,7 +661,7 @@ func dumpErrorMesage(hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
-	m.Put(linux.NetlinkErrorMessage{
+	m.Put(&linux.NetlinkErrorMessage{
 		Error:  int32(-err.ToLinux().Number()),
 		Header: hdr,
 	})
@@ -674,7 +671,7 @@ func dumpAckMesage(hdr linux.NetlinkMessageHeader, ms *MessageSet) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
-	m.Put(linux.NetlinkErrorMessage{
+	m.Put(&linux.NetlinkErrorMessage{
 		Error:  0,
 		Header: hdr,
 	})

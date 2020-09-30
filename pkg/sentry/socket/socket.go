@@ -23,7 +23,6 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/device"
@@ -442,19 +441,19 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 	switch family {
 	case syscall.AF_INET:
 		var addr linux.SockAddrInet
-		binary.Unmarshal(data[:syscall.SizeofSockaddrInet4], usermem.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	case syscall.AF_INET6:
 		var addr linux.SockAddrInet6
-		binary.Unmarshal(data[:syscall.SizeofSockaddrInet6], usermem.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	case syscall.AF_UNIX:
 		var addr linux.SockAddrUnix
-		binary.Unmarshal(data[:syscall.SizeofSockaddrUnix], usermem.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	case syscall.AF_NETLINK:
 		var addr linux.SockAddrNetlink
-		binary.Unmarshal(data[:syscall.SizeofSockaddrNetlink], usermem.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
