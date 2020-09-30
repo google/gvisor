@@ -128,26 +128,14 @@ func (ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.
 const RedirectTargetName = "REDIRECT"
 
 // RedirectTarget redirects the packet by modifying the destination port/IP.
-// Min and Max values for IP and Ports in the struct indicate the range of
-// values which can be used to redirect.
+// TODO(gvisor.dev/issue/170): Other flags need to be added after we support
+// them.
 type RedirectTarget struct {
-	// TODO(gvisor.dev/issue/170): Other flags need to be added after
-	// we support them.
-	// RangeProtoSpecified flag indicates single port is specified to
-	// redirect.
-	RangeProtoSpecified bool
+	// Addr indicates address used to redirect.
+	Addr tcpip.Address
 
-	// MinIP indicates address used to redirect.
-	MinIP tcpip.Address
-
-	// MaxIP indicates address used to redirect.
-	MaxIP tcpip.Address
-
-	// MinPort indicates port used to redirect.
-	MinPort uint16
-
-	// MaxPort indicates port used to redirect.
-	MaxPort uint16
+	// Port indicates port used to redirect.
+	Port uint16
 
 	// NetworkProtocol is the network protocol the target is used with.
 	NetworkProtocol tcpip.NetworkProtocolNumber
@@ -180,11 +168,9 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso
 	// to primary address of the incoming interface in Prerouting.
 	switch hook {
 	case Output:
-		rt.MinIP = tcpip.Address([]byte{127, 0, 0, 1})
-		rt.MaxIP = tcpip.Address([]byte{127, 0, 0, 1})
+		rt.Addr = tcpip.Address([]byte{127, 0, 0, 1})
 	case Prerouting:
-		rt.MinIP = address
-		rt.MaxIP = address
+		rt.Addr = address
 	default:
 		panic("redirect target is supported only on output and prerouting hooks")
 	}
@@ -195,7 +181,7 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso
 	switch protocol := netHeader.TransportProtocol(); protocol {
 	case header.UDPProtocolNumber:
 		udpHeader := header.UDP(pkt.TransportHeader().View())
-		udpHeader.SetDestinationPort(rt.MinPort)
+		udpHeader.SetDestinationPort(rt.Port)
 
 		// Calculate UDP checksum and set it.
 		if hook == Output {
@@ -213,7 +199,7 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso
 			}
 		}
 		// Change destination address.
-		netHeader.SetDestinationAddress(rt.MinIP)
+		netHeader.SetDestinationAddress(rt.Addr)
 		netHeader.SetChecksum(0)
 		netHeader.SetChecksum(^netHeader.CalculateChecksum())
 		pkt.NatDone = true
