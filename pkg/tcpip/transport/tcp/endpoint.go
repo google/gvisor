@@ -2099,7 +2099,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 	case *tcpip.OriginalDestinationOption:
 		e.LockUser()
 		ipt := e.stack.IPTables()
-		addr, port, err := ipt.OriginalDst(e.ID)
+		addr, port, err := ipt.OriginalDst(e.ID, e.NetProto)
 		e.UnlockUser()
 		if err != nil {
 			return err

@@ -147,10 +147,6 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	case stack.FilterTable:
 		table = stack.EmptyFilterTable()
 	case stack.NATTable:
-		if ipv6 {
-			nflog("IPv6 redirection not yet supported (gvisor.dev/issue/3549)")
-			return syserr.ErrInvalidArgument
-		}
 		table = stack.EmptyNATTable()
 	default:
 		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())

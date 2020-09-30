@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type headerType int
@@ -253,6 +254,20 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 		TransportProtocolNumber: pk.TransportProtocolNumber,
 	}
 	return newPk
+}
+
+// Network returns the network header as a header.Network.
+//
+// Network should only be called when NetworkHeader has been set.
+func (pk *PacketBuffer) Network() header.Network {
+	switch netProto := pk.NetworkProtocolNumber; netProto {
+	case header.IPv4ProtocolNumber:
+		return header.IPv4(pk.NetworkHeader().View())
+	case header.IPv6ProtocolNumber:
+		return header.IPv6(pk.NetworkHeader().View())
+	default:
+		panic(fmt.Sprintf("unknown network protocol number %d", netProto))
+	}
 }
 
 // headerInfo stores metadata about a header in a packet.
