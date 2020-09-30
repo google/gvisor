@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -536,7 +536,10 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		return
 	}
 
-	for firstHeader := true; ; firstHeader = false {
+	for {
+		// Keep track of the start of the previous header so we can report the
+		// special case of a Hop by Hop at a location other than at the start.
+		previousHeaderStart := it.HeaderOffset()
 		extHdr, done, err := it.Next()
 		if err != nil {
 			r.Stats().IP.MalformedPacketsReceived.Increment()
@@ -550,11 +553,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		case header.IPv6HopByHopOptionsExtHdr:
 			// As per RFC 8200 section 4.1, the Hop By Hop extension header is
 			// restricted to appear immediately after an IPv6 fixed header.
-			//
-			// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1
-			// (unrecognized next header) error in response to an extension header's
-			// Next Header field with the Hop By Hop extension header identifier.
-			if !firstHeader {
+			if previousHeaderStart != 0 {
+				_ = returnError(r, &icmpReasonParameterProblem{
+					code:    header.ICMPv6UnknownHeader,
+					pointer: previousHeaderStart,
+				}, pkt)
 				return
 			}
 
@@ -576,13 +579,25 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				case header.IPv6OptionUnknownActionSkip:
 				case header.IPv6OptionUnknownActionDiscard:
 					return
-				case header.IPv6OptionUnknownActionDiscardSendICMP:
-					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
-					// unrecognized IPv6 extension header options.
-					return
 				case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
-					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
-					// unrecognized IPv6 extension header options.
+					if header.IsV6MulticastAddress(r.LocalAddress) {
+						return
+					}
+					fallthrough
+				case header.IPv6OptionUnknownActionDiscardSendICMP:
+					// This case satisfies a requirement of RFC 8200 section 4.2
+					// which states that an unknown option starting with bits [10] should:
+					//
+					//    discard the packet and, regardless of whether or not the
+					//    packet's Destination Address was a multicast address, send an
+					//    ICMP Parameter Problem, Code 2, message to the packet's
+					//    Source Address, pointing to the unrecognized Option Type.
+					//
+					_ = returnError(r, &icmpReasonParameterProblem{
+						code:               header.ICMPv6UnknownOption,
+						pointer:            it.ParseOffset() + optsIt.OptionOffset(),
+						respondToMulticast: true,
+					}, pkt)
 					return
 				default:
 					panic(fmt.Sprintf("unrecognized action for an unrecognized Hop By Hop extension header option = %d", opt))
@@ -593,16 +608,20 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			// As per RFC 8200 section 4.4, if a node encounters a routing header with
 			// an unrecognized routing type value, with a non-zero Segments Left
 			// value, the node must discard the packet and send an ICMP Parameter
-			// Problem, Code 0. If the Segments Left is 0, the node must ignore the
-			// Routing extension header and process the next header in the packet.
+			// Problem, Code 0 to the packet's Source Address, pointing to the
+			// unrecognized Routing Type.
+			//
+			// If the Segments Left is 0, the node must ignore the Routing extension
+			// header and process the next header in the packet.
 			//
 			// Note, the stack does not yet handle any type of routing extension
 			// header, so we just make sure Segments Left is zero before processing
 			// the next extension header.
-			//
-			// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 0 for
-			// unrecognized routing types with a non-zero Segments Left value.
 			if extHdr.SegmentsLeft() != 0 {
+				_ = returnError(r, &icmpReasonParameterProblem{
+					code:    header.ICMPv6ErroneousHeader,
+					pointer: it.ParseOffset(),
+				}, pkt)
 				return
 			}
 
@@ -737,13 +756,25 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				case header.IPv6OptionUnknownActionSkip:
 				case header.IPv6OptionUnknownActionDiscard:
 					return
-				case header.IPv6OptionUnknownActionDiscardSendICMP:
-					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
-					// unrecognized IPv6 extension header options.
-					return
 				case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
-					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
-					// unrecognized IPv6 extension header options.
+					if header.IsV6MulticastAddress(r.LocalAddress) {
+						return
+					}
+					fallthrough
+				case header.IPv6OptionUnknownActionDiscardSendICMP:
+					// This case satisfies a requirement of RFC 8200 section 4.2
+					// which states that an unknown option starting with bits [10] should:
+					//
+					//    discard the packet and, regardless of whether or not the
+					//    packet's Destination Address was a multicast address, send an
+					//    ICMP Parameter Problem, Code 2, message to the packet's
+					//    Source Address, pointing to the unrecognized Option Type.
+					//
+					_ = returnError(r, &icmpReasonParameterProblem{
+						code:               header.ICMPv6UnknownOption,
+						pointer:            it.ParseOffset() + optsIt.OptionOffset(),
+						respondToMulticast: true,
+					}, pkt)
 					return
 				default:
 					panic(fmt.Sprintf("unrecognized action for an unrecognized Destination extension header option = %d", opt))
@@ -767,8 +798,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				pkt.TransportProtocolNumber = p
 				e.handleICMP(r, pkt, hasFragmentHeader)
 			} else {
-				// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
-				// in response to unrecognized next header values.
+				r.Stats().IP.PacketsDelivered.Increment()
 				switch res := e.dispatcher.DeliverTransportPacket(r, p, pkt); res {
 				case stack.TransportPacketHandled:
 				case stack.TransportPacketDestinationPortUnreachable:
@@ -778,17 +808,40 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 					//   transport protocol (e.g., UDP) has no listener, if that transport
 					//   protocol has no alternative means to inform the sender.
 					_ = returnError(r, &icmpReasonPortUnreachable{}, pkt)
+				case stack.TransportPacketProtocolUnreachable:
+					// As per RFC 8200 section 4. (page 7):
+					//   Extension headers are numbered from IANA IP Protocol Numbers
+					//   [IANA-PN], the same values used for IPv4 and IPv6.  When
+					//   processing a sequence of Next Header values in a packet, the
+					//   first one that is not an extension header [IANA-EH] indicates
+					//   that the next item in the packet is the corresponding upper-layer
+					//   header.
+					// With more related information on page 8:
+					//   If, as a result of processing a header, the destination node is
+					//   required to proceed to the next header but the Next Header value
+					//   in the current header is unrecognized by the node, it should
+					//   discard the packet and send an ICMP Parameter Problem message to
+					//   the source of the packet, with an ICMP Code value of 1
+					//   ("unrecognized Next Header type encountered") and the ICMP
+					//   Pointer field containing the offset of the unrecognized value
+					//   within the original packet.
+					//
+					// Which when taken together indicate that an unknown protocol should
+					// be treated as an unrecognized next header value.
+					_ = returnError(r, &icmpReasonParameterProblem{
+						code:    header.ICMPv6UnknownHeader,
+						pointer: it.ParseOffset(),
+					}, pkt)
 				default:
 					panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
 				}
 			}
 
 		default:
-			// If we receive a packet for an extension header we do not yet handle,
-			// drop the packet for now.
-			//
-			// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
-			// in response to unrecognized next header values.
+			_ = returnError(r, &icmpReasonParameterProblem{
+				code:    header.ICMPv6UnknownHeader,
+				pointer: it.ParseOffset(),
+			}, pkt)
 			r.Stats().UnknownProtocolRcvdPackets.Increment()
 			return
 		}
