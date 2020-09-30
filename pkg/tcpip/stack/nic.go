@@ -244,22 +244,19 @@ func (n *NIC) setSpoofing(enable bool) {
 	n.mu.Unlock()
 }
 
-// primaryEndpoint will return the first non-deprecated endpoint if such an
-// endpoint exists for the given protocol and remoteAddr. If no non-deprecated
-// endpoint exists, the first deprecated endpoint will be returned.
-//
-// If an IPv6 primary endpoint is requested, Source Address Selection (as
-// defined by RFC 6724 section 5) will be performed.
+// primaryAddress returns an address that can be used to communicate with
+// remoteAddr.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) AssignableAddressEndpoint {
 	n.mu.RLock()
-	defer n.mu.RUnlock()
+	spoofing := n.mu.spoofing
+	n.mu.RUnlock()
 
 	ep, ok := n.networkEndpoints[protocol]
 	if !ok {
 		return nil
 	}
 
-	return ep.AcquirePrimaryAddress(remoteAddr, n.mu.spoofing)
+	return ep.AcquireOutgoingPrimaryAddress(remoteAddr, spoofing)
 }
 
 type getAddressBehaviour int
@@ -360,13 +357,12 @@ func (n *NIC) primaryAddresses() []tcpip.ProtocolAddress {
 // address exists. If no non-deprecated address exists, the first deprecated
 // address will be returned.
 func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWithPrefix {
-	addressEndpoint := n.primaryEndpoint(proto, "")
-	if addressEndpoint == nil {
+	ep, ok := n.networkEndpoints[proto]
+	if !ok {
 		return tcpip.AddressWithPrefix{}
 	}
-	addr := addressEndpoint.AddressWithPrefix()
-	addressEndpoint.DecRef()
-	return addr
+
+	return ep.MainAddress()
 }
 
 // removeAddress removes an address from n.
