@@ -25,13 +25,13 @@ func HaltAndResume()
 func HaltEl1SvcAndResume()
 
 // init initializes architecture-specific state.
-func (k *Kernel) init(opts KernelOpts) {
+func (k *Kernel) init(opts KernelOpts, maxCPUs int) {
 	// Save the root page tables.
 	k.PageTables = opts.PageTables
 }
 
 // init initializes architecture-specific state.
-func (c *CPU) init() {
+func (c *CPU) init(cpuID int) {
 	// Set the kernel stack pointer(virtual address).
 	c.registers.Sp = uint64(c.StackTop())
 

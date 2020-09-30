@@ -24,7 +24,10 @@ go_binary(
         "defs_impl_arm64.go",
         "main.go",
     ],
-    visibility = ["//pkg/sentry/platform/ring0:__pkg__"],
+    visibility = [
+        "//pkg/sentry/platform/kvm:__pkg__",
+        "//pkg/sentry/platform/ring0:__pkg__",
+    ],
     deps = [
         "//pkg/cpuid",
         "//pkg/sentry/arch",

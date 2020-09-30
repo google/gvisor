@@ -76,15 +76,42 @@ type KernelOpts struct {
 type KernelArchState struct {
 	KernelOpts
 
+	// cpuEntries is array of kernelEntry for all cpus
+	cpuEntries []kernelEntry
+
 	// globalIDT is our set of interrupt gates.
-	globalIDT idt64
+	globalIDT *idt64
+}
+
+// kernelEntry contains minimal CPU-specific arch state
+// that can be mapped at the upper of the address space.
+// Malicious APP might steal info from it via CPU bugs.
+type kernelEntry struct {
+	// stack is the stack used for interrupts on this CPU.
+	stack [256]byte
+
+	// scratch space for temporary usage.
+	scratch0 uint64
+	scratch1 uint64
+
+	// stackTop is the top of the stack.
+	stackTop uint64
+
+	// cpuSelf is back reference to CPU.
+	cpuSelf *CPU
+
+	// kernelCR3 is the cr3 used for sentry kernel.
+	kernelCR3 uintptr
+
+	// gdt is the CPU's descriptor table.
+	gdt descriptorTable
+
+	// tss is the CPU's task state.
+	tss TaskState64
 }
 
 // CPUArchState contains CPU-specific arch state.
 type CPUArchState struct {
-	// stack is the stack used for interrupts on this CPU.
-	stack [256]byte
-
 	// errorCode is the error code from the last exception.
 	errorCode uintptr
 
@@ -97,11 +124,7 @@ type CPUArchState struct {
 	// exception.
 	errorType uintptr
 
-	// gdt is the CPU's descriptor table.
-	gdt descriptorTable
-
-	// tss is the CPU's task state.
-	tss TaskState64
+	*kernelEntry
 }
 
 // ErrorCode returns the last error code.

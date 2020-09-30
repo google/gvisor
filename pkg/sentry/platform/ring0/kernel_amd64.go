@@ -18,12 +18,41 @@ package ring0
 
 import (
 	"encoding/binary"
+	"reflect"
+
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // init initializes architecture-specific state.
-func (k *Kernel) init(opts KernelOpts) {
+func (k *Kernel) init(opts KernelOpts, maxCPUs int) {
 	// Save the root page tables.
 	k.PageTables = opts.PageTables
+
+	entrySize := reflect.TypeOf(kernelEntry{}).Size()
+	var (
+		entries []kernelEntry
+		padding = 1
+	)
+	for {
+		entries = make([]kernelEntry, maxCPUs+padding-1)
+		totalSize := entrySize * uintptr(maxCPUs+padding-1)
+		addr := reflect.ValueOf(&entries[0]).Pointer()
+		if addr&(usermem.PageSize-1) == 0 && totalSize >= usermem.PageSize {
+			// The runtime forces power-of-2 alignment for allocations, and we are therefore
+			// safe once the first address is aligned and the chunk is at least a full page.
+			break
+		}
+		padding = padding << 1
+	}
+	k.cpuEntries = entries
+
+	k.globalIDT = &idt64{}
+	if reflect.TypeOf(idt64{}).Size() != usermem.PageSize {
+		panic("Size of globalIDT should be PageSize")
+	}
+	if reflect.ValueOf(k.globalIDT).Pointer()&(usermem.PageSize-1) != 0 {
+		panic("Allocated globalIDT should be page aligned")
+	}
 
 	// Setup the IDT, which is uniform.
 	for v, handler := range handlers {
@@ -39,8 +68,26 @@ func (k *Kernel) init(opts KernelOpts) {
 	}
 }
 
+func (k *Kernel) EntryRegions() map[uintptr]uintptr {
+	regions := make(map[uintptr]uintptr)
+
+	addr := reflect.ValueOf(&k.cpuEntries[0]).Pointer()
+	size := reflect.TypeOf(kernelEntry{}).Size() * uintptr(len(k.cpuEntries))
+	end, _ := usermem.Addr(addr + size).RoundUp()
+	regions[uintptr(usermem.Addr(addr).RoundDown())] = uintptr(end)
+
+	addr = reflect.ValueOf(k.globalIDT).Pointer()
+	size = reflect.TypeOf(idt64{}).Size()
+	end, _ = usermem.Addr(addr + size).RoundUp()
+	regions[uintptr(usermem.Addr(addr).RoundDown())] = uintptr(end)
+
+	return regions
+}
+
 // init initializes architecture-specific state.
-func (c *CPU) init() {
+func (c *CPU) init(cpuID int) {
+	c.kernelEntry = &c.kernel.cpuEntries[cpuID]
+	c.cpuSelf = c
 	// Null segment.
 	c.gdt[0].setNull()
 
@@ -65,6 +112,7 @@ func (c *CPU) init() {
 
 	// Set the kernel stack pointer in the TSS (virtual address).
 	stackAddr := c.StackTop()
+	c.stackTop = stackAddr
 	c.tss.rsp0Lo = uint32(stackAddr)
 	c.tss.rsp0Hi = uint32(stackAddr >> 32)
 	c.tss.ist1Lo = uint32(stackAddr)
@@ -183,7 +231,7 @@ func IsCanonical(addr uint64) bool {
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	userCR3 := switchOpts.PageTables.CR3(!switchOpts.Flush, switchOpts.UserPCID)
-	kernelCR3 := c.kernel.PageTables.CR3(true, switchOpts.KernelPCID)
+	c.kernelCR3 = uintptr(c.kernel.PageTables.CR3(true, switchOpts.KernelPCID))
 
 	// Sanitize registers.
 	regs := switchOpts.Registers
@@ -197,15 +245,11 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	WriteFS(uintptr(regs.Fs_base))                   // escapes: no. Set application FS.
 	WriteGS(uintptr(regs.Gs_base))                   // escapes: no. Set application GS.
 	LoadFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy in floating point.
-	jumpToKernel()                                   // Switch to upper half.
-	writeCR3(uintptr(userCR3))                       // Change to user address space.
 	if switchOpts.FullRestore {
-		vector = iret(c, regs)
+		vector = iret(c, regs, uintptr(userCR3))
 	} else {
-		vector = sysret(c, regs)
+		vector = sysret(c, regs, uintptr(userCR3))
 	}
-	writeCR3(uintptr(kernelCR3))                     // Return to kernel address space.
-	jumpToUser()                                     // Return to lower half.
 	SaveFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy out floating point.
 	WriteFS(uintptr(c.registers.Fs_base))            // escapes: no. Restore kernel FS.
 	return
@@ -219,7 +263,7 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 //go:nosplit
 func start(c *CPU) {
 	// Save per-cpu & FS segment.
-	WriteGS(kernelAddr(c))
+	WriteGS(kernelAddr(c.kernelEntry))
 	WriteFS(uintptr(c.registers.Fs_base))
 
 	// Initialize floating point.
