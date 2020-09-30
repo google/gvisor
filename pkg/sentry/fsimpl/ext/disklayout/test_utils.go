@@ -18,13 +18,13 @@ import (
 	"reflect"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/marshal"
 )
 
-func assertSize(t *testing.T, v interface{}, want uintptr) {
+func assertSize(t *testing.T, v marshal.Marshallable, want int) {
 	t.Helper()
 
-	if got := binary.Size(v); got != want {
+	if got := v.SizeBytes(); got != want {
 		t.Errorf("struct %s should be exactly %d bytes but is %d bytes", reflect.TypeOf(v).Name(), want, got)
 	}
 }

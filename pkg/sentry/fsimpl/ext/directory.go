@@ -16,7 +16,6 @@ package ext
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -100,7 +99,7 @@ func newDirectory(args inodeArgs, newDirent bool) (*directory, error) {
 		} else {
 			curDirent.diskDirent = &disklayout.DirentOld{}
 		}
-		binary.Unmarshal(buf, binary.LittleEndian, curDirent.diskDirent)
+		curDirent.diskDirent.UnmarshalBytes(buf)
 
 		if curDirent.diskDirent.Inode() != 0 && len(curDirent.diskDirent.FileName()) != 0 {
 			// Inode number and name length fields being set to 0 is used to indicate

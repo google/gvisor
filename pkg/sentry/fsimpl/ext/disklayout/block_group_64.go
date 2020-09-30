@@ -18,6 +18,8 @@ package disklayout
 // It is the block group descriptor struct for 64-bit ext4 filesystems.
 // It implements BlockGroup interface. It is an extension of the 32-bit
 // version of BlockGroup.
+//
+// +marshal
 type BlockGroup64Bit struct {
 	// We embed the 32-bit struct here because 64-bit version is just an extension
 	// of the 32-bit version.

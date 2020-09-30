@@ -15,6 +15,7 @@
 package disklayout
 
 import (
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
@@ -51,6 +52,8 @@ var (
 //
 // See https://www.kernel.org/doc/html/latest/filesystems/ext4/dynamic.html#linear-classic-directories.
 type Dirent interface {
+	marshal.Marshallable
+
 	// Inode returns the absolute inode number of the underlying inode.
 	// Inode number 0 signifies an unused dirent.
 	Inode() uint32

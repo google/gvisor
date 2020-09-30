@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 )
 
@@ -87,29 +87,33 @@ func blockMapSetUp(t *testing.T) (*blockMapFile, []byte) {
 	mockDisk := make([]byte, mockBMDiskSize)
 	var fileData []byte
 	blkNums := newBlkNumGen()
-	var data []byte
+	off := 0
+	data := make([]byte, (numDirectBlks+3)*(*primitive.Uint32)(nil).SizeBytes())
 
 	// Write the direct blocks.
 	for i := 0; i < numDirectBlks; i++ {
-		curBlkNum := blkNums.next()
-		data = binary.Marshal(data, binary.LittleEndian, curBlkNum)
-		fileData = append(fileData, writeFileDataToBlock(mockDisk, curBlkNum, 0, blkNums)...)
+		curBlkNum := primitive.Uint32(blkNums.next())
+		curBlkNum.MarshalBytes(data[off:])
+		off += curBlkNum.SizeBytes()
+		fileData = append(fileData, writeFileDataToBlock(mockDisk, uint32(curBlkNum), 0, blkNums)...)
 	}
 
 	// Write to indirect block.
-	indirectBlk := blkNums.next()
-	data = binary.Marshal(data, binary.LittleEndian, indirectBlk)
-	fileData = append(fileData, writeFileDataToBlock(mockDisk, indirectBlk, 1, blkNums)...)
+	indirectBlk := primitive.Uint32(blkNums.next())
+	indirectBlk.MarshalBytes(data[off:])
+	off += indirectBlk.SizeBytes()
+	fileData = append(fileData, writeFileDataToBlock(mockDisk, uint32(indirectBlk), 1, blkNums)...)
 
-	// Write to indirect block.
-	doublyIndirectBlk := blkNums.next()
-	data = binary.Marshal(data, binary.LittleEndian, doublyIndirectBlk)
-	fileData = append(fileData, writeFileDataToBlock(mockDisk, doublyIndirectBlk, 2, blkNums)...)
+	// Write to double indirect block.
+	doublyIndirectBlk := primitive.Uint32(blkNums.next())
+	doublyIndirectBlk.MarshalBytes(data[off:])
+	off += doublyIndirectBlk.SizeBytes()
+	fileData = append(fileData, writeFileDataToBlock(mockDisk, uint32(doublyIndirectBlk), 2, blkNums)...)
 
-	// Write to indirect block.
-	triplyIndirectBlk := blkNums.next()
-	data = binary.Marshal(data, binary.LittleEndian, triplyIndirectBlk)
-	fileData = append(fileData, writeFileDataToBlock(mockDisk, triplyIndirectBlk, 3, blkNums)...)
+	// Write to triple indirect block.
+	triplyIndirectBlk := primitive.Uint32(blkNums.next())
+	triplyIndirectBlk.MarshalBytes(data[off:])
+	fileData = append(fileData, writeFileDataToBlock(mockDisk, uint32(triplyIndirectBlk), 3, blkNums)...)
 
 	args := inodeArgs{
 		fs: &filesystem{
@@ -142,9 +146,9 @@ func writeFileDataToBlock(disk []byte, blkNum uint32, height uint, blkNums *blkN
 
 	var fileData []byte
 	for off := blkNum * mockBMBlkSize; off < (blkNum+1)*mockBMBlkSize; off += 4 {
-		curBlkNum := blkNums.next()
-		copy(disk[off:off+4], binary.Marshal(nil, binary.LittleEndian, curBlkNum))
-		fileData = append(fileData, writeFileDataToBlock(disk, curBlkNum, height-1, blkNums)...)
+		curBlkNum := primitive.Uint32(blkNums.next())
+		curBlkNum.MarshalBytes(disk[off : off+4])
+		fileData = append(fileData, writeFileDataToBlock(disk, uint32(curBlkNum), height-1, blkNums)...)
 	}
 	return fileData
 }

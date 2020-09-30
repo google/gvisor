@@ -21,7 +21,10 @@ import (
 // TestSuperBlockSize tests that the superblock structs are of the correct
 // size.
 func TestSuperBlockSize(t *testing.T) {
-	assertSize(t, SuperBlockOld{}, 84)
-	assertSize(t, SuperBlock32Bit{}, 336)
-	assertSize(t, SuperBlock64Bit{}, 1024)
+	var sbOld SuperBlockOld
+	assertSize(t, &sbOld, 84)
+	var sb32 SuperBlock32Bit
+	assertSize(t, &sb32, 336)
+	var sb64 SuperBlock64Bit
+	assertSize(t, &sb64, 1024)
 }

@@ -29,12 +29,14 @@ import (
 // Note: This struct can be of variable size on disk. The one described below
 // is of maximum size and the FileName beyond NameLength bytes might contain
 // garbage.
+//
+// +marshal
 type DirentNew struct {
 	InodeNumber  uint32
 	RecordLength uint16
 	NameLength   uint8
 	FileTypeRaw  uint8
-	FileNameRaw  [MaxFileName]byte
+	FileNameRaw  [MaxFileName]byte `marshal:"unaligned"`
 }
 
 // Compiles only if DirentNew implements Dirent.

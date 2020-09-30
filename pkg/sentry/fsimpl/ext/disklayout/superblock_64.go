@@ -19,6 +19,8 @@ package disklayout
 // 1024 bytes (smallest possible block size) and hence the superblock always
 // fits in no more than one data block. Should only be used when the 64-bit
 // feature is set.
+//
+// +marshal
 type SuperBlock64Bit struct {
 	// We embed the 32-bit struct here because 64-bit version is just an extension
 	// of the 32-bit version.
