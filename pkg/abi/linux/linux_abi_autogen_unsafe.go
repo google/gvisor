@@ -19,6 +19,7 @@ var _ marshal.Marshallable = (*CapUserData)(nil)
 var _ marshal.Marshallable = (*CapUserHeader)(nil)
 var _ marshal.Marshallable = (*ClockT)(nil)
 var _ marshal.Marshallable = (*ControlMessageCredentials)(nil)
+var _ marshal.Marshallable = (*DigestMetadata)(nil)
 var _ marshal.Marshallable = (*ExtensionName)(nil)
 var _ marshal.Marshallable = (*FOwnerEx)(nil)
 var _ marshal.Marshallable = (*FUSEAttr)(nil)
@@ -3825,6 +3826,99 @@ func (r *RobustListHead) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
     runtime.KeepAlive(r) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (d *DigestMetadata) SizeBytes() int {
+    return 4
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (d *DigestMetadata) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(d.DigestAlgorithm))
+    dst = dst[2:]
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(d.DigestSize))
+    dst = dst[2:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (d *DigestMetadata) UnmarshalBytes(src []byte) {
+    d.DigestAlgorithm = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    d.DigestSize = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (d *DigestMetadata) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (d *DigestMetadata) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(d))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (d *DigestMetadata) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(d), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (d *DigestMetadata) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(d)))
+    hdr.Len = d.SizeBytes()
+    hdr.Cap = d.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that d
+    // must live until the use above.
+    runtime.KeepAlive(d) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (d *DigestMetadata) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return d.CopyOutN(cc, addr, d.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (d *DigestMetadata) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(d)))
+    hdr.Len = d.SizeBytes()
+    hdr.Cap = d.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that d
+    // must live until the use above.
+    runtime.KeepAlive(d) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (d *DigestMetadata) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(d)))
+    hdr.Len = d.SizeBytes()
+    hdr.Cap = d.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that d
+    // must live until the use above.
+    runtime.KeepAlive(d) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
