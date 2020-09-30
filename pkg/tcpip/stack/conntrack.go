@@ -281,8 +281,8 @@ func (ct *ConnTrack) insertRedirectConn(pkt *PacketBuffer, hook Hook, rt Redirec
 	// rule. This tuple will be used to manipulate the packet in
 	// handlePacket.
 	replyTID := tid.reply()
-	replyTID.srcAddr = rt.MinIP
-	replyTID.srcPort = rt.MinPort
+	replyTID.srcAddr = rt.Addr
+	replyTID.srcPort = rt.Port
 	var manip manipType
 	switch hook {
 	case Prerouting:
