@@ -139,6 +139,7 @@ traverseExtensions:
 // Returns true if the header was successfully parsed.
 func UDP(pkt *stack.PacketBuffer) bool {
 	_, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
+	pkt.TransportProtocolNumber = header.UDPProtocolNumber
 	return ok
 }
 
@@ -162,5 +163,6 @@ func TCP(pkt *stack.PacketBuffer) bool {
 	}
 
 	_, ok = pkt.TransportHeader().Consume(hdrLen)
+	pkt.TransportProtocolNumber = header.TCPProtocolNumber
 	return ok
 }
