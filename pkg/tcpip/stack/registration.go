@@ -63,6 +63,52 @@ const (
 	ControlUnknown
 )
 
+// LinkPacketInfo holds information about a link layer packet.
+type LinkPacketInfo struct {
+	// RemoteLinkAddress is the packet's remote link address.
+	//
+	// For incoming packets, RemoteLinkAddress holds the source link address; for
+	// outgoing packets, RemoteLinkAddress holds the destination link address.
+	RemoteLinkAddress tcpip.LinkAddress
+
+	// LocalLinkAddress is the packet's local link address.
+	//
+	// For incoming packets, LocalLinkAddress holds the destination link address;
+	// for outgoing packets, LocalLinkAddress holds the source link address.
+	LocalLinkAddress tcpip.LinkAddress
+
+	// InterfaceCapabilities are the capabilities available to the interface when
+	// the packet was received.
+	//
+	// Ignored for outgoing packets.
+	InterfaceCapabilities LinkEndpointCapabilities
+}
+
+// NetworkPacketInfo holds information about a network layer packet.
+type NetworkPacketInfo struct {
+	// Broadcast is true if the packet is a broadcast packet. That is, a packet is
+	// considered a broadcast packet when its destination address is a broadcast
+	// address.
+	Broadcast bool
+
+	// RemoteAddress is the packet's remote address.
+	//
+	// For incoming packets, RemoteAddress holds the source address; for outgoing
+	// packets, RemoteAddress holds the destination address.
+	RemoteAddress tcpip.Address
+
+	// LocalAddress is the packet's local address.
+	//
+	// For incoming packets, LocalAddress holds the destination address; for
+	// outgoing packets, LocalAddress holds the source address.
+	LocalAddress tcpip.Address
+
+	// LocalAddressBroadcast is true when an incoming packet's source address is a
+	// broadcast address.
+	// remove once packet handling is moved to network layers.
+	LocalAddressBroadcast bool
+}
+
 // TransportEndpoint is the interface that needs to be implemented by transport
 // protocol (e.g., tcp, udp) endpoints that can handle packets.
 type TransportEndpoint interface {
@@ -73,7 +119,7 @@ type TransportEndpoint interface {
 	// this transport endpoint. It sets pkt.TransportHeader.
 	//
 	// HandlePacket takes ownership of pkt.
-	HandlePacket(r *Route, id TransportEndpointID, pkt *PacketBuffer)
+	HandlePacket(id TransportEndpointID, pkt *PacketBuffer)
 
 	// HandleControlPacket is called by the stack when new control (e.g.
 	// ICMP) packets arrive to this transport endpoint.
@@ -106,7 +152,7 @@ type RawTransportEndpoint interface {
 	// layer up.
 	//
 	// HandlePacket takes ownership of pkt.
-	HandlePacket(r *Route, pkt *PacketBuffer)
+	HandlePacket(pkt *PacketBuffer)
 }
 
 // PacketEndpoint is the interface that needs to be implemented by packet
@@ -174,7 +220,7 @@ type TransportProtocol interface {
 	//
 	// HandleUnknownDestinationPacket takes ownership of pkt if it handles
 	// the issue.
-	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, pkt *PacketBuffer) UnknownDestinationPacketDisposition
+	HandleUnknownDestinationPacket(id TransportEndpointID, pkt *PacketBuffer) UnknownDestinationPacketDisposition
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -228,7 +274,7 @@ type TransportDispatcher interface {
 	// pkt.NetworkHeader must be set before calling DeliverTransportPacket.
 	//
 	// DeliverTransportPacket takes ownership of pkt.
-	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) TransportPacketDisposition
+	DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) TransportPacketDisposition
 
 	// DeliverTransportControlPacket delivers control packets to the
 	// appropriate transport protocol endpoint.
@@ -549,7 +595,7 @@ type NetworkEndpoint interface {
 	// this network endpoint. It sets pkt.NetworkHeader.
 	//
 	// HandlePacket takes ownership of pkt.
-	HandlePacket(r *Route, pkt *PacketBuffer)
+	HandlePacket(pkt *PacketBuffer)
 
 	// Close is called when the endpoint is reomved from a stack.
 	Close()
@@ -700,7 +746,7 @@ type LinkEndpoint interface {
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// r.LocalLinkAddress if it is provided.
-	WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error
+	WritePacket(gso *GSO, pkt *PacketBuffer) *tcpip.Error
 
 	// WritePackets writes packets with the given protocol through the
 	// given route. pkts must not be zero length. It takes ownership of pkts and
@@ -709,7 +755,7 @@ type LinkEndpoint interface {
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, it may
 	// require to change syscall filters.
-	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
+	WritePackets(gso *GSO, pkts PacketBufferList) (int, *tcpip.Error)
 
 	// WriteRawPacket writes a packet directly to the link. The packet
 	// should already have an ethernet header. It takes ownership of vv.

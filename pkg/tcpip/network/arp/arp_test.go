@@ -252,8 +252,8 @@ func TestDirectRequest(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			inject(address)
 			pi, _ := c.linkEP.ReadContext(context.Background())
-			if pi.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
+			if pi.Pkt.NetworkProtocolNumber != arp.ProtocolNumber {
+				t.Fatalf("expected ARP response, got network protocol number %d", pi.Pkt.NetworkProtocolNumber)
 			}
 			rep := header.ARP(pi.Pkt.NetworkHeader().View())
 			if !rep.IsValid() {
@@ -281,7 +281,7 @@ func TestDirectRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
-		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
+		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Pkt.NetworkProtocolNumber)
 	}
 }
 
@@ -338,7 +338,7 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 				// There is no need to perform a blocking read here, since packets are
 				// sent in the same function that handles ARP requests.
 				if pkt, ok := c.linkEP.Read(); ok {
-					t.Errorf("unexpected packet sent with network protocol number %d", pkt.Proto)
+					t.Errorf("unexpected packet sent with network protocol number %d", pkt.Pkt.NetworkProtocolNumber)
 				}
 				return
 			}
@@ -349,8 +349,8 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 				t.Fatal("expected ARP response to be sent, got none")
 			}
 
-			if pi.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
+			if pi.Pkt.NetworkProtocolNumber != arp.ProtocolNumber {
+				t.Fatalf("expected ARP response, got network protocol number %d", pi.Pkt.NetworkProtocolNumber)
 			}
 			rep := header.ARP(pi.Pkt.NetworkHeader().View())
 			if !rep.IsValid() {
@@ -458,8 +458,8 @@ func TestLinkAddressRequest(t *testing.T) {
 			t.Fatal("expected to send a link address request")
 		}
 
-		if got, want := pkt.Route.RemoteLinkAddress, test.expectLinkAddr; got != want {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", got, want)
+		if got, want := pkt.Pkt.LinkPacketInfo.RemoteLinkAddress, test.expectLinkAddr; got != want {
+			t.Errorf("got pkt.Pkt.LinkPacketInfo.RemoteLinkAddress = %s, want = %s", got, want)
 		}
 	}
 }

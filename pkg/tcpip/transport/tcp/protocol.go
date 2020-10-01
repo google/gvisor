@@ -187,8 +187,8 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 // to a specific processing queue. Each queue is serviced by its own processor
 // goroutine which is responsible for dequeuing and doing full TCP dispatch of
 // the packet.
-func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
-	p.dispatcher.queuePacket(r, ep, id, pkt)
+func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+	p.dispatcher.queuePacket(ep, id, pkt)
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
@@ -198,9 +198,14 @@ func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id st
 // a reset is sent in response to any incoming segment except another reset. In
 // particular, SYNs addressed to a non-existent connection are rejected by this
 // means."
+func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
+	// TODO: This is a workaround
+	route, err := p.stack.FindRoute(pkt.NICID, pkt.NetworkPacketInfo.LocalAddress, pkt.NetworkPacketInfo.RemoteAddress, pkt.NetworkProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		return stack.UnknownDestinationPacketHandled
+	}
 
-func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
-	s := newSegment(r, id, pkt)
+	s := newSegment(route, id, pkt)
 	defer s.decRef()
 
 	if !s.parse() || !s.csumValid {

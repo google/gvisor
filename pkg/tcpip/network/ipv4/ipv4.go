@@ -233,6 +233,8 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 		fragPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: reserve,
 		})
+		fragPkt.LinkPacketInfo = r.LinkPacketInfo()
+		fragPkt.NetworkPacketInfo = r.PacketInfo()
 		fragPkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 
 		// Copy data for the fragment.
@@ -277,7 +279,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 		offset += copied
 
 		// Send out the fragment.
-		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, fragPkt); err != nil {
+		if err := e.linkEP.WritePacket(gso, fragPkt); err != nil {
 			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(n - i))
 			return err
 		}
@@ -333,14 +335,19 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 		ep, err := e.protocol.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
 		if err == nil {
 			route := r.ReverseRoute(netHeader.SourceAddress(), netHeader.DestinationAddress())
-			ep.HandlePacket(&route, pkt)
+			pkt.LinkPacketInfo = route.LinkPacketInfo()
+			pkt.NetworkPacketInfo = route.PacketInfo()
+			ep.HandlePacket(pkt)
 			return nil
 		}
 	}
 
 	if r.Loop&stack.PacketLoop != 0 {
 		loopedR := r.MakeLoopedRoute()
-		e.HandlePacket(&loopedR, pkt)
+		pkt := pkt.Clone()
+		pkt.LinkPacketInfo = loopedR.LinkPacketInfo()
+		pkt.NetworkPacketInfo = loopedR.PacketInfo()
+		e.HandlePacket(pkt)
 		loopedR.Release()
 	}
 	if r.Loop&stack.PacketOut == 0 {
@@ -349,7 +356,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	if pkt.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
 		return e.writePacketFragments(r, gso, int(e.linkEP.MTU()), pkt)
 	}
-	if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
+	if err := e.linkEP.WritePacket(gso, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
@@ -366,9 +373,8 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		return pkts.Len(), nil
 	}
 
-	for pkt := pkts.Front(); pkt != nil; {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.addIPHeader(r, pkt, params)
-		pkt = pkt.Next()
 	}
 
 	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
@@ -379,7 +385,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	if len(dropped) == 0 && len(natPkts) == 0 {
 		// Fast path: If no packets are to be dropped then we can just invoke the
 		// faster WritePackets API directly.
-		n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
+		n, err := e.linkEP.WritePackets(gso, pkts)
 		r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
 		if err != nil {
 			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n))
@@ -401,12 +407,15 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 				src := netHeader.SourceAddress()
 				dst := netHeader.DestinationAddress()
 				route := r.ReverseRoute(src, dst)
-				ep.HandlePacket(&route, pkt)
+				pkt := pkt.Clone()
+				pkt.LinkPacketInfo = route.LinkPacketInfo()
+				pkt.NetworkPacketInfo = route.PacketInfo()
+				ep.HandlePacket(pkt)
 				n++
 				continue
 			}
 		}
-		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
+		if err := e.linkEP.WritePacket(gso, pkt); err != nil {
 			r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
 			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n - len(dropped)))
 			// Dropped packets aren't errors, so include them in
@@ -426,16 +435,26 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	// The packet already has an IP header, but there are a few required
 	// checks.
 	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
-	if !ok {
-		return tcpip.ErrInvalidOptionValue
-	}
-	ip := header.IPv4(h)
-	if !ip.IsValid(pkt.Data.Size()) {
+	if !ok || len(h) < header.IPv4MinimumSize {
 		return tcpip.ErrInvalidOptionValue
 	}
 
+	headerLen := int(header.IPv4(h).HeaderLength())
+	if headerLen < header.IPv4MinimumSize {
+		return tcpip.ErrInvalidOptionValue
+	}
+
+	hdr, ok := pkt.NetworkHeader().Consume(headerLen)
+	if !ok {
+		return tcpip.ErrInvalidOptionValue
+	}
+	pkt.NetworkProtocolNumber = ProtocolNumber
+	ip := header.IPv4(hdr)
+
 	// Always set the total length.
-	ip.SetTotalLength(uint16(pkt.Data.Size()))
+	totalLength := pkt.Size()
+	ip.SetTotalLength(uint16(totalLength))
+	pkt.Data.CapLength(totalLength - len(ip))
 
 	// Set the source address when zero.
 	if ip.SourceAddress() == tcpip.Address(([]byte{0, 0, 0, 0})) {
@@ -460,14 +479,23 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
 
+	if !ip.IsValid(pkt.Size()) {
+		return tcpip.ErrInvalidOptionValue
+	}
+
 	if r.Loop&stack.PacketLoop != 0 {
-		e.HandlePacket(r, pkt.Clone())
+		loopedR := r.MakeLoopedRoute()
+		pkt := pkt.Clone()
+		pkt.LinkPacketInfo = loopedR.LinkPacketInfo()
+		pkt.NetworkPacketInfo = loopedR.PacketInfo()
+		e.HandlePacket(pkt)
+		loopedR.Release()
 	}
 	if r.Loop&stack.PacketOut == 0 {
 		return nil
 	}
 
-	if err := e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt); err != nil {
+	if err := e.linkEP.WritePacket(nil /* gso */, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
@@ -477,14 +505,16 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	if !e.isEnabled() {
 		return
 	}
 
+	stats := e.protocol.stack.Stats()
+
 	h := header.IPv4(pkt.NetworkHeader().View())
 	if !h.IsValid(pkt.Data.Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
-		r.Stats().IP.MalformedPacketsReceived.Increment()
+		stats.IP.MalformedPacketsReceived.Increment()
 		return
 	}
 
@@ -492,8 +522,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	//   When a host sends any datagram, the IP source address MUST
 	//   be one of its own IP addresses (but not a broadcast or
 	//   multicast address).
-	if r.IsOutboundBroadcast() || header.IsV4MulticastAddress(r.RemoteAddress) {
-		r.Stats().IP.InvalidSourceAddressesReceived.Increment()
+	if pkt.NetworkPacketInfo.Broadcast || header.IsV4MulticastAddress(pkt.NetworkPacketInfo.RemoteAddress) {
+		stats.IP.InvalidSourceAddressesReceived.Increment()
 		return
 	}
 
@@ -502,7 +532,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	ipt := e.protocol.stack.IPTables()
 	if ok := ipt.Check(stack.Input, pkt, nil, nil, "", ""); !ok {
 		// iptables is telling us to drop the packet.
-		r.Stats().IP.IPTablesInputDropped.Increment()
+		stats.IP.IPTablesInputDropped.Increment()
 		return
 	}
 
@@ -510,8 +540,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		if pkt.Data.Size()+pkt.TransportHeader().View().Size() == 0 {
 			// Drop the packet as it's marked as a fragment but has
 			// no payload.
-			r.Stats().IP.MalformedPacketsReceived.Increment()
-			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			stats.IP.MalformedPacketsReceived.Increment()
+			stats.IP.MalformedFragmentsReceived.Increment()
 			return
 		}
 		// The packet is a fragment, let's try to reassemble it.
@@ -524,8 +554,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		// size). Otherwise the packet would've been rejected as invalid before
 		// reaching here.
 		if int(start)+pkt.Data.Size() > header.IPv4MaximumPayloadSize {
-			r.Stats().IP.MalformedPacketsReceived.Increment()
-			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			stats.IP.MalformedPacketsReceived.Increment()
+			stats.IP.MalformedFragmentsReceived.Increment()
 			return
 		}
 		var ready bool
@@ -547,8 +577,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			pkt.Data,
 		)
 		if err != nil {
-			r.Stats().IP.MalformedPacketsReceived.Increment()
-			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			stats.IP.MalformedPacketsReceived.Increment()
+			stats.IP.MalformedFragmentsReceived.Increment()
 			return
 		}
 		if !ready {
@@ -556,18 +586,18 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		}
 	}
 
-	r.Stats().IP.PacketsDelivered.Increment()
+	stats.IP.PacketsDelivered.Increment()
 	p := h.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {
 		// TODO(gvisor.dev/issues/3810): when we sort out ICMP and transport
 		// headers, the setting of the transport number here should be
 		// unnecessary and removed.
 		pkt.TransportProtocolNumber = p
-		e.handleICMP(r, pkt)
+		e.handleICMP(pkt)
 		return
 	}
 
-	switch res := e.dispatcher.DeliverTransportPacket(r, p, pkt); res {
+	switch res := e.dispatcher.DeliverTransportPacket(p, pkt); res {
 	case stack.TransportPacketHandled:
 	case stack.TransportPacketDestinationPortUnreachable:
 		// As per RFC: 1122 Section 3.2.2.1 A host SHOULD generate Destination
@@ -575,13 +605,13 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		//     3 (Port Unreachable), when the designated transport protocol
 		//     (e.g., UDP) is unable to demultiplex the datagram but has no
 		//     protocol mechanism to inform the sender.
-		_ = returnError(r, &icmpReasonPortUnreachable{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonPortUnreachable{}, pkt)
 	case stack.TransportPacketProtocolUnreachable:
 		// As per RFC: 1122 Section 3.2.2.1
 		//   A host SHOULD generate Destination Unreachable messages with code:
 		//     2 (Protocol Unreachable), when the designated transport protocol
 		//     is not supported
-		_ = returnError(r, &icmpReasonProtoUnreachable{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonProtoUnreachable{}, pkt)
 	default:
 		panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
 	}

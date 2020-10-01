@@ -527,14 +527,14 @@ func TestDADResolve(t *testing.T) {
 				p, _ := e.ReadContext(context.Background())
 
 				// Make sure its an IPv6 packet.
-				if p.Proto != header.IPv6ProtocolNumber {
-					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+				if p.Pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+					t.Fatalf("got Proto = %d, want = %d", p.Pkt.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 				}
 
 				// Make sure the right remote link address is used.
 				snmc := header.SolicitedNodeAddr(addr1)
-				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Route.RemoteLinkAddress != want {
-					t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Pkt.LinkPacketInfo.RemoteLinkAddress != want {
+					t.Errorf("got remote link address = %s, want = %s", p.Pkt.LinkPacketInfo.RemoteLinkAddress, want)
 				}
 
 				// Check NDP NS packet.
@@ -5203,13 +5203,13 @@ func TestRouterSolicitation(t *testing.T) {
 						return
 					}
 
-					if p.Proto != header.IPv6ProtocolNumber {
-						t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+					if p.Pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+						t.Fatalf("got Proto = %d, want = %d", p.Pkt.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 					}
 
 					// Make sure the right remote link address is used.
-					if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Route.RemoteLinkAddress != want {
-						t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+					if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Pkt.LinkPacketInfo.RemoteLinkAddress != want {
+						t.Errorf("got remote link address = %s, want = %s", p.Pkt.LinkPacketInfo.RemoteLinkAddress, want)
 					}
 
 					checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
@@ -5363,8 +5363,8 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 					t.Fatal("timed out waiting for packet")
 				}
 
-				if p.Proto != header.IPv6ProtocolNumber {
-					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+				if p.Pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+					t.Fatalf("got Proto = %d, want = %d", p.Pkt.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 				}
 				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(header.IPv6Any),

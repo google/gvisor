@@ -74,9 +74,9 @@ func (*fwdTestNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
 
-func (f *fwdTestNetworkEndpoint) HandlePacket(r *Route, pkt *PacketBuffer) {
+func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
+	f.dispatcher.DeliverTransportPacket(tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
 }
 
 func (f *fwdTestNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -91,15 +91,16 @@ func (f *fwdTestNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNu
 	return f.proto.Number()
 }
 
-func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) *tcpip.Error {
+func (f *fwdTestNetworkEndpoint) WritePacket(_ *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) *tcpip.Error {
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	b := pkt.NetworkHeader().Push(fwdTestNetHeaderLen)
-	b[dstAddrOffset] = r.RemoteAddress[0]
-	b[srcAddrOffset] = r.LocalAddress[0]
+	pkt.NetworkProtocolNumber = fwdTestNetNumber
+	b[dstAddrOffset] = pkt.NetworkPacketInfo.RemoteAddress[0]
+	b[srcAddrOffset] = pkt.NetworkPacketInfo.LocalAddress[0]
 	b[protocolNumberOffset] = byte(params.Protocol)
 
-	return f.ep.WritePacket(r, gso, fwdTestNetNumber, pkt)
+	return f.ep.WritePacket(gso, pkt)
 }
 
 // WritePackets implements LinkEndpoint.WritePackets.
@@ -280,10 +281,10 @@ func (e *fwdTestLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+func (e fwdTestLinkEndpoint) WritePacket(_ *GSO, pkt *PacketBuffer) *tcpip.Error {
 	p := fwdTestPacketInfo{
-		RemoteLinkAddress: r.RemoteLinkAddress,
-		LocalLinkAddress:  r.LocalLinkAddress,
+		RemoteLinkAddress: pkt.LinkPacketInfo.RemoteLinkAddress,
+		LocalLinkAddress:  pkt.LinkPacketInfo.LocalLinkAddress,
 		Pkt:               pkt,
 	}
 
@@ -296,10 +297,10 @@ func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.Netw
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *fwdTestLinkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *fwdTestLinkEndpoint) WritePackets(gso *GSO, pkts PacketBufferList) (int, *tcpip.Error) {
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		e.WritePacket(r, gso, protocol, pkt)
+		e.WritePacket(gso, pkt)
 		n++
 	}
 
