@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_binary(
     name = "proctor",
     srcs = ["main.go"],
+    pure = True,
     visibility = ["//test/runtimes:__pkg__"],
     deps = ["//test/runtimes/proctor/lib"],
 )
