@@ -41,6 +41,12 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 		fmt.Fprintf(os.Stderr, "Error getting exclude list: %s\n", err.Error())
 		return 1
 	}
+	if len(excludes) != 0 {
+		log.Infof("Excluding the following tests:")
+		for tc := range excludes {
+			log.Infof("- %q", tc)
+		}
+	}
 
 	// Construct the shared docker instance.
 	ctx := context.Background()
@@ -101,7 +107,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 		for _, tc := range indices[i:end] {
 			// Add test if not excluded.
 			if _, ok := excludes[tests[tc]]; ok {
-				log.Infof("Skipping test case %s\n", tests[tc])
+				log.Infof("Skipping test case %s", tests[tc])
 				continue
 			}
 			tcs = append(tcs, tests[tc])
