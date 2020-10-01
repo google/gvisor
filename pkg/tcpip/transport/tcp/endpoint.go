@@ -1420,7 +1420,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	queueAndSend := func() (int64, <-chan struct{}, *tcpip.Error) {
 		// Add data to the send queue.
-		s := newSegmentFromView(&e.route, e.ID, v)
+		s := newOutgoingSegment(e.ID, v)
 		e.sndBufUsed += len(v)
 		e.sndBufInQueue += seqnum.Size(len(v))
 		e.sndQueue.PushBack(s)
@@ -2273,7 +2273,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 				// done yet) or the reservation was freed between the check above and
 				// the FindTransportEndpoint below. But rather than retry the same port
 				// we just skip it and move on.
-				transEP := e.stack.FindTransportEndpoint(netProto, ProtocolNumber, transEPID, &r)
+				transEP := e.stack.FindTransportEndpoint(netProto, ProtocolNumber, transEPID, r.NICID())
 				if transEP == nil {
 					// ReservePort failed but there is no registered endpoint with
 					// demuxer. Which indicates there is at least some endpoint that has
@@ -2342,7 +2342,11 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 		for _, l := range []segmentList{e.segmentQueue.list, e.sndQueue, e.snd.writeList} {
 			for s := l.Front(); s != nil; s = s.Next() {
 				s.id = e.ID
-				s.route = r.Clone()
+				s.interfaceCapabilities = r.Capabilities()
+				s.linkPacketInfo = r.LinkPacketInfo()
+				s.networkPacketInfo = r.PacketInfo()
+				s.netProto = r.NetProto
+				s.nicID = r.NICID()
 				e.sndWaker.Assert()
 			}
 		}
@@ -2408,7 +2412,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 			}
 
 			// Queue fin segment.
-			s := newSegmentFromView(&e.route, e.ID, nil)
+			s := newOutgoingSegment(e.ID, nil)
 			e.sndQueue.PushBack(s)
 			e.sndBufInQueue++
 			// Mark endpoint as closed.
@@ -2678,7 +2682,7 @@ func (e *endpoint) getRemoteAddress() tcpip.FullAddress {
 	}
 }
 
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (*endpoint) HandlePacket(stack.TransportEndpointID, *stack.PacketBuffer) {
 	// TCP HandlePacket is not required anymore as inbound packets first
 	// land at the Dispatcher which then can either delivery using the
 	// worker go routine or directly do the invoke the tcp processing inline

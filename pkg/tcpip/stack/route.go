@@ -93,6 +93,24 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 	return r
 }
 
+// PacketInfo returns a network packet information of the route.
+func (r *Route) PacketInfo() NetworkPacketInfo {
+	return NetworkPacketInfo{
+		RemoteAddress:         r.RemoteAddress,
+		Broadcast:             r.IsOutboundBroadcast(),
+		LocalAddress:          r.LocalAddress,
+		LocalAddressBroadcast: r.isInboundBroadcast(),
+	}
+}
+
+// LinkPacketInfo returns the link packet information of the route.
+func (r *Route) LinkPacketInfo() LinkPacketInfo {
+	return LinkPacketInfo{
+		RemoteLinkAddress: r.RemoteLinkAddress,
+		LocalLinkAddress:  r.LocalLinkAddress,
+	}
+}
+
 // NICID returns the id of the NIC from which this route originates.
 func (r *Route) NICID() tcpip.NICID {
 	return r.nic.ID()
@@ -210,6 +228,8 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuf
 
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
+	pkt.LinkPacketInfo = r.LinkPacketInfo()
+	pkt.NetworkPacketInfo = r.PacketInfo()
 
 	if err := r.addressEndpoint.NetworkEndpoint().WritePacket(r, gso, params, pkt); err != nil {
 		return err
@@ -225,6 +245,11 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuf
 func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error) {
 	if !r.nic.isValidForOutgoing(r.addressEndpoint) {
 		return 0, tcpip.ErrInvalidEndpointState
+	}
+
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		pkt.LinkPacketInfo = r.LinkPacketInfo()
+		pkt.NetworkPacketInfo = r.PacketInfo()
 	}
 
 	n, err := r.addressEndpoint.NetworkEndpoint().WritePackets(r, gso, pkts, params)
@@ -247,6 +272,8 @@ func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) *tcpip.Error {
 
 	// WriteHeaderIncludedPacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Data.Size()
+	pkt.LinkPacketInfo = r.LinkPacketInfo()
+	pkt.NetworkPacketInfo = r.PacketInfo()
 
 	if err := r.addressEndpoint.NetworkEndpoint().WriteHeaderIncludedPacket(r, pkt); err != nil {
 		return err
@@ -326,9 +353,9 @@ func (r *Route) IsOutboundBroadcast() bool {
 	return r.isV4Broadcast(r.RemoteAddress)
 }
 
-// IsInboundBroadcast returns true if the route is for an inbound broadcast
+// isInboundBroadcast returns true if the route is for an inbound broadcast
 // packet.
-func (r *Route) IsInboundBroadcast() bool {
+func (r *Route) isInboundBroadcast() bool {
 	// Only IPv4 has a notion of broadcast.
 	return r.isV4Broadcast(r.LocalAddress)
 }

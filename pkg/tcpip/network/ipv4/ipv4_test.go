@@ -273,11 +273,11 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 
 			// Check the route that brought the packet to us.
-			if reply.Route.LocalAddress != ipv4Addr.Address {
-				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", reply.Route.LocalAddress, ipv4Addr.Address)
+			if reply.Pkt.NetworkPacketInfo.LocalAddress != ipv4Addr.Address {
+				t.Errorf("got pkt.Pkt.NetworkPacketInfo.LocalAddress = %s, want = %s", reply.Pkt.NetworkPacketInfo.LocalAddress, ipv4Addr.Address)
 			}
-			if reply.Route.RemoteAddress != remoteIPv4Addr {
-				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", reply.Route.RemoteAddress, remoteIPv4Addr)
+			if reply.Pkt.NetworkPacketInfo.RemoteAddress != remoteIPv4Addr {
+				t.Errorf("got pkt.Pkt.NetworkPacketInfo.RemoteAddress = %s, want = %s", reply.Pkt.NetworkPacketInfo.RemoteAddress, remoteIPv4Addr)
 			}
 
 			// Make sure it's all in one buffer.

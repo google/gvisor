@@ -81,8 +81,7 @@ type PacketBuffer struct {
 	// data are held in the same underlying buffer storage.
 	header buffer.Prependable
 
-	// NetworkProtocolNumber is only valid when NetworkHeader().View().IsEmpty()
-	// returns false.
+	// NetworkProtocolNumber is only valid when it is non zero.
 	// TODO(gvisor.dev/issue/3574): Remove the separately passed protocol
 	// numbers in registration APIs that take a PacketBuffer.
 	NetworkProtocolNumber tcpip.NetworkProtocolNumber
@@ -102,8 +101,7 @@ type PacketBuffer struct {
 
 	// The following fields are only set by the qdisc layer when the packet
 	// is added to a queue.
-	EgressRoute *Route
-	GSOOptions  *GSO
+	GSOOptions *GSO
 
 	// NatDone indicates if the packet has been manipulated as per NAT
 	// iptables rule.
@@ -112,6 +110,21 @@ type PacketBuffer struct {
 	// PktType indicates the SockAddrLink.PacketType of the packet as defined in
 	// https://www.man7.org/linux/man-pages/man7/packet.7.html.
 	PktType tcpip.PacketType
+
+	// NICID is the ID of the NIC the packet was received from.
+	NICID tcpip.NICID
+
+	// InterfaceCapabilities are the capabilities available to the interface when
+	// the packet was received.
+	//
+	// Ignored for outgoing packets.
+	InterfaceCapabilities LinkEndpointCapabilities
+
+	// LinkPacketInfo holds link-layer information.
+	LinkPacketInfo LinkPacketInfo
+
+	// NetworkPacketInfo holds network-layer information.
+	NetworkPacketInfo NetworkPacketInfo
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -240,20 +253,22 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v buffer.View, consum
 // Clone should be called in such cases so that no modifications is done to
 // underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
-	newPk := &PacketBuffer{
+	return &PacketBuffer{
 		PacketBufferEntry:       pk.PacketBufferEntry,
 		Data:                    pk.Data.Clone(nil),
 		headers:                 pk.headers,
 		header:                  pk.header,
 		Hash:                    pk.Hash,
 		Owner:                   pk.Owner,
-		EgressRoute:             pk.EgressRoute,
 		GSOOptions:              pk.GSOOptions,
 		NetworkProtocolNumber:   pk.NetworkProtocolNumber,
 		NatDone:                 pk.NatDone,
 		TransportProtocolNumber: pk.TransportProtocolNumber,
+		NICID:                   pk.NICID,
+		InterfaceCapabilities:   pk.InterfaceCapabilities,
+		LinkPacketInfo:          pk.LinkPacketInfo,
+		NetworkPacketInfo:       pk.NetworkPacketInfo,
 	}
-	return newPk
 }
 
 // Network returns the network header as a header.Network.

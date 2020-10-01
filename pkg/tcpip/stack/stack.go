@@ -52,7 +52,7 @@ const (
 
 type transportProtocolState struct {
 	proto          TransportProtocol
-	defaultHandler func(r *Route, id TransportEndpointID, pkt *PacketBuffer) bool
+	defaultHandler func(id TransportEndpointID, pkt *PacketBuffer) bool
 }
 
 // TCPProbeFunc is the expected function type for a TCP probe function to be
@@ -751,7 +751,7 @@ func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber,
 //
 // It must be called only during initialization of the stack. Changing it as the
 // stack is operating is not supported.
-func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h func(*Route, TransportEndpointID, *PacketBuffer) bool) {
+func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h func(TransportEndpointID, *PacketBuffer) bool) {
 	state := s.transportProtocols[p]
 	if state != nil {
 		state.defaultHandler = h
@@ -1443,8 +1443,8 @@ func (s *Stack) CompleteTransportEndpointCleanup(ep TransportEndpoint) {
 
 // FindTransportEndpoint finds an endpoint that most closely matches the provided
 // id. If no endpoint is found it returns nil.
-func (s *Stack) FindTransportEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, id TransportEndpointID, r *Route) TransportEndpoint {
-	return s.demux.findTransportEndpoint(netProto, transProto, id, r)
+func (s *Stack) FindTransportEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, id TransportEndpointID, nicID tcpip.NICID) TransportEndpoint {
+	return s.demux.findTransportEndpoint(netProto, transProto, id, nicID)
 }
 
 // RegisterRawTransportEndpoint registers the given endpoint with the stack

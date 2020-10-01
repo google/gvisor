@@ -65,7 +65,7 @@ func (*stubLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
-func (*stubLinkEndpoint) WritePacket(*stack.Route, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) *tcpip.Error {
+func (*stubLinkEndpoint) WritePacket(*stack.GSO, *stack.PacketBuffer) *tcpip.Error {
 	return nil
 }
 
@@ -75,7 +75,7 @@ type stubDispatcher struct {
 	stack.TransportDispatcher
 }
 
-func (*stubDispatcher) DeliverTransportPacket(*stack.Route, tcpip.TransportProtocolNumber, *stack.PacketBuffer) stack.TransportPacketDisposition {
+func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, *stack.PacketBuffer) stack.TransportPacketDisposition {
 	return stack.TransportPacketHandled
 }
 
@@ -257,7 +257,8 @@ func TestICMPCounts(t *testing.T) {
 					SrcAddr:       r.LocalAddress,
 					DstAddr:       r.RemoteAddress,
 				})
-				ep.HandlePacket(&r, pkt)
+				pkt.NetworkPacketInfo = r.PacketInfo()
+				ep.HandlePacket(pkt)
 			}
 
 			for _, typ := range types {
@@ -399,7 +400,8 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
-		ep.HandlePacket(&r, pkt)
+		pkt.NetworkPacketInfo = r.PacketInfo()
+		ep.HandlePacket(pkt)
 	}
 
 	for _, typ := range types {
@@ -531,16 +533,16 @@ func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.NewVectorisedView(pi.Pkt.Size(), pi.Pkt.Views()),
 		})
-		args.dst.InjectLinkAddr(pi.Proto, args.dst.LinkAddress(), pkt)
+		args.dst.InjectLinkAddr(pi.Pkt.NetworkProtocolNumber, args.dst.LinkAddress(), pkt)
 	}
 
-	if pi.Proto != ProtocolNumber {
-		t.Errorf("unexpected protocol number %d", pi.Proto)
+	if pi.Pkt.NetworkProtocolNumber != ProtocolNumber {
+		t.Errorf("unexpected protocol number %d", pi.Pkt.NetworkProtocolNumber)
 		return
 	}
 
-	if len(args.remoteLinkAddr) != 0 && args.remoteLinkAddr != pi.Route.RemoteLinkAddress {
-		t.Errorf("got remote link address = %s, want = %s", pi.Route.RemoteLinkAddress, args.remoteLinkAddr)
+	if len(args.remoteLinkAddr) != 0 && args.remoteLinkAddr != pi.Pkt.LinkPacketInfo.RemoteLinkAddress {
+		t.Errorf("got remote link address = %s, want = %s", pi.Pkt.LinkPacketInfo.RemoteLinkAddress, args.remoteLinkAddr)
 	}
 
 	// Pull the full payload since network header. Needed for header.IPv6 to
@@ -1255,8 +1257,8 @@ func TestLinkAddressRequest(t *testing.T) {
 			t.Fatal("expected to send a link address request")
 		}
 
-		if got, want := pkt.Route.RemoteLinkAddress, test.expectLinkAddr; got != want {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", got, want)
+		if got, want := pkt.Pkt.LinkPacketInfo.RemoteLinkAddress, test.expectLinkAddr; got != want {
+			t.Errorf("got pkt.Pkt.LinkPacketInfo.RemoteLinkAddress = %s, want = %s", got, want)
 		}
 	}
 }

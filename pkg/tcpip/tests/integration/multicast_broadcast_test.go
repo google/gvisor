@@ -196,11 +196,11 @@ func TestPingMulticastBroadcast(t *testing.T) {
 				t.Fatal("expected ICMP response")
 			}
 
-			if pkt.Route.LocalAddress != expectedSrc {
-				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, expectedSrc)
+			if pkt.Pkt.NetworkPacketInfo.LocalAddress != expectedSrc {
+				t.Errorf("got pkt.Pkt.NetworkPacketInfo.LocalAddress = %s, want = %s", pkt.Pkt.NetworkPacketInfo.LocalAddress, expectedSrc)
 			}
-			if pkt.Route.RemoteAddress != expectedDst {
-				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, expectedDst)
+			if pkt.Pkt.NetworkPacketInfo.RemoteAddress != expectedDst {
+				t.Errorf("got pkt.Pkt.NetworkPacketInfo.RemoteAddress = %s, want = %s", pkt.Pkt.NetworkPacketInfo.RemoteAddress, expectedDst)
 			}
 
 			src, dst := s.NetworkProtocolInstance(protoNum).ParseAddresses(pkt.Pkt.NetworkHeader().View())
