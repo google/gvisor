@@ -1420,7 +1420,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	queueAndSend := func() (int64, <-chan struct{}, *tcpip.Error) {
 		// Add data to the send queue.
-		s := newSegmentFromView(&e.route, e.ID, v)
+		s := newSegmentFromView(e.route.Clone(), e.ID, v)
 		e.sndBufUsed += len(v)
 		e.sndBufInQueue += seqnum.Size(len(v))
 		e.sndQueue.PushBack(s)
@@ -2408,7 +2408,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 			}
 
 			// Queue fin segment.
-			s := newSegmentFromView(&e.route, e.ID, nil)
+			s := newSegmentFromView(e.route.Clone(), e.ID, nil)
 			e.sndQueue.PushBack(s)
 			e.sndBufInQueue++
 			// Mark endpoint as closed.
@@ -2678,7 +2678,7 @@ func (e *endpoint) getRemoteAddress() tcpip.FullAddress {
 	}
 }
 
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (*endpoint) HandlePacket(stack.TransportEndpointID, *stack.PacketBuffer) {
 	// TCP HandlePacket is not required anymore as inbound packets first
 	// land at the Dispatcher which then can either delivery using the
 	// worker go routine or directly do the invoke the tcp processing inline

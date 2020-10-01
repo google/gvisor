@@ -29,10 +29,8 @@ import (
 
 // PacketInfo holds all the information about an outbound packet.
 type PacketInfo struct {
-	Pkt   *stack.PacketBuffer
-	Proto tcpip.NetworkProtocolNumber
-	GSO   *stack.GSO
-	Route stack.Route
+	Pkt *stack.PacketBuffer
+	GSO *stack.GSO
 }
 
 // Notification is the interface for receiving notification from the packet
@@ -230,16 +228,10 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	// Clone r then release its resource so we only get the relevant fields from
-	// stack.Route without holding a reference to a NIC's endpoint.
-	route := r.Clone()
-	route.Release()
+func (e *Endpoint) WritePacket(gso *stack.GSO, pkt *stack.PacketBuffer) *tcpip.Error {
 	p := PacketInfo{
-		Pkt:   pkt,
-		Proto: protocol,
-		GSO:   gso,
-		Route: route,
+		Pkt: pkt,
+		GSO: gso,
 	}
 
 	e.q.Write(p)
@@ -248,18 +240,14 @@ func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *Endpoint) WritePackets(r stack.NetworkPacketInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	// Clone r then release its resource so we only get the relevant fields from
 	// stack.Route without holding a reference to a NIC's endpoint.
-	route := r.Clone()
-	route.Release()
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		p := PacketInfo{
-			Pkt:   pkt,
-			Proto: protocol,
-			GSO:   gso,
-			Route: route,
+			Pkt: pkt,
+			GSO: gso,
 		}
 
 		if !e.q.Write(p) {
@@ -277,8 +265,7 @@ func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 		Pkt: stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: vv,
 		}),
-		Proto: 0,
-		GSO:   nil,
+		GSO: nil,
 	}
 
 	e.q.Write(p)

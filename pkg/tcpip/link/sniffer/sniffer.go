@@ -168,15 +168,15 @@ func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.Netw
 // WritePacket implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	e.dumpPacket("send", gso, protocol, pkt)
-	return e.Endpoint.WritePacket(r, gso, protocol, pkt)
+func (e *endpoint) WritePacket(gso *stack.GSO, pkt *stack.PacketBuffer) *tcpip.Error {
+	e.dumpPacket("send", gso, pkt.NetworkProtocolNumber, pkt)
+	return e.Endpoint.WritePacket(gso, pkt)
 }
 
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r stack.NetworkPacketInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.dumpPacket("send", gso, protocol, pkt)
 	}

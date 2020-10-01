@@ -81,6 +81,8 @@ type testObject struct {
 // addresses of a packet match what's expected. If any field doesn't match, the
 // test fails.
 func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView, srcAddr, dstAddr tcpip.Address) {
+	t.t.Helper()
+
 	v := vv.ToView()
 	if protocol != t.protocol {
 		t.t.Errorf("protocol = %v, want %v", protocol, t.protocol)
@@ -108,8 +110,8 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buff
 // DeliverTransportPacket is called by network endpoints after parsing incoming
 // packets. This is used by the test object to verify that the results of the
 // parsing are expected.
-func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, pkt *stack.PacketBuffer) stack.TransportPacketDisposition {
-	t.checkValues(protocol, pkt.Data, r.RemoteAddress, r.LocalAddress)
+func (t *testObject) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt *stack.PacketBuffer) stack.TransportPacketDisposition {
+	t.checkValues(protocol, pkt.Data, pkt.NetworkPacketInfo.RemoteAddress, pkt.NetworkPacketInfo.LocalAddress)
 	t.dataCalls++
 	return stack.TransportPacketHandled
 }
@@ -163,7 +165,7 @@ func (*testObject) Wait() {}
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
-func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (t *testObject) WritePacket(_ *stack.GSO, pkt *stack.PacketBuffer) *tcpip.Error {
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
@@ -185,7 +187,7 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*testObject) WritePackets(_ *stack.Route, _ *stack.GSO, pkt stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (*testObject) WritePackets(stack.NetworkPacketInfo, *stack.GSO, stack.PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	panic("not implemented")
 }
 
@@ -424,6 +426,7 @@ func TestSourceAddressValidation(t *testing.T) {
 			if got, want := s.Stats().IP.InvalidSourceAddressesReceived.Value(), 1-wantValid; got != want {
 				t.Errorf("got s.Stats().IP.InvalidSourceAddressesReceived.Value() = %d, want = %d", got, want)
 			}
+
 			if got := s.Stats().IP.PacketsDelivered.Value(); got != wantValid {
 				t.Errorf("got s.Stats().IP.PacketsDelivered.Value() = %d, want = %d", got, wantValid)
 			}
@@ -605,7 +608,8 @@ func TestIPv4Receive(t *testing.T) {
 	if _, _, ok := proto.Parse(pkt); !ok {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
-	ep.HandlePacket(&r, pkt)
+	pkt.NetworkPacketInfo = r.PacketInfo()
+	ep.HandlePacket(pkt)
 	if nic.tester.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", nic.tester.dataCalls)
 	}
@@ -698,7 +702,9 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			nic.tester.typ = c.expectedTyp
 			nic.tester.extra = c.expectedExtra
 
-			ep.HandlePacket(&r, truncatedPacket(view, c.trunc, header.IPv4MinimumSize))
+			pkt := truncatedPacket(view, c.trunc, header.IPv4MinimumSize)
+			pkt.NetworkPacketInfo = r.PacketInfo()
+			ep.HandlePacket(pkt)
 			if want := c.expectedCount; nic.tester.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.tester.controlCalls, want)
 			}
@@ -772,10 +778,11 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: frag1.ToVectorisedView(),
 	})
+	pkt.NetworkPacketInfo = r.PacketInfo()
 	if _, _, ok := proto.Parse(pkt); !ok {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
-	ep.HandlePacket(&r, pkt)
+	ep.HandlePacket(pkt)
 	if nic.tester.dataCalls != 0 {
 		t.Fatalf("Bad number of data calls: got %x, want 0", nic.tester.dataCalls)
 	}
@@ -784,10 +791,11 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: frag2.ToVectorisedView(),
 	})
+	pkt.NetworkPacketInfo = r.PacketInfo()
 	if _, _, ok := proto.Parse(pkt); !ok {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
-	ep.HandlePacket(&r, pkt)
+	ep.HandlePacket(pkt)
 	if nic.tester.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", nic.tester.dataCalls)
 	}
@@ -884,10 +892,11 @@ func TestIPv6Receive(t *testing.T) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: view.ToVectorisedView(),
 	})
+	pkt.NetworkPacketInfo = r.PacketInfo()
 	if _, _, ok := proto.Parse(pkt); !ok {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
-	ep.HandlePacket(&r, pkt)
+	ep.HandlePacket(pkt)
 	if nic.tester.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", nic.tester.dataCalls)
 	}
@@ -1004,7 +1013,9 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Set ICMPv6 checksum.
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIPv6Addr, buffer.VectorisedView{}))
 
-			ep.HandlePacket(&r, truncatedPacket(view, c.trunc, header.IPv6MinimumSize))
+			pkt := truncatedPacket(view, c.trunc, header.IPv6MinimumSize)
+			pkt.NetworkPacketInfo = r.PacketInfo()
+			ep.HandlePacket(pkt)
 			if want := c.expectedCount; nic.tester.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.tester.controlCalls, want)
 			}

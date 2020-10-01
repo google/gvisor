@@ -572,6 +572,13 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 						t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, nicAddr, err)
 					}
 
+					s.SetRouteTable([]tcpip.Route{
+						tcpip.Route{
+							Destination: header.IPv6EmptySubnet,
+							NIC:         1,
+						},
+					})
+
 					ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + test.nsOpts.Length()
 					hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
 					pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
@@ -624,8 +631,8 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 						t.Fatal("expected an NDP NA response")
 					}
 
-					if p.Route.RemoteLinkAddress != test.naDstLinkAddr {
-						t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, test.naDstLinkAddr)
+					if p.Pkt.LinkPacketInfo.RemoteLinkAddress != test.naDstLinkAddr {
+						t.Errorf("got p.Pkt.LinkPacketInfo.RemoteLinkAddress = %s, want = %s", p.Pkt.LinkPacketInfo.RemoteLinkAddress, test.naDstLinkAddr)
 					}
 
 					checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
@@ -925,7 +932,8 @@ func TestNDPValidation(t *testing.T) {
 				if n := copy(ip[header.IPv6MinimumSize:], extensions); n != len(extensions) {
 					t.Fatalf("expected to write %d bytes of extensions, but wrote %d", len(extensions), n)
 				}
-				ep.HandlePacket(r, pkt)
+				pkt.NetworkPacketInfo = r.PacketInfo()
+				ep.HandlePacket(pkt)
 			}
 
 			var tllData [header.NDPLinkLayerAddressSize]byte

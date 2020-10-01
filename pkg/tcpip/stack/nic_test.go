@@ -84,7 +84,7 @@ func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, *PacketBuffer) *tcpip
 }
 
 // HandlePacket implements NetworkEndpoint.HandlePacket.
-func (*testIPv6Endpoint) HandlePacket(*Route, *PacketBuffer) {
+func (*testIPv6Endpoint) HandlePacket(*PacketBuffer) {
 }
 
 // Close implements NetworkEndpoint.Close.

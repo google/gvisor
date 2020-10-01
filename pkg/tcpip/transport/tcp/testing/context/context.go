@@ -279,8 +279,8 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) []byte {
 		return nil
 	}
 
-	if p.Proto != ipv4.ProtocolNumber {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	if p.Pkt.NetworkProtocolNumber != ipv4.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Pkt.NetworkProtocolNumber, ipv4.ProtocolNumber)
 	}
 
 	// Just check that the stack set the transport protocol number for outbound
@@ -329,8 +329,8 @@ func (c *Context) GetPacketNonBlocking() []byte {
 		return nil
 	}
 
-	if p.Proto != ipv4.ProtocolNumber {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	if p.Pkt.NetworkProtocolNumber != ipv4.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Pkt.NetworkProtocolNumber, ipv4.ProtocolNumber)
 	}
 
 	// Just check that the stack set the transport protocol number for outbound
@@ -572,8 +572,8 @@ func (c *Context) GetV6Packet() []byte {
 		return nil
 	}
 
-	if p.Proto != ipv6.ProtocolNumber {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
+	if p.Pkt.NetworkProtocolNumber != ipv6.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Pkt.NetworkProtocolNumber, ipv6.ProtocolNumber)
 	}
 	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
 	b := vv.ToView()

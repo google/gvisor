@@ -172,9 +172,16 @@ func (d *dispatcher) wait() {
 	d.wg.Wait()
 }
 
-func (d *dispatcher) queuePacket(r *stack.Route, stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	ep := stackEP.(*endpoint)
-	s := newSegment(r, id, pkt)
+
+	// TODO: This is a workaround
+	route, err := ep.stack.FindRoute(pkt.NICID, pkt.NetworkPacketInfo.LocalAddress, pkt.NetworkPacketInfo.RemoteAddress, pkt.NetworkProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		return
+	}
+
+	s := newSegment(route, id, pkt)
 	if !s.parse() {
 		ep.stack.Stats().MalformedRcvdPackets.Increment()
 		ep.stack.Stats().TCP.InvalidSegmentsReceived.Increment()

@@ -802,7 +802,7 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		})
 		pkt.Hash = tf.txHash
 		pkt.Owner = owner
-		pkt.EgressRoute = r
+		pkt.EgressRoute = r.PacketInfo()
 		pkt.GSOOptions = gso
 		pkt.NetworkProtocolNumber = r.NetworkProtocolNumber()
 		data.ReadToVV(&pkt.Data, packetSize)

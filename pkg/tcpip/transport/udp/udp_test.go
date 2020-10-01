@@ -384,8 +384,8 @@ func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.Netw
 		return nil
 	}
 
-	if p.Proto != flow.netProto() {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
+	if p.Pkt.NetworkProtocolNumber != flow.netProto() {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Pkt.NetworkProtocolNumber, flow.netProto())
 	}
 
 	if got, want := p.Pkt.TransportProtocolNumber, header.UDPProtocolNumber; got != want {

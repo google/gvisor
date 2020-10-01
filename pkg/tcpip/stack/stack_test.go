@@ -110,9 +110,9 @@ func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
 
-func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
+func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	// Increment the received packet count in the protocol descriptor.
-	f.proto.packetCount[int(r.LocalAddress[0])%len(f.proto.packetCount)]++
+	f.proto.packetCount[int(pkt.NetworkPacketInfo.LocalAddress[0])%len(f.proto.packetCount)]++
 
 	// Handle control packets.
 	if pkt.NetworkHeader().View()[protocolNumberOffset] == uint8(fakeControlProtocol) {
@@ -131,7 +131,7 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuff
 	}
 
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
+	f.dispatcher.DeliverTransportPacket(tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
 }
 
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -153,18 +153,21 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	hdr := pkt.NetworkHeader().Push(fakeNetHeaderLen)
+	pkt.NetworkProtocolNumber = fakeNetNumber
 	hdr[dstAddrOffset] = r.RemoteAddress[0]
 	hdr[srcAddrOffset] = r.LocalAddress[0]
 	hdr[protocolNumberOffset] = byte(params.Protocol)
 
 	if r.Loop&stack.PacketLoop != 0 {
-		f.HandlePacket(r, pkt)
+		pkt := pkt.Clone()
+		pkt.NetworkPacketInfo = r.PacketInfo()
+		f.HandlePacket(pkt)
 	}
 	if r.Loop&stack.PacketOut == 0 {
 		return nil
 	}
 
-	return f.ep.WritePacket(r, gso, fakeNetNumber, pkt)
+	return f.ep.WritePacket(gso, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
@@ -257,6 +260,7 @@ func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProto
 	if !ok {
 		return 0, false, false
 	}
+	pkt.NetworkProtocolNumber = fakeNetNumber
 	return tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]), true, true
 }
 
