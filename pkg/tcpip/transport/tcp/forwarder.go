@@ -30,6 +30,8 @@ import (
 // The canonical way of using it is to pass the Forwarder.HandlePacket function
 // to stack.SetTransportProtocolHandler.
 type Forwarder struct {
+	stack *stack.Stack
+
 	maxInFlight int
 	handler     func(*ForwarderRequest)
 
@@ -48,6 +50,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 		rcvWnd = DefaultReceiveBufferSize
 	}
 	return &Forwarder{
+		stack:       s,
 		maxInFlight: maxInFlight,
 		handler:     handler,
 		inFlight:    make(map[stack.TransportEndpointID]struct{}),
@@ -61,8 +64,16 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	s := newSegment(r, id, pkt)
+func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+	// TODO: This is a workaround
+	route, err := f.stack.FindRoute(pkt.NICID, pkt.NetworkPacketInfo.LocalAddress, pkt.NetworkPacketInfo.RemoteAddress, pkt.NetworkProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		// If we don't have a route back to the source, then there is nothing is
+		// nothing futher to do.
+		return true
+	}
+
+	s := newSegment(route, id, pkt)
 	defer s.decRef()
 
 	// We only care about well-formed SYN packets.

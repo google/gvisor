@@ -183,9 +183,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
 	defer c.cleanup()
 
-	r := &stack.Route{
-		RemoteLinkAddress: raddr,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	// Build payload.
 	payload := buffer.NewView(plen)
@@ -206,7 +204,9 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	if _, err := rand.Read(b); err != nil {
 		t.Fatalf("rand.Read(b): %s", err)
 	}
-
+	pkt.LinkPacketInfo = stack.LinkPacketInfo{
+		RemoteLinkAddress: raddr,
+	}
 	// Write.
 	want := append(append(buffer.View(nil), b...), payload...)
 	var gso *stack.GSO
@@ -324,10 +324,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 	defer c.cleanup()
 
 	// Set LocalLinkAddress in route to the value of the bridged address.
-	r := &stack.Route{
-		RemoteLinkAddress: raddr,
-		LocalLinkAddress:  baddr,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		// WritePacket panics given a prependable with anything less than
@@ -336,6 +333,10 @@ func TestPreserveSrcAddress(t *testing.T) {
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 		Data:               buffer.VectorisedView{},
 	})
+	pkt.LinkPacketInfo = stack.LinkPacketInfo{
+		RemoteLinkAddress: raddr,
+		LocalLinkAddress:  baddr,
+	}
 	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}

@@ -533,8 +533,8 @@ func TestDADResolve(t *testing.T) {
 
 				// Make sure the right remote link address is used.
 				snmc := header.SolicitedNodeAddr(addr1)
-				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Route.RemoteLinkAddress != want {
-					t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Pkt.LinkPacketInfo.RemoteLinkAddress != want {
+					t.Errorf("got remote link address = %s, want = %s", p.Pkt.LinkPacketInfo.RemoteLinkAddress, want)
 				}
 
 				// Check NDP NS packet.
@@ -5208,8 +5208,8 @@ func TestRouterSolicitation(t *testing.T) {
 					}
 
 					// Make sure the right remote link address is used.
-					if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Route.RemoteLinkAddress != want {
-						t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+					if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Pkt.LinkPacketInfo.RemoteLinkAddress != want {
+						t.Errorf("got remote link address = %s, want = %s", p.Pkt.LinkPacketInfo.RemoteLinkAddress, want)
 					}
 
 					checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),

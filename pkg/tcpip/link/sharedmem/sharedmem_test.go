@@ -260,9 +260,7 @@ func TestSimpleSend(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare route.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	for iters := 1000; iters > 0; iters-- {
 		func() {
@@ -279,10 +277,14 @@ func TestSimpleSend(t *testing.T) {
 				ReserveHeaderBytes: hdrLen + int(c.ep.MaxHeaderLength()),
 				Data:               data.ToVectorisedView(),
 			})
+			pkt.LinkPacketInfo = stack.LinkPacketInfo{
+				RemoteLinkAddress: remoteLinkAddr,
+			}
+
 			copy(pkt.NetworkHeader().Push(hdrLen), hdrBuf)
 
 			proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-			if err := c.ep.WritePacket(&r, nil /* gso */, proto, pkt); err != nil {
+			if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
 				t.Fatalf("WritePacket failed: %v", err)
 			}
 
@@ -341,19 +343,20 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 
 	newLocalLinkAddress := tcpip.LinkAddress(strings.Repeat("0xFE", 6))
 	// Set both remote and local link address in route.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-		LocalLinkAddress:  newLocalLinkAddress,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		// WritePacket panics given a prependable with anything less than
 		// the minimum size of the ethernet header.
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 	})
+	pkt.LinkPacketInfo = stack.LinkPacketInfo{
+		RemoteLinkAddress: remoteLinkAddr,
+		LocalLinkAddress:  newLocalLinkAddress,
+	}
 
 	proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-	if err := c.ep.WritePacket(&r, nil /* gso */, proto, pkt); err != nil {
+	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -395,9 +398,7 @@ func TestFillTxQueue(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	buf := buffer.NewView(100)
 
@@ -409,8 +410,11 @@ func TestFillTxQueue(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
+		pkt.LinkPacketInfo = stack.LinkPacketInfo{
+			RemoteLinkAddress: remoteLinkAddr,
+		}
 
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -428,7 +432,11 @@ func TestFillTxQueue(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
+	pkt.LinkPacketInfo = stack.LinkPacketInfo{
+		RemoteLinkAddress: remoteLinkAddr,
+	}
+
+	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
 		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
 	}
 }
@@ -444,9 +452,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	c.txq.rx.Flush()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	buf := buffer.NewView(100)
 
@@ -456,7 +462,11 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		pkt.LinkPacketInfo = stack.LinkPacketInfo{
+			RemoteLinkAddress: remoteLinkAddr,
+		}
+
+		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 	}
@@ -479,7 +489,10 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		pkt.LinkPacketInfo = stack.LinkPacketInfo{
+			RemoteLinkAddress: remoteLinkAddr,
+		}
+		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -497,7 +510,10 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
+	pkt.LinkPacketInfo = stack.LinkPacketInfo{
+		RemoteLinkAddress: remoteLinkAddr,
+	}
+	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
 		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
 	}
 }
@@ -509,9 +525,7 @@ func TestFillTxMemory(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	buf := buffer.NewView(100)
 
@@ -523,7 +537,10 @@ func TestFillTxMemory(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		pkt.LinkPacketInfo = stack.LinkPacketInfo{
+			RemoteLinkAddress: remoteLinkAddr,
+		}
+		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -542,7 +559,10 @@ func TestFillTxMemory(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	pkt.LinkPacketInfo = stack.LinkPacketInfo{
+		RemoteLinkAddress: remoteLinkAddr,
+	}
+	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
 	if want := tcpip.ErrWouldBlock; err != want {
 		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
 	}
@@ -557,9 +577,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	r := stack.NetworkPacketInfo{}
 
 	buf := buffer.NewView(100)
 
@@ -570,7 +588,10 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		pkt.LinkPacketInfo = stack.LinkPacketInfo{
+			RemoteLinkAddress: remoteLinkAddr,
+		}
+		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -585,7 +606,10 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
 		})
-		if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
+		pkt.LinkPacketInfo = stack.LinkPacketInfo{
+			RemoteLinkAddress: remoteLinkAddr,
+		}
+		if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
 			t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
 		}
 	}
@@ -596,7 +620,10 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		pkt.LinkPacketInfo = stack.LinkPacketInfo{
+			RemoteLinkAddress: remoteLinkAddr,
+		}
+		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 	}

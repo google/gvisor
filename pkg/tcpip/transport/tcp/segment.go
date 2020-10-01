@@ -73,11 +73,12 @@ type segment struct {
 	xmitCount uint32
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
+// newSegment takes ownership of the route.
+func newSegment(r stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
-		route:  r.Clone(),
+		route:  r,
 	}
 	s.data = pkt.Data.Clone(s.views[:])
 	s.hdr = header.TCP(pkt.TransportHeader().View())
@@ -85,11 +86,12 @@ func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketB
 	return s
 }
 
-func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.View) *segment {
+// newSegmentFromView takes ownership of the route.
+func newSegmentFromView(r stack.Route, id stack.TransportEndpointID, v buffer.View) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
-		route:  r.Clone(),
+		route:  r,
 	}
 	s.rcvdTime = time.Now()
 	if len(v) != 0 {

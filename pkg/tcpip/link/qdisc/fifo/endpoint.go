@@ -92,9 +92,8 @@ func (q *queueDispatcher) dispatchLoop() {
 			}
 			// We pass a protocol of zero here because each packet carries its
 			// NetworkProtocol.
-			q.lower.WritePackets(nil /* route */, nil /* gso */, batch, 0 /* protocol */)
+			q.lower.WritePackets(stack.NetworkPacketInfo{} /* route */, nil /* gso */, batch, 0 /* protocol */)
 			for pkt := batch.Front(); pkt != nil; pkt = pkt.Next() {
-				pkt.EgressRoute.Release()
 				batch.Remove(pkt)
 			}
 			batch.Reset()
@@ -152,11 +151,10 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r stack.NetworkPacketInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	// WritePacket caller's do not set the following fields in PacketBuffer
 	// so we populate them here.
-	newRoute := r.Clone()
-	pkt.EgressRoute = &newRoute
+	pkt.EgressRoute = r
 	pkt.GSOOptions = gso
 	pkt.NetworkProtocolNumber = protocol
 	d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
@@ -174,16 +172,11 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 //   - pkt.EgressRoute
 //   - pkt.GSOOptions
 //   - pkt.NetworkProtocolNumber
-func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(_ stack.NetworkPacketInfo, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	enqueued := 0
 	for pkt := pkts.Front(); pkt != nil; {
 		d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
 		nxt := pkt.Next()
-		// Since qdisc can hold onto a packet for long we should Clone
-		// the route here to ensure it doesn't get released while the
-		// packet is still in our queue.
-		newRoute := pkt.EgressRoute.Clone()
-		pkt.EgressRoute = &newRoute
 		if !d.q.enqueue(pkt) {
 			if enqueued > 0 {
 				d.newPacketWaker.Assert()

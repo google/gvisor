@@ -70,13 +70,13 @@ func (e *countedEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (e *countedEndpoint) WritePacket(stack.NetworkPacketInfo, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) *tcpip.Error {
 	e.writeCount++
 	return nil
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *countedEndpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *countedEndpoint) WritePackets(_ stack.NetworkPacketInfo, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	e.writeCount += pkts.Len()
 	return pkts.Len(), nil
 }
@@ -104,21 +104,21 @@ func TestWaitWrite(t *testing.T) {
 	wep := New(ep)
 
 	// Write and check that it goes through.
-	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
+	wep.WritePacket(stack.NetworkPacketInfo{}, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 1; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on dispatches, then try to write. It must go through.
 	wep.WaitDispatch()
-	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
+	wep.WritePacket(stack.NetworkPacketInfo{}, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on writes, then try to write. It must not go through.
 	wep.WaitWrite()
-	wep.WritePacket(nil, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
+	wep.WritePacket(stack.NetworkPacketInfo{}, nil /* gso */, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}

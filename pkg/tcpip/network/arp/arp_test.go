@@ -458,8 +458,8 @@ func TestLinkAddressRequest(t *testing.T) {
 			t.Fatal("expected to send a link address request")
 		}
 
-		if got, want := pkt.Route.RemoteLinkAddress, test.expectLinkAddr; got != want {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", got, want)
+		if got, want := pkt.Pkt.LinkPacketInfo.RemoteLinkAddress, test.expectLinkAddr; got != want {
+			t.Errorf("got pkt.Pkt.LinkPacketInfo.RemoteLinkAddress = %s, want = %s", got, want)
 		}
 	}
 }

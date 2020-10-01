@@ -102,7 +102,7 @@ type PacketBuffer struct {
 
 	// The following fields are only set by the qdisc layer when the packet
 	// is added to a queue.
-	EgressRoute *Route
+	EgressRoute NetworkPacketInfo
 	GSOOptions  *GSO
 
 	// NatDone indicates if the packet has been manipulated as per NAT
@@ -112,6 +112,14 @@ type PacketBuffer struct {
 	// PktType indicates the SockAddrLink.PacketType of the packet as defined in
 	// https://www.man7.org/linux/man-pages/man7/packet.7.html.
 	PktType tcpip.PacketType
+
+	// NICID is the ID of the NIC this packet will be sent through, or received
+	// from.
+	NICID tcpip.NICID
+
+	// LinkPacketInfo holds link-layer information.
+	LinkPacketInfo    LinkPacketInfo
+	NetworkPacketInfo NetworkPacketInfo
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -240,7 +248,7 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v buffer.View, consum
 // Clone should be called in such cases so that no modifications is done to
 // underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
-	newPk := &PacketBuffer{
+	return &PacketBuffer{
 		PacketBufferEntry:       pk.PacketBufferEntry,
 		Data:                    pk.Data.Clone(nil),
 		headers:                 pk.headers,
@@ -252,8 +260,10 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 		NetworkProtocolNumber:   pk.NetworkProtocolNumber,
 		NatDone:                 pk.NatDone,
 		TransportProtocolNumber: pk.TransportProtocolNumber,
+		NICID:                   pk.NICID,
+		LinkPacketInfo:          pk.LinkPacketInfo,
+		NetworkPacketInfo:       pk.NetworkPacketInfo,
 	}
-	return newPk
 }
 
 // Network returns the network header as a header.Network.
