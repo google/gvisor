@@ -348,10 +348,10 @@ func (e *SCMConnectedEndpoint) Init() error {
 func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 	e.DecRef(func() {
 		e.mu.Lock()
+		fdnotifier.RemoveFD(int32(e.fd))
 		if err := syscall.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", err)
 		}
-		fdnotifier.RemoveFD(int32(e.fd))
 		e.destroyLocked()
 		e.mu.Unlock()
 	})
