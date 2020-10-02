@@ -154,6 +154,7 @@ func (s State) Proto() *rpb.Registers {
 		Sp:     s.Regs.Sp,
 		Pc:     s.Regs.Pc,
 		Pstate: s.Regs.Pstate,
+		Tls:    s.Regs.TPIDR_EL0,
 	}
 	return &rpb.Registers{Arch: &rpb.Registers_Arm64{Arm64: regs}}
 }
@@ -232,6 +233,7 @@ func (s *State) RegisterMap() (map[string]uintptr, error) {
 		"Sp":     uintptr(s.Regs.Sp),
 		"Pc":     uintptr(s.Regs.Pc),
 		"Pstate": uintptr(s.Regs.Pstate),
+		"Tls":    uintptr(s.Regs.TPIDR_EL0),
 	}, nil
 }
 
