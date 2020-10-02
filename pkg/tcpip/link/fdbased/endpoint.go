@@ -40,11 +40,11 @@
 package fdbased
 
 import (
+	"encoding/binary"
 	"fmt"
 	"syscall"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/iovec"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -378,6 +378,25 @@ type virtioNetHdr struct {
 	csumOffset uint16
 }
 
+func (h *virtioNetHdr) marshal() []byte {
+	// Note: Virtio v1.0 onwards specifies little-endian as the byte
+	// ordering used for general serialization. This makes it difficult to use
+	// go-marshal for virtio types, as go-marshal implicitly uses the native
+	// byte ordering.
+	buf := make([]byte, virtioNetHdrSize)
+	buf[0] = byte(h.flags)
+	buf[1] = byte(h.gsoType)
+	// offset = 2
+	binary.LittleEndian.PutUint16(buf[2:], h.hdrLen)
+	// offset = 4 (+2)
+	binary.LittleEndian.PutUint16(buf[4:], h.gsoSize)
+	// offset = 6 (+2)
+	binary.LittleEndian.PutUint16(buf[6:], h.csumStart)
+	// offset = 8 (+2)
+	binary.LittleEndian.PutUint16(buf[8:], h.csumOffset)
+	return buf
+}
+
 // These constants are declared in linux/virtio_net.h.
 const (
 	_VIRTIO_NET_HDR_F_NEEDS_CSUM = 1
@@ -438,7 +457,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 			}
 		}
 
-		vnetHdrBuf := binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
+		vnetHdrBuf := vnetHdr.marshal()
 		builder.Add(vnetHdrBuf)
 	}
 
@@ -478,7 +497,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 					vnetHdr.gsoSize = pkt.GSOOptions.MSS
 				}
 			}
-			vnetHdrBuf = binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
+			vnetHdrBuf = vnetHdr.marshal()
 		}
 
 		var builder iovec.Builder

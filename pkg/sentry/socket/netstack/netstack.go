@@ -37,7 +37,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/amutex"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -347,9 +346,9 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 	}), nil
 }
 
-var sockAddrInetSize = int(binary.Size(linux.SockAddrInet{}))
-var sockAddrInet6Size = int(binary.Size(linux.SockAddrInet6{}))
-var sockAddrLinkSize = int(binary.Size(linux.SockAddrLink{}))
+var sockAddrInetSize = (*linux.SockAddrInet)(nil).SizeBytes()
+var sockAddrInet6Size = (*linux.SockAddrInet6)(nil).SizeBytes()
+var sockAddrLinkSize = (*linux.SockAddrLink)(nil).SizeBytes()
 
 // bytesToIPAddress converts an IPv4 or IPv6 address from the user to the
 // netstack representation taking any addresses into account.
@@ -394,7 +393,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInetSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInetSize], usermem.ByteOrder, &a)
+		a.UnmarshalBytes(addr[:sockAddrInetSize])
 
 		out := tcpip.FullAddress{
 			Addr: bytesToIPAddress(a.Addr[:]),
@@ -407,7 +406,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInet6Size {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInet6Size], usermem.ByteOrder, &a)
+		a.UnmarshalBytes(addr[:sockAddrInet6Size])
 
 		out := tcpip.FullAddress{
 			Addr: bytesToIPAddress(a.Addr[:]),
@@ -423,7 +422,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrLinkSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrLinkSize], usermem.ByteOrder, &a)
+		a.UnmarshalBytes(addr[:sockAddrLinkSize])
 		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
@@ -810,7 +809,7 @@ func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		if len(sockaddr) < sockAddrLinkSize {
 			return syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(sockaddr[:sockAddrLinkSize], usermem.ByteOrder, &a)
+		a.UnmarshalBytes(sockaddr[:sockAddrLinkSize])
 
 		if a.Protocol != uint16(s.protocol) {
 			return syserr.ErrInvalidArgument
@@ -1512,7 +1511,7 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		return &vP, nil
 
 	case linux.IP6T_ORIGINAL_DST:
-		if outLen < int(binary.Size(linux.SockAddrInet6{})) {
+		if outLen < (*linux.SockAddrInet6)(nil).SizeBytes() {
 			return nil, syserr.ErrInvalidArgument
 		}
 
@@ -1695,7 +1694,7 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		return &vP, nil
 
 	case linux.SO_ORIGINAL_DST:
-		if outLen < int(binary.Size(linux.SockAddrInet{})) {
+		if outLen < sockAddrInetSize {
 			return nil, syserr.ErrInvalidArgument
 		}
 
@@ -1923,7 +1922,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Timeval
-		binary.Unmarshal(optVal[:linux.SizeOfTimeval], usermem.ByteOrder, &v)
+		v.UnmarshalBytes(optVal[:linux.SizeOfTimeval])
 		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
 			return syserr.ErrDomain
 		}
@@ -1936,7 +1935,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Timeval
-		binary.Unmarshal(optVal[:linux.SizeOfTimeval], usermem.ByteOrder, &v)
+		v.UnmarshalBytes(optVal[:linux.SizeOfTimeval])
 		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
 			return syserr.ErrDomain
 		}
@@ -1971,7 +1970,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Linger
-		binary.Unmarshal(optVal[:linux.SizeOfLinger], usermem.ByteOrder, &v)
+		v.UnmarshalBytes(optVal[:linux.SizeOfLinger])
 
 		if v != (linux.Linger{}) {
 			socket.SetSockOptEmitUnimplementedEvent(t, name)
@@ -2208,8 +2207,8 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 }
 
 var (
-	inetMulticastRequestSize        = int(binary.Size(linux.InetMulticastRequest{}))
-	inetMulticastRequestWithNICSize = int(binary.Size(linux.InetMulticastRequestWithNIC{}))
+	inetMulticastRequestSize        = (*linux.InetMulticastRequest)(nil).SizeBytes()
+	inetMulticastRequestWithNICSize = (*linux.InetMulticastRequestWithNIC)(nil).SizeBytes()
 )
 
 // copyInMulticastRequest copies in a variable-size multicast request. The
@@ -2233,13 +2232,15 @@ func copyInMulticastRequest(optVal []byte, allowAddr bool) (linux.InetMulticastR
 	}
 
 	if len(optVal) >= inetMulticastRequestWithNICSize {
+		// TODO(ayushranjan): Port this once embedding is allowed in go-marshal.
 		var req linux.InetMulticastRequestWithNIC
-		binary.Unmarshal(optVal[:inetMulticastRequestWithNICSize], usermem.ByteOrder, &req)
+		req.UnmarshalUnsafe(optVal[:req.SizeBytes()])
 		return req, nil
 	}
 
+	// TODO(ayushranjan): Port this once embedding is allowed in go-marshal.
 	var req linux.InetMulticastRequestWithNIC
-	binary.Unmarshal(optVal[:inetMulticastRequestSize], usermem.ByteOrder, &req.InetMulticastRequest)
+	req.InetMulticastRequest.UnmarshalUnsafe(optVal[:inetMulticastRequestSize])
 	return req, nil
 }
 
@@ -3278,10 +3279,10 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 			// Populate ifr.ifr_netmask (type sockaddr).
 			usermem.ByteOrder.PutUint16(ifr.Data[0:2], uint16(linux.AF_INET))
 			usermem.ByteOrder.PutUint16(ifr.Data[2:4], 0)
-			var mask uint32 = 0xffffffff << (32 - addr.PrefixLen)
+			var mask primitive.Uint32 = 0xffffffff << (32 - addr.PrefixLen)
 			// Netmask is expected to be returned as a big endian
 			// value.
-			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
+			mask.MarshalBytes(ifr.Data[4:8])
 			break
 		}
 

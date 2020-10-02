@@ -124,6 +124,80 @@ func (b *ByteSlice) WriteTo(w io.Writer) (int64, error) {
 
 var _ marshal.Marshallable = (*ByteSlice)(nil)
 
+// The following set of functions are convenient shorthands for wrapping a
+// built-in type in a marshallable primitive type. For example:
+//
+// func useMarshallable(m marshal.Marshallable) { ... }
+//
+// // Compare:
+//
+// buf = []byte{...}
+// // useMarshallable(&primitive.ByteSlice(buf)) // Not allowed, can't address temp value.
+// bufP := primitive.ByteSlice(buf)
+// useMarshallable(&bufP)
+//
+// // Vs:
+//
+// useMarshallable(AsByteSlice(buf))
+//
+// Note that the argument to these function escapes, so avoid using them on very
+// hot code paths. But generally if a function accepts an interface as an
+// argument, the argument escapes anyways.
+
+// AsInt8 returns x as a marshallable.
+func AsInt8(x int8) marshal.Marshallable {
+	p := Int8(x)
+	return &p
+}
+
+// AsUint8 returns x as a marshallable.
+func AsUint8(x uint8) marshal.Marshallable {
+	p := Uint8(x)
+	return &p
+}
+
+// AsInt16 returns x as a marshallable.
+func AsInt16(x int16) marshal.Marshallable {
+	p := Int16(x)
+	return &p
+}
+
+// AsUint16 returns x as a marshallable.
+func AsUint16(x uint16) marshal.Marshallable {
+	p := Uint16(x)
+	return &p
+}
+
+// AsInt32 returns x as a marshallable.
+func AsInt32(x int32) marshal.Marshallable {
+	p := Int32(x)
+	return &p
+}
+
+// AsUint32 returns x as a marshallable.
+func AsUint32(x uint32) marshal.Marshallable {
+	p := Uint32(x)
+	return &p
+}
+
+// AsInt64 returns x as a marshallable.
+func AsInt64(x int64) marshal.Marshallable {
+	p := Int64(x)
+	return &p
+}
+
+// AsUint64 returns x as a marshallable.
+func AsUint64(x uint64) marshal.Marshallable {
+	p := Uint64(x)
+	return &p
+}
+
+// AsByteSlice returns b as a marshallable.
+func AsByteSlice(b []byte) marshal.Marshallable {
+	bs := ByteSlice(b)
+	return &bs
+}
+
 // Below, we define some convenience functions for marshalling primitive types
 // using the newtypes above, without requiring superfluous casts.
 
