@@ -398,7 +398,37 @@ func loadObjdump() (map[string][]string, error) {
 		return nil, err
 	}
 
+	// Identify calls by address or name. Note that this is also
+	// constructed dynamically below, as we encounted the addresses.
+	// This is because some of the functions (duffzero) may have
+	// jump targets in the middle of the function itself.
+	funcsAllowed := map[string]struct{}{
+		"runtime.duffzero":       struct{}{},
+		"runtime.duffcopy":       struct{}{},
+		"runtime.racefuncenter":  struct{}{},
+		"runtime.gcWriteBarrier": struct{}{},
+		"runtime.retpolineAX":    struct{}{},
+		"runtime.retpolineBP":    struct{}{},
+		"runtime.retpolineBX":    struct{}{},
+		"runtime.retpolineCX":    struct{}{},
+		"runtime.retpolineDI":    struct{}{},
+		"runtime.retpolineDX":    struct{}{},
+		"runtime.retpolineR10":   struct{}{},
+		"runtime.retpolineR11":   struct{}{},
+		"runtime.retpolineR12":   struct{}{},
+		"runtime.retpolineR13":   struct{}{},
+		"runtime.retpolineR14":   struct{}{},
+		"runtime.retpolineR15":   struct{}{},
+		"runtime.retpolineR8":    struct{}{},
+		"runtime.retpolineR9":    struct{}{},
+		"runtime.retpolineSI":    struct{}{},
+		"runtime.stackcheck":     struct{}{},
+		"runtime.settls":         struct{}{},
+	}
+	addrsAllowed := make(map[string]struct{})
+
 	// Build the map.
+	nextFunc := "" // For funcsAllowed.
 	m := make(map[string][]string)
 	r := bufio.NewReader(out)
 NextLine:
@@ -406,6 +436,20 @@ NextLine:
 		line, err := r.ReadString('\n')
 		if err != nil && err != io.EOF {
 			return nil, err
+		}
+		fields := strings.Fields(line)
+
+		// Is this an "allowed" function definition?
+		if len(fields) >= 2 && fields[0] == "TEXT" {
+			if _, ok := funcsAllowed[fields[1]]; ok {
+				nextFunc = strings.TrimSuffix(fields[1], "(SB)")
+			} else {
+				nextFunc = "" // Don't record addresses.
+			}
+		}
+		if nextFunc != "" && len(fields) > 2 {
+			// Save the given address (in hex form, as it appears).
+			addrsAllowed[fields[1]] = struct{}{}
 		}
 
 		// We recognize lines corresponding to actual code (not the
@@ -416,53 +460,31 @@ NextLine:
 		//
 		// Lines look like this (including the first space):
 		//  gohacks_unsafe.go:33  0xa39                   488b442408              MOVQ 0x8(SP), AX
-		if len(line) > 0 && line[0] == ' ' {
-			fields := strings.Fields(line)
+		if len(fields) >= 5 && line[0] == ' ' {
 			if !strings.Contains(fields[3], "CALL") {
 				continue
 			}
-			site := strings.TrimSpace(fields[0])
-			var callStr string // Friendly string.
+			site := fields[0]
+			target := strings.TrimSuffix(fields[4], "(SB)")
+
+			// Ignore strings containing allowed functions.
+			if _, ok := funcsAllowed[target]; ok {
+				continue
+			}
+			if _, ok := addrsAllowed[target]; ok {
+				continue
+			}
 			if len(fields) > 5 {
-				callStr = strings.Join(fields[5:], " ")
-			}
-			if len(callStr) == 0 {
-				// Just a raw call? is this asm?
-				callStr = strings.Join(fields[3:], " ")
-			}
-
-			// Ignore strings containing duffzero, which is just
-			// used by stack allocations for types that are large
-			// enough to warrant Duff's device.
-			if strings.Contains(callStr, "runtime.duffzero") ||
-				strings.Contains(callStr, "runtime.duffcopy") {
-				continue
-			}
-
-			// Ignore the racefuncenter call, which is used for
-			// race builds. This does not escape.
-			if strings.Contains(callStr, "runtime.racefuncenter") {
-				continue
-			}
-
-			// Ignore the write barriers.
-			if strings.Contains(callStr, "runtime.gcWriteBarrier") {
-				continue
-			}
-
-			// Ignore retpolines.
-			if strings.Contains(callStr, "runtime.retpoline") {
-				continue
-			}
-
-			// Ignore stack sanity check (does not split).
-			if strings.Contains(callStr, "runtime.stackcheck") {
-				continue
-			}
-
-			// Ignore tls functions.
-			if strings.Contains(callStr, "runtime.settls") {
-				continue
+				// This may be a future relocation. Some
+				// objdump versions describe this differently.
+				// If it contains any of the functions allowed
+				// above as a string, we let it go.
+				softTarget := strings.Join(fields[5:], " ")
+				for name := range funcsAllowed {
+					if strings.Contains(softTarget, name) {
+						continue NextLine
+					}
+				}
 			}
 
 			// Does this exist already?
@@ -471,11 +493,11 @@ NextLine:
 				existing = make([]string, 0, 1)
 			}
 			for _, other := range existing {
-				if callStr == other {
+				if target == other {
 					continue NextLine
 				}
 			}
-			existing = append(existing, callStr)
+			existing = append(existing, target)
 			m[site] = existing // Update.
 		}
 		if err == io.EOF {
@@ -483,12 +505,25 @@ NextLine:
 		}
 	}
 
+	// Zap any accidental false positives.
+	final := make(map[string][]string)
+	for site, calls := range m {
+		filteredCalls := make([]string, 0, len(calls))
+		for _, call := range calls {
+			if _, ok := addrsAllowed[call]; ok {
+				continue // Omit this call.
+			}
+			filteredCalls = append(filteredCalls, call)
+		}
+		final[site] = filteredCalls
+	}
+
 	// Wait for the dump to finish.
 	if err := cmd.Wait(); err != nil {
 		return nil, err
 	}
 
-	return m, nil
+	return final, nil
 }
 
 // poser is a type that implements Pos.
