@@ -441,9 +441,8 @@ NextLine:
 
 		// Is this an "allowed" function definition?
 		if len(fields) >= 2 && fields[0] == "TEXT" {
-			if _, ok := funcsAllowed[fields[1]]; ok {
-				nextFunc = strings.TrimSuffix(fields[1], "(SB)")
-			} else {
+			nextFunc = strings.TrimSuffix(fields[1], "(SB)")
+			if _, ok := funcsAllowed[nextFunc]; !ok {
 				nextFunc = "" // Don't record addresses.
 			}
 		}
