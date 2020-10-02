@@ -194,6 +194,19 @@ type IPHeaderFilter struct {
 	// filter will match packets that fail the source comparison.
 	SrcInvert bool
 
+	// InputInterface matches the name of the incoming interface for the
+	// packet.
+	InputInterface string
+
+	// InputInterfaceMask masks the characters of the interface name when
+	// comparing with InputInterface.
+	InputInterfaceMask string
+
+	// InputInterfaceInvert inverts the meaning of input interface check,
+	// i.e. when true the filter will match packets that fail the incoming
+	// interface comparison.
+	InputInterfaceInvert bool
+
 	// OutputInterface matches the name of the outgoing interface for the
 	// packet.
 	OutputInterface string
@@ -248,25 +261,36 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, nicName string) boo
 		return false
 	}
 
-	// Check the output interface.
-	// TODO(gvisor.dev/issue/170): Add the check for FORWARD and POSTROUTING
-	// hooks after supported.
-	if hook == Output {
-		n := len(fl.OutputInterface)
-		if n == 0 {
-			return true
+	// Check the input interface.
+	switch hook {
+	case Prerouting, Input, Forward:
+		if n := len(fl.InputInterface); n != 0 {
+			// If the interface name ends with '+', any interface which begins
+			// with the name should be matched.
+			matches := (strings.HasSuffix(fl.InputInterface, "+") && strings.HasPrefix(nicName, fl.InputInterface[:n-1])) || nicName == fl.InputInterface
+			if fl.InputInterfaceInvert == matches {
+				return false
+			}
 		}
+	case Output, Postrouting:
+	default:
+		panic(fmt.Sprintf("unrecognized hook = %d", hook))
+	}
 
-		// If the interface name ends with '+', any interface which begins
-		// with the name should be matched.
-		ifName := fl.OutputInterface
-		matches := true
-		if strings.HasSuffix(ifName, "+") {
-			matches = strings.HasPrefix(nicName, ifName[:n-1])
-		} else {
-			matches = nicName == ifName
+	// Check the output interface.
+	switch hook {
+	case Prerouting, Input:
+	case Forward, Output, Postrouting:
+		if n := len(fl.OutputInterface); n != 0 {
+			// If the interface name ends with '+', any interface which begins
+			// with the name should be matched.
+			matches := (strings.HasSuffix(fl.OutputInterface, "+") && strings.HasPrefix(nicName, fl.OutputInterface[:n-1])) || nicName == fl.OutputInterface
+			if fl.OutputInterfaceInvert == matches {
+				return false
+			}
 		}
-		return fl.OutputInterfaceInvert != matches
+	default:
+		panic(fmt.Sprintf("unrecognized hook = %d", hook))
 	}
 
 	return true
