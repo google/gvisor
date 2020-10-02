@@ -45,6 +45,7 @@ func Emit(w io.Writer) {
 
 	fmt.Fprintf(w, "\n// Bits.\n")
 	fmt.Fprintf(w, "#define _RFLAGS_IF           0x%02x\n", _RFLAGS_IF)
+	fmt.Fprintf(w, "#define _RFLAGS_IOPL0         0x%02x\n", _RFLAGS_IOPL0)
 	fmt.Fprintf(w, "#define _KERNEL_FLAGS        0x%02x\n", KernelFlagsSet)
 
 	fmt.Fprintf(w, "\n// Vectors.\n")
