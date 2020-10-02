@@ -1365,9 +1365,6 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 		ackLeft := acked
 		originalOutstanding := s.outstanding
-		s.rtt.Lock()
-		srtt := s.rtt.srtt
-		s.rtt.Unlock()
 		for ackLeft > 0 {
 			// We use logicalLen here because we can have FIN
 			// segments (which are always at the end of list) that
@@ -1389,7 +1386,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			// Update the RACK fields if SACK is enabled.
 			if s.ep.sackPermitted {
-				s.rc.Update(seg, rcvdSeg, srtt, s.ep.tsOffset)
+				s.rc.Update(seg, rcvdSeg, s.ep.tsOffset)
 			}
 
 			s.writeList.Remove(seg)
