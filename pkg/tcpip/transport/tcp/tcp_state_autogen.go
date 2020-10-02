@@ -411,6 +411,7 @@ func (x *rackControl) StateFields() []string {
 		"xmitTime",
 		"endSequence",
 		"fack",
+		"minRTT",
 		"rtt",
 	}
 }
@@ -423,7 +424,8 @@ func (x *rackControl) StateSave(m state.Sink) {
 	m.SaveValue(0, xmitTime)
 	m.Save(1, &x.endSequence)
 	m.Save(2, &x.fack)
-	m.Save(3, &x.rtt)
+	m.Save(3, &x.minRTT)
+	m.Save(4, &x.rtt)
 }
 
 func (x *rackControl) afterLoad() {}
@@ -431,7 +433,8 @@ func (x *rackControl) afterLoad() {}
 func (x *rackControl) StateLoad(m state.Source) {
 	m.Load(1, &x.endSequence)
 	m.Load(2, &x.fack)
-	m.Load(3, &x.rtt)
+	m.Load(3, &x.minRTT)
+	m.Load(4, &x.rtt)
 	m.LoadValue(0, new(unixTime), func(y interface{}) { x.loadXmitTime(y.(unixTime)) })
 }
 
