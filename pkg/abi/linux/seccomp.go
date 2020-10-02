@@ -83,3 +83,22 @@ type SockFprog struct {
 	pad    [6]byte
 	Filter *BPFInstruction
 }
+
+// SeccompData is equivalent to struct seccomp_data, which contains the data
+// passed to seccomp-bpf filters.
+//
+// +marshal
+type SeccompData struct {
+	// Nr is the system call number.
+	Nr int32
+
+	// Arch is an AUDIT_ARCH_* value indicating the system call convention.
+	Arch uint32
+
+	// InstructionPointer is the value of the instruction pointer at the time
+	// of the system call.
+	InstructionPointer uint64
+
+	// Args contains the first 6 system call arguments.
+	Args [6]uint64
+}

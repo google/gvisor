@@ -16,7 +16,6 @@ package signalfd
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -95,8 +94,7 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 	}
 
 	// Copy out the signal info using the specified format.
-	var buf [128]byte
-	binary.Marshal(buf[:0], usermem.ByteOrder, &linux.SignalfdSiginfo{
+	infoNative := linux.SignalfdSiginfo{
 		Signo:   uint32(info.Signo),
 		Errno:   info.Errno,
 		Code:    info.Code,
@@ -105,9 +103,13 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 		Status:  info.Status(),
 		Overrun: uint32(info.Overrun()),
 		Addr:    info.Addr(),
-	})
-	n, err := dst.CopyOut(ctx, buf[:])
-	return int64(n), err
+	}
+	n, err := infoNative.WriteTo(dst.Writer(ctx))
+	if err == usermem.ErrEndOfIOSequence {
+		// Partial copy-out ok.
+		err = nil
+	}
+	return n, err
 }
 
 // Readiness implements waiter.Waitable.Readiness.
