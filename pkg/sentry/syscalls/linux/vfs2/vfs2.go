@@ -227,6 +227,7 @@ func Override() {
 	s.Table[76] = syscalls.Supported("splice", Splice)
 	s.Table[77] = syscalls.Supported("tee", Tee)
 	s.Table[78] = syscalls.Supported("readlinkat", Readlinkat)
+	s.Table[79] = syscalls.Supported("newfstatat", Newfstatat)
 	s.Table[80] = syscalls.Supported("fstat", Fstat)
 	s.Table[81] = syscalls.Supported("sync", Sync)
 	s.Table[82] = syscalls.Supported("fsync", Fsync)
