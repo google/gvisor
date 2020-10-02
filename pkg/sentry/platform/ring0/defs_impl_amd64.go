@@ -270,6 +270,7 @@ func Emit(w io.Writer) {
 
 	fmt.Fprintf(w, "\n// Bits.\n")
 	fmt.Fprintf(w, "#define _RFLAGS_IF           0x%02x\n", _RFLAGS_IF)
+	fmt.Fprintf(w, "#define _RFLAGS_IOPL0         0x%02x\n", _RFLAGS_IOPL0)
 	fmt.Fprintf(w, "#define _KERNEL_FLAGS        0x%02x\n", KernelFlagsSet)
 
 	fmt.Fprintf(w, "\n// Vectors.\n")
@@ -343,7 +344,9 @@ const (
 
 	_RFLAGS_AC       = 1 << 18
 	_RFLAGS_NT       = 1 << 14
-	_RFLAGS_IOPL     = 3 << 12
+	_RFLAGS_IOPL0    = 1 << 12
+	_RFLAGS_IOPL1    = 1 << 13
+	_RFLAGS_IOPL     = _RFLAGS_IOPL0 | _RFLAGS_IOPL1
 	_RFLAGS_DF       = 1 << 10
 	_RFLAGS_IF       = 1 << 9
 	_RFLAGS_STEP     = 1 << 8
@@ -371,14 +374,44 @@ const (
 	KernelFlagsSet = _RFLAGS_RESERVED
 
 	// UserFlagsSet are always set in userspace.
-	UserFlagsSet = _RFLAGS_RESERVED | _RFLAGS_IF
+	//
+	// _RFLAGS_IOPL is a set of two bits and it shows the I/O privilege
+	// level. The Current Privilege Level (CPL) of the task must be less
+	// than or equal to the IOPL in order for the task or program to access
+	// I/O ports.
+	//
+	// Here, _RFLAGS_IOPL0 is used only to determine whether the task is
+	// running in the kernel or userspace mode. In the user mode, the CPL is
+	// always 3 and it doesn't matter what IOPL is set if it is bellow CPL.
+	//
+	// We need to have one bit which will be always different in user and
+	// kernel modes. And we have to remember that even though we have
+	// KernelFlagsClear, we still can see some of these flags in the kernel
+	// mode. This can happen when the goruntime switches on a goroutine
+	// which has been saved in the host mode. On restore, the popf
+	// instruction is used to restore flags and this means that all flags
+	// what the goroutine has in the host mode will be restored in the
+	// kernel mode.
+	//
+	// _RFLAGS_IOPL0 is never set in host and kernel modes and we always set
+	// it in the user mode. So if this flag is set, the task is running in
+	// the user mode and if it isn't set, the task is running in the kernel
+	// mode.
+	UserFlagsSet = _RFLAGS_RESERVED | _RFLAGS_IF | _RFLAGS_IOPL0
 
 	// KernelFlagsClear should always be clear in the kernel.
 	KernelFlagsClear = _RFLAGS_STEP | _RFLAGS_IF | _RFLAGS_IOPL | _RFLAGS_AC | _RFLAGS_NT
 
 	// UserFlagsClear are always cleared in userspace.
-	UserFlagsClear = _RFLAGS_NT | _RFLAGS_IOPL
+	UserFlagsClear = _RFLAGS_NT | _RFLAGS_IOPL1
 )
+
+// IsKernelFlags returns true if rflags coresponds to the kernel mode.
+//
+// go:nosplit
+func IsKernelFlags(rflags uint64) bool {
+	return rflags&_RFLAGS_IOPL0 == 0
+}
 
 // Vector is an exception vector.
 type Vector uintptr

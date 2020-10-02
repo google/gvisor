@@ -83,5 +83,34 @@ func bluepillStopGuest(c *vCPU) {
 //
 //go:nosplit
 func bluepillReadyStopGuest(c *vCPU) bool {
-	return c.runData.readyForInterruptInjection != 0
+	if c.runData.readyForInterruptInjection == 0 {
+		return false
+	}
+
+	if c.runData.ifFlag == 0 {
+		// This is impossible if readyForInterruptInjection is 1.
+		throw("interrupts are disabled")
+	}
+
+	// Disable interrupts if we are in the kernel space.
+	//
+	// When the Sentry switches into the kernel mode, it disables
+	// interrupts. But when goruntime switches on a goroutine which has
+	// been saved in the host mode, it restores flags and this enables
+	// interrupts.  See the comment of UserFlagsSet for more details.
+	uregs := userRegs{}
+	err := c.getUserRegisters(&uregs)
+	if err != 0 {
+		throw("failed to get user registers")
+	}
+
+	if ring0.IsKernelFlags(uregs.RFLAGS) {
+		uregs.RFLAGS &^= ring0.KernelFlagsClear
+		err = c.setUserRegisters(&uregs)
+		if err != 0 {
+			throw("failed to set user registers")
+		}
+		return false
+	}
+	return true
 }

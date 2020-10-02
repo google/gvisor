@@ -17,6 +17,7 @@
 
 // Bits.
 #define _RFLAGS_IF           0x200
+#define _RFLAGS_IOPL0         0x1000
 #define _KERNEL_FLAGS        0x02
 
 // Vectors.
