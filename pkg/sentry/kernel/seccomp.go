@@ -18,7 +18,6 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -27,25 +26,18 @@ import (
 
 const maxSyscallFilterInstructions = 1 << 15
 
-// seccompData is equivalent to struct seccomp_data, which contains the data
-// passed to seccomp-bpf filters.
-type seccompData struct {
-	// nr is the system call number.
-	nr int32
-
-	// arch is an AUDIT_ARCH_* value indicating the system call convention.
-	arch uint32
-
-	// instructionPointer is the value of the instruction pointer at the time
-	// of the system call.
-	instructionPointer uint64
-
-	// args contains the first 6 system call arguments.
-	args [6]uint64
-}
-
-func (d *seccompData) asBPFInput() bpf.Input {
-	return bpf.InputBytes{binary.Marshal(nil, usermem.ByteOrder, d), usermem.ByteOrder}
+// dataAsBPFInput returns a serialized BPF program, only valid on the current task
+// goroutine.
+//
+// Note: this is called for every syscall, which is a very hot path.
+func dataAsBPFInput(t *Task, d *linux.SeccompData) bpf.Input {
+	buf := t.CopyScratchBuffer(d.SizeBytes())
+	d.MarshalUnsafe(buf)
+	return bpf.InputBytes{
+		Data: buf,
+		// Go-marshal always uses the native byte order.
+		Order: usermem.ByteOrder,
+	}
 }
 
 func seccompSiginfo(t *Task, errno, sysno int32, ip usermem.Addr) *arch.SignalInfo {
@@ -112,20 +104,20 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip u
 }
 
 func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, ip usermem.Addr) uint32 {
-	data := seccompData{
-		nr:                 sysno,
-		arch:               t.tc.st.AuditNumber,
-		instructionPointer: uint64(ip),
+	data := linux.SeccompData{
+		Nr:                 sysno,
+		Arch:               t.tc.st.AuditNumber,
+		InstructionPointer: uint64(ip),
 	}
 	// data.args is []uint64 and args is []arch.SyscallArgument (uintptr), so
 	// we can't do any slicing tricks or even use copy/append here.
 	for i, arg := range args {
-		if i >= len(data.args) {
+		if i >= len(data.Args) {
 			break
 		}
-		data.args[i] = arg.Uint64()
+		data.Args[i] = arg.Uint64()
 	}
-	input := data.asBPFInput()
+	input := dataAsBPFInput(t, &data)
 
 	ret := uint32(linux.SECCOMP_RET_ALLOW)
 	f := t.syscallFilters.Load()
