@@ -17,6 +17,7 @@
 
 // Bits.
 #define _RFLAGS_IF           0x200
+#define _RFLAGS_IOPL0         0x1000
 #define _KERNEL_FLAGS        0x02
 
 // Vectors.
@@ -263,13 +264,10 @@ TEXT ·Start(SB),NOSPLIT,$0
 
 // See entry_amd64.go.
 TEXT ·sysenter(SB),NOSPLIT,$0
-	// Interrupts are always disabled while we're executing in kernel mode
-	// and always enabled while executing in user mode. Therefore, we can
-	// reliably look at the flags in R11 to determine where this syscall
-	// was from.
-	TESTL $_RFLAGS_IF, R11
+	// _RFLAGS_IOPL0 is always set in the user mode and it is never set in
+	// the kernel mode. See the comment of UserFlagsSet for more details.
+	TESTL $_RFLAGS_IOPL0, R11
 	JZ kernel
-
 user:
 	SWAP_GS()
 	MOVQ AX, ENTRY_SCRATCH0(GS)            // Save user AX on scratch.
@@ -348,7 +346,7 @@ TEXT ·exception(SB),NOSPLIT,$0
 	//	ERROR_CODE  (sp+8)
 	//	VECTOR      (sp+0)
 	//
-	TESTL $_RFLAGS_IF, 32(SP)
+	TESTL $_RFLAGS_IOPL0, 32(SP)
 	JZ kernel
 
 user:
