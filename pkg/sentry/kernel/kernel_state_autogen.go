@@ -2259,6 +2259,7 @@ func (x *VDSOParamPage) StateFields() []string {
 		"mfp",
 		"fr",
 		"seq",
+		"copyScratchBuffer",
 	}
 }
 
@@ -2269,6 +2270,7 @@ func (x *VDSOParamPage) StateSave(m state.Sink) {
 	m.Save(0, &x.mfp)
 	m.Save(1, &x.fr)
 	m.Save(2, &x.seq)
+	m.Save(3, &x.copyScratchBuffer)
 }
 
 func (x *VDSOParamPage) afterLoad() {}
@@ -2277,6 +2279,7 @@ func (x *VDSOParamPage) StateLoad(m state.Source) {
 	m.Load(0, &x.mfp)
 	m.Load(1, &x.fr)
 	m.Load(2, &x.seq)
+	m.Load(3, &x.copyScratchBuffer)
 }
 
 func init() {
