@@ -39,6 +39,9 @@ type rackControl struct {
 	// sequence.
 	fack seqnum.Value
 
+	// minRTT is the estimated minimum RTT of the connection.
+	minRTT time.Duration
+
 	// rtt is the RTT of the most recently delivered packet on the
 	// connection (either cumulatively acknowledged or selectively
 	// acknowledged) that was not marked invalid as a possible spurious
@@ -48,7 +51,7 @@ type rackControl struct {
 
 // Update will update the RACK related fields when an ACK has been received.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-func (rc *rackControl) Update(seg *segment, ackSeg *segment, srtt time.Duration, offset uint32) {
+func (rc *rackControl) Update(seg *segment, ackSeg *segment, offset uint32) {
 	rtt := time.Now().Sub(seg.xmitTime)
 
 	// If the ACK is for a retransmitted packet, do not update if it is a
@@ -65,12 +68,21 @@ func (rc *rackControl) Update(seg *segment, ackSeg *segment, srtt time.Duration,
 				return
 			}
 		}
-		if rtt < srtt {
+		if rtt < rc.minRTT {
 			return
 		}
 	}
 
 	rc.rtt = rtt
+
+	// The sender can either track a simple global minimum of all RTT
+	// measurements from the connection, or a windowed min-filtered value
+	// of recent RTT measurements. This implementation keeps track of the
+	// simple global minimum of all RTTs for the connection.
+	if rtt < rc.minRTT || rc.minRTT == 0 {
+		rc.minRTT = rtt
+	}
+
 	// Update rc.xmitTime and rc.endSequence to the transmit time and
 	// ending sequence number of the packet which has been acknowledged
 	// most recently.
