@@ -311,7 +311,10 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 	if isRoot(args.Spec) {
 		log.Debugf("Creating new sandbox for container %q", args.ID)
 
-		if args.Spec.Linux != nil && args.Spec.Linux.CgroupsPath == "" {
+		if args.Spec.Linux == nil {
+			args.Spec.Linux = &specs.Linux{}
+		}
+		if args.Spec.Linux.CgroupsPath == "" {
 			args.Spec.Linux.CgroupsPath = "/" + args.ID
 		}
 
