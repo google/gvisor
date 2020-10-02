@@ -49,7 +49,7 @@ go_test(
     library = ":seccomp",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/bpf",
+        "//pkg/usermem",
     ],
 )

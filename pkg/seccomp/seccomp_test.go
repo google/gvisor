@@ -28,16 +28,9 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
-
-type seccompData struct {
-	nr                 uint32
-	arch               uint32
-	instructionPointer uint64
-	args               [6]uint64
-}
 
 // newVictim makes a victim binary.
 func newVictim() (string, error) {
@@ -58,9 +51,14 @@ func newVictim() (string, error) {
 	return path, nil
 }
 
-// asInput converts a seccompData to a bpf.Input.
-func (d *seccompData) asInput() bpf.Input {
-	return bpf.InputBytes{binary.Marshal(nil, binary.LittleEndian, d), binary.LittleEndian}
+// dataAsInput converts a linux.SeccompData to a bpf.Input.
+func dataAsInput(d *linux.SeccompData) bpf.Input {
+	buf := make([]byte, d.SizeBytes())
+	d.MarshalUnsafe(buf)
+	return bpf.InputBytes{
+		Data:  buf,
+		Order: usermem.ByteOrder,
+	}
 }
 
 func TestBasic(t *testing.T) {
@@ -69,7 +67,7 @@ func TestBasic(t *testing.T) {
 		desc string
 
 		// data is the input data.
-		data seccompData
+		data linux.SeccompData
 
 		// want is the expected return value of the BPF program.
 		want linux.BPFAction
@@ -95,12 +93,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "syscall allowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "syscall disallowed",
-					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 2, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -131,22 +129,22 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "allowed (1a)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x1}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x1}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "allowed (1b)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "syscall 1 matched 2nd rule",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "no match",
-					data: seccompData{nr: 0, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 0, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_KILL_THREAD,
 				},
 			},
@@ -168,42 +166,42 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "allowed (1)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "allowed (3)",
-					data: seccompData{nr: 3, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 3, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "allowed (5)",
-					data: seccompData{nr: 5, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 5, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "disallowed (0)",
-					data: seccompData{nr: 0, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 0, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "disallowed (2)",
-					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 2, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "disallowed (4)",
-					data: seccompData{nr: 4, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 4, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "disallowed (6)",
-					data: seccompData{nr: 6, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 6, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "disallowed (100)",
-					data: seccompData{nr: 100, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 100, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -223,7 +221,7 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "arch (123)",
-					data: seccompData{nr: 1, arch: 123},
+					data: linux.SeccompData{Nr: 1, Arch: 123},
 					want: linux.SECCOMP_RET_KILL_THREAD,
 				},
 			},
@@ -243,7 +241,7 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "action trap",
-					data: seccompData{nr: 2, arch: LINUX_AUDIT_ARCH},
+					data: linux.SeccompData{Nr: 2, Arch: LINUX_AUDIT_ARCH},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -268,12 +266,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "allowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xf}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xf, 0xf}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "disallowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xe}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xf, 0xe}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -300,12 +298,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "match first rule",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xf}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "match 2nd rule",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xe}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xe}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 			},
@@ -331,28 +329,28 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "argument allowed (all match)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
-						args: [6]uint64{0, math.MaxUint64 - 1, math.MaxUint32},
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
+						Args: [6]uint64{0, math.MaxUint64 - 1, math.MaxUint32},
 					},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "argument disallowed (one mismatch)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
-						args: [6]uint64{0, math.MaxUint64, math.MaxUint32},
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
+						Args: [6]uint64{0, math.MaxUint64, math.MaxUint32},
 					},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "argument disallowed (multiple mismatch)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
-						args: [6]uint64{0, math.MaxUint64, math.MaxUint32 - 1},
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
+						Args: [6]uint64{0, math.MaxUint64, math.MaxUint32 - 1},
 					},
 					want: linux.SECCOMP_RET_TRAP,
 				},
@@ -379,28 +377,28 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "arg allowed",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
-						args: [6]uint64{0, math.MaxUint64, math.MaxUint32 - 1},
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
+						Args: [6]uint64{0, math.MaxUint64, math.MaxUint32 - 1},
 					},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (one equal)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
-						args: [6]uint64{0x7aabbccdd, math.MaxUint64, math.MaxUint32 - 1},
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
+						Args: [6]uint64{0x7aabbccdd, math.MaxUint64, math.MaxUint32 - 1},
 					},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (all equal)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
-						args: [6]uint64{0x7aabbccdd, math.MaxUint64 - 1, math.MaxUint32},
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
+						Args: [6]uint64{0x7aabbccdd, math.MaxUint64 - 1, math.MaxUint32},
 					},
 					want: linux.SECCOMP_RET_TRAP,
 				},
@@ -429,27 +427,27 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000003_00000002}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits equal, low 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000003}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits equal, low 32bits equal",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000002}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits equal, low 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000001}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000003}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000001_00000003}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -474,27 +472,27 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "arg allowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x10, 0xffffffff}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (first arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xf, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (first arg smaller)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (second arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xabcd000d}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x10, 0xabcd000d}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (second arg smaller)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xa000ffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x10, 0xa000ffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -522,27 +520,27 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000003_00000002}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits equal, low 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000003}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits equal, low 32bits equal",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000002}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits equal, low 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000001}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000001_00000002}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -567,32 +565,32 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "arg allowed (both greater)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x10, 0xffffffff}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg allowed (first arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0xf, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xf, 0xffffffff}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (first arg smaller)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg allowed (second arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xabcd000d}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x10, 0xabcd000d}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (second arg smaller)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x10, 0xa000ffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x10, 0xa000ffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (both arg smaller)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xa000ffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0xa000ffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -620,27 +618,27 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000003_00000002}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits equal, low 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000003}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits equal, low 32bits equal",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000002}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits equal, low 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000001}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000001_00000002}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 			},
@@ -665,32 +663,32 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "arg allowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0x0}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0x0}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (first arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x1, 0x0}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x1, 0x0}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (first arg greater)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0x0}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x2, 0x0}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (second arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xabcd000d}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0xabcd000d}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (second arg greater)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (both arg greater)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x2, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -718,27 +716,27 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000003_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000003_00000002}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits equal, low 32bits greater",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000003}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000003}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "high 32bits equal, low 32bits equal",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000002}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits equal, low 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000002_00000001}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000002_00000001}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "high 32bits less",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x00000001_00000002}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x00000001_00000002}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 			},
@@ -764,32 +762,32 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "arg allowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0x0}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0x0}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg allowed (first arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x1, 0x0}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x1, 0x0}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (first arg greater)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0x0}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x2, 0x0}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg allowed (second arg equal)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xabcd000d}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0xabcd000d}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (second arg greater)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x0, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (both arg greater)",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{0x2, 0xffffffff}},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x2, 0xffffffff}},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -816,51 +814,51 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "arg allowed (low order mandatory bit)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
 						// 00000000 00000000 00000000 00000001
-						args: [6]uint64{0x1},
+						Args: [6]uint64{0x1},
 					},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg allowed (low order optional bit)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
 						// 00000000 00000000 00000000 00000101
-						args: [6]uint64{0x5},
+						Args: [6]uint64{0x5},
 					},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "arg disallowed (lowest order bit not set)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
 						// 00000000 00000000 00000000 00000010
-						args: [6]uint64{0x2},
+						Args: [6]uint64{0x2},
 					},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (second lowest order bit set)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
 						// 00000000 00000000 00000000 00000011
-						args: [6]uint64{0x3},
+						Args: [6]uint64{0x3},
 					},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 				{
 					desc: "arg disallowed (8th bit set)",
-					data: seccompData{
-						nr:   1,
-						arch: LINUX_AUDIT_ARCH,
+					data: linux.SeccompData{
+						Nr:   1,
+						Arch: LINUX_AUDIT_ARCH,
 						// 00000000 00000000 00000001 00000000
-						args: [6]uint64{0x100},
+						Args: [6]uint64{0x100},
 					},
 					want: linux.SECCOMP_RET_TRAP,
 				},
@@ -885,12 +883,12 @@ func TestBasic(t *testing.T) {
 			specs: []spec{
 				{
 					desc: "allowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{}, instructionPointer: 0x7aabbccdd},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{}, InstructionPointer: 0x7aabbccdd},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					desc: "disallowed",
-					data: seccompData{nr: 1, arch: LINUX_AUDIT_ARCH, args: [6]uint64{}, instructionPointer: 0x711223344},
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{}, InstructionPointer: 0x711223344},
 					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
@@ -906,7 +904,7 @@ func TestBasic(t *testing.T) {
 				t.Fatalf("bpf.Compile() got error: %v", err)
 			}
 			for _, spec := range test.specs {
-				got, err := bpf.Exec(p, spec.data.asInput())
+				got, err := bpf.Exec(p, dataAsInput(&spec.data))
 				if err != nil {
 					t.Fatalf("%s: bpf.Exec() got error: %v", spec.desc, err)
 				}
@@ -947,8 +945,8 @@ func TestRandom(t *testing.T) {
 		t.Fatalf("bpf.Compile() got error: %v", err)
 	}
 	for i := uint32(0); i < 200; i++ {
-		data := seccompData{nr: i, arch: LINUX_AUDIT_ARCH}
-		got, err := bpf.Exec(p, data.asInput())
+		data := linux.SeccompData{Nr: int32(i), Arch: LINUX_AUDIT_ARCH}
+		got, err := bpf.Exec(p, dataAsInput(&data))
 		if err != nil {
 			t.Errorf("bpf.Exec() got error: %v, for syscall %d", err, i)
 			continue

@@ -204,7 +204,6 @@ go_library(
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/amutex",
-        "//pkg/binary",
         "//pkg/bits",
         "//pkg/bpf",
         "//pkg/context",

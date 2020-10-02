@@ -23,6 +23,8 @@ const (
 )
 
 // SignalfdSiginfo is the siginfo encoding for signalfds.
+//
+// +marshal
 type SignalfdSiginfo struct {
 	Signo   uint32
 	Errno   int32
@@ -41,5 +43,5 @@ type SignalfdSiginfo struct {
 	STime   uint64
 	Addr    uint64
 	AddrLSB uint16
-	_       [48]uint8
+	_       [48]uint8 `marshal:"unaligned"`
 }
