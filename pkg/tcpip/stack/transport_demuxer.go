@@ -155,7 +155,7 @@ func (epsByNIC *endpointsByNIC) transportEndpoints() []TransportEndpoint {
 func (epsByNIC *endpointsByNIC) handlePacket(r *Route, id TransportEndpointID, pkt *PacketBuffer) {
 	epsByNIC.mu.RLock()
 
-	mpep, ok := epsByNIC.endpoints[r.nic.ID()]
+	mpep, ok := epsByNIC.endpoints[r.localAddressNIC.ID()]
 	if !ok {
 		if mpep, ok = epsByNIC.endpoints[0]; !ok {
 			epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
@@ -628,7 +628,7 @@ func (d *transportDemuxer) findTransportEndpoint(netProto tcpip.NetworkProtocolN
 	epsByNIC.mu.RLock()
 	eps.mu.RUnlock()
 
-	mpep, ok := epsByNIC.endpoints[r.nic.ID()]
+	mpep, ok := epsByNIC.endpoints[r.localAddressNIC.ID()]
 	if !ok {
 		if mpep, ok = epsByNIC.endpoints[0]; !ok {
 			epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.

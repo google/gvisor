@@ -488,7 +488,7 @@ func (n *NIC) isInGroup(addr tcpip.Address) bool {
 }
 
 func (n *NIC) handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, remotelinkAddr tcpip.LinkAddress, addressEndpoint AssignableAddressEndpoint, pkt *PacketBuffer) {
-	r := makeRoute(protocol, dst, src, n, addressEndpoint, false /* handleLocal */, false /* multicastLoop */)
+	r := makeRoute(protocol, dst, src, n, n, addressEndpoint, false /* handleLocal */, false /* multicastLoop */)
 	defer r.Release()
 	r.RemoteLinkAddress = remotelinkAddr
 	n.getNetworkEndpoint(protocol).HandlePacket(&r, pkt)
@@ -602,7 +602,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		}
 
 		// Found a NIC.
-		n := r.nic
+		n := r.localAddressNIC
 		if addressEndpoint := n.getAddressOrCreateTempInner(protocol, dst, false, NeverPrimaryEndpoint); addressEndpoint != nil {
 			if n.isValidForOutgoing(addressEndpoint) {
 				r.LocalLinkAddress = n.linkEP.LinkAddress()
