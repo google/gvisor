@@ -485,7 +485,7 @@ func (r *ReadWriterFile) Write(p []byte) (int, error) {
 		return n, err
 	}
 	if n < len(p) {
-		return n, io.ErrShortWrite
+		log.Debugf("Unexpected partial write of %d out of %d bytes", n, len(p))
 	}
 	return n, nil
 }
@@ -497,7 +497,7 @@ func (r *ReadWriterFile) WriteAt(p []byte, offset int64) (int, error) {
 		return n, err
 	}
 	if n < len(p) {
-		return n, io.ErrShortWrite
+		log.Debugf("Unexpected partial write of %d out of %d bytes", n, len(p))
 	}
 	return n, nil
 }
