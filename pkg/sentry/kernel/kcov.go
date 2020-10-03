@@ -89,7 +89,7 @@ func (kcov *Kcov) TaskWork(t *Task) {
 	kcov.mu.Lock()
 	defer kcov.mu.Unlock()
 
-	if kcov.mode != linux.KCOV_TRACE_PC {
+	if kcov.mode != linux.KCOV_MODE_TRACE_PC {
 		return
 	}
 
@@ -146,7 +146,7 @@ func (kcov *Kcov) InitTrace(size uint64) error {
 }
 
 // EnableTrace performs the KCOV_ENABLE_TRACE ioctl.
-func (kcov *Kcov) EnableTrace(ctx context.Context, traceMode uint8) error {
+func (kcov *Kcov) EnableTrace(ctx context.Context, traceKind uint8) error {
 	t := TaskFromContext(ctx)
 	if t == nil {
 		panic("kcovInode.EnableTrace() cannot be used outside of a task goroutine")
@@ -160,9 +160,9 @@ func (kcov *Kcov) EnableTrace(ctx context.Context, traceMode uint8) error {
 		return syserror.EINVAL
 	}
 
-	switch traceMode {
+	switch traceKind {
 	case linux.KCOV_TRACE_PC:
-		kcov.mode = traceMode
+		kcov.mode = linux.KCOV_MODE_TRACE_PC
 	case linux.KCOV_TRACE_CMP:
 		// We do not support KCOV_MODE_TRACE_CMP.
 		return syserror.ENOTSUP
@@ -175,6 +175,7 @@ func (kcov *Kcov) EnableTrace(ctx context.Context, traceMode uint8) error {
 	}
 
 	kcov.owningTask = t
+	t.SetKcov(kcov)
 	t.RegisterWork(kcov)
 
 	// Clear existing coverage data; the task expects to read only coverage data
@@ -196,26 +197,37 @@ func (kcov *Kcov) DisableTrace(ctx context.Context) error {
 	if t != kcov.owningTask {
 		return syserror.EINVAL
 	}
-	kcov.owningTask = nil
 	kcov.mode = linux.KCOV_MODE_INIT
-	kcov.resetLocked()
+	kcov.owningTask = nil
+	kcov.mappable = nil
 	return nil
 }
 
-// Reset is called when the owning task exits.
-func (kcov *Kcov) Reset() {
+// Clear resets the mode and clears the owning task and memory mapping for kcov.
+// It is called when the fd corresponding to kcov is closed. Note that the mode
+// needs to be set so that the next call to kcov.TaskWork() will exit early.
+func (kcov *Kcov) Clear() {
 	kcov.mu.Lock()
-	kcov.resetLocked()
+	kcov.clearLocked()
 	kcov.mu.Unlock()
 }
 
-// The kcov instance is reset when the owning task exits or when tracing is
-// disabled.
-func (kcov *Kcov) resetLocked() {
+func (kcov *Kcov) clearLocked() {
+	kcov.mode = linux.KCOV_MODE_INIT
 	kcov.owningTask = nil
 	if kcov.mappable != nil {
 		kcov.mappable = nil
 	}
+}
+
+// OnTaskExit is called when the owning task exits. It is similar to
+// kcov.Clear(), except the memory mapping is not cleared, so that the same
+// mapping can be used in the future if kcov is enabled again by another task.
+func (kcov *Kcov) OnTaskExit() {
+	kcov.mu.Lock()
+	kcov.mode = linux.KCOV_MODE_INIT
+	kcov.owningTask = nil
+	kcov.mu.Unlock()
 }
 
 // ConfigureMMap is called by the vfs.FileDescription for this kcov instance to
