@@ -16,39 +16,47 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
+#include <atomic>
+
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
 
 namespace {
 
-// For this test to work properly, it must be run with coverage enabled. On
+// For this set of tests to run, they must be run with coverage enabled. On
 // native Linux, this involves compiling the kernel with kcov enabled. For
-// gVisor, we need to enable the Go coverage tool, e.g.
-// bazel test --collect_coverage_data --instrumentation_filter=//pkg/... <test>.
+// gVisor, we need to enable the Go coverage tool, e.g. bazel test --
+// collect_coverage_data --instrumentation_filter=//pkg/... <test>.
+
+constexpr char kcovPath[] = "/sys/kernel/debug/kcov";
+constexpr int kSize = 4096;
+constexpr int KCOV_INIT_TRACE = 0x80086301;
+constexpr int KCOV_ENABLE = 0x6364;
+constexpr int KCOV_DISABLE = 0x6365;
+
+uint64_t* KcovMmap(int fd) {
+  return (uint64_t*)mmap(nullptr, kSize * sizeof(uint64_t),
+                         PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+}
+
 TEST(KcovTest, Kcov) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
 
-  constexpr int kSize = 4096;
-  constexpr int KCOV_INIT_TRACE = 0x80086301;
-  constexpr int KCOV_ENABLE = 0x6364;
-  constexpr int KCOV_DISABLE = 0x6365;
-
   int fd;
-  ASSERT_THAT(fd = open("/sys/kernel/debug/kcov", O_RDWR),
+  ASSERT_THAT(fd = open(kcovPath, O_RDWR),
               AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(ENOENT)));
-
   // Kcov not available.
   SKIP_IF(errno == ENOENT);
+  auto fd_closer = Cleanup([fd]() { close(fd); });
 
   ASSERT_THAT(ioctl(fd, KCOV_INIT_TRACE, kSize), SyscallSucceeds());
-  uint64_t* area = (uint64_t*)mmap(nullptr, kSize * sizeof(uint64_t),
-                                   PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-
+  uint64_t* area = KcovMmap(fd);
   ASSERT_TRUE(area != MAP_FAILED);
   ASSERT_THAT(ioctl(fd, KCOV_ENABLE, 0), SyscallSucceeds());
 
@@ -65,6 +73,109 @@ TEST(KcovTest, Kcov) {
   }
 
   ASSERT_THAT(ioctl(fd, KCOV_DISABLE, 0), SyscallSucceeds());
+}
+
+TEST(KcovTest, PrematureMmap) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  int fd;
+  ASSERT_THAT(fd = open(kcovPath, O_RDWR),
+              AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(ENOENT)));
+  // Kcov not available.
+  SKIP_IF(errno == ENOENT);
+  auto fd_closer = Cleanup([fd]() { close(fd); });
+
+  // Cannot mmap before KCOV_INIT_TRACE.
+  uint64_t* area = KcovMmap(fd);
+  ASSERT_TRUE(area == MAP_FAILED);
+}
+
+// Tests that multiple kcov fds can be used simultaneously.
+TEST(KcovTest, MultipleFds) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  int fd1;
+  ASSERT_THAT(fd1 = open(kcovPath, O_RDWR),
+              AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(ENOENT)));
+  // Kcov not available.
+  SKIP_IF(errno == ENOENT);
+
+  int fd2;
+  ASSERT_THAT(fd2 = open(kcovPath, O_RDWR), SyscallSucceeds());
+  auto fd_closer = Cleanup([fd1, fd2]() {
+    close(fd1);
+    close(fd2);
+  });
+
+  auto t1 = ScopedThread([&] {
+    ASSERT_THAT(ioctl(fd1, KCOV_INIT_TRACE, kSize), SyscallSucceeds());
+    uint64_t* area = KcovMmap(fd1);
+    ASSERT_TRUE(area != MAP_FAILED);
+    ASSERT_THAT(ioctl(fd1, KCOV_ENABLE, 0), SyscallSucceeds());
+  });
+
+  ASSERT_THAT(ioctl(fd2, KCOV_INIT_TRACE, kSize), SyscallSucceeds());
+  uint64_t* area = KcovMmap(fd2);
+  ASSERT_TRUE(area != MAP_FAILED);
+  ASSERT_THAT(ioctl(fd2, KCOV_ENABLE, 0), SyscallSucceeds());
+}
+
+// Tests behavior for two threads trying to use the same kcov fd.
+TEST(KcovTest, MultipleThreads) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  int fd;
+  ASSERT_THAT(fd = open(kcovPath, O_RDWR),
+              AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(ENOENT)));
+  // Kcov not available.
+  SKIP_IF(errno == ENOENT);
+  auto fd_closer = Cleanup([fd]() { close(fd); });
+
+  // Test the behavior of multiple threads trying to use the same kcov fd
+  // simultaneously.
+  std::atomic<bool> t1_enabled(false), t1_disabled(false), t2_failed(false),
+      t2_exited(false);
+  auto t1 = ScopedThread([&] {
+    ASSERT_THAT(ioctl(fd, KCOV_INIT_TRACE, kSize), SyscallSucceeds());
+    uint64_t* area = KcovMmap(fd);
+    ASSERT_TRUE(area != MAP_FAILED);
+    ASSERT_THAT(ioctl(fd, KCOV_ENABLE, 0), SyscallSucceeds());
+    t1_enabled = true;
+
+    // After t2 has made sure that enabling kcov again fails, disable it.
+    while (!t2_failed) {
+      sched_yield();
+    }
+    ASSERT_THAT(ioctl(fd, KCOV_DISABLE, 0), SyscallSucceeds());
+    t1_disabled = true;
+
+    // Wait for t2 to enable kcov and then exit, after which we should be able
+    // to enable kcov again, without needing to set up a new memory mapping.
+    while (!t2_exited) {
+      sched_yield();
+    }
+    ASSERT_THAT(ioctl(fd, KCOV_ENABLE, 0), SyscallSucceeds());
+  });
+
+  auto t2 = ScopedThread([&] {
+    // Wait for t1 to enable kcov, and make sure that enabling kcov again fails.
+    while (!t1_enabled) {
+      sched_yield();
+    }
+    ASSERT_THAT(ioctl(fd, KCOV_ENABLE, 0), SyscallFailsWithErrno(EINVAL));
+    t2_failed = true;
+
+    // Wait for t1 to disable kcov, after which using fd should now succeed.
+    while (!t1_disabled) {
+      sched_yield();
+    }
+    uint64_t* area = KcovMmap(fd);
+    ASSERT_TRUE(area != MAP_FAILED);
+    ASSERT_THAT(ioctl(fd, KCOV_ENABLE, 0), SyscallSucceeds());
+  });
+
+  t2.Join();
+  t2_exited = true;
 }
 
 }  // namespace

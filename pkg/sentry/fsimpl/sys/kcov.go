@@ -104,7 +104,7 @@ func (fd *kcovFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 func (fd *kcovFD) Release(ctx context.Context) {
 	// kcov instances have reference counts in Linux, but this seems sufficient
 	// for our purposes.
-	fd.kcov.Reset()
+	fd.kcov.Clear()
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.

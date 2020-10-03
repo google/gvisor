@@ -917,7 +917,7 @@ func (t *Task) SetKcov(k *Kcov) {
 // ResetKcov clears the kcov instance associated with t.
 func (t *Task) ResetKcov() {
 	if t.kcov != nil {
-		t.kcov.Reset()
+		t.kcov.OnTaskExit()
 		t.kcov = nil
 	}
 }
