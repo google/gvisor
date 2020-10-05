@@ -1,6 +1,6 @@
 # iptables Tests
 
-iptables tests are run via `scripts/iptables_test.sh`.
+iptables tests are run via `make iptables-tests`.
 
 iptables requires raw socket support, so you must add the `--net-raw=true` flag
 to `/etc/docker/daemon.json` in order to use it.
