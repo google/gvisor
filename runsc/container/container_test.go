@@ -316,6 +316,7 @@ func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
 	return cs
 }
 
+// TODO(gvisor.dev/issue/1624): Merge with configs when VFS2 is the default.
 func configsWithVFS2(t *testing.T, opts ...configOption) map[string]*config.Config {
 	all := configs(t, opts...)
 	for key, value := range configs(t, opts...) {
@@ -894,13 +895,15 @@ func TestKillPid(t *testing.T) {
 	}
 }
 
-// TestCheckpointRestore creates a container that continuously writes successive integers
-// to a file. To test checkpoint and restore functionality, the container is
-// checkpointed and the last number printed to the file is recorded. Then, it is restored in two
-// new containers and the first number printed from these containers is checked. Both should
-// be the next consecutive number after the last number from the checkpointed container.
+// TestCheckpointRestore creates a container that continuously writes successive
+// integers to a file. To test checkpoint and restore functionality, the
+// container is checkpointed and the last number printed to the file is
+// recorded. Then, it is restored in two new containers and the first number
+// printed from these containers is checked. Both should be the next consecutive
+// number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
+	// TODO(gvisor.dev/issue/1663): Add VFS when S/R support is added.
 	for name, conf := range configs(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
@@ -1062,6 +1065,7 @@ func TestCheckpointRestore(t *testing.T) {
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
+	// TODO(gvisor.dev/issue/1663): Add VFS when S/R support is added.
 	for name, conf := range configs(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			// UDS path is limited to 108 chars for compatibility with older systems.
@@ -1199,7 +1203,7 @@ func TestUnixDomainSockets(t *testing.T) {
 // recreated. Then it resumes the container, verify that the file gets created
 // again.
 func TestPauseResume(t *testing.T) {
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configsWithVFS2(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "lock")
 			if err != nil {

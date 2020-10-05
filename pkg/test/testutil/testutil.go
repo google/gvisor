@@ -270,7 +270,7 @@ func RandomID(prefix string) string {
 // same name, sometimes between test runs the socket does not get cleaned up
 // quickly enough, causing container creation to fail.
 func RandomContainerID() string {
-	return RandomID("test-container-")
+	return RandomID("test-container")
 }
 
 // Copy copies file from src to dst.
