@@ -14,7 +14,6 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/binary",
         "//pkg/iovec",
         "//pkg/sync",
         "//pkg/tcpip",

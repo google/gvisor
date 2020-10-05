@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package bits includes all bit related types and operations.
-package bits
+package marshal
 
-// AlignUp rounds a length up to an alignment. align must be a power of 2.
-func AlignUp(length int, align uint) int {
-	return (length + int(align) - 1) & ^(int(align) - 1)
-}
-
-// AlignDown rounds a length down to an alignment. align must be a power of 2.
-func AlignDown(length int, align uint) int {
-	return length & ^(int(align) - 1)
+// Marshal returns the serialized contents of m in a newly allocated
+// byte slice.
+func Marshal(m Marshallable) []byte {
+	buf := make([]byte, m.SizeBytes())
+	m.MarshalUnsafe(buf)
+	return buf
 }

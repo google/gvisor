@@ -117,8 +117,7 @@ func (fd fieldDispatcher) dispatch(f *ast.Field) {
 			case *ast.Ident:
 				fd.array(name, v, t)
 			default:
-				// Should be handled with a better error message during validate.
-				panic(fmt.Sprintf("Array element type is of unsupported kind. Expected *ast.Ident, got %v", t))
+				panic(fmt.Sprintf("Array element type is of unsupported kind. Expected *ast.Ident, got %T: %+v", t, t))
 			}
 		default:
 			fd.unhandled(name)

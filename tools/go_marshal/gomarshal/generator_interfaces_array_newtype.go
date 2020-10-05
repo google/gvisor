@@ -71,7 +71,7 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.inIndent(func() {
 		g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
 		g.inIndent(func() {
-			g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.r), elt.Name, "src")
+			g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.r), elt.Name, "src", fmt.Sprintf("%s[0]", g.r))
 		})
 		g.emit("}\n")
 	})

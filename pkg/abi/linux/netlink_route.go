@@ -85,6 +85,8 @@ const (
 )
 
 // InterfaceInfoMessage is struct ifinfomsg, from uapi/linux/rtnetlink.h.
+//
+// +marshal
 type InterfaceInfoMessage struct {
 	Family uint8
 	_      uint8
@@ -164,6 +166,8 @@ const (
 )
 
 // InterfaceAddrMessage is struct ifaddrmsg, from uapi/linux/if_addr.h.
+//
+// +marshal
 type InterfaceAddrMessage struct {
 	Family    uint8
 	PrefixLen uint8
@@ -193,6 +197,8 @@ const (
 )
 
 // RouteMessage is struct rtmsg, from uapi/linux/rtnetlink.h.
+//
+// +marshal
 type RouteMessage struct {
 	Family uint8
 	DstLen uint8

@@ -43,8 +43,7 @@ type interfaceGenerator struct {
 	// of t's interfaces.
 	ms map[string]struct{}
 
-	// as records fields in t that are potentially not packed. The key is the
-	// accessor for the field.
+	// as records fields in t that are potentially not packed.
 	as map[string]struct{}
 }
 
@@ -138,7 +137,7 @@ func (g *interfaceGenerator) marshalScalar(accessor, typ, bufVar string) {
 }
 
 // unmarshalScalar reads a single scalar from a byte slice.
-func (g *interfaceGenerator) unmarshalScalar(accessor, typ, bufVar string) {
+func (g *interfaceGenerator) unmarshalScalar(accessor, typ, bufVar string, arrayFirstElemAccessor string) {
 	switch typ {
 	case "byte":
 		g.emit("%s = %s[0]\n", accessor, bufVar)
@@ -161,7 +160,11 @@ func (g *interfaceGenerator) unmarshalScalar(accessor, typ, bufVar string) {
 	default:
 		g.emit("%s.UnmarshalBytes(%s[:%s.SizeBytes()])\n", accessor, bufVar, accessor)
 		g.shiftDynamic(bufVar, accessor)
-		g.recordPotentiallyNonPackedField(accessor)
+		if arrayFirstElemAccessor != "" {
+			g.recordPotentiallyNonPackedField(arrayFirstElemAccessor)
+		} else {
+			g.recordPotentiallyNonPackedField(accessor)
+		}
 	}
 }
 

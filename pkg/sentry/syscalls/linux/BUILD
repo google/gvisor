@@ -62,7 +62,6 @@ go_library(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/bpf",
         "//pkg/context",
         "//pkg/log",

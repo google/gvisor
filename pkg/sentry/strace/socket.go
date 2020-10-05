@@ -20,7 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -180,7 +180,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 		}
 
 		var h linux.ControlMessageHeader
-		binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageHeader], usermem.ByteOrder, &h)
+		h.UnmarshalUnsafe(buf[i : i+linux.SizeOfControlMessageHeader])
 
 		var skipData bool
 		level := "SOL_SOCKET"
@@ -220,17 +220,19 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 
 		if skipData {
 			strs = append(strs, fmt.Sprintf("{level=%s, type=%s, length=%d}", level, typ, h.Length))
-			i += binary.AlignUp(length, width)
+			i += bits.AlignUp(length, width)
 			continue
 		}
 
 		switch h.Type {
 		case linux.SCM_RIGHTS:
-			rightsSize := binary.AlignDown(length, linux.SizeOfControlMessageRight)
+			rightsSize := bits.AlignDown(length, linux.SizeOfControlMessageRight)
 
 			numRights := rightsSize / linux.SizeOfControlMessageRight
+
 			fds := make(linux.ControlMessageRights, numRights)
-			binary.Unmarshal(buf[i:i+rightsSize], usermem.ByteOrder, &fds)
+			fdsRaw := castControlMessageRightsToPrimitive(fds)
+			primitive.UnmarshalUnsafeInt32Slice(fdsRaw, buf[i:i+rightsSize])
 
 			rights := make([]string, 0, len(fds))
 			for _, fd := range fds {
@@ -257,7 +259,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 			}
 
 			var creds linux.ControlMessageCredentials
-			binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageCredentials], usermem.ByteOrder, &creds)
+			creds.UnmarshalUnsafe(buf[i : i+linux.SizeOfControlMessageCredentials])
 
 			strs = append(strs, fmt.Sprintf(
 				"{level=%s, type=%s, length=%d, pid: %d, uid: %d, gid: %d}",
@@ -281,7 +283,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 			}
 
 			var tv linux.Timeval
-			binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], usermem.ByteOrder, &tv)
+			tv.UnmarshalUnsafe(buf[i : i+linux.SizeOfTimeval])
 
 			strs = append(strs, fmt.Sprintf(
 				"{level=%s, type=%s, length=%d, Sec: %d, Usec: %d}",
@@ -295,7 +297,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 		default:
 			panic("unreachable")
 		}
-		i += binary.AlignUp(length, width)
+		i += bits.AlignUp(length, width)
 	}
 
 	return fmt.Sprintf("%#x %s", addr, strings.Join(strs, ", "))
