@@ -21,53 +21,53 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 func TestWindowShrink(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	defer dut.Close(listenFd)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
-	defer conn.Close()
+	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFd)
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	defer conn.Close(t)
 
-	conn.Handshake()
-	acceptFd, _ := dut.Accept(listenFd)
-	defer dut.Close(acceptFd)
+	conn.Connect(t)
+	acceptFd, _ := dut.Accept(t, listenFd)
+	defer dut.Close(t, acceptFd)
 
-	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 	sampleData := []byte("Sample Data")
-	samplePayload := &tb.Payload{Bytes: sampleData}
+	samplePayload := &testbench.Payload{Bytes: sampleData}
 
-	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	dut.Send(t, acceptFd, sampleData, 0)
+	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
+		t.Fatalf("expected payload was not received: %s", err)
 	}
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
-	dut.Send(acceptFd, sampleData, 0)
-	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	dut.Send(t, acceptFd, sampleData, 0)
+	dut.Send(t, acceptFd, sampleData, 0)
+	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
+		t.Fatalf("expected payload was not received: %s", err)
 	}
-	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	// We close our receiving window here
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), WindowSize: tb.Uint16(0)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 
-	dut.Send(acceptFd, []byte("Sample Data"), 0)
+	dut.Send(t, acceptFd, []byte("Sample Data"), 0)
 	// Note: There is another kind of zero-window probing which Windows uses (by sending one
 	// new byte at `RemoteSeqNum`), if netstack wants to go that way, we may want to change
 	// the following lines.
-	expectedRemoteSeqNum := *conn.RemoteSeqNum() - 1
-	if _, err := conn.ExpectData(&tb.TCP{SeqNum: tb.Uint32(uint32(expectedRemoteSeqNum))}, nil, time.Second); err != nil {
-		t.Fatalf("expected a packet with sequence number %v: %s", expectedRemoteSeqNum, err)
+	expectedRemoteSeqNum := *conn.RemoteSeqNum(t) - 1
+	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: testbench.Uint32(uint32(expectedRemoteSeqNum))}, nil, time.Second); err != nil {
+		t.Fatalf("expected a packet with sequence number %d: %s", expectedRemoteSeqNum, err)
 	}
 }

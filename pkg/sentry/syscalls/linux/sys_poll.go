@@ -70,7 +70,7 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 	}
 
 	if ch == nil {
-		defer file.DecRef()
+		defer file.DecRef(t)
 	} else {
 		state.file = file
 		state.waiter, _ = waiter.NewChannelEntry(ch)
@@ -82,11 +82,11 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 }
 
 // releaseState releases all the pollState in "state".
-func releaseState(state []pollState) {
+func releaseState(t *kernel.Task, state []pollState) {
 	for i := range state {
 		if state[i].file != nil {
 			state[i].file.EventUnregister(&state[i].waiter)
-			state[i].file.DecRef()
+			state[i].file.DecRef(t)
 		}
 	}
 }
@@ -107,7 +107,7 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 	// result, we stop registering for events but still go through all files
 	// to get their ready masks.
 	state := make([]pollState, len(pfd))
-	defer releaseState(state)
+	defer releaseState(t, state)
 	n := uintptr(0)
 	for i := range pfd {
 		initReadiness(t, &pfd[i], &state[i], ch)
@@ -162,7 +162,7 @@ func CopyInPollFDs(t *kernel.Task, addr usermem.Addr, nfds uint) ([]linux.PollFD
 
 	pfd := make([]linux.PollFD, nfds)
 	if nfds > 0 {
-		if _, err := t.CopyIn(addr, &pfd); err != nil {
+		if _, err := linux.CopyPollFDSliceIn(t, addr, pfd); err != nil {
 			return nil, err
 		}
 	}
@@ -189,7 +189,7 @@ func doPoll(t *kernel.Task, addr usermem.Addr, nfds uint, timeout time.Duration)
 	// The poll entries are copied out regardless of whether
 	// any are set or not. This aligns with the Linux behavior.
 	if nfds > 0 && err == nil {
-		if _, err := t.CopyOut(addr, pfd); err != nil {
+		if _, err := linux.CopyPollFDSliceOut(t, addr, pfd); err != nil {
 			return remainingTimeout, 0, err
 		}
 	}
@@ -202,7 +202,7 @@ func CopyInFDSet(t *kernel.Task, addr usermem.Addr, nBytes, nBitsInLastPartialBy
 	set := make([]byte, nBytes)
 
 	if addr != 0 {
-		if _, err := t.CopyIn(addr, &set); err != nil {
+		if _, err := t.CopyInBytes(addr, set); err != nil {
 			return nil, err
 		}
 		// If we only use part of the last byte, mask out the extraneous bits.
@@ -266,7 +266,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs usermem.Add
 				if file == nil {
 					return 0, syserror.EBADF
 				}
-				file.DecRef()
+				file.DecRef(t)
 
 				var mask int16
 				if (rV & m) != 0 {
@@ -329,19 +329,19 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs usermem.Add
 
 	// Copy updated vectors back.
 	if readFDs != 0 {
-		if _, err := t.CopyOut(readFDs, r); err != nil {
+		if _, err := t.CopyOutBytes(readFDs, r); err != nil {
 			return 0, err
 		}
 	}
 
 	if writeFDs != 0 {
-		if _, err := t.CopyOut(writeFDs, w); err != nil {
+		if _, err := t.CopyOutBytes(writeFDs, w); err != nil {
 			return 0, err
 		}
 	}
 
 	if exceptFDs != 0 {
-		if _, err := t.CopyOut(exceptFDs, e); err != nil {
+		if _, err := t.CopyOutBytes(exceptFDs, e); err != nil {
 			return 0, err
 		}
 	}
@@ -410,7 +410,7 @@ func poll(t *kernel.Task, pfdAddr usermem.Addr, nfds uint, timeout time.Duration
 			nfds:    nfds,
 			timeout: remainingTimeout,
 		})
-		return 0, kernel.ERESTART_RESTARTBLOCK
+		return 0, syserror.ERESTART_RESTARTBLOCK
 	}
 	return n, err
 }
@@ -464,7 +464,7 @@ func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Note that this means that if err is nil but copyErr is not, copyErr is
 	// ignored. This is consistent with Linux.
 	if err == syserror.EINTR && copyErr == nil {
-		err = kernel.ERESTARTNOHAND
+		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
 }
@@ -494,7 +494,7 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	copyErr := copyOutTimevalRemaining(t, startNs, timeout, timevalAddr)
 	// See comment in Ppoll.
 	if err == syserror.EINTR && copyErr == nil {
-		err = kernel.ERESTARTNOHAND
+		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
 }
@@ -539,7 +539,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	copyErr := copyOutTimespecRemaining(t, startNs, timeout, timespecAddr)
 	// See comment in Ppoll.
 	if err == syserror.EINTR && copyErr == nil {
-		err = kernel.ERESTARTNOHAND
+		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
 }

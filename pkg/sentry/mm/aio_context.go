@@ -17,10 +17,8 @@ package mm
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -240,10 +238,10 @@ func (ctx *AIOContext) Drain() {
 //
 // +stateify savable
 type aioMappable struct {
-	refs.AtomicRefCount
+	aioMappableRefs
 
 	mfp pgalloc.MemoryFileProvider
-	fr  platform.FileRange
+	fr  memmap.FileRange
 }
 
 var aioRingBufferSize = uint64(usermem.Addr(linux.AIORingSize).MustRoundUp())
@@ -254,13 +252,13 @@ func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
 		return nil, err
 	}
 	m := aioMappable{mfp: mfp, fr: fr}
-	m.EnableLeakCheck("mm.aioMappable")
+	m.EnableLeakCheck()
 	return &m, nil
 }
 
 // DecRef implements refs.RefCounter.DecRef.
-func (m *aioMappable) DecRef() {
-	m.AtomicRefCount.DecRefWithDestructor(func() {
+func (m *aioMappable) DecRef(ctx context.Context) {
+	m.aioMappableRefs.DecRef(func() {
 		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }
@@ -368,7 +366,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	if err != nil {
 		return 0, err
 	}
-	defer m.DecRef()
+	defer m.DecRef(ctx)
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
 		Length:          aioRingBufferSize,
 		MappingIdentity: m,

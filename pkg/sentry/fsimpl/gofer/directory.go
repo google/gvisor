@@ -34,8 +34,11 @@ func (d *dentry) isDir() bool {
 	return d.fileType() == linux.S_IFDIR
 }
 
-// Preconditions: filesystem.renameMu must be locked. d.dirMu must be locked.
-// d.isDir(). child must be a newly-created dentry that has never had a parent.
+// Preconditions:
+// * filesystem.renameMu must be locked.
+// * d.dirMu must be locked.
+// * d.isDir().
+// * child must be a newly-created dentry that has never had a parent.
 func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 	d.IncRef() // reference held by child on its parent
 	child.parent = d
@@ -46,7 +49,9 @@ func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 	d.children[name] = child
 }
 
-// Preconditions: d.dirMu must be locked. d.isDir().
+// Preconditions:
+// * d.dirMu must be locked.
+// * d.isDir().
 func (d *dentry) cacheNegativeLookupLocked(name string) {
 	// Don't cache negative lookups if InteropModeShared is in effect (since
 	// this makes remote lookup unavoidable), or if d.isSynthetic() (in which
@@ -79,49 +84,51 @@ type createSyntheticOpts struct {
 // createSyntheticChildLocked creates a synthetic file with the given name
 // in d.
 //
-// Preconditions: d.dirMu must be locked. d.isDir(). d does not already contain
-// a child with the given name.
+// Preconditions:
+// * d.dirMu must be locked.
+// * d.isDir().
+// * d does not already contain a child with the given name.
 func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
-	d2 := &dentry{
+	child := &dentry{
 		refs:      1, // held by d
 		fs:        d.fs,
+		ino:       d.fs.nextSyntheticIno(),
 		mode:      uint32(opts.mode),
 		uid:       uint32(opts.kuid),
 		gid:       uint32(opts.kgid),
 		blockSize: usermem.PageSize, // arbitrary
-		handle: handle{
-			fd: -1,
-		},
-		nlink: uint32(2),
+		hostFD:    -1,
+		nlink:     uint32(2),
 	}
 	switch opts.mode.FileType() {
 	case linux.S_IFDIR:
 		// Nothing else needs to be done.
 	case linux.S_IFSOCK:
-		d2.endpoint = opts.endpoint
+		child.endpoint = opts.endpoint
 	case linux.S_IFIFO:
-		d2.pipe = opts.pipe
+		child.pipe = opts.pipe
 	default:
 		panic(fmt.Sprintf("failed to create synthetic file of unrecognized type: %v", opts.mode.FileType()))
 	}
-	d2.pf.dentry = d2
-	d2.vfsd.Init(d2)
+	child.pf.dentry = child
+	child.vfsd.Init(child)
 
-	d.cacheNewChildLocked(d2, opts.name)
+	d.cacheNewChildLocked(child, opts.name)
 	d.syntheticChildren++
 }
 
+// +stateify savable
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl
 
-	mu      sync.Mutex
+	mu      sync.Mutex `state:"nosave"`
 	off     int64
 	dirents []vfs.Dirent
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *directoryFD) Release() {
+func (fd *directoryFD) Release(context.Context) {
 }
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
@@ -138,6 +145,7 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 		fd.dirents = ds
 	}
 
+	d.InotifyWithParent(ctx, linux.IN_ACCESS, 0, vfs.PathEvent)
 	if d.cachedMetadataAuthoritative() {
 		d.touchAtime(fd.vfsfd.Mount())
 	}
@@ -151,7 +159,9 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	return nil
 }
 
-// Preconditions: d.isDir(). There exists at least one directoryFD representing d.
+// Preconditions:
+// * d.isDir().
+// * There exists at least one directoryFD representing d.
 func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	// NOTE(b/135560623): 9P2000.L's readdir does not specify behavior in the
 	// presence of concurrent mutation of an iterated directory, so
@@ -183,13 +193,13 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		{
 			Name:    ".",
 			Type:    linux.DT_DIR,
-			Ino:     d.ino,
+			Ino:     uint64(d.ino),
 			NextOff: 1,
 		},
 		{
 			Name:    "..",
 			Type:    uint8(atomic.LoadUint32(&parent.mode) >> 12),
-			Ino:     parent.ino,
+			Ino:     uint64(parent.ino),
 			NextOff: 2,
 		},
 	}
@@ -203,14 +213,14 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		off := uint64(0)
 		const count = 64 * 1024 // for consistency with the vfs1 client
 		d.handleMu.RLock()
-		if !d.handleReadable {
+		if d.readFile.isNil() {
 			// This should not be possible because a readable handle should
 			// have been opened when the calling directoryFD was opened.
 			d.handleMu.RUnlock()
 			panic("gofer.dentry.getDirents called without a readable handle")
 		}
 		for {
-			p9ds, err := d.handle.file.readdir(ctx, off, count)
+			p9ds, err := d.readFile.readdir(ctx, off, count)
 			if err != nil {
 				d.handleMu.RUnlock()
 				return nil, err
@@ -225,7 +235,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 				}
 				dirent := vfs.Dirent{
 					Name:    p9d.Name,
-					Ino:     p9d.QID.Path,
+					Ino:     uint64(inoFromPath(p9d.QID.Path)),
 					NextOff: int64(len(dirents) + 1),
 				}
 				// p9 does not expose 9P2000.U's DMDEVICE, DMNAMEDPIPE, or
@@ -258,7 +268,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			dirents = append(dirents, vfs.Dirent{
 				Name:    child.name,
 				Type:    uint8(atomic.LoadUint32(&child.mode) >> 12),
-				Ino:     child.ino,
+				Ino:     uint64(child.ino),
 				NextOff: int64(len(dirents) + 1),
 			})
 		}
@@ -298,4 +308,9 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	default:
 		return 0, syserror.EINVAL
 	}
+}
+
+// Sync implements vfs.FileDescriptionImpl.Sync.
+func (fd *directoryFD) Sync(ctx context.Context) error {
+	return fd.dentry().syncRemoteFile(ctx)
 }

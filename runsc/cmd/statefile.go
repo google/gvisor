@@ -20,7 +20,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state/pretty"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -105,8 +105,14 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 		if err != nil {
 			Fatalf("error parsing statefile: %v", err)
 		}
-		if err := state.PrettyPrint(output, rc, s.html); err != nil {
-			Fatalf("error printing state: %v", err)
+		if s.html {
+			if err := pretty.PrintHTML(output, rc); err != nil {
+				Fatalf("error printing state: %v", err)
+			}
+		} else {
+			if err := pretty.PrintText(output, rc); err != nil {
+				Fatalf("error printing state: %v", err)
+			}
 		}
 		return subcommands.ExitSuccess
 	}

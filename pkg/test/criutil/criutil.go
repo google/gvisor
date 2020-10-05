@@ -22,6 +22,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,28 +36,44 @@ import (
 type Crictl struct {
 	logger   testutil.Logger
 	endpoint string
+	runpArgs []string
 	cleanup  []func()
 }
 
-// resolvePath attempts to find binary paths. It may set the path to invalid,
+// ResolvePath attempts to find binary paths. It may set the path to invalid,
 // which will cause the execution to fail with a sensible error.
-func resolvePath(executable string) string {
-	guess, err := exec.LookPath(executable)
-	if err != nil {
-		guess = fmt.Sprintf("/usr/local/bin/%s", executable)
+func ResolvePath(executable string) string {
+	runtime, err := dockerutil.RuntimePath()
+	if err == nil {
+		// Check first the directory of the runtime itself.
+		if dir := path.Dir(runtime); dir != "" && dir != "." {
+			guess := path.Join(dir, executable)
+			if fi, err := os.Stat(guess); err == nil && (fi.Mode()&0111) != 0 {
+				return guess
+			}
+		}
 	}
-	return guess
+
+	// Try to find via the path.
+	guess, err := exec.LookPath(executable)
+	if err == nil {
+		return guess
+	}
+
+	// Return a default path.
+	return fmt.Sprintf("/usr/local/bin/%s", executable)
 }
 
 // NewCrictl returns a Crictl configured with a timeout and an endpoint over
 // which it will talk to containerd.
-func NewCrictl(logger testutil.Logger, endpoint string) *Crictl {
+func NewCrictl(logger testutil.Logger, endpoint string, runpArgs []string) *Crictl {
 	// Attempt to find the executable, but don't bother propagating the
 	// error at this point. The first command executed will return with a
 	// binary not found error.
 	return &Crictl{
 		logger:   logger,
 		endpoint: endpoint,
+		runpArgs: runpArgs,
 	}
 }
 
@@ -67,8 +86,8 @@ func (cc *Crictl) CleanUp() {
 }
 
 // RunPod creates a sandbox. It corresponds to `crictl runp`.
-func (cc *Crictl) RunPod(sbSpecFile string) (string, error) {
-	podID, err := cc.run("runp", sbSpecFile)
+func (cc *Crictl) RunPod(runtime, sbSpecFile string) (string, error) {
+	podID, err := cc.run("runp", "--runtime", runtime, sbSpecFile)
 	if err != nil {
 		return "", fmt.Errorf("runp failed: %v", err)
 	}
@@ -79,10 +98,42 @@ func (cc *Crictl) RunPod(sbSpecFile string) (string, error) {
 // Create creates a container within a sandbox. It corresponds to `crictl
 // create`.
 func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error) {
-	podID, err := cc.run("create", podID, contSpecFile, sbSpecFile)
+	// In version 1.16.0, crictl annoying starting attempting to pull the
+	// container, even if it was already available locally. We therefore
+	// need to parse the version and add an appropriate --no-pull argument
+	// since the image has already been loaded locally.
+	out, err := cc.run("-v")
 	if err != nil {
+		return "", err
+	}
+	r := regexp.MustCompile("crictl version ([0-9]+)\\.([0-9]+)\\.([0-9+])")
+	vs := r.FindStringSubmatch(out)
+	if len(vs) != 4 {
+		return "", fmt.Errorf("crictl -v had unexpected output: %s", out)
+	}
+	major, err := strconv.ParseUint(vs[1], 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("crictl had invalid version: %v (%s)", err, out)
+	}
+	minor, err := strconv.ParseUint(vs[2], 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("crictl had invalid version: %v (%s)", err, out)
+	}
+
+	args := []string{"create"}
+	if (major == 1 && minor >= 16) || major > 1 {
+		args = append(args, "--no-pull")
+	}
+	args = append(args, podID)
+	args = append(args, contSpecFile)
+	args = append(args, sbSpecFile)
+
+	podID, err = cc.run(args...)
+	if err != nil {
+		time.Sleep(10 * time.Minute) // XXX
 		return "", fmt.Errorf("create failed: %v", err)
 	}
+
 	// Strip the trailing newline from crictl output.
 	return strings.TrimSpace(podID), nil
 }
@@ -109,6 +160,17 @@ func (cc *Crictl) Exec(contID string, args ...string) (string, error) {
 	output, err := cc.run(a...)
 	if err != nil {
 		return "", fmt.Errorf("exec failed: %v", err)
+	}
+	return output, nil
+}
+
+// Logs retrieves the container logs. It corresponds to `crictl logs`.
+func (cc *Crictl) Logs(contID string, args ...string) (string, error) {
+	a := []string{"logs", contID}
+	a = append(a, args...)
+	output, err := cc.run(a...)
+	if err != nil {
+		return "", fmt.Errorf("logs failed: %v", err)
 	}
 	return output, nil
 }
@@ -168,7 +230,7 @@ func (cc *Crictl) Import(image string) error {
 	// be pushing a lot of bytes in order to import the image. The connect
 	// timeout stays the same and is inherited from the Crictl instance.
 	cmd := testutil.Command(cc.logger,
-		resolvePath("ctr"),
+		ResolvePath("ctr"),
 		fmt.Sprintf("--connect-timeout=%s", 30*time.Second),
 		fmt.Sprintf("--address=%s", cc.endpoint),
 		"-n", "k8s.io", "images", "import", "-")
@@ -249,7 +311,7 @@ func (cc *Crictl) StopContainer(contID string) error {
 
 // StartPodAndContainer starts a sandbox and container in that sandbox. It
 // returns the pod ID and container ID.
-func (cc *Crictl) StartPodAndContainer(image, sbSpec, contSpec string) (string, string, error) {
+func (cc *Crictl) StartPodAndContainer(runtime, image, sbSpec, contSpec string) (string, string, error) {
 	if err := cc.Import(image); err != nil {
 		return "", "", err
 	}
@@ -266,7 +328,7 @@ func (cc *Crictl) StartPodAndContainer(image, sbSpec, contSpec string) (string, 
 	}
 	cc.cleanup = append(cc.cleanup, cleanup)
 
-	podID, err := cc.RunPod(sbSpecFile)
+	podID, err := cc.RunPod(runtime, sbSpecFile)
 	if err != nil {
 		return "", "", err
 	}
@@ -296,7 +358,7 @@ func (cc *Crictl) StopPodAndContainer(podID, contID string) error {
 // run runs crictl with the given args.
 func (cc *Crictl) run(args ...string) (string, error) {
 	defaultArgs := []string{
-		resolvePath("crictl"),
+		ResolvePath("crictl"),
 		"--image-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
 		"--runtime-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
 	}

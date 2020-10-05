@@ -15,6 +15,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/binary",
+        "//pkg/iovec",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
@@ -36,5 +37,6 @@ go_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/stack",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

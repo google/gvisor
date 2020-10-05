@@ -36,20 +36,39 @@ func statxTimestampFromDentry(ns int64) linux.StatxTimestamp {
 	}
 }
 
-// Preconditions: fs.interop != InteropModeShared.
+// Preconditions: d.cachedMetadataAuthoritative() == true.
 func (d *dentry) touchAtime(mnt *vfs.Mount) {
+	if mnt.Flags.NoATime || mnt.ReadOnly() {
+		return
+	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
 	atomic.StoreInt64(&d.atime, now)
+	atomic.StoreUint32(&d.atimeDirty, 1)
 	d.metadataMu.Unlock()
 	mnt.EndWrite()
 }
 
-// Preconditions: fs.interop != InteropModeShared. The caller has successfully
-// called vfs.Mount.CheckBeginWrite().
+// Preconditions: d.metadataMu is locked. d.cachedMetadataAuthoritative() == true.
+func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
+	if mnt.Flags.NoATime || mnt.ReadOnly() {
+		return
+	}
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return
+	}
+	now := d.fs.clock.Now().Nanoseconds()
+	atomic.StoreInt64(&d.atime, now)
+	atomic.StoreUint32(&d.atimeDirty, 1)
+	mnt.EndWrite()
+}
+
+// Preconditions:
+// * d.cachedMetadataAuthoritative() == true.
+// * The caller has successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
@@ -57,18 +76,24 @@ func (d *dentry) touchCtime() {
 	d.metadataMu.Unlock()
 }
 
-// Preconditions: fs.interop != InteropModeShared. The caller has successfully
-// called vfs.Mount.CheckBeginWrite().
+// Preconditions:
+// * d.cachedMetadataAuthoritative() == true.
+// * The caller has successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCMtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
 	atomic.StoreInt64(&d.mtime, now)
 	atomic.StoreInt64(&d.ctime, now)
+	atomic.StoreUint32(&d.mtimeDirty, 1)
 	d.metadataMu.Unlock()
 }
 
+// Preconditions:
+// * d.cachedMetadataAuthoritative() == true.
+// * The caller has locked d.metadataMu.
 func (d *dentry) touchCMtimeLocked() {
 	now := d.fs.clock.Now().Nanoseconds()
 	atomic.StoreInt64(&d.mtime, now)
 	atomic.StoreInt64(&d.ctime, now)
+	atomic.StoreUint32(&d.mtimeDirty, 1)
 }

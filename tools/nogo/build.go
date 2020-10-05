@@ -26,11 +26,18 @@ var (
 	// and should not have any special prefix applied.
 	internalPrefix = fmt.Sprintf("^")
 
+	// internalDefault is applied when no paths are provided.
+	internalDefault = fmt.Sprintf("%s/.*", notPath("external"))
+
 	// externalPrefix is external workspace packages.
 	externalPrefix = "^external/"
 )
 
 // findStdPkg needs to find the bundled standard library packages.
-func findStdPkg(path, GOOS, GOARCH string) (io.ReadCloser, error) {
+func findStdPkg(GOOS, GOARCH, path string) (io.ReadCloser, error) {
+	if path == "C" {
+		// Cgo builds cannot be analyzed. Skip.
+		return nil, ErrSkip
+	}
 	return os.Open(fmt.Sprintf("external/go_sdk/pkg/%s_%s/%s.a", GOOS, GOARCH, path))
 }

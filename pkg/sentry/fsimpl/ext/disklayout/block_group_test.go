@@ -21,6 +21,8 @@ import (
 // TestBlockGroupSize tests that the block group descriptor structs are of the
 // correct size.
 func TestBlockGroupSize(t *testing.T) {
-	assertSize(t, BlockGroup32Bit{}, 32)
-	assertSize(t, BlockGroup64Bit{}, 64)
+	var bgSmall BlockGroup32Bit
+	assertSize(t, &bgSmall, 32)
+	var bgBig BlockGroup64Bit
+	assertSize(t, &bgBig, 64)
 }

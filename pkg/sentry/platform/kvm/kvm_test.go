@@ -262,30 +262,6 @@ func TestRegistersFault(t *testing.T) {
 	})
 }
 
-func TestSegments(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleSegments, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		testutil.SetTestSegments(regs)
-		for {
-			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
-				Registers:          regs,
-				FloatingPointState: dummyFPState,
-				PageTables:         pt,
-				FullRestore:        true,
-			}, &si); err == platform.ErrContextInterrupt {
-				continue // Retry.
-			} else if err != nil {
-				t.Errorf("application segment check with full restore got unexpected error: %v", err)
-			}
-			if err := testutil.CheckTestSegments(regs); err != nil {
-				t.Errorf("application segment check with full restore failed: %v", err)
-			}
-			break // Done.
-		}
-		return false
-	})
-}
-
 func TestBounce(t *testing.T) {
 	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		go func() {

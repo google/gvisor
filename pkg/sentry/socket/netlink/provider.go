@@ -97,7 +97,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 	}
 
 	d := socket.NewDirent(t, netlinkSocketDevice)
-	defer d.DecRef()
+	defer d.DecRef(t)
 	return fs.NewFile(t, d, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, s), nil
 }
 

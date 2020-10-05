@@ -212,7 +212,7 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			continue
 		}
 		if family, _, _ := s.Impl().(socket.SocketVFS2).Type(); family != linux.AF_UNIX {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not a unix socket.
 			continue
 		}
@@ -262,7 +262,7 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// For now, we always redact this pointer.
 		fmt.Fprintf(buf, "%#016p: %08X %08X %08X %04X %02X %8d",
 			(*unix.SocketOperations)(nil), // Num, pointer to kernel socket struct.
-			s.Refs()-1,                    // RefCount, don't count our own ref.
+			s.ReadRefs()-1,                // RefCount, don't count our own ref.
 			0,                             // Protocol, always 0 for UDS.
 			sockFlags,                     // Flags.
 			sops.Endpoint().Type(),        // Type.
@@ -281,7 +281,7 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		}
 		fmt.Fprintf(buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 	return nil
 }
@@ -359,7 +359,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}
 		if fa, stype, _ := sops.Type(); !(family == fa && stype == linux.SOCK_STREAM) {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not tcp4 sockets.
 			continue
 		}
@@ -430,7 +430,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 
 		// Field: refcount. Don't count the ref we obtain while deferencing
 		// the weakref to this socket.
-		fmt.Fprintf(buf, "%d ", s.Refs()-1)
+		fmt.Fprintf(buf, "%d ", s.ReadRefs()-1)
 
 		// Field: Socket struct address. Redacted due to the same reason as
 		// the 'Num' field in /proc/net/unix, see netUnix.ReadSeqFileData.
@@ -455,7 +455,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 
 		fmt.Fprintf(buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	return nil
@@ -524,7 +524,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}
 		if family, stype, _ := sops.Type(); family != linux.AF_INET || stype != linux.SOCK_DGRAM {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not udp4 socket.
 			continue
 		}
@@ -589,7 +589,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		// Field: ref; reference count on the socket inode. Don't count the ref
 		// we obtain while deferencing the weakref to this socket.
-		fmt.Fprintf(buf, "%d ", s.Refs()-1)
+		fmt.Fprintf(buf, "%d ", s.ReadRefs()-1)
 
 		// Field: Socket struct address. Redacted due to the same reason as
 		// the 'Num' field in /proc/net/unix, see netUnix.ReadSeqFileData.
@@ -600,7 +600,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		fmt.Fprintf(buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 	return nil
 }
@@ -616,6 +616,7 @@ type netSnmpData struct {
 
 var _ dynamicInode = (*netSnmpData)(nil)
 
+// +stateify savable
 type snmpLine struct {
 	prefix string
 	header string
@@ -660,7 +661,7 @@ func sprintSlice(s []uint64) string {
 	return r[1 : len(r)-1] // Remove "[]" introduced by fmt of slice.
 }
 
-// Generate implements vfs.DynamicBytesSource.
+// Generate implements vfs.DynamicBytesSource.Generate.
 func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	types := []interface{}{
 		&inet.StatSNMPIP{},
@@ -709,7 +710,7 @@ type netRouteData struct {
 
 var _ dynamicInode = (*netRouteData)(nil)
 
-// Generate implements vfs.DynamicBytesSource.
+// Generate implements vfs.DynamicBytesSource.Generate.
 // See Linux's net/ipv4/fib_trie.c:fib_route_seq_show.
 func (d *netRouteData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "%-127s\n", "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT")
@@ -773,7 +774,7 @@ type netStatData struct {
 
 var _ dynamicInode = (*netStatData)(nil)
 
-// Generate implements vfs.DynamicBytesSource.
+// Generate implements vfs.DynamicBytesSource.Generate.
 // See Linux's net/ipv4/fib_trie.c:fib_route_seq_show.
 func (d *netStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString("TcpExt: SyncookiesSent SyncookiesRecv SyncookiesFailed " +

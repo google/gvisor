@@ -61,20 +61,20 @@ package checkescape
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
-	"gvisor.dev/gvisor/tools/nogo/data"
 )
 
 const (
@@ -88,84 +88,23 @@ const (
 	testMagic = "// +mustescape:"
 
 	// exempt is the exemption annotation.
-	exempt = "// escapes:"
+	exempt = "// escapes"
 )
 
-// escapingBuiltins are builtins known to escape.
-//
-// These are lowered at an earlier stage of compilation to explicit function
-// calls, but are not available for recursive analysis.
-var escapingBuiltins = []string{
-	"append",
-	"makemap",
-	"newobject",
-	"mallocgc",
-}
+var (
+	// Binary is the binary under analysis.
+	//
+	// See Reader, below.
+	binary = flag.String("binary", "", "binary under analysis")
 
-// Analyzer defines the entrypoint.
-var Analyzer = &analysis.Analyzer{
-	Name:      "checkescape",
-	Doc:       "surfaces recursive escape analysis results",
-	Run:       run,
-	Requires:  []*analysis.Analyzer{buildssa.Analyzer},
-	FactTypes: []analysis.Fact{(*packageEscapeFacts)(nil)},
-}
+	// Reader is the input stream.
+	//
+	// This may be set instead of Binary.
+	Reader io.Reader
 
-// packageEscapeFacts is the set of all functions in a package, and whether or
-// not they recursively pass escape analysis.
-//
-// All the type names for receivers are encoded in the full key. The key
-// represents the fully qualified package and type name used at link time.
-type packageEscapeFacts struct {
-	Funcs map[string][]Escape
-}
-
-// AFact implements analysis.Fact.AFact.
-func (*packageEscapeFacts) AFact() {}
-
-// CallSite is a single call site.
-//
-// These can be chained.
-type CallSite struct {
-	LocalPos token.Pos
-	Resolved LinePosition
-}
-
-// Escape is a single escape instance.
-type Escape struct {
-	Reason EscapeReason
-	Detail string
-	Chain  []CallSite
-}
-
-// LinePosition is a low-resolution token.Position.
-//
-// This is used to match against possible exemptions placed in the source.
-type LinePosition struct {
-	Filename string
-	Line     int
-}
-
-// String implements fmt.Stringer.String.
-func (e *LinePosition) String() string {
-	return fmt.Sprintf("%s:%d", e.Filename, e.Line)
-}
-
-// String implements fmt.Stringer.String.
-//
-// Note that this string will contain new lines.
-func (e *Escape) String() string {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "%s", e.Reason.String())
-	for i, cs := range e.Chain {
-		if i == len(e.Chain)-1 {
-			fmt.Fprintf(&b, "\n @ %s → %s", cs.Resolved.String(), e.Detail)
-		} else {
-			fmt.Fprintf(&b, "\n + %s", cs.Resolved.String())
-		}
-	}
-	return b.String()
-}
+	// Tool is the tool used to dump a binary.
+	tool = flag.String("dump_tool", "", "tool used to dump a binary")
+)
 
 // EscapeReason is an escape reason.
 //
@@ -173,12 +112,12 @@ func (e *Escape) String() string {
 type EscapeReason int
 
 const (
-	interfaceInvoke EscapeReason = iota
-	unknownPackage
-	allocation
+	allocation EscapeReason = iota
 	builtin
+	interfaceInvoke
 	dynamicCall
 	stackSplit
+	unknownPackage
 	reasonCount // Count for below.
 )
 
@@ -189,17 +128,17 @@ const (
 func (e EscapeReason) String() string {
 	switch e {
 	case interfaceInvoke:
-		return "interface: function invocation via interface"
+		return "interface: call to potentially allocating function"
 	case unknownPackage:
 		return "unknown: no package information available"
 	case allocation:
-		return "heap: call to runtime heap allocation"
+		return "heap: explicit allocation"
 	case builtin:
-		return "builtin: call to runtime builtin"
+		return "builtin: call to potentially allocating builtin"
 	case dynamicCall:
-		return "dynamic: call via dynamic function"
+		return "dynamic: call to potentially allocating function"
 	case stackSplit:
-		return "stack: stack split on function entry"
+		return "stack: possible split on function entry"
 	default:
 		panic(fmt.Sprintf("unknown reason: %d", e))
 	}
@@ -228,26 +167,201 @@ var escapeTypes = func() map[string]EscapeReason {
 	return result
 }()
 
-// EscapeCount counts escapes.
+// escapingBuiltins are builtins known to escape.
 //
-// It is used to avoid accumulating too many escapes for the same reason, for
-// the same function. We limit each class to 3 instances (arbitrarily).
-type EscapeCount struct {
-	byReason [reasonCount]uint32
+// These are lowered at an earlier stage of compilation to explicit function
+// calls, but are not available for recursive analysis.
+var escapingBuiltins = []string{
+	"append",
+	"makemap",
+	"newobject",
+	"mallocgc",
 }
 
-// maxRecordsPerReason is the number of explicit records.
+// packageEscapeFacts is the set of all functions in a package, and whether or
+// not they recursively pass escape analysis.
 //
-// See EscapeCount (and usage), and Record implementation.
-const maxRecordsPerReason = 5
+// All the type names for receivers are encoded in the full key. The key
+// represents the fully qualified package and type name used at link time.
+//
+// Note that each Escapes object is a summary. Local findings may be reported
+// using more detailed information.
+type packageEscapeFacts struct {
+	Funcs map[string]Escapes
+}
 
-// Record records the reason or returns false if it should not be added.
-func (ec *EscapeCount) Record(reason EscapeReason) bool {
-	ec.byReason[reason]++
-	if ec.byReason[reason] > maxRecordsPerReason {
-		return false
+// AFact implements analysis.Fact.AFact.
+func (*packageEscapeFacts) AFact() {}
+
+// Analyzer includes specific results.
+var Analyzer = &analysis.Analyzer{
+	Name:      "checkescape",
+	Doc:       "escape analysis checks based on +checkescape annotations",
+	Run:       runSelectEscapes,
+	Requires:  []*analysis.Analyzer{buildssa.Analyzer},
+	FactTypes: []analysis.Fact{(*packageEscapeFacts)(nil)},
+}
+
+// EscapeAnalyzer includes all local escape results.
+var EscapeAnalyzer = &analysis.Analyzer{
+	Name:     "checkescape",
+	Doc:      "complete local escape analysis results (requires Analyzer facts)",
+	Run:      runAllEscapes,
+	Requires: []*analysis.Analyzer{buildssa.Analyzer},
+}
+
+// LinePosition is a low-resolution token.Position.
+//
+// This is used to match against possible exemptions placed in the source.
+type LinePosition struct {
+	Filename string
+	Line     int
+}
+
+// String implements fmt.Stringer.String.
+func (e LinePosition) String() string {
+	return fmt.Sprintf("%s:%d", e.Filename, e.Line)
+}
+
+// Simplified returns the simplified name.
+func (e LinePosition) Simplified() string {
+	return fmt.Sprintf("%s:%d", filepath.Base(e.Filename), e.Line)
+}
+
+// CallSite is a single call site.
+//
+// These can be chained.
+type CallSite struct {
+	LocalPos token.Pos
+	Resolved LinePosition
+}
+
+// IsValid indicates whether the CallSite is valid or not.
+func (cs *CallSite) IsValid() bool {
+	return cs.LocalPos.IsValid()
+}
+
+// Escapes is a collection of escapes.
+//
+// We record at most one escape for each reason, but record the number of
+// escapes that were omitted.
+//
+// This object should be used to summarize all escapes for a single line (local
+// analysis) or a single function (package facts).
+//
+// All fields are exported for gob.
+type Escapes struct {
+	CallSites [reasonCount][]CallSite
+	Details   [reasonCount]string
+	Omitted   [reasonCount]int
+}
+
+// add is called by Add and Merge.
+func (es *Escapes) add(r EscapeReason, detail string, omitted int, callSites ...CallSite) {
+	if es.CallSites[r] != nil {
+		// We will either be replacing the current escape or dropping
+		// the added one. Either way, we increment omitted by the
+		// appropriate amount.
+		es.Omitted[r]++
+		// If the callSites in the other is only a single element, then
+		// we will universally favor this. This provides the cleanest
+		// set of escapes to summarize, and more importantly: if there
+		if len(es.CallSites) == 1 || len(callSites) != 1 {
+			return
+		}
+	}
+	es.Details[r] = detail
+	es.CallSites[r] = callSites
+	es.Omitted[r] += omitted
+}
+
+// Add adds a single escape.
+func (es *Escapes) Add(r EscapeReason, detail string, callSites ...CallSite) {
+	es.add(r, detail, 0, callSites...)
+}
+
+// IsEmpty returns true iff this Escapes is empty.
+func (es *Escapes) IsEmpty() bool {
+	for _, cs := range es.CallSites {
+		if cs != nil {
+			return false
+		}
 	}
 	return true
+}
+
+// Filter filters out all escapes except those matches the given reasons.
+//
+// If local is set, then non-local escapes will also be filtered.
+func (es *Escapes) Filter(reasons []EscapeReason, local bool) {
+FilterReasons:
+	for r := EscapeReason(0); r < reasonCount; r++ {
+		for i := 0; i < len(reasons); i++ {
+			if r == reasons[i] {
+				continue FilterReasons
+			}
+		}
+		// Zap this reason.
+		es.CallSites[r] = nil
+		es.Details[r] = ""
+		es.Omitted[r] = 0
+	}
+	if !local {
+		return
+	}
+	for r := EscapeReason(0); r < reasonCount; r++ {
+		// Is does meet our local requirement?
+		if len(es.CallSites[r]) > 1 {
+			es.CallSites[r] = nil
+			es.Details[r] = ""
+			es.Omitted[r] = 0
+		}
+	}
+}
+
+// MergeWithCall merges these escapes with another.
+//
+// If callSite is nil, no call is added.
+func (es *Escapes) MergeWithCall(other Escapes, callSite CallSite) {
+	for r := EscapeReason(0); r < reasonCount; r++ {
+		if other.CallSites[r] != nil {
+			// Construct our new call chain.
+			newCallSites := other.CallSites[r]
+			if callSite.IsValid() {
+				newCallSites = append([]CallSite{callSite}, newCallSites...)
+			}
+			// Add (potentially replacing) the underlying escape.
+			es.add(r, other.Details[r], other.Omitted[r], newCallSites...)
+		}
+	}
+}
+
+// Reportf will call Reportf for each class of escapes.
+func (es *Escapes) Reportf(pass *analysis.Pass) {
+	var b bytes.Buffer // Reused for all escapes.
+	for r := EscapeReason(0); r < reasonCount; r++ {
+		if es.CallSites[r] == nil {
+			continue
+		}
+		b.Reset()
+		fmt.Fprintf(&b, "%s ", r.String())
+		if es.Omitted[r] > 0 {
+			fmt.Fprintf(&b, "(%d omitted) ", es.Omitted[r])
+		}
+		for _, cs := range es.CallSites[r][1:] {
+			fmt.Fprintf(&b, "→ %s ", cs.Resolved.String())
+		}
+		fmt.Fprintf(&b, "→ %s", es.Details[r])
+		pass.Reportf(es.CallSites[r][0].LocalPos, b.String())
+	}
+}
+
+// MergeAll merges a sequence of escapes.
+func MergeAll(others []Escapes) (es Escapes) {
+	for _, other := range others {
+		es.MergeWithCall(other, CallSite{})
+	}
+	return
 }
 
 // loadObjdump reads the objdump output.
@@ -255,24 +369,86 @@ func (ec *EscapeCount) Record(reason EscapeReason) bool {
 // This records if there is a call any function for every source line. It is
 // used only to remove false positives for escape analysis. The call will be
 // elided if escape analysis is able to put the object on the heap exclusively.
-func loadObjdump() (map[LinePosition]string, error) {
-	f, err := os.Open(data.Objdump)
+//
+// Note that the map uses <basename.go>:<line> because that is all that is
+// provided in the objdump format. Since this is all local, it is sufficient.
+func loadObjdump() (map[string][]string, error) {
+	var (
+		args  []string
+		stdin io.Reader
+	)
+	if *binary != "" {
+		args = append(args, *binary)
+	} else if Reader != nil {
+		stdin = Reader
+	} else {
+		// We have no input stream or binary.
+		return nil, fmt.Errorf("no binary or reader provided")
+	}
+
+	// Construct our command.
+	cmd := exec.Command(*tool, args...)
+	cmd.Stdin = stdin
+	cmd.Stderr = os.Stderr
+	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	// Identify calls by address or name. Note that this is also
+	// constructed dynamically below, as we encounted the addresses.
+	// This is because some of the functions (duffzero) may have
+	// jump targets in the middle of the function itself.
+	funcsAllowed := map[string]struct{}{
+		"runtime.duffzero":       struct{}{},
+		"runtime.duffcopy":       struct{}{},
+		"runtime.racefuncenter":  struct{}{},
+		"runtime.gcWriteBarrier": struct{}{},
+		"runtime.retpolineAX":    struct{}{},
+		"runtime.retpolineBP":    struct{}{},
+		"runtime.retpolineBX":    struct{}{},
+		"runtime.retpolineCX":    struct{}{},
+		"runtime.retpolineDI":    struct{}{},
+		"runtime.retpolineDX":    struct{}{},
+		"runtime.retpolineR10":   struct{}{},
+		"runtime.retpolineR11":   struct{}{},
+		"runtime.retpolineR12":   struct{}{},
+		"runtime.retpolineR13":   struct{}{},
+		"runtime.retpolineR14":   struct{}{},
+		"runtime.retpolineR15":   struct{}{},
+		"runtime.retpolineR8":    struct{}{},
+		"runtime.retpolineR9":    struct{}{},
+		"runtime.retpolineSI":    struct{}{},
+		"runtime.stackcheck":     struct{}{},
+		"runtime.settls":         struct{}{},
+	}
+	addrsAllowed := make(map[string]struct{})
 
 	// Build the map.
-	m := make(map[LinePosition]string)
-	r := bufio.NewReader(f)
-	var (
-		lastField string
-		lastPos   LinePosition
-	)
+	nextFunc := "" // For funcsAllowed.
+	m := make(map[string][]string)
+	r := bufio.NewReader(out)
+NextLine:
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil && err != io.EOF {
 			return nil, err
+		}
+		fields := strings.Fields(line)
+
+		// Is this an "allowed" function definition?
+		if len(fields) >= 2 && fields[0] == "TEXT" {
+			nextFunc = strings.TrimSuffix(fields[1], "(SB)")
+			if _, ok := funcsAllowed[nextFunc]; !ok {
+				nextFunc = "" // Don't record addresses.
+			}
+		}
+		if nextFunc != "" && len(fields) > 2 {
+			// Save the given address (in hex form, as it appears).
+			addrsAllowed[fields[1]] = struct{}{}
 		}
 
 		// We recognize lines corresponding to actual code (not the
@@ -283,53 +459,70 @@ func loadObjdump() (map[LinePosition]string, error) {
 		//
 		// Lines look like this (including the first space):
 		//  gohacks_unsafe.go:33  0xa39                   488b442408              MOVQ 0x8(SP), AX
-		if len(line) > 0 && line[0] == ' ' {
-			fields := strings.Fields(line)
+		if len(fields) >= 5 && line[0] == ' ' {
 			if !strings.Contains(fields[3], "CALL") {
 				continue
 			}
+			site := fields[0]
+			target := strings.TrimSuffix(fields[4], "(SB)")
 
-			// Ignore strings containing duffzero, which is just
-			// used by stack allocations for types that are large
-			// enough to warrant Duff's device.
-			if strings.Contains(line, "runtime.duffzero") {
+			// Ignore strings containing allowed functions.
+			if _, ok := funcsAllowed[target]; ok {
 				continue
 			}
-
-			// Ignore the racefuncenter call, which is used for
-			// race builds. This does not escape.
-			if strings.Contains(line, "runtime.racefuncenter") {
+			if _, ok := addrsAllowed[target]; ok {
 				continue
 			}
-
-			// Calculate the filename and line. Note that per the
-			// example above, the filename is not a fully qualified
-			// base, just the basename (what we require).
-			if fields[0] != lastField {
-				parts := strings.SplitN(fields[0], ":", 2)
-				lineNum, err := strconv.ParseInt(parts[1], 10, 64)
-				if err != nil {
-					return nil, err
+			if len(fields) > 5 {
+				// This may be a future relocation. Some
+				// objdump versions describe this differently.
+				// If it contains any of the functions allowed
+				// above as a string, we let it go.
+				softTarget := strings.Join(fields[5:], " ")
+				for name := range funcsAllowed {
+					if strings.Contains(softTarget, name) {
+						continue NextLine
+					}
 				}
-				lastPos = LinePosition{
-					Filename: parts[0],
-					Line:     int(lineNum),
-				}
-				lastField = fields[0]
-			}
-			if _, ok := m[lastPos]; ok {
-				continue // Already marked.
 			}
 
-			// Save the actual call for the detail.
-			m[lastPos] = strings.Join(fields[3:], " ")
+			// Does this exist already?
+			existing, ok := m[site]
+			if !ok {
+				existing = make([]string, 0, 1)
+			}
+			for _, other := range existing {
+				if target == other {
+					continue NextLine
+				}
+			}
+			existing = append(existing, target)
+			m[site] = existing // Update.
 		}
 		if err == io.EOF {
 			break
 		}
 	}
 
-	return m, nil
+	// Zap any accidental false positives.
+	final := make(map[string][]string)
+	for site, calls := range m {
+		filteredCalls := make([]string, 0, len(calls))
+		for _, call := range calls {
+			if _, ok := addrsAllowed[call]; ok {
+				continue // Omit this call.
+			}
+			filteredCalls = append(filteredCalls, call)
+		}
+		final[site] = filteredCalls
+	}
+
+	// Wait for the dump to finish.
+	if err := cmd.Wait(); err != nil {
+		return nil, err
+	}
+
+	return final, nil
 }
 
 // poser is a type that implements Pos.
@@ -337,29 +530,108 @@ type poser interface {
 	Pos() token.Pos
 }
 
+// runSelectEscapes runs with only select escapes.
+func runSelectEscapes(pass *analysis.Pass) (interface{}, error) {
+	return run(pass, false)
+}
+
+// runAllEscapes runs with all escapes included.
+func runAllEscapes(pass *analysis.Pass) (interface{}, error) {
+	return run(pass, true)
+}
+
+// findReasons extracts reasons from the function.
+func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool, map[EscapeReason]bool) {
+	// Is there a comment?
+	if fdecl.Doc == nil {
+		return nil, false, nil
+	}
+	var (
+		reasons     []EscapeReason
+		local       bool
+		testReasons = make(map[EscapeReason]bool) // reason -> local?
+	)
+	// Scan all lines.
+	found := false
+	for _, c := range fdecl.Doc.List {
+		// Does the comment contain a +checkescape line?
+		if !strings.HasPrefix(c.Text, magic) && !strings.HasPrefix(c.Text, testMagic) {
+			continue
+		}
+		if c.Text == magic {
+			// Default: hard reasons, local only.
+			reasons = hardReasons
+			local = true
+		} else if strings.HasPrefix(c.Text, magicParams) {
+			// Extract specific reasons.
+			types := strings.Split(c.Text[len(magicParams):], ",")
+			found = true // For below.
+			for i := 0; i < len(types); i++ {
+				if types[i] == "local" {
+					// Limit search to local escapes.
+					local = true
+				} else if types[i] == "all" {
+					// Append all reasons.
+					reasons = append(reasons, allReasons...)
+				} else if types[i] == "hard" {
+					// Append all hard reasons.
+					reasons = append(reasons, hardReasons...)
+				} else {
+					r, ok := escapeTypes[types[i]]
+					if !ok {
+						// This is not a valid escape reason.
+						pass.Reportf(fdecl.Pos(), "unknown reason: %v", types[i])
+						continue
+					}
+					reasons = append(reasons, r)
+				}
+			}
+		} else if strings.HasPrefix(c.Text, testMagic) {
+			types := strings.Split(c.Text[len(testMagic):], ",")
+			local := false
+			for i := 0; i < len(types); i++ {
+				if types[i] == "local" {
+					local = true
+				} else {
+					r, ok := escapeTypes[types[i]]
+					if !ok {
+						// This is not a valid escape reason.
+						pass.Reportf(fdecl.Pos(), "unknown reason: %v", types[i])
+						continue
+					}
+					if v, ok := testReasons[r]; ok && v {
+						// Already registered as local.
+						continue
+					}
+					testReasons[r] = local
+				}
+			}
+		}
+	}
+	if len(reasons) == 0 && found {
+		// A magic annotation was provided, but no reasons.
+		pass.Reportf(fdecl.Pos(), "no reasons provided")
+	}
+	return reasons, local, testReasons
+}
+
 // run performs the analysis.
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 	calls, err := loadObjdump()
 	if err != nil {
 		return nil, err
 	}
-	pef := packageEscapeFacts{
-		Funcs: make(map[string][]Escape),
-	}
+	allEscapes := make(map[string][]Escapes)
+	mergedEscapes := make(map[string]Escapes)
 	linePosition := func(inst, parent poser) LinePosition {
 		p := pass.Fset.Position(inst.Pos())
 		if (p.Filename == "" || p.Line == 0) && parent != nil {
 			p = pass.Fset.Position(parent.Pos())
 		}
 		return LinePosition{
-			Filename: filepath.Base(p.Filename),
+			Filename: p.Filename,
 			Line:     p.Line,
 		}
-	}
-	hasCall := func(inst poser) (string, bool) {
-		p := linePosition(inst, nil)
-		s, ok := calls[p]
-		return s, ok
 	}
 	callSite := func(inst ssa.Instruction) CallSite {
 		return CallSite{
@@ -367,35 +639,39 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			Resolved: linePosition(inst, inst.Parent()),
 		}
 	}
-	escapes := func(reason EscapeReason, detail string, inst ssa.Instruction, ec *EscapeCount) []Escape {
-		if !ec.Record(reason) {
-			return nil // Skip.
+	hasCall := func(inst poser) (string, bool) {
+		p := linePosition(inst, nil)
+		s, ok := calls[p.Simplified()]
+		if !ok {
+			return "", false
 		}
-		es := Escape{
-			Reason: reason,
-			Detail: detail,
-			Chain:  []CallSite{callSite(inst)},
-		}
-		return []Escape{es}
-	}
-	resolve := func(sub []Escape, inst ssa.Instruction, ec *EscapeCount) (es []Escape) {
-		for _, e := range sub {
-			if !ec.Record(e.Reason) {
-				continue // Skip.
-			}
-			es = append(es, Escape{
-				Reason: e.Reason,
-				Detail: e.Detail,
-				Chain:  append([]CallSite{callSite(inst)}, e.Chain...),
-			})
-		}
-		return es
+		// Join all calls together.
+		return strings.Join(s, " or "), true
 	}
 	state := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 
-	var loadFunc func(*ssa.Function) []Escape // Used below.
+	// Build the exception list.
+	exemptions := make(map[LinePosition]string)
+	for _, f := range pass.Files {
+		for _, cg := range f.Comments {
+			for _, c := range cg.List {
+				p := pass.Fset.Position(c.Slash)
+				if strings.HasPrefix(strings.ToLower(c.Text), exempt) {
+					exemptions[LinePosition{
+						Filename: p.Filename,
+						Line:     p.Line,
+					}] = c.Text[len(exempt):]
+				}
+			}
+		}
+	}
 
-	analyzeInstruction := func(inst ssa.Instruction, ec *EscapeCount) []Escape {
+	var loadFunc func(*ssa.Function) Escapes // Used below.
+	analyzeInstruction := func(inst ssa.Instruction) (es Escapes) {
+		cs := callSite(inst)
+		if _, ok := exemptions[cs.Resolved]; ok {
+			return // No escape.
+		}
 		switch x := inst.(type) {
 		case *ssa.Call:
 			if x.Call.IsInvoke() {
@@ -404,19 +680,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				// not, since we don't know the underlying
 				// type.
 				call, _ := hasCall(inst)
-				return escapes(interfaceInvoke, call, inst, ec)
+				es.Add(interfaceInvoke, call, cs)
+				return
 			}
 			switch x := x.Call.Value.(type) {
 			case *ssa.Function:
 				if x.Pkg == nil {
 					// Can't resolve the package.
-					return escapes(unknownPackage, "no package", inst, ec)
-				}
-
-				// Atomic functions are instrinics. We can
-				// assume that they don't escape.
-				if x.Pkg.Pkg.Name() == "atomic" {
-					return nil
+					es.Add(unknownPackage, "no package", cs)
+					return
 				}
 
 				// Is this a local function? If yes, call the
@@ -424,7 +696,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				// local escapes are the escapes found in the
 				// local function.
 				if x.Pkg.Pkg == pass.Pkg {
-					return resolve(loadFunc(x), inst, ec)
+					es.MergeWithCall(loadFunc(x), cs)
+					return
 				}
 
 				// Recursively collect information from
@@ -433,22 +706,26 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				if !pass.ImportPackageFact(x.Pkg.Pkg, &imp) {
 					// Unable to import the dependency; we must
 					// declare these as escaping.
-					return escapes(unknownPackage, "no analysis", inst, ec)
+					es.Add(unknownPackage, "no analysis", cs)
+					return
 				}
 
 				// The escapes of this instruction are the
 				// escapes of the called function directly.
-				return resolve(imp.Funcs[x.RelString(x.Pkg.Pkg)], inst, ec)
+				// Note that this may record many escapes.
+				es.MergeWithCall(imp.Funcs[x.RelString(x.Pkg.Pkg)], cs)
+				return
 			case *ssa.Builtin:
 				// Ignore elided escapes.
 				if _, has := hasCall(inst); !has {
-					return nil
+					return
 				}
 
 				// Check if the builtin is escaping.
 				for _, name := range escapingBuiltins {
 					if x.Name() == name {
-						return escapes(builtin, name, inst, ec)
+						es.Add(builtin, name, cs)
+						return
 					}
 				}
 			default:
@@ -457,82 +734,87 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				// dispatches. We cannot actually look up what
 				// this refers to using static analysis alone.
 				call, _ := hasCall(inst)
-				return escapes(dynamicCall, call, inst, ec)
+				es.Add(dynamicCall, call, cs)
 			}
 		case *ssa.Alloc:
 			// Ignore non-heap allocations.
 			if !x.Heap {
-				return nil
+				return
 			}
 
 			// Ignore elided escapes.
 			call, has := hasCall(inst)
 			if !has {
-				return nil
+				return
 			}
 
 			// This is a real heap allocation.
-			return escapes(allocation, call, inst, ec)
+			es.Add(allocation, call, cs)
 		case *ssa.MakeMap:
-			return escapes(builtin, "makemap", inst, ec)
+			es.Add(builtin, "makemap", cs)
 		case *ssa.MakeSlice:
-			return escapes(builtin, "makeslice", inst, ec)
+			es.Add(builtin, "makeslice", cs)
 		case *ssa.MakeClosure:
-			return escapes(builtin, "makeclosure", inst, ec)
+			es.Add(builtin, "makeclosure", cs)
 		case *ssa.MakeChan:
-			return escapes(builtin, "makechan", inst, ec)
+			es.Add(builtin, "makechan", cs)
 		}
-		return nil // No escapes.
+		return
 	}
 
-	var analyzeBasicBlock func(*ssa.BasicBlock, *EscapeCount) []Escape // Recursive.
-	analyzeBasicBlock = func(block *ssa.BasicBlock, ec *EscapeCount) (rval []Escape) {
+	var analyzeBasicBlock func(*ssa.BasicBlock) []Escapes // Recursive.
+	analyzeBasicBlock = func(block *ssa.BasicBlock) (rval []Escapes) {
 		for _, inst := range block.Instrs {
-			rval = append(rval, analyzeInstruction(inst, ec)...)
+			if es := analyzeInstruction(inst); !es.IsEmpty() {
+				rval = append(rval, es)
+			}
 		}
-		return rval // N.B. may be empty.
+		return
 	}
 
-	loadFunc = func(fn *ssa.Function) []Escape {
+	loadFunc = func(fn *ssa.Function) Escapes {
 		// Is this already available?
 		name := fn.RelString(pass.Pkg)
-		if es, ok := pef.Funcs[name]; ok {
+		if es, ok := mergedEscapes[name]; ok {
 			return es
 		}
 
 		// In the case of a true cycle, we assume that the current
-		// function itself has no escapes until the rest of the
-		// analysis is complete. This will trip the above in the case
-		// of a cycle of any kind.
-		pef.Funcs[name] = nil
+		// function itself has no escapes.
+		//
+		// When evaluating the function again, the proper escapes will
+		// be filled in here.
+		allEscapes[name] = nil
+		mergedEscapes[name] = Escapes{}
 
 		// Perform the basic analysis.
-		var (
-			es []Escape
-			ec EscapeCount
-		)
+		var es []Escapes
 		if fn.Recover != nil {
-			es = append(es, analyzeBasicBlock(fn.Recover, &ec)...)
+			es = append(es, analyzeBasicBlock(fn.Recover)...)
 		}
 		for _, block := range fn.Blocks {
-			es = append(es, analyzeBasicBlock(block, &ec)...)
+			es = append(es, analyzeBasicBlock(block)...)
 		}
 
 		// Check for a stack split.
 		if call, has := hasCall(fn); has {
-			es = append(es, Escape{
-				Reason: stackSplit,
-				Detail: call,
-				Chain: []CallSite{CallSite{
-					LocalPos: fn.Pos(),
-					Resolved: linePosition(fn, fn.Parent()),
-				}},
+			var ss Escapes
+			ss.Add(stackSplit, call, CallSite{
+				LocalPos: fn.Pos(),
+				Resolved: linePosition(fn, fn.Parent()),
 			})
+			es = append(es, ss)
 		}
 
 		// Save the result and return.
-		pef.Funcs[name] = es
-		return es
+		//
+		// Note that we merge the result when saving to the facts. It
+		// doesn't really matter the specific escapes, as long as we
+		// have recorded all the appropriate classes of escapes.
+		summary := MergeAll(es)
+		allEscapes[name] = es
+		mergedEscapes[name] = summary
+		return summary
 	}
 
 	// Complete all local functions.
@@ -540,173 +822,76 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		loadFunc(fn)
 	}
 
-	// Build the exception list.
-	exemptions := make(map[LinePosition]string)
-	for _, f := range pass.Files {
-		for _, cg := range f.Comments {
-			for _, c := range cg.List {
-				p := pass.Fset.Position(c.Slash)
-				if strings.HasPrefix(c.Text, exempt) {
-					exemptions[LinePosition{
-						Filename: filepath.Base(p.Filename),
-						Line:     p.Line,
-					}] = c.Text[len(exempt):]
-				}
-			}
-		}
+	if !localEscapes {
+		// Export all findings for future packages. We only do this in
+		// non-local escapes mode, and expect to run this analysis
+		// after the SelectAnalysis.
+		pass.ExportPackageFact(&packageEscapeFacts{
+			Funcs: mergedEscapes,
+		})
 	}
-
-	// Delete everything matching the excemtions.
-	//
-	// This has the implication that exceptions are applied recursively,
-	// since this now modified set is what will be saved.
-	for name, escapes := range pef.Funcs {
-		var newEscapes []Escape
-		for _, escape := range escapes {
-			isExempt := false
-			for line, _ := range exemptions {
-				// Note that an exemption applies if it is
-				// marked as an exemption anywhere in the call
-				// chain. It need not be marked as escapes in
-				// the function itself, nor in the top-level
-				// caller.
-				for _, callSite := range escape.Chain {
-					if callSite.Resolved == line {
-						isExempt = true
-						break
-					}
-				}
-				if isExempt {
-					break
-				}
-			}
-			if !isExempt {
-				// Record this escape; not an exception.
-				newEscapes = append(newEscapes, escape)
-			}
-		}
-		pef.Funcs[name] = newEscapes // Update.
-	}
-
-	// Export all findings for future packages.
-	pass.ExportPackageFact(&pef)
 
 	// Scan all functions for violations.
 	for _, f := range pass.Files {
 		// Scan all declarations.
 		for _, decl := range f.Decls {
-			fdecl, ok := decl.(*ast.FuncDecl)
 			// Function declaration?
+			fdecl, ok := decl.(*ast.FuncDecl)
 			if !ok {
-				continue
-			}
-			// Is there a comment?
-			if fdecl.Doc == nil {
 				continue
 			}
 			var (
 				reasons     []EscapeReason
-				found       bool
 				local       bool
-				testReasons = make(map[EscapeReason]bool) // reason -> local?
+				testReasons map[EscapeReason]bool
 			)
-			// Does the comment contain a +checkescape line?
-			for _, c := range fdecl.Doc.List {
-				if !strings.HasPrefix(c.Text, magic) && !strings.HasPrefix(c.Text, testMagic) {
-					continue
-				}
-				if c.Text == magic {
-					// Default: hard reasons, local only.
-					reasons = hardReasons
-					local = true
-				} else if strings.HasPrefix(c.Text, magicParams) {
-					// Extract specific reasons.
-					types := strings.Split(c.Text[len(magicParams):], ",")
-					found = true // For below.
-					for i := 0; i < len(types); i++ {
-						if types[i] == "local" {
-							// Limit search to local escapes.
-							local = true
-						} else if types[i] == "all" {
-							// Append all reasons.
-							reasons = append(reasons, allReasons...)
-						} else if types[i] == "hard" {
-							// Append all hard reasons.
-							reasons = append(reasons, hardReasons...)
-						} else {
-							r, ok := escapeTypes[types[i]]
-							if !ok {
-								// This is not a valid escape reason.
-								pass.Reportf(fdecl.Pos(), "unknown reason: %v", types[i])
-								continue
-							}
-							reasons = append(reasons, r)
-						}
-					}
-				} else if strings.HasPrefix(c.Text, testMagic) {
-					types := strings.Split(c.Text[len(testMagic):], ",")
-					local := false
-					for i := 0; i < len(types); i++ {
-						if types[i] == "local" {
-							local = true
-						} else {
-							r, ok := escapeTypes[types[i]]
-							if !ok {
-								// This is not a valid escape reason.
-								pass.Reportf(fdecl.Pos(), "unknown reason: %v", types[i])
-								continue
-							}
-							if v, ok := testReasons[r]; ok && v {
-								// Already registered as local.
-								continue
-							}
-							testReasons[r] = local
-						}
-					}
-				}
-			}
-			if len(reasons) == 0 && found {
-				// A magic annotation was provided, but no reasons.
-				pass.Reportf(fdecl.Pos(), "no reasons provided")
-				continue
+			if localEscapes {
+				// Find all hard escapes.
+				reasons = hardReasons
+			} else {
+				// Find all declared reasons.
+				reasons, local, testReasons = findReasons(pass, fdecl)
 			}
 
 			// Scan for matches.
 			fn := pass.TypesInfo.Defs[fdecl.Name].(*types.Func)
-			name := state.Pkg.Prog.FuncValue(fn).RelString(pass.Pkg)
-			es, ok := pef.Funcs[name]
-			if !ok {
+			fv := state.Pkg.Prog.FuncValue(fn)
+			if fv == nil {
+				continue
+			}
+			name := fv.RelString(pass.Pkg)
+			all, allOk := allEscapes[name]
+			merged, mergedOk := mergedEscapes[name]
+			if !allOk || !mergedOk {
 				pass.Reportf(fdecl.Pos(), "internal error: function %s not found.", name)
 				continue
 			}
-			for _, e := range es {
-				for _, r := range reasons {
-					// Is does meet our local requirement?
-					if local && len(e.Chain) > 1 {
-						continue
-					}
-					// Does this match the reason? Emit
-					// with a full stack trace that
-					// explains why this violates our
-					// constraints.
-					if e.Reason == r {
-						pass.Reportf(e.Chain[0].LocalPos, "%s", e.String())
-					}
-				}
+
+			// Filter reasons and report.
+			//
+			// For the findings, we use all escapes.
+			for _, es := range all {
+				es.Filter(reasons, local)
+				es.Reportf(pass)
 			}
 
 			// Scan for test (required) matches.
+			//
+			// For tests we need only the merged escapes.
 			testReasonsFound := make(map[EscapeReason]bool)
-			for _, e := range es {
+			for r := EscapeReason(0); r < reasonCount; r++ {
+				if merged.CallSites[r] == nil {
+					continue
+				}
 				// Is this local?
-				local, ok := testReasons[e.Reason]
-				wantLocal := len(e.Chain) == 1
-				testReasonsFound[e.Reason] = wantLocal
+				wantLocal, ok := testReasons[r]
+				isLocal := len(merged.CallSites[r]) == 1
+				testReasonsFound[r] = isLocal
 				if !ok {
 					continue
 				}
-				if local == wantLocal {
-					delete(testReasons, e.Reason)
+				if isLocal == wantLocal {
+					delete(testReasons, r)
 				}
 			}
 			for reason, local := range testReasons {
@@ -714,10 +899,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				pass.Reportf(fdecl.Pos(), fmt.Sprintf("testescapes not found: reason=%s, local=%t", reason, local))
 			}
 			if len(testReasons) > 0 {
-				// Dump all reasons found to help in debugging.
-				for _, e := range es {
-					pass.Reportf(e.Chain[0].LocalPos, "escape found: %s", e.String())
-				}
+				// Report for debugging.
+				merged.Reportf(pass)
 			}
 		}
 	}

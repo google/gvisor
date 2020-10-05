@@ -67,6 +67,7 @@ var (
 	taskStaticFiles = map[string]testutil.DirentType{
 		"auxv":          linux.DT_REG,
 		"cgroup":        linux.DT_REG,
+		"cwd":           linux.DT_LNK,
 		"cmdline":       linux.DT_REG,
 		"comm":          linux.DT_REG,
 		"environ":       linux.DT_REG,
@@ -104,7 +105,7 @@ func setup(t *testing.T) *testutil.System {
 		AllowUserMount: true,
 	})
 
-	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", tmpfs.Name, &vfs.GetFilesystemOptions{})
+	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", tmpfs.Name, &vfs.MountOptions{})
 	if err != nil {
 		t.Fatalf("NewMountNamespace(): %v", err)
 	}
@@ -132,7 +133,7 @@ func setup(t *testing.T) *testutil.System {
 			},
 		},
 	}
-	if err := k.VFS().MountAt(ctx, creds, "", pop, Name, mntOpts); err != nil {
+	if _, err := k.VFS().MountAt(ctx, creds, "", pop, Name, mntOpts); err != nil {
 		t.Fatalf("MountAt(/proc): %v", err)
 	}
 	return testutil.NewSystem(ctx, t, k.VFS(), mntns)
@@ -218,7 +219,7 @@ func TestTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("vfsfs.OpenAt(%q) failed: %v", path, err)
 		}
-		defer fd.DecRef()
+		defer fd.DecRef(s.Ctx)
 		buf := make([]byte, 1)
 		bufIOSeq := usermem.BytesIOSequence(buf)
 		if _, err := fd.Read(s.Ctx, bufIOSeq, vfs.ReadOptions{}); err != syserror.EISDIR {
@@ -336,7 +337,7 @@ func TestTasksOffset(t *testing.T) {
 			if err != nil {
 				t.Fatalf("vfsfs.OpenAt(/) failed: %v", err)
 			}
-			defer fd.DecRef()
+			defer fd.DecRef(s.Ctx)
 			if _, err := fd.Seek(s.Ctx, tc.offset, linux.SEEK_SET); err != nil {
 				t.Fatalf("Seek(%d, SEEK_SET): %v", tc.offset, err)
 			}
@@ -441,7 +442,7 @@ func iterateDir(ctx context.Context, t *testing.T, s *testutil.System, fd *vfs.F
 			t.Errorf("vfsfs.OpenAt(%v) failed: %v", absPath, err)
 			continue
 		}
-		defer child.DecRef()
+		defer child.DecRef(ctx)
 		stat, err := child.Stat(ctx, vfs.StatOptions{})
 		if err != nil {
 			t.Errorf("Stat(%v) failed: %v", absPath, err)
@@ -476,7 +477,7 @@ func TestTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
-	defer file.DecRef()
+	defer file.DecRef(s.Ctx)
 
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
@@ -501,5 +502,5 @@ func TestTree(t *testing.T) {
 		t.Fatalf("vfsfs.OpenAt(/proc) failed: %v", err)
 	}
 	iterateDir(ctx, t, s, fd)
-	fd.DecRef()
+	fd.DecRef(ctx)
 }

@@ -23,7 +23,7 @@ reproduced with software that is publicly available.
 
 Please include the following details of your environment:
 
-*   `runsc -v`
+*   `runsc -version`
 *   `docker version` or `docker info` (if available)
 *   `kubectl version` and `kubectl get nodes` (if using Kubernetes)
 *   `uname -a`

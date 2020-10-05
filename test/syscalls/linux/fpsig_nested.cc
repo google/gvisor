@@ -26,9 +26,22 @@ namespace testing {
 
 namespace {
 
+#ifdef __x86_64__
 #define GET_XMM(__var, __xmm) \
   asm volatile("movq %%" #__xmm ", %0" : "=r"(__var))
 #define SET_XMM(__var, __xmm) asm volatile("movq %0, %%" #__xmm : : "r"(__var))
+#define GET_FP0(__var) GET_XMM(__var, xmm0)
+#define SET_FP0(__var) SET_XMM(__var, xmm0)
+#elif __aarch64__
+#define __stringify_1(x...) #x
+#define __stringify(x...) __stringify_1(x)
+#define GET_FPREG(var, regname) \
+  asm volatile("str " __stringify(regname) ", %0" : "=m"(var))
+#define SET_FPREG(var, regname) \
+  asm volatile("ldr " __stringify(regname) ", %0" : "=m"(var))
+#define GET_FP0(var) GET_FPREG(var, d0)
+#define SET_FP0(var) SET_FPREG(var, d0)
+#endif
 
 int pid;
 int tid;
@@ -40,20 +53,21 @@ void sigusr2(int s, siginfo_t* siginfo, void* _uc) {
   uint64_t val = SIGUSR2;
 
   // Record the value of %xmm0 on entry and then clobber it.
-  GET_XMM(entryxmm[1], xmm0);
-  SET_XMM(val, xmm0);
-  GET_XMM(exitxmm[1], xmm0);
+  GET_FP0(entryxmm[1]);
+  SET_FP0(val);
+  GET_FP0(exitxmm[1]);
 }
 
 void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
   uint64_t val = SIGUSR1;
 
   // Record the value of %xmm0 on entry and then clobber it.
-  GET_XMM(entryxmm[0], xmm0);
-  SET_XMM(val, xmm0);
+  GET_FP0(entryxmm[0]);
+  SET_FP0(val);
 
   // Send a SIGUSR2 to ourself. The signal mask is configured such that
   // the SIGUSR2 handler will run before this handler returns.
+#ifdef __x86_64__
   asm volatile(
       "movl %[killnr], %%eax;"
       "movl %[pid], %%edi;"
@@ -66,10 +80,19 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
       : "rax", "rdi", "rsi", "rdx",
         // Clobbered by syscall.
         "rcx", "r11");
+#elif __aarch64__
+  asm volatile(
+      "mov x8, %0\n"
+      "mov x0, %1\n"
+      "mov x1, %2\n"
+      "mov x2, %3\n"
+      "svc #0\n" ::"r"(__NR_tgkill),
+      "r"(pid), "r"(tid), "r"(SIGUSR2));
+#endif
 
   // Record value of %xmm0 again to verify that the nested signal handler
   // does not clobber it.
-  GET_XMM(exitxmm[0], xmm0);
+  GET_FP0(exitxmm[0]);
 }
 
 TEST(FPSigTest, NestedSignals) {
@@ -98,8 +121,9 @@ TEST(FPSigTest, NestedSignals) {
   // to signal the current thread ensures that this is the clobbered thread.
 
   uint64_t expected = 0xdeadbeeffacefeed;
-  SET_XMM(expected, xmm0);
+  SET_FP0(expected);
 
+#ifdef __x86_64__
   asm volatile(
       "movl %[killnr], %%eax;"
       "movl %[pid], %%edi;"
@@ -112,9 +136,18 @@ TEST(FPSigTest, NestedSignals) {
       : "rax", "rdi", "rsi", "rdx",
         // Clobbered by syscall.
         "rcx", "r11");
+#elif __aarch64__
+  asm volatile(
+      "mov x8, %0\n"
+      "mov x0, %1\n"
+      "mov x1, %2\n"
+      "mov x2, %3\n"
+      "svc #0\n" ::"r"(__NR_tgkill),
+      "r"(pid), "r"(tid), "r"(SIGUSR1));
+#endif
 
   uint64_t got;
-  GET_XMM(got, xmm0);
+  GET_FP0(got);
 
   //
   // The checks below verifies the following:

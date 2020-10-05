@@ -37,10 +37,8 @@ Dependencies can be added by using `go mod get`. In order to keep the
 
 ### Coding Guidelines
 
-All Go code should conform to the [Go style guidelines][gostyle]. C++ code
-should conform to the [Google C++ Style Guide][cppstyle] and the guidelines
-described for tests. Note that code may be automatically formatted per the
-guidelines when merged.
+All code should comply with the [style guide](g3doc/style.md). Note that code
+may be automatically formatted per the guidelines when merged.
 
 As a secure runtime, we need to maintain the safety of all of code included in
 gVisor. The following rules help mitigate issues.
@@ -125,9 +123,7 @@ Contributions made by corporations are covered by a different agreement than the
 one above, the
 [Software Grant and Corporate Contributor License Agreement][gccla].
 
-[cppstyle]: https://google.github.io/styleguide/cppguide.html
 [gcla]: https://cla.developers.google.com/about/google-individual
 [gccla]: https://cla.developers.google.com/about/google-corporate
 [github]: https://github.com/google/gvisor/compare
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
-[gostyle]: https://github.com/golang/go/wiki/CodeReviewComments

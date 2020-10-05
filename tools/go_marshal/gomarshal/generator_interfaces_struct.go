@@ -20,6 +20,7 @@ package gomarshal
 import (
 	"fmt"
 	"go/ast"
+	"sort"
 	"strings"
 )
 
@@ -40,6 +41,8 @@ func (g *interfaceGenerator) areFieldsPackedExpression() (string, bool) {
 	for accessor, _ := range g.as {
 		cs = append(cs, fmt.Sprintf("%s.Packed()", accessor))
 	}
+	// Sort expressions for determinstic build outputs.
+	sort.Strings(cs)
 	return strings.Join(cs, " && "), true
 }
 
@@ -47,12 +50,6 @@ func (g *interfaceGenerator) areFieldsPackedExpression() (string, bool) {
 // checks are done ahead of time and in one place so we can make assumptions
 // later.
 func (g *interfaceGenerator) validateStruct(ts *ast.TypeSpec, st *ast.StructType) {
-	forEachStructField(st, func(f *ast.Field) {
-		if len(f.Names) == 0 {
-			g.abortAt(f.Pos(), "Cannot marshal structs with embedded fields, give the field a name; use '_' for anonymous fields such as padding fields")
-		}
-	})
-
 	forEachStructField(st, func(f *ast.Field) {
 		fieldDispatcher{
 			primitive: func(_, t *ast.Ident) {
@@ -98,7 +95,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 		var dynamicSizeTerms []string
 
 		forEachStructField(st, fieldDispatcher{
-			primitive: func(n, t *ast.Ident) {
+			primitive: func(_, t *ast.Ident) {
 				if size, dynamic := g.scalarSize(t); !dynamic {
 					primitiveSize += size
 				} else {
@@ -106,13 +103,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", t.Name))
 				}
 			},
-			selector: func(n, tX, tSel *ast.Ident) {
+			selector: func(_, tX, tSel *ast.Ident) {
 				tName := fmt.Sprintf("%s.%s", tX.Name, tSel.Name)
 				g.recordUsedImport(tX.Name)
 				g.recordUsedMarshallable(tName)
 				dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", tName))
 			},
-			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+			array: func(_ *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
 				lenExpr := g.arrayLenExpr(a)
 				if size, dynamic := g.scalarSize(t); !dynamic {
 					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%d*%s", size, lenExpr))
@@ -268,6 +265,10 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
 	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
+			g.emit("%s.MarshalBytes(dst)\n", g.r)
+		}
 		if thisPacked {
 			g.recordUsedImport("safecopy")
 			g.recordUsedImport("unsafe")
@@ -277,16 +278,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
 				})
 				g.emit("} else {\n")
-				g.inIndent(func() {
-					g.emit("%s.MarshalBytes(dst)\n", g.r)
-				})
+				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
 				g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
 			}
 		} else {
-			g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
-			g.emit("%s.MarshalBytes(dst)\n", g.r)
+			fallback()
 		}
 	})
 	g.emit("}\n\n")
@@ -294,6 +292,10 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
 	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fallback to UnmarshalBytes.\n", g.typeName())
+			g.emit("%s.UnmarshalBytes(src)\n", g.r)
+		}
 		if thisPacked {
 			g.recordUsedImport("safecopy")
 			g.recordUsedImport("unsafe")
@@ -303,16 +305,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
 				})
 				g.emit("} else {\n")
-				g.inIndent(func() {
-					g.emit("%s.UnmarshalBytes(src)\n", g.r)
-				})
+				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
 				g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
 			}
 		} else {
-			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
-			g.emit("%s.UnmarshalBytes(src)\n", g.r)
+			fallback()
 		}
 	})
 	g.emit("}\n\n")
@@ -321,13 +320,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
-			g.emit("buf := task.CopyScratchBuffer(%s.SizeBytes()) // escapes: okay.\n", g.r)
+			g.emit("buf := cc.CopyScratchBuffer(%s.SizeBytes()) // escapes: okay.\n", g.r)
 			g.emit("%s.MarshalBytes(buf) // escapes: fallback.\n", g.r)
-			g.emit("return task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
+			g.emit("return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
 		}
 		if thisPacked {
 			g.recordUsedImport("reflect")
@@ -341,7 +340,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			// Fast serialization.
 			g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-			g.emit("length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
+			g.emit("length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
 			g.emitKeepAlive(g.r)
 			g.emit("return length, err\n")
 		} else {
@@ -354,9 +353,9 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("return %s.CopyOutN(task, addr, %s.SizeBytes())\n", g.r, g.r)
+		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
 	})
 	g.emit("}\n\n")
 
@@ -364,12 +363,12 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
-			g.emit("buf := task.CopyScratchBuffer(%s.SizeBytes()) // escapes: okay.\n", g.r)
-			g.emit("length, err := task.CopyInBytes(addr, buf) // escapes: okay.\n")
+			g.emit("buf := cc.CopyScratchBuffer(%s.SizeBytes()) // escapes: okay.\n", g.r)
+			g.emit("length, err := cc.CopyInBytes(addr, buf) // escapes: okay.\n")
 			g.emit("// Unmarshal unconditionally. If we had a short copy-in, this results in a\n")
 			g.emit("// partially unmarshalled struct.\n")
 			g.emit("%s.UnmarshalBytes(buf) // escapes: fallback.\n", g.r)
@@ -387,7 +386,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			// Fast deserialization.
 			g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-			g.emit("length, err := task.CopyInBytes(addr, buf) // escapes: okay.\n")
+			g.emit("length, err := cc.CopyInBytes(addr, buf) // escapes: okay.\n")
 			g.emitKeepAlive(g.r)
 			g.emit("return length, err\n")
 		} else {
@@ -398,13 +397,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 
 	g.emit("// WriteTo implements io.WriterTo.WriteTo.\n")
 	g.recordUsedImport("io")
-	g.emit("func (%s *%s) WriteTo(w io.Writer) (int64, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) WriteTo(writer io.Writer) (int64, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
 			g.emit("buf := make([]byte, %s.SizeBytes())\n", g.r)
 			g.emit("%s.MarshalBytes(buf)\n", g.r)
-			g.emit("length, err := w.Write(buf)\n")
+			g.emit("length, err := writer.Write(buf)\n")
 			g.emit("return int64(length), err\n")
 		}
 		if thisPacked {
@@ -419,7 +418,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			// Fast serialization.
 			g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-			g.emit("length, err := w.Write(buf)\n")
+			g.emit("length, err := writer.Write(buf)\n")
 			g.emitKeepAlive(g.r)
 			g.emit("return int64(length), err\n")
 		} else {
@@ -440,7 +439,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 	g.recordUsedImport("usermem")
 
 	g.emit("// Copy%sIn copies in a slice of %s objects from the task's memory.\n", slice.ident, g.typeName())
-	g.emit("func Copy%sIn(task marshal.Task, addr usermem.Addr, dst []%s) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func Copy%sIn(cc marshal.CopyContext, addr usermem.Addr, dst []%s) (int, error) {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(dst)\n")
 		g.emit("if count == 0 {\n")
@@ -452,8 +451,8 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
-			g.emit("buf := task.CopyScratchBuffer(size * count)\n")
-			g.emit("length, err := task.CopyInBytes(addr, buf)\n\n")
+			g.emit("buf := cc.CopyScratchBuffer(size * count)\n")
+			g.emit("length, err := cc.CopyInBytes(addr, buf)\n\n")
 
 			g.emit("// Unmarshal as much as possible, even on error. First handle full objects.\n")
 			g.emit("limit := length/size\n")
@@ -463,8 +462,10 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			})
 			g.emit("}\n\n")
 
-			g.emit("// Handle any final partial object.\n")
-			g.emit("if length < size*count && length%size != 0 {\n")
+			g.emit("// Handle any final partial object. buf is guaranteed to be long enough for the\n")
+			g.emit("// final element, but may not contain valid data for the entire range. This may\n")
+			g.emit("// result in unmarshalling zero values for some parts of the object.\n")
+			g.emit("if length%size != 0 {\n")
 			g.inIndent(func() {
 				g.emit("idx := limit\n")
 				g.emit("dst[idx].UnmarshalBytes(buf[size*idx:size*(idx+1)])\n")
@@ -485,7 +486,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			// Fast deserialization.
 			g.emitCastSliceToByteSlice("&dst", "buf", "size * count")
 
-			g.emit("length, err := task.CopyInBytes(addr, buf)\n")
+			g.emit("length, err := cc.CopyInBytes(addr, buf)\n")
 			g.emitKeepAlive("dst")
 			g.emit("return length, err\n")
 		} else {
@@ -495,7 +496,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 	g.emit("}\n\n")
 
 	g.emit("// Copy%sOut copies a slice of %s objects to the task's memory.\n", slice.ident, g.typeName())
-	g.emit("func Copy%sOut(task marshal.Task, addr usermem.Addr, src []%s) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func Copy%sOut(cc marshal.CopyContext, addr usermem.Addr, src []%s) (int, error) {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(src)\n")
 		g.emit("if count == 0 {\n")
@@ -507,13 +508,13 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
-			g.emit("buf := task.CopyScratchBuffer(size * count)\n")
+			g.emit("buf := cc.CopyScratchBuffer(size * count)\n")
 			g.emit("for idx := 0; idx < count; idx++ {\n")
 			g.inIndent(func() {
 				g.emit("src[idx].MarshalBytes(buf[size*idx:size*(idx+1)])\n")
 			})
 			g.emit("}\n")
-			g.emit("return task.CopyOutBytes(addr, buf)\n")
+			g.emit("return cc.CopyOutBytes(addr, buf)\n")
 		}
 		if thisPacked {
 			g.recordUsedImport("reflect")
@@ -527,7 +528,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			// Fast serialization.
 			g.emitCastSliceToByteSlice("&src", "buf", "size * count")
 
-			g.emit("length, err := task.CopyOutBytes(addr, buf)\n")
+			g.emit("length, err := cc.CopyOutBytes(addr, buf)\n")
 			g.emitKeepAlive("src")
 			g.emit("return length, err\n")
 		} else {

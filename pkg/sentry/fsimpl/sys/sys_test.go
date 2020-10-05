@@ -38,7 +38,7 @@ func newTestSystem(t *testing.T) *testutil.System {
 		AllowUserMount: true,
 	})
 
-	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, &vfs.GetFilesystemOptions{})
+	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, &vfs.MountOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create new mount namespace: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestReadCPUFile(t *testing.T) {
 	k := kernel.KernelFromContext(s.Ctx)
 	maxCPUCores := k.ApplicationCores()
 
-	expected := fmt.Sprintf("0-%d", maxCPUCores-1)
+	expected := fmt.Sprintf("0-%d\n", maxCPUCores-1)
 
 	for _, fname := range []string{"online", "possible", "present"} {
 		pop := s.PathOpAtRoot(fmt.Sprintf("devices/system/cpu/%s", fname))
@@ -59,7 +59,7 @@ func TestReadCPUFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
 		}
-		defer fd.DecRef()
+		defer fd.DecRef(s.Ctx)
 		content, err := s.ReadToEnd(fd)
 		if err != nil {
 			t.Fatalf("Read failed: %v", err)

@@ -27,6 +27,8 @@ import (
 )
 
 // Dentry is a required type parameter that is a struct with the given fields.
+//
+// +stateify savable
 type Dentry struct {
 	// vfsd is the embedded vfs.Dentry corresponding to this vfs.DentryImpl.
 	vfsd vfs.Dentry
@@ -43,7 +45,7 @@ type Dentry struct {
 // IsAncestorDentry returns true if d is an ancestor of d2; that is, d is
 // either d2's parent or an ancestor of d2's parent.
 func IsAncestorDentry(d, d2 *Dentry) bool {
-	for {
+	for d2 != nil { // Stop at root, where d2.parent == nil.
 		if d2.parent == d {
 			return true
 		}
@@ -52,6 +54,7 @@ func IsAncestorDentry(d, d2 *Dentry) bool {
 		}
 		d2 = d2.parent
 	}
+	return false
 }
 
 // ParentOrSelf returns d.parent. If d.parent is nil, ParentOrSelf returns d.

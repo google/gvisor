@@ -1,39 +1,21 @@
 load("//tools:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-go_template_instance(
-    name = "file_range",
-    out = "file_range.go",
-    package = "platform",
-    prefix = "File",
-    template = "//pkg/segment:generic_range",
-    types = {
-        "T": "uint64",
-    },
-)
 
 go_library(
     name = "platform",
     srcs = [
         "context.go",
-        "file_range.go",
         "mmap_min_addr.go",
         "platform.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/atomicbitops",
         "//pkg/context",
-        "//pkg/log",
-        "//pkg/safecopy",
-        "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
-        "//pkg/sentry/usage",
-        "//pkg/syserror",
+        "//pkg/sentry/memmap",
         "//pkg/usermem",
     ],
 )

@@ -19,16 +19,17 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
+// +stateify savable
 type symlink struct {
 	inode  inode
 	target string // immutable
 }
 
-func (fs *filesystem) newSymlink(creds *auth.Credentials, target string) *inode {
+func (fs *filesystem) newSymlink(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, target string) *inode {
 	link := &symlink{
 		target: target,
 	}
-	link.inode.init(link, fs, creds, linux.S_IFLNK|0777)
+	link.inode.init(link, fs, kuid, kgid, linux.S_IFLNK|mode)
 	link.inode.nlink = 1 // from parent directory
 	return &link.inode
 }

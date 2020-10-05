@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/gate"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -50,12 +51,21 @@ func New(lower stack.LinkEndpoint) *Endpoint {
 // It is called by the link-layer endpoint being wrapped when a packet arrives,
 // and only forwards to the actual dispatcher if Wait or WaitDispatch haven't
 // been called.
-func (e *Endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (e *Endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	if !e.dispatchGate.Enter() {
 		return
 	}
 
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
+	e.dispatcher.DeliverNetworkPacket(remote, local, protocol, pkt)
+	e.dispatchGate.Leave()
+}
+
+// DeliverOutboundPacket implements stack.NetworkDispatcher.DeliverOutboundPacket.
+func (e *Endpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	if !e.dispatchGate.Enter() {
+		return
+	}
+	e.dispatcher.DeliverOutboundPacket(remote, local, protocol, pkt)
 	e.dispatchGate.Leave()
 }
 
@@ -99,7 +109,7 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket implements stack.LinkEndpoint.WritePacket. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	if !e.writeGate.Enter() {
 		return nil
 	}
@@ -147,3 +157,13 @@ func (e *Endpoint) WaitDispatch() {
 
 // Wait implements stack.LinkEndpoint.Wait.
 func (e *Endpoint) Wait() {}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
+	return e.lower.ARPHardwareType()
+}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.lower.AddHeader(local, remote, protocol, pkt)
+}

@@ -17,6 +17,7 @@ package fs
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -101,7 +102,7 @@ func (c *DirentCache) remove(d *Dirent) {
 		panic(fmt.Sprintf("trying to remove %v, which is not in the dirent cache", d))
 	}
 	c.list.Remove(d)
-	d.DecRef()
+	d.DecRef(context.Background())
 	c.currentSize--
 	if c.limit != nil {
 		c.limit.dec()

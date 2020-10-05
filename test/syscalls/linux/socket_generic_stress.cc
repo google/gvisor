@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <poll.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -29,6 +30,9 @@ namespace testing {
 using ConnectStressTest = SocketPairTest;
 
 TEST_P(ConnectStressTest, Reset65kTimes) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   for (int i = 0; i < 1 << 16; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -37,6 +41,14 @@ TEST_P(ConnectStressTest, Reset65kTimes) {
     char sent_data[100] = {};
     ASSERT_THAT(write(sockets->first_fd(), sent_data, sizeof(sent_data)),
                 SyscallSucceedsWithValue(sizeof(sent_data)));
+    // Poll the other FD to make sure that the data is in the receive buffer
+    // before closing it to ensure a RST is triggered.
+    const int kTimeout = 10000;
+    struct pollfd pfd = {
+        .fd = sockets->second_fd(),
+        .events = POLL_IN,
+    };
+    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
   }
 }
 
@@ -58,7 +70,54 @@ INSTANTIATE_TEST_SUITE_P(
 // a persistent listener (if applicable).
 using PersistentListenerConnectStressTest = SocketPairTest;
 
-TEST_P(PersistentListenerConnectStressTest, 65kTimes) {
+TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseFirst) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
+  for (int i = 0; i < 1 << 16; ++i) {
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
+    if (GetParam().type == SOCK_STREAM) {
+      // Poll the other FD to make sure that we see the FIN from the other
+      // side before closing the second_fd. This ensures that the first_fd
+      // enters TIME-WAIT and not second_fd.
+      const int kTimeout = 10000;
+      struct pollfd pfd = {
+          .fd = sockets->second_fd(),
+          .events = POLL_IN,
+      };
+      ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    }
+    ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_RDWR), SyscallSucceeds());
+  }
+}
+
+TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseSecond) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
+  for (int i = 0; i < 1 << 16; ++i) {
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_RDWR), SyscallSucceeds());
+    if (GetParam().type == SOCK_STREAM) {
+      // Poll the other FD to make sure that we see the FIN from the other
+      // side before closing the first_fd. This ensures that the second_fd
+      // enters TIME-WAIT and not first_fd.
+      const int kTimeout = 10000;
+      struct pollfd pfd = {
+          .fd = sockets->first_fd(),
+          .events = POLL_IN,
+      };
+      ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    }
+    ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
+  }
+}
+
+TEST_P(PersistentListenerConnectStressTest, 65kTimesClose) {
+  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   for (int i = 0; i < 1 << 16; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   }

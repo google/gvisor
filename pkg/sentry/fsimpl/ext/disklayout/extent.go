@@ -14,6 +14,10 @@
 
 package disklayout
 
+import (
+	"gvisor.dev/gvisor/pkg/marshal"
+)
+
 // Extents were introduced in ext4 and provide huge performance gains in terms
 // data locality and reduced metadata block usage. Extents are organized in
 // extent trees. The root node is contained in inode.BlocksRaw.
@@ -64,6 +68,8 @@ type ExtentNode struct {
 // ExtentEntry represents an extent tree node entry. The entry can either be
 // an ExtentIdx or Extent itself. This exists to simplify navigation logic.
 type ExtentEntry interface {
+	marshal.Marshallable
+
 	// FileBlock returns the first file block number covered by this entry.
 	FileBlock() uint32
 
@@ -75,6 +81,8 @@ type ExtentEntry interface {
 // tree node begins with this and is followed by `NumEntries` number of:
 //   - Extent         if `Depth` == 0
 //   - ExtentIdx      otherwise
+//
+// +marshal
 type ExtentHeader struct {
 	// Magic in the extent magic number, must be 0xf30a.
 	Magic uint16
@@ -96,6 +104,8 @@ type ExtentHeader struct {
 // internal nodes. Sorted in ascending order based on FirstFileBlock since
 // Linux does a binary search on this. This points to a block containing the
 // child node.
+//
+// +marshal
 type ExtentIdx struct {
 	FirstFileBlock uint32
 	ChildBlockLo   uint32
@@ -121,6 +131,8 @@ func (ei *ExtentIdx) PhysicalBlock() uint64 {
 // nodes. Sorted in ascending order based on FirstFileBlock since Linux does a
 // binary search on this. This points to an array of data blocks containing the
 // file data. It covers `Length` data blocks starting from `StartBlock`.
+//
+// +marshal
 type Extent struct {
 	FirstFileBlock uint32
 	Length         uint16

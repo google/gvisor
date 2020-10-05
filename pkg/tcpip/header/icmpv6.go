@@ -54,8 +54,16 @@ const (
 	// address.
 	ICMPv6NeighborAdvertSize = ICMPv6HeaderSize + NDPNAMinimumSize + NDPLinkLayerAddressSize
 
-	// ICMPv6EchoMinimumSize is the minimum size of a valid ICMP echo packet.
+	// ICMPv6EchoMinimumSize is the minimum size of a valid echo packet.
 	ICMPv6EchoMinimumSize = 8
+
+	// ICMPv6ErrorHeaderSize is the size of an ICMP error packet header,
+	// as per RFC 4443, Apendix A, item 4 and the errata.
+	//   ... all ICMP error messages shall have exactly
+	//   32 bits of type-specific data, so that receivers can reliably find
+	//   the embedded invoking packet even when they don't recognize the
+	//   ICMP message Type.
+	ICMPv6ErrorHeaderSize = 8
 
 	// ICMPv6DstUnreachableMinimumSize is the minimum size of a valid ICMP
 	// destination unreachable packet.
@@ -68,6 +76,10 @@ const (
 	// icmpv6ChecksumOffset is the offset of the checksum field
 	// in an ICMPv6 message.
 	icmpv6ChecksumOffset = 2
+
+	// icmpv6PointerOffset is the offset of the pointer
+	// in an ICMPv6 Parameter problem message.
+	icmpv6PointerOffset = 4
 
 	// icmpv6MTUOffset is the offset of the MTU field in an ICMPv6
 	// PacketTooBig message.
@@ -89,10 +101,10 @@ const (
 	NDPHopLimit = 255
 )
 
-// ICMPv6Type is the ICMP type field described in RFC 4443 and friends.
+// ICMPv6Type is the ICMP type field described in RFC 4443.
 type ICMPv6Type byte
 
-// Typical values of ICMPv6Type defined in RFC 4443.
+// Values for use in the Type field of ICMPv6 packet from RFC 4433.
 const (
 	ICMPv6DstUnreachable ICMPv6Type = 1
 	ICMPv6PacketTooBig   ICMPv6Type = 2
@@ -110,10 +122,53 @@ const (
 	ICMPv6RedirectMsg     ICMPv6Type = 137
 )
 
-// Values for ICMP code as defined in RFC 4443.
+// IsErrorType returns true if the receiver is an ICMP error type.
+func (typ ICMPv6Type) IsErrorType() bool {
+	// Per RFC 4443 section 2.1:
+	//   ICMPv6 messages are grouped into two classes: error messages and
+	//   informational messages.  Error messages are identified as such by a
+	//   zero in the high-order bit of their message Type field values.  Thus,
+	//   error messages have message types from 0 to 127; informational
+	//   messages have message types from 128 to 255.
+	return typ&0x80 == 0
+}
+
+// ICMPv6Code is the ICMP Code field described in RFC 4443.
+type ICMPv6Code byte
+
+// ICMP codes used with Destination Unreachable (Type 1). As per RFC 4443
+// section 3.1.
 const (
-	ICMPv6PortUnreachable = 4
+	ICMPv6NetworkUnreachable ICMPv6Code = 0
+	ICMPv6Prohibited         ICMPv6Code = 1
+	ICMPv6BeyondScope        ICMPv6Code = 2
+	ICMPv6AddressUnreachable ICMPv6Code = 3
+	ICMPv6PortUnreachable    ICMPv6Code = 4
+	ICMPv6Policy             ICMPv6Code = 5
+	ICMPv6RejectRoute        ICMPv6Code = 6
 )
+
+// ICMP codes used with Time Exceeded (Type 3). As per RFC 4443 section 3.3.
+const (
+	ICMPv6HopLimitExceeded  ICMPv6Code = 0
+	ICMPv6ReassemblyTimeout ICMPv6Code = 1
+)
+
+// ICMP codes used with Parameter Problem (Type 4). As per RFC 4443 section 3.4.
+const (
+	// ICMPv6ErroneousHeader indicates an erroneous header field was encountered.
+	ICMPv6ErroneousHeader ICMPv6Code = 0
+
+	// ICMPv6UnknownHeader indicates an unrecognized Next Header type encountered.
+	ICMPv6UnknownHeader ICMPv6Code = 1
+
+	// ICMPv6UnknownOption indicates an unrecognized IPv6 option was encountered.
+	ICMPv6UnknownOption ICMPv6Code = 2
+)
+
+// ICMPv6UnusedCode is the code value used with ICMPv6 messages which don't use
+// the code field. (Types not mentioned above.)
+const ICMPv6UnusedCode ICMPv6Code = 0
 
 // Type is the ICMP type field.
 func (b ICMPv6) Type() ICMPv6Type { return ICMPv6Type(b[0]) }
@@ -122,10 +177,20 @@ func (b ICMPv6) Type() ICMPv6Type { return ICMPv6Type(b[0]) }
 func (b ICMPv6) SetType(t ICMPv6Type) { b[0] = byte(t) }
 
 // Code is the ICMP code field. Its meaning depends on the value of Type.
-func (b ICMPv6) Code() byte { return b[1] }
+func (b ICMPv6) Code() ICMPv6Code { return ICMPv6Code(b[1]) }
 
 // SetCode sets the ICMP code field.
-func (b ICMPv6) SetCode(c byte) { b[1] = c }
+func (b ICMPv6) SetCode(c ICMPv6Code) { b[1] = byte(c) }
+
+// TypeSpecific returns the type specific data field.
+func (b ICMPv6) TypeSpecific() uint32 {
+	return binary.BigEndian.Uint32(b[icmpv6PointerOffset:])
+}
+
+// SetTypeSpecific sets the type specific data field.
+func (b ICMPv6) SetTypeSpecific(val uint32) {
+	binary.BigEndian.PutUint32(b[icmpv6PointerOffset:], val)
+}
 
 // Checksum is the ICMP checksum field.
 func (b ICMPv6) Checksum() uint16 {

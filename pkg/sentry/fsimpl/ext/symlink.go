@@ -23,6 +23,8 @@ import (
 )
 
 // symlink represents a symlink inode.
+//
+// +stateify savable
 type symlink struct {
 	inode  inode
 	target string // immutable
@@ -30,18 +32,17 @@ type symlink struct {
 
 // newSymlink is the symlink constructor. It reads out the symlink target from
 // the inode (however it might have been stored).
-func newSymlink(inode inode) (*symlink, error) {
-	var file *symlink
+func newSymlink(args inodeArgs) (*symlink, error) {
 	var link []byte
 
 	// If the symlink target is lesser than 60 bytes, its stores in inode.Data().
 	// Otherwise either extents or block maps will be used to store the link.
-	size := inode.diskInode.Size()
+	size := args.diskInode.Size()
 	if size < 60 {
-		link = inode.diskInode.Data()[:size]
+		link = args.diskInode.Data()[:size]
 	} else {
 		// Create a regular file out of this inode and read out the target.
-		regFile, err := newRegularFile(inode)
+		regFile, err := newRegularFile(args)
 		if err != nil {
 			return nil, err
 		}
@@ -52,8 +53,8 @@ func newSymlink(inode inode) (*symlink, error) {
 		}
 	}
 
-	file = &symlink{inode: inode, target: string(link)}
-	file.inode.impl = file
+	file := &symlink{target: string(link)}
+	file.inode.init(args, file)
 	return file, nil
 }
 
@@ -62,18 +63,21 @@ func (in *inode) isSymlink() bool {
 	return ok
 }
 
-// symlinkFD represents a symlink file description and implements implements
+// symlinkFD represents a symlink file description and implements
 // vfs.FileDescriptionImpl. which may only be used if open options contains
 // O_PATH. For this reason most of the functions return EBADF.
+//
+// +stateify savable
 type symlinkFD struct {
 	fileDescription
+	vfs.NoLockFD
 }
 
 // Compiles only if symlinkFD implements vfs.FileDescriptionImpl.
 var _ vfs.FileDescriptionImpl = (*symlinkFD)(nil)
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *symlinkFD) Release() {}
+func (fd *symlinkFD) Release(context.Context) {}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *symlinkFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {

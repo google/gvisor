@@ -33,7 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -105,7 +105,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute. It starts a process in an
 // already created container.
 func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 	e, id, err := ex.parseArgs(f, conf.EnableRaw)
 	if err != nil {
 		Fatalf("parsing process spec: %v", err)
@@ -220,7 +220,7 @@ func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.Exi
 	cmd.Stderr = os.Stderr
 
 	// If the console control socket file is provided, then create a new
-	// pty master/slave pair and set the TTY on the sandbox process.
+	// pty master/replica pair and set the TTY on the sandbox process.
 	if ex.consoleSocket != "" {
 		// Create a new TTY pair and send the master on the provided socket.
 		tty, err := console.NewWithSocket(ex.consoleSocket)
@@ -229,7 +229,7 @@ func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.Exi
 		}
 		defer tty.Close()
 
-		// Set stdio to the new TTY slave.
+		// Set stdio to the new TTY replica.
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

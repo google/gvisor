@@ -56,5 +56,9 @@ func CheckTestRegs(regs *arch.Registers, full bool) (err error) {
 			err = addRegisterMismatch(err, fmt.Sprintf("R%d", i), regs.Regs[i], need)
 		}
 	}
+	// Check tls.
+	if need := ^uint64(11); regs.TPIDR_EL0 != need {
+		err = addRegisterMismatch(err, "tpdir_el0", regs.TPIDR_EL0, need)
+	}
 	return
 }

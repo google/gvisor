@@ -170,6 +170,9 @@ TEST(RenameTest, FileOverwritesFile) {
 }
 
 TEST(RenameTest, DirectoryOverwritesDirectoryLinkCount) {
+  // Directory link counts are synthetic on overlay filesystems.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+
   auto parent1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(Links(parent1.path()), IsPosixErrorOkAndHolds(2));
 

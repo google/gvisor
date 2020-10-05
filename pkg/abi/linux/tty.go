@@ -23,6 +23,8 @@ const (
 )
 
 // Winsize is struct winsize, defined in uapi/asm-generic/termios.h.
+//
+// +marshal
 type Winsize struct {
 	Row    uint16
 	Col    uint16
@@ -31,6 +33,8 @@ type Winsize struct {
 }
 
 // Termios is struct termios, defined in uapi/asm-generic/termbits.h.
+//
+// +marshal
 type Termios struct {
 	InputFlags        uint32
 	OutputFlags       uint32
@@ -321,9 +325,9 @@ var MasterTermios = KernelTermios{
 	OutputSpeed:       38400,
 }
 
-// DefaultSlaveTermios is the default terminal configuration of the slave end
-// of a Unix98 pseudoterminal.
-var DefaultSlaveTermios = KernelTermios{
+// DefaultReplicaTermios is the default terminal configuration of the replica
+// end of a Unix98 pseudoterminal.
+var DefaultReplicaTermios = KernelTermios{
 	InputFlags:        ICRNL | IXON,
 	OutputFlags:       OPOST | ONLCR,
 	ControlFlags:      B38400 | CS8 | CREAD,
@@ -337,6 +341,7 @@ var DefaultSlaveTermios = KernelTermios{
 // include/uapi/asm-generic/termios.h.
 //
 // +stateify savable
+// +marshal
 type WindowSize struct {
 	Rows uint16
 	Cols uint16

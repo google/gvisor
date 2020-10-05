@@ -77,7 +77,10 @@ var DefaultOpts = Opts{
 // trigger it.
 const descheduleThreshold = 1 * time.Second
 
-var stuckTasks = metric.MustCreateNewUint64Metric("/watchdog/stuck_tasks_detected", true /* sync */, "Cumulative count of stuck tasks detected")
+var (
+	stuckStartup = metric.MustCreateNewUint64Metric("/watchdog/stuck_startup_detected", true /* sync */, "Incremented once on startup watchdog timeout")
+	stuckTasks   = metric.MustCreateNewUint64Metric("/watchdog/stuck_tasks_detected", true /* sync */, "Cumulative count of stuck tasks detected")
+)
 
 // Amount of time to wait before dumping the stack to the log again when the same task(s) remains stuck.
 var stackDumpSameTaskPeriod = time.Minute
@@ -93,15 +96,33 @@ const (
 	Panic
 )
 
-// String returns Action's string representation.
-func (a Action) String() string {
-	switch a {
-	case LogWarning:
-		return "LogWarning"
-	case Panic:
-		return "Panic"
+// Set implements flag.Value.
+func (a *Action) Set(v string) error {
+	switch v {
+	case "log", "logwarning":
+		*a = LogWarning
+	case "panic":
+		*a = Panic
 	default:
-		panic(fmt.Sprintf("Invalid action: %d", a))
+		return fmt.Errorf("invalid watchdog action %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (a *Action) Get() interface{} {
+	return *a
+}
+
+// String returns Action's string representation.
+func (a *Action) String() string {
+	switch *a {
+	case LogWarning:
+		return "logWarning"
+	case Panic:
+		return "panic"
+	default:
+		panic(fmt.Sprintf("Invalid watchdog action: %d", *a))
 	}
 }
 
@@ -220,6 +241,9 @@ func (w *Watchdog) waitForStart() {
 		// We are fine.
 		return
 	}
+
+	stuckStartup.Increment()
+
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
 	w.doAction(w.StartupTimeoutAction, false, &buf)
@@ -323,13 +347,13 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 
 func (w *Watchdog) reportStuckWatchdog() {
 	var buf bytes.Buffer
-	buf.WriteString("Watchdog goroutine is stuck:")
+	buf.WriteString("Watchdog goroutine is stuck")
 	w.doAction(w.TaskTimeoutAction, false, &buf)
 }
 
 // doAction will take the given action. If the action is LogWarning, the stack
-// is not always dumpped to the log to prevent log flooding. "forceStack"
-// guarantees that the stack will be dumped regarless.
+// is not always dumped to the log to prevent log flooding. "forceStack"
+// guarantees that the stack will be dumped regardless.
 func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
 	switch action {
 	case LogWarning:

@@ -36,16 +36,16 @@ func TestEventFD(t *testing.T) {
 	for _, initVal := range initVals {
 		ctx := contexttest.Context(t)
 		vfsObj := &vfs.VirtualFilesystem{}
-		if err := vfsObj.Init(); err != nil {
+		if err := vfsObj.Init(ctx); err != nil {
 			t.Fatalf("VFS init: %v", err)
 		}
 
 		// Make a new eventfd that is writable.
-		eventfd, err := New(vfsObj, initVal, false, linux.O_RDWR)
+		eventfd, err := New(ctx, vfsObj, initVal, false, linux.O_RDWR)
 		if err != nil {
 			t.Fatalf("New() failed: %v", err)
 		}
-		defer eventfd.DecRef()
+		defer eventfd.DecRef(ctx)
 
 		// Register a callback for a write event.
 		w, ch := waiter.NewChannelEntry(nil)
@@ -74,16 +74,16 @@ func TestEventFD(t *testing.T) {
 func TestEventFDStat(t *testing.T) {
 	ctx := contexttest.Context(t)
 	vfsObj := &vfs.VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
 
 	// Make a new eventfd that is writable.
-	eventfd, err := New(vfsObj, 0, false, linux.O_RDWR)
+	eventfd, err := New(ctx, vfsObj, 0, false, linux.O_RDWR)
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
-	defer eventfd.DecRef()
+	defer eventfd.DecRef(ctx)
 
 	statx, err := eventfd.Stat(ctx, vfs.StatOptions{
 		Mask: linux.STATX_BASIC_STATS,

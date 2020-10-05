@@ -12,6 +12,7 @@ go_library(
         "sleep_unsafe.go",
     ],
     visibility = ["//:sandbox"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

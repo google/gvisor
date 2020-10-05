@@ -80,13 +80,24 @@ type IPv4Fields struct {
 type IPv4 []byte
 
 const (
-	// IPv4MinimumSize is the minimum size of a valid IPv4 packet.
+	// IPv4MinimumSize is the minimum size of a valid IPv4 packet;
+	// i.e. a packet header with no options.
 	IPv4MinimumSize = 20
 
 	// IPv4MaximumHeaderSize is the maximum size of an IPv4 header. Given
 	// that there are only 4 bits to represents the header length in 32-bit
 	// units, the header cannot exceed 15*4 = 60 bytes.
 	IPv4MaximumHeaderSize = 60
+
+	// IPv4MaximumPayloadSize is the maximum size of a valid IPv4 payload.
+	//
+	// Linux limits this to 65,515 octets (the max IP datagram size - the IPv4
+	// header size). But RFC 791 section 3.2 discusses the design of the IPv4
+	// fragment "allows 2**13 = 8192 fragments of 8 octets each for a total of
+	// 65,536 octets. Note that this is consistent with the the datagram total
+	// length field (of course, the header is counted in the total length and not
+	// in the fragments)."
+	IPv4MaximumPayloadSize = 65536
 
 	// MinIPFragmentPayloadSize is the minimum number of payload bytes that
 	// the first fragment must carry when an IPv4 packet is fragmented.
@@ -100,6 +111,11 @@ const (
 
 	// IPv4Version is the version of the ipv4 protocol.
 	IPv4Version = 4
+
+	// IPv4AllSystems is the all systems IPv4 multicast address as per
+	// IANA's IPv4 Multicast Address Space Registry. See
+	// https://www.iana.org/assignments/multicast-addresses/multicast-addresses.xhtml.
+	IPv4AllSystems tcpip.Address = "\xe0\x00\x00\x01"
 
 	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
 	IPv4Broadcast tcpip.Address = "\xff\xff\xff\xff"
@@ -157,6 +173,11 @@ func (b IPv4) Protocol() uint8 {
 // Flags returns the "flags" field of the ipv4 header.
 func (b IPv4) Flags() uint8 {
 	return uint8(binary.BigEndian.Uint16(b[flagsFO:]) >> 13)
+}
+
+// More returns whether the more fragments flag is set.
+func (b IPv4) More() bool {
+	return b.Flags()&IPv4FlagMoreFragments != 0
 }
 
 // TTL returns the "TTL" field of the ipv4 header.
@@ -304,4 +325,13 @@ func IsV4MulticastAddress(addr tcpip.Address) bool {
 		return false
 	}
 	return (addr[0] & 0xf0) == 0xe0
+}
+
+// IsV4LoopbackAddress determines if the provided address is an IPv4 loopback
+// address (belongs to 127.0.0.0/8 subnet). See RFC 1122 section 3.2.1.3.
+func IsV4LoopbackAddress(addr tcpip.Address) bool {
+	if len(addr) != IPv4AddressSize {
+		return false
+	}
+	return addr[0] == 0x7f
 }

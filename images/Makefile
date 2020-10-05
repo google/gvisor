@@ -34,8 +34,15 @@ list-all-images:
 	@for image in $(ALL_IMAGES); do echo $${image}; done
 .PHONY: list-build-images
 
+# Handy wrapper to allow load-all-images, push-all-images, etc.
 %-all-images:
 	@$(MAKE) $(patsubst %,$*-%,$(ALL_IMAGES))
+load-all-images:
+	@$(MAKE) $(patsubst %,load-%,$(ALL_IMAGES))
+
+# Handy wrapper to load specified "groups", e.g. load-basic-images, etc.
+load-%-images:
+	@$(MAKE) $(patsubst %,load-%,$(subst /,_,$(subst ./,,$(shell find ./$* -name Dockerfile -exec dirname {} \;))))
 
 # tag is a function that returns the tag name, given an image.
 #
@@ -52,9 +59,9 @@ local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
 # we need to explicitly repull the base layer in order to ensure that the
 # architecture is correct. Note that we use the term "rebuild" here to avoid
 # conflicting with the bazel "build" terminology, which is used elsewhere.
+rebuild-%: FROM=$(shell grep FROM $(call path,$*)/Dockerfile | cut -d' ' -f2)
 rebuild-%: register-cross
-	FROM=$(shell grep FROM $(call path,$*)/Dockerfile | cut -d' ' -f2-) && \
-		docker pull $(DOCKER_PLATFORM_ARGS) $$FROM
+	$(foreach IMAGE,$(FROM),docker pull $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) \
 	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
 		docker build $(DOCKER_PLATFORM_ARGS) -t $(call remote_image,$*) $$T && \
 		rm -rf $$T
@@ -66,10 +73,10 @@ pull-%:
 	docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$*)
 
 # load will either pull the "remote" or build it locally. This is the preferred
-# entrypoint, as it should never file. The local tag should always be set after
+# entrypoint, as it should never fail. The local tag should always be set after
 # this returns (either by the pull or the build).
 load-%:
-	docker inspect $(call remote_image,$*) >/dev/null 2>&1 || $(MAKE) pull-$* || $(MAKE) rebuild-$*
+	$(MAKE) pull-$* || $(MAKE) rebuild-$*
 	docker tag $(call remote_image,$*) $(call local_image,$*)
 
 # push pushes the remote image, after either pulling (to validate that the tag

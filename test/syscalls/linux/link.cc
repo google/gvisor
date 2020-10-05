@@ -79,8 +79,13 @@ TEST(LinkTest, PermissionDenied) {
 
   // Make the file "unsafe" to link by making it only readable, but not
   // writable.
-  const auto oldfile =
+  const auto unwriteable_file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0400));
+  const std::string special_path = NewTempAbsPath();
+  ASSERT_THAT(mkfifo(special_path.c_str(), 0666), SyscallSucceeds());
+  const auto setuid_file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0666 | S_ISUID));
+
   const std::string newname = NewTempAbsPath();
 
   // Do setuid in a separate thread so that after finishing this test, the
@@ -97,8 +102,14 @@ TEST(LinkTest, PermissionDenied) {
     EXPECT_THAT(syscall(SYS_setuid, absl::GetFlag(FLAGS_scratch_uid)),
                 SyscallSucceeds());
 
-    EXPECT_THAT(link(oldfile.path().c_str(), newname.c_str()),
+    EXPECT_THAT(link(unwriteable_file.path().c_str(), newname.c_str()),
                 SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(link(special_path.c_str(), newname.c_str()),
+                SyscallFailsWithErrno(EPERM));
+    if (!IsRunningWithVFS1()) {
+      EXPECT_THAT(link(setuid_file.path().c_str(), newname.c_str()),
+                  SyscallFailsWithErrno(EPERM));
+    }
   });
 }
 

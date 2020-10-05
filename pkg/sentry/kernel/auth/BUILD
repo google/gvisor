@@ -57,6 +57,7 @@ go_library(
         "id_map_set.go",
         "user_namespace.go",
     ],
+    marshal = True,
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

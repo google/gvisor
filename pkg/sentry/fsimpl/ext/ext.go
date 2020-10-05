@@ -34,6 +34,8 @@ import (
 const Name = "ext"
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // Compiles only if FilesystemType implements vfs.FilesystemType.
@@ -123,32 +125,32 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fs.vfsfs.Init(vfsObj, &fsType, &fs)
 	fs.sb, err = readSuperBlock(dev)
 	if err != nil {
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 
 	if fs.sb.Magic() != linux.EXT_SUPER_MAGIC {
 		// mount(2) specifies that EINVAL should be returned if the superblock is
 		// invalid.
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, syserror.EINVAL
 	}
 
 	// Refuse to mount if the filesystem is incompatible.
 	if !isCompatible(fs.sb) {
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, syserror.EINVAL
 	}
 
 	fs.bgs, err = readBlockGroups(dev, fs.sb)
 	if err != nil {
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 
 	rootInode, err := fs.getOrCreateInodeLocked(disklayout.RootDirInode)
 	if err != nil {
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 	rootInode.incRef()

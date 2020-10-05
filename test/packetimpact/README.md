@@ -18,6 +18,27 @@ Packetimpact aims to provide:
 *   **Control-flow** like for loops, conditionals, and variables.
 *   **Flexibilty** to specify every byte in a packet or use multiple sockets.
 
+## How to run packetimpact tests?
+
+Build the test container image by running the following at the root of the
+repository:
+
+```bash
+$ make load-packetimpact
+```
+
+Run a test, e.g. `fin_wait2_timeout`, against Linux:
+
+```bash
+$ bazel test //test/packetimpact/tests:fin_wait2_timeout_native_test
+```
+
+Run the same test, but against gVisor:
+
+```bash
+$ bazel test //test/packetimpact/tests:fin_wait2_timeout_netstack_test
+```
+
 ## When to use packetimpact?
 
 There are a few ways to write networking tests for gVisor currently:

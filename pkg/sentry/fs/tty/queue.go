@@ -17,8 +17,10 @@ package tty
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -32,7 +34,7 @@ import (
 const waitBufMaxBytes = 131072
 
 // queue represents one of the input or output queues between a pty master and
-// slave. Bytes written to a queue are added to the read buffer until it is
+// replica. Bytes written to a queue are added to the read buffer until it is
 // full, at which point they are written to the wait buffer. Bytes are
 // processed (i.e. undergo termios transformations) as they are added to the
 // read buffer. The read buffer is readable when its length is nonzero and
@@ -85,17 +87,15 @@ func (q *queue) writeReadiness(t *linux.KernelTermios) waiter.EventMask {
 }
 
 // readableSize writes the number of readable bytes to userspace.
-func (q *queue) readableSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
+func (q *queue) readableSize(t *kernel.Task, args arch.SyscallArguments) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	var size int32
+	size := primitive.Int32(0)
 	if q.readable {
-		size = int32(len(q.readBuf))
+		size = primitive.Int32(len(q.readBuf))
 	}
 
-	_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), size, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	_, err := size.CopyOut(t, args[2].Pointer())
 	return err
 
 }
@@ -104,8 +104,7 @@ func (q *queue) readableSize(ctx context.Context, io usermem.IO, args arch.Sysca
 // as whether the read caused more readable data to become available (whether
 // data was pushed from the wait buffer to the read buffer).
 //
-// Preconditions:
-// * l.termiosMu must be held for reading.
+// Preconditions: l.termiosMu must be held for reading.
 func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline) (int64, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -145,8 +144,7 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 
 // write writes to q from userspace.
 //
-// Preconditions:
-// * l.termiosMu must be held for reading.
+// Preconditions: l.termiosMu must be held for reading.
 func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscipline) (int64, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -188,8 +186,7 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 
 // writeBytes writes to q from b.
 //
-// Preconditions:
-// * l.termiosMu must be held for reading.
+// Preconditions: l.termiosMu must be held for reading.
 func (q *queue) writeBytes(b []byte, l *lineDiscipline) {
 	q.mu.Lock()
 	defer q.mu.Unlock()

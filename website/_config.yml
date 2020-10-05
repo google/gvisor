@@ -12,6 +12,7 @@ plugins:
   - jekyll-inline-svg
   - jekyll-relative-links
   - jekyll-feed
+  - jekyll-sitemap
 site_url: https://gvisor.dev
 feed:
   path: blog/index.xml
@@ -33,3 +34,6 @@ authors:
   igudger:
     name: Ian Gudger
     email: igudger@google.com
+  fvoznika:
+    name: Fabricio Voznika
+    email: fvoznika@google.com

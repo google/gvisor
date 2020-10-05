@@ -21,14 +21,16 @@ import (
 )
 
 // socketFile is a socket (=S_IFSOCK) tmpfs file.
+//
+// +stateify savable
 type socketFile struct {
 	inode inode
 	ep    transport.BoundEndpoint
 }
 
-func (fs *filesystem) newSocketFile(creds *auth.Credentials, mode linux.FileMode, ep transport.BoundEndpoint) *inode {
+func (fs *filesystem) newSocketFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, ep transport.BoundEndpoint) *inode {
 	file := &socketFile{ep: ep}
-	file.inode.init(file, fs, creds, mode)
+	file.inode.init(file, fs, kuid, kgid, mode)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
 }

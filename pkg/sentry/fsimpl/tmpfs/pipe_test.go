@@ -32,7 +32,7 @@ const fileName = "mypipe"
 
 func TestSeparateFDs(t *testing.T) {
 	ctx, creds, vfsObj, root := setup(t)
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	// Open the read side. This is done in a concurrently because opening
 	// One end the pipe blocks until the other end is opened.
@@ -55,13 +55,13 @@ func TestSeparateFDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open pipe for writing %q: %v", fileName, err)
 	}
-	defer wfd.DecRef()
+	defer wfd.DecRef(ctx)
 
 	rfd, ok := <-rfdchan
 	if !ok {
 		t.Fatalf("failed to open pipe for reading %q", fileName)
 	}
-	defer rfd.DecRef()
+	defer rfd.DecRef(ctx)
 
 	const msg = "vamos azul"
 	checkEmpty(ctx, t, rfd)
@@ -71,7 +71,7 @@ func TestSeparateFDs(t *testing.T) {
 
 func TestNonblockingRead(t *testing.T) {
 	ctx, creds, vfsObj, root := setup(t)
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	// Open the read side as nonblocking.
 	pop := vfs.PathOperation{
@@ -85,7 +85,7 @@ func TestNonblockingRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open pipe for reading %q: %v", fileName, err)
 	}
-	defer rfd.DecRef()
+	defer rfd.DecRef(ctx)
 
 	// Open the write side.
 	openOpts = vfs.OpenOptions{Flags: linux.O_WRONLY}
@@ -93,7 +93,7 @@ func TestNonblockingRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open pipe for writing %q: %v", fileName, err)
 	}
-	defer wfd.DecRef()
+	defer wfd.DecRef(ctx)
 
 	const msg = "geh blau"
 	checkEmpty(ctx, t, rfd)
@@ -103,7 +103,7 @@ func TestNonblockingRead(t *testing.T) {
 
 func TestNonblockingWriteError(t *testing.T) {
 	ctx, creds, vfsObj, root := setup(t)
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	// Open the write side as nonblocking, which should return ENXIO.
 	pop := vfs.PathOperation{
@@ -121,7 +121,7 @@ func TestNonblockingWriteError(t *testing.T) {
 
 func TestSingleFD(t *testing.T) {
 	ctx, creds, vfsObj, root := setup(t)
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	// Open the pipe as readable and writable.
 	pop := vfs.PathOperation{
@@ -135,7 +135,7 @@ func TestSingleFD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open pipe for writing %q: %v", fileName, err)
 	}
-	defer fd.DecRef()
+	defer fd.DecRef(ctx)
 
 	const msg = "forza blu"
 	checkEmpty(ctx, t, fd)
@@ -152,13 +152,13 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 
 	// Create VFS.
 	vfsObj := &vfs.VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
 	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.GetFilesystemOptions{})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{})
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}

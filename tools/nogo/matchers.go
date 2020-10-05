@@ -16,7 +16,6 @@ package nogo
 
 import (
 	"go/token"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -27,10 +26,15 @@ type matcher interface {
 	ShouldReport(d analysis.Diagnostic, fs *token.FileSet) bool
 }
 
-// pathRegexps excludes explicit paths.
+// pathRegexps filters explicit paths.
 type pathRegexps struct {
-	expr      []*regexp.Regexp
-	whitelist bool
+	expr []*regexp.Regexp
+
+	// include, if true, indicates that paths matching any regexp in expr
+	// match.
+	//
+	// If false, paths matching no regexps in expr match.
+	include bool
 }
 
 // buildRegexps builds a list of regular expressions.
@@ -39,9 +43,28 @@ type pathRegexps struct {
 func buildRegexps(prefix string, args ...string) []*regexp.Regexp {
 	result := make([]*regexp.Regexp, 0, len(args))
 	for _, arg := range args {
-		result = append(result, regexp.MustCompile(filepath.Join(prefix, arg)))
+		result = append(result, regexp.MustCompile(prefix+arg))
 	}
 	return result
+}
+
+// notPath works around the lack of backtracking.
+//
+// It is used to construct a regular expression for non-matching components.
+func notPath(name string) string {
+	sb := strings.Builder{}
+	sb.WriteString("(")
+	for i := range name {
+		if i > 0 {
+			sb.WriteString("|")
+		}
+		sb.WriteString(name[:i])
+		sb.WriteString("[^")
+		sb.WriteByte(name[i])
+		sb.WriteString("/][^/]*")
+	}
+	sb.WriteString(")")
+	return sb.String()
 }
 
 // ShouldReport implements matcher.ShouldReport.
@@ -49,33 +72,33 @@ func (p *pathRegexps) ShouldReport(d analysis.Diagnostic, fs *token.FileSet) boo
 	fullPos := fs.Position(d.Pos).String()
 	for _, path := range p.expr {
 		if path.MatchString(fullPos) {
-			return p.whitelist
+			return p.include
 		}
 	}
-	return !p.whitelist
+	return !p.include
 }
 
 // internalExcluded excludes specific internal paths.
 func internalExcluded(paths ...string) *pathRegexps {
 	return &pathRegexps{
-		expr:      buildRegexps(internalPrefix, paths...),
-		whitelist: false,
+		expr:    buildRegexps(internalPrefix, paths...),
+		include: false,
 	}
 }
 
 // excludedExcluded excludes specific external paths.
 func externalExcluded(paths ...string) *pathRegexps {
 	return &pathRegexps{
-		expr:      buildRegexps(externalPrefix, paths...),
-		whitelist: false,
+		expr:    buildRegexps(externalPrefix, paths...),
+		include: false,
 	}
 }
 
 // internalMatches returns a path matcher for internal packages.
 func internalMatches() *pathRegexps {
 	return &pathRegexps{
-		expr:      buildRegexps(internalPrefix, ".*"),
-		whitelist: true,
+		expr:    buildRegexps(internalPrefix, internalDefault),
+		include: true,
 	}
 }
 
@@ -89,7 +112,7 @@ func (r resultExcluded) ShouldReport(d analysis.Diagnostic, _ *token.FileSet) bo
 			return false
 		}
 	}
-	return true // Not blacklisted.
+	return true // Not excluded.
 }
 
 // andMatcher is a composite matcher.

@@ -312,8 +312,9 @@ func HostFeatureSet() *FeatureSet {
 	}
 }
 
-// Reads bogomips from host /proc/cpuinfo. Must run before whitelisting.
-// This value is used to create the fake /proc/cpuinfo from a FeatureSet.
+// Reads bogomips from host /proc/cpuinfo. Must run before syscall filter
+// installation. This value is used to create the fake /proc/cpuinfo from a
+// FeatureSet.
 func initCPUInfo() {
 	cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
 	if err != nil {

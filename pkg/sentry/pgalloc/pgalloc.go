@@ -33,14 +33,14 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// MemoryFile is a platform.File whose pages may be allocated to arbitrary
+// MemoryFile is a memmap.File whose pages may be allocated to arbitrary
 // users.
 type MemoryFile struct {
 	// opts holds options passed to NewMemoryFile. opts is immutable.
@@ -108,12 +108,6 @@ type MemoryFile struct {
 	usageSwapped  uint64
 	usageLast     time.Time
 
-	// minUnallocatedPage is the minimum page that may be unallocated.
-	// i.e., there are no unallocated pages below minUnallocatedPage.
-	//
-	// minUnallocatedPage is protected by mu.
-	minUnallocatedPage uint64
-
 	// fileSize is the size of the backing memory file in bytes. fileSize is
 	// always a power-of-two multiple of chunkSize.
 	//
@@ -146,11 +140,9 @@ type MemoryFile struct {
 	// is protected by mu.
 	reclaimable bool
 
-	// minReclaimablePage is the minimum page that may be reclaimable.
-	// i.e., all reclaimable pages are >= minReclaimablePage.
-	//
-	// minReclaimablePage is protected by mu.
-	minReclaimablePage uint64
+	// relcaim is the collection of regions for reclaim. relcaim is protected
+	// by mu.
+	reclaim reclaimSet
 
 	// reclaimCond is signaled (with mu locked) when reclaimable or destroyed
 	// transitions from false to true.
@@ -273,11 +265,9 @@ type evictableMemoryUserInfo struct {
 }
 
 const (
-	chunkShift = 24
-	chunkSize  = 1 << chunkShift // 16 MB
+	chunkShift = 30
+	chunkSize  = 1 << chunkShift // 1 GB
 	chunkMask  = chunkSize - 1
-
-	initialSize = chunkSize
 
 	// maxPage is the highest 64-bit page.
 	maxPage = math.MaxUint64 &^ (usermem.PageSize - 1)
@@ -302,19 +292,12 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	if err := file.Truncate(0); err != nil {
 		return nil, err
 	}
-	if err := file.Truncate(initialSize); err != nil {
-		return nil, err
-	}
 	f := &MemoryFile{
-		opts:     opts,
-		fileSize: initialSize,
-		file:     file,
-		// No pages are reclaimable. DecRef will always be able to
-		// decrease minReclaimablePage from this point.
-		minReclaimablePage: maxPage,
-		evictable:          make(map[EvictableMemoryUser]*evictableMemoryUserInfo),
+		opts:      opts,
+		file:      file,
+		evictable: make(map[EvictableMemoryUser]*evictableMemoryUserInfo),
 	}
-	f.mappings.Store(make([]uintptr, initialSize/chunkSize))
+	f.mappings.Store(make([]uintptr, 0))
 	f.reclaimCond.L = &f.mu
 
 	if f.opts.DelayedEviction == DelayedEvictionEnabled && f.opts.UseHostMemcgPressure {
@@ -389,7 +372,7 @@ func (f *MemoryFile) Destroy() {
 // to Allocate.
 //
 // Preconditions: length must be page-aligned and non-zero.
-func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (platform.FileRange, error) {
+func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.FileRange, error) {
 	if length == 0 || length%usermem.PageSize != 0 {
 		panic(fmt.Sprintf("invalid allocation length: %#x", length))
 	}
@@ -404,48 +387,38 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (platform.Fi
 		alignment = usermem.HugePageSize
 	}
 
-	start, minUnallocatedPage := findUnallocatedRange(&f.usage, f.minUnallocatedPage, length, alignment)
-	end := start + length
-	// File offsets are int64s. Since length must be strictly positive, end
-	// cannot legitimately be 0.
-	if end < start || int64(end) <= 0 {
-		return platform.FileRange{}, syserror.ENOMEM
+	// Find a range in the underlying file.
+	fr, ok := findAvailableRange(&f.usage, f.fileSize, length, alignment)
+	if !ok {
+		return memmap.FileRange{}, syserror.ENOMEM
 	}
 
-	// Expand the file if needed. Double the file size on each expansion;
-	// uncommitted pages have effectively no cost.
-	fileSize := f.fileSize
-	for int64(end) > fileSize {
-		if fileSize >= 2*fileSize {
-			// fileSize overflow.
-			return platform.FileRange{}, syserror.ENOMEM
+	// Expand the file if needed.
+	if int64(fr.End) > f.fileSize {
+		// Round the new file size up to be chunk-aligned.
+		newFileSize := (int64(fr.End) + chunkMask) &^ chunkMask
+		if err := f.file.Truncate(newFileSize); err != nil {
+			return memmap.FileRange{}, err
 		}
-		fileSize *= 2
-	}
-	if fileSize > f.fileSize {
-		if err := f.file.Truncate(fileSize); err != nil {
-			return platform.FileRange{}, err
-		}
-		f.fileSize = fileSize
+		f.fileSize = newFileSize
 		f.mappingsMu.Lock()
 		oldMappings := f.mappings.Load().([]uintptr)
-		newMappings := make([]uintptr, fileSize>>chunkShift)
+		newMappings := make([]uintptr, newFileSize>>chunkShift)
 		copy(newMappings, oldMappings)
 		f.mappings.Store(newMappings)
 		f.mappingsMu.Unlock()
 	}
 
-	// Mark selected pages as in use.
-	fr := platform.FileRange{start, end}
 	if f.opts.ManualZeroing {
 		if err := f.forEachMappingSlice(fr, func(bs []byte) {
 			for i := range bs {
 				bs[i] = 0
 			}
 		}); err != nil {
-			return platform.FileRange{}, err
+			return memmap.FileRange{}, err
 		}
 	}
+	// Mark selected pages as in use.
 	if !f.usage.Add(fr, usageInfo{
 		kind: kind,
 		refs: 1,
@@ -453,49 +426,79 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (platform.Fi
 		panic(fmt.Sprintf("allocating %v: failed to insert into usage set:\n%v", fr, &f.usage))
 	}
 
-	if minUnallocatedPage < start {
-		f.minUnallocatedPage = minUnallocatedPage
-	} else {
-		// start was the first unallocated page. The next must be
-		// somewhere beyond end.
-		f.minUnallocatedPage = end
-	}
-
 	return fr, nil
 }
 
-// findUnallocatedRange returns the first unallocated page in usage of the
-// specified length and alignment beginning at page start and the first single
-// unallocated page.
-func findUnallocatedRange(usage *usageSet, start, length, alignment uint64) (uint64, uint64) {
-	// Only searched until the first page is found.
-	firstPage := start
-	foundFirstPage := false
-	alignMask := alignment - 1
-	for seg := usage.LowerBoundSegment(start); seg.Ok(); seg = seg.NextSegment() {
-		r := seg.Range()
+// findAvailableRange returns an available range in the usageSet.
+//
+// Note that scanning for available slots takes place from end first backwards,
+// then forwards. This heuristic has important consequence for how sequential
+// mappings can be merged in the host VMAs, given that addresses for both
+// application and sentry mappings are allocated top-down (from higher to
+// lower addresses). The file is also grown expoentially in order to create
+// space for mappings to be allocated downwards.
+//
+// Precondition: alignment must be a power of 2.
+func findAvailableRange(usage *usageSet, fileSize int64, length, alignment uint64) (memmap.FileRange, bool) {
+	alignmentMask := alignment - 1
 
-		if !foundFirstPage && r.Start > firstPage {
-			foundFirstPage = true
+	// Search for space in existing gaps, starting at the current end of the
+	// file and working backward.
+	lastGap := usage.LastGap()
+	gap := lastGap
+	for {
+		end := gap.End()
+		if end > uint64(fileSize) {
+			end = uint64(fileSize)
 		}
 
-		if start >= r.End {
-			// start was rounded up to an alignment boundary from the end
-			// of a previous segment and is now beyond r.End.
-			continue
-		}
-		// This segment represents allocated or reclaimable pages; only the
-		// range from start to the segment's beginning is allocatable, and the
-		// next allocatable range begins after the segment.
-		if r.Start > start && r.Start-start >= length {
+		// Try to allocate from the end of this gap, with the start of the
+		// allocated range aligned down to alignment.
+		unalignedStart := end - length
+		if unalignedStart > end {
+			// Negative overflow: this and all preceding gaps are too small to
+			// accommodate length.
 			break
 		}
-		start = (r.End + alignMask) &^ alignMask
-		if !foundFirstPage {
-			firstPage = r.End
+		if start := unalignedStart &^ alignmentMask; start >= gap.Start() {
+			return memmap.FileRange{start, start + length}, true
+		}
+
+		gap = gap.PrevLargeEnoughGap(length)
+		if !gap.Ok() {
+			break
 		}
 	}
-	return start, firstPage
+
+	// Check that it's possible to fit this allocation at the end of a file of any size.
+	min := lastGap.Start()
+	min = (min + alignmentMask) &^ alignmentMask
+	if min+length < min {
+		// Overflow: allocation would exceed the range of uint64.
+		return memmap.FileRange{}, false
+	}
+
+	// Determine the minimum file size required to fit this allocation at its end.
+	for {
+		newFileSize := 2 * fileSize
+		if newFileSize <= fileSize {
+			if fileSize != 0 {
+				// Overflow: allocation would exceed the range of int64.
+				return memmap.FileRange{}, false
+			}
+			newFileSize = chunkSize
+		}
+		fileSize = newFileSize
+
+		unalignedStart := uint64(fileSize) - length
+		if unalignedStart > uint64(fileSize) {
+			// Negative overflow: fileSize is still inadequate.
+			continue
+		}
+		if start := unalignedStart &^ alignmentMask; start >= min {
+			return memmap.FileRange{start, start + length}, true
+		}
+	}
 }
 
 // AllocateAndFill allocates memory of the given kind and fills it by calling
@@ -504,23 +507,25 @@ func findUnallocatedRange(usage *usageSet, start, length, alignment uint64) (uin
 // nearest page. If this is shorter than length bytes due to an error returned
 // by r.ReadToBlocks(), it returns that error.
 //
-// Preconditions: length > 0. length must be page-aligned.
-func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r safemem.Reader) (platform.FileRange, error) {
+// Preconditions:
+// * length > 0.
+// * length must be page-aligned.
+func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r safemem.Reader) (memmap.FileRange, error) {
 	fr, err := f.Allocate(length, kind)
 	if err != nil {
-		return platform.FileRange{}, err
+		return memmap.FileRange{}, err
 	}
 	dsts, err := f.MapInternal(fr, usermem.Write)
 	if err != nil {
 		f.DecRef(fr)
-		return platform.FileRange{}, err
+		return memmap.FileRange{}, err
 	}
 	n, err := safemem.ReadFullToBlocks(r, dsts)
 	un := uint64(usermem.Addr(n).RoundDown())
 	if un < length {
 		// Free unused memory and update fr to contain only the memory that is
 		// still allocated.
-		f.DecRef(platform.FileRange{fr.Start + un, fr.End})
+		f.DecRef(memmap.FileRange{fr.Start + un, fr.End})
 		fr.End = fr.Start + un
 	}
 	return fr, err
@@ -537,7 +542,7 @@ const (
 // will read zeroes.
 //
 // Preconditions: fr.Length() > 0.
-func (f *MemoryFile) Decommit(fr platform.FileRange) error {
+func (f *MemoryFile) Decommit(fr memmap.FileRange) error {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
@@ -557,7 +562,7 @@ func (f *MemoryFile) Decommit(fr platform.FileRange) error {
 	return nil
 }
 
-func (f *MemoryFile) markDecommitted(fr platform.FileRange) {
+func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	// Since we're changing the knownCommitted attribute, we need to merge
@@ -578,8 +583,8 @@ func (f *MemoryFile) markDecommitted(fr platform.FileRange) {
 	f.usage.MergeRange(fr)
 }
 
-// IncRef implements platform.File.IncRef.
-func (f *MemoryFile) IncRef(fr platform.FileRange) {
+// IncRef implements memmap.File.IncRef.
+func (f *MemoryFile) IncRef(fr memmap.FileRange) {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
@@ -597,8 +602,8 @@ func (f *MemoryFile) IncRef(fr platform.FileRange) {
 	f.usage.MergeAdjacent(fr)
 }
 
-// DecRef implements platform.File.DecRef.
-func (f *MemoryFile) DecRef(fr platform.FileRange) {
+// DecRef implements memmap.File.DecRef.
+func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
@@ -616,6 +621,7 @@ func (f *MemoryFile) DecRef(fr platform.FileRange) {
 		}
 		val.refs--
 		if val.refs == 0 {
+			f.reclaim.Add(seg.Range(), reclaimSetValue{})
 			freed = true
 			// Reclassify memory as System, until it's freed by the reclaim
 			// goroutine.
@@ -628,17 +634,13 @@ func (f *MemoryFile) DecRef(fr platform.FileRange) {
 	f.usage.MergeAdjacent(fr)
 
 	if freed {
-		if fr.Start < f.minReclaimablePage {
-			// We've freed at least one lower page.
-			f.minReclaimablePage = fr.Start
-		}
 		f.reclaimable = true
 		f.reclaimCond.Signal()
 	}
 }
 
-// MapInternal implements platform.File.MapInternal.
-func (f *MemoryFile) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+// MapInternal implements memmap.File.MapInternal.
+func (f *MemoryFile) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
 	if !fr.WellFormed() || fr.Length() == 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
@@ -664,7 +666,7 @@ func (f *MemoryFile) MapInternal(fr platform.FileRange, at usermem.AccessType) (
 
 // forEachMappingSlice invokes fn on a sequence of byte slices that
 // collectively map all bytes in fr.
-func (f *MemoryFile) forEachMappingSlice(fr platform.FileRange, fn func([]byte)) error {
+func (f *MemoryFile) forEachMappingSlice(fr memmap.FileRange, fn func([]byte)) error {
 	mappings := f.mappings.Load().([]uintptr)
 	for chunkStart := fr.Start &^ chunkMask; chunkStart < fr.End; chunkStart += chunkSize {
 		chunk := int(chunkStart >> chunkShift)
@@ -944,7 +946,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 					continue
 				case !populated && populatedRun:
 					// Finish the run by changing this segment.
-					runRange := platform.FileRange{
+					runRange := memmap.FileRange{
 						Start: r.Start + uint64(populatedRunStart*usermem.PageSize),
 						End:   r.Start + uint64(i*usermem.PageSize),
 					}
@@ -1009,7 +1011,7 @@ func (f *MemoryFile) File() *os.File {
 	return f.file
 }
 
-// FD implements platform.File.FD.
+// FD implements memmap.File.FD.
 func (f *MemoryFile) FD() int {
 	return int(f.file.Fd())
 }
@@ -1030,6 +1032,7 @@ func (f *MemoryFile) String() string {
 // for allocation.
 func (f *MemoryFile) runReclaim() {
 	for {
+		// N.B. We must call f.markReclaimed on the returned FrameRange.
 		fr, ok := f.findReclaimable()
 		if !ok {
 			break
@@ -1085,13 +1088,17 @@ func (f *MemoryFile) runReclaim() {
 	}
 }
 
-func (f *MemoryFile) findReclaimable() (platform.FileRange, bool) {
+// findReclaimable finds memory that has been marked for reclaim.
+//
+// Note that there returned range will be removed from tracking. It
+// must be reclaimed (removed from f.usage) at this point.
+func (f *MemoryFile) findReclaimable() (memmap.FileRange, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for {
 		for {
 			if f.destroyed {
-				return platform.FileRange{}, false
+				return memmap.FileRange{}, false
 			}
 			if f.reclaimable {
 				break
@@ -1103,27 +1110,24 @@ func (f *MemoryFile) findReclaimable() (platform.FileRange, bool) {
 			}
 			f.reclaimCond.Wait()
 		}
-		// Allocate returns the first usable range in offset order and is
-		// currently a linear scan, so reclaiming from the beginning of the
-		// file minimizes the expected latency of Allocate.
-		for seg := f.usage.LowerBoundSegment(f.minReclaimablePage); seg.Ok(); seg = seg.NextSegment() {
-			if seg.ValuePtr().refs == 0 {
-				f.minReclaimablePage = seg.End()
-				return seg.Range(), true
-			}
+		// Allocate works from the back of the file inwards, so reclaim
+		// preserves this order to minimize the cost of the search.
+		if seg := f.reclaim.LastSegment(); seg.Ok() {
+			fr := seg.Range()
+			f.reclaim.Remove(seg)
+			return fr, true
 		}
-		// No pages are reclaimable.
+		// Nothing is reclaimable.
 		f.reclaimable = false
-		f.minReclaimablePage = maxPage
 	}
 }
 
-func (f *MemoryFile) markReclaimed(fr platform.FileRange) {
+func (f *MemoryFile) markReclaimed(fr memmap.FileRange) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	seg := f.usage.FindSegment(fr.Start)
-	// All of fr should be mapped to a single uncommitted reclaimable segment
-	// accounted to System.
+	// All of fr should be mapped to a single uncommitted reclaimable
+	// segment accounted to System.
 	if !seg.Ok() {
 		panic(fmt.Sprintf("reclaimed pages %v include unreferenced pages:\n%v", fr, &f.usage))
 	}
@@ -1137,14 +1141,10 @@ func (f *MemoryFile) markReclaimed(fr platform.FileRange) {
 	}); got != want {
 		panic(fmt.Sprintf("reclaimed pages %v in segment %v has incorrect state %v, wanted %v:\n%v", fr, seg.Range(), got, want, &f.usage))
 	}
-	// Deallocate reclaimed pages. Even though all of seg is reclaimable, the
-	// caller of markReclaimed may not have decommitted it, so we can only mark
-	// fr as reclaimed.
+	// Deallocate reclaimed pages. Even though all of seg is reclaimable,
+	// the caller of markReclaimed may not have decommitted it, so we can
+	// only mark fr as reclaimed.
 	f.usage.Remove(f.usage.Isolate(seg, fr))
-	if fr.Start < f.minUnallocatedPage {
-		// We've deallocated at least one lower page.
-		f.minUnallocatedPage = fr.Start
-	}
 }
 
 // StartEvictions requests that f evict all evictable allocations. It does not
@@ -1169,8 +1169,10 @@ func (f *MemoryFile) startEvictionsLocked() bool {
 	return startedAny
 }
 
-// Preconditions: info == f.evictable[user]. !info.evicting. f.mu must be
-// locked.
+// Preconditions:
+// * info == f.evictable[user].
+// * !info.evicting.
+// * f.mu must be locked.
 func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info *evictableMemoryUserInfo) {
 	info.evicting = true
 	f.evictionWG.Add(1)
@@ -1224,11 +1226,11 @@ func (usageSetFunctions) MaxKey() uint64 {
 func (usageSetFunctions) ClearValue(val *usageInfo) {
 }
 
-func (usageSetFunctions) Merge(_ platform.FileRange, val1 usageInfo, _ platform.FileRange, val2 usageInfo) (usageInfo, bool) {
+func (usageSetFunctions) Merge(_ memmap.FileRange, val1 usageInfo, _ memmap.FileRange, val2 usageInfo) (usageInfo, bool) {
 	return val1, val1 == val2
 }
 
-func (usageSetFunctions) Split(_ platform.FileRange, val usageInfo, _ uint64) (usageInfo, usageInfo) {
+func (usageSetFunctions) Split(_ memmap.FileRange, val usageInfo, _ uint64) (usageInfo, usageInfo) {
 	return val, val
 }
 
@@ -1254,4 +1256,28 @@ func (evictableRangeSetFunctions) Merge(_ EvictableRange, _ evictableRangeSetVal
 
 func (evictableRangeSetFunctions) Split(_ EvictableRange, _ evictableRangeSetValue, _ uint64) (evictableRangeSetValue, evictableRangeSetValue) {
 	return evictableRangeSetValue{}, evictableRangeSetValue{}
+}
+
+// reclaimSetValue is the value type of reclaimSet.
+type reclaimSetValue struct{}
+
+type reclaimSetFunctions struct{}
+
+func (reclaimSetFunctions) MinKey() uint64 {
+	return 0
+}
+
+func (reclaimSetFunctions) MaxKey() uint64 {
+	return math.MaxUint64
+}
+
+func (reclaimSetFunctions) ClearValue(val *reclaimSetValue) {
+}
+
+func (reclaimSetFunctions) Merge(_ memmap.FileRange, _ reclaimSetValue, _ memmap.FileRange, _ reclaimSetValue) (reclaimSetValue, bool) {
+	return reclaimSetValue{}, true
+}
+
+func (reclaimSetFunctions) Split(_ memmap.FileRange, _ reclaimSetValue, _ uint64) (reclaimSetValue, reclaimSetValue) {
+	return reclaimSetValue{}, reclaimSetValue{}
 }

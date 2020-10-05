@@ -13,14 +13,14 @@
 // limitations under the License.
 
 // +build go1.9
-// +build !go1.15
+// +build !go1.17
 
 // Check go:linkname function signatures when updating Go version.
 
 package tcpip
 
 import (
-	_ "time"   // Used with go:linkname.
+	"time"     // Used with go:linkname.
 	_ "unsafe" // Required for go:linkname.
 )
 
@@ -44,4 +44,32 @@ func (*StdClock) NowNanoseconds() int64 {
 func (*StdClock) NowMonotonic() int64 {
 	_, _, mono := now()
 	return mono
+}
+
+// AfterFunc implements Clock.AfterFunc.
+func (*StdClock) AfterFunc(d time.Duration, f func()) Timer {
+	return &stdTimer{
+		t: time.AfterFunc(d, f),
+	}
+}
+
+type stdTimer struct {
+	t *time.Timer
+}
+
+var _ Timer = (*stdTimer)(nil)
+
+// Stop implements Timer.Stop.
+func (st *stdTimer) Stop() bool {
+	return st.t.Stop()
+}
+
+// Reset implements Timer.Reset.
+func (st *stdTimer) Reset(d time.Duration) {
+	st.t.Reset(d)
+}
+
+// NewStdTimer returns a Timer implemented with the time package.
+func NewStdTimer(t *time.Timer) Timer {
+	return &stdTimer{t: t}
 }

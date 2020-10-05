@@ -21,6 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -138,14 +140,14 @@ func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socke
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
 	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}, nil); err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 
 	// Create a connection from which the kernel can write messages.
 	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t)
 	if err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 
@@ -162,9 +164,9 @@ func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socke
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *socketOpsCommon) Release() {
-	s.connection.Release()
-	s.ep.Close()
+func (s *socketOpsCommon) Release(ctx context.Context) {
+	s.connection.Release(ctx)
+	s.ep.Close(ctx)
 
 	if s.bound {
 		s.ports.Release(s.protocol.Protocol(), s.portID)
@@ -330,7 +332,7 @@ func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error) {
+func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	switch level {
 	case linux.SOL_SOCKET:
 		switch name {
@@ -340,24 +342,26 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 			}
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			return int32(s.sendBufferSize), nil
+			sendBufferSizeP := primitive.Int32(s.sendBufferSize)
+			return &sendBufferSizeP, nil
 
 		case linux.SO_RCVBUF:
 			if outLen < sizeOfInt32 {
 				return nil, syserr.ErrInvalidArgument
 			}
 			// We don't have limit on receiving size.
-			return int32(math.MaxInt32), nil
+			recvBufferSizeP := primitive.Int32(math.MaxInt32)
+			return &recvBufferSizeP, nil
 
 		case linux.SO_PASSCRED:
 			if outLen < sizeOfInt32 {
 				return nil, syserr.ErrInvalidArgument
 			}
-			var passcred int32
+			var passcred primitive.Int32
 			if s.Passcred() {
 				passcred = 1
 			}
-			return passcred, nil
+			return &passcred, nil
 
 		default:
 			socket.GetSockOptEmitUnimplementedEvent(t, name)
@@ -617,7 +621,7 @@ func (s *socketOpsCommon) sendResponse(ctx context.Context, ms *MessageSet) *sys
 	if len(bufs) > 0 {
 		// RecvMsg never receives the address, so we don't need to send
 		// one.
-		_, notify, err := s.connection.Send(bufs, cms, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(ctx, bufs, cms, tcpip.FullAddress{})
 		// If the buffer is full, we simply drop messages, just like
 		// Linux.
 		if err != nil && err != syserr.ErrWouldBlock {
@@ -644,7 +648,7 @@ func (s *socketOpsCommon) sendResponse(ctx context.Context, ms *MessageSet) *sys
 		// Add the dump_done_errno payload.
 		m.Put(int64(0))
 
-		_, notify, err := s.connection.Send([][]byte{m.Finalize()}, cms, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(ctx, [][]byte{m.Finalize()}, cms, tcpip.FullAddress{})
 		if err != nil && err != syserr.ErrWouldBlock {
 			return err
 		}

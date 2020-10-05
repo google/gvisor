@@ -44,7 +44,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -133,25 +133,28 @@ func Command(logger Logger, args ...string) *Cmd {
 
 // TestConfig returns the default configuration to use in tests. Note that
 // 'RootDir' must be set by caller if required.
-func TestConfig(t *testing.T) *boot.Config {
+func TestConfig(t *testing.T) *config.Config {
 	logDir := os.TempDir()
 	if dir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
 		logDir = dir + "/"
 	}
-	return &boot.Config{
-		Debug:              true,
-		DebugLog:           path.Join(logDir, "runsc.log."+t.Name()+".%TIMESTAMP%.%COMMAND%"),
-		LogFormat:          "text",
-		DebugLogFormat:     "text",
-		LogPackets:         true,
-		Network:            boot.NetworkNone,
-		Strace:             true,
-		Platform:           "ptrace",
-		FileAccess:         boot.FileAccessExclusive,
-		NumNetworkChannels: 1,
 
-		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
+	// Only register flags if config is being used. Otherwise anyone that uses
+	// testutil will get flags registered and they may conflict.
+	config.RegisterFlags()
+
+	conf, err := config.NewFromFlags()
+	if err != nil {
+		panic(err)
 	}
+	// Change test defaults.
+	conf.Debug = true
+	conf.DebugLog = path.Join(logDir, "runsc.log."+t.Name()+".%TIMESTAMP%.%COMMAND%")
+	conf.LogPackets = true
+	conf.Network = config.NetworkNone
+	conf.Strace = true
+	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
+	return conf
 }
 
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
@@ -203,7 +206,7 @@ func SetupRootDir() (string, func(), error) {
 
 // SetupContainer creates a bundle and root dir for the container, generates a
 // test config, and writes the spec to config.json in the bundle dir.
-func SetupContainer(spec *specs.Spec, conf *boot.Config) (rootDir, bundleDir string, cleanup func(), err error) {
+func SetupContainer(spec *specs.Spec, conf *config.Config) (rootDir, bundleDir string, cleanup func(), err error) {
 	rootDir, rootCleanup, err := SetupRootDir()
 	if err != nil {
 		return "", "", nil, err
@@ -243,15 +246,21 @@ func writeSpec(dir string, spec *specs.Spec) error {
 	return ioutil.WriteFile(filepath.Join(dir, "config.json"), b, 0755)
 }
 
+// idRandomSrc is a pseudo random generator used to in RandomID.
+var idRandomSrc = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 // RandomID returns 20 random bytes following the given prefix.
 func RandomID(prefix string) string {
 	// Read 20 random bytes.
 	b := make([]byte, 20)
 	// "[Read] always returns len(p) and a nil error." --godoc
-	if _, err := rand.Read(b); err != nil {
+	if _, err := idRandomSrc.Read(b); err != nil {
 		panic("rand.Read failed: " + err.Error())
 	}
-	return fmt.Sprintf("%s-%s", prefix, base32.StdEncoding.EncodeToString(b))
+	if prefix != "" {
+		prefix = prefix + "-"
+	}
+	return fmt.Sprintf("%s%s", prefix, base32.StdEncoding.EncodeToString(b))
 }
 
 // RandomContainerID generates a random container id for each test.
@@ -313,18 +322,23 @@ func Copy(src, dst string) error {
 func Poll(cb func() error, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	return PollContext(ctx, cb)
+}
+
+// PollContext is like Poll, but takes a context instead of a timeout.
+func PollContext(ctx context.Context, cb func() error) error {
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	return backoff.Retry(cb, b)
 }
 
 // WaitForHTTP tries GET requests on a port until the call succeeds or timeout.
-func WaitForHTTP(port int, timeout time.Duration) error {
+func WaitForHTTP(ip string, port int, timeout time.Duration) error {
 	cb := func() error {
 		c := &http.Client{
 			// Calculate timeout to be able to do minimum 5 attempts.
 			Timeout: timeout / 5,
 		}
-		url := fmt.Sprintf("http://localhost:%d/", port)
+		url := fmt.Sprintf("http://%s:%d/", ip, port)
 		resp, err := c.Get(url)
 		if err != nil {
 			log.Printf("Waiting %s: %v", url, err)
@@ -477,6 +491,21 @@ func IsStatic(filename string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// TouchShardStatusFile indicates to Bazel that the test runner supports
+// sharding by creating or updating the last modified date of the file
+// specified by TEST_SHARD_STATUS_FILE.
+//
+// See https://docs.bazel.build/versions/master/test-encyclopedia.html#role-of-the-test-runner.
+func TouchShardStatusFile() error {
+	if statusFile := os.Getenv("TEST_SHARD_STATUS_FILE"); statusFile != "" {
+		cmd := exec.Command("touch", statusFile)
+		if b, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("touch %q failed:\n output: %s\n error: %s", statusFile, string(b), err.Error())
+		}
+	}
+	return nil
 }
 
 // TestIndicesForShard returns indices for this test shard based on the

@@ -39,8 +39,8 @@ Mount references are held by:
 -   Mount: Each referenced Mount holds a reference on its parent, which is the
     mount containing its mount point.
 
--   VirtualFilesystem: A reference is held on each Mount that has not been
-    umounted.
+-   VirtualFilesystem: A reference is held on each Mount that has been connected
+    to a mount point, but not yet umounted.
 
 MountNamespace and FileDescription references are held by users of VFS. The
 expectation is that each `kernel.Task` holds a reference on its corresponding
@@ -169,8 +169,6 @@ This construction, which is essentially a type-safe analogue to Linux's
 
     -   binder, which is similarly far too incomplete to use.
 
-    -   whitelistfs, which we are already actively attempting to remove.
-
 -   Save/restore. For instance, it is unclear if the current implementation of
     the `state` package supports the inheritance pattern described above.
 
@@ -186,12 +184,3 @@ This construction, which is essentially a type-safe analogue to Linux's
     -   File locking
 
     -   `O_ASYNC`
-
--   Reference counts in the `vfs` package do not use the `refs` package since
-    `refs.AtomicRefCount` adds 64 bytes of overhead to each 8-byte reference
-    count, resulting in considerable cache bloat. 24 bytes of this overhead is
-    for weak reference support, which have poor performance and will not be used
-    by VFS2. The remaining 40 bytes is to store a descriptive string and stack
-    trace for reference leak checking; we can support reference leak checking
-    without incurring this space overhead by including the applicable
-    information directly in finalizers for applicable types.

@@ -36,8 +36,6 @@
 //     escape analysis on an unknown implementation at compile time.
 //
 // Notes:
-//   - All fields in these structs are exported because binary.Read would
-//     panic otherwise.
 //   - All structures on disk are in little-endian order. Only jbd2 (journal)
 //     structures are in big-endian order.
 //   - All OS dependent fields in these structures will be interpretted using

@@ -49,7 +49,7 @@ func fixCount(n int, err error) (int, error) {
 
 // Read implements io.Reader.
 func (r *ReadWriter) Read(b []byte) (int, error) {
-	c, err := fixCount(syscall.Read(int(atomic.LoadInt64(&r.fd)), b))
+	c, err := fixCount(syscall.Read(r.FD(), b))
 	if c == 0 && len(b) > 0 && err == nil {
 		return 0, io.EOF
 	}
@@ -62,7 +62,7 @@ func (r *ReadWriter) Read(b []byte) (int, error) {
 func (r *ReadWriter) ReadAt(b []byte, off int64) (c int, err error) {
 	for len(b) > 0 {
 		var m int
-		m, err = fixCount(syscall.Pread(int(atomic.LoadInt64(&r.fd)), b, off))
+		m, err = fixCount(syscall.Pread(r.FD(), b, off))
 		if m == 0 && err == nil {
 			return c, io.EOF
 		}
@@ -82,7 +82,7 @@ func (r *ReadWriter) Write(b []byte) (int, error) {
 	var n, remaining int
 	for remaining = len(b); remaining > 0; {
 		woff := len(b) - remaining
-		n, err = syscall.Write(int(atomic.LoadInt64(&r.fd)), b[woff:])
+		n, err = syscall.Write(r.FD(), b[woff:])
 
 		if n > 0 {
 			// syscall.Write wrote some bytes. This is the common case.
@@ -110,7 +110,7 @@ func (r *ReadWriter) Write(b []byte) (int, error) {
 func (r *ReadWriter) WriteAt(b []byte, off int64) (c int, err error) {
 	for len(b) > 0 {
 		var m int
-		m, err = fixCount(syscall.Pwrite(int(atomic.LoadInt64(&r.fd)), b, off))
+		m, err = fixCount(syscall.Pwrite(r.FD(), b, off))
 		if err != nil {
 			break
 		}
@@ -119,6 +119,16 @@ func (r *ReadWriter) WriteAt(b []byte, off int64) (c int, err error) {
 		off += int64(m)
 	}
 	return
+}
+
+// FD returns the owned file descriptor. Ownership remains unchanged.
+func (r *ReadWriter) FD() int {
+	return int(atomic.LoadInt64(&r.fd))
+}
+
+// String implements Stringer.String().
+func (r *ReadWriter) String() string {
+	return fmt.Sprintf("FD: %d", r.FD())
 }
 
 // FD owns a host file descriptor.
@@ -167,6 +177,23 @@ func NewFromFile(file *os.File) (*FD, error) {
 	return New(fd), nil
 }
 
+// NewFromFiles creates new FDs for each file in the slice.
+func NewFromFiles(files []*os.File) ([]*FD, error) {
+	rv := make([]*FD, 0, len(files))
+	for _, f := range files {
+		new, err := NewFromFile(f)
+		if err != nil {
+			// Cleanup on error.
+			for _, fd := range rv {
+				fd.Close()
+			}
+			return nil, err
+		}
+		rv = append(rv, new)
+	}
+	return rv, nil
+}
+
 // Open is equivalent to open(2).
 func Open(path string, openmode int, perm uint32) (*FD, error) {
 	f, err := syscall.Open(path, openmode|syscall.O_LARGEFILE, perm)
@@ -204,11 +231,6 @@ func (f *FD) Release() int {
 	return int(atomic.SwapInt64(&f.fd, -1))
 }
 
-// FD returns the file descriptor owned by FD. FD retains ownership.
-func (f *FD) FD() int {
-	return int(atomic.LoadInt64(&f.fd))
-}
-
 // File converts the FD to an os.File.
 //
 // FD does not transfer ownership of the file descriptor (it will be
@@ -219,7 +241,7 @@ func (f *FD) FD() int {
 // This operation is somewhat expensive, so care should be taken to minimize
 // its use.
 func (f *FD) File() (*os.File, error) {
-	fd, err := syscall.Dup(int(atomic.LoadInt64(&f.fd)))
+	fd, err := syscall.Dup(f.FD())
 	if err != nil {
 		return nil, err
 	}

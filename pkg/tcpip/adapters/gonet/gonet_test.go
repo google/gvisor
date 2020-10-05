@@ -61,8 +61,8 @@ func TestTimeouts(t *testing.T) {
 func newLoopbackStack() (*stack.Stack, *tcpip.Error) {
 	// Create the stack and add a NIC.
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 
 	if err := s.CreateNIC(NICID, loopback.New()); err != nil {
@@ -104,7 +104,7 @@ func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, *tcpip.Er
 	err = ep.Connect(addr)
 	if err == tcpip.ErrConnectStarted {
 		<-ch
-		err = ep.GetSockOpt(tcpip.ErrorOption{})
+		err = ep.LastError()
 	}
 	if err != nil {
 		return nil, err

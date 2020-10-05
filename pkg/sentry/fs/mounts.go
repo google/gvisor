@@ -17,13 +17,9 @@ package fs
 import (
 	"fmt"
 	"math"
-	"path"
-	"strings"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -238,7 +234,7 @@ func (mns *MountNamespace) flushMountSourceRefsLocked() {
 // After destroy is called, the MountNamespace may continue to be referenced (for
 // example via /proc/mounts), but should free all resources and shouldn't have
 // Find* methods called.
-func (mns *MountNamespace) destroy() {
+func (mns *MountNamespace) destroy(ctx context.Context) {
 	mns.mu.Lock()
 	defer mns.mu.Unlock()
 
@@ -251,13 +247,13 @@ func (mns *MountNamespace) destroy() {
 	for _, mp := range mns.mounts {
 		// Drop the mount reference on all mounted dirents.
 		for ; mp != nil; mp = mp.previous {
-			mp.root.DecRef()
+			mp.root.DecRef(ctx)
 		}
 	}
 	mns.mounts = nil
 
 	// Drop reference on the root.
-	mns.root.DecRef()
+	mns.root.DecRef(ctx)
 
 	// Ensure that root cannot be accessed via this MountNamespace any
 	// more.
@@ -269,8 +265,8 @@ func (mns *MountNamespace) destroy() {
 }
 
 // DecRef implements RefCounter.DecRef with destructor mns.destroy.
-func (mns *MountNamespace) DecRef() {
-	mns.DecRefWithDestructor(mns.destroy)
+func (mns *MountNamespace) DecRef(ctx context.Context) {
+	mns.DecRefWithDestructor(ctx, mns.destroy)
 }
 
 // withMountLocked prevents further walks to `node`, because `node` is about to
@@ -316,7 +312,7 @@ func (mns *MountNamespace) Mount(ctx context.Context, mountPoint *Dirent, inode 
 		if err != nil {
 			return err
 		}
-		defer replacement.DecRef()
+		defer replacement.DecRef(ctx)
 
 		// Set the mount's root dirent and id.
 		parentMnt := mns.findMountLocked(mountPoint)
@@ -398,7 +394,7 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 				panic(fmt.Sprintf("Last mount in the chain must be a undo mount: %+v", prev))
 			}
 			// Drop mount reference taken at the end of MountNamespace.Mount.
-			prev.root.DecRef()
+			prev.root.DecRef(ctx)
 		} else {
 			mns.mounts[prev.root] = prev
 		}
@@ -500,11 +496,11 @@ func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path 
 		// non-directory root is hopeless.
 		if current != root {
 			if !IsDir(current.Inode.StableAttr) {
-				current.DecRef() // Drop reference from above.
+				current.DecRef(ctx) // Drop reference from above.
 				return nil, syserror.ENOTDIR
 			}
 			if err := current.Inode.CheckPermission(ctx, PermMask{Execute: true}); err != nil {
-				current.DecRef() // Drop reference from above.
+				current.DecRef(ctx) // Drop reference from above.
 				return nil, err
 			}
 		}
@@ -515,12 +511,12 @@ func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path 
 			// Allow failed walks to cache the dirent, because no
 			// children will acquire a reference at the end.
 			current.maybeExtendReference()
-			current.DecRef()
+			current.DecRef(ctx)
 			return nil, err
 		}
 
 		// Drop old reference.
-		current.DecRef()
+		current.DecRef(ctx)
 
 		if remainder != "" {
 			// Ensure it's resolved, unless it's the last level.
@@ -574,11 +570,11 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 	case nil:
 		// Make sure we didn't exhaust the traversal budget.
 		if *remainingTraversals == 0 {
-			target.DecRef()
+			target.DecRef(ctx)
 			return nil, syscall.ELOOP
 		}
 
-		node.DecRef() // Drop the original reference.
+		node.DecRef(ctx) // Drop the original reference.
 		return target, nil
 
 	case syscall.ENOLINK:
@@ -586,7 +582,7 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 		return node, nil
 
 	case ErrResolveViaReadlink:
-		defer node.DecRef() // See above.
+		defer node.DecRef(ctx) // See above.
 
 		// First, check if we should traverse.
 		if *remainingTraversals == 0 {
@@ -612,7 +608,7 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 		return d, err
 
 	default:
-		node.DecRef() // Drop for err; see above.
+		node.DecRef(ctx) // Drop for err; see above.
 
 		// Propagate the error.
 		return nil, err
@@ -624,72 +620,4 @@ func (mns *MountNamespace) SyncAll(ctx context.Context) {
 	mns.mu.Lock()
 	defer mns.mu.Unlock()
 	mns.root.SyncAll(ctx)
-}
-
-// ResolveExecutablePath resolves the given executable name given a set of
-// paths that might contain it.
-func (mns *MountNamespace) ResolveExecutablePath(ctx context.Context, wd, name string, paths []string) (string, error) {
-	// Absolute paths can be used directly.
-	if path.IsAbs(name) {
-		return name, nil
-	}
-
-	// Paths with '/' in them should be joined to the working directory, or
-	// to the root if working directory is not set.
-	if strings.IndexByte(name, '/') > 0 {
-		if wd == "" {
-			wd = "/"
-		}
-		if !path.IsAbs(wd) {
-			return "", fmt.Errorf("working directory %q must be absolute", wd)
-		}
-		return path.Join(wd, name), nil
-	}
-
-	// Otherwise, We must lookup the name in the paths, starting from the
-	// calling context's root directory.
-	root := RootFromContext(ctx)
-	if root == nil {
-		// Caller has no root. Don't bother traversing anything.
-		return "", syserror.ENOENT
-	}
-	defer root.DecRef()
-	for _, p := range paths {
-		binPath := path.Join(p, name)
-		traversals := uint(linux.MaxSymlinkTraversals)
-		d, err := mns.FindInode(ctx, root, nil, binPath, &traversals)
-		if err == syserror.ENOENT || err == syserror.EACCES {
-			// Didn't find it here.
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		defer d.DecRef()
-
-		// Check that it is a regular file.
-		if !IsRegular(d.Inode.StableAttr) {
-			continue
-		}
-
-		// Check whether we can read and execute the found file.
-		if err := d.Inode.CheckPermission(ctx, PermMask{Read: true, Execute: true}); err != nil {
-			log.Infof("Found executable at %q, but user cannot execute it: %v", binPath, err)
-			continue
-		}
-		return path.Join("/", p, name), nil
-	}
-	return "", syserror.ENOENT
-}
-
-// GetPath returns the PATH as a slice of strings given the environment
-// variables.
-func GetPath(env []string) []string {
-	const prefix = "PATH="
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			return strings.Split(strings.TrimPrefix(e, prefix), ":")
-		}
-	}
-	return nil
 }

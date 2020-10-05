@@ -47,7 +47,7 @@ sudo mkdir -p /etc/cni/net.d
 
 sudo sh -c 'cat > /etc/cni/net.d/10-bridge.conf << EOF
 {
-  "cniVersion": "0.4.0",
+  "cniVersion": "0.3.1",
   "name": "mynet",
   "type": "bridge",
   "bridge": "cni0",
@@ -65,7 +65,7 @@ EOF'
 
 sudo sh -c 'cat > /etc/cni/net.d/99-loopback.conf << EOF
 {
-  "cniVersion": "0.4.0",
+  "cniVersion": "0.3.1",
   "name": "lo",
   "type": "loopback"
 }
@@ -128,12 +128,14 @@ sudo mkdir -p rootfs/var/www/html
 sudo sh -c 'echo "Hello World!" > rootfs/var/www/html/index.html'
 ```
 
-Next create the `config.json` specifying the network namespace. `sudo
-/usr/local/bin/runsc spec sudo sed -i 's;"sh";"python", "-m", "http.server";'
-config.json sudo sed -i "s;\"cwd\": \"/\";\"cwd\": \"/var/www/html\";"
-config.json sudo sed -i "s;\"type\": \"network\";\"type\":
-\"network\",\n\t\t\t\t\"path\": \"/var/run/netns/${CNI_CONTAINERID}\";"
-config.json`
+Next create the `config.json` specifying the network namespace.
+
+```
+sudo /usr/local/bin/runsc spec \
+    --cwd /var/www/html \
+    --netns /var/run/netns/${CNI_CONTAINERID} \
+    -- python -m http.server
+```
 
 ## Run the Container
 

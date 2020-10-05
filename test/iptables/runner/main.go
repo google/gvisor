@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -24,7 +25,10 @@ import (
 	"gvisor.dev/gvisor/test/iptables"
 )
 
-var name = flag.String("name", "", "name of the test to run")
+var (
+	name = flag.String("name", "", "name of the test to run")
+	ipv6 = flag.Bool("ipv6", false, "whether the test utilizes ip6tables")
+)
 
 func main() {
 	flag.Parse()
@@ -43,7 +47,9 @@ func main() {
 	}
 
 	// Run the test.
-	if err := test.ContainerAction(ip); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := test.ContainerAction(ctx, ip, *ipv6); err != nil {
 		log.Fatalf("Failed running test %q: %v", *name, err)
 	}
 
@@ -57,7 +63,7 @@ func getIP() (net.IP, error) {
 	localAddr := net.TCPAddr{
 		Port: iptables.IPExchangePort,
 	}
-	listener, err := net.ListenTCP("tcp4", &localAddr)
+	listener, err := net.ListenTCP("tcp", &localAddr)
 	if err != nil {
 		return net.IP{}, fmt.Errorf("failed listening for IP: %v", err)
 	}

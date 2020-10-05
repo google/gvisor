@@ -69,8 +69,52 @@ go_template_instance(
     prefix = "socket",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*SocketEntry",
-        "Linker": "*SocketEntry",
+        "Element": "*SocketRecordVFS1",
+        "Linker": "*SocketRecordVFS1",
+    },
+)
+
+go_template_instance(
+    name = "fd_table_refs",
+    out = "fd_table_refs.go",
+    package = "kernel",
+    prefix = "FDTable",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "FDTable",
+    },
+)
+
+go_template_instance(
+    name = "fs_context_refs",
+    out = "fs_context_refs.go",
+    package = "kernel",
+    prefix = "FSContext",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "FSContext",
+    },
+)
+
+go_template_instance(
+    name = "process_group_refs",
+    out = "process_group_refs.go",
+    package = "kernel",
+    prefix = "ProcessGroup",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "ProcessGroup",
+    },
+)
+
+go_template_instance(
+    name = "session_refs",
+    out = "session_refs.go",
+    package = "kernel",
+    prefix = "Session",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "Session",
     },
 )
 
@@ -85,11 +129,16 @@ go_library(
     name = "kernel",
     srcs = [
         "abstract_socket_namespace.go",
+        "aio.go",
         "context.go",
         "fd_table.go",
+        "fd_table_refs.go",
         "fd_table_unsafe.go",
         "fs_context.go",
+        "fs_context_refs.go",
         "ipc_namespace.go",
+        "kcov.go",
+        "kcov_unsafe.go",
         "kernel.go",
         "kernel_opts.go",
         "kernel_state.go",
@@ -98,6 +147,7 @@ go_library(
         "pending_signals_state.go",
         "posixtimer.go",
         "process_group_list.go",
+        "process_group_refs.go",
         "ptrace.go",
         "ptrace_amd64.go",
         "ptrace_arm64.go",
@@ -105,6 +155,7 @@ go_library(
         "seccomp.go",
         "seqatomic_taskgoroutineschedinfo_unsafe.go",
         "session_list.go",
+        "session_refs.go",
         "sessions.go",
         "signal.go",
         "signal_handlers.go",
@@ -131,6 +182,7 @@ go_library(
         "task_stop.go",
         "task_syscall.go",
         "task_usermem.go",
+        "task_work.go",
         "thread_group.go",
         "threads.go",
         "timekeeper.go",
@@ -145,22 +197,26 @@ go_library(
         "gvisor.dev/gvisor/pkg/sentry/device",
         "gvisor.dev/gvisor/pkg/tcpip",
     ],
+    marshal = True,
     visibility = ["//:sandbox"],
     deps = [
         ":uncaught_signal_go_proto",
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/amutex",
-        "//pkg/binary",
         "//pkg/bits",
         "//pkg/bpf",
         "//pkg/context",
+        "//pkg/coverage",
         "//pkg/cpuid",
         "//pkg/eventchannel",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/metric",
         "//pkg/refs",
+        "//pkg/refs_vfs2",
         "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",
@@ -199,6 +255,7 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/state",
         "//pkg/state/statefile",
+        "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
@@ -206,7 +263,6 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/usermem",
         "//pkg/waiter",
-        "//tools/go_marshal/marshal",
     ],
 )
 

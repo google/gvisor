@@ -553,7 +553,12 @@ TEST(ExecTest, SymlinkLimitRefreshedForInterpreter) {
   // Hold onto TempPath objects so they are not destructed prematurely.
   std::vector<TempPath> interpreter_symlinks;
   std::vector<TempPath> script_symlinks;
-  for (int i = 0; i < kLinuxMaxSymlinks; i++) {
+  // Replace both the interpreter and script paths with symlink chains of just
+  // over half the symlink limit each; this is the minimum required to test that
+  // the symlink limit applies separately to each traversal, while tolerating
+  // some symlinks in the resolution of (the original) interpreter_path and
+  // script_path.
+  for (int i = 0; i < (kLinuxMaxSymlinks / 2) + 1; i++) {
     interpreter_symlinks.push_back(ASSERT_NO_ERRNO_AND_VALUE(
         TempPath::CreateSymlinkTo(tmp_dir, interpreter_path)));
     interpreter_path = interpreter_symlinks[i].path();
@@ -671,6 +676,31 @@ TEST(ExecveatTest, SymlinkNoFollowWithRelativePath) {
                                             AT_SYMLINK_NOFOLLOW,
                                             /*child=*/nullptr, &execve_errno));
   EXPECT_EQ(execve_errno, ELOOP);
+}
+
+TEST(ExecveatTest, UnshareFiles) {
+  TempPath tempFile = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "bar", 0755));
+  const FileDescriptor fd_closed_on_exec =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tempFile.path(), O_RDONLY | O_CLOEXEC));
+
+  ExecveArray argv = {"test"};
+  ExecveArray envp;
+  std::string child_path = RunfilePath(kBasicWorkload);
+  pid_t child =
+      syscall(__NR_clone, SIGCHLD | CLONE_VFORK | CLONE_FILES, 0, 0, 0, 0);
+  if (child == 0) {
+    execve(child_path.c_str(), argv.get(), envp.get());
+    _exit(1);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0), SyscallSucceeds());
+  EXPECT_EQ(status, 0);
+
+  struct stat st;
+  EXPECT_THAT(fstat(fd_closed_on_exec.get(), &st), SyscallSucceeds());
 }
 
 TEST(ExecveatTest, SymlinkNoFollowWithAbsolutePath) {

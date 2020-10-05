@@ -33,12 +33,16 @@ go_library(
         "aliases.go",
         "memmove_unsafe.go",
         "mutex_unsafe.go",
+        "nocopy.go",
         "norace_unsafe.go",
         "race_unsafe.go",
         "rwmutex_unsafe.go",
         "seqcount.go",
+        "spin_unsafe.go",
         "sync.go",
     ],
+    marshal = False,
+    stateify = False,
 )
 
 go_test(

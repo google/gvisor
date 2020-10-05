@@ -15,8 +15,8 @@ mkdir bundle
 cd bundle
 ```
 
-Create a root file system for the container. We will use the Docker hello-world
-image as the basis for our container.
+Create a root file system for the container. We will use the Docker
+`hello-world` image as the basis for our container.
 
 ```bash
 mkdir rootfs
@@ -24,12 +24,10 @@ docker export $(docker create hello-world) | tar -xf - -C rootfs
 ```
 
 Next, create an specification file called `config.json` that contains our
-container specification. We will update the default command it runs to `/hello`
-in the `hello-world` container.
+container specification. We tell the container to run the `/hello` program.
 
 ```bash
-runsc spec
-sed -i 's;"sh";"/hello";' config.json
+runsc spec -- /hello
 ```
 
 Finally run the container.

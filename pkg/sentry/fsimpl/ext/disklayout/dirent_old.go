@@ -22,11 +22,13 @@ import "gvisor.dev/gvisor/pkg/sentry/fs"
 // Note: This struct can be of variable size on disk. The one described below
 // is of maximum size and the FileName beyond NameLength bytes might contain
 // garbage.
+//
+// +marshal
 type DirentOld struct {
 	InodeNumber  uint32
 	RecordLength uint16
 	NameLength   uint16
-	FileNameRaw  [MaxFileName]byte
+	FileNameRaw  [MaxFileName]byte `marshal:"unaligned"`
 }
 
 // Compiles only if DirentOld implements Dirent.

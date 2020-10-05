@@ -117,9 +117,7 @@ for more information on filesystem bundles. `runsc` implements multiple commands
 that perform various functions such as starting, stopping, listing, and querying
 the status of containers.
 
-### Sentry
-
-<a name="sentry"></a> <!-- For deep linking. -->
+### Sentry {#sentry}
 
 The Sentry is the largest component of gVisor. It can be thought of as a
 application kernel. The Sentry implements all the kernel functionality needed by
@@ -136,9 +134,7 @@ calls it makes. For example, the Sentry is not able to open files directly; file
 system operations that extend beyond the sandbox (not internal `/proc` files,
 pipes, etc) are sent to the Gofer, described below.
 
-### Gofer
-
-<a name="gofer"></a> <!-- For deep linking. -->
+### Gofer {#gofer}
 
 The Gofer is a standard host process which is started with each container and
 communicates with the Sentry via the [9P protocol][9p] over a socket or shared
@@ -146,13 +142,13 @@ memory channel. The Sentry process is started in a restricted seccomp container
 without access to file system resources. The Gofer mediates all access to the
 these resources, providing an additional level of isolation.
 
-### Application
+### Application {#application}
 
 The application is a normal Linux binary provided to gVisor in an OCI runtime
 bundle. gVisor aims to provide an environment equivalent to Linux v4.4, so
 applications should be able to run unmodified. However, gVisor does not
 presently implement every system call, `/proc` file, or `/sys` file so some
-incompatibilities may occur. See [Commpatibility](./user_guide/compatibility.md)
+incompatibilities may occur. See [Compatibility](./user_guide/compatibility.md)
 for more information.
 
 [9p]: https://en.wikipedia.org/wiki/9P_(protocol)

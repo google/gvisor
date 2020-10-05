@@ -17,7 +17,6 @@ package signalfd
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
@@ -76,7 +75,7 @@ func New(ctx context.Context, mask linux.SignalSet) (*fs.File, error) {
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *SignalOperations) Release() {}
+func (s *SignalOperations) Release(context.Context) {}
 
 // Mask returns the signal mask.
 func (s *SignalOperations) Mask() linux.SignalSet {
@@ -103,8 +102,7 @@ func (s *SignalOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 	}
 
 	// Copy out the signal info using the specified format.
-	var buf [128]byte
-	binary.Marshal(buf[:0], usermem.ByteOrder, &linux.SignalfdSiginfo{
+	infoNative := linux.SignalfdSiginfo{
 		Signo:   uint32(info.Signo),
 		Errno:   info.Errno,
 		Code:    info.Code,
@@ -113,9 +111,13 @@ func (s *SignalOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 		Status:  info.Status(),
 		Overrun: uint32(info.Overrun()),
 		Addr:    info.Addr(),
-	})
-	n, err := dst.CopyOut(ctx, buf[:])
-	return int64(n), err
+	}
+	n, err := infoNative.WriteTo(dst.Writer(ctx))
+	if err == usermem.ErrEndOfIOSequence {
+		// Partial copy-out ok.
+		err = nil
+	}
+	return n, err
 }
 
 // Readiness implements waiter.Waitable.Readiness.

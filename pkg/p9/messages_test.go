@@ -376,6 +376,30 @@ func TestEncodeDecode(t *testing.T) {
 		&Rumknod{
 			Rmknod{QID: QID{Type: 1}},
 		},
+		&Tsetattrclunk{
+			FID: 1,
+			Valid: SetAttrMask{
+				Permissions:        true,
+				UID:                true,
+				GID:                true,
+				Size:               true,
+				ATime:              true,
+				MTime:              true,
+				CTime:              true,
+				ATimeNotSystemTime: true,
+				MTimeNotSystemTime: true,
+			},
+			SetAttr: SetAttr{
+				Permissions:      1,
+				UID:              2,
+				GID:              3,
+				Size:             4,
+				ATimeSeconds:     5,
+				ATimeNanoSeconds: 6,
+				MTimeSeconds:     7,
+				MTimeNanoSeconds: 8,
+			},
+		},
 	}
 
 	for _, enc := range objs {

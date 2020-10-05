@@ -26,6 +26,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -140,7 +141,7 @@ func (*runApp) handleCPUIDInstruction(t *Task) error {
 	region := trace.StartRegion(t.traceContext, cpuidRegion)
 	expected := arch.CPUIDInstruction[:]
 	found := make([]byte, len(expected))
-	_, err := t.CopyIn(usermem.Addr(t.Arch().IP()), &found)
+	_, err := t.CopyInBytes(usermem.Addr(t.Arch().IP()), found)
 	if err == nil && bytes.Equal(expected, found) {
 		// Skip the cpuid instruction.
 		t.Arch().CPUIDEmulate(t)
@@ -167,15 +168,30 @@ func (app *runApp) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 
-	// We're about to switch to the application again. If there's still a
+	// Execute any task work callbacks before returning to user space.
+	if atomic.LoadInt32(&t.taskWorkCount) > 0 {
+		t.taskWorkMu.Lock()
+		queue := t.taskWork
+		t.taskWork = nil
+		atomic.StoreInt32(&t.taskWorkCount, 0)
+		t.taskWorkMu.Unlock()
+
+		// Do not hold taskWorkMu while executing task work, which may register
+		// more work.
+		for _, work := range queue {
+			work.TaskWork(t)
+		}
+	}
+
+	// We're about to switch to the application again. If there's still an
 	// unhandled SyscallRestartErrno that wasn't translated to an EINTR,
 	// restart the syscall that was interrupted. If there's a saved signal
 	// mask, restore it. (Note that restoring the saved signal mask may unblock
 	// a pending signal, causing another interruption, but that signal should
 	// not interact with the interrupted syscall.)
 	if t.haveSyscallReturn {
-		if sre, ok := SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
-			if sre == ERESTART_RESTARTBLOCK {
+		if sre, ok := syserror.SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
+			if sre == syserror.ERESTART_RESTARTBLOCK {
 				t.Debugf("Restarting syscall %d with restart block after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
 				t.Arch().RestartSyscallWithRestartBlock()
 			} else {
@@ -245,7 +261,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 
 	region := trace.StartRegion(t.traceContext, runRegion)
 	t.accountTaskGoroutineEnter(TaskGoroutineRunningApp)
-	info, at, err := t.p.Switch(t.MemoryManager().AddressSpace(), t.Arch(), t.rseqCPU)
+	info, at, err := t.p.Switch(t, t.MemoryManager(), t.Arch(), t.rseqCPU)
 	t.accountTaskGoroutineLeave(TaskGoroutineRunningApp)
 	region.End()
 

@@ -28,12 +28,11 @@ func (b *buffer) ReadBlock() safemem.Block {
 	return safemem.BlockFromSafeSlice(b.ReadSlice())
 }
 
-// WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
-//
-// This will advance the write index.
-func (v *View) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
-	need := int(srcs.NumBytes())
-	if need == 0 {
+// WriteFromSafememReader writes up to count bytes from r to v and advances the
+// write index by the number of bytes written. It calls r.ReadToBlocks() at
+// most once.
+func (v *View) WriteFromSafememReader(r safemem.Reader, count uint64) (uint64, error) {
+	if count == 0 {
 		return 0, nil
 	}
 
@@ -45,37 +44,38 @@ func (v *View) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	// Need at least one buffer.
 	firstBuf := v.data.Back()
 	if firstBuf == nil {
-		firstBuf = bufferPool.Get().(*buffer)
+		firstBuf = v.pool.get()
 		v.data.PushBack(firstBuf)
 	}
 
 	// Does the last block have sufficient capacity alone?
-	if l := firstBuf.WriteSize(); l >= need {
-		dst = safemem.BlockSeqOf(firstBuf.WriteBlock())
+	if l := uint64(firstBuf.WriteSize()); l >= count {
+		dst = safemem.BlockSeqOf(firstBuf.WriteBlock().TakeFirst64(count))
 	} else {
 		// Append blocks until sufficient.
-		need -= l
+		count -= l
 		blocks = append(blocks, firstBuf.WriteBlock())
-		for need > 0 {
-			emptyBuf := bufferPool.Get().(*buffer)
+		for count > 0 {
+			emptyBuf := v.pool.get()
 			v.data.PushBack(emptyBuf)
-			need -= emptyBuf.WriteSize()
-			blocks = append(blocks, emptyBuf.WriteBlock())
+			block := emptyBuf.WriteBlock().TakeFirst64(count)
+			count -= uint64(block.Len())
+			blocks = append(blocks, block)
 		}
 		dst = safemem.BlockSeqFromSlice(blocks)
 	}
 
-	// Perform the copy.
-	n, err := safemem.CopySeq(dst, srcs)
+	// Perform I/O.
+	n, err := r.ReadToBlocks(dst)
 	v.size += int64(n)
 
 	// Update all indices.
-	for left := int(n); left > 0; firstBuf = firstBuf.Next() {
-		if l := firstBuf.WriteSize(); left >= l {
+	for left := n; left > 0; firstBuf = firstBuf.Next() {
+		if l := firstBuf.WriteSize(); left >= uint64(l) {
 			firstBuf.WriteMove(l) // Whole block.
-			left -= l
+			left -= uint64(l)
 		} else {
-			firstBuf.WriteMove(left) // Partial block.
+			firstBuf.WriteMove(int(left)) // Partial block.
 			left = 0
 		}
 	}
@@ -83,14 +83,16 @@ func (v *View) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	return n, err
 }
 
-// ReadToBlocks implements safemem.Reader.ReadToBlocks.
-//
-// This will not advance the read index; the caller should follow
-// this call with a call to TrimFront in order to remove the read
-// data from the buffer. This is done to support pipe sematics.
-func (v *View) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
-	need := int(dsts.NumBytes())
-	if need == 0 {
+// WriteFromBlocks implements safemem.Writer.WriteFromBlocks. It advances the
+// write index by the number of bytes written.
+func (v *View) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
+	return v.WriteFromSafememReader(&safemem.BlockSeqReader{srcs}, srcs.NumBytes())
+}
+
+// ReadToSafememWriter reads up to count bytes from v to w. It does not advance
+// the read index. It calls w.WriteFromBlocks() at most once.
+func (v *View) ReadToSafememWriter(w safemem.Writer, count uint64) (uint64, error) {
+	if count == 0 {
 		return 0, nil
 	}
 
@@ -105,25 +107,27 @@ func (v *View) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	}
 
 	// Is all the data in a single block?
-	if l := firstBuf.ReadSize(); l >= need {
-		src = safemem.BlockSeqOf(firstBuf.ReadBlock())
+	if l := uint64(firstBuf.ReadSize()); l >= count {
+		src = safemem.BlockSeqOf(firstBuf.ReadBlock().TakeFirst64(count))
 	} else {
 		// Build a list of all the buffers.
-		need -= l
+		count -= l
 		blocks = append(blocks, firstBuf.ReadBlock())
-		for buf := firstBuf.Next(); buf != nil && need > 0; buf = buf.Next() {
-			need -= buf.ReadSize()
-			blocks = append(blocks, buf.ReadBlock())
+		for buf := firstBuf.Next(); buf != nil && count > 0; buf = buf.Next() {
+			block := buf.ReadBlock().TakeFirst64(count)
+			count -= uint64(block.Len())
+			blocks = append(blocks, block)
 		}
 		src = safemem.BlockSeqFromSlice(blocks)
 	}
 
-	// Perform the copy.
-	n, err := safemem.CopySeq(dsts, src)
+	// Perform I/O. As documented, we don't advance the read index.
+	return w.WriteFromBlocks(src)
+}
 
-	// See above: we would normally advance the read index here, but we
-	// don't do that in order to support pipe semantics. We rely on a
-	// separate call to TrimFront() in this case.
-
-	return n, err
+// ReadToBlocks implements safemem.Reader.ReadToBlocks. It does not advance the
+// read index by the number of bytes read, such that it's only safe to call if
+// the caller guarantees that ReadToBlocks will only be called once.
+func (v *View) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
+	return v.ReadToSafememWriter(&safemem.BlockSeqWriter{dsts}, dsts.NumBytes())
 }

@@ -52,6 +52,8 @@ const (
 )
 
 // anonFilesystemType implements FilesystemType.
+//
+// +stateify savable
 type anonFilesystemType struct{}
 
 // GetFilesystem implements FilesystemType.GetFilesystem.
@@ -69,12 +71,15 @@ func (anonFilesystemType) Name() string {
 //
 // Since all Dentries in anonFilesystem are non-directories, all FilesystemImpl
 // methods that would require an anonDentry to be a directory return ENOTDIR.
+//
+// +stateify savable
 type anonFilesystem struct {
 	vfsfs Filesystem
 
 	devMinor uint32
 }
 
+// +stateify savable
 type anonDentry struct {
 	vfsd Dentry
 
@@ -82,7 +87,7 @@ type anonDentry struct {
 }
 
 // Release implements FilesystemImpl.Release.
-func (fs *anonFilesystem) Release() {
+func (fs *anonFilesystem) Release(ctx context.Context) {
 }
 
 // Sync implements FilesystemImpl.Sync.
@@ -245,32 +250,32 @@ func (fs *anonFilesystem) BoundEndpointAt(ctx context.Context, rp *ResolvingPath
 	return nil, syserror.ECONNREFUSED
 }
 
-// ListxattrAt implements FilesystemImpl.ListxattrAt.
-func (fs *anonFilesystem) ListxattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error) {
+// ListXattrAt implements FilesystemImpl.ListXattrAt.
+func (fs *anonFilesystem) ListXattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error) {
 	if !rp.Done() {
 		return nil, syserror.ENOTDIR
 	}
 	return nil, nil
 }
 
-// GetxattrAt implements FilesystemImpl.GetxattrAt.
-func (fs *anonFilesystem) GetxattrAt(ctx context.Context, rp *ResolvingPath, opts GetxattrOptions) (string, error) {
+// GetXattrAt implements FilesystemImpl.GetXattrAt.
+func (fs *anonFilesystem) GetXattrAt(ctx context.Context, rp *ResolvingPath, opts GetXattrOptions) (string, error) {
 	if !rp.Done() {
 		return "", syserror.ENOTDIR
 	}
 	return "", syserror.ENOTSUP
 }
 
-// SetxattrAt implements FilesystemImpl.SetxattrAt.
-func (fs *anonFilesystem) SetxattrAt(ctx context.Context, rp *ResolvingPath, opts SetxattrOptions) error {
+// SetXattrAt implements FilesystemImpl.SetXattrAt.
+func (fs *anonFilesystem) SetXattrAt(ctx context.Context, rp *ResolvingPath, opts SetXattrOptions) error {
 	if !rp.Done() {
 		return syserror.ENOTDIR
 	}
 	return syserror.EPERM
 }
 
-// RemovexattrAt implements FilesystemImpl.RemovexattrAt.
-func (fs *anonFilesystem) RemovexattrAt(ctx context.Context, rp *ResolvingPath, name string) error {
+// RemoveXattrAt implements FilesystemImpl.RemoveXattrAt.
+func (fs *anonFilesystem) RemoveXattrAt(ctx context.Context, rp *ResolvingPath, name string) error {
 	if !rp.Done() {
 		return syserror.ENOTDIR
 	}
@@ -294,6 +299,21 @@ func (d *anonDentry) TryIncRef() bool {
 }
 
 // DecRef implements DentryImpl.DecRef.
-func (d *anonDentry) DecRef() {
+func (d *anonDentry) DecRef(ctx context.Context) {
 	// no-op
 }
+
+// InotifyWithParent implements DentryImpl.InotifyWithParent.
+//
+// Although Linux technically supports inotify on pseudo filesystems (inotify
+// is implemented at the vfs layer), it is not particularly useful. It is left
+// unimplemented until someone actually needs it.
+func (d *anonDentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType) {}
+
+// Watches implements DentryImpl.Watches.
+func (d *anonDentry) Watches() *Watches {
+	return nil
+}
+
+// OnZeroWatches implements Dentry.OnZeroWatches.
+func (d *anonDentry) OnZeroWatches(context.Context) {}

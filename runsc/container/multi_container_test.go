@@ -27,11 +27,13 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -59,34 +61,21 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 	return specs, ids
 }
 
-func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
+func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
 	if len(conf.RootDir) == 0 {
 		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
 	}
 
-	var (
-		containers []*Container
-		cleanups   []func()
-	)
-	cleanups = append(cleanups, func() {
-		for _, c := range containers {
-			c.Destroy()
-		}
-	})
-	cleanupAll := func() {
-		for _, c := range cleanups {
-			c()
-		}
-	}
-	localClean := specutils.MakeCleanup(cleanupAll)
-	defer localClean.Clean()
+	cu := cleanup.Cleanup{}
+	defer cu.Clean()
 
+	var containers []*Container
 	for i, spec := range specs {
 		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error setting up container: %v", err)
 		}
-		cleanups = append(cleanups, cleanup)
+		cu.Add(cleanup)
 
 		args := Args{
 			ID:        ids[i],
@@ -97,6 +86,7 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		if err != nil {
 			return nil, nil, fmt.Errorf("error creating container: %v", err)
 		}
+		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
 		if err := cont.Start(conf); err != nil {
@@ -104,27 +94,27 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		}
 	}
 
-	localClean.Release()
-	return containers, cleanupAll, nil
+	return containers, cu.Release(), nil
 }
 
 type execDesc struct {
 	c    *Container
 	cmd  []string
 	want int
-	desc string
+	name string
 }
 
-func execMany(execs []execDesc) error {
+func execMany(t *testing.T, execs []execDesc) {
 	for _, exec := range execs {
-		args := &control.ExecArgs{Argv: exec.cmd}
-		if ws, err := exec.c.executeSync(args); err != nil {
-			return fmt.Errorf("error executing %+v: %v", args, err)
-		} else if ws.ExitStatus() != exec.want {
-			return fmt.Errorf("%q: exec %q got exit status: %d, want: %d", exec.desc, exec.cmd, ws.ExitStatus(), exec.want)
-		}
+		t.Run(exec.name, func(t *testing.T) {
+			args := &control.ExecArgs{Argv: exec.cmd}
+			if ws, err := exec.c.executeSync(args); err != nil {
+				t.Errorf("error executing %+v: %v", args, err)
+			} else if ws.ExitStatus() != exec.want {
+				t.Errorf("%q: exec %q got exit status: %d, want: %d", exec.name, exec.cmd, ws.ExitStatus(), exec.want)
+			}
+		})
 	}
-	return nil
 }
 
 func createSharedMount(mount specs.Mount, name string, pod ...*specs.Spec) {
@@ -141,7 +131,7 @@ func createSharedMount(mount specs.Mount, name string, pod ...*specs.Spec) {
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -161,13 +151,13 @@ func TestMultiContainerSanity(t *testing.T) {
 
 			// Check via ps that multiple processes are running.
 			expectedPL := []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
 			expectedPL = []*control.Process{
-				{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -179,7 +169,7 @@ func TestMultiContainerSanity(t *testing.T) {
 // TestMultiPIDNS checks that it is possible to run 2 dead-simple
 // containers in the same sandbox with different pidns.
 func TestMultiPIDNS(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -207,13 +197,13 @@ func TestMultiPIDNS(t *testing.T) {
 
 			// Check via ps that multiple processes are running.
 			expectedPL := []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
 			expectedPL = []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -224,7 +214,7 @@ func TestMultiPIDNS(t *testing.T) {
 
 // TestMultiPIDNSPath checks the pidns path.
 func TestMultiPIDNSPath(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -269,7 +259,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 
 			// Check via ps that multiple processes are running.
 			expectedPL := []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -279,7 +269,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 			}
 
 			expectedPL = []*control.Process{
-				{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -312,7 +302,7 @@ func TestMultiContainerWait(t *testing.T) {
 
 	// Check via ps that multiple processes are running.
 	expectedPL := []*control.Process{
-		{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+		newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[1], expectedPL); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
@@ -357,7 +347,7 @@ func TestMultiContainerWait(t *testing.T) {
 	// After Wait returns, ensure that the root container is running and
 	// the child has finished.
 	expectedPL = []*control.Process{
-		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
@@ -389,7 +379,7 @@ func TestExecWait(t *testing.T) {
 
 	// Check via ps that process is running.
 	expectedPL := []*control.Process{
-		{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+		newProcessBuilder().Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[1], expectedPL); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
@@ -424,7 +414,7 @@ func TestExecWait(t *testing.T) {
 
 	// Wait for the exec'd process to exit.
 	expectedPL = []*control.Process{
-		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().PID(1).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Fatalf("failed to wait for second container to stop: %v", err)
@@ -510,9 +500,8 @@ func TestMultiContainerSignal(t *testing.T) {
 
 			// Check via ps that container 1 process is running.
 			expectedPL := []*control.Process{
-				{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+				newProcessBuilder().Cmd("sleep").Process(),
 			}
-
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
@@ -524,7 +513,7 @@ func TestMultiContainerSignal(t *testing.T) {
 
 			// Make sure process 1 is still running.
 			expectedPL = []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -591,7 +580,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -638,8 +627,10 @@ func TestMultiContainerDestroy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error getting process data from sandbox: %v", err)
 			}
-			expectedPL := []*control.Process{{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}}}
-			if r, err := procListsEqual(pss, expectedPL); !r {
+			expectedPL := []*control.Process{
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+			}
+			if !procListsEqual(pss, expectedPL) {
 				t.Errorf("container got process list: %s, want: %s: error: %v",
 					procListToString(pss), procListToString(expectedPL), err)
 			}
@@ -676,7 +667,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 
 	// Check root's container process list doesn't include other containers.
 	expectedPL0 := []*control.Process{
-		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().PID(1).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL0); err != nil {
 		t.Errorf("failed to wait for process to start: %v", err)
@@ -684,8 +675,8 @@ func TestMultiContainerProcesses(t *testing.T) {
 
 	// Same for the other container.
 	expectedPL1 := []*control.Process{
-		{PID: 2, Cmd: "sh", Threads: []kernel.ThreadID{2}},
-		{PID: 3, PPID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{3}},
+		newProcessBuilder().PID(2).Cmd("sh").Process(),
+		newProcessBuilder().PID(3).PPID(2).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[1], expectedPL1); err != nil {
 		t.Errorf("failed to wait for process to start: %v", err)
@@ -699,7 +690,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 	if _, err := containers[1].Execute(args); err != nil {
 		t.Fatalf("error exec'ing: %v", err)
 	}
-	expectedPL1 = append(expectedPL1, &control.Process{PID: 4, Cmd: "sleep", Threads: []kernel.ThreadID{4}})
+	expectedPL1 = append(expectedPL1, newProcessBuilder().PID(4).Cmd("sleep").Process())
 	if err := waitForProcessList(containers[1], expectedPL1); err != nil {
 		t.Errorf("failed to wait for process to start: %v", err)
 	}
@@ -1083,7 +1074,7 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 // Test that pod shared mounts are properly mounted in 2 containers and that
 // changes from one container is reflected in the other.
 func TestMultiContainerSharedMount(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1121,84 +1112,82 @@ func TestMultiContainerSharedMount(t *testing.T) {
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "-d", mnt0.Destination},
-					desc: "directory is mounted in container0",
+					name: "directory is mounted in container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
-					desc: "directory is mounted in container1",
+					name: "directory is mounted in container1",
 				},
 				{
 					c:    containers[0],
-					cmd:  []string{"/usr/bin/touch", file0},
-					desc: "create file in container0",
+					cmd:  []string{"/bin/touch", file0},
+					name: "create file in container0",
 				},
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "-f", file0},
-					desc: "file appears in container0",
+					name: "file appears in container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "-f", file1},
-					desc: "file appears in container1",
+					name: "file appears in container1",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/bin/rm", file1},
-					desc: "file removed from container1",
+					name: "remove file from container1",
 				},
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "!", "-f", file0},
-					desc: "file removed from container0",
+					name: "file removed from container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "!", "-f", file1},
-					desc: "file removed from container1",
+					name: "file removed from container1",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/bin/mkdir", file1},
-					desc: "create directory in container1",
+					name: "create directory in container1",
 				},
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "-d", file0},
-					desc: "dir appears in container0",
+					name: "dir appears in container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "-d", file1},
-					desc: "dir appears in container1",
+					name: "dir appears in container1",
 				},
 				{
 					c:    containers[0],
 					cmd:  []string{"/bin/rmdir", file0},
-					desc: "create directory in container0",
+					name: "remove directory from container0",
 				},
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "!", "-d", file0},
-					desc: "dir removed from container0",
+					name: "dir removed from container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "!", "-d", file1},
-					desc: "dir removed from container1",
+					name: "dir removed from container1",
 				},
 			}
-			if err := execMany(execs); err != nil {
-				t.Fatal(err.Error())
-			}
+			execMany(t, execs)
 		})
 	}
 }
 
 // Test that pod mounts are mounted as readonly when requested.
 func TestMultiContainerSharedMountReadonly(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1236,36 +1225,34 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "-d", mnt0.Destination},
-					desc: "directory is mounted in container0",
+					name: "directory is mounted in container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
-					desc: "directory is mounted in container1",
+					name: "directory is mounted in container1",
 				},
 				{
 					c:    containers[0],
-					cmd:  []string{"/usr/bin/touch", file0},
+					cmd:  []string{"/bin/touch", file0},
 					want: 1,
-					desc: "fails to write to container0",
+					name: "fails to write to container0",
 				},
 				{
 					c:    containers[1],
-					cmd:  []string{"/usr/bin/touch", file1},
+					cmd:  []string{"/bin/touch", file1},
 					want: 1,
-					desc: "fails to write to container1",
+					name: "fails to write to container1",
 				},
 			}
-			if err := execMany(execs); err != nil {
-				t.Fatal(err.Error())
-			}
+			execMany(t, execs)
 		})
 	}
 }
 
 // Test that shared pod mounts continue to work after container is restarted.
 func TestMultiContainerSharedMountRestart(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1302,23 +1289,21 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 			execs := []execDesc{
 				{
 					c:    containers[0],
-					cmd:  []string{"/usr/bin/touch", file0},
-					desc: "create file in container0",
+					cmd:  []string{"/bin/touch", file0},
+					name: "create file in container0",
 				},
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "-f", file0},
-					desc: "file appears in container0",
+					name: "file appears in container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "-f", file1},
-					desc: "file appears in container1",
+					name: "file appears in container1",
 				},
 			}
-			if err := execMany(execs); err != nil {
-				t.Fatal(err.Error())
-			}
+			execMany(t, execs)
 
 			containers[1].Destroy()
 
@@ -1345,86 +1330,84 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "-f", file0},
-					desc: "file is still in container0",
+					name: "file is still in container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "-f", file1},
-					desc: "file is still in container1",
+					name: "file is still in container1",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/bin/rm", file1},
-					desc: "file removed from container1",
+					name: "file removed from container1",
 				},
 				{
 					c:    containers[0],
 					cmd:  []string{"/usr/bin/test", "!", "-f", file0},
-					desc: "file removed from container0",
+					name: "file removed from container0",
 				},
 				{
 					c:    containers[1],
 					cmd:  []string{"/usr/bin/test", "!", "-f", file1},
-					desc: "file removed from container1",
+					name: "file removed from container1",
 				},
 			}
-			if err := execMany(execs); err != nil {
-				t.Fatal(err.Error())
-			}
+			execMany(t, execs)
 		})
 	}
 }
 
 // Test that unsupported pod mounts options are ignored when matching master and
-// slave mounts.
+// replica mounts.
 func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
-	rootDir, cleanup, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer cleanup()
+	for name, conf := range configsWithVFS2(t, all...) {
+		t.Run(name, func(t *testing.T) {
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
 
-	conf := testutil.TestConfig(t)
-	conf.RootDir = rootDir
+			// Setup the containers.
+			sleep := []string{"/bin/sleep", "100"}
+			podSpec, ids := createSpecs(sleep, sleep)
+			mnt0 := specs.Mount{
+				Destination: "/mydir/test",
+				Source:      "/some/dir",
+				Type:        "tmpfs",
+				Options:     []string{"rw", "rbind", "relatime"},
+			}
+			podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
 
-	// Setup the containers.
-	sleep := []string{"/bin/sleep", "100"}
-	podSpec, ids := createSpecs(sleep, sleep)
-	mnt0 := specs.Mount{
-		Destination: "/mydir/test",
-		Source:      "/some/dir",
-		Type:        "tmpfs",
-		Options:     []string{"rw", "relatime"},
-	}
-	podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+			mnt1 := mnt0
+			mnt1.Destination = "/mydir2/test2"
+			mnt1.Options = []string{"rw", "nosuid"}
+			podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
 
-	mnt1 := mnt0
-	mnt1.Destination = "/mydir2/test2"
-	mnt1.Options = []string{"rw", "nosuid"}
-	podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+			createSharedMount(mnt0, "test-mount", podSpec...)
 
-	createSharedMount(mnt0, "test-mount", podSpec...)
+			containers, cleanup, err := startContainers(conf, podSpec, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
 
-	containers, cleanup, err := startContainers(conf, podSpec, ids)
-	if err != nil {
-		t.Fatalf("error starting containers: %v", err)
-	}
-	defer cleanup()
-
-	execs := []execDesc{
-		{
-			c:    containers[0],
-			cmd:  []string{"/usr/bin/test", "-d", mnt0.Destination},
-			desc: "directory is mounted in container0",
-		},
-		{
-			c:    containers[1],
-			cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
-			desc: "directory is mounted in container1",
-		},
-	}
-	if err := execMany(execs); err != nil {
-		t.Fatal(err.Error())
+			execs := []execDesc{
+				{
+					c:    containers[0],
+					cmd:  []string{"/usr/bin/test", "-d", mnt0.Destination},
+					name: "directory is mounted in container0",
+				},
+				{
+					c:    containers[1],
+					cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
+					name: "directory is mounted in container1",
+				},
+			}
+			execMany(t, execs)
+		})
 	}
 }
 
@@ -1517,7 +1500,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	// Ensure container is running
 	c := containers[2]
 	expectedPL := []*control.Process{
-		{PID: 3, Cmd: "sleep", Threads: []kernel.ThreadID{3}},
+		newProcessBuilder().PID(3).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
@@ -1534,8 +1517,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	}
 
 	// Check that container isn't running anymore.
-	args := &control.ExecArgs{Argv: []string{"/bin/true"}}
-	if _, err := c.executeSync(args); err == nil {
+	if _, err := execute(c, "/bin/true"); err == nil {
 		t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 	}
 
@@ -1545,13 +1527,12 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 			continue // container[2] has been killed.
 		}
 		pl := []*control.Process{
-			{PID: kernel.ThreadID(i + 1), Cmd: "sleep", Threads: []kernel.ThreadID{kernel.ThreadID(i + 1)}},
+			newProcessBuilder().PID(kernel.ThreadID(i + 1)).Cmd("sleep").Process(),
 		}
 		if err := waitForProcessList(c, pl); err != nil {
 			t.Errorf("Container %q was affected by another container: %v", c.ID, err)
 		}
-		args := &control.ExecArgs{Argv: []string{"/bin/true"}}
-		if _, err := c.executeSync(args); err != nil {
+		if _, err := execute(c, "/bin/true"); err != nil {
 			t.Fatalf("Container %q was affected by another container: %v", c.ID, err)
 		}
 	}
@@ -1565,7 +1546,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	// Wait until sandbox stops. waitForProcessList will loop until sandbox exits
 	// and RPC errors out.
 	impossiblePL := []*control.Process{
-		{PID: 100, Cmd: "non-existent-process", Threads: []kernel.ThreadID{100}},
+		newProcessBuilder().Cmd("non-existent-process").Process(),
 	}
 	if err := waitForProcessList(c, impossiblePL); err == nil {
 		t.Fatalf("Sandbox was not killed after gofer death")
@@ -1573,8 +1554,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Check that entire sandbox isn't running anymore.
 	for _, c := range containers {
-		args := &control.ExecArgs{Argv: []string{"/bin/true"}}
-		if _, err := c.executeSync(args); err == nil {
+		if _, err := execute(c, "/bin/true"); err == nil {
 			t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 		}
 	}
@@ -1707,5 +1687,83 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 	}
 	if !ws.Exited() || ws.ExitStatus() != 0 {
 		t.Fatalf("child container failed, waitStatus: %v", ws)
+	}
+}
+
+// TestMultiContainerHomeEnvDir tests that the HOME environment variable is set
+// for root containers, sub-containers, and execed processes.
+func TestMultiContainerHomeEnvDir(t *testing.T) {
+	// TODO(gvisor.dev/issue/1487): VFSv2 configs failing.
+	// NOTE: Don't use overlay since we need changes to persist to the temp dir
+	// outside the sandbox.
+	for testName, conf := range configs(t, noOverlay...) {
+		t.Run(testName, func(t *testing.T) {
+
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			// Create temp files we can write the value of $HOME to.
+			homeDirs := map[string]*os.File{}
+			for _, name := range []string{"root", "sub", "exec"} {
+				homeFile, err := ioutil.TempFile(testutil.TmpDir(), name)
+				if err != nil {
+					t.Fatalf("creating temp file: %v", err)
+				}
+				homeDirs[name] = homeFile
+			}
+
+			// We will sleep in the root container in order to ensure that the root
+			//container doesn't terminate before sub containers can be created.
+			rootCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s; sleep 1000", homeDirs["root"].Name())}
+			subCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["sub"].Name())}
+			execCmd := fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["exec"].Name())
+
+			// Setup the containers, a root container and sub container.
+			specConfig, ids := createSpecs(rootCmd, subCmd)
+			containers, cleanup, err := startContainers(conf, specConfig, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
+
+			// Exec into the root container synchronously.
+			if _, err := execute(containers[0], "/bin/sh", "-c", execCmd); err != nil {
+				t.Errorf("error executing %+v: %v", execCmd, err)
+			}
+
+			// Wait for the subcontainer to finish.
+			_, err = containers[1].Wait()
+			if err != nil {
+				t.Errorf("wait on child container: %v", err)
+			}
+
+			// Wait for the root container to run.
+			expectedPL := []*control.Process{
+				newProcessBuilder().Cmd("sh").Process(),
+				newProcessBuilder().Cmd("sleep").Process(),
+			}
+			if err := waitForProcessList(containers[0], expectedPL); err != nil {
+				t.Errorf("failed to wait for sleep to start: %v", err)
+			}
+
+			// Check the written files.
+			for name, tmpFile := range homeDirs {
+				dirBytes, err := ioutil.ReadAll(tmpFile)
+				if err != nil {
+					t.Fatalf("reading %s temp file: %v", name, err)
+				}
+				got := string(dirBytes)
+
+				want := "/"
+				if got != want {
+					t.Errorf("%s $HOME incorrect: got: %q, want: %q", name, got, want)
+				}
+			}
+
+		})
 	}
 }

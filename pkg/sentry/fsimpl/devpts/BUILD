@@ -1,6 +1,18 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
+
+go_template_instance(
+    name = "root_inode_refs",
+    out = "root_inode_refs.go",
+    package = "devpts",
+    prefix = "rootInode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "rootInode",
+    },
+)
 
 go_library(
     name = "devpts",
@@ -9,15 +21,21 @@ go_library(
         "line_discipline.go",
         "master.go",
         "queue.go",
-        "slave.go",
+        "replica.go",
+        "root_inode_refs.go",
         "terminal.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/log",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
+        "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

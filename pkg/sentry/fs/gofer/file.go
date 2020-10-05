@@ -114,7 +114,7 @@ func NewFile(ctx context.Context, dirent *fs.Dirent, name string, flags fs.FileF
 }
 
 // Release implements fs.FileOpeations.Release.
-func (f *fileOperations) Release() {
+func (f *fileOperations) Release(context.Context) {
 	f.handles.DecRef()
 }
 
@@ -122,7 +122,7 @@ func (f *fileOperations) Release() {
 func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 
 	dirCtx := &fs.DirCtx{

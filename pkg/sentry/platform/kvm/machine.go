@@ -43,25 +43,31 @@ type machine struct {
 	// kernel is the set of global structures.
 	kernel ring0.Kernel
 
-	// mappingCache is used for mapPhysical.
-	mappingCache sync.Map
-
 	// mu protects vCPUs.
 	mu sync.RWMutex
 
 	// available is notified when vCPUs are available.
 	available sync.Cond
 
-	// vCPUs are the machine vCPUs.
+	// vCPUsByTID are the machine vCPUs.
 	//
 	// These are populated dynamically.
-	vCPUs map[uint64]*vCPU
+	vCPUsByTID map[uint64]*vCPU
 
 	// vCPUsByID are the machine vCPUs, can be indexed by the vCPU's ID.
-	vCPUsByID map[int]*vCPU
+	vCPUsByID []*vCPU
 
 	// maxVCPUs is the maximum number of vCPUs supported by the machine.
 	maxVCPUs int
+
+	// maxSlots is the maximum number of memory slots supported by the machine.
+	maxSlots int
+
+	// usedSlots is the set of used physical addresses (sorted).
+	usedSlots []uintptr
+
+	// nextID is the next vCPU ID.
+	nextID uint32
 }
 
 const (
@@ -137,9 +143,8 @@ type dieState struct {
 //
 // Precondition: mu must be held.
 func (m *machine) newVCPU() *vCPU {
-	id := len(m.vCPUs)
-
 	// Create the vCPU.
+	id := int(atomic.AddUint32(&m.nextID, 1) - 1)
 	fd, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CREATE_VCPU, uintptr(id))
 	if errno != 0 {
 		panic(fmt.Sprintf("error creating new vCPU: %v", errno))
@@ -150,7 +155,7 @@ func (m *machine) newVCPU() *vCPU {
 		fd:      int(fd),
 		machine: m,
 	}
-	c.CPU.Init(&m.kernel, c)
+	c.CPU.Init(&m.kernel, c.id, c)
 	m.vCPUsByID[c.id] = c
 
 	// Ensure the signal mask is correct.
@@ -176,16 +181,10 @@ func (m *machine) newVCPU() *vCPU {
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
 	// Create the machine.
-	m := &machine{
-		fd:        vm,
-		vCPUs:     make(map[uint64]*vCPU),
-		vCPUsByID: make(map[int]*vCPU),
-	}
+	m := &machine{fd: vm}
 	m.available.L = &m.mu
-	m.kernel.Init(ring0.KernelOpts{
-		PageTables: pagetables.New(newAllocator()),
-	})
 
+	// Pull the maximum vCPUs.
 	maxVCPUs, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
 	if errno != 0 {
 		m.maxVCPUs = _KVM_NR_VCPUS
@@ -193,6 +192,21 @@ func newMachine(vm int) (*machine, error) {
 		m.maxVCPUs = int(maxVCPUs)
 	}
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
+	m.vCPUsByTID = make(map[uint64]*vCPU)
+	m.vCPUsByID = make([]*vCPU, m.maxVCPUs)
+	m.kernel.Init(ring0.KernelOpts{
+		PageTables: pagetables.New(newAllocator()),
+	}, m.maxVCPUs)
+
+	// Pull the maximum slots.
+	maxSlots, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
+	if errno != 0 {
+		m.maxSlots = _KVM_NR_MEMSLOTS
+	} else {
+		m.maxSlots = int(maxSlots)
+	}
+	log.Debugf("The maximum number of slots is %d.", m.maxSlots)
+	m.usedSlots = make([]uintptr, m.maxSlots)
 
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
@@ -205,15 +219,9 @@ func newMachine(vm int) (*machine, error) {
 			pagetables.MapOpts{AccessType: usermem.AnyAccess},
 			pr.physical)
 
-		// And keep everything in the upper half.
-		m.kernel.PageTables.Map(
-			usermem.Addr(ring0.KernelStartAddress|pr.virtual),
-			pr.length,
-			pagetables.MapOpts{AccessType: usermem.AnyAccess},
-			pr.physical)
-
 		return true // Keep iterating.
 	})
+	m.mapUpperHalf(m.kernel.PageTables)
 
 	var physicalRegionsReadOnly []physicalRegion
 	var physicalRegionsAvailable []physicalRegion
@@ -270,10 +278,26 @@ func newMachine(vm int) (*machine, error) {
 	return m, nil
 }
 
+// hasSlot returns true iff the given address is mapped.
+//
+// This must be done via a linear scan.
+//
+//go:nosplit
+func (m *machine) hasSlot(physical uintptr) bool {
+	for i := 0; i < len(m.usedSlots); i++ {
+		if p := atomic.LoadUintptr(&m.usedSlots[i]); p == physical {
+			return true
+		}
+	}
+	return false
+}
+
 // mapPhysical checks for the mapping of a physical range, and installs one if
 // not available. This attempts to be efficient for calls in the hot path.
 //
 // This panics on error.
+//
+//go:nosplit
 func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion, flags uint32) {
 	for end := physical + length; physical < end; {
 		_, physicalStart, length, ok := calculateBluepillFault(physical, phyRegions)
@@ -282,8 +306,8 @@ func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalReg
 			panic("mapPhysical on unknown physical address")
 		}
 
-		if _, ok := m.mappingCache.LoadOrStore(physicalStart, true); !ok {
-			// Not present in the cache; requires setting the slot.
+		// Is this already mapped? Check the usedSlots.
+		if !m.hasSlot(physicalStart) {
 			if _, ok := handleBluepillFault(m, physical, phyRegions, flags); !ok {
 				panic("handleBluepillFault failed")
 			}
@@ -304,7 +328,11 @@ func (m *machine) Destroy() {
 	runtime.SetFinalizer(m, nil)
 
 	// Destroy vCPUs.
-	for _, c := range m.vCPUs {
+	for _, c := range m.vCPUsByID {
+		if c == nil {
+			continue
+		}
+
 		// Ensure the vCPU is not still running in guest mode. This is
 		// possible iff teardown has been done by other threads, and
 		// somehow a single thread has not executed any system calls.
@@ -331,13 +359,18 @@ func (m *machine) Destroy() {
 // Get gets an available vCPU.
 //
 // This will return with the OS thread locked.
+//
+// It is guaranteed that if any OS thread TID is in guest, m.vCPUs[TID] points
+// to the vCPU in which the OS thread TID is running. So if Get() returns with
+// the corrent context in guest, the vCPU of it must be the same as what
+// Get() returns.
 func (m *machine) Get() *vCPU {
 	m.mu.RLock()
 	runtime.LockOSThread()
 	tid := procid.Current()
 
 	// Check for an exact match.
-	if c := m.vCPUs[tid]; c != nil {
+	if c := m.vCPUsByTID[tid]; c != nil {
 		c.lock()
 		m.mu.RUnlock()
 		return c
@@ -356,7 +389,7 @@ func (m *machine) Get() *vCPU {
 	tid = procid.Current()
 
 	// Recheck for an exact match.
-	if c := m.vCPUs[tid]; c != nil {
+	if c := m.vCPUsByTID[tid]; c != nil {
 		c.lock()
 		m.mu.Unlock()
 		return c
@@ -364,10 +397,10 @@ func (m *machine) Get() *vCPU {
 
 	for {
 		// Scan for an available vCPU.
-		for origTID, c := range m.vCPUs {
+		for origTID, c := range m.vCPUsByTID {
 			if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
-				delete(m.vCPUs, origTID)
-				m.vCPUs[tid] = c
+				delete(m.vCPUsByTID, origTID)
+				m.vCPUsByTID[tid] = c
 				m.mu.Unlock()
 				c.loadSegments(tid)
 				return c
@@ -375,17 +408,17 @@ func (m *machine) Get() *vCPU {
 		}
 
 		// Create a new vCPU (maybe).
-		if len(m.vCPUs) < m.maxVCPUs {
+		if int(m.nextID) < m.maxVCPUs {
 			c := m.newVCPU()
 			c.lock()
-			m.vCPUs[tid] = c
+			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
 			c.loadSegments(tid)
 			return c
 		}
 
 		// Scan for something not in user mode.
-		for origTID, c := range m.vCPUs {
+		for origTID, c := range m.vCPUsByTID {
 			if !atomic.CompareAndSwapUint32(&c.state, vCPUGuest, vCPUGuest|vCPUWaiter) {
 				continue
 			}
@@ -403,8 +436,8 @@ func (m *machine) Get() *vCPU {
 			}
 
 			// Steal the vCPU.
-			delete(m.vCPUs, origTID)
-			m.vCPUs[tid] = c
+			delete(m.vCPUsByTID, origTID)
+			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
 			c.loadSegments(tid)
 			return c
@@ -431,7 +464,7 @@ func (m *machine) Put(c *vCPU) {
 // newDirtySet returns a new dirty set.
 func (m *machine) newDirtySet() *dirtySet {
 	return &dirtySet{
-		vCPUs: make([]uint64, (m.maxVCPUs+63)/64, (m.maxVCPUs+63)/64),
+		vCPUMasks: make([]uint64, (m.maxVCPUs+63)/64, (m.maxVCPUs+63)/64),
 	}
 }
 

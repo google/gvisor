@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -40,6 +41,7 @@ type SocketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.LockFD
 
 	socketOpsCommon
 }
@@ -55,18 +57,18 @@ func NewVFS2(t *kernel.Task, skType linux.SockType, protocol Protocol) (*SocketV
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
 	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}, nil); err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 
 	// Create a connection from which the kernel can write messages.
 	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t)
 	if err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 
-	return &SocketVFS2{
+	fd := &SocketVFS2{
 		socketOpsCommon: socketOpsCommon{
 			ports:          t.Kernel().NetlinkPorts(),
 			protocol:       protocol,
@@ -75,7 +77,16 @@ func NewVFS2(t *kernel.Task, skType linux.SockType, protocol Protocol) (*SocketV
 			connection:     connection,
 			sendBufferSize: defaultSendBufferSize,
 		},
-	}, nil
+	}
+	fd.LockFD.Init(&vfs.FileLocks{})
+	return fd, nil
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (s *SocketVFS2) Release(ctx context.Context) {
+	t := kernel.TaskFromContext(ctx)
+	t.Kernel().DeleteSocketVFS2(&s.vfsfd)
+	s.socketOpsCommon.Release(ctx)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -135,4 +146,14 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 
 	n, err := s.sendMsg(ctx, src, nil, 0, socket.ControlMessages{})
 	return int64(n), err.ToError()
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (s *SocketVFS2) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	return s.Locks().LockPOSIX(ctx, &s.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (s *SocketVFS2) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return s.Locks().UnlockPOSIX(ctx, &s.vfsfd, uid, start, length, whence)
 }

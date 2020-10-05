@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -324,40 +325,26 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 }
 
 func startContainers(t *testing.T, specs []*specs.Spec, ids []string) ([]*container.Container, func(), error) {
-	var (
-		containers []*container.Container
-		cleanups   []func()
-	)
-	cleanups = append(cleanups, func() {
-		for _, c := range containers {
-			c.Destroy()
-		}
-	})
-	cleanupAll := func() {
-		for _, c := range cleanups {
-			c()
-		}
-	}
-	localClean := specutils.MakeCleanup(cleanupAll)
-	defer localClean.Clean()
+	var containers []*container.Container
 
 	// All containers must share the same root.
-	rootDir, cleanup, err := testutil.SetupRootDir()
+	rootDir, clean, err := testutil.SetupRootDir()
 	if err != nil {
 		t.Fatalf("error creating root dir: %v", err)
 	}
-	cleanups = append(cleanups, cleanup)
+	cu := cleanup.Make(clean)
+	defer cu.Clean()
 
 	// Point this to from the configuration.
 	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
 
 	for i, spec := range specs {
-		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
+		bundleDir, clean, err := testutil.SetupBundleDir(spec)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error setting up bundle: %v", err)
 		}
-		cleanups = append(cleanups, cleanup)
+		cu.Add(clean)
 
 		args := container.Args{
 			ID:        ids[i],
@@ -375,6 +362,5 @@ func startContainers(t *testing.T, specs []*specs.Spec, ids []string) ([]*contai
 		}
 	}
 
-	localClean.Release()
-	return containers, cleanupAll, nil
+	return containers, cu.Release(), nil
 }

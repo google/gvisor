@@ -43,8 +43,8 @@ type interfaceGenerator struct {
 	// of t's interfaces.
 	ms map[string]struct{}
 
-	// as records embedded fields in t that are potentially not packed. The key
-	// is the accessor for the field.
+	// as records fields in t that are potentially not packed. The key is the
+	// accessor for the field.
 	as map[string]struct{}
 }
 
@@ -224,7 +224,7 @@ func (g *interfaceGenerator) emitNoEscapeSliceDataPointer(srcPtr, dstVar string)
 func (g *interfaceGenerator) emitKeepAlive(ptrVar string) {
 	g.emit("// Since we bypassed the compiler's escape analysis, indicate that %s\n", ptrVar)
 	g.emit("// must live until the use above.\n")
-	g.emit("runtime.KeepAlive(%s)\n", ptrVar)
+	g.emit("runtime.KeepAlive(%s) // escapes: replaced by intrinsic.\n", ptrVar)
 }
 
 func (g *interfaceGenerator) expandBinaryExpr(b *strings.Builder, e *ast.BinaryExpr) {

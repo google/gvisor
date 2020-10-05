@@ -11,16 +11,16 @@ doc(
     category = "User Guide",
     permalink = "/docs/tutorials/docker/",
     subcategory = "Tutorials",
-    weight = "21",
+    weight = "10",
 )
 
 doc(
-    name = "cni",
-    src = "cni.md",
+    name = "docker_compose",
+    src = "docker-compose.md",
     category = "User Guide",
-    permalink = "/docs/tutorials/cni/",
+    permalink = "/docs/tutorials/docker-compose/",
     subcategory = "Tutorials",
-    weight = "22",
+    weight = "20",
 )
 
 doc(
@@ -33,5 +33,14 @@ doc(
     ],
     permalink = "/docs/tutorials/kubernetes/",
     subcategory = "Tutorials",
-    weight = "33",
+    weight = "30",
+)
+
+doc(
+    name = "cni",
+    src = "cni.md",
+    category = "User Guide",
+    permalink = "/docs/tutorials/cni/",
+    subcategory = "Tutorials",
+    weight = "40",
 )

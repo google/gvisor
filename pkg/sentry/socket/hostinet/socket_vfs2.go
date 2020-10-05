@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -35,6 +36,7 @@ import (
 type socketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
 
 	// We store metadata for hostinet sockets internally. Technically, we should
 	// access metadata (e.g. through stat, chmod) on the host for correctness,
@@ -50,6 +52,7 @@ var _ = socket.SocketVFS2(&socketVFS2{})
 func newVFS2Socket(t *kernel.Task, family int, stype linux.SockType, protocol int, fd int, flags uint32) (*vfs.FileDescription, *syserr.Error) {
 	mnt := t.Kernel().SocketMount()
 	d := sockfs.NewDentry(t.Credentials(), mnt)
+	defer d.DecRef(t)
 
 	s := &socketVFS2{
 		socketOpsCommon: socketOpsCommon{
@@ -59,6 +62,7 @@ func newVFS2Socket(t *kernel.Task, family int, stype linux.SockType, protocol in
 			fd:       fd,
 		},
 	}
+	s.LockFD.Init(&vfs.FileLocks{})
 	if err := fdnotifier.AddFD(int32(fd), &s.queue); err != nil {
 		return nil, syserr.FromError(err)
 	}
@@ -68,9 +72,17 @@ func newVFS2Socket(t *kernel.Task, family int, stype linux.SockType, protocol in
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
 	}); err != nil {
+		fdnotifier.RemoveFD(int32(s.fd))
 		return nil, syserr.FromError(err)
 	}
 	return vfsfd, nil
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (s *socketVFS2) Release(ctx context.Context) {
+	t := kernel.TaskFromContext(ctx)
+	t.Kernel().DeleteSocketVFS2(&s.vfsfd)
+	s.socketOpsCommon.Release(ctx)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -93,7 +105,7 @@ func (s *socketVFS2) Ioctl(ctx context.Context, uio usermem.IO, args arch.Syscal
 	return ioctl(ctx, s.fd, uio, args)
 }
 
-// PRead implements vfs.FileDescriptionImpl.
+// PRead implements vfs.FileDescriptionImpl.PRead.
 func (s *socketVFS2) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.ESPIPE
 }
@@ -129,6 +141,16 @@ func (s *socketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	n, err := src.CopyInTo(ctx, writer)
 	hostfd.PutReadWriterAt(writer)
 	return int64(n), err
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (s *socketVFS2) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	return s.Locks().LockPOSIX(ctx, &s.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (s *socketVFS2) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return s.Locks().UnlockPOSIX(ctx, &s.vfsfd, uid, start, length, whence)
 }
 
 type socketProviderVFS2 struct {

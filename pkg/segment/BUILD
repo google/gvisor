@@ -21,6 +21,8 @@ go_template(
     ],
     opt_consts = [
         "minDegree",
+        # trackGaps must either be 0 or 1.
+        "trackGaps",
     ],
     types = [
         "Key",

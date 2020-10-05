@@ -32,6 +32,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/usermem",
-        "@com_github_google_go-cmp//cmp:go_default_library",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

@@ -15,10 +15,13 @@
 package boot
 
 import (
+	"strings"
+
 	"gvisor.dev/gvisor/pkg/sentry/strace"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
-func enableStrace(conf *Config) error {
+func enableStrace(conf *config.Config) error {
 	// We must initialize even if strace is not enabled.
 	strace.Initialize()
 
@@ -36,5 +39,5 @@ func enableStrace(conf *Config) error {
 		strace.EnableAll(strace.SinkTypeLog)
 		return nil
 	}
-	return strace.Enable(conf.StraceSyscalls, strace.SinkTypeLog)
+	return strace.Enable(strings.Split(conf.StraceSyscalls, ","), strace.SinkTypeLog)
 }

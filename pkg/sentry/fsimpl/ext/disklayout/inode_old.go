@@ -30,6 +30,8 @@ const (
 //
 // All fields representing time are in seconds since the epoch. Which means that
 // they will overflow in January 2038.
+//
+// +marshal
 type InodeOld struct {
 	ModeRaw uint16
 	UIDLo   uint16

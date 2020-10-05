@@ -24,6 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -98,12 +100,12 @@ func newSocketFile(ctx context.Context, family int, stype linux.SockType, protoc
 		return nil, syserr.FromError(err)
 	}
 	dirent := socket.NewDirent(ctx, socketDevice)
-	defer dirent.DecRef()
+	defer dirent.DecRef(ctx)
 	return fs.NewFile(ctx, dirent, fs.FileFlags{NonBlocking: nonblock, Read: true, Write: true, NonSeekable: true}, s), nil
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *socketOpsCommon) Release() {
+func (s *socketOpsCommon) Release(context.Context) {
 	fdnotifier.RemoveFD(int32(s.fd))
 	syscall.Close(s.fd)
 }
@@ -267,7 +269,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 			syscall.Close(fd)
 			return 0, nil, 0, err
 		}
-		defer f.DecRef()
+		defer f.DecRef(t)
 
 		kfd, kerr = t.NewFDFromVFS2(0, f, kernel.FDFlags{
 			CloseOnExec: flags&syscall.SOCK_CLOEXEC != 0,
@@ -279,7 +281,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 			syscall.Close(fd)
 			return 0, nil, 0, err
 		}
-		defer f.DecRef()
+		defer f.DecRef(t)
 
 		kfd, kerr = t.NewFDFrom(0, f, kernel.FDFlags{
 			CloseOnExec: flags&syscall.SOCK_CLOEXEC != 0,
@@ -319,12 +321,12 @@ func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error) {
+func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	if outLen < 0 {
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// Whitelist options and constrain option length.
+	// Only allow known and safe options.
 	optlen := getSockOptLen(t, level, name)
 	switch level {
 	case linux.SOL_IP:
@@ -364,12 +366,13 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}
-	return opt, nil
+	optP := primitive.ByteSlice(opt)
+	return &optP, nil
 }
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
 func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
-	// Whitelist options and constrain option length.
+	// Only allow known and safe options.
 	optlen := setSockOptLen(t, level, name)
 	switch level {
 	case linux.SOL_IP:
@@ -415,7 +418,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 
 // RecvMsg implements socket.Socket.RecvMsg.
 func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
-	// Whitelist flags.
+	// Only allow known and safe flags.
 	//
 	// FIXME(jamieliu): We can't support MSG_ERRQUEUE because it uses ancillary
 	// messages that gvisor/pkg/tcpip/transport/unix doesn't understand. Kill the
@@ -537,7 +540,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 
 // SendMsg implements socket.Socket.SendMsg.
 func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
-	// Whitelist flags.
+	// Only allow known and safe flags.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_EOR|syscall.MSG_FASTOPEN|syscall.MSG_MORE|syscall.MSG_NOSIGNAL) != 0 {
 		return 0, syserr.ErrInvalidArgument
 	}
@@ -555,7 +558,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		if uint64(src.NumBytes()) != srcs.NumBytes() {
 			return 0, nil
 		}
-		if srcs.IsEmpty() {
+		if srcs.IsEmpty() && len(controlBuf) == 0 {
 			return 0, nil
 		}
 
@@ -708,6 +711,6 @@ func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int
 func init() {
 	for _, family := range []int{syscall.AF_INET, syscall.AF_INET6} {
 		socket.RegisterProvider(family, &socketProvider{family})
-		socket.RegisterProviderVFS2(family, &socketProviderVFS2{})
+		socket.RegisterProviderVFS2(family, &socketProviderVFS2{family})
 	}
 }

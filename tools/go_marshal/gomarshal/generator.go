@@ -38,8 +38,8 @@ import (
 // All recievers are single letters, so we don't allow import aliases to be a
 // single letter.
 var badIdents = []string{
-	"addr", "blk", "buf", "dst", "dsts", "count", "err", "hdr", "idx", "inner",
-	"length", "limit", "ptr", "size", "src", "srcs", "task", "val",
+	"addr", "blk", "buf", "cc", "dst", "dsts", "count", "err", "hdr", "idx",
+	"inner", "length", "limit", "ptr", "size", "src", "srcs", "val",
 	// All single-letter identifiers.
 }
 
@@ -68,6 +68,8 @@ type Generator struct {
 	output *os.File
 	// Output file to write generated tests.
 	outputTest *os.File
+	// Output file to write unconditionally generated tests.
+	outputTestUC *os.File
 	// Package name for the generated file.
 	pkg string
 	// Set of extra packages to import in the generated file.
@@ -75,7 +77,7 @@ type Generator struct {
 }
 
 // NewGenerator creates a new code Generator.
-func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*Generator, error) {
+func NewGenerator(srcs []string, out, outTest, outTestUnconditional, pkg string, imports []string) (*Generator, error) {
 	f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't open output file %q: %v", out, err)
@@ -84,12 +86,17 @@ func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*G
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't open test output file %q: %v", out, err)
 	}
+	fTestUC, err := os.OpenFile(outTestUnconditional, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("Couldn't open unconditional test output file %q: %v", out, err)
+	}
 	g := Generator{
-		inputs:     srcs,
-		output:     f,
-		outputTest: fTest,
-		pkg:        pkg,
-		imports:    newImportTable(),
+		inputs:       srcs,
+		output:       f,
+		outputTest:   fTest,
+		outputTestUC: fTestUC,
+		pkg:          pkg,
+		imports:      newImportTable(),
 	}
 	for _, i := range imports {
 		// All imports on the extra imports list are unconditionally marked as
@@ -107,7 +114,7 @@ func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*G
 	g.imports.add("gvisor.dev/gvisor/pkg/gohacks")
 	g.imports.add("gvisor.dev/gvisor/pkg/safecopy")
 	g.imports.add("gvisor.dev/gvisor/pkg/usermem")
-	g.imports.add("gvisor.dev/gvisor/tools/go_marshal/marshal")
+	g.imports.add("gvisor.dev/gvisor/pkg/marshal")
 
 	return &g, nil
 }
@@ -413,13 +420,13 @@ func (g *Generator) Run() error {
 		for _, t := range g.collectMarshallableTypes(a, fsets[i]) {
 			impl := g.generateOne(t, fsets[i])
 			// Collect Marshallable types referenced by the generated code.
-			for ref, _ := range impl.ms {
+			for ref := range impl.ms {
 				ms[ref] = struct{}{}
 			}
 			impls = append(impls, impl)
 			// Collect imports referenced by the generated code and add them to
 			// the list of imports we need to copy to the generated code.
-			for name, _ := range impl.is {
+			for name := range impl.is {
 				if !g.imports.markUsed(name) {
 					panic(fmt.Sprintf("Generated code for '%s' referenced a non-existent import with local name '%s'. Either go-marshal needs to add an import to the generated file, or a package in an input source file has a package name differ from the final component of its path, which go-marshal doesn't know how to detect; use an import alias to work around this limitation.", impl.typeName(), name))
 				}
@@ -454,6 +461,46 @@ func (g *Generator) Run() error {
 // source file.
 func (g *Generator) writeTests(ts []*testGenerator) error {
 	var b sourceBuffer
+
+	// Write the unconditional test file. This file is always compiled,
+	// regardless of what build tags were specified on the original input
+	// files. We use this file to guarantee we never end up with an empty test
+	// file, as that causes the build to fail with "no tests/benchmarks/examples
+	// found".
+	//
+	// There's no easy way to determine ahead of time if we'll end up with an
+	// empty build file since build constraints can arbitrarily cause some of
+	// the original types to be not defined. We also have no way to tell bazel
+	// to omit the entire test suite since the output files are already defined
+	// before go-marshal is called.
+	b.emit("// Automatically generated marshal tests. See tools/go_marshal.\n\n")
+	b.emit("package %s\n\n", g.pkg)
+	b.emit("func Example() {\n")
+	b.inIndent(func() {
+		b.emit("// This example is intentionally empty, and ensures this package contains at\n")
+		b.emit("// least one testable entity. go-marshal is forced to emit a test package if the\n")
+		b.emit("// input package is marked marshallable, but emitting no testable entities \n")
+		b.emit("// results in a build failure.\n")
+	})
+	b.emit("}\n")
+	if err := b.write(g.outputTestUC); err != nil {
+		return err
+	}
+
+	// Now generate the real test file that contains the real types we
+	// processed. These need to be conditionally compiled according to the build
+	// tags, as the original types may not be defined under all build
+	// configurations.
+
+	b.reset()
+	b.emit("// Automatically generated marshal tests. See tools/go_marshal.\n\n")
+
+	// Emit build tags.
+	if t := tags.Aggregate(g.inputs); len(t) > 0 {
+		b.emit(strings.Join(t.Lines(), "\n"))
+		b.emit("\n\n")
+	}
+
 	b.emit("package %s\n\n", g.pkg)
 	if err := b.write(g.outputTest); err != nil {
 		return err
@@ -470,26 +517,6 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 	}
 
 	// Write test functions.
-
-	// If we didn't generate any Marshallable implementations, we can't just
-	// emit an empty test file, since that causes the build to fail with "no
-	// tests/benchmarks/examples found". Unfortunately we can't signal bazel to
-	// omit the entire package since the outputs are already defined before
-	// go-marshal is called. If we'd otherwise emit an empty test suite, emit an
-	// empty example instead.
-	if len(ts) == 0 {
-		b.reset()
-		b.emit("func Example() {\n")
-		b.inIndent(func() {
-			b.emit("// This example is intentionally empty to ensure this file contains at least\n")
-			b.emit("// one testable entity. go-marshal is forced to emit a test file if a package\n")
-			b.emit("// is marked marshallable, but emitting a test file with no entities results\n")
-			b.emit("// in a build failure.\n")
-		})
-		b.emit("}\n")
-		return b.write(g.outputTest)
-	}
-
 	for _, t := range ts {
 		if err := t.write(g.outputTest); err != nil {
 			return err

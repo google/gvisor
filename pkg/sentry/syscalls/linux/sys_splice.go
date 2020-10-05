@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -80,6 +81,12 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		}
 	}
 
+	if total > 0 {
+		// On Linux, inotify behavior is not very consistent with splice(2). We try
+		// our best to emulate Linux for very basic calls to splice, where for some
+		// reason, events are generated for output files, but not input files.
+		outFile.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
+	}
 	return total, err
 }
 
@@ -95,7 +102,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	if !inFile.Flags().Read {
 		return 0, nil, syserror.EBADF
@@ -105,7 +112,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	if !outFile.Flags().Write {
 		return 0, nil, syserror.EBADF
@@ -135,7 +142,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 		// Copy in the offset.
 		var offset int64
-		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
+		if _, err := primitive.CopyInt64In(t, offsetAddr, &offset); err != nil {
 			return 0, nil, err
 		}
 
@@ -143,11 +150,11 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		n, err = doSplice(t, outFile, inFile, fs.SpliceOpts{
 			Length:    count,
 			SrcOffset: true,
-			SrcStart:  offset,
+			SrcStart:  int64(offset),
 		}, outFile.Flags().NonBlocking)
 
 		// Copy out the new offset.
-		if _, err := t.CopyOut(offsetAddr, n+offset); err != nil {
+		if _, err := primitive.CopyInt64Out(t, offsetAddr, offset+n); err != nil {
 			return 0, nil, err
 		}
 	} else {
@@ -164,7 +171,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// We can only pass a single file to handleIOError, so pick inFile
 	// arbitrarily. This is used only for debugging purposes.
-	return uintptr(n), nil, handleIOError(t, false, err, kernel.ERESTARTSYS, "sendfile", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "sendfile", inFile)
 }
 
 // Splice implements splice(2).
@@ -186,13 +193,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	// The operation is non-blocking if anything is non-blocking.
 	//
@@ -222,7 +229,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			}
 
 			var offset int64
-			if _, err := t.CopyIn(outOffset, &offset); err != nil {
+			if _, err := primitive.CopyInt64In(t, outOffset, &offset); err != nil {
 				return 0, nil, err
 			}
 
@@ -240,7 +247,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			}
 
 			var offset int64
-			if _, err := t.CopyIn(inOffset, &offset); err != nil {
+			if _, err := primitive.CopyInt64In(t, inOffset, &offset); err != nil {
 				return 0, nil, err
 			}
 
@@ -274,7 +281,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "splice", inFile)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "splice", inFile)
 }
 
 // Tee imlements tee(2).
@@ -294,13 +301,13 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	// All files must be pipes.
 	if !fs.IsPipe(inFile.Dirent.Inode.StableAttr) || !fs.IsPipe(outFile.Dirent.Inode.StableAttr) {
@@ -327,5 +334,5 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	}
 
 	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, false, err, kernel.ERESTARTSYS, "tee", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "tee", inFile)
 }

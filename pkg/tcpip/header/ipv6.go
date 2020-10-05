@@ -34,6 +34,9 @@ const (
 	hopLimit             = 7
 	v6SrcAddr            = 8
 	v6DstAddr            = v6SrcAddr + IPv6AddressSize
+
+	// IPv6FixedHeaderSize is the size of the fixed header.
+	IPv6FixedHeaderSize = v6DstAddr + IPv6AddressSize
 )
 
 // IPv6Fields contains the fields of an IPv6 packet. It is used to describe the
@@ -69,10 +72,14 @@ type IPv6 []byte
 
 const (
 	// IPv6MinimumSize is the minimum size of a valid IPv6 packet.
-	IPv6MinimumSize = 40
+	IPv6MinimumSize = IPv6FixedHeaderSize
 
 	// IPv6AddressSize is the size, in bytes, of an IPv6 address.
 	IPv6AddressSize = 16
+
+	// IPv6MaximumPayloadSize is the maximum size of a valid IPv6 payload per
+	// RFC 8200 Section 4.5.
+	IPv6MaximumPayloadSize = 65535
 
 	// IPv6ProtocolNumber is IPv6's network protocol number.
 	IPv6ProtocolNumber tcpip.NetworkProtocolNumber = 0x86dd
@@ -97,6 +104,9 @@ const (
 	// IPv6MinimumMTU is the minimum MTU required by IPv6, per RFC 2460,
 	// section 5.
 	IPv6MinimumMTU = 1280
+
+	// IPv6Loopback is the IPv6 Loopback address.
+	IPv6Loopback tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
 
 	// IPv6Any is the non-routable IPv6 "any" meta address. It is also
 	// known as the unspecified address.

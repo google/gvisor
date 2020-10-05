@@ -14,6 +14,7 @@ go_library(
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
 )

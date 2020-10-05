@@ -33,6 +33,7 @@ var (
 	EBADFD       = error(syscall.EBADFD)
 	EBUSY        = error(syscall.EBUSY)
 	ECHILD       = error(syscall.ECHILD)
+	ECONNABORTED = error(syscall.ECONNABORTED)
 	ECONNREFUSED = error(syscall.ECONNREFUSED)
 	ECONNRESET   = error(syscall.ECONNRESET)
 	EDEADLK      = error(syscall.EDEADLK)
@@ -61,6 +62,7 @@ var (
 	ENOMEM       = error(syscall.ENOMEM)
 	ENOSPC       = error(syscall.ENOSPC)
 	ENOSYS       = error(syscall.ENOSYS)
+	ENOTCONN     = error(syscall.ENOTCONN)
 	ENOTDIR      = error(syscall.ENOTDIR)
 	ENOTEMPTY    = error(syscall.ENOTEMPTY)
 	ENOTSOCK     = error(syscall.ENOTSOCK)
@@ -72,6 +74,7 @@ var (
 	EPERM        = error(syscall.EPERM)
 	EPIPE        = error(syscall.EPIPE)
 	ERANGE       = error(syscall.ERANGE)
+	EREMOTE      = error(syscall.EREMOTE)
 	EROFS        = error(syscall.EROFS)
 	ESPIPE       = error(syscall.ESPIPE)
 	ESRCH        = error(syscall.ESRCH)
@@ -149,6 +152,73 @@ func ConvertIntr(err, intr error) error {
 		return intr
 	}
 	return err
+}
+
+// SyscallRestartErrno represents a ERESTART* errno defined in the Linux's kernel
+// include/linux/errno.h. These errnos are never returned to userspace
+// directly, but are used to communicate the expected behavior of an
+// interrupted syscall from the syscall to signal handling.
+type SyscallRestartErrno int
+
+// These numeric values are significant because ptrace syscall exit tracing can
+// observe them.
+//
+// For all of the following errnos, if the syscall is not interrupted by a
+// signal delivered to a user handler, the syscall is restarted.
+const (
+	// ERESTARTSYS is returned by an interrupted syscall to indicate that it
+	// should be converted to EINTR if interrupted by a signal delivered to a
+	// user handler without SA_RESTART set, and restarted otherwise.
+	ERESTARTSYS = SyscallRestartErrno(512)
+
+	// ERESTARTNOINTR is returned by an interrupted syscall to indicate that it
+	// should always be restarted.
+	ERESTARTNOINTR = SyscallRestartErrno(513)
+
+	// ERESTARTNOHAND is returned by an interrupted syscall to indicate that it
+	// should be converted to EINTR if interrupted by a signal delivered to a
+	// user handler, and restarted otherwise.
+	ERESTARTNOHAND = SyscallRestartErrno(514)
+
+	// ERESTART_RESTARTBLOCK is returned by an interrupted syscall to indicate
+	// that it should be restarted using a custom function. The interrupted
+	// syscall must register a custom restart function by calling
+	// Task.SetRestartSyscallFn.
+	ERESTART_RESTARTBLOCK = SyscallRestartErrno(516)
+)
+
+// Error implements error.Error.
+func (e SyscallRestartErrno) Error() string {
+	// Descriptions are borrowed from strace.
+	switch e {
+	case ERESTARTSYS:
+		return "to be restarted if SA_RESTART is set"
+	case ERESTARTNOINTR:
+		return "to be restarted"
+	case ERESTARTNOHAND:
+		return "to be restarted if no handler"
+	case ERESTART_RESTARTBLOCK:
+		return "interrupted by signal"
+	default:
+		return "(unknown interrupt error)"
+	}
+}
+
+// SyscallRestartErrnoFromReturn returns the SyscallRestartErrno represented by
+// rv, the value in a syscall return register.
+func SyscallRestartErrnoFromReturn(rv uintptr) (SyscallRestartErrno, bool) {
+	switch int(rv) {
+	case -int(ERESTARTSYS):
+		return ERESTARTSYS, true
+	case -int(ERESTARTNOINTR):
+		return ERESTARTNOINTR, true
+	case -int(ERESTARTNOHAND):
+		return ERESTARTNOHAND, true
+	case -int(ERESTART_RESTARTBLOCK):
+		return ERESTART_RESTARTBLOCK, true
+	default:
+		return 0, false
+	}
 }
 
 func init() {

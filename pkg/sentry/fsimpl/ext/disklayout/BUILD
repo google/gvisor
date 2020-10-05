@@ -22,10 +22,11 @@ go_library(
         "superblock_old.go",
         "test_utils.go",
     ],
+    marshal = True,
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
+        "//pkg/marshal",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",

@@ -419,7 +419,7 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 		}
 		sfile := s.(*fs.File)
 		if family, _, _ := sfile.FileOperations.(socket.Socket).Type(); family != linux.AF_UNIX {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not a unix socket.
 			continue
 		}
@@ -479,7 +479,7 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 		}
 		fmt.Fprintf(&buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	data := []seqfile.SeqData{
@@ -574,7 +574,7 @@ func commonReadSeqFileDataTCP(ctx context.Context, n seqfile.SeqHandle, k *kerne
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
 		}
 		if family, stype, _ := sops.Type(); !(family == fa && stype == linux.SOCK_STREAM) {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not tcp4 sockets.
 			continue
 		}
@@ -664,7 +664,7 @@ func commonReadSeqFileDataTCP(ctx context.Context, n seqfile.SeqHandle, k *kerne
 
 		fmt.Fprintf(&buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	data := []seqfile.SeqData{
@@ -752,7 +752,7 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
 		}
 		if family, stype, _ := sops.Type(); family != linux.AF_INET || stype != linux.SOCK_DGRAM {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not udp4 socket.
 			continue
 		}
@@ -822,7 +822,7 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 
 		fmt.Fprintf(&buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	data := []seqfile.SeqData{

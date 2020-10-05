@@ -41,7 +41,7 @@ while true; do
 done
 
 # junitparser is used to merge junit xml files.
-pip install junitparser
+pip install --no-cache-dir junitparser
 
 # We need a kbuilder user, which may already exist.
 useradd -c "kbuilder user" -m -s /bin/bash kbuilder || true

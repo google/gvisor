@@ -17,6 +17,7 @@
 package kvm
 
 import (
+	"syscall"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -40,7 +41,7 @@ func fpsimdPtr(addr *byte) *arch.FpsimdContext {
 func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 	// If the vCPU is in user mode, we set the stack to the stored stack
 	// value in the vCPU itself. We don't want to unwind the user stack.
-	if guestRegs.Regs.Pstate&ring0.PSR_MODE_MASK == ring0.PSR_MODE_EL0t {
+	if guestRegs.Regs.Pstate&ring0.PsrModeMask == ring0.UserFlagsSet {
 		regs := c.CPU.Registers()
 		context.Regs[0] = regs.Regs[0]
 		context.Sp = regs.Sp
@@ -60,4 +61,37 @@ func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 //go:nosplit
 func bluepillArchFpContext(context unsafe.Pointer) *arch.FpsimdContext {
 	return &((*arch.SignalContext64)(context).Fpsimd64)
+}
+
+// getHypercallID returns hypercall ID.
+//
+// On Arm64, the MMIO address should be 64-bit aligned.
+//
+//go:nosplit
+func getHypercallID(addr uintptr) int {
+	if addr < arm64HypercallMMIOBase || addr >= (arm64HypercallMMIOBase+_AARCH64_HYPERCALL_MMIO_SIZE) {
+		return _KVM_HYPERCALL_MAX
+	} else {
+		return int(((addr) - arm64HypercallMMIOBase) >> 3)
+	}
+}
+
+// bluepillStopGuest is reponsible for injecting sError.
+//
+//go:nosplit
+func bluepillStopGuest(c *vCPU) {
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_VCPU_EVENTS,
+		uintptr(unsafe.Pointer(&vcpuSErr))); errno != 0 {
+		throw("sErr injection failed")
+	}
+}
+
+// bluepillReadyStopGuest checks whether the current vCPU is ready for sError injection.
+//
+//go:nosplit
+func bluepillReadyStopGuest(c *vCPU) bool {
+	return true
 }

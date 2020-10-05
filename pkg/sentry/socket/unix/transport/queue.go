@@ -15,7 +15,7 @@
 package transport
 
 import (
-	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -27,7 +27,7 @@ import (
 //
 // +stateify savable
 type queue struct {
-	refs.AtomicRefCount
+	queueRefs
 
 	ReaderQueue *waiter.Queue
 	WriterQueue *waiter.Queue
@@ -57,21 +57,23 @@ func (q *queue) Close() {
 // Both the read and write queues must be notified after resetting:
 // q.ReaderQueue.Notify(waiter.EventIn)
 // q.WriterQueue.Notify(waiter.EventOut)
-func (q *queue) Reset() {
+func (q *queue) Reset(ctx context.Context) {
 	q.mu.Lock()
 	for cur := q.dataList.Front(); cur != nil; cur = cur.Next() {
-		cur.Release()
+		cur.Release(ctx)
 	}
 	q.dataList.Reset()
 	q.used = 0
 	q.mu.Unlock()
 }
 
-// DecRef implements RefCounter.DecRef with destructor q.Reset.
-func (q *queue) DecRef() {
-	q.DecRefWithDestructor(q.Reset)
-	// We don't need to notify after resetting because no one cares about
-	// this queue after all references have been dropped.
+// DecRef implements RefCounter.DecRef.
+func (q *queue) DecRef(ctx context.Context) {
+	q.queueRefs.DecRef(func() {
+		// We don't need to notify after resetting because no one cares about
+		// this queue after all references have been dropped.
+		q.Reset(ctx)
+	})
 }
 
 // IsReadable determines if q is currently readable.
@@ -111,7 +113,7 @@ func (q *queue) IsWritable() bool {
 //
 // If notify is true, ReaderQueue.Notify must be called:
 // q.ReaderQueue.Notify(waiter.EventIn)
-func (q *queue) Enqueue(data [][]byte, c ControlMessages, from tcpip.FullAddress, discardEmpty bool, truncate bool) (l int64, notify bool, err *syserr.Error) {
+func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, from tcpip.FullAddress, discardEmpty bool, truncate bool) (l int64, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 
 	if q.closed {
@@ -124,7 +126,7 @@ func (q *queue) Enqueue(data [][]byte, c ControlMessages, from tcpip.FullAddress
 	}
 	if discardEmpty && l == 0 {
 		q.mu.Unlock()
-		c.Release()
+		c.Release(ctx)
 		return 0, false, nil
 	}
 

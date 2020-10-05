@@ -30,9 +30,6 @@ go_library(
         "//pkg/rand",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/anon",
-        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/limits",
@@ -45,6 +42,5 @@ go_library(
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/usermem",
-        "//pkg/waiter",
     ],
 )

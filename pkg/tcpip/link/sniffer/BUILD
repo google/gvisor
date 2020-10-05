@@ -14,6 +14,8 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/header/parse",
+        "//pkg/tcpip/link/nested",
         "//pkg/tcpip/stack",
     ],
 )

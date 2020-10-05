@@ -28,7 +28,7 @@ import (
 // CreateEpoll implements the epoll_create(2) linux syscall.
 func CreateEpoll(t *kernel.Task, closeOnExec bool) (int32, error) {
 	file := epoll.NewEventPoll(t)
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: closeOnExec,
@@ -47,14 +47,14 @@ func AddEpoll(t *kernel.Task, epfd int32, fd int32, flags epoll.EntryFlags, mask
 	if epollfile == nil {
 		return syserror.EBADF
 	}
-	defer epollfile.DecRef()
+	defer epollfile.DecRef(t)
 
 	// Get the target file id.
 	file := t.GetFile(fd)
 	if file == nil {
 		return syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the epollPoll operations.
 	e, ok := epollfile.FileOperations.(*epoll.EventPoll)
@@ -73,14 +73,14 @@ func UpdateEpoll(t *kernel.Task, epfd int32, fd int32, flags epoll.EntryFlags, m
 	if epollfile == nil {
 		return syserror.EBADF
 	}
-	defer epollfile.DecRef()
+	defer epollfile.DecRef(t)
 
 	// Get the target file id.
 	file := t.GetFile(fd)
 	if file == nil {
 		return syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the epollPoll operations.
 	e, ok := epollfile.FileOperations.(*epoll.EventPoll)
@@ -99,14 +99,14 @@ func RemoveEpoll(t *kernel.Task, epfd int32, fd int32) error {
 	if epollfile == nil {
 		return syserror.EBADF
 	}
-	defer epollfile.DecRef()
+	defer epollfile.DecRef(t)
 
 	// Get the target file id.
 	file := t.GetFile(fd)
 	if file == nil {
 		return syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the epollPoll operations.
 	e, ok := epollfile.FileOperations.(*epoll.EventPoll)
@@ -115,7 +115,7 @@ func RemoveEpoll(t *kernel.Task, epfd int32, fd int32) error {
 	}
 
 	// Try to remove the entry.
-	return e.RemoveEntry(epoll.FileIdentifier{file, fd})
+	return e.RemoveEntry(t, epoll.FileIdentifier{file, fd})
 }
 
 // WaitEpoll implements the epoll_wait(2) linux syscall.
@@ -125,7 +125,7 @@ func WaitEpoll(t *kernel.Task, fd int32, max int, timeout int) ([]linux.EpollEve
 	if epollfile == nil {
 		return nil, syserror.EBADF
 	}
-	defer epollfile.DecRef()
+	defer epollfile.DecRef(t)
 
 	// Extract the epollPoll operations.
 	e, ok := epollfile.FileOperations.(*epoll.EventPoll)

@@ -30,6 +30,7 @@ package tmpfs
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -40,7 +41,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -51,9 +51,13 @@ import (
 const Name = "tmpfs"
 
 // FilesystemType implements vfs.FilesystemType.
+//
+// +stateify savable
 type FilesystemType struct{}
 
 // filesystem implements vfs.FilesystemImpl.
+//
+// +stateify savable
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
@@ -67,7 +71,7 @@ type filesystem struct {
 	devMinor uint32
 
 	// mu serializes changes to the Dentry tree.
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	nextInoMinusOne uint64 // accessed using atomic memory operations
 }
@@ -78,6 +82,8 @@ func (FilesystemType) Name() string {
 }
 
 // FilesystemOpts is used to pass configuration data to tmpfs.
+//
+// +stateify savable
 type FilesystemOpts struct {
 	// RootFileType is the FileType of the filesystem root. Valid values
 	// are: S_IFDIR, S_IFREG, and S_IFLNK. Defaults to S_IFDIR.
@@ -112,6 +118,58 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	rootMode := linux.FileMode(0777)
+	if rootFileType == linux.S_IFDIR {
+		rootMode = 01777
+	}
+	modeStr, ok := mopts["mode"]
+	if ok {
+		delete(mopts, "mode")
+		mode, err := strconv.ParseUint(modeStr, 8, 32)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid mode: %q", modeStr)
+			return nil, nil, syserror.EINVAL
+		}
+		rootMode = linux.FileMode(mode & 07777)
+	}
+	rootKUID := creds.EffectiveKUID
+	uidStr, ok := mopts["uid"]
+	if ok {
+		delete(mopts, "uid")
+		uid, err := strconv.ParseUint(uidStr, 10, 32)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid uid: %q", uidStr)
+			return nil, nil, syserror.EINVAL
+		}
+		kuid := creds.UserNamespace.MapToKUID(auth.UID(uid))
+		if !kuid.Ok() {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped uid: %d", uid)
+			return nil, nil, syserror.EINVAL
+		}
+		rootKUID = kuid
+	}
+	rootKGID := creds.EffectiveKGID
+	gidStr, ok := mopts["gid"]
+	if ok {
+		delete(mopts, "gid")
+		gid, err := strconv.ParseUint(gidStr, 10, 32)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid gid: %q", gidStr)
+			return nil, nil, syserror.EINVAL
+		}
+		kgid := creds.UserNamespace.MapToKGID(auth.GID(gid))
+		if !kgid.Ok() {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped gid: %d", gid)
+			return nil, nil, syserror.EINVAL
+		}
+		rootKGID = kgid
+	}
+	if len(mopts) != 0 {
+		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
+		return nil, nil, syserror.EINVAL
+	}
+
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
 		return nil, nil, err
@@ -127,13 +185,13 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	var root *dentry
 	switch rootFileType {
 	case linux.S_IFREG:
-		root = fs.newDentry(fs.newRegularFile(creds, 0777))
+		root = fs.newDentry(fs.newRegularFile(rootKUID, rootKGID, rootMode))
 	case linux.S_IFLNK:
-		root = fs.newDentry(fs.newSymlink(creds, tmpfsOpts.RootSymlinkTarget))
+		root = fs.newDentry(fs.newSymlink(rootKUID, rootKGID, rootMode, tmpfsOpts.RootSymlinkTarget))
 	case linux.S_IFDIR:
-		root = &fs.newDirectory(creds, 01777).dentry
+		root = &fs.newDirectory(rootKUID, rootKGID, rootMode).dentry
 	default:
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
 	return &fs.vfsfs, &root.vfsd, nil
@@ -145,11 +203,32 @@ func NewFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *au
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 }
 
+// immutable
+var globalStatfs = linux.Statfs{
+	Type:         linux.TMPFS_MAGIC,
+	BlockSize:    usermem.PageSize,
+	FragmentSize: usermem.PageSize,
+	NameLength:   linux.NAME_MAX,
+
+	// tmpfs currently does not support configurable size limits. In Linux,
+	// such a tmpfs mount will return f_blocks == f_bfree == f_bavail == 0 from
+	// statfs(2). However, many applications treat this as having a size limit
+	// of 0. To work around this, claim to have a very large but non-zero size,
+	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
+	// applications may also handle incorrectly).
+	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
+	Blocks:          math.MaxInt64 / usermem.PageSize,
+	BlocksFree:      math.MaxInt64 / usermem.PageSize,
+	BlocksAvailable: math.MaxInt64 / usermem.PageSize,
+}
+
 // dentry implements vfs.DentryImpl.
+//
+// +stateify savable
 type dentry struct {
 	vfsd vfs.Dentry
 
@@ -197,24 +276,48 @@ func (d *dentry) TryIncRef() bool {
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef() {
-	d.inode.decRef()
+func (d *dentry) DecRef(ctx context.Context) {
+	d.inode.decRef(ctx)
 }
 
+// InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
+func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {
+	if d.inode.isDir() {
+		events |= linux.IN_ISDIR
+	}
+
+	// tmpfs never calls VFS.InvalidateDentry(), so d.vfsd.IsDead() indicates
+	// that d was deleted.
+	deleted := d.vfsd.IsDead()
+
+	d.inode.fs.mu.RLock()
+	// The ordering below is important, Linux always notifies the parent first.
+	if d.parent != nil {
+		d.parent.inode.watches.Notify(ctx, d.name, events, cookie, et, deleted)
+	}
+	d.inode.watches.Notify(ctx, "", events, cookie, et, deleted)
+	d.inode.fs.mu.RUnlock()
+}
+
+// Watches implements vfs.DentryImpl.Watches.
+func (d *dentry) Watches() *vfs.Watches {
+	return &d.inode.watches
+}
+
+// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
+func (d *dentry) OnZeroWatches(context.Context) {}
+
 // inode represents a filesystem object.
+//
+// +stateify savable
 type inode struct {
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
 
-	// refs is a reference count. refs is accessed using atomic memory
-	// operations.
-	//
-	// A reference is held on all inodes that are reachable in the filesystem
-	// tree. For non-directories (which may have multiple hard links), this
-	// means that a reference is dropped when nlink reaches 0. For directories,
-	// nlink never reaches 0 due to the "." entry; instead,
-	// filesystem.RmdirAt() drops the reference.
-	refs int64
+	// A reference is held on all inodes as long as they are reachable in the
+	// filesystem tree, i.e. nlink is nonzero. This reference is dropped when
+	// nlink reaches 0.
+	refs inodeRefs
 
 	// xattrs implements extended attributes.
 	//
@@ -223,35 +326,36 @@ type inode struct {
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, othewise atomic operations can be used.
-	mu    sync.Mutex
-	mode  uint32 // file type and mode
-	nlink uint32 // protected by filesystem.mu instead of inode.mu
-	uid   uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid   uint32 // auth.KGID, but ...
-	ino   uint64 // immutable
+	mu    sync.Mutex `state:"nosave"`
+	mode  uint32     // file type and mode
+	nlink uint32     // protected by filesystem.mu instead of inode.mu
+	uid   uint32     // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid   uint32     // auth.KGID, but ...
+	ino   uint64     // immutable
 
 	// Linux's tmpfs has no concept of btime.
 	atime int64 // nanoseconds
 	ctime int64 // nanoseconds
 	mtime int64 // nanoseconds
 
-	// Advisory file locks, which lock at the inode level.
-	locks lock.FileLocks
+	locks vfs.FileLocks
+
+	// Inotify watches for this inode.
+	watches vfs.Watches
 
 	impl interface{} // immutable
 }
 
 const maxLinks = math.MaxUint32
 
-func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, mode linux.FileMode) {
+func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) {
 	if mode.FileType() == 0 {
 		panic("file type is required in FileMode")
 	}
 	i.fs = fs
-	i.refs = 1
 	i.mode = uint32(mode)
-	i.uid = uint32(creds.EffectiveKUID)
-	i.gid = uint32(creds.EffectiveKGID)
+	i.uid = uint32(kuid)
+	i.gid = uint32(kgid)
 	i.ino = atomic.AddUint64(&fs.nextInoMinusOne, 1)
 	// Tmpfs creation sets atime, ctime, and mtime to current time.
 	now := fs.clock.Now().Nanoseconds()
@@ -260,12 +364,15 @@ func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, 
 	i.mtime = now
 	// i.nlink initialized by caller
 	i.impl = impl
+	i.refs.EnableLeakCheck()
 }
 
 // incLinksLocked increments i's link count.
 //
-// Preconditions: filesystem.mu must be locked for writing. i.nlink != 0.
-// i.nlink < maxLinks.
+// Preconditions:
+// * filesystem.mu must be locked for writing.
+// * i.nlink != 0.
+// * i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
 	if i.nlink == 0 {
 		panic("tmpfs.inode.incLinksLocked() called with no existing links")
@@ -276,45 +383,39 @@ func (i *inode) incLinksLocked() {
 	atomic.AddUint32(&i.nlink, 1)
 }
 
-// decLinksLocked decrements i's link count.
+// decLinksLocked decrements i's link count. If the link count reaches 0, we
+// remove a reference on i as well.
 //
-// Preconditions: filesystem.mu must be locked for writing. i.nlink != 0.
-func (i *inode) decLinksLocked() {
+// Preconditions:
+// * filesystem.mu must be locked for writing.
+// * i.nlink != 0.
+func (i *inode) decLinksLocked(ctx context.Context) {
 	if i.nlink == 0 {
 		panic("tmpfs.inode.decLinksLocked() called with no existing links")
 	}
-	atomic.AddUint32(&i.nlink, ^uint32(0))
+	if atomic.AddUint32(&i.nlink, ^uint32(0)) == 0 {
+		i.decRef(ctx)
+	}
 }
 
 func (i *inode) incRef() {
-	if atomic.AddInt64(&i.refs, 1) <= 1 {
-		panic("tmpfs.inode.incRef() called without holding a reference")
-	}
+	i.refs.IncRef()
 }
 
 func (i *inode) tryIncRef() bool {
-	for {
-		refs := atomic.LoadInt64(&i.refs)
-		if refs == 0 {
-			return false
-		}
-		if atomic.CompareAndSwapInt64(&i.refs, refs, refs+1) {
-			return true
-		}
-	}
+	return i.refs.TryIncRef()
 }
 
-func (i *inode) decRef() {
-	if refs := atomic.AddInt64(&i.refs, -1); refs == 0 {
+func (i *inode) decRef(ctx context.Context) {
+	i.refs.DecRef(func() {
+		i.watches.HandleDeletion(ctx)
 		if regFile, ok := i.impl.(*regularFile); ok {
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
 			// metadata.
 			regFile.data.DropAll(regFile.memFile)
 		}
-	} else if refs < 0 {
-		panic("tmpfs.inode.decRef() called without holding a reference")
-	}
+	})
 }
 
 func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
@@ -369,7 +470,8 @@ func (i *inode) statTo(stat *linux.Statx) {
 	}
 }
 
-func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linux.Statx) error {
+func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.SetStatOptions) error {
+	stat := &opts.Stat
 	if stat.Mask == 0 {
 		return nil
 	}
@@ -377,7 +479,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linu
 		return syserror.EPERM
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
-	if err := vfs.CheckSetStat(ctx, creds, stat, mode, auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
 		return err
 	}
 	i.mu.Lock()
@@ -455,44 +557,6 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linu
 	return nil
 }
 
-// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
-func (i *inode) lockBSD(uid fslock.UniqueID, t fslock.LockType, block fslock.Blocker) error {
-	switch i.impl.(type) {
-	case *regularFile:
-		return i.locks.LockBSD(uid, t, block)
-	}
-	return syserror.EBADF
-}
-
-// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
-func (i *inode) unlockBSD(uid fslock.UniqueID) error {
-	switch i.impl.(type) {
-	case *regularFile:
-		i.locks.UnlockBSD(uid)
-		return nil
-	}
-	return syserror.EBADF
-}
-
-// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
-func (i *inode) lockPOSIX(uid fslock.UniqueID, t fslock.LockType, rng fslock.LockRange, block fslock.Blocker) error {
-	switch i.impl.(type) {
-	case *regularFile:
-		return i.locks.LockPOSIX(uid, t, rng, block)
-	}
-	return syserror.EBADF
-}
-
-// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
-func (i *inode) unlockPOSIX(uid fslock.UniqueID, rng fslock.LockRange) error {
-	switch i.impl.(type) {
-	case *regularFile:
-		i.locks.UnlockPOSIX(uid, rng)
-		return nil
-	}
-	return syserror.EBADF
-}
-
 // allocatedBlocksForSize returns the number of 512B blocks needed to
 // accommodate the given size in bytes, as appropriate for struct
 // stat::st_blocks and struct statx::stx_blocks. (Note that this 512B block
@@ -512,6 +576,8 @@ func (i *inode) direntType() uint8 {
 		return linux.DT_LNK
 	case *socketFile:
 		return linux.DT_SOCK
+	case *namedPipe:
+		return linux.DT_FIFO
 	case *deviceFile:
 		switch impl.kind {
 		case vfs.BlockDevice:
@@ -531,6 +597,9 @@ func (i *inode) isDir() bool {
 }
 
 func (i *inode) touchAtime(mnt *vfs.Mount) {
+	if mnt.Flags.NoATime {
+		return
+	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}
@@ -558,77 +627,75 @@ func (i *inode) touchCMtime() {
 	i.mu.Unlock()
 }
 
-// Preconditions: The caller has called vfs.Mount.CheckBeginWrite() and holds
-// inode.mu.
+// Preconditions:
+// * The caller has called vfs.Mount.CheckBeginWrite().
+// * inode.mu must be locked.
 func (i *inode) touchCMtimeLocked() {
 	now := i.fs.clock.Now().Nanoseconds()
 	atomic.StoreInt64(&i.mtime, now)
 	atomic.StoreInt64(&i.ctime, now)
 }
 
-func (i *inode) listxattr(size uint64) ([]string, error) {
-	return i.xattrs.Listxattr(size)
+func (i *inode) listXattr(size uint64) ([]string, error) {
+	return i.xattrs.ListXattr(size)
 }
 
-func (i *inode) getxattr(creds *auth.Credentials, opts *vfs.GetxattrOptions) (string, error) {
-	if err := i.checkPermissions(creds, vfs.MayRead); err != nil {
+func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
+	if err := i.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
 	}
-	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
-		return "", syserror.EOPNOTSUPP
-	}
-	if !i.userXattrSupported() {
-		return "", syserror.ENODATA
-	}
-	return i.xattrs.Getxattr(opts)
+	return i.xattrs.GetXattr(opts)
 }
 
-func (i *inode) setxattr(creds *auth.Credentials, opts *vfs.SetxattrOptions) error {
-	if err := i.checkPermissions(creds, vfs.MayWrite); err != nil {
+func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
+	if err := i.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
-	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
-		return syserror.EOPNOTSUPP
-	}
-	if !i.userXattrSupported() {
-		return syserror.EPERM
-	}
-	return i.xattrs.Setxattr(opts)
+	return i.xattrs.SetXattr(opts)
 }
 
-func (i *inode) removexattr(creds *auth.Credentials, name string) error {
-	if err := i.checkPermissions(creds, vfs.MayWrite); err != nil {
+func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
+	if err := i.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err
 	}
-	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return syserror.EOPNOTSUPP
-	}
-	if !i.userXattrSupported() {
-		return syserror.EPERM
-	}
-	return i.xattrs.Removexattr(name)
+	return i.xattrs.RemoveXattr(name)
 }
 
-// Extended attributes in the user.* namespace are only supported for regular
-// files and directories.
-func (i *inode) userXattrSupported() bool {
-	filetype := linux.S_IFMT & atomic.LoadUint32(&i.mode)
-	return filetype == linux.S_IFREG || filetype == linux.S_IFDIR
+func (i *inode) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
+	// We currently only support extended attributes in the user.* and
+	// trusted.* namespaces. See b/148380782.
+	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) && !strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
+		return syserror.EOPNOTSUPP
+	}
+	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
+	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
+	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+		return err
+	}
+	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
 }
 
 // fileDescription is embedded by tmpfs implementations of
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
 }
 
 func (fd *fileDescription) filesystem() *filesystem {
 	return fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 }
 
+func (fd *fileDescription) dentry() *dentry {
+	return fd.vfsfd.Dentry().Impl().(*dentry)
+}
+
 func (fd *fileDescription) inode() *inode {
-	return fd.vfsfd.Dentry().Impl().(*dentry).inode
+	return fd.dentry().inode
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
@@ -641,56 +708,68 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
-	return fd.inode().setStat(ctx, creds, &opts.Stat)
-}
-
-// Listxattr implements vfs.FileDescriptionImpl.Listxattr.
-func (fd *fileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
-	return fd.inode().listxattr(size)
-}
-
-// Getxattr implements vfs.FileDescriptionImpl.Getxattr.
-func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOptions) (string, error) {
-	return fd.inode().getxattr(auth.CredentialsFromContext(ctx), &opts)
-}
-
-// Setxattr implements vfs.FileDescriptionImpl.Setxattr.
-func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
-	return fd.inode().setxattr(auth.CredentialsFromContext(ctx), &opts)
-}
-
-// Removexattr implements vfs.FileDescriptionImpl.Removexattr.
-func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
-	return fd.inode().removexattr(auth.CredentialsFromContext(ctx), name)
-}
-
-// NewMemfd creates a new tmpfs regular file and file description that can back
-// an anonymous fd created by memfd_create.
-func NewMemfd(mount *vfs.Mount, creds *auth.Credentials, allowSeals bool, name string) (*vfs.FileDescription, error) {
-	fs, ok := mount.Filesystem().Impl().(*filesystem)
-	if !ok {
-		panic("NewMemfd() called with non-tmpfs mount")
+	d := fd.dentry()
+	if err := d.inode.setStat(ctx, creds, &opts); err != nil {
+		return err
 	}
 
-	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd inodes are set up with
-	// S_IRWXUGO.
-	mode := linux.FileMode(0777)
-	inode := fs.newRegularFile(creds, mode)
-	rf := inode.impl.(*regularFile)
-	if allowSeals {
-		rf.seals = 0
+	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
+	}
+	return nil
+}
+
+// StatFS implements vfs.FileDescriptionImpl.StatFS.
+func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
+	return globalStatfs, nil
+}
+
+// ListXattr implements vfs.FileDescriptionImpl.ListXattr.
+func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
+	return fd.inode().listXattr(size)
+}
+
+// GetXattr implements vfs.FileDescriptionImpl.GetXattr.
+func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
+	return fd.inode().getXattr(auth.CredentialsFromContext(ctx), &opts)
+}
+
+// SetXattr implements vfs.FileDescriptionImpl.SetXattr.
+func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
+	d := fd.dentry()
+	if err := d.inode.setXattr(auth.CredentialsFromContext(ctx), &opts); err != nil {
+		return err
 	}
 
-	d := fs.newDentry(inode)
-	defer d.DecRef()
-	d.name = name
+	// Generate inotify events.
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	return nil
+}
 
-	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd files are set up with
-	// FMODE_READ | FMODE_WRITE.
-	var fd regularFileFD
-	flags := uint32(linux.O_RDWR)
-	if err := fd.vfsfd.Init(&fd, flags, mount, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
-		return nil, err
+// RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
+func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
+	d := fd.dentry()
+	if err := d.inode.removeXattr(auth.CredentialsFromContext(ctx), name); err != nil {
+		return err
 	}
-	return &fd.vfsfd, nil
+
+	// Generate inotify events.
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	return nil
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	return fd.Locks().LockPOSIX(ctx, &fd.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return fd.Locks().UnlockPOSIX(ctx, &fd.vfsfd, uid, start, length, whence)
+}
+
+// Sync implements vfs.FileDescriptionImpl.Sync. It does nothing because all
+// filesystem state is in-memory.
+func (*fileDescription) Sync(context.Context) error {
+	return nil
 }

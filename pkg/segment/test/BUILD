@@ -29,10 +29,28 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "gap_set",
+    out = "gap_set.go",
+    consts = {
+        "trackGaps": "1",
+    },
+    package = "segment",
+    prefix = "gap",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "int",
+        "Range": "Range",
+        "Value": "int",
+        "Functions": "gapSetFunctions",
+    },
+)
+
 go_library(
     name = "segment",
     testonly = 1,
     srcs = [
+        "gap_set.go",
         "int_range.go",
         "int_set.go",
         "set_functions.go",

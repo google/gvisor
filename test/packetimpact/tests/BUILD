@@ -1,4 +1,4 @@
-load("defs.bzl", "packetimpact_go_test")
+load("//test/packetimpact/runner:defs.bzl", "packetimpact_go_test")
 
 package(
     default_visibility = ["//test/packetimpact:__subpackages__"],
@@ -16,10 +16,19 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
-    name = "udp_recv_multicast",
-    srcs = ["udp_recv_multicast_test.go"],
-    # TODO(b/152813495): Fix netstack then remove the line below.
-    expect_netstack_failure = True,
+    name = "ipv4_id_uniqueness",
+    srcs = ["ipv4_id_uniqueness_test.go"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "udp_discard_mcast_source_addr",
+    srcs = ["udp_discard_mcast_source_addr_test.go"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",
@@ -29,13 +38,47 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
-    name = "udp_icmp_error_propagation",
-    srcs = ["udp_icmp_error_propagation_test.go"],
-    # TODO(b/153926291): Fix netstack then remove the line below.
-    expect_netstack_failure = True,
+    name = "udp_recv_mcast_bcast",
+    srcs = ["udp_recv_mcast_bcast_test.go"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "udp_any_addr_recv_unicast",
+    srcs = ["udp_any_addr_recv_unicast_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "udp_icmp_error_propagation",
+    srcs = ["udp_icmp_error_propagation_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_reordering",
+    srcs = ["tcp_reordering_test.go"],
+    # TODO(b/139368047): Fix netstack then remove the line below.
+    expect_netstack_failure = True,
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -113,10 +156,8 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
-    name = "tcp_should_piggyback",
-    srcs = ["tcp_should_piggyback_test.go"],
-    # TODO(b/153680566): Fix netstack then remove the line below.
-    expect_netstack_failure = True,
+    name = "tcp_send_window_sizes_piggyback",
+    srcs = ["tcp_send_window_sizes_piggyback_test.go"],
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
@@ -125,8 +166,21 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
-    name = "tcp_close_wait_ack",
-    srcs = ["tcp_close_wait_ack_test.go"],
+    name = "tcp_unacc_seq_ack",
+    srcs = ["tcp_unacc_seq_ack_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_paws_mechanism",
+    srcs = ["tcp_paws_mechanism_test.go"],
+    # TODO(b/156682000): Fix netstack then remove the line below.
+    expect_netstack_failure = True,
     deps = [
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
@@ -138,6 +192,88 @@ packetimpact_go_test(
 packetimpact_go_test(
     name = "tcp_user_timeout",
     srcs = ["tcp_user_timeout_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_queue_receive_in_syn_sent",
+    srcs = ["tcp_queue_receive_in_syn_sent_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_synsent_reset",
+    srcs = ["tcp_synsent_reset_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_synrcvd_reset",
+    srcs = ["tcp_synrcvd_reset_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_network_unreachable",
+    srcs = ["tcp_network_unreachable_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_cork_mss",
+    srcs = ["tcp_cork_mss_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_handshake_window_size",
+    srcs = ["tcp_handshake_window_size_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_timewait_reset",
+    srcs = ["tcp_timewait_reset_test.go"],
+    # TODO(b/168523247): Fix netstack then remove the line below.
+    expect_netstack_failure = True,
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_queue_send_in_syn_sent",
+    srcs = ["tcp_queue_send_in_syn_sent_test.go"],
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
@@ -159,15 +295,58 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
-    name = "udp_send_recv_dgram",
-    srcs = ["udp_send_recv_dgram_test.go"],
+    name = "ipv6_unknown_options_action",
+    srcs = ["ipv6_unknown_options_action_test.go"],
+    # TODO(b/159928940): Fix netstack then remove the line below.
+    expect_netstack_failure = True,
     deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
-sh_binary(
-    name = "test_runner",
-    srcs = ["test_runner.sh"],
+packetimpact_go_test(
+    name = "ipv6_fragment_reassembly",
+    srcs = ["ipv6_fragment_reassembly_test.go"],
+    # TODO(b/160919104): Fix netstack then remove the line below.
+    expect_netstack_failure = True,
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "udp_send_recv_dgram",
+    srcs = ["udp_send_recv_dgram_test.go"],
+    deps = [
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_linger",
+    srcs = ["tcp_linger_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_rcv_buf_space",
+    srcs = ["tcp_rcv_buf_space_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

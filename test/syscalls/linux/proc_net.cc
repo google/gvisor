@@ -20,8 +20,13 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 
+#include <vector>
+
 #include "gtest/gtest.h"
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
@@ -34,6 +39,7 @@ namespace testing {
 namespace {
 
 constexpr const char kProcNet[] = "/proc/net";
+constexpr const char kIpForward[] = "/proc/sys/net/ipv4/ip_forward";
 
 TEST(ProcNetSymlinkTarget, FileMode) {
   struct stat s;
@@ -402,6 +408,152 @@ TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
 
   EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
   EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
+}
+
+TEST(ProcNetSnmp, CheckNetStat) {
+  // TODO(b/155123175): SNMP and netstat don't work on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/netstat"));
+
+  int name_count = 0;
+  int value_count = 0;
+  std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
+  for (int i = 0; i + 1 < lines.size(); i += 2) {
+    std::vector<absl::string_view> names =
+        absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
+    std::vector<absl::string_view> values =
+        absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
+    EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
+                                           << "' and '" << lines[i + 1] << "'";
+    for (int j = 0; j < names.size() && j < values.size(); ++j) {
+      if (names[j] == "TCPOrigDataSent" || names[j] == "TCPSynRetrans" ||
+          names[j] == "TCPDSACKRecv" || names[j] == "TCPDSACKOfoRecv") {
+        ++name_count;
+        int64_t val;
+        if (absl::SimpleAtoi(values[j], &val)) {
+          ++value_count;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(name_count, 4);
+  EXPECT_EQ(value_count, 4);
+}
+
+TEST(ProcNetSnmp, Stat) {
+  struct stat st = {};
+  ASSERT_THAT(stat("/proc/net/snmp", &st), SyscallSucceeds());
+}
+
+TEST(ProcNetSnmp, CheckSnmp) {
+  // TODO(b/155123175): SNMP and netstat don't work on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+
+  int name_count = 0;
+  int value_count = 0;
+  std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
+  for (int i = 0; i + 1 < lines.size(); i += 2) {
+    std::vector<absl::string_view> names =
+        absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
+    std::vector<absl::string_view> values =
+        absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
+    EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
+                                           << "' and '" << lines[i + 1] << "'";
+    for (int j = 0; j < names.size() && j < values.size(); ++j) {
+      if (names[j] == "RetransSegs") {
+        ++name_count;
+        int64_t val;
+        if (absl::SimpleAtoi(values[j], &val)) {
+          ++value_count;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(name_count, 1);
+  EXPECT_EQ(value_count, 1);
+}
+
+TEST(ProcSysNetIpv4Recovery, Exists) {
+  EXPECT_THAT(open("/proc/sys/net/ipv4/tcp_recovery", O_RDONLY),
+              SyscallSucceeds());
+}
+
+TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
+  // TODO(b/162988252): Enable save/restore for this test after the bug is
+  // fixed.
+  DisableSave ds;
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/net/ipv4/tcp_recovery", O_RDWR));
+
+  char buf[10] = {'\0'};
+  char to_write = '2';
+
+  // Check initial value is set to 1.
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "1\n"), 0);
+
+  // Set tcp_recovery to one of the allowed constants.
+  EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
+              SyscallSucceedsWithValue(sizeof(to_write)));
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "2\n"), 0);
+
+  // Set tcp_recovery to any random value.
+  char kMessage[] = "100";
+  EXPECT_THAT(PwriteFd(fd.get(), kMessage, strlen(kMessage), 0),
+              SyscallSucceedsWithValue(strlen(kMessage)));
+  EXPECT_THAT(PreadFd(fd.get(), buf, sizeof(kMessage), 0),
+              SyscallSucceedsWithValue(sizeof(kMessage)));
+  EXPECT_EQ(strcmp(buf, "100\n"), 0);
+}
+
+TEST(ProcSysNetIpv4IpForward, Exists) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDONLY));
+}
+
+TEST(ProcSysNetIpv4IpForward, DefaultValueEqZero) {
+  // Test is only valid in sandbox. Not hermetic in native tests
+  // running on a arbitrary machine.
+  SKIP_IF(!IsRunningOnGvisor());
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDONLY));
+
+  char buf = 101;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_EQ(buf, '0') << "unexpected ip_forward: " << buf;
+}
+
+TEST(ProcSysNetIpv4IpForward, CanReadAndWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDWR));
+
+  char buf;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_TRUE(buf == '0' || buf == '1') << "unexpected ip_forward: " << buf;
+
+  // constexpr char to_write = '1';
+  char to_write = (buf == '1') ? '0' : '1';
+  EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
+              SyscallSucceedsWithValue(sizeof(to_write)));
+
+  buf = 0;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(buf, to_write);
 }
 
 }  // namespace

@@ -16,6 +16,7 @@ package header
 
 import (
 	"encoding/binary"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -54,6 +55,10 @@ type UDP []byte
 const (
 	// UDPMinimumSize is the minimum size of a valid UDP packet.
 	UDPMinimumSize = 8
+
+	// UDPMaximumSize is the maximum size of a valid UDP packet. The length field
+	// in the UDP header is 16 bits as per RFC 768.
+	UDPMaximumSize = math.MaxUint16
 
 	// UDPProtocolNumber is UDP's transport protocol number.
 	UDPProtocolNumber tcpip.TransportProtocolNumber = 17

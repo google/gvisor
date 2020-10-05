@@ -40,7 +40,7 @@ TEST_P(IPUnboundSocketTest, TtlDefault) {
   socklen_t get_sz = sizeof(get);
   EXPECT_THAT(getsockopt(socket->get(), IPPROTO_IP, IP_TTL, &get, &get_sz),
               SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get, 64);
+  EXPECT_TRUE(get == 64 || get == 127);
   EXPECT_EQ(get_sz, sizeof(get));
 }
 
@@ -157,7 +157,7 @@ TEST_P(IPUnboundSocketTest, TOSDefault) {
   int get = -1;
   socklen_t get_sz = sizeof(get);
   constexpr int kDefaultTOS = 0;
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, sizeof(get));
   EXPECT_EQ(get, kDefaultTOS);
@@ -173,7 +173,7 @@ TEST_P(IPUnboundSocketTest, SetTOS) {
 
   int get = -1;
   socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, sizeof(get));
   EXPECT_EQ(get, set);
@@ -188,7 +188,7 @@ TEST_P(IPUnboundSocketTest, ZeroTOS) {
               SyscallSucceedsWithValue(0));
   int get = -1;
   socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, sizeof(get));
   EXPECT_EQ(get, set);
@@ -210,13 +210,15 @@ TEST_P(IPUnboundSocketTest, InvalidLargeTOS) {
   }
   int get = -1;
   socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, sizeof(get));
   EXPECT_EQ(get, kDefaultTOS);
 }
 
 TEST_P(IPUnboundSocketTest, CheckSkipECN) {
+  // Test is inconsistant on different kernels.
+  SKIP_IF(!IsRunningOnGvisor());
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   int set = 0xFF;
   socklen_t set_sz = sizeof(set);
@@ -229,7 +231,7 @@ TEST_P(IPUnboundSocketTest, CheckSkipECN) {
   }
   int get = -1;
   socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, sizeof(get));
   EXPECT_EQ(get, expect);
@@ -249,7 +251,7 @@ TEST_P(IPUnboundSocketTest, ZeroTOSOptionSize) {
   }
   int get = -1;
   socklen_t get_sz = 0;
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, 0);
   EXPECT_EQ(get, -1);
@@ -276,7 +278,7 @@ TEST_P(IPUnboundSocketTest, SmallTOSOptionSize) {
     }
     uint get = -1;
     socklen_t get_sz = i;
-    EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+    ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
                 SyscallSucceedsWithValue(0));
     EXPECT_EQ(get_sz, expect_sz);
     // Account for partial copies by getsockopt, retrieve the lower
@@ -297,7 +299,7 @@ TEST_P(IPUnboundSocketTest, LargeTOSOptionSize) {
     // We expect the system call handler to only copy atmost sizeof(int) bytes
     // as asserted by the check below. Hence, we do not expect the copy to
     // overflow in getsockopt.
-    EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+    ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
                 SyscallSucceedsWithValue(0));
     EXPECT_EQ(get_sz, sizeof(int));
     EXPECT_EQ(get, set);
@@ -325,7 +327,7 @@ TEST_P(IPUnboundSocketTest, NegativeTOS) {
   }
   int get = -1;
   socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, sizeof(get));
   EXPECT_EQ(get, expect);
@@ -338,20 +340,20 @@ TEST_P(IPUnboundSocketTest, InvalidNegativeTOS) {
   TOSOption t = GetTOSOption(GetParam().domain);
   int expect;
   if (GetParam().domain == AF_INET) {
-    EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, &set, set_sz),
+    ASSERT_THAT(setsockopt(socket->get(), t.level, t.option, &set, set_sz),
                 SyscallSucceedsWithValue(0));
     expect = static_cast<uint8_t>(set);
     if (GetParam().protocol == IPPROTO_TCP) {
       expect &= ~INET_ECN_MASK;
     }
   } else {
-    EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, &set, set_sz),
+    ASSERT_THAT(setsockopt(socket->get(), t.level, t.option, &set, set_sz),
                 SyscallFailsWithErrno(EINVAL));
     expect = 0;
   }
   int get = 0;
   socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
+  ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_sz, sizeof(get));
   EXPECT_EQ(get, expect);
@@ -377,8 +379,11 @@ TEST_P(IPUnboundSocketTest, NullTOS) {
       //
       // Linux's implementation would need fixing as passing a nullptr as optval
       // and non-zero optlen may not be valid.
-      EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, nullptr, set_sz),
-                  SyscallSucceedsWithValue(0));
+      // TODO(b/158666797): Combine the gVisor and linux cases for IPv6.
+      // Some kernel versions return EFAULT, so we handle both.
+      EXPECT_THAT(
+          setsockopt(socket->get(), t.level, t.option, nullptr, set_sz),
+          AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(0)));
     }
   }
   socklen_t get_sz = sizeof(int);
@@ -417,6 +422,34 @@ TEST_P(IPUnboundSocketTest, InsufficientBufferTOS) {
   }
 
   EXPECT_THAT(sendmsg(socket->get(), &msg, 0), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(IPUnboundSocketTest, ReuseAddrDefault) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  int get = -1;
+  socklen_t get_sz = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(socket->get(), SOL_SOCKET, SO_REUSEADDR, &get, &get_sz),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOff);
+  EXPECT_EQ(get_sz, sizeof(get));
+}
+
+TEST_P(IPUnboundSocketTest, SetReuseAddr) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  ASSERT_THAT(setsockopt(socket->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+
+  int get = -1;
+  socklen_t get_sz = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(socket->get(), SOL_SOCKET, SO_REUSEADDR, &get, &get_sz),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOn);
+  EXPECT_EQ(get_sz, sizeof(get));
 }
 
 INSTANTIATE_TEST_SUITE_P(

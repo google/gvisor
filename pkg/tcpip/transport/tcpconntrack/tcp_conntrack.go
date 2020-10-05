@@ -106,6 +106,11 @@ func (t *TCB) UpdateStateOutbound(tcp header.TCP) Result {
 	return st
 }
 
+// State returns the current state of the TCB.
+func (t *TCB) State() Result {
+	return t.state
+}
+
 // IsAlive returns true as long as the connection is established(Alive)
 // or connecting state.
 func (t *TCB) IsAlive() bool {

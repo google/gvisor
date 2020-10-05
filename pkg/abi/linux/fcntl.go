@@ -45,6 +45,8 @@ const (
 )
 
 // Flock is the lock structure for F_SETLK.
+//
+// +marshal
 type Flock struct {
 	Type   int16
 	Whence int16
@@ -55,7 +57,7 @@ type Flock struct {
 	_      [4]byte
 }
 
-// Flags for F_SETOWN_EX and F_GETOWN_EX.
+// Owner types for F_SETOWN_EX and F_GETOWN_EX.
 const (
 	F_OWNER_TID  = 0
 	F_OWNER_PID  = 1
@@ -63,6 +65,8 @@ const (
 )
 
 // FOwnerEx is the owner structure for F_SETOWN_EX and F_GETOWN_EX.
+//
+// +marshal
 type FOwnerEx struct {
 	Type int32
 	PID  int32

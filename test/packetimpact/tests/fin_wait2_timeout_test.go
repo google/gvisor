@@ -21,11 +21,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 func TestFinWait2Timeout(t *testing.T) {
@@ -37,36 +37,36 @@ func TestFinWait2Timeout(t *testing.T) {
 		{"WithoutLinger2", false},
 	} {
 		t.Run(tt.description, func(t *testing.T) {
-			dut := tb.NewDUT(t)
+			dut := testbench.NewDUT(t)
 			defer dut.TearDown()
-			listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-			defer dut.Close(listenFd)
-			conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
-			defer conn.Close()
-			conn.Handshake()
+			listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenFd)
+			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			defer conn.Close(t)
+			conn.Connect(t)
 
-			acceptFd, _ := dut.Accept(listenFd)
+			acceptFd, _ := dut.Accept(t, listenFd)
 			if tt.linger2 {
 				tv := unix.Timeval{Sec: 1, Usec: 0}
-				dut.SetSockOptTimeval(acceptFd, unix.SOL_TCP, unix.TCP_LINGER2, &tv)
+				dut.SetSockOptTimeval(t, acceptFd, unix.SOL_TCP, unix.TCP_LINGER2, &tv)
 			}
-			dut.Close(acceptFd)
+			dut.Close(t, acceptFd)
 
-			if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
 				t.Fatalf("expected a FIN-ACK within 1 second but got none: %s", err)
 			}
-			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
 			time.Sleep(5 * time.Second)
-			conn.Drain()
+			conn.Drain(t)
 
-			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 			if tt.linger2 {
-				if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, time.Second); err != nil {
+				if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, time.Second); err != nil {
 					t.Fatalf("expected a RST packet within a second but got none: %s", err)
 				}
 			} else {
-				if got, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, 10*time.Second); got != nil || err == nil {
+				if got, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, 10*time.Second); got != nil || err == nil {
 					t.Fatalf("expected no RST packets within ten seconds but got one: %s", got)
 				}
 			}

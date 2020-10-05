@@ -22,8 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func TestSimpleMasterToSlave(t *testing.T) {
-	ld := newLineDiscipline(linux.DefaultSlaveTermios)
+func TestSimpleMasterToReplica(t *testing.T) {
+	ld := newLineDiscipline(linux.DefaultReplicaTermios)
 	ctx := contexttest.Context(t)
 	inBytes := []byte("hello, tty\n")
 	src := usermem.BytesIOSequence(inBytes)

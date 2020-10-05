@@ -348,7 +348,7 @@ func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 // Pause implements linux syscall pause(2).
 func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), kernel.ERESTARTNOHAND)
+	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
 }
 
 // RtSigpending implements linux syscall rt_sigpending(2).
@@ -496,7 +496,7 @@ func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	t.SetSavedSignalMask(oldmask)
 
 	// Perform the wait.
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), kernel.ERESTARTNOHAND)
+	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
 }
 
 // RestartSyscall implements the linux syscall restart_syscall(2).
@@ -536,7 +536,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize ui
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 
 		// Is this a signalfd?
 		if s, ok := file.FileOperations.(*signalfd.SignalOperations); ok {
@@ -553,7 +553,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize ui
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Set appropriate flags.
 	file.SetFlags(fs.SettableFileFlags{

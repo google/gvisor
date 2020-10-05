@@ -46,7 +46,7 @@ type SyscallDoc struct {
 }
 
 var mdTemplate = template.Must(template.New("out").Parse(`---
-title: {{.OS}}/{{.Arch}}
+title: {{.Title}}
 description: Syscall Compatibility Reference Documentation for {{.OS}}/{{.Arch}}
 layout: docs
 category: Compatibility
@@ -134,6 +134,7 @@ func main() {
 
 			weight += 10
 			data := struct {
+				Title        string
 				OS           string
 				Arch         string
 				Weight       int
@@ -149,7 +150,8 @@ func main() {
 					URLs    []string
 				}
 			}{
-				OS:           strings.Title(osName),
+				Title:        strings.Title(osName) + "/" + archName,
+				OS:           osName,
 				Arch:         archName,
 				Weight:       weight,
 				Total:        0,

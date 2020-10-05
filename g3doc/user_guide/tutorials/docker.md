@@ -1,4 +1,4 @@
-# WorkPress with Docker
+# WordPress with Docker
 
 This page shows you how to deploy a sample [WordPress][wordpress] site using
 [Docker][docker].
@@ -60,9 +60,11 @@ Congratulations! You have just deployed a WordPress site using Docker.
 
 ### What's next
 
-[Learn how to deploy WordPress with Kubernetes][wordpress-k8s].
+Learn how to deploy WordPress with [Kubernetes][wordpress-k8s] or
+[Docker Compose][wordpress-compose].
 
 [docker]: https://www.docker.com/
-[docker-install]: /docs/user_guide/quick_start/docker/
+[docker-install]: ../quick_start/docker.md
 [wordpress]: https://wordpress.com/
-[wordpress-k8s]: /docs/tutorials/kubernetes/
+[wordpress-k8s]: kubernetes.md
+[wordpress-compose]: docker-compose.md

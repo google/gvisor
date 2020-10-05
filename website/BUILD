@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "pkg_tar")
+load("//tools:defs.bzl", "bzl_library", "pkg_tar")
 load("//website:defs.bzl", "doc", "docs")
 
 package(licenses = ["notice"])
@@ -55,9 +55,7 @@ genrule(
           "docker run -i --user $$(id -u):$$(id -g) " +
           "-v $$(readlink -m $$T/output/_site):/output " +
           "gvisor.dev/images/jekyll " +
-          "/usr/gem/bin/htmlproofer " +
-          "--disable-external " +
-          "--check-html " +
+          "ruby /checks.rb " +
           "/output && " +
           "cp $(location //website/cmd/server) $$T/output/server && " +
           "tar -zcf $@ -C $$T/output . && " +
@@ -138,6 +136,7 @@ docs(
         "//g3doc:community",
         "//g3doc:index",
         "//g3doc:roadmap",
+        "//g3doc:style",
         "//g3doc/architecture_guide:performance",
         "//g3doc/architecture_guide:platforms",
         "//g3doc/architecture_guide:resources",
@@ -150,11 +149,15 @@ docs(
         "//g3doc/user_guide:install",
         "//g3doc/user_guide:networking",
         "//g3doc/user_guide:platforms",
+        "//g3doc/user_guide/containerd:configuration",
+        "//g3doc/user_guide/containerd:containerd_11",
+        "//g3doc/user_guide/containerd:quick_start",
         "//g3doc/user_guide/quick_start:docker",
         "//g3doc/user_guide/quick_start:kubernetes",
         "//g3doc/user_guide/quick_start:oci",
         "//g3doc/user_guide/tutorials:cni",
         "//g3doc/user_guide/tutorials:docker",
+        "//g3doc/user_guide/tutorials:docker_compose",
         "//g3doc/user_guide/tutorials:kubernetes",
     ],
 )
@@ -177,4 +180,10 @@ genrule(
           "tar -C $$T -czf $@ . && " +
           "rm -rf $$T",
     tools = ["//website/cmd/syscalldocs"],
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )

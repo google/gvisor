@@ -25,6 +25,8 @@ import (
 const nullDevMinor = 3
 
 // nullDevice implements vfs.Device for /dev/null.
+//
+// +stateify savable
 type nullDevice struct{}
 
 // Open implements vfs.Device.Open.
@@ -39,14 +41,17 @@ func (nullDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, op
 }
 
 // nullFD implements vfs.FileDescriptionImpl for /dev/null.
+//
+// +stateify savable
 type nullFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *nullFD) Release() {
+func (fd *nullFD) Release(context.Context) {
 	// noop
 }
 

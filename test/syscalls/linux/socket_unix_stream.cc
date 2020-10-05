@@ -89,6 +89,38 @@ TEST_P(StreamUnixSocketPairTest, ReadOneSideClosedWithUnreadData) {
               SyscallFailsWithErrno(ECONNRESET));
 }
 
+TEST_P(StreamUnixSocketPairTest, Sendto) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  constexpr char kPath[] = "\0nonexistent";
+  memcpy(addr.sun_path, kPath, sizeof(kPath));
+
+  constexpr char kStr[] = "abc";
+  ASSERT_THAT(sendto(sockets->second_fd(), kStr, 3, 0, (struct sockaddr*)&addr,
+                     sizeof(addr)),
+              SyscallFailsWithErrno(EISCONN));
+}
+
+TEST_P(StreamUnixSocketPairTest, SetAndGetSocketLinger) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct linger sl = {1, 5};
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+      SyscallSucceedsWithValue(0));
+
+  struct linger got_linger = {};
+  socklen_t length = sizeof(sl);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER,
+                         &got_linger, &length),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_EQ(length, sizeof(got_linger));
+  EXPECT_EQ(0, memcmp(&got_linger, &sl, length));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(

@@ -51,9 +51,10 @@ func (m *machine) initArchState() error {
 		recover()
 		debug.SetPanicOnFault(old)
 	}()
-	m.retryInGuest(func() {
-		ring0.SetCPUIDFaulting(true)
-	})
+	c := m.Get()
+	defer m.Put(c)
+	bluepill(c)
+	ring0.SetCPUIDFaulting(true)
 
 	return nil
 }
@@ -89,8 +90,8 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 	defer m.mu.Unlock()
 
 	// Clear from all PCIDs.
-	for _, c := range m.vCPUs {
-		if c.PCIDs != nil {
+	for _, c := range m.vCPUsByID {
+		if c != nil && c.PCIDs != nil {
 			c.PCIDs.Drop(pt)
 		}
 	}
@@ -143,6 +144,7 @@ func (c *vCPU) initArchState() error {
 	// Set the entrypoint for the kernel.
 	kernelUserRegs.RIP = uint64(reflect.ValueOf(ring0.Start).Pointer())
 	kernelUserRegs.RAX = uint64(reflect.ValueOf(&c.CPU).Pointer())
+	kernelUserRegs.RSP = c.StackTop()
 	kernelUserRegs.RFLAGS = ring0.KernelFlagsSet
 
 	// Set the system registers.
@@ -151,8 +153,8 @@ func (c *vCPU) initArchState() error {
 	}
 
 	// Set the user registers.
-	if err := c.setUserRegisters(&kernelUserRegs); err != nil {
-		return err
+	if errno := c.setUserRegisters(&kernelUserRegs); errno != 0 {
+		return fmt.Errorf("error setting user registers: %v", errno)
 	}
 
 	// Allocate some floating point state save area for the local vCPU.
@@ -335,29 +337,6 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	}
 }
 
-// retryInGuest runs the given function in guest mode.
-//
-// If the function does not complete in guest mode (due to execution of a
-// system call due to a GC stall, for example), then it will be retried. The
-// given function must be idempotent as a result of the retry mechanism.
-func (m *machine) retryInGuest(fn func()) {
-	c := m.Get()
-	defer m.Put(c)
-	for {
-		c.ClearErrorCode() // See below.
-		bluepill(c)        // Force guest mode.
-		fn()               // Execute the given function.
-		_, user := c.ErrorCode()
-		if user {
-			// If user is set, then we haven't bailed back to host
-			// mode via a kernel exception or system call. We
-			// consider the full function to have executed in guest
-			// mode and we can return.
-			break
-		}
-	}
-}
-
 // On x86 platform, the flags for "setMemoryRegion" can always be set as 0.
 // There is no need to return read-only physicalRegions.
 func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
@@ -366,4 +345,44 @@ func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
 
 func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 	return physicalRegions
+}
+
+var execRegions []region
+
+func init() {
+	applyVirtualRegions(func(vr virtualRegion) {
+		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
+			return
+		}
+
+		if vr.accessType.Execute {
+			execRegions = append(execRegions, vr.region)
+		}
+	})
+}
+
+func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
+	for _, r := range execRegions {
+		physical, length, ok := translateToPhysical(r.virtual)
+		if !ok || length < r.length {
+			panic("impossilbe translation")
+		}
+		pageTable.Map(
+			usermem.Addr(ring0.KernelStartAddress|r.virtual),
+			r.length,
+			pagetables.MapOpts{AccessType: usermem.Execute},
+			physical)
+	}
+	for start, end := range m.kernel.EntryRegions() {
+		regionLen := end - start
+		physical, length, ok := translateToPhysical(start)
+		if !ok || length < regionLen {
+			panic("impossible translation")
+		}
+		pageTable.Map(
+			usermem.Addr(ring0.KernelStartAddress|start),
+			regionLen,
+			pagetables.MapOpts{AccessType: usermem.ReadWrite},
+			physical)
+	}
 }

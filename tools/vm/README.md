@@ -25,6 +25,12 @@ vm_image(
 These images can be built manually by executing the target. The output on
 `stdout` will be the image id (in the current project).
 
+For example:
+
+```
+$ bazel build :ubuntu
+```
+
 Images are always named per the hash of all the hermetic input scripts. This
 allows images to be memoized quickly and easily.
 

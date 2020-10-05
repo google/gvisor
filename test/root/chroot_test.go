@@ -16,6 +16,7 @@
 package root
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os/exec"
@@ -30,16 +31,17 @@ import (
 // TestChroot verifies that the sandbox is chroot'd and that mounts are cleaned
 // up after the sandbox is destroyed.
 func TestChroot(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
-	if err := d.Spawn(dockerutil.RunOpts{
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
 	}, "sleep", "10000"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	pid, err := d.SandboxPid()
+	pid, err := d.SandboxPid(ctx)
 	if err != nil {
 		t.Fatalf("Docker.SandboxPid(): %v", err)
 	}
@@ -75,14 +77,15 @@ func TestChroot(t *testing.T) {
 		t.Errorf("chroot got children %v, want %v", fi[0].Name(), "proc")
 	}
 
-	d.CleanUp()
+	d.CleanUp(ctx)
 }
 
 func TestChrootGofer(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
-	if err := d.Spawn(dockerutil.RunOpts{
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
 	}, "sleep", "10000"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
@@ -91,7 +94,7 @@ func TestChrootGofer(t *testing.T) {
 	// It's tricky to find gofers. Get sandbox PID first, then find parent. From
 	// parent get all immediate children, remove the sandbox, and everything else
 	// are gofers.
-	sandPID, err := d.SandboxPid()
+	sandPID, err := d.SandboxPid(ctx)
 	if err != nil {
 		t.Fatalf("Docker.SandboxPid(): %v", err)
 	}

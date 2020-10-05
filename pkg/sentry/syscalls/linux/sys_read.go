@@ -48,7 +48,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
@@ -71,7 +71,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	n, err := readv(t, file, dst)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "read", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "read", file)
 }
 
 // Readahead implements readahead(2).
@@ -84,7 +84,7 @@ func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
@@ -118,7 +118,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate and does not overflow.
 	if offset < 0 || offset+int64(size) < 0 {
@@ -151,7 +151,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := preadv(t, file, dst, offset)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "pread64", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pread64", file)
 }
 
 // Readv implements linux syscall readv(2).
@@ -164,7 +164,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
@@ -181,7 +181,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := readv(t, file, dst)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "readv", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "readv", file)
 }
 
 // Preadv implements linux syscall preadv(2).
@@ -195,7 +195,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < 0 {
@@ -222,7 +222,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := preadv(t, file, dst, offset)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "preadv", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "preadv", file)
 }
 
 // Preadv2 implements linux syscall preadv2(2).
@@ -244,7 +244,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < -1 {
@@ -280,12 +280,12 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if offset == -1 {
 		n, err := readv(t, file, dst)
 		t.IOUsage().AccountReadSyscall(n)
-		return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "preadv2", file)
+		return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "preadv2", file)
 	}
 
 	n, err := preadv(t, file, dst, offset)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "preadv2", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "preadv2", file)
 }
 
 func readv(t *kernel.Task, f *fs.File, dst usermem.IOSequence) (int64, error) {

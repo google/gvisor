@@ -9,6 +9,7 @@ go_library(
         "filter_input.go",
         "filter_output.go",
         "iptables.go",
+        "iptables_unsafe.go",
         "iptables_util.go",
         "nat.go",
     ],
@@ -20,6 +21,7 @@ go_library(
 
 go_test(
     name = "iptables_test",
+    size = "large",
     srcs = [
         "iptables_test.go",
     ],

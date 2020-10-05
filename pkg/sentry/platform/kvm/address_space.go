@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -26,16 +27,15 @@ import (
 
 // dirtySet tracks vCPUs for invalidation.
 type dirtySet struct {
-	vCPUs []uint64
+	vCPUMasks []uint64
 }
 
 // forEach iterates over all CPUs in the dirty set.
+//
+//go:nosplit
 func (ds *dirtySet) forEach(m *machine, fn func(c *vCPU)) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	for index := range ds.vCPUs {
-		mask := atomic.SwapUint64(&ds.vCPUs[index], 0)
+	for index := range ds.vCPUMasks {
+		mask := atomic.SwapUint64(&ds.vCPUMasks[index], 0)
 		if mask != 0 {
 			for bit := 0; bit < 64; bit++ {
 				if mask&(1<<uint64(bit)) == 0 {
@@ -54,7 +54,7 @@ func (ds *dirtySet) mark(c *vCPU) bool {
 	index := uint64(c.id) / 64
 	bit := uint64(1) << uint(c.id%64)
 
-	oldValue := atomic.LoadUint64(&ds.vCPUs[index])
+	oldValue := atomic.LoadUint64(&ds.vCPUMasks[index])
 	if oldValue&bit != 0 {
 		return false // Not clean.
 	}
@@ -62,7 +62,7 @@ func (ds *dirtySet) mark(c *vCPU) bool {
 	// Set the bit unilaterally, and ensure that a flush takes place. Note
 	// that it's possible for races to occur here, but since the flush is
 	// taking place long after these lines there's no race in practice.
-	atomicbitops.OrUint64(&ds.vCPUs[index], bit)
+	atomicbitops.OrUint64(&ds.vCPUMasks[index], bit)
 	return true // Previously clean.
 }
 
@@ -113,7 +113,12 @@ type hostMapEntry struct {
 	length uintptr
 }
 
-func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.AccessType) (inv bool) {
+// mapLocked maps the given host entry.
+//
+// +checkescape:hard,stack
+//
+//go:nosplit
+func (as *addressSpace) mapLocked(addr usermem.Addr, m hostMapEntry, at usermem.AccessType) (inv bool) {
 	for m.length > 0 {
 		physical, length, ok := translateToPhysical(m.addr)
 		if !ok {
@@ -133,18 +138,10 @@ func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.Ac
 		// important; if the pagetable mappings were installed before
 		// ensuring the physical pages were available, then some other
 		// thread could theoretically access them.
-		//
-		// Due to the way KVM's shadow paging implementation works,
-		// modifications to the page tables while in host mode may not
-		// be trapped, leading to the shadow pages being out of sync.
-		// Therefore, we need to ensure that we are in guest mode for
-		// page table modifications. See the call to bluepill, below.
-		as.machine.retryInGuest(func() {
-			inv = as.pageTables.Map(addr, length, pagetables.MapOpts{
-				AccessType: at,
-				User:       true,
-			}, physical) || inv
-		})
+		inv = as.pageTables.Map(addr, length, pagetables.MapOpts{
+			AccessType: at,
+			User:       true,
+		}, physical) || inv
 		m.addr += length
 		m.length -= length
 		addr += usermem.Addr(length)
@@ -154,7 +151,7 @@ func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.Ac
 }
 
 // MapFile implements platform.AddressSpace.MapFile.
-func (as *addressSpace) MapFile(addr usermem.Addr, f platform.File, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
+func (as *addressSpace) MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
@@ -176,6 +173,10 @@ func (as *addressSpace) MapFile(addr usermem.Addr, f platform.File, fr platform.
 		return err
 	}
 
+	// See block in mapLocked.
+	as.pageTables.Allocator.(*allocator).cpu = as.machine.Get()
+	defer as.machine.Put(as.pageTables.Allocator.(*allocator).cpu)
+
 	// Map the mappings in the sentry's address space (guest physical memory)
 	// into the application's address space (guest virtual memory).
 	inv := false
@@ -190,7 +191,12 @@ func (as *addressSpace) MapFile(addr usermem.Addr, f platform.File, fr platform.
 				_ = s[i] // Touch to commit.
 			}
 		}
-		prev := as.mapHost(addr, hostMapEntry{
+
+		// See bluepill_allocator.go.
+		bluepill(as.pageTables.Allocator.(*allocator).cpu)
+
+		// Perform the mapping.
+		prev := as.mapLocked(addr, hostMapEntry{
 			addr:   b.Addr(),
 			length: uintptr(b.Len()),
 		}, at)
@@ -204,17 +210,27 @@ func (as *addressSpace) MapFile(addr usermem.Addr, f platform.File, fr platform.
 	return nil
 }
 
+// unmapLocked is an escape-checked wrapped around Unmap.
+//
+// +checkescape:hard,stack
+//
+//go:nosplit
+func (as *addressSpace) unmapLocked(addr usermem.Addr, length uint64) bool {
+	return as.pageTables.Unmap(addr, uintptr(length))
+}
+
 // Unmap unmaps the given range by calling pagetables.PageTables.Unmap.
 func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
-	// See above re: retryInGuest.
-	var prev bool
-	as.machine.retryInGuest(func() {
-		prev = as.pageTables.Unmap(addr, uintptr(length)) || prev
-	})
-	if prev {
+	// See above & bluepill_allocator.go.
+	as.pageTables.Allocator.(*allocator).cpu = as.machine.Get()
+	defer as.machine.Put(as.pageTables.Allocator.(*allocator).cpu)
+	bluepill(as.pageTables.Allocator.(*allocator).cpu)
+
+	if prev := as.unmapLocked(addr, length); prev {
+		// Invalidate all active vCPUs.
 		as.invalidate()
 
 		// Recycle any freed intermediate pages.
@@ -227,8 +243,14 @@ func (as *addressSpace) Release() {
 	as.Unmap(0, ^uint64(0))
 
 	// Free all pages from the allocator.
-	as.pageTables.Allocator.(allocator).base.Drain()
+	as.pageTables.Allocator.(*allocator).base.Drain()
 
 	// Drop all cached machine references.
 	as.machine.dropPageTables(as.pageTables)
 }
+
+// PreFork implements platform.AddressSpace.PreFork.
+func (as *addressSpace) PreFork() {}
+
+// PostFork implements platform.AddressSpace.PostFork.
+func (as *addressSpace) PostFork() {}

@@ -90,14 +90,23 @@ type elfInfo struct {
 	sharedObject bool
 }
 
+// fullReader interface extracts the ReadFull method from fsbridge.File so that
+// client code does not need to define an entire fsbridge.File when only read
+// functionality is needed.
+//
+// TODO(gvisor.dev/issue/1035): Once VFS2 ships, rewrite this to wrap
+// vfs.FileDescription's PRead/Read instead.
+type fullReader interface {
+	// ReadFull is the same as fsbridge.File.ReadFull.
+	ReadFull(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error)
+}
+
 // parseHeader parse the ELF header, verifying that this is a supported ELF
 // file and returning the ELF program headers.
 //
 // This is similar to elf.NewFile, except that it is more strict about what it
 // accepts from the ELF, and it doesn't parse unnecessary parts of the file.
-//
-// ctx may be nil if f does not need it.
-func parseHeader(ctx context.Context, f fsbridge.File) (elfInfo, error) {
+func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 	// Check ident first; it will tell us the endianness of the rest of the
 	// structs.
 	var ident [elf.EI_NIDENT]byte
@@ -272,7 +281,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 		}
 		defer func() {
 			if mopts.MappingIdentity != nil {
-				mopts.MappingIdentity.DecRef()
+				mopts.MappingIdentity.DecRef(ctx)
 			}
 		}()
 		if err := f.ConfigureMMap(ctx, &mopts); err != nil {
@@ -393,8 +402,7 @@ type loadedELF struct {
 //
 // It does not load the ELF interpreter, or return any auxv entries.
 //
-// Preconditions:
-//  * f is an ELF file
+// Preconditions: f is an ELF file.
 func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, info elfInfo, sharedLoadOffset usermem.Addr) (loadedELF, error) {
 	first := true
 	var start, end usermem.Addr
@@ -562,8 +570,8 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 // It does not load the ELF interpreter, or return any auxv entries.
 //
 // Preconditions:
-//  * f is an ELF file
-//  * f is the first ELF loaded into m
+// * f is an ELF file.
+// * f is the first ELF loaded into m.
 func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureSet, f fsbridge.File) (loadedELF, arch.Context, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
@@ -600,8 +608,7 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureS
 //
 // It does not return any auxv entries.
 //
-// Preconditions:
-//  * f is an ELF file
+// Preconditions: f is an ELF file.
 func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, initial loadedELF) (loadedELF, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
@@ -631,8 +638,7 @@ func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.Fil
 // If loadELF returns ErrSwitchFile it should be called again with the returned
 // path and argv.
 //
-// Preconditions:
-//  * args.File is an ELF file
+// Preconditions: args.File is an ELF file.
 func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error) {
 	bin, ac, err := loadInitialELF(ctx, args.MemoryManager, args.Features, args.File)
 	if err != nil {
@@ -654,7 +660,7 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error
 			ctx.Infof("Error opening interpreter %s: %v", bin.interpreter, err)
 			return loadedELF{}, nil, err
 		}
-		defer intFile.DecRef()
+		defer intFile.DecRef(ctx)
 
 		interp, err = loadInterpreterELF(ctx, args.MemoryManager, intFile, bin)
 		if err != nil {

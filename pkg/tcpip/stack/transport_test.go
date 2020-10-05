@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -38,7 +39,7 @@ const (
 // use it.
 type fakeTransportEndpoint struct {
 	stack.TransportEndpointInfo
-	stack    *stack.Stack
+
 	proto    *fakeTransportProtocol
 	peerAddr tcpip.Address
 	route    stack.Route
@@ -52,14 +53,14 @@ func (f *fakeTransportEndpoint) Info() tcpip.EndpointInfo {
 	return &f.TransportEndpointInfo
 }
 
-func (f *fakeTransportEndpoint) Stats() tcpip.EndpointStats {
+func (*fakeTransportEndpoint) Stats() tcpip.EndpointStats {
 	return nil
 }
 
-func (f *fakeTransportEndpoint) SetOwner(owner tcpip.PacketOwner) {}
+func (*fakeTransportEndpoint) SetOwner(owner tcpip.PacketOwner) {}
 
-func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
-	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
+func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
+	return &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
 }
 
 func (f *fakeTransportEndpoint) Abort() {
@@ -83,27 +84,28 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 		return 0, nil, tcpip.ErrNoRoute
 	}
 
-	hdr := buffer.NewPrependable(int(f.route.MaxHeaderLength()))
 	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketBuffer{
-		Header: hdr,
-		Data:   buffer.View(v).ToVectorisedView(),
-	}); err != nil {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(f.route.MaxHeaderLength()) + fakeTransHeaderLen,
+		Data:               buffer.View(v).ToVectorisedView(),
+	})
+	_ = pkt.TransportHeader().Push(fakeTransHeaderLen)
+	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
 		return 0, nil, err
 	}
 
 	return int64(len(v)), nil, nil
 }
 
-func (f *fakeTransportEndpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
+func (*fakeTransportEndpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	return 0, tcpip.ControlMessages{}, nil
 }
 
 // SetSockOpt sets a socket option. Currently not supported.
-func (*fakeTransportEndpoint) SetSockOpt(interface{}) *tcpip.Error {
+func (*fakeTransportEndpoint) SetSockOpt(tcpip.SettableSocketOption) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
@@ -128,11 +130,7 @@ func (*fakeTransportEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.E
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (*fakeTransportEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch opt.(type) {
-	case tcpip.ErrorOption:
-		return nil
-	}
+func (*fakeTransportEndpoint) GetSockOpt(tcpip.GettableSocketOption) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
@@ -145,7 +143,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	f.peerAddr = addr.Addr
 
 	// Find the route.
-	r, err := f.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
+	r, err := f.proto.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
 		return tcpip.ErrNoRoute
 	}
@@ -153,7 +151,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	// Try to register so that we can start receiving packets.
 	f.ID.RemoteAddress = addr.Addr
-	err = f.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, false /* reuse */, 0 /* bindToDevice */)
+	err = f.proto.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, ports.Flags{}, 0 /* bindToDevice */)
 	if err != nil {
 		return err
 	}
@@ -167,7 +165,7 @@ func (f *fakeTransportEndpoint) UniqueID() uint64 {
 	return f.uniqueID
 }
 
-func (f *fakeTransportEndpoint) ConnectEndpoint(e tcpip.Endpoint) *tcpip.Error {
+func (*fakeTransportEndpoint) ConnectEndpoint(e tcpip.Endpoint) *tcpip.Error {
 	return nil
 }
 
@@ -182,7 +180,7 @@ func (*fakeTransportEndpoint) Listen(int) *tcpip.Error {
 	return nil
 }
 
-func (f *fakeTransportEndpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
+func (f *fakeTransportEndpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	if len(f.acceptQueue) == 0 {
 		return nil, nil, nil
 	}
@@ -192,14 +190,14 @@ func (f *fakeTransportEndpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.
 }
 
 func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress) *tcpip.Error {
-	if err := f.stack.RegisterTransportEndpoint(
+	if err := f.proto.stack.RegisterTransportEndpoint(
 		a.NIC,
 		[]tcpip.NetworkProtocolNumber{fakeNetNumber},
 		fakeTransNumber,
 		stack.TransportEndpointID{LocalAddress: a.Addr},
 		f,
-		false, /* reuse */
-		0,     /* bindtoDevice */
+		ports.Flags{},
+		0, /* bindtoDevice */
 	); err != nil {
 		return err
 	}
@@ -215,12 +213,11 @@ func (*fakeTransportEndpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Erro
 	return tcpip.FullAddress{}, nil
 }
 
-func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, _ stack.PacketBuffer) {
+func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, _ *stack.PacketBuffer) {
 	// Increment the number of received packets.
 	f.proto.packetCount++
 	if f.acceptQueue != nil {
 		f.acceptQueue = append(f.acceptQueue, fakeTransportEndpoint{
-			stack: f.stack,
 			TransportEndpointInfo: stack.TransportEndpointInfo{
 				ID:       f.ID,
 				NetProto: f.NetProto,
@@ -232,24 +229,24 @@ func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportE
 	}
 }
 
-func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, stack.ControlType, uint32, stack.PacketBuffer) {
+func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, stack.ControlType, uint32, *stack.PacketBuffer) {
 	// Increment the number of received control packets.
 	f.proto.controlCount++
 }
 
-func (f *fakeTransportEndpoint) State() uint32 {
+func (*fakeTransportEndpoint) State() uint32 {
 	return 0
 }
 
-func (f *fakeTransportEndpoint) ModerateRecvBuf(copied int) {}
+func (*fakeTransportEndpoint) ModerateRecvBuf(copied int) {}
 
-func (f *fakeTransportEndpoint) IPTables() (stack.IPTables, error) {
-	return stack.IPTables{}, nil
+func (*fakeTransportEndpoint) Resume(*stack.Stack) {}
+
+func (*fakeTransportEndpoint) Wait() {}
+
+func (*fakeTransportEndpoint) LastError() *tcpip.Error {
+	return nil
 }
-
-func (f *fakeTransportEndpoint) Resume(*stack.Stack) {}
-
-func (f *fakeTransportEndpoint) Wait() {}
 
 type fakeTransportGoodOption bool
 
@@ -264,6 +261,8 @@ type fakeTransportProtocolOptions struct {
 // fakeTransportProtocol is a transport-layer protocol descriptor. It
 // aggregates the number of packets received via endpoints of this protocol.
 type fakeTransportProtocol struct {
+	stack *stack.Stack
+
 	packetCount  int
 	controlCount int
 	opts         fakeTransportProtocolOptions
@@ -273,11 +272,11 @@ func (*fakeTransportProtocol) Number() tcpip.TransportProtocolNumber {
 	return fakeTransNumber
 }
 
-func (f *fakeTransportProtocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return newFakeTransportEndpoint(stack, f, netProto, stack.UniqueID()), nil
+func (f *fakeTransportProtocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return newFakeTransportEndpoint(f, netProto, f.stack.UniqueID()), nil
 }
 
-func (*fakeTransportProtocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (*fakeTransportProtocol) NewRawEndpoint(tcpip.NetworkProtocolNumber, *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	return nil, tcpip.ErrUnknownProtocol
 }
 
@@ -289,26 +288,24 @@ func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err *tcp
 	return 0, 0, nil
 }
 
-func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, stack.PacketBuffer) bool {
-	return true
+func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
+	return stack.UnknownDestinationPacketHandled
 }
 
-func (f *fakeTransportProtocol) SetOption(option interface{}) *tcpip.Error {
+func (f *fakeTransportProtocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpip.Error {
 	switch v := option.(type) {
-	case fakeTransportGoodOption:
-		f.opts.good = bool(v)
+	case *tcpip.TCPModerateReceiveBufferOption:
+		f.opts.good = bool(*v)
 		return nil
-	case fakeTransportInvalidValueOption:
-		return tcpip.ErrInvalidOptionValue
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
-func (f *fakeTransportProtocol) Option(option interface{}) *tcpip.Error {
+func (f *fakeTransportProtocol) Option(option tcpip.GettableTransportProtocolOption) *tcpip.Error {
 	switch v := option.(type) {
-	case *fakeTransportGoodOption:
-		*v = fakeTransportGoodOption(f.opts.good)
+	case *tcpip.TCPModerateReceiveBufferOption:
+		*v = tcpip.TCPModerateReceiveBufferOption(f.opts.good)
 		return nil
 	default:
 		return tcpip.ErrUnknownProtocolOption
@@ -324,15 +321,21 @@ func (*fakeTransportProtocol) Close() {}
 // Wait implements TransportProtocol.Wait.
 func (*fakeTransportProtocol) Wait() {}
 
-func fakeTransFactory() stack.TransportProtocol {
-	return &fakeTransportProtocol{}
+// Parse implements TransportProtocol.Parse.
+func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
+	_, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen)
+	return ok
+}
+
+func fakeTransFactory(s *stack.Stack) stack.TransportProtocol {
+	return &fakeTransportProtocol{stack: s}
 }
 
 func TestTransportReceive(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
@@ -369,9 +372,9 @@ func TestTransportReceive(t *testing.T) {
 	// Make sure packet with wrong protocol is not delivered.
 	buf[0] = 1
 	buf[2] = 0
-	linkEP.InjectInbound(fakeNetNumber, stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
 	}
@@ -380,9 +383,9 @@ func TestTransportReceive(t *testing.T) {
 	buf[0] = 1
 	buf[1] = 3
 	buf[2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
 	}
@@ -391,9 +394,9 @@ func TestTransportReceive(t *testing.T) {
 	buf[0] = 1
 	buf[1] = 2
 	buf[2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.packetCount != 1 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 1)
 	}
@@ -402,8 +405,8 @@ func TestTransportReceive(t *testing.T) {
 func TestTransportControlReceive(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
@@ -446,9 +449,9 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 0
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = 0
-	linkEP.InjectInbound(fakeNetNumber, stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
 	}
@@ -457,9 +460,9 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 3
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
 	}
@@ -468,9 +471,9 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 2
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
-	linkEP.InjectInbound(fakeNetNumber, stack.PacketBuffer{
+	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 	if fakeTrans.controlCount != 1 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 1)
 	}
@@ -479,8 +482,8 @@ func TestTransportControlReceive(t *testing.T) {
 func TestTransportSend(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
@@ -525,54 +528,29 @@ func TestTransportSend(t *testing.T) {
 
 func TestTransportOptions(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
 
-	// Try an unsupported transport protocol.
-	if err := s.SetTransportProtocolOption(tcpip.TransportProtocolNumber(99999), fakeTransportGoodOption(false)); err != tcpip.ErrUnknownProtocol {
-		t.Fatalf("SetTransportProtocolOption(fakeTrans2, blah, false) = %v, want = tcpip.ErrUnknownProtocol", err)
+	v := tcpip.TCPModerateReceiveBufferOption(true)
+	if err := s.SetTransportProtocolOption(fakeTransNumber, &v); err != nil {
+		t.Errorf("s.SetTransportProtocolOption(fakeTrans, &%T(%t)): %s", v, v, err)
 	}
-
-	testCases := []struct {
-		option   interface{}
-		wantErr  *tcpip.Error
-		verifier func(t *testing.T, p stack.TransportProtocol)
-	}{
-		{fakeTransportGoodOption(true), nil, func(t *testing.T, p stack.TransportProtocol) {
-			t.Helper()
-			fakeTrans := p.(*fakeTransportProtocol)
-			if fakeTrans.opts.good != true {
-				t.Fatalf("fakeTrans.opts.good = false, want = true")
-			}
-			var v fakeTransportGoodOption
-			if err := s.TransportProtocolOption(fakeTransNumber, &v); err != nil {
-				t.Fatalf("s.TransportProtocolOption(fakeTransNumber, &v) = %v, want = nil, where v is option %T", v, err)
-			}
-			if v != true {
-				t.Fatalf("s.TransportProtocolOption(fakeTransNumber, &v) returned v = %v, want = true", v)
-			}
-
-		}},
-		{fakeTransportBadOption(true), tcpip.ErrUnknownProtocolOption, nil},
-		{fakeTransportInvalidValueOption(1), tcpip.ErrInvalidOptionValue, nil},
+	v = false
+	if err := s.TransportProtocolOption(fakeTransNumber, &v); err != nil {
+		t.Fatalf("s.TransportProtocolOption(fakeTransNumber, &%T): %s", v, err)
 	}
-	for _, tc := range testCases {
-		if got := s.SetTransportProtocolOption(fakeTransNumber, tc.option); got != tc.wantErr {
-			t.Errorf("s.SetTransportProtocolOption(fakeTrans, %v) = %v, want = %v", tc.option, got, tc.wantErr)
-		}
-		if tc.verifier != nil {
-			tc.verifier(t, s.TransportProtocolInstance(fakeTransNumber))
-		}
+	if !v {
+		t.Fatalf("got tcpip.TCPModerateReceiveBufferOption = false, want = true")
 	}
 }
 
 func TestTransportForwarding(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
-		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
+		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
 	})
-	s.SetForwarding(true)
+	s.SetForwarding(fakeNetNumber, true)
 
 	// TODO(b/123449044): Change this to a channel NIC.
 	ep1 := loopback.New()
@@ -623,11 +601,11 @@ func TestTransportForwarding(t *testing.T) {
 	req[0] = 1
 	req[1] = 3
 	req[2] = byte(fakeTransNumber)
-	ep2.InjectInbound(fakeNetNumber, stack.PacketBuffer{
+	ep2.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: req.ToVectorisedView(),
-	})
+	}))
 
-	aep, _, err := ep.Accept()
+	aep, _, err := ep.Accept(nil)
 	if err != nil || aep == nil {
 		t.Fatalf("Accept failed: %v, %v", aep, err)
 	}
@@ -642,11 +620,11 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatal("Response packet not forwarded")
 	}
 
-	hdrs := p.Pkt.Data.ToView()
-	if dst := hdrs[0]; dst != 3 {
+	nh := stack.PayloadSince(p.Pkt.NetworkHeader())
+	if dst := nh[0]; dst != 3 {
 		t.Errorf("Response packet has incorrect destination addresss: got = %d, want = 3", dst)
 	}
-	if src := hdrs[1]; src != 1 {
+	if src := nh[1]; src != 1 {
 		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
 }

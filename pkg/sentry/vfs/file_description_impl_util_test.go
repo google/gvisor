@@ -33,6 +33,7 @@ import (
 type fileDescription struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
+	NoLockFD
 }
 
 // genCount contains the number of times its DynamicBytesSource.Generate()
@@ -79,9 +80,9 @@ type testFD struct {
 	data DynamicBytesSource
 }
 
-func newTestFD(vfsObj *VirtualFilesystem, statusFlags uint32, data DynamicBytesSource) *FileDescription {
+func newTestFD(ctx context.Context, vfsObj *VirtualFilesystem, statusFlags uint32, data DynamicBytesSource) *FileDescription {
 	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	var fd testFD
 	fd.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
 	fd.DynamicBytesFileDescriptionImpl.SetDataSource(data)
@@ -89,7 +90,7 @@ func newTestFD(vfsObj *VirtualFilesystem, statusFlags uint32, data DynamicBytesS
 }
 
 // Release implements FileDescriptionImpl.Release.
-func (fd *testFD) Release() {
+func (fd *testFD) Release(context.Context) {
 }
 
 // SetStatusFlags implements FileDescriptionImpl.SetStatusFlags.
@@ -108,11 +109,11 @@ func TestGenCountFD(t *testing.T) {
 	ctx := contexttest.Context(t)
 
 	vfsObj := &VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
-	fd := newTestFD(vfsObj, linux.O_RDWR, &genCount{})
-	defer fd.DecRef()
+	fd := newTestFD(ctx, vfsObj, linux.O_RDWR, &genCount{})
+	defer fd.DecRef(ctx)
 
 	// The first read causes Generate to be called to fill the FD's buffer.
 	buf := make([]byte, 2)
@@ -154,11 +155,11 @@ func TestGenCountFD(t *testing.T) {
 	}
 
 	// Write and PWrite fails.
-	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); err != syserror.EINVAL {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EINVAL)
+	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); err != syserror.EIO {
+		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
 	}
-	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); err != syserror.EINVAL {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EINVAL)
+	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); err != syserror.EIO {
+		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
 	}
 }
 
@@ -166,11 +167,11 @@ func TestWritable(t *testing.T) {
 	ctx := contexttest.Context(t)
 
 	vfsObj := &VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
-	fd := newTestFD(vfsObj, linux.O_RDWR, &storeData{data: "init"})
-	defer fd.DecRef()
+	fd := newTestFD(ctx, vfsObj, linux.O_RDWR, &storeData{data: "init"})
+	defer fd.DecRef(ctx)
 
 	buf := make([]byte, 10)
 	ioseq := usermem.BytesIOSequence(buf)

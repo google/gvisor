@@ -30,7 +30,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -82,7 +82,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		return subcommands.ExitUsageError
 	}
 
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
 	if conf.Rootless {
@@ -125,7 +125,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	specutils.LogSpec(spec)
 
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
-	if conf.Network == boot.NetworkNone {
+	if conf.Network == config.NetworkNone {
 		netns := specs.LinuxNamespace{
 			Type: specs.NetworkNamespace,
 		}
@@ -135,9 +135,9 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		spec.Linux = &specs.Linux{Namespaces: []specs.LinuxNamespace{netns}}
 
 	} else if conf.Rootless {
-		if conf.Network == boot.NetworkSandbox {
+		if conf.Network == config.NetworkSandbox {
 			c.notifyUser("*** Warning: using host network due to --rootless ***")
-			conf.Network = boot.NetworkHost
+			conf.Network = config.NetworkHost
 		}
 
 	} else {

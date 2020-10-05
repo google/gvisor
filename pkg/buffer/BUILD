@@ -20,14 +20,17 @@ go_library(
     srcs = [
         "buffer.go",
         "buffer_list.go",
+        "pool.go",
         "safemem.go",
         "view.go",
         "view_unsafe.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/context",
         "//pkg/log",
         "//pkg/safemem",
+        "//pkg/usermem",
     ],
 )
 
@@ -35,9 +38,13 @@ go_test(
     name = "buffer_test",
     size = "small",
     srcs = [
+        "pool_test.go",
         "safemem_test.go",
         "view_test.go",
     ],
     library = ":buffer",
-    deps = ["//pkg/safemem"],
+    deps = [
+        "//pkg/safemem",
+        "//pkg/state",
+    ],
 )

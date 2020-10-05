@@ -102,11 +102,11 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
 	g.emit("//go:nosplit\n")
-	g.emit("func (%s *%s) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-		g.emit("length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
+		g.emit("length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
 		g.emitKeepAlive(g.r)
 		g.emit("return length, err\n")
 	})
@@ -114,19 +114,19 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
 	g.emit("//go:nosplit\n")
-	g.emit("func (%s *%s) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("return %s.CopyOutN(task, addr, %s.SizeBytes())\n", g.r, g.r)
+		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
 	})
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
 	g.emit("//go:nosplit\n")
-	g.emit("func (%s *%s) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-		g.emit("length, err := task.CopyInBytes(addr, buf) // escapes: okay.\n")
+		g.emit("length, err := cc.CopyInBytes(addr, buf) // escapes: okay.\n")
 		g.emitKeepAlive(g.r)
 		g.emit("return length, err\n")
 	})

@@ -17,10 +17,9 @@ package kernel
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -28,6 +27,8 @@ import (
 //
 // They are exposed to the VDSO via a parameter page managed by VDSOParamPage,
 // which also includes a sequence counter.
+//
+// +marshal
 type vdsoParams struct {
 	monotonicReady      uint64
 	monotonicBaseCycles int64
@@ -58,7 +59,7 @@ type vdsoParams struct {
 type VDSOParamPage struct {
 	// The parameter page is fr, allocated from mfp.MemoryFile().
 	mfp pgalloc.MemoryFileProvider
-	fr  platform.FileRange
+	fr  memmap.FileRange
 
 	// seq is the current sequence count written to the page.
 	//
@@ -68,21 +69,29 @@ type VDSOParamPage struct {
 	// checked in state_test_util tests, causing this field to change across
 	// save / restore.
 	seq uint64
+
+	// copyScratchBuffer is a temporary buffer used to marshal the params before
+	// copying it to the real parameter page. The parameter page is typically
+	// updated at a moderate frequency of ~O(seconds) throughout the lifetime of
+	// the sentry, so reusing this buffer is a good tradeoff between memory
+	// usage and the cost of allocation.
+	copyScratchBuffer []byte
 }
 
 // NewVDSOParamPage returns a VDSOParamPage.
 //
 // Preconditions:
-//
 // * fr is a single page allocated from mfp.MemoryFile(). VDSOParamPage does
 //   not take ownership of fr; it must remain allocated for the lifetime of the
 //   VDSOParamPage.
-//
 // * VDSOParamPage must be the only writer to fr.
-//
 // * mfp.MemoryFile().MapInternal(fr) must return a single safemem.Block.
-func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr platform.FileRange) *VDSOParamPage {
-	return &VDSOParamPage{mfp: mfp, fr: fr}
+func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *VDSOParamPage {
+	return &VDSOParamPage{
+		mfp:               mfp,
+		fr:                fr,
+		copyScratchBuffer: make([]byte, (*vdsoParams)(nil).SizeBytes()),
+	}
 }
 
 // access returns a mapping of the param page.
@@ -136,7 +145,8 @@ func (v *VDSOParamPage) Write(f func() vdsoParams) error {
 
 	// Get the new params.
 	p := f()
-	buf := binary.Marshal(nil, usermem.ByteOrder, p)
+	buf := v.copyScratchBuffer[:p.SizeBytes()]
+	p.MarshalUnsafe(buf)
 
 	// Skip the sequence counter.
 	if _, err := safemem.Copy(paramPage.DropFirst(8), safemem.BlockFromSafeSlice(buf)); err != nil {

@@ -15,7 +15,13 @@
 # limitations under the License.
 
 # Install our runtime.
-$(find . -executable -type f -name runsc) install
+runfiles=.
+if [[ -d "$0.runfiles" ]]; then
+  runfiles="$0.runfiles"
+fi
+$(find -L "${runfiles}" -executable -type f -name runsc) install
 
 # Restart docker.
-service docker restart || true
+if service docker status 2>/dev/null; then
+  service docker restart
+fi

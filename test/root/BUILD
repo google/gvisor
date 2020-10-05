@@ -33,6 +33,7 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/test/criutil",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
@@ -40,7 +41,7 @@ go_test(
         "//runsc/container",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
-        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -50,8 +51,5 @@ vm_test(
     name = "root_vm_test",
     size = "large",
     shard_count = 1,
-    targets = [
-        "//tools/installers:shim",
-        ":root_test",
-    ],
+    targets = [":root_test"],
 )

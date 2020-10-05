@@ -198,9 +198,8 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 }
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
-// the connection parameters given by the arguments. The endpoint is returned
-// with n.mu held.
-func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, irs seqnum.Value, rcvdSynOpts *header.TCPSynOptions, queue *waiter.Queue) (*endpoint, *tcpip.Error) {
+// the connection parameters given by the arguments.
+func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, irs seqnum.Value, rcvdSynOpts *header.TCPSynOptions, queue *waiter.Queue) *endpoint {
 	// Create a new endpoint.
 	netProto := l.netProto
 	if netProto == 0 {
@@ -213,7 +212,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	n.route = s.route.Clone()
 	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.route.NetProto}
 	n.rcvBufSize = int(l.rcvWnd)
-	n.amss = mssForRoute(&n.route)
+	n.amss = calculateAdvertisedMSS(n.userMSS, n.route)
 	n.setEndpointState(StateConnecting)
 
 	n.maybeEnableTimestamp(rcvdSynOpts)
@@ -221,32 +220,12 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 
 	n.initGSO()
 
-	// Create sender and receiver.
-	//
-	// The receiver at least temporarily has a zero receive window scale,
-	// but the caller may change it (before starting the protocol loop).
-	n.snd = newSender(n, iss, irs, s.window, rcvdSynOpts.MSS, rcvdSynOpts.WS)
-	n.rcv = newReceiver(n, irs, seqnum.Size(n.initialReceiveWindow()), 0, seqnum.Size(n.receiveBufferSize()))
 	// Bootstrap the auto tuning algorithm. Starting at zero will result in
 	// a large step function on the first window adjustment causing the
 	// window to grow to a really large value.
 	n.rcvAutoParams.prevCopied = n.initialReceiveWindow()
 
-	// Lock the endpoint before registering to ensure that no out of
-	// band changes are possible due to incoming packets etc till
-	// the endpoint is done initializing.
-	n.mu.Lock()
-
-	// Register new endpoint so that packets are routed to it.
-	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.reusePort, n.boundBindToDevice); err != nil {
-		n.mu.Unlock()
-		n.Close()
-		return nil, err
-	}
-
-	n.isRegistered = true
-
-	return n, nil
+	return n
 }
 
 // createEndpointAndPerformHandshake creates a new endpoint in connected state
@@ -257,10 +236,12 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	// Create new endpoint.
 	irs := s.sequenceNumber
 	isn := generateSecureISN(s.id, l.stack.Seed())
-	ep, err := l.createConnectingEndpoint(s, isn, irs, opts, queue)
-	if err != nil {
-		return nil, err
-	}
+	ep := l.createConnectingEndpoint(s, isn, irs, opts, queue)
+
+	// Lock the endpoint before registering to ensure that no out of
+	// band changes are possible due to incoming packets etc till
+	// the endpoint is done initializing.
+	ep.mu.Lock()
 	ep.owner = owner
 
 	// listenEP is nil when listenContext is used by tcp.Forwarder.
@@ -268,18 +249,13 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	if l.listenEP != nil {
 		l.listenEP.mu.Lock()
 		if l.listenEP.EndpointState() != StateListen {
+
 			l.listenEP.mu.Unlock()
 			// Ensure we release any registrations done by the newly
 			// created endpoint.
 			ep.mu.Unlock()
 			ep.Close()
 
-			// Wake up any waiters. This is strictly not required normally
-			// as a socket that was never accepted can't really have any
-			// registered waiters except when stack.Wait() is called which
-			// waits for all registered endpoints to stop and expects an
-			// EventHUp.
-			ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 			return nil, tcpip.ErrConnectionAborted
 		}
 		l.addPendingEndpoint(ep)
@@ -288,21 +264,44 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		// to the newly created endpoint.
 		l.listenEP.propagateInheritableOptionsLocked(ep)
 
+		if !ep.reserveTupleLocked() {
+			ep.mu.Unlock()
+			ep.Close()
+
+			if l.listenEP != nil {
+				l.removePendingEndpoint(ep)
+				l.listenEP.mu.Unlock()
+			}
+
+			return nil, tcpip.ErrConnectionAborted
+		}
+
 		deferAccept = l.listenEP.deferAccept
 		l.listenEP.mu.Unlock()
 	}
 
+	// Register new endpoint so that packets are routed to it.
+	if err := ep.stack.RegisterTransportEndpoint(ep.boundNICID, ep.effectiveNetProtos, ProtocolNumber, ep.ID, ep, ep.boundPortFlags, ep.boundBindToDevice); err != nil {
+		ep.mu.Unlock()
+		ep.Close()
+
+		if l.listenEP != nil {
+			l.removePendingEndpoint(ep)
+		}
+
+		ep.drainClosingSegmentQueue()
+
+		return nil, err
+	}
+
+	ep.isRegistered = true
+
 	// Perform the 3-way handshake.
-	h := newPassiveHandshake(ep, ep.rcv.rcvWnd, isn, irs, opts, deferAccept)
+	h := newPassiveHandshake(ep, seqnum.Size(ep.initialReceiveWindow()), isn, irs, opts, deferAccept)
 	if err := h.execute(); err != nil {
 		ep.mu.Unlock()
 		ep.Close()
-		// Wake up any waiters. This is strictly not required normally
-		// as a socket that was never accepted can't really have any
-		// registered waiters except when stack.Wait() is called which
-		// waits for all registered endpoints to stop and expects an
-		// EventHUp.
-		ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+		ep.notifyAborted()
 
 		if l.listenEP != nil {
 			l.removePendingEndpoint(ep)
@@ -378,6 +377,44 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 // Precondition: e.mu and n.mu must be held.
 func (e *endpoint) propagateInheritableOptionsLocked(n *endpoint) {
 	n.userTimeout = e.userTimeout
+	n.portFlags = e.portFlags
+	n.boundBindToDevice = e.boundBindToDevice
+	n.boundPortFlags = e.boundPortFlags
+	n.userMSS = e.userMSS
+}
+
+// reserveTupleLocked reserves an accepted endpoint's tuple.
+//
+// Preconditions:
+// * propagateInheritableOptionsLocked has been called.
+// * e.mu is held.
+func (e *endpoint) reserveTupleLocked() bool {
+	dest := tcpip.FullAddress{Addr: e.ID.RemoteAddress, Port: e.ID.RemotePort}
+	if !e.stack.ReserveTuple(
+		e.effectiveNetProtos,
+		ProtocolNumber,
+		e.ID.LocalAddress,
+		e.ID.LocalPort,
+		e.boundPortFlags,
+		e.boundBindToDevice,
+		dest,
+	) {
+		return false
+	}
+
+	e.isPortReserved = true
+	e.boundDest = dest
+	return true
+}
+
+// notifyAborted wakes up any waiters on registered, but not accepted
+// endpoints.
+//
+// This is strictly not required normally as a socket that was never accepted
+// can't really have any registered waiters except when stack.Wait() is called
+// which waits for all registered endpoints to stop and expects an EventHUp.
+func (e *endpoint) notifyAborted() {
+	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 }
 
 // handleSynSegment is called in its own goroutine once the listening endpoint
@@ -445,9 +482,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		return
 	}
 
-	// TODO(b/143300739): Use the userMSS of the listening socket
-	// for accepted sockets.
-
 	switch {
 	case s.flags == header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
@@ -478,16 +512,19 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 
 			// Send SYN without window scaling because we currently
-			// dont't encode this information in the cookie.
+			// don't encode this information in the cookie.
 			//
 			// Enable Timestamp option if the original syn did have
 			// the timestamp option specified.
+			//
+			// Use the user supplied MSS on the listening socket for
+			// new connections, if available.
 			synOpts := header.TCPSynOptions{
 				WS:    -1,
 				TS:    opts.TS,
-				TSVal: tcpTimeStamp(timeStampOffset()),
+				TSVal: tcpTimeStamp(time.Now(), timeStampOffset()),
 				TSEcr: opts.TSVal,
-				MSS:   mssForRoute(&s.route),
+				MSS:   calculateAdvertisedMSS(e.userMSS, s.route),
 			}
 			e.sendSynTCP(&s.route, tcpFields{
 				id:     s.id,
@@ -534,6 +571,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			return
 		}
 
+		iss := s.ackNumber - 1
+		irs := s.sequenceNumber - 1
+
 		// Since SYN cookies are in use this is potentially an ACK to a
 		// SYN-ACK we sent but don't have a half open connection state
 		// as cookies are being used to protect against a potential SYN
@@ -544,7 +584,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// when under a potential syn flood attack.
 		//
 		// Validate the cookie.
-		data, ok := ctx.isCookieValid(s.id, s.ackNumber-1, s.sequenceNumber-1)
+		data, ok := ctx.isCookieValid(s.id, iss, irs)
 		if !ok || int(data) >= len(mssTable) {
 			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
@@ -569,16 +609,34 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			rcvdSynOptions.TSEcr = s.parsedOptions.TSEcr
 		}
 
-		n, err := ctx.createConnectingEndpoint(s, s.ackNumber-1, s.sequenceNumber-1, rcvdSynOptions, &waiter.Queue{})
-		if err != nil {
+		n := ctx.createConnectingEndpoint(s, iss, irs, rcvdSynOptions, &waiter.Queue{})
+
+		n.mu.Lock()
+
+		// Propagate any inheritable options from the listening endpoint
+		// to the newly created endpoint.
+		e.propagateInheritableOptionsLocked(n)
+
+		if !n.reserveTupleLocked() {
+			n.mu.Unlock()
+			n.Close()
+
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
 			return
 		}
 
-		// Propagate any inheritable options from the listening endpoint
-		// to the newly created endpoint.
-		e.propagateInheritableOptionsLocked(n)
+		// Register new endpoint so that packets are routed to it.
+		if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.boundPortFlags, n.boundBindToDevice); err != nil {
+			n.mu.Unlock()
+			n.Close()
+
+			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+			e.stats.FailedConnectionAttempts.Increment()
+			return
+		}
+
+		n.isRegistered = true
 
 		// clear the tsOffset for the newly created
 		// endpoint as the Timestamp was already
@@ -587,10 +645,17 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n.tsOffset = 0
 
 		// Switch state to connected.
-		// We do not use transitionToStateEstablishedLocked here as there is
-		// no handshake state available when doing a SYN cookie based accept.
 		n.isConnectNotified = true
-		n.setEndpointState(StateEstablished)
+		n.transitionToStateEstablishedLocked(&handshake{
+			ep:          n,
+			iss:         iss,
+			ackNum:      irs + 1,
+			rcvWnd:      seqnum.Size(n.initialReceiveWindow()),
+			sndWnd:      s.window,
+			rcvWndScale: e.rcvWndScaleForHandshake(),
+			sndWndScale: rcvdSynOptions.WS,
+			mss:         rcvdSynOptions.MSS,
+		})
 
 		// Do the delivery in a separate goroutine so
 		// that we don't block the listen loop in case

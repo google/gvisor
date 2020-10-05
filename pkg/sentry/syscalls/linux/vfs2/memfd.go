@@ -47,10 +47,11 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	}
 
 	shmMount := t.Kernel().ShmMount()
-	file, err := tmpfs.NewMemfd(shmMount, t.Credentials(), allowSeals, memfdPrefix+name)
+	file, err := tmpfs.NewMemfd(t, t.Credentials(), shmMount, allowSeals, memfdPrefix+name)
 	if err != nil {
 		return 0, nil, err
 	}
+	defer file.DecRef(t)
 
 	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
 		CloseOnExec: cloExec,

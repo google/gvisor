@@ -67,7 +67,7 @@ type SpliceOpts struct {
 // - File.Flags():	This value may change during the operation.
 type FileOperations interface {
 	// Release release resources held by FileOperations.
-	Release()
+	Release(ctx context.Context)
 
 	// Waitable defines how this File can be waited on for read and
 	// write readiness.
@@ -159,7 +159,9 @@ type FileOperations interface {
 	// io provides access to the virtual memory space to which pointers in args
 	// refer.
 	//
-	// Preconditions: The AddressSpace (if any) that io refers to is activated.
+	// Preconditions:
+	// * The AddressSpace (if any) that io refers to is activated.
+	// * Must only be called from a task goroutine.
 	Ioctl(ctx context.Context, file *File, io usermem.IO, args arch.SyscallArguments) (uintptr, error)
 }
 

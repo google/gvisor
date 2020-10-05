@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -34,10 +35,10 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 	r, w := pipe.NewConnectedPipe(t, pipe.DefaultPipeSize, usermem.PageSize)
 
 	r.SetFlags(linuxToFlags(flags).Settable())
-	defer r.DecRef()
+	defer r.DecRef(t)
 
 	w.SetFlags(linuxToFlags(flags).Settable())
-	defer w.DecRef()
+	defer w.DecRef(t)
 
 	fds, err := t.NewFDs(0, []*fs.File{r, w}, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
@@ -46,10 +47,10 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 		return 0, err
 	}
 
-	if _, err := t.CopyOut(addr, fds); err != nil {
+	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
-			if file, _ := t.FDTable().Remove(fd); file != nil {
-				file.DecRef()
+			if file, _ := t.FDTable().Remove(t, fd); file != nil {
+				file.DecRef(t)
 			}
 		}
 		return 0, err

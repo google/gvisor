@@ -5,7 +5,7 @@
       <div class="col-md-6">
         <p>gVisor is an <b>application kernel</b> for <b>containers</b> that provides efficient defense-in-depth anywhere.</p>
         <p style="margin-top: 20px;">
-          <a class="btn" href="/docs/user_guide/quick_start/docker/">Quick start&nbsp;<i class="fas fa-arrow-alt-circle-right ml-2"></i></a>
+          <a class="btn" href="/docs/user_guide/install/">Get started&nbsp;<i class="fas fa-arrow-alt-circle-right ml-2"></i></a>
           <a class="btn" href="/docs/">Learn More&nbsp;<i class="fas fa-arrow-alt-circle-right ml-2"></i></a>
         </p>
       </div>

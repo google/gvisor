@@ -30,6 +30,8 @@ const (
 )
 
 // randomDevice implements vfs.Device for /dev/random and /dev/urandom.
+//
+// +stateify savable
 type randomDevice struct{}
 
 // Open implements vfs.Device.Open.
@@ -44,10 +46,13 @@ func (randomDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, 
 }
 
 // randomFD implements vfs.FileDescriptionImpl for /dev/random.
+//
+// +stateify savable
 type randomFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
 
 	// off is the "file offset". off is accessed using atomic memory
 	// operations.
@@ -55,7 +60,7 @@ type randomFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *randomFD) Release() {
+func (fd *randomFD) Release(context.Context) {
 	// noop
 }
 

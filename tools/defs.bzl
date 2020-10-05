@@ -7,13 +7,14 @@ change for Google-internal and bazel-compatible rules.
 
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
-load("//tools/bazeldefs:defs.bzl", _build_test = "build_test", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _default_installer = "default_installer", _default_net_util = "default_net_util", _gazelle = "gazelle", _gbenchmark = "gbenchmark", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_test = "go_test", _grpcpp = "grpcpp", _gtest = "gtest", _loopback = "loopback", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar", _proto_library = "proto_library", _py_binary = "py_binary", _py_library = "py_library", _py_requirement = "py_requirement", _py_test = "py_test", _rbe_platform = "rbe_platform", _rbe_toolchain = "rbe_toolchain", _select_arch = "select_arch", _select_system = "select_system", _vdso_linker_option = "vdso_linker_option")
+load("//tools/bazeldefs:defs.bzl", _build_test = "build_test", _bzl_library = "bzl_library", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _default_installer = "default_installer", _default_net_util = "default_net_util", _gazelle = "gazelle", _gbenchmark = "gbenchmark", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_test = "go_test", _grpcpp = "grpcpp", _gtest = "gtest", _loopback = "loopback", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar", _proto_library = "proto_library", _py_binary = "py_binary", _rbe_platform = "rbe_platform", _rbe_toolchain = "rbe_toolchain", _select_arch = "select_arch", _select_system = "select_system", _short_path = "short_path", _vdso_linker_option = "vdso_linker_option")
 load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platforms = "platforms")
 load("//tools/bazeldefs:tags.bzl", "go_suffixes")
 load("//tools/nogo:defs.bzl", "nogo_test")
 
 # Delegate directly.
 build_test = _build_test
+bzl_library = _bzl_library
 cc_binary = _cc_binary
 cc_flags_supplier = _cc_flags_supplier
 cc_grpc_library = _cc_grpc_library
@@ -26,18 +27,15 @@ gbenchmark = _gbenchmark
 gazelle = _gazelle
 go_embed_data = _go_embed_data
 go_path = _go_path
-go_test = _go_test
 gtest = _gtest
 grpcpp = _grpcpp
 loopback = _loopback
 pkg_deb = _pkg_deb
 pkg_tar = _pkg_tar
 py_binary = _py_binary
-py_library = _py_library
-py_requirement = _py_requirement
-py_test = _py_test
 select_arch = _select_arch
 select_system = _select_system
+short_path = _short_path
 rbe_platform = _rbe_platform
 rbe_toolchain = _rbe_toolchain
 vdso_linker_option = _vdso_linker_option
@@ -46,17 +44,35 @@ vdso_linker_option = _vdso_linker_option
 default_platform = _default_platform
 platforms = _platforms
 
-def go_binary(name, **kwargs):
+def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **kwargs):
     """Wraps the standard go_binary.
 
     Args:
       name: the rule name.
+      nogo: enable nogo analysis.
+      pure: build a pure Go (no CGo) binary.
+      static: build a static binary.
+      x_defs: additional linker definitions.
       **kwargs: standard go_binary arguments.
     """
     _go_binary(
         name = name,
+        pure = pure,
+        static = static,
+        x_defs = x_defs,
         **kwargs
     )
+    if nogo:
+        # Note that the nogo rule applies only for go_library and go_test
+        # targets, therefore we construct a library from the binary sources.
+        _go_library(
+            name = name + "_nogo_library",
+            **kwargs
+        )
+        nogo_test(
+            name = name + "_nogo",
+            deps = [":" + name + "_nogo_library"],
+        )
 
 def calculate_sets(srcs):
     """Calculates special Go sets for templates.
@@ -96,7 +112,7 @@ def go_imports(name, src, out):
         cmd = ("$(location @org_golang_x_tools//cmd/goimports:goimports) $(SRCS) > $@"),
     )
 
-def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, marshal_debug = False, nogo = False, **kwargs):
+def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, marshal_debug = False, nogo = True, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
     The recommended way is to use this rule with mostly identical configuration as the native
@@ -120,6 +136,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
       stateify: whether statify is enabled (default: true).
       marshal: whether marshal is enabled (default: false).
       marshal_debug: whether the gomarshal tools emits debugging output (default: false).
+      nogo: enable nogo analysis.
       **kwargs: standard go_library arguments.
     """
     all_srcs = srcs
@@ -197,11 +214,32 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
         for (suffix, _) in marshal_sets.items():
             _go_test(
                 name = name + suffix + "_abi_autogen_test",
-                srcs = [name + suffix + "_abi_autogen_test.go"],
+                srcs = [
+                    name + suffix + "_abi_autogen_test.go",
+                    name + suffix + "_abi_autogen_unconditional_test.go",
+                ],
                 library = ":" + name,
                 deps = marshal_test_deps,
                 **kwargs
             )
+
+def go_test(name, nogo = True, **kwargs):
+    """Wraps the standard go_test.
+
+    Args:
+      name: the rule name.
+      nogo: enable nogo analysis.
+      **kwargs: standard go_test arguments.
+    """
+    _go_test(
+        name = name,
+        **kwargs
+    )
+    if nogo:
+        nogo_test(
+            name = name + "_nogo",
+            deps = [":" + name],
+        )
 
 def proto_library(name, srcs, deps = None, has_services = 0, **kwargs):
     """Wraps the standard proto_library.

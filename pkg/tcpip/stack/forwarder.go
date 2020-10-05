@@ -32,7 +32,7 @@ type pendingPacket struct {
 	nic   *NIC
 	route *Route
 	proto tcpip.NetworkProtocolNumber
-	pkt   PacketBuffer
+	pkt   *PacketBuffer
 }
 
 type forwardQueue struct {
@@ -50,7 +50,7 @@ func newForwardQueue() *forwardQueue {
 	return &forwardQueue{packets: make(map[<-chan struct{}][]*pendingPacket)}
 }
 
-func (f *forwardQueue) enqueue(ch <-chan struct{}, n *NIC, r *Route, protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) {
+func (f *forwardQueue) enqueue(ch <-chan struct{}, n *NIC, r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	shouldWait := false
 
 	f.Lock()

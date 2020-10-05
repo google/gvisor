@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/magic.h>
 #include <sys/statfs.h>
 #include <unistd.h>
 
@@ -43,14 +44,10 @@ TEST(StatfsTest, InternalTmpfs) {
 TEST(StatfsTest, InternalDevShm) {
   struct statfs st;
   EXPECT_THAT(statfs("/dev/shm", &st), SyscallSucceeds());
-}
-
-TEST(StatfsTest, NameLen) {
-  struct statfs st;
-  EXPECT_THAT(statfs("/dev/shm", &st), SyscallSucceeds());
 
   // This assumes that /dev/shm is tmpfs.
-  EXPECT_EQ(st.f_namelen, NAME_MAX);
+  // Note: We could be an overlay on some configurations.
+  EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC);
 }
 
 TEST(FstatfsTest, CannotStatBadFd) {

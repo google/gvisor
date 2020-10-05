@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_binary", "go_test")
+load("//tools:defs.bzl", "go_binary")
 
 package(licenses = ["notice"])
 
@@ -7,15 +7,5 @@ go_binary(
     testonly = 1,
     srcs = ["main.go"],
     visibility = ["//test/runtimes:__pkg__"],
-    deps = [
-        "//pkg/test/dockerutil",
-        "//pkg/test/testutil",
-    ],
-)
-
-go_test(
-    name = "blacklist_test",
-    size = "small",
-    srcs = ["blacklist_test.go"],
-    library = ":runner",
+    deps = ["//test/runtimes/runner/lib"],
 )

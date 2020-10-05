@@ -33,8 +33,8 @@ type SimpleExtendedAttributes struct {
 	xattrs map[string]string
 }
 
-// Getxattr returns the value at 'name'.
-func (x *SimpleExtendedAttributes) Getxattr(opts *vfs.GetxattrOptions) (string, error) {
+// GetXattr returns the value at 'name'.
+func (x *SimpleExtendedAttributes) GetXattr(opts *vfs.GetXattrOptions) (string, error) {
 	x.mu.RLock()
 	value, ok := x.xattrs[opts.Name]
 	x.mu.RUnlock()
@@ -49,8 +49,8 @@ func (x *SimpleExtendedAttributes) Getxattr(opts *vfs.GetxattrOptions) (string, 
 	return value, nil
 }
 
-// Setxattr sets 'value' at 'name'.
-func (x *SimpleExtendedAttributes) Setxattr(opts *vfs.SetxattrOptions) error {
+// SetXattr sets 'value' at 'name'.
+func (x *SimpleExtendedAttributes) SetXattr(opts *vfs.SetXattrOptions) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if x.xattrs == nil {
@@ -72,8 +72,8 @@ func (x *SimpleExtendedAttributes) Setxattr(opts *vfs.SetxattrOptions) error {
 	return nil
 }
 
-// Listxattr returns all names in xattrs.
-func (x *SimpleExtendedAttributes) Listxattr(size uint64) ([]string, error) {
+// ListXattr returns all names in xattrs.
+func (x *SimpleExtendedAttributes) ListXattr(size uint64) ([]string, error) {
 	// Keep track of the size of the buffer needed in listxattr(2) for the list.
 	listSize := 0
 	x.mu.RLock()
@@ -90,8 +90,8 @@ func (x *SimpleExtendedAttributes) Listxattr(size uint64) ([]string, error) {
 	return names, nil
 }
 
-// Removexattr removes the xattr at 'name'.
-func (x *SimpleExtendedAttributes) Removexattr(name string) error {
+// RemoveXattr removes the xattr at 'name'.
+func (x *SimpleExtendedAttributes) RemoveXattr(name string) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if _, ok := x.xattrs[name]; !ok {

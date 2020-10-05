@@ -49,7 +49,7 @@ func FGetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	n, err := getXattr(t, f.Dirent, nameAddr, valueAddr, size)
 	if err != nil {
@@ -153,7 +153,7 @@ func FSetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	return 0, nil, setXattr(t, f.Dirent, nameAddr, valueAddr, uint64(size), flags)
 }
@@ -207,7 +207,11 @@ func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr usermem.Addr, si
 		return syserror.EOPNOTSUPP
 	}
 
-	return d.Inode.SetXattr(t, d, name, value, flags)
+	if err := d.Inode.SetXattr(t, d, name, value, flags); err != nil {
+		return err
+	}
+	d.InotifyEvent(linux.IN_ATTRIB, 0)
+	return nil
 }
 
 func copyInXattrName(t *kernel.Task, nameAddr usermem.Addr) (string, error) {
@@ -266,7 +270,7 @@ func FListXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	n, err := listXattr(t, f.Dirent, listAddr, size)
 	if err != nil {
@@ -380,7 +384,7 @@ func FRemoveXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	return 0, nil, removeXattr(t, f.Dirent, nameAddr)
 }
@@ -418,7 +422,11 @@ func removeXattr(t *kernel.Task, d *fs.Dirent, nameAddr usermem.Addr) error {
 		return syserror.EOPNOTSUPP
 	}
 
-	return d.Inode.RemoveXattr(t, d, name)
+	if err := d.Inode.RemoveXattr(t, d, name); err != nil {
+		return err
+	}
+	d.InotifyEvent(linux.IN_ATTRIB, 0)
+	return nil
 }
 
 // LINT.ThenChange(vfs2/xattr.go)

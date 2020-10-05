@@ -29,11 +29,13 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/mohae/deepcopy"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
@@ -44,20 +46,31 @@ var ExePath = "/proc/self/exe"
 var Version = specs.Version
 
 // LogSpec logs the spec in a human-friendly way.
-func LogSpec(spec *specs.Spec) {
-	log.Debugf("Spec: %+v", spec)
-	log.Debugf("Spec.Hooks: %+v", spec.Hooks)
-	log.Debugf("Spec.Linux: %+v", spec.Linux)
-	if spec.Linux != nil && spec.Linux.Resources != nil {
-		res := spec.Linux.Resources
-		log.Debugf("Spec.Linux.Resources.Memory: %+v", res.Memory)
-		log.Debugf("Spec.Linux.Resources.CPU: %+v", res.CPU)
-		log.Debugf("Spec.Linux.Resources.BlockIO: %+v", res.BlockIO)
-		log.Debugf("Spec.Linux.Resources.Network: %+v", res.Network)
+func LogSpec(orig *specs.Spec) {
+	if !log.IsLogging(log.Debug) {
+		return
 	}
-	log.Debugf("Spec.Process: %+v", spec.Process)
-	log.Debugf("Spec.Root: %+v", spec.Root)
-	log.Debugf("Spec.Mounts: %+v", spec.Mounts)
+
+	// Strip down parts of the spec that are not interesting.
+	spec := deepcopy.Copy(orig).(*specs.Spec)
+	if spec.Process != nil {
+		spec.Process.Capabilities = nil
+	}
+	if spec.Linux != nil {
+		spec.Linux.Seccomp = nil
+		spec.Linux.MaskedPaths = nil
+		spec.Linux.ReadonlyPaths = nil
+		if spec.Linux.Resources != nil {
+			spec.Linux.Resources.Devices = nil
+		}
+	}
+
+	out, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		log.Debugf("Failed to marshal spec: %v", err)
+		return
+	}
+	log.Debugf("Spec:\n%s", out)
 }
 
 // ValidateSpec validates that the spec is compatible with runsc.
@@ -96,11 +109,6 @@ func ValidateSpec(spec *specs.Spec) error {
 	// See kernel.Task.updateCredsForExecLocked.
 	if !spec.Process.NoNewPrivileges {
 		log.Warningf("noNewPrivileges ignored. PR_SET_NO_NEW_PRIVS is assumed to always be set.")
-	}
-
-	// TODO(gvisor.dev/issue/510): Apply seccomp to application inside sandbox.
-	if spec.Linux != nil && spec.Linux.Seccomp != nil {
-		log.Warningf("Seccomp spec is being ignored")
 	}
 
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
@@ -149,18 +157,18 @@ func OpenSpec(bundleDir string) (*os.File, error) {
 // ReadSpec reads an OCI runtime spec from the given bundle directory.
 // ReadSpec also normalizes all potential relative paths into absolute
 // path, e.g. spec.Root.Path, mount.Source.
-func ReadSpec(bundleDir string) (*specs.Spec, error) {
+func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 	specFile, err := OpenSpec(bundleDir)
 	if err != nil {
 		return nil, fmt.Errorf("error opening spec file %q: %v", filepath.Join(bundleDir, "config.json"), err)
 	}
 	defer specFile.Close()
-	return ReadSpecFromFile(bundleDir, specFile)
+	return ReadSpecFromFile(bundleDir, specFile, conf)
 }
 
 // ReadSpecFromFile reads an OCI runtime spec from the given File, and
 // normalizes all relative paths into absolute by prepending the bundle dir.
-func ReadSpecFromFile(bundleDir string, specFile *os.File) (*specs.Spec, error) {
+func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) (*specs.Spec, error) {
 	if _, err := specFile.Seek(0, os.SEEK_SET); err != nil {
 		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
 	}
@@ -183,6 +191,20 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File) (*specs.Spec, error) 
 			m.Source = absPath(bundleDir, m.Source)
 		}
 	}
+
+	// Override flags using annotation to allow customization per sandbox
+	// instance.
+	for annotation, val := range spec.Annotations {
+		const flagPrefix = "dev.gvisor.flag."
+		if strings.HasPrefix(annotation, flagPrefix) {
+			name := annotation[len(flagPrefix):]
+			log.Infof("Overriding flag: %s=%q", name, val)
+			if err := conf.Override(name, val); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &spec, nil
 }
 
@@ -311,19 +333,7 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 
 // Is9PMount returns true if the given mount can be mounted as an external gofer.
 func Is9PMount(m specs.Mount) bool {
-	var isBind bool
-	switch m.Type {
-	case "bind":
-		isBind = true
-	default:
-		for _, opt := range m.Options {
-			if opt == "bind" || opt == "rbind" {
-				isBind = true
-				break
-			}
-		}
-	}
-	return isBind && m.Source != "" && IsSupportedDevMount(m)
+	return m.Type == "bind" && m.Source != "" && IsSupportedDevMount(m)
 }
 
 // IsSupportedDevMount returns true if the mount is a supported /dev mount.
@@ -454,36 +464,6 @@ func ContainsStr(strs []string, str string) bool {
 		}
 	}
 	return false
-}
-
-// Cleanup allows defers to be aborted when cleanup needs to happen
-// conditionally. Usage:
-// c := MakeCleanup(func() { f.Close() })
-// defer c.Clean() // any failure before release is called will close the file.
-// ...
-// c.Release() // on success, aborts closing the file and return it.
-// return f
-type Cleanup struct {
-	clean func()
-}
-
-// MakeCleanup creates a new Cleanup object.
-func MakeCleanup(f func()) Cleanup {
-	return Cleanup{clean: f}
-}
-
-// Clean calls the cleanup function.
-func (c *Cleanup) Clean() {
-	if c.clean != nil {
-		c.clean()
-		c.clean = nil
-	}
-}
-
-// Release releases the cleanup from its duties, i.e. cleanup function is not
-// called after this point.
-func (c *Cleanup) Release() {
-	c.clean = nil
 }
 
 // RetryEintr retries the function until an error different than EINTR is

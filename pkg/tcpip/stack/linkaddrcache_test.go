@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ type testLinkAddressResolver struct {
 	onLinkAddressRequest func()
 }
 
-func (r *testLinkAddressResolver) LinkAddressRequest(addr, _ tcpip.Address, _ LinkEndpoint) *tcpip.Error {
+func (r *testLinkAddressResolver) LinkAddressRequest(addr, _ tcpip.Address, _ tcpip.LinkAddress, _ LinkEndpoint) *tcpip.Error {
 	time.AfterFunc(r.delay, func() { r.fakeRequest(addr) })
 	if f := r.onLinkAddressRequest; f != nil {
 		f()
@@ -191,7 +192,13 @@ func TestCacheReplace(t *testing.T) {
 }
 
 func TestCacheResolution(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 250*time.Millisecond, 1)
+	// There is a race condition causing this test to fail when the executor
+	// takes longer than the resolution timeout to call linkAddrCache.get. This
+	// is especially common when this test is run with gotsan.
+	//
+	// Using a large resolution timeout decreases the probability of experiencing
+	// this race condition and does not affect how long this test takes to run.
+	c := newLinkAddrCache(1<<63-1, math.MaxInt64, 1)
 	linkRes := &testLinkAddressResolver{cache: c}
 	for i, ta := range testAddrs {
 		got, err := getBlocking(c, ta.addr, linkRes)
@@ -273,5 +280,73 @@ func TestStaticResolution(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("c.get(%q)=%q, want %q", string(addr), string(got), string(want))
+	}
+}
+
+// TestCacheWaker verifies that RemoveWaker removes a waker previously added
+// through get().
+func TestCacheWaker(t *testing.T) {
+	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
+
+	// First, sanity check that wakers are working.
+	{
+		linkRes := &testLinkAddressResolver{cache: c}
+		s := sleep.Sleeper{}
+		defer s.Done()
+
+		const wakerID = 1
+		w := sleep.Waker{}
+		s.AddWaker(&w, wakerID)
+
+		e := testAddrs[0]
+
+		if _, _, err := c.get(e.addr, linkRes, "", nil, &w); err != tcpip.ErrWouldBlock {
+			t.Fatalf("got c.get(%q, _, _, _, _) = %s, want = %s", e.addr.Addr, err, tcpip.ErrWouldBlock)
+		}
+		id, ok := s.Fetch(true /* block */)
+		if !ok {
+			t.Fatal("got s.Fetch(true) = (_, false), want = (_, true)")
+		}
+		if id != wakerID {
+			t.Fatalf("got s.Fetch(true) = (%d, %t), want = (%d, true)", id, ok, wakerID)
+		}
+
+		if got, _, err := c.get(e.addr, linkRes, "", nil, nil); err != nil {
+			t.Fatalf("c.get(%q, _, _, _, _): %s", e.addr.Addr, err)
+		} else if got != e.linkAddr {
+			t.Fatalf("got c.get(%q) = %q, want = %q", e.addr.Addr, got, e.linkAddr)
+		}
+	}
+
+	// Check that RemoveWaker works.
+	{
+		linkRes := &testLinkAddressResolver{cache: c}
+		s := sleep.Sleeper{}
+		defer s.Done()
+
+		const wakerID = 2 // different than the ID used in the sanity check
+		w := sleep.Waker{}
+		s.AddWaker(&w, wakerID)
+
+		e := testAddrs[1]
+		linkRes.onLinkAddressRequest = func() {
+			// Remove the waker before the linkAddrCache has the opportunity to send
+			// a notification.
+			c.removeWaker(e.addr, &w)
+		}
+
+		if _, _, err := c.get(e.addr, linkRes, "", nil, &w); err != tcpip.ErrWouldBlock {
+			t.Fatalf("got c.get(%q, _, _, _, _) = %s, want = %s", e.addr.Addr, err, tcpip.ErrWouldBlock)
+		}
+
+		if got, err := getBlocking(c, e.addr, linkRes); err != nil {
+			t.Fatalf("c.get(%q, _, _, _, _): %s", e.addr.Addr, err)
+		} else if got != e.linkAddr {
+			t.Fatalf("c.get(%q) = %q, want = %q", e.addr.Addr, got, e.linkAddr)
+		}
+
+		if id, ok := s.Fetch(false /* block */); ok {
+			t.Fatalf("unexpected notification from waker with id %d", id)
+		}
 	}
 }

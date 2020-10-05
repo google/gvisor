@@ -441,8 +441,9 @@ func (i *inodeOperations) Release(ctx context.Context) {
 	// asynchronously.
 	//
 	// We use AsyncWithContext to avoid needing to allocate an extra
-	// anonymous function on the heap.
-	fs.AsyncWithContext(ctx, i.fileState.Release)
+	// anonymous function on the heap. We must use background context
+	// because the async work cannot happen on the task context.
+	fs.AsyncWithContext(context.Background(), i.fileState.Release)
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
@@ -640,7 +641,7 @@ func (i *inodeOperations) Allocate(ctx context.Context, inode *fs.Inode, offset,
 
 // WriteOut implements fs.InodeOperations.WriteOut.
 func (i *inodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
-	if !i.session().cachePolicy.cacheUAttrs(inode) {
+	if inode.MountSource.Flags.ReadOnly || !i.session().cachePolicy.cacheUAttrs(inode) {
 		return nil
 	}
 

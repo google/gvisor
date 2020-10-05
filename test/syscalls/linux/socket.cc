@@ -14,6 +14,7 @@
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -25,6 +26,9 @@
 
 namespace gvisor {
 namespace testing {
+
+// From linux/magic.h, but we can't depend on linux headers here.
+#define SOCKFS_MAGIC 0x534F434B
 
 TEST(SocketTest, UnixSocketPairProtocol) {
   int socks[2];
@@ -62,9 +66,7 @@ TEST(SocketTest, ProtocolInet) {
 }
 
 TEST(SocketTest, UnixSocketStat) {
-  // TODO(gvisor.dev/issue/1624): Re-enable this test once VFS1 is deleted. It
-  // should pass in VFS2.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithVFS1());
 
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
@@ -88,39 +90,25 @@ TEST(SocketTest, UnixSocketStat) {
   EXPECT_EQ(statbuf.st_mode, S_IFSOCK | sock_perm & ~mask);
 
   // Timestamps should be equal and non-zero.
-  EXPECT_NE(statbuf.st_atime, 0);
-  EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
-  EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
+  // TODO(b/158882152): Sockets currently don't implement timestamps.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_NE(statbuf.st_atime, 0);
+    EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
+    EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
+  }
 }
 
-TEST(SocketTest, UnixConnectNeedsWritePerm) {
-  // TODO(gvisor.dev/issue/1624): Re-enable this test once VFS1 is deleted. It
-  // should succeed in VFS2.
-  SKIP_IF(IsRunningOnGvisor());
+TEST(SocketTest, UnixSocketStatFS) {
+  SKIP_IF(IsRunningWithVFS1());
 
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 
-  struct sockaddr_un addr =
-      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(/*abstract=*/false, AF_UNIX));
-  ASSERT_THAT(bind(bound.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                   sizeof(addr)),
-              SyscallSucceeds());
-  ASSERT_THAT(listen(bound.get(), 1), SyscallSucceeds());
-
-  // Connect should fail without write perms.
-  ASSERT_THAT(chmod(addr.sun_path, 0500), SyscallSucceeds());
-  FileDescriptor client =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
-  EXPECT_THAT(connect(client.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                      sizeof(addr)),
-              SyscallFailsWithErrno(EACCES));
-
-  // Connect should succeed with write perms.
-  ASSERT_THAT(chmod(addr.sun_path, 0200), SyscallSucceeds());
-  EXPECT_THAT(connect(client.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                      sizeof(addr)),
-              SyscallSucceeds());
+  struct statfs st;
+  EXPECT_THAT(fstatfs(bound.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_type, SOCKFS_MAGIC);
+  EXPECT_EQ(st.f_bsize, getpagesize());
+  EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 
 using SocketOpenTest = ::testing::TestWithParam<int>;
@@ -128,10 +116,7 @@ using SocketOpenTest = ::testing::TestWithParam<int>;
 // UDS cannot be opened.
 TEST_P(SocketOpenTest, Unix) {
   // FIXME(b/142001530): Open incorrectly succeeds on gVisor.
-  //
-  // TODO(gvisor.dev/issue/1624): Re-enable this test once VFS1 is deleted. It
-  // should succeed in VFS2.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithVFS1());
 
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));

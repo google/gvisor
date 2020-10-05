@@ -239,6 +239,8 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.traceExitEvent()
 	lastExiter := t.exitThreadGroup()
 
+	t.ResetKcov()
+
 	// If the task has a cleartid, and the thread group wasn't killed by a
 	// signal, handle that before releasing the MM.
 	if t.cleartid != 0 {
@@ -246,12 +248,16 @@ func (*runExitMain) execute(t *Task) taskRunState {
 		signaled := t.tg.exiting && t.tg.exitStatus.Signaled()
 		t.tg.signalHandlers.mu.Unlock()
 		if !signaled {
-			if _, err := t.CopyOut(t.cleartid, ThreadID(0)); err == nil {
+			zero := ThreadID(0)
+			if _, err := zero.CopyOut(t, t.cleartid); err == nil {
 				t.Futex().Wake(t, t.cleartid, false, ^uint32(0), 1)
 			}
 			// If the CopyOut fails, there's nothing we can do.
 		}
 	}
+
+	// Handle the robust futex list.
+	t.exitRobustList()
 
 	// Deactivate the address space and update max RSS before releasing the
 	// task's MM.
@@ -266,12 +272,12 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// Releasing the MM unblocks a blocked CLONE_VFORK parent.
 	t.unstopVforkParent()
 
-	t.fsContext.DecRef()
-	t.fdTable.DecRef()
+	t.fsContext.DecRef(t)
+	t.fdTable.DecRef(t)
 
 	t.mu.Lock()
 	if t.mountNamespaceVFS2 != nil {
-		t.mountNamespaceVFS2.DecRef()
+		t.mountNamespaceVFS2.DecRef(t)
 		t.mountNamespaceVFS2 = nil
 	}
 	t.mu.Unlock()
@@ -279,7 +285,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.
 	if lastExiter {
-		t.tg.release()
+		t.tg.release(t)
 	}
 
 	// Detach tracees.

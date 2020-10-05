@@ -45,6 +45,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/iovec"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -385,32 +386,40 @@ const (
 	_VIRTIO_NET_HDR_GSO_TCPV6 = 4
 )
 
-// WritePacket writes outbound packets to the file descriptor. If it is not
-// currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
-		eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
-		pkt.LinkHeader = buffer.View(eth)
+		eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 		ethHdr := &header.EthernetFields{
-			DstAddr: r.RemoteLinkAddress,
+			DstAddr: remote,
 			Type:    protocol,
 		}
 
 		// Preserve the src address if it's set in the route.
-		if r.LocalLinkAddress != "" {
-			ethHdr.SrcAddr = r.LocalLinkAddress
+		if local != "" {
+			ethHdr.SrcAddr = local
 		} else {
 			ethHdr.SrcAddr = e.addr
 		}
 		eth.Encode(ethHdr)
 	}
+}
+
+// WritePacket writes outbound packets to the file descriptor. If it is not
+// currently writable, the packet is dropped.
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	if e.hdrSize > 0 {
+		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
+	}
+
+	var builder iovec.Builder
 
 	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
 	if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		vnetHdr := virtioNetHdr{}
 		if gso != nil {
-			vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
+			vnetHdr.hdrLen = uint16(pkt.HeaderSize())
 			if gso.NeedsCsum {
 				vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
 				vnetHdr.csumStart = header.EthernetMinimumSize + gso.L3HdrLen
@@ -430,49 +439,28 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 		}
 
 		vnetHdrBuf := binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
-		return rawfile.NonBlockingWrite3(fd, vnetHdrBuf, pkt.Header.View(), pkt.Data.ToView())
+		builder.Add(vnetHdrBuf)
 	}
 
-	if pkt.Data.Size() == 0 {
-		return rawfile.NonBlockingWrite(fd, pkt.Header.View())
+	for _, v := range pkt.Views() {
+		builder.Add(v)
 	}
-	if pkt.Header.UsedLength() == 0 {
-		return rawfile.NonBlockingWrite(fd, pkt.Data.ToView())
-	}
-
-	return rawfile.NonBlockingWrite3(fd, pkt.Header.View(), pkt.Data.ToView(), nil)
+	return rawfile.NonBlockingWriteIovec(fd, builder.Build())
 }
 
 func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tcpip.Error) {
 	// Send a batch of packets through batchFD.
 	mmsgHdrs := make([]rawfile.MMsgHdr, 0, len(batch))
 	for _, pkt := range batch {
-		var ethHdrBuf []byte
-		iovLen := 0
 		if e.hdrSize > 0 {
-			// Add ethernet header if needed.
-			ethHdrBuf = make([]byte, header.EthernetMinimumSize)
-			eth := header.Ethernet(ethHdrBuf)
-			ethHdr := &header.EthernetFields{
-				DstAddr: pkt.EgressRoute.RemoteLinkAddress,
-				Type:    pkt.NetworkProtocolNumber,
-			}
-
-			// Preserve the src address if it's set in the route.
-			if pkt.EgressRoute.LocalLinkAddress != "" {
-				ethHdr.SrcAddr = pkt.EgressRoute.LocalLinkAddress
-			} else {
-				ethHdr.SrcAddr = e.addr
-			}
-			eth.Encode(ethHdr)
-			iovLen++
+			e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 		}
 
-		vnetHdr := virtioNetHdr{}
 		var vnetHdrBuf []byte
 		if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
+			vnetHdr := virtioNetHdr{}
 			if pkt.GSOOptions != nil {
-				vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
+				vnetHdr.hdrLen = uint16(pkt.HeaderSize())
 				if pkt.GSOOptions.NeedsCsum {
 					vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
 					vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
@@ -491,45 +479,18 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 				}
 			}
 			vnetHdrBuf = binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
-			iovLen++
 		}
 
-		iovecs := make([]syscall.Iovec, iovLen+1+len(pkt.Data.Views()))
+		var builder iovec.Builder
+		builder.Add(vnetHdrBuf)
+		for _, v := range pkt.Views() {
+			builder.Add(v)
+		}
+		iovecs := builder.Build()
+
 		var mmsgHdr rawfile.MMsgHdr
 		mmsgHdr.Msg.Iov = &iovecs[0]
-		iovecIdx := 0
-		if vnetHdrBuf != nil {
-			v := &iovecs[iovecIdx]
-			v.Base = &vnetHdrBuf[0]
-			v.Len = uint64(len(vnetHdrBuf))
-			iovecIdx++
-		}
-		if ethHdrBuf != nil {
-			v := &iovecs[iovecIdx]
-			v.Base = &ethHdrBuf[0]
-			v.Len = uint64(len(ethHdrBuf))
-			iovecIdx++
-		}
-		pktSize := uint64(0)
-		// Encode L3 Header
-		v := &iovecs[iovecIdx]
-		hdr := &pkt.Header
-		hdrView := hdr.View()
-		v.Base = &hdrView[0]
-		v.Len = uint64(len(hdrView))
-		pktSize += v.Len
-		iovecIdx++
-
-		// Now encode the Transport Payload.
-		pktViews := pkt.Data.Views()
-		for i := range pktViews {
-			vec := &iovecs[iovecIdx]
-			iovecIdx++
-			vec.Base = &pktViews[i][0]
-			vec.Len = uint64(len(pktViews[i]))
-			pktSize += vec.Len
-		}
-		mmsgHdr.Msg.Iovlen = uint64(iovecIdx)
+		mmsgHdr.Msg.Iovlen = uint64(len(iovecs))
 		mmsgHdrs = append(mmsgHdrs, mmsgHdr)
 	}
 
@@ -626,6 +587,14 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return e.gsoMaxSize
 }
 
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
+	if e.hdrSize > 0 {
+		return header.ARPHardwareEther
+	}
+	return header.ARPHardwareNone
+}
+
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes
 // to the FD, but does not read from it. All reads come from injected packets.
 type InjectableEndpoint struct {
@@ -641,8 +610,8 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, pkt)
+func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, pkt)
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.

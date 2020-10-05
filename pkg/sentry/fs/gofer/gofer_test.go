@@ -232,7 +232,7 @@ func TestRevalidation(t *testing.T) {
 
 			// We must release the dirent, of the test will fail
 			// with a reference leak. This is tracked by p9test.
-			defer dirent.DecRef()
+			defer dirent.DecRef(ctx)
 
 			// Walk again. Depending on the cache policy, we may
 			// get a new dirent.
@@ -246,7 +246,7 @@ func TestRevalidation(t *testing.T) {
 			if !test.preModificationWantReload && dirent != newDirent {
 				t.Errorf("Lookup with cachePolicy=%s got new dirent %+v, wanted old dirent %+v", test.cachePolicy, newDirent, dirent)
 			}
-			newDirent.DecRef() // See above.
+			newDirent.DecRef(ctx) // See above.
 
 			// Modify the underlying mocked file's modification
 			// time for the next walk that occurs.
@@ -287,7 +287,7 @@ func TestRevalidation(t *testing.T) {
 			if test.postModificationWantUpdatedAttrs && gotModTimeSeconds != nowSeconds {
 				t.Fatalf("Lookup with cachePolicy=%s got new modification time %v, wanted %v", test.cachePolicy, gotModTimeSeconds, nowSeconds)
 			}
-			newDirent.DecRef() // See above.
+			newDirent.DecRef(ctx) // See above.
 
 			// Remove the file from the remote fs, subsequent walks
 			// should now fail to find anything.
@@ -303,7 +303,7 @@ func TestRevalidation(t *testing.T) {
 				t.Errorf("Lookup with cachePolicy=%s got new dirent and error %v, wanted old dirent and nil error", test.cachePolicy, err)
 			}
 			if err == nil {
-				newDirent.DecRef() // See above.
+				newDirent.DecRef(ctx) // See above.
 			}
 		})
 	}

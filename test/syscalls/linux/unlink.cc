@@ -208,6 +208,20 @@ TEST(RmdirTest, CanRemoveWithTrailingSlashes) {
   ASSERT_THAT(rmdir(slashslash.c_str()), SyscallSucceeds());
 }
 
+TEST(UnlinkTest, UnlinkAtEmptyPath) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  EXPECT_THAT(unlinkat(fd.get(), "", 0), SyscallFailsWithErrno(ENOENT));
+
+  auto dirInDir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  auto dirFD = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(dirInDir.path(), O_RDONLY | O_DIRECTORY, 0666));
+  EXPECT_THAT(unlinkat(dirFD.get(), "", AT_REMOVEDIR),
+              SyscallFailsWithErrno(ENOENT));
+}
+
 }  // namespace
 
 }  // namespace testing

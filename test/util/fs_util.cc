@@ -15,7 +15,11 @@
 #include "test/util/fs_util.h"
 
 #include <dirent.h>
+#ifdef __linux__
+#include <linux/magic.h>
+#endif  // __linux__
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -125,12 +129,12 @@ PosixErrorOr<struct stat> Fstat(int fd) {
 
 PosixErrorOr<bool> Exists(absl::string_view path) {
   struct stat stat_buf;
-  int res = stat(std::string(path).c_str(), &stat_buf);
+  int res = lstat(std::string(path).c_str(), &stat_buf);
   if (res < 0) {
     if (errno == ENOENT) {
       return false;
     }
-    return PosixError(errno, absl::StrCat("stat ", path));
+    return PosixError(errno, absl::StrCat("lstat ", path));
   }
   return true;
 }
@@ -627,6 +631,36 @@ PosixErrorOr<std::string> ProcessExePath(int pid) {
   }
 
   return ReadLink(absl::StrCat("/proc/", pid, "/exe"));
+}
+
+#ifdef __linux__
+PosixErrorOr<bool> IsTmpfs(const std::string& path) {
+  struct statfs stat;
+  if (statfs(path.c_str(), &stat)) {
+    if (errno == ENOENT) {
+      // Nothing at path, don't raise this as an error. Instead, just report no
+      // tmpfs at path.
+      return false;
+    }
+    return PosixError(errno,
+                      absl::StrFormat("statfs(\"%s\", %#p)", path, &stat));
+  }
+  return stat.f_type == TMPFS_MAGIC;
+}
+#endif  // __linux__
+
+PosixErrorOr<bool> IsOverlayfs(const std::string& path) {
+  struct statfs stat;
+  if (statfs(path.c_str(), &stat)) {
+    if (errno == ENOENT) {
+      // Nothing at path, don't raise this as an error. Instead, just report no
+      // overlayfs at path.
+      return false;
+    }
+    return PosixError(errno,
+                      absl::StrFormat("statfs(\"%s\", %#p)", path, &stat));
+  }
+  return stat.f_type == OVERLAYFS_SUPER_MAGIC;
 }
 
 }  // namespace testing

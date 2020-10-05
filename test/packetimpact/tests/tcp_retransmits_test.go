@@ -21,54 +21,54 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestRetransmits tests retransmits occur at exponentially increasing
 // time intervals.
 func TestRetransmits(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	defer dut.Close(listenFd)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
-	defer conn.Close()
+	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFd)
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	defer conn.Close(t)
 
-	conn.Handshake()
-	acceptFd, _ := dut.Accept(listenFd)
-	defer dut.Close(acceptFd)
+	conn.Connect(t)
+	acceptFd, _ := dut.Accept(t, listenFd)
+	defer dut.Close(t, acceptFd)
 
-	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 	sampleData := []byte("Sample Data")
-	samplePayload := &tb.Payload{Bytes: sampleData}
+	samplePayload := &testbench.Payload{Bytes: sampleData}
 
-	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	dut.Send(t, acceptFd, sampleData, 0)
+	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	// Give a chance for the dut to estimate RTO with RTT from the DATA-ACK.
 	// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
 	// we can skip sending this ACK.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
 	startRTO := time.Second
 	current := startRTO
 	first := time.Now()
-	dut.Send(acceptFd, sampleData, 0)
-	seq := tb.Uint32(uint32(*conn.RemoteSeqNum()))
-	if _, err := conn.ExpectData(&tb.TCP{SeqNum: seq}, samplePayload, startRTO); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	dut.Send(t, acceptFd, sampleData, 0)
+	seq := testbench.Uint32(uint32(*conn.RemoteSeqNum(t)))
+	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, startRTO); err != nil {
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	// Expect retransmits of the same segment.
 	for i := 0; i < 5; i++ {
 		start := time.Now()
-		if _, err := conn.ExpectData(&tb.TCP{SeqNum: seq}, samplePayload, 2*current); err != nil {
-			t.Fatalf("expected a packet with payload %v: %s loop %d", samplePayload, err, i)
+		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, 2*current); err != nil {
+			t.Fatalf("expected payload was not received: %s loop %d", err, i)
 		}
 		if i == 0 {
 			startRTO = time.Now().Sub(first)
@@ -77,7 +77,7 @@ func TestRetransmits(t *testing.T) {
 		}
 		// Check if the probes came at exponentially increasing intervals.
 		if p := time.Since(start); p < current-startRTO {
-			t.Fatalf("retransmit came sooner interval %d probe %d\n", p, i)
+			t.Fatalf("retransmit came sooner interval %d probe %d", p, i)
 		}
 		current *= 2
 	}

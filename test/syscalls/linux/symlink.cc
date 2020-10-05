@@ -218,6 +218,36 @@ TEST(SymlinkTest, PreadFromSymlink) {
   EXPECT_THAT(unlink(linkname.c_str()), SyscallSucceeds());
 }
 
+TEST(SymlinkTest, PwriteToSymlink) {
+  std::string name = NewTempAbsPath();
+  int fd;
+  ASSERT_THAT(fd = open(name.c_str(), O_CREAT, 0644), SyscallSucceeds());
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+
+  std::string linkname = NewTempAbsPath();
+  ASSERT_THAT(symlink(name.c_str(), linkname.c_str()), SyscallSucceeds());
+
+  ASSERT_THAT(fd = open(linkname.c_str(), O_WRONLY), SyscallSucceeds());
+
+  const int data_size = 10;
+  const std::string data = std::string(data_size, 'a');
+  EXPECT_THAT(pwrite64(fd, data.c_str(), data.size(), 0),
+              SyscallSucceedsWithValue(data.size()));
+
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+  ASSERT_THAT(fd = open(name.c_str(), O_RDONLY), SyscallSucceeds());
+
+  char buf[data_size + 1];
+  EXPECT_THAT(pread64(fd, buf, data.size(), 0), SyscallSucceeds());
+  buf[data.size()] = '\0';
+  EXPECT_STREQ(buf, data.c_str());
+
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+
+  EXPECT_THAT(unlink(name.c_str()), SyscallSucceeds());
+  EXPECT_THAT(unlink(linkname.c_str()), SyscallSucceeds());
+}
+
 TEST(SymlinkTest, SymlinkAtDegradedPermissions_NoRandomSave) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
@@ -295,6 +325,16 @@ TEST(SymlinkTest, FollowUpdatesATime) {
   struct stat st_after_follow;
   ASSERT_THAT(lstat(link.c_str(), &st_after_follow), SyscallSucceeds());
   EXPECT_LT(st_before_follow.st_atime, st_after_follow.st_atime);
+}
+
+TEST(SymlinkTest, SymlinkAtEmptyPath) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY, 0666));
+  EXPECT_THAT(symlinkat(file.path().c_str(), fd.get(), ""),
+              SyscallFailsWithErrno(ENOENT));
 }
 
 class ParamSymlinkTest : public ::testing::TestWithParam<std::string> {};

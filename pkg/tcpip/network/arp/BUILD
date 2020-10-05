@@ -10,6 +10,7 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/header/parse",
         "//pkg/tcpip/stack",
     ],
 )
@@ -28,5 +29,6 @@ go_test(
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/icmp",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

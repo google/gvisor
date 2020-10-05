@@ -84,9 +84,9 @@ BENCHMARK(BM_FutexWaitNop)->MinTime(5);
 // changes, such that it always times out. Timeout overhead can be estimated by
 // timer overruns for short timeouts.
 void BM_FutexWaitMonotonicTimeout(benchmark::State& state) {
-  const int timeout_ns = state.range(0);
+  const absl::Duration timeout = absl::Nanoseconds(state.range(0));
   std::atomic<int32_t> v(0);
-  auto ts = absl::ToTimespec(absl::Nanoseconds(timeout_ns));
+  auto ts = absl::ToTimespec(timeout);
 
   for (auto _ : state) {
     TEST_PCHECK(FutexWaitMonotonicTimeout(&v, 0, &ts) == -1 &&

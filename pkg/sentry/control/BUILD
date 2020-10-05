@@ -16,14 +16,12 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/context",
         "//pkg/fd",
-        "//pkg/fspath",
         "//pkg/log",
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/host",
-        "//pkg/sentry/fsbridge",
+        "//pkg/sentry/fs/user",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -35,10 +33,8 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sentry/watchdog",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/tcpip/link/sniffer",
         "//pkg/urpc",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

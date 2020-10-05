@@ -40,6 +40,8 @@ go_library(
         "endpoint_state.go",
         "forwarder.go",
         "protocol.go",
+        "rack.go",
+        "rack_state.go",
         "rcv.go",
         "rcv_state.go",
         "reno.go",
@@ -49,6 +51,7 @@ go_library(
         "segment_heap.go",
         "segment_queue.go",
         "segment_state.go",
+        "segment_unsafe.go",
         "snd.go",
         "snd_state.go",
         "tcp_endpoint_list.go",
@@ -66,6 +69,7 @@ go_library(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/hash/jenkins",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/header/parse",
         "//pkg/tcpip/ports",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
@@ -76,22 +80,21 @@ go_library(
 )
 
 go_test(
-    name = "tcp_test",
+    name = "tcp_x_test",
     size = "medium",
     srcs = [
         "dual_stack_test.go",
         "sack_scoreboard_test.go",
         "tcp_noracedetector_test.go",
+        "tcp_rack_test.go",
         "tcp_sack_test.go",
         "tcp_test.go",
         "tcp_timestamp_test.go",
     ],
-    # FIXME(b/68809571)
-    tags = [
-        "flaky",
-    ],
+    shard_count = 10,
     deps = [
         ":tcp",
+        "//pkg/rand",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
@@ -118,4 +121,12 @@ go_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
     ],
+)
+
+go_test(
+    name = "tcp_test",
+    size = "small",
+    srcs = ["timer_test.go"],
+    library = ":tcp",
+    deps = ["//pkg/sleep"],
 )

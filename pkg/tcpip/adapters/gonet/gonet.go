@@ -245,7 +245,7 @@ func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
 
 // Accept implements net.Conn.Accept.
 func (l *TCPListener) Accept() (net.Conn, error) {
-	n, wq, err := l.ep.Accept()
+	n, wq, err := l.ep.Accept(nil)
 
 	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
@@ -254,7 +254,7 @@ func (l *TCPListener) Accept() (net.Conn, error) {
 		defer l.wq.EventUnregister(&waitEntry)
 
 		for {
-			n, wq, err = l.ep.Accept()
+			n, wq, err = l.ep.Accept(nil)
 
 			if err != tcpip.ErrWouldBlock {
 				break
@@ -335,6 +335,11 @@ func (c *TCPConn) Read(b []byte) (int, error) {
 	deadline := c.readCancel()
 
 	numRead := 0
+	defer func() {
+		if numRead != 0 {
+			c.ep.ModerateRecvBuf(numRead)
+		}
+	}()
 	for numRead != len(b) {
 		if len(c.read) == 0 {
 			var err error
@@ -536,7 +541,7 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 		case <-notifyCh:
 		}
 
-		err = ep.GetSockOpt(tcpip.ErrorOption{})
+		err = ep.LastError()
 	}
 	if err != nil {
 		ep.Close()

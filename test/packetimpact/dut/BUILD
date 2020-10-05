@@ -16,3 +16,13 @@ cc_binary(
         "//test/packetimpact/proto:posix_server_cc_proto",
     ],
 )
+
+cc_binary(
+    name = "posix_server_dynamic",
+    srcs = ["posix_server.cc"],
+    deps = [
+        grpcpp,
+        "//test/packetimpact/proto:posix_server_cc_grpc_proto",
+        "//test/packetimpact/proto:posix_server_cc_proto",
+    ],
+)

@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/safemem"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -30,6 +31,8 @@ import (
 // regularFile represents a regular file's inode. This too follows the
 // inheritance pattern prevelant in the vfs layer described in
 // pkg/sentry/vfs/README.md.
+//
+// +stateify savable
 type regularFile struct {
 	inode inode
 
@@ -43,28 +46,19 @@ type regularFile struct {
 
 // newRegularFile is the regularFile constructor. It figures out what kind of
 // file this is and initializes the fileReader.
-func newRegularFile(inode inode) (*regularFile, error) {
-	regFile := regularFile{
-		inode: inode,
-	}
-
-	inodeFlags := inode.diskInode.Flags()
-
-	if inodeFlags.Extents {
-		file, err := newExtentFile(regFile)
+func newRegularFile(args inodeArgs) (*regularFile, error) {
+	if args.diskInode.Flags().Extents {
+		file, err := newExtentFile(args)
 		if err != nil {
 			return nil, err
 		}
-
-		file.regFile.inode.impl = &file.regFile
 		return &file.regFile, nil
 	}
 
-	file, err := newBlockMapFile(regFile)
+	file, err := newBlockMapFile(args)
 	if err != nil {
 		return nil, err
 	}
-	file.regFile.inode.impl = &file.regFile
 	return &file.regFile, nil
 }
 
@@ -75,18 +69,21 @@ func (in *inode) isRegular() bool {
 
 // directoryFD represents a directory file description. It implements
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type regularFileFD struct {
 	fileDescription
+	vfs.LockFD
 
 	// off is the file offset. off is accessed using atomic memory operations.
 	off int64
 
 	// offMu serializes operations that may mutate off.
-	offMu sync.Mutex
+	offMu sync.Mutex `state:"nosave"`
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *regularFileFD) Release() {}
+func (fd *regularFileFD) Release(context.Context) {}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
@@ -156,4 +153,14 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	// TODO(b/134676337): Implement mmap(2).
 	return syserror.ENODEV
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (fd *regularFileFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	return fd.Locks().LockPOSIX(ctx, &fd.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (fd *regularFileFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return fd.Locks().UnlockPOSIX(ctx, &fd.vfsfd, uid, start, length, whence)
 }

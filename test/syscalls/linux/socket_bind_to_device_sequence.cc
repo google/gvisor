@@ -180,7 +180,7 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
  private:
   SocketKind socket_factory_;
   // devices maps from the device id in the test case to the name of the device.
-  std::unordered_map<int, string> devices_;
+  absl::node_hash_map<int, string> devices_;
   // These are the tunnels that were created for the test and will be destroyed
   // by the destructor.
   vector<std::unique_ptr<Tunnel>> tunnels_;
@@ -363,9 +363,6 @@ TEST_P(BindToDeviceSequenceTest, BindTwiceWithReuseOnce) {
 }
 
 TEST_P(BindToDeviceSequenceTest, BindWithReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   ASSERT_NO_FATAL_FAILURE(
       BindSocket(/* reusePort */ false, /* reuse_addr */ true));
   ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
@@ -405,9 +402,6 @@ TEST_P(BindToDeviceSequenceTest, BindReuseAddrReusePortThenReusePort) {
 }
 
 TEST_P(BindToDeviceSequenceTest, BindReuseAddrReusePortThenReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
                                      /* reuse_addr */ true,
                                      /* bind_to_device */ 0));
@@ -434,9 +428,6 @@ TEST_P(BindToDeviceSequenceTest, BindDoubleReuseAddrReusePortThenReusePort) {
 }
 
 TEST_P(BindToDeviceSequenceTest, BindDoubleReuseAddrReusePortThenReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   ASSERT_NO_FATAL_FAILURE(BindSocket(
       /* reuse_port */ true, /* reuse_addr */ true, /* bind_to_device */ 0));
   ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
@@ -469,10 +460,20 @@ TEST_P(BindToDeviceSequenceTest, BindReuseAddrThenReuseAddr) {
                                      /* bind_to_device */ 0, EADDRINUSE));
 }
 
-// This behavior seems like a bug?
 TEST_P(BindToDeviceSequenceTest,
        BindReuseAddrThenReuseAddrReusePortThenReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  // The behavior described in this test seems like a Linux bug. It doesn't
+  // make any sense and it is unlikely that any applications rely on it.
+  //
+  // Both SO_REUSEADDR and SO_REUSEPORT allow binding multiple UDP sockets to
+  // the same address and deliver each packet to exactly one of the bound
+  // sockets. If both are enabled, one of the strategies is selected to route
+  // packets. The strategy is selected dynamically based on the settings of the
+  // currently bound sockets. Usually, the strategy is selected based on the
+  // common setting (SO_REUSEADDR or SO_REUSEPORT) amongst the sockets, but for
+  // some reason, Linux allows binding sets of sockets with no overlapping
+  // settings in some situations. In this case, it is not obvious which strategy
+  // would be selected as the configured setting is a contradiction.
   SKIP_IF(IsRunningOnGvisor());
 
   ASSERT_NO_FATAL_FAILURE(BindSocket(

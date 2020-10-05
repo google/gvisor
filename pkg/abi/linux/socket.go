@@ -14,7 +14,10 @@
 
 package linux
 
-import "gvisor.dev/gvisor/pkg/binary"
+import (
+	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/marshal"
+)
 
 // Address families, from linux/socket.h.
 const (
@@ -83,7 +86,6 @@ const (
 	MSG_MORE             = 0x8000
 	MSG_WAITFORONE       = 0x10000
 	MSG_SENDPAGE_NOTLAST = 0x20000
-	MSG_REINJECT         = 0x8000000
 	MSG_ZEROCOPY         = 0x4000000
 	MSG_FASTOPEN         = 0x20000000
 	MSG_CMSG_CLOEXEC     = 0x40000000
@@ -132,6 +134,15 @@ const (
 	SHUT_RD   = 0
 	SHUT_WR   = 1
 	SHUT_RDWR = 2
+)
+
+// Packet types from <linux/if_packet.h>
+const (
+	PACKET_HOST      = 0 // To us
+	PACKET_BROADCAST = 1 // To all
+	PACKET_MULTICAST = 2 // To group
+	PACKET_OTHERHOST = 3 // To someone else
+	PACKET_OUTGOING  = 4 // Outgoing of any type
 )
 
 // Socket options from socket.h.
@@ -225,14 +236,18 @@ const (
 const SockAddrMax = 128
 
 // InetAddr is struct in_addr, from uapi/linux/in.h.
+//
+// +marshal
 type InetAddr [4]byte
 
 // SockAddrInet is struct sockaddr_in, from uapi/linux/in.h.
+//
+// +marshal
 type SockAddrInet struct {
 	Family uint16
 	Port   uint16
 	Addr   InetAddr
-	Zero   [8]uint8 // pad to sizeof(struct sockaddr).
+	_      [8]uint8 // pad to sizeof(struct sockaddr).
 }
 
 // InetMulticastRequest is struct ip_mreq, from uapi/linux/in.h.
@@ -247,7 +262,14 @@ type InetMulticastRequestWithNIC struct {
 	InterfaceIndex int32
 }
 
+// Inet6Addr is struct in6_addr, from uapi/linux/in6.h.
+//
+// +marshal
+type Inet6Addr [16]byte
+
 // SockAddrInet6 is struct sockaddr_in6, from uapi/linux/in6.h.
+//
+// +marshal
 type SockAddrInet6 struct {
 	Family   uint16
 	Port     uint16
@@ -257,6 +279,8 @@ type SockAddrInet6 struct {
 }
 
 // SockAddrLink is a struct sockaddr_ll, from uapi/linux/if_packet.h.
+//
+// +marshal
 type SockAddrLink struct {
 	Family          uint16
 	Protocol        uint16
@@ -273,6 +297,8 @@ type SockAddrLink struct {
 const UnixPathMax = 108
 
 // SockAddrUnix is struct sockaddr_un, from uapi/linux/un.h.
+//
+// +marshal
 type SockAddrUnix struct {
 	Family uint16
 	Path   [UnixPathMax]int8
@@ -282,6 +308,8 @@ type SockAddrUnix struct {
 // equivalent to struct sockaddr. SockAddr ensures that a well-defined set of
 // types can be used as socket addresses.
 type SockAddr interface {
+	marshal.Marshallable
+
 	// implementsSockAddr exists purely to allow a type to indicate that they
 	// implement this interface. This method is a no-op and shouldn't be called.
 	implementsSockAddr()
@@ -294,6 +322,8 @@ func (s *SockAddrUnix) implementsSockAddr()    {}
 func (s *SockAddrNetlink) implementsSockAddr() {}
 
 // Linger is struct linger, from include/linux/socket.h.
+//
+// +marshal
 type Linger struct {
 	OnOff  int32
 	Linger int32
@@ -308,6 +338,8 @@ const SizeOfLinger = 8
 // the end of this struct or within existing unusued space, so its size grows
 // over time. The current iteration is based on linux v4.17. New versions are
 // always backwards compatible.
+//
+// +marshal
 type TCPInfo struct {
 	State       uint8
 	CaState     uint8
@@ -405,6 +437,8 @@ var SizeOfControlMessageHeader = int(binary.Size(ControlMessageHeader{}))
 // A ControlMessageCredentials is an SCM_CREDENTIALS socket control message.
 //
 // ControlMessageCredentials represents struct ucred from linux/socket.h.
+//
+// +marshal
 type ControlMessageCredentials struct {
 	PID int32
 	UID uint32

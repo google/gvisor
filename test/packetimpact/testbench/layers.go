@@ -15,6 +15,7 @@
 package testbench
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"reflect"
@@ -470,17 +471,11 @@ func (l *IPv6) ToBytes() ([]byte, error) {
 	if l.NextHeader != nil {
 		fields.NextHeader = *l.NextHeader
 	} else {
-		switch n := l.next().(type) {
-		case *TCP:
-			fields.NextHeader = uint8(header.TCPProtocolNumber)
-		case *UDP:
-			fields.NextHeader = uint8(header.UDPProtocolNumber)
-		case *ICMPv6:
-			fields.NextHeader = uint8(header.ICMPv6ProtocolNumber)
-		default:
-			// TODO(b/150301488): Support more protocols as needed.
-			return nil, fmt.Errorf("ToBytes can't deduce the IPv6 header's next protocol: %#v", n)
+		nh, err := nextHeaderByLayer(l.next())
+		if err != nil {
+			return nil, err
 		}
+		fields.NextHeader = nh
 	}
 	if l.HopLimit != nil {
 		fields.HopLimit = *l.HopLimit
@@ -493,6 +488,27 @@ func (l *IPv6) ToBytes() ([]byte, error) {
 	}
 	h.Encode(fields)
 	return h, nil
+}
+
+// nextIPv6PayloadParser finds the corresponding parser for nextHeader.
+func nextIPv6PayloadParser(nextHeader uint8) layerParser {
+	switch tcpip.TransportProtocolNumber(nextHeader) {
+	case header.TCPProtocolNumber:
+		return parseTCP
+	case header.UDPProtocolNumber:
+		return parseUDP
+	case header.ICMPv6ProtocolNumber:
+		return parseICMPv6
+	}
+	switch header.IPv6ExtensionHeaderIdentifier(nextHeader) {
+	case header.IPv6HopByHopOptionsExtHdrIdentifier:
+		return parseIPv6HopByHopOptionsExtHdr
+	case header.IPv6DestinationOptionsExtHdrIdentifier:
+		return parseIPv6DestinationOptionsExtHdr
+	case header.IPv6FragmentExtHdrIdentifier:
+		return parseIPv6FragmentExtHdr
+	}
+	return parsePayload
 }
 
 // parseIPv6 parses the bytes assuming that they start with an ipv6 header and
@@ -509,18 +525,7 @@ func parseIPv6(b []byte) (Layer, layerParser) {
 		SrcAddr:       Address(h.SourceAddress()),
 		DstAddr:       Address(h.DestinationAddress()),
 	}
-	var nextParser layerParser
-	switch h.TransportProtocol() {
-	case header.TCPProtocolNumber:
-		nextParser = parseTCP
-	case header.UDPProtocolNumber:
-		nextParser = parseUDP
-	case header.ICMPv6ProtocolNumber:
-		nextParser = parseICMPv6
-	default:
-		// Assume that the rest is a payload.
-		nextParser = parsePayload
-	}
+	nextParser := nextIPv6PayloadParser(h.NextHeader())
 	return &ipv6, nextParser
 }
 
@@ -538,13 +543,241 @@ func (l *IPv6) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
 
+// IPv6HopByHopOptionsExtHdr can construct and match an IPv6HopByHopOptions
+// Extension Header.
+type IPv6HopByHopOptionsExtHdr struct {
+	LayerBase
+	NextHeader *header.IPv6ExtensionHeaderIdentifier
+	Options    []byte
+}
+
+// IPv6DestinationOptionsExtHdr can construct and match an IPv6DestinationOptions
+// Extension Header.
+type IPv6DestinationOptionsExtHdr struct {
+	LayerBase
+	NextHeader *header.IPv6ExtensionHeaderIdentifier
+	Options    []byte
+}
+
+// IPv6FragmentExtHdr can construct and match an IPv6 Fragment Extension Header.
+type IPv6FragmentExtHdr struct {
+	LayerBase
+	NextHeader     *header.IPv6ExtensionHeaderIdentifier
+	FragmentOffset *uint16
+	MoreFragments  *bool
+	Identification *uint32
+}
+
+// nextHeaderByLayer finds the correct next header protocol value for layer l.
+func nextHeaderByLayer(l Layer) (uint8, error) {
+	if l == nil {
+		return uint8(header.IPv6NoNextHeaderIdentifier), nil
+	}
+	switch l.(type) {
+	case *TCP:
+		return uint8(header.TCPProtocolNumber), nil
+	case *UDP:
+		return uint8(header.UDPProtocolNumber), nil
+	case *ICMPv6:
+		return uint8(header.ICMPv6ProtocolNumber), nil
+	case *Payload:
+		return uint8(header.IPv6NoNextHeaderIdentifier), nil
+	case *IPv6HopByHopOptionsExtHdr:
+		return uint8(header.IPv6HopByHopOptionsExtHdrIdentifier), nil
+	case *IPv6DestinationOptionsExtHdr:
+		return uint8(header.IPv6DestinationOptionsExtHdrIdentifier), nil
+	case *IPv6FragmentExtHdr:
+		return uint8(header.IPv6FragmentExtHdrIdentifier), nil
+	default:
+		// TODO(b/161005083): Support more protocols as needed.
+		return 0, fmt.Errorf("failed to deduce the IPv6 header's next protocol: %T", l)
+	}
+}
+
+// ipv6OptionsExtHdrToBytes serializes an options extension header into bytes.
+func ipv6OptionsExtHdrToBytes(nextHeader *header.IPv6ExtensionHeaderIdentifier, nextLayer Layer, options []byte) ([]byte, error) {
+	length := len(options) + 2
+	if length%8 != 0 {
+		return nil, fmt.Errorf("IPv6 extension headers must be a multiple of 8 octets long, but the length given: %d, options: %s", length, hex.Dump(options))
+	}
+	bytes := make([]byte, length)
+	if nextHeader != nil {
+		bytes[0] = byte(*nextHeader)
+	} else {
+		nh, err := nextHeaderByLayer(nextLayer)
+		if err != nil {
+			return nil, err
+		}
+		bytes[0] = nh
+	}
+	// ExtHdrLen field is the length of the extension header
+	// in 8-octet unit, ignoring the first 8 octets.
+	// https://tools.ietf.org/html/rfc2460#section-4.3
+	// https://tools.ietf.org/html/rfc2460#section-4.6
+	bytes[1] = uint8((length - 8) / 8)
+	copy(bytes[2:], options)
+	return bytes, nil
+}
+
+// IPv6ExtHdrIdent is a helper routine that allocates a new
+// header.IPv6ExtensionHeaderIdentifier value to store v and returns a pointer
+// to it.
+func IPv6ExtHdrIdent(id header.IPv6ExtensionHeaderIdentifier) *header.IPv6ExtensionHeaderIdentifier {
+	return &id
+}
+
+// ToBytes implements Layer.ToBytes.
+func (l *IPv6HopByHopOptionsExtHdr) ToBytes() ([]byte, error) {
+	return ipv6OptionsExtHdrToBytes(l.NextHeader, l.next(), l.Options)
+}
+
+// ToBytes implements Layer.ToBytes.
+func (l *IPv6DestinationOptionsExtHdr) ToBytes() ([]byte, error) {
+	return ipv6OptionsExtHdrToBytes(l.NextHeader, l.next(), l.Options)
+}
+
+// ToBytes implements Layer.ToBytes.
+func (l *IPv6FragmentExtHdr) ToBytes() ([]byte, error) {
+	var offset, mflag uint16
+	var ident uint32
+	bytes := make([]byte, header.IPv6FragmentExtHdrLength)
+	if l.NextHeader != nil {
+		bytes[0] = byte(*l.NextHeader)
+	} else {
+		nh, err := nextHeaderByLayer(l.next())
+		if err != nil {
+			return nil, err
+		}
+		bytes[0] = nh
+	}
+	bytes[1] = 0 // reserved
+	if l.MoreFragments != nil && *l.MoreFragments {
+		mflag = 1
+	}
+	if l.FragmentOffset != nil {
+		offset = *l.FragmentOffset
+	}
+	if l.Identification != nil {
+		ident = *l.Identification
+	}
+	offsetAndMflag := offset<<3 | mflag
+	binary.BigEndian.PutUint16(bytes[2:], offsetAndMflag)
+	binary.BigEndian.PutUint32(bytes[4:], ident)
+
+	return bytes, nil
+}
+
+// parseIPv6ExtHdr parses an IPv6 extension header and returns the NextHeader
+// field, the rest of the payload and a parser function for the corresponding
+// next extension header.
+func parseIPv6ExtHdr(b []byte) (header.IPv6ExtensionHeaderIdentifier, []byte, layerParser) {
+	nextHeader := b[0]
+	// For HopByHop and Destination options extension headers,
+	// This field is the length of the extension header in
+	// 8-octet units, not including the first 8 octets.
+	// https://tools.ietf.org/html/rfc2460#section-4.3
+	// https://tools.ietf.org/html/rfc2460#section-4.6
+	length := b[1]*8 + 8
+	data := b[2:length]
+	nextParser := nextIPv6PayloadParser(nextHeader)
+	return header.IPv6ExtensionHeaderIdentifier(nextHeader), data, nextParser
+}
+
+// parseIPv6HopByHopOptionsExtHdr parses the bytes assuming that they start
+// with an IPv6 HopByHop Options Extension Header.
+func parseIPv6HopByHopOptionsExtHdr(b []byte) (Layer, layerParser) {
+	nextHeader, options, nextParser := parseIPv6ExtHdr(b)
+	return &IPv6HopByHopOptionsExtHdr{NextHeader: &nextHeader, Options: options}, nextParser
+}
+
+// parseIPv6DestinationOptionsExtHdr parses the bytes assuming that they start
+// with an IPv6 Destination Options Extension Header.
+func parseIPv6DestinationOptionsExtHdr(b []byte) (Layer, layerParser) {
+	nextHeader, options, nextParser := parseIPv6ExtHdr(b)
+	return &IPv6DestinationOptionsExtHdr{NextHeader: &nextHeader, Options: options}, nextParser
+}
+
+// Bool is a helper routine that allocates a new
+// bool value to store v and returns a pointer to it.
+func Bool(v bool) *bool {
+	return &v
+}
+
+// parseIPv6FragmentExtHdr parses the bytes assuming that they start
+// with an IPv6 Fragment Extension Header.
+func parseIPv6FragmentExtHdr(b []byte) (Layer, layerParser) {
+	nextHeader := b[0]
+	var extHdr header.IPv6FragmentExtHdr
+	copy(extHdr[:], b[2:])
+	return &IPv6FragmentExtHdr{
+		NextHeader:     IPv6ExtHdrIdent(header.IPv6ExtensionHeaderIdentifier(nextHeader)),
+		FragmentOffset: Uint16(extHdr.FragmentOffset()),
+		MoreFragments:  Bool(extHdr.More()),
+		Identification: Uint32(extHdr.ID()),
+	}, nextIPv6PayloadParser(nextHeader)
+}
+
+func (l *IPv6HopByHopOptionsExtHdr) length() int {
+	return len(l.Options) + 2
+}
+
+func (l *IPv6HopByHopOptionsExtHdr) match(other Layer) bool {
+	return equalLayer(l, other)
+}
+
+// merge overrides the values in l with the values from other but only in fields
+// where the value is not nil.
+func (l *IPv6HopByHopOptionsExtHdr) merge(other Layer) error {
+	return mergeLayer(l, other)
+}
+
+func (l *IPv6HopByHopOptionsExtHdr) String() string {
+	return stringLayer(l)
+}
+
+func (l *IPv6DestinationOptionsExtHdr) length() int {
+	return len(l.Options) + 2
+}
+
+func (l *IPv6DestinationOptionsExtHdr) match(other Layer) bool {
+	return equalLayer(l, other)
+}
+
+// merge overrides the values in l with the values from other but only in fields
+// where the value is not nil.
+func (l *IPv6DestinationOptionsExtHdr) merge(other Layer) error {
+	return mergeLayer(l, other)
+}
+
+func (l *IPv6DestinationOptionsExtHdr) String() string {
+	return stringLayer(l)
+}
+
+func (*IPv6FragmentExtHdr) length() int {
+	return header.IPv6FragmentExtHdrLength
+}
+
+func (l *IPv6FragmentExtHdr) match(other Layer) bool {
+	return equalLayer(l, other)
+}
+
+// merge overrides the values in l with the values from other but only in fields
+// where the value is not nil.
+func (l *IPv6FragmentExtHdr) merge(other Layer) error {
+	return mergeLayer(l, other)
+}
+
+func (l *IPv6FragmentExtHdr) String() string {
+	return stringLayer(l)
+}
+
 // ICMPv6 can construct and match an ICMPv6 encapsulation.
 type ICMPv6 struct {
 	LayerBase
-	Type       *header.ICMPv6Type
-	Code       *byte
-	Checksum   *uint16
-	NDPPayload []byte
+	Type     *header.ICMPv6Type
+	Code     *header.ICMPv6Code
+	Checksum *uint16
+	Payload  []byte
 }
 
 func (l *ICMPv6) String() string {
@@ -555,7 +788,7 @@ func (l *ICMPv6) String() string {
 
 // ToBytes implements Layer.ToBytes.
 func (l *ICMPv6) ToBytes() ([]byte, error) {
-	b := make([]byte, header.ICMPv6HeaderSize+len(l.NDPPayload))
+	b := make([]byte, header.ICMPv6HeaderSize+len(l.Payload))
 	h := header.ICMPv6(b)
 	if l.Type != nil {
 		h.SetType(*l.Type)
@@ -563,12 +796,23 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 	if l.Code != nil {
 		h.SetCode(*l.Code)
 	}
-	copy(h.NDPPayload(), l.NDPPayload)
+	copy(h.NDPPayload(), l.Payload)
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
 	} else {
-		ipv6 := l.Prev().(*IPv6)
-		h.SetChecksum(header.ICMPv6Checksum(h, *ipv6.SrcAddr, *ipv6.DstAddr, buffer.VectorisedView{}))
+		// It is possible that the ICMPv6 header does not follow the IPv6 header
+		// immediately, there could be one or more extension headers in between.
+		// We need to search forward to find the IPv6 header.
+		for prev := l.Prev(); prev != nil; prev = prev.Prev() {
+			if ipv6, ok := prev.(*IPv6); ok {
+				payload, err := payload(l)
+				if err != nil {
+					return nil, err
+				}
+				h.SetChecksum(header.ICMPv6Checksum(h, *ipv6.SrcAddr, *ipv6.DstAddr, payload))
+				break
+			}
+		}
 	}
 	return h, nil
 }
@@ -576,6 +820,12 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 // ICMPv6Type is a helper routine that allocates a new ICMPv6Type value to store
 // v and returns a pointer to it.
 func ICMPv6Type(v header.ICMPv6Type) *header.ICMPv6Type {
+	return &v
+}
+
+// ICMPv6Code is a helper routine that allocates a new ICMPv6Type value to store
+// v and returns a pointer to it.
+func ICMPv6Code(v header.ICMPv6Code) *header.ICMPv6Code {
 	return &v
 }
 
@@ -589,10 +839,10 @@ func Byte(v byte) *byte {
 func parseICMPv6(b []byte) (Layer, layerParser) {
 	h := header.ICMPv6(b)
 	icmpv6 := ICMPv6{
-		Type:       ICMPv6Type(h.Type()),
-		Code:       Byte(h.Code()),
-		Checksum:   Uint16(h.Checksum()),
-		NDPPayload: h.NDPPayload(),
+		Type:     ICMPv6Type(h.Type()),
+		Code:     ICMPv6Code(h.Code()),
+		Checksum: Uint16(h.Checksum()),
+		Payload:  h.NDPPayload(),
 	}
 	return &icmpv6, nil
 }
@@ -602,7 +852,7 @@ func (l *ICMPv6) match(other Layer) bool {
 }
 
 func (l *ICMPv6) length() int {
-	return header.ICMPv6HeaderSize + len(l.NDPPayload)
+	return header.ICMPv6HeaderSize + len(l.Payload)
 }
 
 // merge overrides the values in l with the values from other but only in fields
@@ -617,11 +867,17 @@ func ICMPv4Type(t header.ICMPv4Type) *header.ICMPv4Type {
 	return &t
 }
 
+// ICMPv4Code is a helper routine that allocates a new header.ICMPv4Code value
+// to store t and returns a pointer to it.
+func ICMPv4Code(t header.ICMPv4Code) *header.ICMPv4Code {
+	return &t
+}
+
 // ICMPv4 can construct and match an ICMPv4 encapsulation.
 type ICMPv4 struct {
 	LayerBase
 	Type     *header.ICMPv4Type
-	Code     *uint8
+	Code     *header.ICMPv4Code
 	Checksum *uint16
 }
 
@@ -637,7 +893,7 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 		h.SetType(*l.Type)
 	}
 	if l.Code != nil {
-		h.SetCode(byte(*l.Code))
+		h.SetCode(*l.Code)
 	}
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
@@ -657,7 +913,7 @@ func parseICMPv4(b []byte) (Layer, layerParser) {
 	h := header.ICMPv4(b)
 	icmpv4 := ICMPv4{
 		Type:     ICMPv4Type(h.Type()),
-		Code:     Uint8(h.Code()),
+		Code:     ICMPv4Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
 	}
 	return &icmpv4, parsePayload
@@ -768,12 +1024,14 @@ func payload(l Layer) (buffer.VectorisedView, error) {
 func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, error) {
 	totalLength := uint16(totalLength(l))
 	var xsum uint16
-	switch s := l.Prev().(type) {
+	switch p := l.Prev().(type) {
 	case *IPv4:
-		xsum = header.PseudoHeaderChecksum(protoNumber, *s.SrcAddr, *s.DstAddr, totalLength)
+		xsum = header.PseudoHeaderChecksum(protoNumber, *p.SrcAddr, *p.DstAddr, totalLength)
+	case *IPv6:
+		xsum = header.PseudoHeaderChecksum(protoNumber, *p.SrcAddr, *p.DstAddr, totalLength)
 	default:
-		// TODO(b/150301488): Support more protocols, like IPv6.
-		return 0, fmt.Errorf("can't get src and dst addr from previous layer: %#v", s)
+		// TODO(b/161246171): Support more protocols.
+		return 0, fmt.Errorf("checksum for protocol %d is not supported when previous layer is %T", protoNumber, p)
 	}
 	payloadBytes, err := payload(l)
 	if err != nil {
@@ -937,6 +1195,11 @@ func parsePayload(b []byte) (Layer, layerParser) {
 // ToBytes implements Layer.ToBytes.
 func (l *Payload) ToBytes() ([]byte, error) {
 	return l.Bytes, nil
+}
+
+// Length returns payload byte length.
+func (l *Payload) Length() int {
+	return l.length()
 }
 
 func (l *Payload) match(other Layer) bool {

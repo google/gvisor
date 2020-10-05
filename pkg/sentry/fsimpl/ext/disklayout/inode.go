@@ -16,6 +16,7 @@ package disklayout
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
@@ -38,6 +39,8 @@ const (
 //
 // See https://www.kernel.org/doc/html/latest/filesystems/ext4/dynamic.html#index-nodes.
 type Inode interface {
+	marshal.Marshallable
+
 	// Mode returns the linux file mode which is majorly used to extract
 	// information like:
 	// - File permissions (read/write/execute by user/group/others).

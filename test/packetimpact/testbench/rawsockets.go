@@ -16,7 +16,6 @@ package testbench
 
 import (
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"math"
 	"net"
@@ -29,7 +28,6 @@ import (
 
 // Sniffer can sniff raw packets on the wire.
 type Sniffer struct {
-	t  *testing.T
 	fd int
 }
 
@@ -41,7 +39,8 @@ func htons(x uint16) uint16 {
 
 // NewSniffer creates a Sniffer connected to *device.
 func NewSniffer(t *testing.T) (Sniffer, error) {
-	flag.Parse()
+	t.Helper()
+
 	snifferFd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
 	if err != nil {
 		return Sniffer{}, err
@@ -53,7 +52,6 @@ func NewSniffer(t *testing.T) (Sniffer, error) {
 		t.Fatalf("can't setsockopt SO_RCVBUF to 10M: %s", err)
 	}
 	return Sniffer{
-		t:  t,
 		fd: snifferFd,
 	}, nil
 }
@@ -63,7 +61,9 @@ func NewSniffer(t *testing.T) (Sniffer, error) {
 const maxReadSize int = 65536
 
 // Recv tries to read one frame until the timeout is up.
-func (s *Sniffer) Recv(timeout time.Duration) []byte {
+func (s *Sniffer) Recv(t *testing.T, timeout time.Duration) []byte {
+	t.Helper()
+
 	deadline := time.Now().Add(timeout)
 	for {
 		timeout = deadline.Sub(time.Now())
@@ -77,7 +77,7 @@ func (s *Sniffer) Recv(timeout time.Duration) []byte {
 		}
 
 		if err := unix.SetsockoptTimeval(s.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv); err != nil {
-			s.t.Fatalf("can't setsockopt SO_RCVTIMEO: %s", err)
+			t.Fatalf("can't setsockopt SO_RCVTIMEO: %s", err)
 		}
 
 		buf := make([]byte, maxReadSize)
@@ -87,10 +87,10 @@ func (s *Sniffer) Recv(timeout time.Duration) []byte {
 			continue
 		}
 		if err != nil {
-			s.t.Fatalf("can't read: %s", err)
+			t.Fatalf("can't read: %s", err)
 		}
 		if nread > maxReadSize {
-			s.t.Fatalf("received a truncated frame of %d bytes", nread)
+			t.Fatalf("received a truncated frame of %d bytes, want at most %d bytes", nread, maxReadSize)
 		}
 		return buf[:nread]
 	}
@@ -98,14 +98,16 @@ func (s *Sniffer) Recv(timeout time.Duration) []byte {
 
 // Drain drains the Sniffer's socket receive buffer by receiving until there's
 // nothing else to receive.
-func (s *Sniffer) Drain() {
-	s.t.Helper()
+func (s *Sniffer) Drain(t *testing.T) {
+	t.Helper()
+
 	flags, err := unix.FcntlInt(uintptr(s.fd), unix.F_GETFL, 0)
 	if err != nil {
-		s.t.Fatalf("failed to get sniffer socket fd flags: %s", err)
+		t.Fatalf("failed to get sniffer socket fd flags: %s", err)
 	}
-	if _, err := unix.FcntlInt(uintptr(s.fd), unix.F_SETFL, flags|unix.O_NONBLOCK); err != nil {
-		s.t.Fatalf("failed to make sniffer socket non-blocking: %s", err)
+	nonBlockingFlags := flags | unix.O_NONBLOCK
+	if _, err := unix.FcntlInt(uintptr(s.fd), unix.F_SETFL, nonBlockingFlags); err != nil {
+		t.Fatalf("failed to make sniffer socket non-blocking with flags %b: %s", nonBlockingFlags, err)
 	}
 	for {
 		buf := make([]byte, maxReadSize)
@@ -115,7 +117,7 @@ func (s *Sniffer) Drain() {
 		}
 	}
 	if _, err := unix.FcntlInt(uintptr(s.fd), unix.F_SETFL, flags); err != nil {
-		s.t.Fatalf("failed to restore sniffer socket fd flags: %s", err)
+		t.Fatalf("failed to restore sniffer socket fd flags to %b: %s", flags, err)
 	}
 }
 
@@ -130,14 +132,14 @@ func (s *Sniffer) close() error {
 
 // Injector can inject raw frames.
 type Injector struct {
-	t  *testing.T
 	fd int
 }
 
 // NewInjector creates a new injector on *device.
 func NewInjector(t *testing.T) (Injector, error) {
-	flag.Parse()
-	ifInfo, err := net.InterfaceByName(Device)
+	t.Helper()
+
+	ifInfo, err := net.InterfaceByName(LocalDevice)
 	if err != nil {
 		return Injector{}, err
 	}
@@ -159,15 +161,20 @@ func NewInjector(t *testing.T) (Injector, error) {
 		return Injector{}, err
 	}
 	return Injector{
-		t:  t,
 		fd: injectFd,
 	}, nil
 }
 
 // Send a raw frame.
-func (i *Injector) Send(b []byte) {
-	if _, err := unix.Write(i.fd, b); err != nil {
-		i.t.Fatalf("can't write: %s of len %d", err, len(b))
+func (i *Injector) Send(t *testing.T, b []byte) {
+	t.Helper()
+
+	n, err := unix.Write(i.fd, b)
+	if err != nil {
+		t.Fatalf("can't write bytes of len %d: %s", len(b), err)
+	}
+	if n != len(b) {
+		t.Fatalf("got %d bytes written, want %d", n, len(b))
 	}
 }
 

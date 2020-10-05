@@ -22,6 +22,7 @@ go_library(
         "signal_info.go",
         "signal_stack.go",
         "stack.go",
+        "stack_unsafe.go",
         "syscalls_amd64.go",
         "syscalls_arm64.go",
     ],
@@ -33,11 +34,12 @@ go_library(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/sentry/limits",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",
-        "//tools/go_marshal/marshal",
     ],
 )
 

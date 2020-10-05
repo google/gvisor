@@ -16,6 +16,7 @@ package linux
 
 // BPFInstruction is a raw BPF virtual machine instruction.
 //
+// +marshal slice:BPFInstructionSlice
 // +stateify savable
 type BPFInstruction struct {
 	// OpCode is the operation to execute.

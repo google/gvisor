@@ -15,8 +15,9 @@
 package linux
 
 import (
-	"encoding/binary"
-
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -27,59 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// I/O commands.
-const (
-	_IOCB_CMD_PREAD   = 0
-	_IOCB_CMD_PWRITE  = 1
-	_IOCB_CMD_FSYNC   = 2
-	_IOCB_CMD_FDSYNC  = 3
-	_IOCB_CMD_NOOP    = 6
-	_IOCB_CMD_PREADV  = 7
-	_IOCB_CMD_PWRITEV = 8
-)
-
-// I/O flags.
-const (
-	_IOCB_FLAG_RESFD = 1
-)
-
-// ioCallback describes an I/O request.
-//
-// The priority field is currently ignored in the implementation below. Also
-// note that the IOCB_FLAG_RESFD feature is not supported.
-type ioCallback struct {
-	Data      uint64
-	Key       uint32
-	Reserved1 uint32
-
-	OpCode  uint16
-	ReqPrio int16
-	FD      int32
-
-	Buf    uint64
-	Bytes  uint64
-	Offset int64
-
-	Reserved2 uint64
-	Flags     uint32
-
-	// eventfd to signal if IOCB_FLAG_RESFD is set in flags.
-	ResFD int32
-}
-
-// ioEvent describes an I/O result.
-//
-// +stateify savable
-type ioEvent struct {
-	Data    uint64
-	Obj     uint64
-	Result  int64
-	Result2 int64
-}
-
-// ioEventSize is the size of an ioEvent encoded.
-var ioEventSize = binary.Size(ioEvent{})
-
 // IoSetup implements linux syscall io_setup(2).
 func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nrEvents := args[0].Int()
@@ -89,7 +37,7 @@ func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	//
 	// The context pointer _must_ be zero initially.
 	var idIn uint64
-	if _, err := t.CopyIn(idAddr, &idIn); err != nil {
+	if _, err := primitive.CopyUint64In(t, idAddr, &idIn); err != nil {
 		return 0, nil, err
 	}
 	if idIn != 0 {
@@ -102,7 +50,7 @@ func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	// Copy out the new ID.
-	if _, err := t.CopyOut(idAddr, &id); err != nil {
+	if _, err := primitive.CopyUint64Out(t, idAddr, id); err != nil {
 		t.MemoryManager().DestroyAIOContext(t, id)
 		return 0, nil, err
 	}
@@ -192,10 +140,10 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 			}
 		}
 
-		ev := v.(*ioEvent)
+		ev := v.(*linux.IOEvent)
 
 		// Copy out the result.
-		if _, err := t.CopyOut(eventsAddr, ev); err != nil {
+		if _, err := ev.CopyOut(t, eventsAddr); err != nil {
 			if count > 0 {
 				return uintptr(count), nil, nil
 			}
@@ -204,7 +152,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		}
 
 		// Keep rolling.
-		eventsAddr += usermem.Addr(ioEventSize)
+		eventsAddr += usermem.Addr(linux.IOEventSize)
 	}
 
 	// Everything finished.
@@ -231,7 +179,7 @@ func waitForRequest(ctx *mm.AIOContext, t *kernel.Task, haveDeadline bool, deadl
 }
 
 // memoryFor returns appropriate memory for the given callback.
-func memoryFor(t *kernel.Task, cb *ioCallback) (usermem.IOSequence, error) {
+func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error) {
 	bytes := int(cb.Bytes)
 	if bytes < 0 {
 		// Linux also requires that this field fit in ssize_t.
@@ -242,17 +190,17 @@ func memoryFor(t *kernel.Task, cb *ioCallback) (usermem.IOSequence, error) {
 	// we have no guarantee that t's AddressSpace will be active during the
 	// I/O.
 	switch cb.OpCode {
-	case _IOCB_CMD_PREAD, _IOCB_CMD_PWRITE:
+	case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PWRITE:
 		return t.SingleIOSequence(usermem.Addr(cb.Buf), bytes, usermem.IOOpts{
 			AddressSpaceActive: false,
 		})
 
-	case _IOCB_CMD_PREADV, _IOCB_CMD_PWRITEV:
+	case linux.IOCB_CMD_PREADV, linux.IOCB_CMD_PWRITEV:
 		return t.IovecsIOSequence(usermem.Addr(cb.Buf), bytes, usermem.IOOpts{
 			AddressSpaceActive: false,
 		})
 
-	case _IOCB_CMD_FSYNC, _IOCB_CMD_FDSYNC, _IOCB_CMD_NOOP:
+	case linux.IOCB_CMD_FSYNC, linux.IOCB_CMD_FDSYNC, linux.IOCB_CMD_NOOP:
 		return usermem.IOSequence{}, nil
 
 	default:
@@ -261,70 +209,78 @@ func memoryFor(t *kernel.Task, cb *ioCallback) (usermem.IOSequence, error) {
 	}
 }
 
-func performCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *ioCallback, ioseq usermem.IOSequence, ctx *mm.AIOContext, eventFile *fs.File) {
-	if ctx.Dead() {
-		ctx.CancelPendingRequest()
-		return
-	}
-	ev := &ioEvent{
-		Data: cb.Data,
-		Obj:  uint64(cbAddr),
-	}
+// IoCancel implements linux syscall io_cancel(2).
+//
+// It is not presently supported (ENOSYS indicates no support on this
+// architecture).
+func IoCancel(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return 0, nil, syserror.ENOSYS
+}
 
-	// Construct a context.Context that will not be interrupted if t is
-	// interrupted.
-	c := t.AsyncContext()
+// LINT.IfChange
 
-	var err error
-	switch cb.OpCode {
-	case _IOCB_CMD_PREAD, _IOCB_CMD_PREADV:
-		ev.Result, err = file.Preadv(c, ioseq, cb.Offset)
-	case _IOCB_CMD_PWRITE, _IOCB_CMD_PWRITEV:
-		ev.Result, err = file.Pwritev(c, ioseq, cb.Offset)
-	case _IOCB_CMD_FSYNC:
-		err = file.Fsync(c, 0, fs.FileMaxOffset, fs.SyncAll)
-	case _IOCB_CMD_FDSYNC:
-		err = file.Fsync(c, 0, fs.FileMaxOffset, fs.SyncData)
-	}
+func getAIOCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *linux.IOCallback, ioseq usermem.IOSequence, actx *mm.AIOContext, eventFile *fs.File) kernel.AIOCallback {
+	return func(ctx context.Context) {
+		if actx.Dead() {
+			actx.CancelPendingRequest()
+			return
+		}
+		ev := &linux.IOEvent{
+			Data: cb.Data,
+			Obj:  uint64(cbAddr),
+		}
 
-	// Update the result.
-	if err != nil {
-		err = handleIOError(t, ev.Result != 0 /* partial */, err, nil /* never interrupted */, "aio", file)
-		ev.Result = -int64(kernel.ExtractErrno(err, 0))
-	}
+		var err error
+		switch cb.OpCode {
+		case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PREADV:
+			ev.Result, err = file.Preadv(ctx, ioseq, cb.Offset)
+		case linux.IOCB_CMD_PWRITE, linux.IOCB_CMD_PWRITEV:
+			ev.Result, err = file.Pwritev(ctx, ioseq, cb.Offset)
+		case linux.IOCB_CMD_FSYNC:
+			err = file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncAll)
+		case linux.IOCB_CMD_FDSYNC:
+			err = file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncData)
+		}
 
-	file.DecRef()
+		// Update the result.
+		if err != nil {
+			err = handleIOError(t, ev.Result != 0 /* partial */, err, nil /* never interrupted */, "aio", file)
+			ev.Result = -int64(kernel.ExtractErrno(err, 0))
+		}
 
-	// Queue the result for delivery.
-	ctx.FinishRequest(ev)
+		file.DecRef(ctx)
 
-	// Notify the event file if one was specified. This needs to happen
-	// *after* queueing the result to avoid racing with the thread we may
-	// wake up.
-	if eventFile != nil {
-		eventFile.FileOperations.(*eventfd.EventOperations).Signal(1)
-		eventFile.DecRef()
+		// Queue the result for delivery.
+		actx.FinishRequest(ev)
+
+		// Notify the event file if one was specified. This needs to happen
+		// *after* queueing the result to avoid racing with the thread we may
+		// wake up.
+		if eventFile != nil {
+			eventFile.FileOperations.(*eventfd.EventOperations).Signal(1)
+			eventFile.DecRef(ctx)
+		}
 	}
 }
 
 // submitCallback processes a single callback.
-func submitCallback(t *kernel.Task, id uint64, cb *ioCallback, cbAddr usermem.Addr) error {
+func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr usermem.Addr) error {
 	file := t.GetFile(cb.FD)
 	if file == nil {
 		// File not found.
 		return syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Was there an eventFD? Extract it.
 	var eventFile *fs.File
-	if cb.Flags&_IOCB_FLAG_RESFD != 0 {
+	if cb.Flags&linux.IOCB_FLAG_RESFD != 0 {
 		eventFile = t.GetFile(cb.ResFD)
 		if eventFile == nil {
 			// Bad FD.
 			return syserror.EBADF
 		}
-		defer eventFile.DecRef()
+		defer eventFile.DecRef(t)
 
 		// Check that it is an eventfd.
 		if _, ok := eventFile.FileOperations.(*eventfd.EventOperations); !ok {
@@ -340,7 +296,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *ioCallback, cbAddr usermem.Ad
 
 	// Check offset for reads/writes.
 	switch cb.OpCode {
-	case _IOCB_CMD_PREAD, _IOCB_CMD_PREADV, _IOCB_CMD_PWRITE, _IOCB_CMD_PWRITEV:
+	case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PREADV, linux.IOCB_CMD_PWRITE, linux.IOCB_CMD_PWRITEV:
 		if cb.Offset < 0 {
 			return syserror.EINVAL
 		}
@@ -366,7 +322,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *ioCallback, cbAddr usermem.Ad
 
 	// Perform the request asynchronously.
 	file.IncRef()
-	fs.Async(func() { performCallback(t, file, cbAddr, cb, ioseq, ctx, eventFile) })
+	t.QueueAIO(getAIOCallback(t, file, cbAddr, cb, ioseq, ctx, eventFile))
 
 	// All set.
 	return nil
@@ -383,21 +339,27 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	for i := int32(0); i < nrEvents; i++ {
-		// Copy in the address.
-		cbAddrNative := t.Arch().Native(0)
-		if _, err := t.CopyIn(addr, cbAddrNative); err != nil {
-			if i > 0 {
-				// Some successful.
-				return uintptr(i), nil, nil
+		// Copy in the callback address.
+		var cbAddr usermem.Addr
+		switch t.Arch().Width() {
+		case 8:
+			var cbAddrP primitive.Uint64
+			if _, err := cbAddrP.CopyIn(t, addr); err != nil {
+				if i > 0 {
+					// Some successful.
+					return uintptr(i), nil, nil
+				}
+				// Nothing done.
+				return 0, nil, err
 			}
-			// Nothing done.
-			return 0, nil, err
+			cbAddr = usermem.Addr(cbAddrP)
+		default:
+			return 0, nil, syserror.ENOSYS
 		}
 
 		// Copy in this callback.
-		var cb ioCallback
-		cbAddr := usermem.Addr(t.Arch().Value(cbAddrNative))
-		if _, err := t.CopyIn(cbAddr, &cb); err != nil {
+		var cb linux.IOCallback
+		if _, err := cb.CopyIn(t, cbAddr); err != nil {
 
 			if i > 0 {
 				// Some have been successful.
@@ -424,10 +386,4 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(nrEvents), nil, nil
 }
 
-// IoCancel implements linux syscall io_cancel(2).
-//
-// It is not presently supported (ENOSYS indicates no support on this
-// architecture).
-func IoCancel(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.ENOSYS
-}
+// LINT.ThenChange(vfs2/aio.go)

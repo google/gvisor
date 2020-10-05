@@ -77,6 +77,7 @@ func main() {
 	// Create a new declaration slice with all imports at the top, merging any
 	// redundant imports.
 	imports := make(map[string]*ast.ImportSpec)
+	var importNames []string // Keep imports in the original order to get deterministic output.
 	var anonImports []*ast.ImportSpec
 	for _, d := range f.Decls {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.IMPORT {
@@ -98,6 +99,7 @@ func main() {
 						}
 					} else {
 						imports[n] = i
+						importNames = append(importNames, n)
 					}
 				}
 			}
@@ -112,8 +114,8 @@ func main() {
 			Lparen: token.NoPos + 1,
 			Specs:  make([]ast.Spec, 0, l),
 		}
-		for _, i := range imports {
-			d.Specs = append(d.Specs, i)
+		for _, i := range importNames {
+			d.Specs = append(d.Specs, imports[i])
 		}
 		for _, i := range anonImports {
 			d.Specs = append(d.Specs, i)

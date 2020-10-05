@@ -57,6 +57,8 @@ func (mm *MemoryManager) SetMmapLayout(ac arch.Context, r *limits.LimitSet) (arc
 // Fork creates a copy of mm with 1 user, as for Linux syscalls fork() or
 // clone() (without CLONE_VM).
 func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
+	mm.AddressSpace().PreFork()
+	defer mm.AddressSpace().PostFork()
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	mm.mappingMu.RLock()
@@ -258,7 +260,7 @@ func (mm *MemoryManager) DecUsers(ctx context.Context) {
 	mm.executable = nil
 	mm.metadataMu.Unlock()
 	if exe != nil {
-		exe.DecRef()
+		exe.DecRef(ctx)
 	}
 
 	mm.activeMu.Lock()

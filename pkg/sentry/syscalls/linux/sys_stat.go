@@ -58,7 +58,7 @@ func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 
 		return 0, nil, fstat(t, file, statAddr)
 	}
@@ -100,7 +100,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	return 0, nil, fstat(t, file, statAddr)
 }
@@ -158,7 +158,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 		uattr, err := file.UnstableAttr(t)
 		if err != nil {
 			return 0, nil, err
@@ -221,7 +221,7 @@ func statx(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr, statxAddr
 		DevMajor:  uint32(devMajor),
 		DevMinor:  devMinor,
 	}
-	_, err := t.CopyOut(statxAddr, &s)
+	_, err := s.CopyOut(t, statxAddr)
 	return err
 }
 
@@ -249,7 +249,7 @@ func Fstatfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	return 0, nil, statfsImpl(t, file.Dirent, statfsAddr)
 }
@@ -283,7 +283,7 @@ func statfsImpl(t *kernel.Task, d *fs.Dirent, addr usermem.Addr) error {
 		FragmentSize: d.Inode.StableAttr.BlockSize,
 		// Leave other fields 0 like simple_statfs does.
 	}
-	_, err = t.CopyOut(addr, &statfs)
+	_, err = statfs.CopyOut(t, addr)
 	return err
 }
 

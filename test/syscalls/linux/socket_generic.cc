@@ -462,7 +462,8 @@ TEST_P(AllSocketPairTest, SendTimeoutDefault) {
 TEST_P(AllSocketPairTest, SetGetSendTimeout) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  timeval tv = {.tv_sec = 89, .tv_usec = 42000};
+  // tv_usec should be a multiple of 4000 to work on most systems.
+  timeval tv = {.tv_sec = 89, .tv_usec = 44000};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -472,8 +473,8 @@ TEST_P(AllSocketPairTest, SetGetSendTimeout) {
   EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO,
                          &actual_tv, &len),
               SyscallSucceeds());
-  EXPECT_EQ(actual_tv.tv_sec, 89);
-  EXPECT_EQ(actual_tv.tv_usec, 42000);
+  EXPECT_EQ(actual_tv.tv_sec, tv.tv_sec);
+  EXPECT_EQ(actual_tv.tv_usec, tv.tv_usec);
 }
 
 TEST_P(AllSocketPairTest, SetGetSendTimeoutLargerArg) {
@@ -484,8 +485,9 @@ TEST_P(AllSocketPairTest, SetGetSendTimeoutLargerArg) {
     int64_t extra_data;
   } ABSL_ATTRIBUTE_PACKED;
 
+  // tv_usec should be a multiple of 4000 to work on most systems.
   timeval_with_extra tv_extra = {
-      .tv = {.tv_sec = 0, .tv_usec = 123000},
+      .tv = {.tv_sec = 0, .tv_usec = 124000},
   };
 
   EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO,
@@ -497,8 +499,8 @@ TEST_P(AllSocketPairTest, SetGetSendTimeoutLargerArg) {
   EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO,
                          &actual_tv, &len),
               SyscallSucceeds());
-  EXPECT_EQ(actual_tv.tv.tv_sec, 0);
-  EXPECT_EQ(actual_tv.tv.tv_usec, 123000);
+  EXPECT_EQ(actual_tv.tv.tv_sec, tv_extra.tv.tv_sec);
+  EXPECT_EQ(actual_tv.tv.tv_usec, tv_extra.tv.tv_usec);
 }
 
 TEST_P(AllSocketPairTest, SendTimeoutAllowsWrite) {

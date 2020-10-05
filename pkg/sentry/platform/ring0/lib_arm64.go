@@ -16,6 +16,15 @@
 
 package ring0
 
+// storeAppASID writes the application's asid value.
+func storeAppASID(asid uintptr)
+
+// LocalFlushTlbAll same as FlushTlbAll, but only applies to the calling CPU.
+func LocalFlushTlbAll()
+
+// FlushTlbAll flush all tlb.
+func FlushTlbAll()
+
 // CPACREL1 returns the value of the CPACR_EL1 register.
 func CPACREL1() (value uintptr)
 
@@ -37,6 +46,18 @@ func SaveVRegs(*byte)
 
 // LoadVRegs loads V0-V31 registers.
 func LoadVRegs(*byte)
+
+// LoadFloatingPoint loads floating point state.
+func LoadFloatingPoint(*byte)
+
+// SaveFloatingPoint saves floating point state.
+func SaveFloatingPoint(*byte)
+
+// GetTLS returns the value of TPIDR_EL0 register.
+func GetTLS() (value uint64)
+
+// SetTLS writes the TPIDR_EL0 value.
+func SetTLS(value uint64)
 
 // Init sets function pointers based on architectural features.
 //

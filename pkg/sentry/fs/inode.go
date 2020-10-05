@@ -96,13 +96,12 @@ func NewInode(ctx context.Context, iops InodeOperations, msrc *MountSource, satt
 }
 
 // DecRef drops a reference on the Inode.
-func (i *Inode) DecRef() {
-	i.DecRefWithDestructor(i.destroy)
+func (i *Inode) DecRef(ctx context.Context) {
+	i.DecRefWithDestructor(ctx, i.destroy)
 }
 
 // destroy releases the Inode and releases the msrc reference taken.
-func (i *Inode) destroy() {
-	ctx := context.Background()
+func (i *Inode) destroy(ctx context.Context) {
 	if err := i.WriteOut(ctx); err != nil {
 		// FIXME(b/65209558): Mark as warning again once noatime is
 		// properly supported.
@@ -122,12 +121,12 @@ func (i *Inode) destroy() {
 	i.Watches.targetDestroyed()
 
 	if i.overlay != nil {
-		i.overlay.release()
+		i.overlay.release(ctx)
 	} else {
 		i.InodeOperations.Release(ctx)
 	}
 
-	i.MountSource.DecRef()
+	i.MountSource.DecRef(ctx)
 }
 
 // Mappable calls i.InodeOperations.Mappable.
@@ -271,7 +270,7 @@ func (i *Inode) GetXattr(ctx context.Context, name string, size uint64) (string,
 // SetXattr calls i.InodeOperations.SetXattr with i as the Inode.
 func (i *Inode) SetXattr(ctx context.Context, d *Dirent, name, value string, flags uint32) error {
 	if i.overlay != nil {
-		return overlaySetxattr(ctx, i.overlay, d, name, value, flags)
+		return overlaySetXattr(ctx, i.overlay, d, name, value, flags)
 	}
 	return i.InodeOperations.SetXattr(ctx, i, name, value, flags)
 }

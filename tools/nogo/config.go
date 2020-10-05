@@ -84,6 +84,14 @@ var analyzerConfig = map[*analysis.Analyzer]matcher{
 		externalExcluded(
 			".*protobuf/.*.go",              // Bad conversions.
 			".*flate/huffman_bit_writer.go", // Bad conversion.
+
+			// Runtime internal violations.
+			".*reflect/value.go",
+			".*encoding/xml/xml.go",
+			".*runtime/pprof/internal/profile/proto.go",
+			".*fmt/scan.go",
+			".*go/types/conversions.go",
+			".*golang.org/x/net/dns/dnsmessage/message.go",
 		),
 	),
 	shadow.Analyzer:      disableMatches(),  // Disabled for now.
@@ -113,4 +121,9 @@ var analyzerConfig = map[*analysis.Analyzer]matcher{
 	// Internal analyzers: external packages not subject.
 	checkescape.Analyzer: internalMatches(),
 	checkunsafe.Analyzer: internalMatches(),
+}
+
+var escapesConfig = map[*analysis.Analyzer]matcher{
+	// Informational only: include all packages.
+	checkescape.EscapeAnalyzer: alwaysMatches(),
 }

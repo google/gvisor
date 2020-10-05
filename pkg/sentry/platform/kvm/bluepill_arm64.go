@@ -26,6 +26,17 @@ import (
 var (
 	// The action for bluepillSignal is changed by sigaction().
 	bluepillSignal = syscall.SIGILL
+
+	// vcpuSErr is the event of system error.
+	vcpuSErr = kvmVcpuEvents{
+		exception: exception{
+			sErrPending: 1,
+			sErrHasEsr:  0,
+			pad:         [6]uint8{0, 0, 0, 0, 0, 0},
+			sErrEsr:     1,
+		},
+		rsvd: [12]uint32{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	}
 )
 
 // bluepillArchEnter is called during bluepillEnter.
@@ -38,7 +49,7 @@ func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
 	regs.Sp = context.Sp
 	regs.Pc = context.Pc
 	regs.Pstate = context.Pstate
-	regs.Pstate &^= uint64(ring0.KernelFlagsClear)
+	regs.Pstate &^= uint64(ring0.PsrFlagsClear)
 	regs.Pstate |= ring0.KernelFlagsSet
 	return
 }
@@ -52,7 +63,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	context.Sp = regs.Sp
 	context.Pc = regs.Pc
 	context.Pstate = regs.Pstate
-	context.Pstate &^= uint64(ring0.UserFlagsClear)
+	context.Pstate &^= uint64(ring0.PsrFlagsClear)
 	context.Pstate |= ring0.UserFlagsSet
 
 	lazyVfp := c.GetLazyVFP()
@@ -65,6 +76,8 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 }
 
 // KernelSyscall handles kernel syscalls.
+//
+// +checkescape:all
 //
 //go:nosplit
 func (c *vCPU) KernelSyscall() {
@@ -87,6 +100,8 @@ func (c *vCPU) KernelSyscall() {
 }
 
 // KernelException handles kernel exceptions.
+//
+// +checkescape:all
 //
 //go:nosplit
 func (c *vCPU) KernelException(vector ring0.Vector) {

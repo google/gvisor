@@ -3,20 +3,19 @@ This package implements the go_marshal utility.
 # Overview
 
 `go_marshal` is a code generation utility similar to `go_stateify` for
-automatically generating code to marshal go data structures to memory.
+marshalling go data structures to and from memory.
 
 `go_marshal` attempts to improve on `binary.Write` and the sentry's
-`binary.Marshal` by moving the go runtime reflection necessary to marshal a
-struct to compile-time.
+`binary.Marshal` by moving the expensive use of reflection from runtime to
+compile-time.
 
-`go_marshal` automatically generates implementations for `abi.Marshallable` and
-`safemem.{Reader,Writer}`. Call-sites for serialization (typically syscall
-implementations) can directly invoke `safemem.Reader.ReadToBlocks` and
-`safemem.Writer.WriteFromBlocks`. Data structures that require custom
-serialization will have manual implementations for these interfaces.
+`go_marshal` automatically generates implementations for `marshal.Marshallable`
+interface. Data structures that require custom serialization can be accomodated
+through a manual implementation this interface.
 
 Data structures can be flagged for code generation by adding a struct-level
-comment `// +marshal`.
+comment `// +marshal`. For additional details and options, see the documentation
+for the `marshal.Marshallable` interface.
 
 # Usage
 
@@ -76,7 +75,7 @@ intended for ABI structs, which have these additional restrictions:
     dependent native pointer size.
 
 -   Fields must either be a primitive integer type (`byte`,
-    `[u]int{8,16,32,64}`), or of a type that implements abi.Marshallable.
+    `[u]int{8,16,32,64}`), or of a type that implements `marshal.Marshallable`.
 
 -   `int` and `uint` fields are not allowed. Use an explicitly-sized numeric
     type.
@@ -114,3 +113,18 @@ The following are some guidelines for modifying the `go_marshal` tool:
 -   No runtime reflection in the code generated for the marshallable interface.
     The entire point of the tool is to avoid runtime reflection. The generated
     tests may use reflection.
+
+## Debugging
+
+To enable debugging output from the go-marshal tool, use one of the following
+options, depending on how go-marshal is being invoked:
+
+-   Pass `--define gomarshal=verbose` to the bazel command. Note that this can
+    generate a lot of output depending on what's being compiled, as this will
+    enable debugging for all packages built by the command.
+
+-   Set `marshal_debug = True` on the top-level `go_library` BUILD rule.
+
+-   Set `debug = True` on the `go_marshal` BUILD rule.
+
+-   Pass `-debug` to the go-marshal tool invocation.

@@ -26,6 +26,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -43,9 +44,36 @@ const (
 )
 
 type packetInfo struct {
-	raddr    tcpip.LinkAddress
-	proto    tcpip.NetworkProtocolNumber
-	contents stack.PacketBuffer
+	Raddr    tcpip.LinkAddress
+	Proto    tcpip.NetworkProtocolNumber
+	Contents *stack.PacketBuffer
+}
+
+type packetContents struct {
+	LinkHeader      buffer.View
+	NetworkHeader   buffer.View
+	TransportHeader buffer.View
+	Data            buffer.View
+}
+
+func checkPacketInfoEqual(t *testing.T, got, want packetInfo) {
+	t.Helper()
+	if diff := cmp.Diff(
+		want, got,
+		cmp.Transformer("ExtractPacketBuffer", func(pk *stack.PacketBuffer) *packetContents {
+			if pk == nil {
+				return nil
+			}
+			return &packetContents{
+				LinkHeader:      pk.LinkHeader().View(),
+				NetworkHeader:   pk.NetworkHeader().View(),
+				TransportHeader: pk.TransportHeader().View(),
+				Data:            pk.Data.ToView(),
+			}
+		}),
+	); diff != "" {
+		t.Errorf("unexpected packetInfo (-want +got):\n%s", diff)
+	}
 }
 
 type context struct {
@@ -103,8 +131,12 @@ func (c *context) cleanup() {
 	}
 }
 
-func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (c *context) DeliverNetworkPacket(remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	c.ch <- packetInfo{remote, protocol, pkt}
+}
+
+func (c *context) DeliverOutboundPacket(remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("unimplemented")
 }
 
 func TestNoEthernetProperties(t *testing.T) {
@@ -155,19 +187,28 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 		RemoteLinkAddress: raddr,
 	}
 
-	// Build header.
-	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()) + 100)
-	b := hdr.Prepend(100)
-	for i := range b {
-		b[i] = uint8(rand.Intn(256))
+	// Build payload.
+	payload := buffer.NewView(plen)
+	if _, err := rand.Read(payload); err != nil {
+		t.Fatalf("rand.Read(payload): %s", err)
 	}
 
-	// Build payload and write.
-	payload := make(buffer.View, plen)
-	for i := range payload {
-		payload[i] = uint8(rand.Intn(256))
+	// Build packet buffer.
+	const netHdrLen = 100
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()) + netHdrLen,
+		Data:               payload.ToVectorisedView(),
+	})
+	pkt.Hash = hash
+
+	// Build header.
+	b := pkt.NetworkHeader().Push(netHdrLen)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatalf("rand.Read(b): %s", err)
 	}
-	want := append(hdr.View(), payload...)
+
+	// Write.
+	want := append(append(buffer.View(nil), b...), payload...)
 	var gso *stack.GSO
 	if gsoMaxSize != 0 {
 		gso = &stack.GSO{
@@ -179,11 +220,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			L3HdrLen:   header.IPv4MaximumHeaderSize,
 		}
 	}
-	if err := c.ep.WritePacket(r, gso, proto, stack.PacketBuffer{
-		Header: hdr,
-		Data:   payload.ToVectorisedView(),
-		Hash:   hash,
-	}); err != nil {
+	if err := c.ep.WritePacket(r, gso, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -292,13 +329,14 @@ func TestPreserveSrcAddress(t *testing.T) {
 		LocalLinkAddress:  baddr,
 	}
 
-	// WritePacket panics given a prependable with anything less than
-	// the minimum size of the ethernet header.
-	hdr := buffer.NewPrependable(header.EthernetMinimumSize)
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, stack.PacketBuffer{
-		Header: hdr,
-		Data:   buffer.VectorisedView{},
-	}); err != nil {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		// WritePacket panics given a prependable with anything less than
+		// the minimum size of the ethernet header.
+		// TODO(b/153685824): Figure out if this should use c.ep.MaxHeaderLength().
+		ReserveHeaderBytes: header.EthernetMinimumSize,
+		Data:               buffer.VectorisedView{},
+	})
+	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -327,24 +365,25 @@ func TestDeliverPacket(t *testing.T) {
 				defer c.cleanup()
 
 				// Build packet.
-				b := make([]byte, plen)
-				all := b
-				for i := range b {
-					b[i] = uint8(rand.Intn(256))
+				all := make([]byte, plen)
+				if _, err := rand.Read(all); err != nil {
+					t.Fatalf("rand.Read(all): %s", err)
 				}
+				// Make it look like an IPv4 packet.
+				all[0] = 0x40
 
-				var hdr header.Ethernet
-				if !eth {
-					// So that it looks like an IPv4 packet.
-					b[0] = 0x40
-				} else {
-					hdr = make(header.Ethernet, header.EthernetMinimumSize)
+				wantPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.EthernetMinimumSize,
+					Data:               buffer.NewViewFromBytes(all).ToVectorisedView(),
+				})
+				if eth {
+					hdr := header.Ethernet(wantPkt.LinkHeader().Push(header.EthernetMinimumSize))
 					hdr.Encode(&header.EthernetFields{
 						SrcAddr: raddr,
 						DstAddr: laddr,
 						Type:    proto,
 					})
-					all = append(hdr, b...)
+					all = append(hdr, all...)
 				}
 
 				// Write packet via the file descriptor.
@@ -356,24 +395,15 @@ func TestDeliverPacket(t *testing.T) {
 				select {
 				case pi := <-c.ch:
 					want := packetInfo{
-						raddr: raddr,
-						proto: proto,
-						contents: stack.PacketBuffer{
-							Data:       buffer.View(b).ToVectorisedView(),
-							LinkHeader: buffer.View(hdr),
-						},
+						Raddr:    raddr,
+						Proto:    proto,
+						Contents: wantPkt,
 					}
 					if !eth {
-						want.proto = header.IPv4ProtocolNumber
-						want.raddr = ""
+						want.Proto = header.IPv4ProtocolNumber
+						want.Raddr = ""
 					}
-					// want.contents.Data will be a single
-					// view, so make pi do the same for the
-					// DeepEqual check.
-					pi.contents.Data = pi.contents.Data.ToView().ToVectorisedView()
-					if !reflect.DeepEqual(want, pi) {
-						t.Fatalf("Unexpected received packet: %+v, want %+v", pi, want)
-					}
+					checkPacketInfoEqual(t, pi, want)
 				case <-time.After(10 * time.Second):
 					t.Fatalf("Timed out waiting for packet")
 				}
@@ -498,5 +528,82 @@ func TestRecvMMsgDispatcherCapLength(t *testing.T) {
 			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %v. Want %v", c.comment, c.n, c.config, lengths, c.wantLengths)
 		}
 
+	}
+}
+
+// fakeNetworkDispatcher delivers packets to pkts.
+type fakeNetworkDispatcher struct {
+	pkts []*stack.PacketBuffer
+}
+
+func (d *fakeNetworkDispatcher) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	d.pkts = append(d.pkts, pkt)
+}
+
+func (d *fakeNetworkDispatcher) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("unimplemented")
+}
+
+func TestDispatchPacketFormat(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		newDispatcher func(fd int, e *endpoint) (linkDispatcher, error)
+	}{
+		{
+			name:          "readVDispatcher",
+			newDispatcher: newReadVDispatcher,
+		},
+		{
+			name:          "recvMMsgDispatcher",
+			newDispatcher: newRecvMMsgDispatcher,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Create a socket pair to send/recv.
+			fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_DGRAM, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer syscall.Close(fds[0])
+			defer syscall.Close(fds[1])
+
+			data := []byte{
+				// Ethernet header.
+				1, 2, 3, 4, 5, 60,
+				1, 2, 3, 4, 5, 61,
+				8, 0,
+				// Mock network header.
+				40, 41, 42, 43,
+			}
+			err = syscall.Sendmsg(fds[1], data, nil, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Create and run dispatcher once.
+			sink := &fakeNetworkDispatcher{}
+			d, err := test.newDispatcher(fds[0], &endpoint{
+				hdrSize:    header.EthernetMinimumSize,
+				dispatcher: sink,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := d.dispatch(); !ok || err != nil {
+				t.Fatalf("d.dispatch() = %v, %v", ok, err)
+			}
+
+			// Verify packet.
+			if got, want := len(sink.pkts), 1; got != want {
+				t.Fatalf("len(sink.pkts) = %d, want %d", got, want)
+			}
+			pkt := sink.pkts[0]
+			if got, want := pkt.LinkHeader().View().Size(), header.EthernetMinimumSize; got != want {
+				t.Errorf("pkt.LinkHeader().View().Size() = %d, want %d", got, want)
+			}
+			if got, want := pkt.Data.Size(), 4; got != want {
+				t.Errorf("pkt.Data.Size() = %d, want %d", got, want)
+			}
+		})
 	}
 }

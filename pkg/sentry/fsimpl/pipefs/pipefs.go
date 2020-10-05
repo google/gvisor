@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// +stateify savable
 type filesystemType struct{}
 
 // Name implements vfs.FilesystemType.Name.
@@ -43,6 +44,7 @@ func (filesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFile
 	panic("pipefs.filesystemType.GetFilesystem should never be called")
 }
 
+// +stateify savable
 type filesystem struct {
 	kernfs.Filesystem
 
@@ -63,9 +65,9 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
-	fs.Filesystem.Release()
+	fs.Filesystem.Release(ctx)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
@@ -76,12 +78,15 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 }
 
 // inode implements kernfs.Inode.
+//
+// +stateify savable
 type inode struct {
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoopRefCount
 
-	pipe *pipe.VFSPipe
+	locks vfs.FileLocks
+	pipe  *pipe.VFSPipe
 
 	ino uint64
 	uid auth.KUID
@@ -114,7 +119,7 @@ func (i *inode) Mode() linux.FileMode {
 }
 
 // Stat implements kernfs.Inode.Stat.
-func (i *inode) Stat(vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+func (i *inode) Stat(_ context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	ts := linux.NsecToStatxTimestamp(i.ctime.Nanoseconds())
 	return linux.Statx{
 		Mask:     linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS,
@@ -142,12 +147,14 @@ func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.
 	return syserror.EPERM
 }
 
-// TODO(gvisor.dev/issue/1193): kernfs does not provide a way to implement
-// statfs, from which we should indicate PIPEFS_MAGIC.
-
 // Open implements kernfs.Inode.Open.
-func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	return i.pipe.Open(ctx, rp.Mount(), vfsd, opts.Flags)
+func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	return i.pipe.Open(ctx, rp.Mount(), d.VFSDentry(), opts.Flags, &i.locks)
+}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.PIPEFS_MAGIC), nil
 }
 
 // NewConnectedPipeFDs returns a pair of FileDescriptions representing the read
@@ -159,6 +166,6 @@ func NewConnectedPipeFDs(ctx context.Context, mnt *vfs.Mount, flags uint32) (*vf
 	inode := newInode(ctx, fs)
 	var d kernfs.Dentry
 	d.Init(inode)
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 	return inode.pipe.ReaderWriterPair(mnt, d.VFSDentry(), flags)
 }

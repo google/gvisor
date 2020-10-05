@@ -198,10 +198,17 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	t.tg.pidns.owner.mu.Unlock()
 
+	oldFDTable := t.fdTable
+	t.fdTable = t.fdTable.Fork(t)
+	oldFDTable.DecRef(t)
+
 	// Remove FDs with the CloseOnExec flag set.
-	t.fdTable.RemoveIf(func(_ *fs.File, _ *vfs.FileDescription, flags FDFlags) bool {
+	t.fdTable.RemoveIf(t, func(_ *fs.File, _ *vfs.FileDescription, flags FDFlags) bool {
 		return flags.CloseOnExec
 	})
+
+	// Handle the robust futex list.
+	t.exitRobustList()
 
 	// NOTE(b/30815691): We currently do not implement privileged
 	// executables (set-user/group-ID bits and file capabilities). This
@@ -219,6 +226,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tc = *r.tc
 	t.mu.Unlock()
 	t.unstopVforkParent()
+	t.p.FullStateChanged()
 	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
 	t.MemoryManager().Activate(t)
 
@@ -229,9 +237,10 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 // promoteLocked makes t the leader of its thread group. If t is already the
 // thread group leader, promoteLocked is a no-op.
 //
-// Preconditions: All other tasks in t's thread group, including the existing
-// leader (if it is not t), have reached TaskExitZombie. The TaskSet mutex must
-// be locked for writing.
+// Preconditions:
+// * All other tasks in t's thread group, including the existing leader (if it
+//   is not t), have reached TaskExitZombie.
+// * The TaskSet mutex must be locked for writing.
 func (t *Task) promoteLocked() {
 	oldLeader := t.tg.leader
 	if t == oldLeader {

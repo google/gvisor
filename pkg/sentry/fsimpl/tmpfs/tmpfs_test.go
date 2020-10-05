@@ -34,21 +34,21 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := &vfs.VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %v", err)
 	}
 
 	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.GetFilesystemOptions{})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{})
 	if err != nil {
 		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("failed to create tmpfs root mount: %v", err)
 	}
 	root := mntns.Root()
 	return vfsObj, root, func() {
-		root.DecRef()
-		mntns.DecRef()
+		root.DecRef(ctx)
+		mntns.DecRef(ctx)
 	}, nil
 }
 

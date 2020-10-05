@@ -10,6 +10,8 @@ go_library(
         "json_k8s.go",
         "log.go",
     ],
+    marshal = False,
+    stateify = False,
     visibility = [
         "//visibility:public",
     ],

@@ -37,6 +37,24 @@ func (u *udpPacket) loadData(data buffer.VectorisedView) {
 	u.data = data
 }
 
+// saveLastError is invoked by stateify.
+func (e *endpoint) saveLastError() string {
+	if e.lastError == nil {
+		return ""
+	}
+
+	return e.lastError.String()
+}
+
+// loadLastError is invoked by stateify.
+func (e *endpoint) loadLastError(s string) {
+	if s == "" {
+		return
+	}
+
+	e.lastError = tcpip.StringToError(s)
+}
+
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
 	// Stop incoming packets from being handled (and mutate endpoint state).
@@ -74,7 +92,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	e.stack = s
 
-	for _, m := range e.multicastMemberships {
+	for m := range e.multicastMemberships {
 		if err := e.stack.JoinGroup(e.NetProto, m.nicID, m.multicastAddr); err != nil {
 			panic(err)
 		}

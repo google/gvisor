@@ -188,6 +188,9 @@ type MultiDevice struct {
 
 // String stringifies MultiDevice.
 func (m *MultiDevice) String() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("cache{")
 	for k, v := range m.cache {
@@ -253,7 +256,7 @@ func (m *MultiDevice) Load(key MultiDeviceKey, value uint64) bool {
 	}
 	if k, exists := m.rcache[value]; exists && k != key {
 		// Should never happen.
-		panic("MultiDevice's caches are inconsistent")
+		panic(fmt.Sprintf("MultiDevice's caches are inconsistent, current: %+v, previous: %+v", key, k))
 	}
 
 	// Cache value at key.

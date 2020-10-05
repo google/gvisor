@@ -40,10 +40,15 @@ trap finish EXIT
 # Record the current working commit.
 declare -r head=$(git describe --always)
 
-# We expect to have an existing go branch that we will use as the basis for
-# this commit. That branch may be empty, but it must exist.
+# We expect to have an existing go branch that we will use as the basis for this
+# commit. That branch may be empty, but it must exist. We search for this branch
+# using the local branch, the "origin" branch, and other remotes, in order.
 git fetch --all
-declare -r go_branch=$(git show-ref --hash go)
+declare -r go_branch=$( \
+  git show-ref --hash refs/heads/go || \
+  git show-ref --hash refs/remotes/origin/go || \
+  git show-ref --hash go | head -n 1 \
+)
 
 # Clone the current repository to the temporary directory, and check out the
 # current go_branch directory. We move to the new repository for convenience.
@@ -66,6 +71,11 @@ git checkout -b go "${go_branch}"
 git merge --no-commit --strategy ours ${head} || \
   git merge --allow-unrelated-histories --no-commit --strategy ours ${head}
 
+# Normalize the permissions on the old branch. Note that they should be
+# normalized if constructed by this tool, but we do so before the rsync.
+find . -type f -exec chmod 0644 {} \;
+find . -type d -exec chmod 0755 {} \;
+
 # Sync the entire gopath_dir.
 rsync --recursive --verbose --delete --exclude .git -L "${gopath_dir}/" .
 
@@ -86,7 +96,17 @@ EOF
 # There are a few solitary files that can get left behind due to the way bazel
 # constructs the gopath target. Note that we don't find all Go files here
 # because they may correspond to unused templates, etc.
-cp "${repo_orig}"/runsc/*.go runsc/
+declare -ar binaries=( "runsc" "shim/v1" "shim/v2" )
+for target in "${binaries[@]}"; do
+  mkdir -p "${target}"
+  cp "${repo_orig}/${target}"/*.go "${target}/"
+done
+
+# Normalize all permissions. The way bazel constructs the :gopath tree may leave
+# some strange permissions on files. We don't have anything in this tree that
+# should be execution, only the Go source files, README.md, and ${othersrc}.
+find . -type f -exec chmod 0644 {} \;
+find . -type d -exec chmod 0755 {} \;
 
 # Update the current working set and commit.
 git add . && git commit -m "Merge ${head} (automated)"

@@ -26,6 +26,8 @@ const (
 )
 
 // Rusage represents the Linux struct rusage.
+//
+// +marshal
 type Rusage struct {
 	UTime    Timeval
 	STime    Timeval

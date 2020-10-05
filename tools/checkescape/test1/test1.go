@@ -17,7 +17,6 @@ package test1
 
 import (
 	"fmt"
-	"reflect"
 )
 
 // Interface is a generic interface.
@@ -163,20 +162,6 @@ func dynamicRec(f func()) {
 	Dynamic(f)
 }
 
-// +mustescape:local,unknown
-//go:noinline
-//go:nosplit
-func Unknown() {
-	_ = reflect.TypeOf((*Type)(nil)) // Does not actually escape.
-}
-
-// +mustescape:unknown
-//go:noinline
-//go:nosplit
-func unknownRec() {
-	Unknown()
-}
-
 //go:noinline
 //go:nosplit
 func internalFunc() {
@@ -190,6 +175,7 @@ func Split() {
 
 // +mustescape:stack
 //go:noinline
+//go:nosplit
 func splitRec() {
 	Split()
 }

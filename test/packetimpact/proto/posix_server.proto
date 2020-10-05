@@ -91,6 +91,17 @@ message ConnectResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
+message FcntlRequest {
+  int32 fd = 1;
+  int32 cmd = 2;
+  int32 arg = 3;
+}
+
+message FcntlResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
 message GetSockNameRequest {
   int32 sockfd = 1;
 }
@@ -139,7 +150,7 @@ message SendRequest {
 
 message SendResponse {
   int32 ret = 1;
-  int32 errno_ = 2;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
 message SendToRequest {
@@ -177,6 +188,15 @@ message SocketResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
+message ShutdownRequest {
+  int32 fd = 1;
+  int32 how = 2;
+}
+
+message ShutdownResponse {
+  int32 errno_ = 1;  // "errno" may fail to compile in c++.
+}
+
 message RecvRequest {
   int32 sockfd = 1;
   int32 len = 2;
@@ -198,6 +218,8 @@ service Posix {
   rpc Close(CloseRequest) returns (CloseResponse);
   // Call connect() on the DUT.
   rpc Connect(ConnectRequest) returns (ConnectResponse);
+  // Call fcntl() on the DUT.
+  rpc Fcntl(FcntlRequest) returns (FcntlResponse);
   // Call getsockname() on the DUT.
   rpc GetSockName(GetSockNameRequest) returns (GetSockNameResponse);
   // Call getsockopt() on the DUT.
@@ -212,6 +234,8 @@ service Posix {
   rpc SetSockOpt(SetSockOptRequest) returns (SetSockOptResponse);
   // Call socket() on the DUT.
   rpc Socket(SocketRequest) returns (SocketResponse);
+  // Call shutdown() on the DUT.
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
   // Call recv() on the DUT.
   rpc Recv(RecvRequest) returns (RecvResponse);
 }

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -46,6 +47,8 @@ var (
 	useTmpfs   = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
+	vfs2       = flag.Bool("vfs2", false, "enable VFS2")
+	fuse       = flag.Bool("fuse", false, "enable FUSE")
 	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 
@@ -103,6 +106,16 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+
+	if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) {
+		cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUTS
+	}
+
+	if specutils.HasCapabilities(capability.CAP_NET_ADMIN) {
+		cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNET
+	}
+
 	if err := cmd.Run(); err != nil {
 		ws := err.(*exec.ExitError).Sys().(syscall.WaitStatus)
 		t.Errorf("test %q exited with status %d, want 0", tc.FullName(), ws.ExitStatus())
@@ -146,6 +159,12 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	if *overlay {
 		args = append(args, "-overlay")
 	}
+	if *vfs2 {
+		args = append(args, "-vfs2")
+		if *fuse {
+			args = append(args, "-fuse")
+		}
+	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
 	}
@@ -156,12 +175,14 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-fsgofer-host-uds")
 	}
 
-	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
-		tdir := filepath.Join(outDir, strings.Replace(name, "/", "_", -1))
-		if err := os.MkdirAll(tdir, 0755); err != nil {
+	testLogDir := ""
+	if undeclaredOutputsDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+		// Create log directory dedicated for this test.
+		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
+		if err := os.MkdirAll(testLogDir, 0755); err != nil {
 			return fmt.Errorf("could not create test dir: %v", err)
 		}
-		debugLogDir, err := ioutil.TempDir(tdir, "runsc")
+		debugLogDir, err := ioutil.TempDir(testLogDir, "runsc")
 		if err != nil {
 			return fmt.Errorf("could not create temp dir: %v", err)
 		}
@@ -197,21 +218,23 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	sig := make(chan os.Signal, 1)
+	defer close(sig)
 	signal.Notify(sig, syscall.SIGTERM)
+	defer signal.Stop(sig)
 	go func() {
 		s, ok := <-sig
 		if !ok {
 			return
 		}
 		log.Warningf("%s: Got signal: %v", name, s)
-		done := make(chan bool)
+		done := make(chan bool, 1)
 		dArgs := append([]string{}, args...)
 		dArgs = append(dArgs, "-alsologtostderr=true", "debug", "--stacks", id)
 		go func(dArgs []string) {
-			cmd := exec.Command(*runscPath, dArgs...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Run()
+			debug := exec.Command(*runscPath, dArgs...)
+			debug.Stdout = os.Stdout
+			debug.Stderr = os.Stderr
+			debug.Run()
 			done <- true
 		}(dArgs)
 
@@ -226,16 +249,18 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		dArgs = append(args, "debug",
 			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
 			id)
-		cmd := exec.Command(*runscPath, dArgs...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
+		signal := exec.Command(*runscPath, dArgs...)
+		signal.Stdout = os.Stdout
+		signal.Stderr = os.Stderr
+		signal.Run()
 	}()
 
 	err = cmd.Run()
-
-	signal.Stop(sig)
-	close(sig)
+	if err == nil && len(testLogDir) > 0 {
+		// If the test passed, then we erase the log directory. This speeds up
+		// uploading logs in continuous integration & saves on disk space.
+		os.RemoveAll(testLogDir)
+	}
 
 	return err
 }
@@ -341,11 +366,23 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		}
 	}
 
-	// Set environment variables that indicate we are
-	// running in gVisor with the given platform and network.
+	// Set environment variables that indicate we are running in gVisor with
+	// the given platform, network, and filesystem stack.
 	platformVar := "TEST_ON_GVISOR"
 	networkVar := "GVISOR_NETWORK"
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
+	vfsVar := "GVISOR_VFS"
+	if *vfs2 {
+		env = append(env, vfsVar+"=VFS2")
+		fuseVar := "FUSE_ENABLED"
+		if *fuse {
+			env = append(env, fuseVar+"=TRUE")
+		} else {
+			env = append(env, fuseVar+"=FALSE")
+		}
+	} else {
+		env = append(env, vfsVar+"=VFS1")
+	}
 
 	// Remove env variables that cause the gunit binary to write output
 	// files, since they will stomp on eachother, and on the output files
@@ -376,12 +413,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	}
 }
 
-// filterEnv returns an environment with the blacklisted variables removed.
-func filterEnv(env, blacklist []string) []string {
+// filterEnv returns an environment with the excluded variables removed.
+func filterEnv(env, exclude []string) []string {
 	var out []string
 	for _, kv := range env {
 		ok := true
-		for _, k := range blacklist {
+		for _, k := range exclude {
 			if strings.HasPrefix(kv, k+"=") {
 				ok = false
 				break

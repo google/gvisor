@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.12
-// +build !go1.15
+// +build !go1.17
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -34,6 +34,8 @@ import (
 // structurally identical to VirtualDentry, but stores its fields as
 // unsafe.Pointer since mutators synchronize with VFS path traversal using
 // seqcounts.
+//
+// This is explicitly not savable.
 type mountKey struct {
 	parent unsafe.Pointer // *Mount
 	point  unsafe.Pointer // *Dentry
@@ -47,18 +49,22 @@ func (mnt *Mount) point() *Dentry {
 	return (*Dentry)(atomic.LoadPointer(&mnt.key.point))
 }
 
-func (mnt *Mount) loadKey() VirtualDentry {
+func (mnt *Mount) getKey() VirtualDentry {
 	return VirtualDentry{
 		mount:  mnt.parent(),
 		dentry: mnt.point(),
 	}
 }
 
+func (mnt *Mount) saveKey() VirtualDentry { return mnt.getKey() }
+
 // Invariant: mnt.key.parent == nil. vd.Ok().
-func (mnt *Mount) storeKey(vd VirtualDentry) {
+func (mnt *Mount) setKey(vd VirtualDentry) {
 	atomic.StorePointer(&mnt.key.parent, unsafe.Pointer(vd.mount))
 	atomic.StorePointer(&mnt.key.point, unsafe.Pointer(vd.dentry))
 }
+
+func (mnt *Mount) loadKey(vd VirtualDentry) { mnt.setKey(vd) }
 
 // mountTable maps (mount parent, mount point) pairs to mounts. It supports
 // efficient concurrent lookup, even in the presence of concurrent mutators
@@ -92,6 +98,7 @@ type mountTable struct {
 	// length and cap in separate uint32s) for ~free.
 	size uint64
 
+	// FIXME(gvisor.dev/issue/1663): Slots need to be saved.
 	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
 
@@ -217,8 +224,9 @@ func (mt *mountTable) Insert(mount *Mount) {
 
 // insertSeqed inserts the given mount into mt.
 //
-// Preconditions: mt.seq must be in a writer critical section. mt must not
-// already contain a Mount with the same mount point and parent.
+// Preconditions:
+// * mt.seq must be in a writer critical section.
+// * mt must not already contain a Mount with the same mount point and parent.
 func (mt *mountTable) insertSeqed(mount *Mount) {
 	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
 
@@ -269,9 +277,11 @@ func (mt *mountTable) insertSeqed(mount *Mount) {
 	atomic.StorePointer(&mt.slots, newSlots)
 }
 
-// Preconditions: There are no concurrent mutators of the table (slots, cap).
-// If the table is visible to readers, then mt.seq must be in a writer critical
-// section. cap must be a power of 2.
+// Preconditions:
+// * There are no concurrent mutators of the table (slots, cap).
+// * If the table is visible to readers, then mt.seq must be in a writer
+//   critical section.
+// * cap must be a power of 2.
 func mtInsertLocked(slots unsafe.Pointer, cap uintptr, value unsafe.Pointer, hash uintptr) {
 	mask := cap - 1
 	off := (hash & mask) * mountSlotBytes
@@ -313,8 +323,9 @@ func (mt *mountTable) Remove(mount *Mount) {
 
 // removeSeqed removes the given mount from mt.
 //
-// Preconditions: mt.seq must be in a writer critical section. mt must contain
-// mount.
+// Preconditions:
+// * mt.seq must be in a writer critical section.
+// * mt must contain mount.
 func (mt *mountTable) removeSeqed(mount *Mount) {
 	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
 	tcap := uintptr(1) << (mt.size & mtSizeOrderMask)

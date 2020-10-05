@@ -46,14 +46,14 @@ func TestInjectableEndpointRawDispatch(t *testing.T) {
 func TestInjectableEndpointDispatch(t *testing.T) {
 	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
 
-	hdr := buffer.NewPrependable(1)
-	hdr.Prepend(1)[0] = 0xFA
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: 1,
+		Data:               buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(),
+	})
+	pkt.TransportHeader().Push(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}
 
-	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, stack.PacketBuffer{
-		Header: hdr,
-		Data:   buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(),
-	})
+	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, pkt)
 
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
@@ -67,13 +67,14 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 
 func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
-	hdr := buffer.NewPrependable(1)
-	hdr.Prepend(1)[0] = 0xFA
-	packetRoute := stack.Route{RemoteAddress: dstIP}
-	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, stack.PacketBuffer{
-		Header: hdr,
-		Data:   buffer.NewView(0).ToVectorisedView(),
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: 1,
+		Data:               buffer.NewView(0).ToVectorisedView(),
 	})
+	pkt.TransportHeader().Push(1)[0] = 0xFA
+	packetRoute := stack.Route{RemoteAddress: dstIP}
+	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, pkt)
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
 	if err != nil {

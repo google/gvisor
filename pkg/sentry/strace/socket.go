@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -166,7 +167,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 	}
 
 	buf := make([]byte, length)
-	if _, err := t.CopyIn(addr, &buf); err != nil {
+	if _, err := t.CopyInBytes(addr, buf); err != nil {
 		return fmt.Sprintf("%#x (error decoding control: %v)", addr, err)
 	}
 
@@ -302,7 +303,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 
 func msghdr(t *kernel.Task, addr usermem.Addr, printContent bool, maxBytes uint64) string {
 	var msg slinux.MessageHeader64
-	if err := slinux.CopyInMessageHeader64(t, addr, &msg); err != nil {
+	if _, err := msg.CopyIn(t, addr); err != nil {
 		return fmt.Sprintf("%#x (error decoding msghdr: %v)", addr, err)
 	}
 	s := fmt.Sprintf(
@@ -380,9 +381,9 @@ func postSockAddr(t *kernel.Task, addr usermem.Addr, lengthPtr usermem.Addr) str
 
 func copySockLen(t *kernel.Task, addr usermem.Addr) (uint32, error) {
 	// socklen_t is 32-bits.
-	var l uint32
-	_, err := t.CopyIn(addr, &l)
-	return l, err
+	var l primitive.Uint32
+	_, err := l.CopyIn(t, addr)
+	return uint32(l), err
 }
 
 func sockLenPointer(t *kernel.Task, addr usermem.Addr) string {
@@ -436,22 +437,22 @@ func getSockOptVal(t *kernel.Task, level, optname uint64, optVal usermem.Addr, o
 func sockOptVal(t *kernel.Task, level, optname uint64, optVal usermem.Addr, optLen uint64, maximumBlobSize uint) string {
 	switch optLen {
 	case 1:
-		var v uint8
-		_, err := t.CopyIn(optVal, &v)
+		var v primitive.Uint8
+		_, err := v.CopyIn(t, optVal)
 		if err != nil {
 			return fmt.Sprintf("%#x {error reading optval: %v}", optVal, err)
 		}
 		return fmt.Sprintf("%#x {value=%v}", optVal, v)
 	case 2:
-		var v uint16
-		_, err := t.CopyIn(optVal, &v)
+		var v primitive.Uint16
+		_, err := v.CopyIn(t, optVal)
 		if err != nil {
 			return fmt.Sprintf("%#x {error reading optval: %v}", optVal, err)
 		}
 		return fmt.Sprintf("%#x {value=%v}", optVal, v)
 	case 4:
-		var v uint32
-		_, err := t.CopyIn(optVal, &v)
+		var v primitive.Uint32
+		_, err := v.CopyIn(t, optVal)
 		if err != nil {
 			return fmt.Sprintf("%#x {error reading optval: %v}", optVal, err)
 		}
@@ -521,6 +522,7 @@ var sockOptNames = map[uint64]abi.ValueSet{
 		linux.IP_ROUTER_ALERT:           "IP_ROUTER_ALERT",
 		linux.IP_PKTOPTIONS:             "IP_PKTOPTIONS",
 		linux.IP_MTU:                    "IP_MTU",
+		linux.SO_ORIGINAL_DST:           "SO_ORIGINAL_DST",
 	},
 	linux.SOL_SOCKET: {
 		linux.SO_ERROR:        "SO_ERROR",
@@ -631,6 +633,8 @@ var sockOptNames = map[uint64]abi.ValueSet{
 		linux.IPV6_UNICAST_IF:          "IPV6_UNICAST_IF",
 		linux.MCAST_MSFILTER:           "MCAST_MSFILTER",
 		linux.IPV6_ADDRFORM:            "IPV6_ADDRFORM",
+		linux.IP6T_SO_GET_INFO:         "IP6T_SO_GET_INFO",
+		linux.IP6T_SO_GET_ENTRIES:      "IP6T_SO_GET_ENTRIES",
 	},
 	linux.SOL_NETLINK: {
 		linux.NETLINK_BROADCAST_ERROR:  "NETLINK_BROADCAST_ERROR",

@@ -9,18 +9,20 @@ def _runtime_test_impl(ctx):
         ctx.attr.lang,
         "--image",
         ctx.attr.image,
+        "--batch",
+        str(ctx.attr.batch),
     ]
-    if ctx.attr.blacklist_file:
+    if ctx.attr.exclude_file:
         args += [
-            "--blacklist_file",
-            ctx.files.blacklist_file[0].short_path,
+            "--exclude_file",
+            ctx.files.exclude_file[0].short_path,
         ]
 
     # Build a runner.
     runner = ctx.actions.declare_file("%s-executer" % ctx.label.name)
     runner_content = "\n".join([
         "#!/bin/bash",
-        "%s %s\n" % (ctx.files._runner[0].short_path, " ".join(args)),
+        "%s %s $@\n" % (ctx.files._runner[0].short_path, " ".join(args)),
     ])
     ctx.actions.write(runner, runner_content, is_executable = True)
 
@@ -28,7 +30,7 @@ def _runtime_test_impl(ctx):
     return [DefaultInfo(
         executable = runner,
         runfiles = ctx.runfiles(
-            files = ctx.files._runner + ctx.files.blacklist_file + ctx.files._proctor,
+            files = ctx.files._runner + ctx.files.exclude_file + ctx.files._proctor,
             collect_default = True,
             collect_data = True,
         ),
@@ -43,15 +45,23 @@ _runtime_test = rule(
         "lang": attr.string(
             mandatory = True,
         ),
-        "blacklist_file": attr.label(
+        "exclude_file": attr.label(
             mandatory = False,
             allow_single_file = True,
         ),
+        "batch": attr.int(
+            default = 50,
+            mandatory = False,
+        ),
         "_runner": attr.label(
             default = "//test/runtimes/runner:runner",
+            executable = True,
+            cfg = "target",
         ),
         "_proctor": attr.label(
             default = "//test/runtimes/proctor:proctor",
+            executable = True,
+            cfg = "target",
         ),
     },
     test = True,
@@ -65,15 +75,16 @@ def runtime_test(name, **kwargs):
             "local",
             "manual",
         ],
+        size = "enormous",
         **kwargs
     )
 
-def blacklist_test(name, blacklist_file):
-    """Test that a blacklist parses correctly."""
+def exclude_test(name, exclude_file):
+    """Test that a exclude file parses correctly."""
     go_test(
-        name = name + "_blacklist_test",
+        name = name + "_exclude_test",
         library = ":runner",
-        srcs = ["blacklist_test.go"],
-        args = ["--blacklist_file", "test/runtimes/" + blacklist_file],
-        data = [blacklist_file],
+        srcs = ["exclude_test.go"],
+        args = ["--exclude_file", "test/runtimes/" + exclude_file],
+        data = [exclude_file],
     )

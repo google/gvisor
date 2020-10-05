@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.12
-// +build !go1.15
+// +build !go1.17
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -115,7 +115,7 @@ func (a *atomicAddressSpace) get() *addressSpace {
 //
 //go:nosplit
 func (c *vCPU) notify() {
-	_, _, errno := syscall.RawSyscall6(
+	_, _, errno := syscall.RawSyscall6( // escapes: no.
 		syscall.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,

@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//pkg/binary",
         "//pkg/compressio",
+        "//pkg/state/wire",
     ],
 )
 

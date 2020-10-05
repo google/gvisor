@@ -29,7 +29,7 @@
 //
 // Reference Model:
 //
-// Kernfs dentries represents named pointers to inodes. Dentries and inode have
+// Kernfs dentries represents named pointers to inodes. Dentries and inodes have
 // independent lifetimes and reference counts. A child dentry unconditionally
 // holds a reference on its parent directory's dentry. A dentry also holds a
 // reference on the inode it points to. Multiple dentries can point to the same
@@ -57,24 +57,26 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
 // filesystem. Concrete implementations are expected to embed this in their own
 // Filesystem type.
+//
+// +stateify savable
 type Filesystem struct {
 	vfsfs vfs.Filesystem
 
-	droppedDentriesMu sync.Mutex
+	droppedDentriesMu sync.Mutex `state:"nosave"`
 
 	// droppedDentries is a list of dentries waiting to be DecRef()ed. This is
 	// used to defer dentry destruction until mu can be acquired for
 	// writing. Protected by droppedDentriesMu.
-	droppedDentries []*vfs.Dentry
+	droppedDentries []*Dentry
 
 	// mu synchronizes the lifetime of Dentries on this filesystem. Holding it
 	// for reading guarantees continued existence of any resolved dentries, but
@@ -97,7 +99,7 @@ type Filesystem struct {
 	//   defer fs.mu.RUnlock()
 	//   ...
 	//   fs.deferDecRef(dentry)
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
@@ -108,7 +110,7 @@ type Filesystem struct {
 // processDeferredDecRefs{,Locked}. See comment on Filesystem.mu.
 //
 // Precondition: d must not already be pending destruction.
-func (fs *Filesystem) deferDecRef(d *vfs.Dentry) {
+func (fs *Filesystem) deferDecRef(d *Dentry) {
 	fs.droppedDentriesMu.Lock()
 	fs.droppedDentries = append(fs.droppedDentries, d)
 	fs.droppedDentriesMu.Unlock()
@@ -116,17 +118,17 @@ func (fs *Filesystem) deferDecRef(d *vfs.Dentry) {
 
 // processDeferredDecRefs calls vfs.Dentry.DecRef on all dentries in the
 // droppedDentries list. See comment on Filesystem.mu.
-func (fs *Filesystem) processDeferredDecRefs() {
+func (fs *Filesystem) processDeferredDecRefs(ctx context.Context) {
 	fs.mu.Lock()
-	fs.processDeferredDecRefsLocked()
+	fs.processDeferredDecRefsLocked(ctx)
 	fs.mu.Unlock()
 }
 
 // Precondition: fs.mu must be held for writing.
-func (fs *Filesystem) processDeferredDecRefsLocked() {
+func (fs *Filesystem) processDeferredDecRefsLocked(ctx context.Context) {
 	fs.droppedDentriesMu.Lock()
 	for _, d := range fs.droppedDentries {
-		d.DecRef()
+		d.DecRef(ctx)
 	}
 	fs.droppedDentries = fs.droppedDentries[:0] // Keep slice memory for reuse.
 	fs.droppedDentriesMu.Unlock()
@@ -160,10 +162,12 @@ const (
 // to, and child dentries hold a reference on their parent.
 //
 // Must be initialized by Init prior to first use.
+//
+// +stateify savable
 type Dentry struct {
-	vfsd vfs.Dentry
+	DentryRefs
 
-	refs.AtomicRefCount
+	vfsd vfs.Dentry
 
 	// flags caches useful information about the dentry from the inode. See the
 	// dflags* consts above. Must be accessed by atomic ops.
@@ -173,7 +177,11 @@ type Dentry struct {
 	name   string
 
 	// dirMu protects children and the names of child Dentries.
-	dirMu    sync.Mutex
+	//
+	// Note that holding fs.mu for writing is not sufficient;
+	// revalidateChildLocked(), which is a very hot path, may modify children with
+	// fs.mu acquired for reading only.
+	dirMu    sync.Mutex `state:"nosave"`
 	children map[string]*Dentry
 
 	inode Inode
@@ -194,6 +202,7 @@ func (d *Dentry) Init(inode Inode) {
 	if ftype == linux.ModeSymlink {
 		d.flags |= dflagsIsSymlink
 	}
+	d.EnableLeakCheck()
 }
 
 // VFSDentry returns the generic vfs dentry for this kernfs dentry.
@@ -212,38 +221,52 @@ func (d *Dentry) isSymlink() bool {
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *Dentry) DecRef() {
-	d.AtomicRefCount.DecRefWithDestructor(d.destroy)
+func (d *Dentry) DecRef(ctx context.Context) {
+	// Before the destructor is called, Dentry must be removed from VFS' dentry cache.
+	d.DentryRefs.DecRef(func() {
+		d.inode.DecRef(ctx) // IncRef from Init.
+		d.inode = nil
+		if d.parent != nil {
+			d.parent.DecRef(ctx) // IncRef from Dentry.InsertChild.
+		}
+	})
 }
 
-// Precondition: Dentry must be removed from VFS' dentry cache.
-func (d *Dentry) destroy() {
-	d.inode.DecRef() // IncRef from Init.
-	d.inode = nil
-	if d.parent != nil {
-		d.parent.DecRef() // IncRef from Dentry.InsertChild.
-	}
+// InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
+//
+// Although Linux technically supports inotify on pseudo filesystems (inotify
+// is implemented at the vfs layer), it is not particularly useful. It is left
+// unimplemented until someone actually needs it.
+func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {}
+
+// Watches implements vfs.DentryImpl.Watches.
+func (d *Dentry) Watches() *vfs.Watches {
+	return nil
 }
+
+// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
+func (d *Dentry) OnZeroWatches(context.Context) {}
 
 // InsertChild inserts child into the vfs dentry cache with the given name under
-// this dentry. This does not update the directory inode, so calling this on
-// it's own isn't sufficient to insert a child into a directory. InsertChild
-// updates the link count on d if required.
+// this dentry. This does not update the directory inode, so calling this on its
+// own isn't sufficient to insert a child into a directory.
 //
 // Precondition: d must represent a directory inode.
 func (d *Dentry) InsertChild(name string, child *Dentry) {
 	d.dirMu.Lock()
-	d.insertChildLocked(name, child)
+	d.InsertChildLocked(name, child)
 	d.dirMu.Unlock()
 }
 
-// insertChildLocked is equivalent to InsertChild, with additional
+// InsertChildLocked is equivalent to InsertChild, with additional
 // preconditions.
 //
-// Precondition: d.dirMu must be locked.
-func (d *Dentry) insertChildLocked(name string, child *Dentry) {
+// Preconditions:
+// * d must represent a directory inode.
+// * d.dirMu must be locked.
+func (d *Dentry) InsertChildLocked(name string, child *Dentry) {
 	if !d.isDir() {
-		panic(fmt.Sprintf("InsertChild called on non-directory Dentry: %+v.", d))
+		panic(fmt.Sprintf("InsertChildLocked called on non-directory Dentry: %+v.", d))
 	}
 	d.IncRef() // DecRef in child's Dentry.destroy.
 	child.parent = d
@@ -252,6 +275,36 @@ func (d *Dentry) insertChildLocked(name string, child *Dentry) {
 		d.children = make(map[string]*Dentry)
 	}
 	d.children[name] = child
+}
+
+// RemoveChild removes child from the vfs dentry cache. This does not update the
+// directory inode or modify the inode to be unlinked. So calling this on its own
+// isn't sufficient to remove a child from a directory.
+//
+// Precondition: d must represent a directory inode.
+func (d *Dentry) RemoveChild(name string, child *Dentry) error {
+	d.dirMu.Lock()
+	defer d.dirMu.Unlock()
+	return d.RemoveChildLocked(name, child)
+}
+
+// RemoveChildLocked is equivalent to RemoveChild, with additional
+// preconditions.
+//
+// Precondition: d.dirMu must be locked.
+func (d *Dentry) RemoveChildLocked(name string, child *Dentry) error {
+	if !d.isDir() {
+		panic(fmt.Sprintf("RemoveChild called on non-directory Dentry: %+v.", d))
+	}
+	c, ok := d.children[name]
+	if !ok {
+		return syserror.ENOENT
+	}
+	if c != child {
+		panic(fmt.Sprintf("Dentry hashed into inode doesn't match what vfs thinks! Child: %+v, vfs: %+v", c, child))
+	}
+	delete(d.children, name)
+	return nil
 }
 
 // Inode returns the dentry's inode.
@@ -274,7 +327,6 @@ func (d *Dentry) Inode() Inode {
 //
 // - Checking that dentries passed to methods are of the appropriate file type.
 // - Checking permissions.
-// - Updating link and reference counts.
 //
 // Specific responsibilities of implementations are documented below.
 type Inode interface {
@@ -284,7 +336,8 @@ type Inode interface {
 	inodeRefs
 
 	// Methods related to node metadata. A generic implementation is provided by
-	// InodeAttrs.
+	// InodeAttrs. Note that a concrete filesystem using kernfs is responsible for
+	// managing link counts.
 	inodeMetadata
 
 	// Method for inodes that represent symlink. InodeNotSymlink provides a
@@ -302,21 +355,22 @@ type Inode interface {
 
 	// Open creates a file description for the filesystem object represented by
 	// this inode. The returned file description should hold a reference on the
-	// inode for its lifetime.
+	// dentry for its lifetime.
 	//
 	// Precondition: rp.Done(). vfsd.Impl() must be the kernfs Dentry containing
 	// the inode on which Open() is being called.
-	Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
+	Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
+
+	// StatFS returns filesystem statistics for the client filesystem. This
+	// corresponds to vfs.FilesystemImpl.StatFSAt. If the client filesystem
+	// doesn't support statfs(2), this should return ENOSYS.
+	StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error)
 }
 
 type inodeRefs interface {
 	IncRef()
-	DecRef()
+	DecRef(ctx context.Context)
 	TryIncRef() bool
-	// Destroy is called when the inode reaches zero references. Destroy release
-	// all resources (references) on objects referenced by the inode, including
-	// any child dentries.
-	Destroy()
 }
 
 type inodeMetadata interface {
@@ -331,7 +385,7 @@ type inodeMetadata interface {
 
 	// Stat returns the metadata for this inode. This corresponds to
 	// vfs.FilesystemImpl.StatAt.
-	Stat(fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error)
+	Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error)
 
 	// SetStat updates the metadata for this inode. This corresponds to
 	// vfs.FilesystemImpl.SetStatAt. Implementations are responsible for checking
@@ -355,30 +409,30 @@ type inodeDirectory interface {
 	HasChildren() bool
 
 	// NewFile creates a new regular file inode.
-	NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*vfs.Dentry, error)
+	NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*Dentry, error)
 
 	// NewDir creates a new directory inode.
-	NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error)
+	NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*Dentry, error)
 
 	// NewLink creates a new hardlink to a specified inode in this
 	// directory. Implementations should create a new kernfs Dentry pointing to
 	// target, and update target's link count.
-	NewLink(ctx context.Context, name string, target Inode) (*vfs.Dentry, error)
+	NewLink(ctx context.Context, name string, target Inode) (*Dentry, error)
 
 	// NewSymlink creates a new symbolic link inode.
-	NewSymlink(ctx context.Context, name, target string) (*vfs.Dentry, error)
+	NewSymlink(ctx context.Context, name, target string) (*Dentry, error)
 
 	// NewNode creates a new filesystem node for a mknod syscall.
-	NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error)
+	NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*Dentry, error)
 
 	// Unlink removes a child dentry from this directory inode.
-	Unlink(ctx context.Context, name string, child *vfs.Dentry) error
+	Unlink(ctx context.Context, name string, child *Dentry) error
 
 	// RmDir removes an empty child directory from this directory
 	// inode. Implementations must update the parent directory's link count,
 	// if required. Implementations are not responsible for checking that child
 	// is a directory, checking for an empty directory.
-	RmDir(ctx context.Context, name string, child *vfs.Dentry) error
+	RmDir(ctx context.Context, name string, child *Dentry) error
 
 	// Rename is called on the source directory containing an inode being
 	// renamed. child should point to the resolved child in the source
@@ -386,7 +440,7 @@ type inodeDirectory interface {
 	// should return the replaced dentry or nil otherwise.
 	//
 	// Precondition: Caller must serialize concurrent calls to Rename.
-	Rename(ctx context.Context, oldname, newname string, child, dstDir *vfs.Dentry) (replaced *vfs.Dentry, err error)
+	Rename(ctx context.Context, oldname, newname string, child, dstDir *Dentry) (replaced *Dentry, err error)
 }
 
 type inodeDynamicLookup interface {
@@ -404,26 +458,26 @@ type inodeDynamicLookup interface {
 	//
 	// Lookup returns the child with an extra reference and the caller owns this
 	// reference.
-	Lookup(ctx context.Context, name string) (*vfs.Dentry, error)
+	Lookup(ctx context.Context, name string) (*Dentry, error)
 
 	// Valid should return true if this inode is still valid, or needs to
 	// be resolved again by a call to Lookup.
 	Valid(ctx context.Context) bool
 
 	// IterDirents is used to iterate over dynamically created entries. It invokes
-	// cb on each entry in the directory represented by the FileDescription.
+	// cb on each entry in the directory represented by the Inode.
 	// 'offset' is the offset for the entire IterDirents call, which may include
-	// results from the caller. 'relOffset' is the offset inside the entries
-	// returned by this IterDirents invocation. In other words,
-	// 'offset+relOffset+1' is the value that should be set in vfs.Dirent.NextOff,
-	// while 'relOffset' is the place where iteration should start from.
+	// results from the caller (e.g. "." and ".."). 'relOffset' is the offset
+	// inside the entries returned by this IterDirents invocation. In other words,
+	// 'offset' should be used to calculate each vfs.Dirent.NextOff as well as
+	// the return value, while 'relOffset' is the place to start iteration.
 	IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error)
 }
 
 type inodeSymlink interface {
 	// Readlink returns the target of a symbolic link. If an inode is not a
 	// symlink, the implementation should return EINVAL.
-	Readlink(ctx context.Context) (string, error)
+	Readlink(ctx context.Context, mnt *vfs.Mount) (string, error)
 
 	// Getlink returns the target of a symbolic link, as used by path
 	// resolution:

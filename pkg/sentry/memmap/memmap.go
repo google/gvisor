@@ -19,18 +19,18 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Mappable represents a memory-mappable object, a mutable mapping from uint64
-// offsets to (platform.File, uint64 File offset) pairs.
+// offsets to (File, uint64 File offset) pairs.
 //
 // See mm/mm.go for Mappable's place in the lock order.
 //
-// Preconditions: For all Mappable methods, usermem.AddrRanges and
-// MappableRanges must be non-empty (Length() != 0), and usermem.Addrs and
-// Mappable offsets must be page-aligned.
+// All Mappable methods have the following preconditions:
+// * usermem.AddrRanges and MappableRanges must be non-empty (Length() != 0).
+// * usermem.Addrs and Mappable offsets must be page-aligned.
 type Mappable interface {
 	// AddMapping notifies the Mappable of a mapping from addresses ar in ms to
 	// offsets [offset, offset+ar.Length()) in this Mappable.
@@ -48,8 +48,10 @@ type Mappable interface {
 	// addresses ar in ms to offsets [offset, offset+ar.Length()) in this
 	// Mappable.
 	//
-	// Preconditions: offset+ar.Length() does not overflow. The removed mapping
-	// must exist. writable must match the corresponding call to AddMapping.
+	// Preconditions:
+	// * offset+ar.Length() does not overflow.
+	// * The removed mapping must exist. writable must match the
+	//   corresponding call to AddMapping.
 	RemoveMapping(ctx context.Context, ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool)
 
 	// CopyMapping notifies the Mappable of an attempt to copy a mapping in ms
@@ -60,9 +62,10 @@ type Mappable interface {
 	// CopyMapping is only called when a mapping is copied within a given
 	// MappingSpace; it is analogous to Linux's vm_operations_struct::mremap.
 	//
-	// Preconditions: offset+srcAR.Length() and offset+dstAR.Length() do not
-	// overflow. The mapping at srcAR must exist. writable must match the
-	// corresponding call to AddMapping.
+	// Preconditions:
+	// * offset+srcAR.Length() and offset+dstAR.Length() do not overflow.
+	// * The mapping at srcAR must exist. writable must match the
+	//   corresponding call to AddMapping.
 	CopyMapping(ctx context.Context, ms MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error
 
 	// Translate returns the Mappable's current mappings for at least the range
@@ -74,14 +77,17 @@ type Mappable interface {
 	// Translations are valid until invalidated by a callback to
 	// MappingSpace.Invalidate or until the caller removes its mapping of the
 	// translated range. Mappable implementations must ensure that at least one
-	// reference is held on all pages in a platform.File that may be the result
+	// reference is held on all pages in a File that may be the result
 	// of a valid Translation.
 	//
-	// Preconditions: required.Length() > 0. optional.IsSupersetOf(required).
-	// required and optional must be page-aligned. The caller must have
-	// established a mapping for all of the queried offsets via a previous call
-	// to AddMapping. The caller is responsible for ensuring that calls to
-	// Translate synchronize with invalidation.
+	// Preconditions:
+	// * required.Length() > 0.
+	// * optional.IsSupersetOf(required).
+	// * required and optional must be page-aligned.
+	// * The caller must have established a mapping for all of the queried
+	//   offsets via a previous call to AddMapping.
+	// * The caller is responsible for ensuring that calls to Translate
+	//   synchronize with invalidation.
 	//
 	// Postconditions: See CheckTranslateResult.
 	Translate(ctx context.Context, required, optional MappableRange, at usermem.AccessType) ([]Translation, error)
@@ -100,7 +106,7 @@ type Translation struct {
 	Source MappableRange
 
 	// File is the mapped file.
-	File platform.File
+	File File
 
 	// Offset is the offset into File at which this Translation begins.
 	Offset uint64
@@ -110,15 +116,15 @@ type Translation struct {
 	Perms usermem.AccessType
 }
 
-// FileRange returns the platform.FileRange represented by t.
-func (t Translation) FileRange() platform.FileRange {
-	return platform.FileRange{t.Offset, t.Offset + t.Source.Length()}
+// FileRange returns the FileRange represented by t.
+func (t Translation) FileRange() FileRange {
+	return FileRange{t.Offset, t.Offset + t.Source.Length()}
 }
 
 // CheckTranslateResult returns an error if (ts, terr) does not satisfy all
 // postconditions for Mappable.Translate(required, optional, at).
 //
-// Preconditions: As for Mappable.Translate.
+// Preconditions: Same as Mappable.Translate.
 func CheckTranslateResult(required, optional MappableRange, at usermem.AccessType, ts []Translation, terr error) error {
 	// Verify that the inputs to Mappable.Translate were valid.
 	if !required.WellFormed() || required.Length() <= 0 {
@@ -214,7 +220,9 @@ type MappingSpace interface {
 	// Invalidate must not take any locks preceding mm.MemoryManager.activeMu
 	// in the lock order.
 	//
-	// Preconditions: ar.Length() != 0. ar must be page-aligned.
+	// Preconditions:
+	// * ar.Length() != 0.
+	// * ar must be page-aligned.
 	Invalidate(ar usermem.AddrRange, opts InvalidateOpts)
 }
 
@@ -238,7 +246,7 @@ type MappingIdentity interface {
 	IncRef()
 
 	// DecRef decrements the MappingIdentity's reference count.
-	DecRef()
+	DecRef(ctx context.Context)
 
 	// MappedName returns the application-visible name shown in
 	// /proc/[pid]/maps.
@@ -360,4 +368,62 @@ type MMapOpts struct {
 	//
 	// TODO(jamieliu): Replace entirely with MappingIdentity?
 	Hint string
+
+	// Force means to skip validation checks of Addr and Length. It can be
+	// used to create special mappings below mm.layout.MinAddr and
+	// mm.layout.MaxAddr. It has to be used with caution.
+	//
+	// If Force is true, Unmap and Fixed must be true.
+	Force bool
+}
+
+// File represents a host file that may be mapped into an platform.AddressSpace.
+type File interface {
+	// All pages in a File are reference-counted.
+
+	// IncRef increments the reference count on all pages in fr.
+	//
+	// Preconditions:
+	// * fr.Start and fr.End must be page-aligned.
+	// * fr.Length() > 0.
+	// * At least one reference must be held on all pages in fr. (The File
+	//   interface does not provide a way to acquire an initial reference;
+	//   implementors may define mechanisms for doing so.)
+	IncRef(fr FileRange)
+
+	// DecRef decrements the reference count on all pages in fr.
+	//
+	// Preconditions:
+	// * fr.Start and fr.End must be page-aligned.
+	// * fr.Length() > 0.
+	// * At least one reference must be held on all pages in fr.
+	DecRef(fr FileRange)
+
+	// MapInternal returns a mapping of the given file offsets in the invoking
+	// process' address space for reading and writing.
+	//
+	// Note that fr.Start and fr.End need not be page-aligned.
+	//
+	// Preconditions:
+	// * fr.Length() > 0.
+	// * At least one reference must be held on all pages in fr.
+	//
+	// Postconditions: The returned mapping is valid as long as at least one
+	// reference is held on the mapped pages.
+	MapInternal(fr FileRange, at usermem.AccessType) (safemem.BlockSeq, error)
+
+	// FD returns the file descriptor represented by the File.
+	//
+	// The only permitted operation on the returned file descriptor is to map
+	// pages from it consistent with the requirements of AddressSpace.MapFile.
+	FD() int
+}
+
+// FileRange represents a range of uint64 offsets into a File.
+//
+// type FileRange <generated using go_generics>
+
+// String implements fmt.Stringer.String.
+func (fr FileRange) String() string {
+	return fmt.Sprintf("[%#x, %#x)", fr.Start, fr.End)
 }

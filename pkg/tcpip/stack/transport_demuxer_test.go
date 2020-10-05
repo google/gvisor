@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -50,8 +51,8 @@ type testContext struct {
 // newDualTestContextMultiNIC creates the testing context and also linkEpIDs NICs.
 func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICID) *testContext {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	})
 	linkEps := make(map[tcpip.NICID]*channel.Endpoint)
 	for _, linkEpID := range linkEpIDs {
@@ -127,11 +128,10 @@ func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
-		Data:            buf.ToVectorisedView(),
-		NetworkHeader:   buffer.View(ip),
-		TransportHeader: buffer.View(u),
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
 	})
+	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
@@ -165,11 +165,10 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
-		Data:            buf.ToVectorisedView(),
-		NetworkHeader:   buffer.View(ip),
-		TransportHeader: buffer.View(u),
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
 	})
+	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, pkt)
 }
 
 func TestTransportDemuxerRegister(t *testing.T) {
@@ -183,8 +182,8 @@ func TestTransportDemuxerRegister(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			var wq waiter.Queue
 			ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
@@ -195,7 +194,7 @@ func TestTransportDemuxerRegister(t *testing.T) {
 			if !ok {
 				t.Fatalf("%T does not implement stack.TransportEndpoint", ep)
 			}
-			if got, want := s.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{test.proto}, udp.ProtocolNumber, stack.TransportEndpointID{}, tEP, false, 0), test.want; got != want {
+			if got, want := s.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{test.proto}, udp.ProtocolNumber, stack.TransportEndpointID{}, tEP, ports.Flags{}, 0), test.want; got != want {
 				t.Fatalf("s.RegisterTransportEndpoint(...) = %s, want %s", got, want)
 			}
 		})
@@ -313,8 +312,8 @@ func TestBindToDeviceDistribution(t *testing.T) {
 							t.Fatalf("SetSockOptBool(ReusePortOption, %t) on endpoint %d failed: %s", endpoint.reuse, i, err)
 						}
 						bindToDeviceOption := tcpip.BindToDeviceOption(endpoint.bindToDevice)
-						if err := ep.SetSockOpt(bindToDeviceOption); err != nil {
-							t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %s", bindToDeviceOption, i, err)
+						if err := ep.SetSockOpt(&bindToDeviceOption); err != nil {
+							t.Fatalf("SetSockOpt(&%T(%d)) on endpoint %d failed: %s", bindToDeviceOption, bindToDeviceOption, i, err)
 						}
 
 						var dstAddr tcpip.Address

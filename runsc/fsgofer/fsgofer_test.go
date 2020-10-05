@@ -21,11 +21,24 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/test/testutil"
+)
+
+var allOpenFlags = []p9.OpenFlags{p9.ReadOnly, p9.WriteOnly, p9.ReadWrite}
+
+var (
+	allTypes = []uint32{unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK}
+
+	// allConfs is set in init().
+	allConfs []Config
+
+	rwConfs = []Config{{ROMount: false}}
+	roConfs = []Config{{ROMount: true}}
 )
 
 func init() {
@@ -37,6 +50,13 @@ func init() {
 	if err := OpenProcSelfFD(); err != nil {
 		panic(err)
 	}
+}
+
+func configTestName(conf *Config) string {
+	if conf.ROMount {
+		return "ROMount"
+	}
+	return "RWMount"
 }
 
 func assertPanic(t *testing.T, f func()) {
@@ -63,7 +83,7 @@ func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
 		}
 		want = append(want, b...)
 	} else {
-		if e, ok := err.(syscall.Errno); !ok || e != syscall.EBADF {
+		if e, ok := err.(unix.Errno); !ok || e != unix.EBADF {
 			return fmt.Errorf("WriteAt() should have failed, got: %d, want: EBADFD", err)
 		}
 	}
@@ -81,78 +101,83 @@ func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
 			return fmt.Errorf("ReadAt() wrong data, got: %s, want: %s", string(rBuf), want)
 		}
 	} else {
-		if e, ok := err.(syscall.Errno); !ok || e != syscall.EBADF {
+		if e, ok := err.(unix.Errno); !ok || e != unix.EBADF {
 			return fmt.Errorf("ReadAt() should have failed, got: %d, want: EBADFD", err)
 		}
 	}
 	return nil
 }
 
-var allOpenFlags = []p9.OpenFlags{p9.ReadOnly, p9.WriteOnly, p9.ReadWrite}
-
-var (
-	allTypes = []fileType{regular, directory, symlink}
-
-	// allConfs is set in init() above.
-	allConfs []Config
-
-	rwConfs = []Config{{ROMount: false}}
-	roConfs = []Config{{ROMount: true}}
-)
-
 type state struct {
-	root *localFile
-	file *localFile
-	conf Config
-	ft   fileType
+	root     *localFile
+	file     *localFile
+	conf     Config
+	fileType uint32
 }
 
 func (s state) String() string {
-	return fmt.Sprintf("type(%v)", s.ft)
+	return fmt.Sprintf("type(%v)", s.fileType)
+}
+
+func typeName(fileType uint32) string {
+	switch fileType {
+	case unix.S_IFREG:
+		return "file"
+	case unix.S_IFDIR:
+		return "directory"
+	case unix.S_IFLNK:
+		return "symlink"
+	default:
+		panic(fmt.Sprintf("invalid file type for test: %d", fileType))
+	}
 }
 
 func runAll(t *testing.T, test func(*testing.T, state)) {
 	runCustom(t, allTypes, allConfs, test)
 }
 
-func runCustom(t *testing.T, types []fileType, confs []Config, test func(*testing.T, state)) {
+func runCustom(t *testing.T, types []uint32, confs []Config, test func(*testing.T, state)) {
 	for _, c := range confs {
-		t.Logf("Config: %+v", c)
-
 		for _, ft := range types {
-			t.Logf("File type: %v", ft)
+			name := fmt.Sprintf("%s/%s", configTestName(&c), typeName(ft))
+			t.Run(name, func(t *testing.T) {
+				path, name, err := setup(ft)
+				if err != nil {
+					t.Fatalf("%v", err)
+				}
+				defer os.RemoveAll(path)
 
-			path, name, err := setup(ft)
-			if err != nil {
-				t.Fatalf("%v", err)
-			}
-			defer os.RemoveAll(path)
+				a, err := NewAttachPoint(path, c)
+				if err != nil {
+					t.Fatalf("NewAttachPoint failed: %v", err)
+				}
+				root, err := a.Attach()
+				if err != nil {
+					t.Fatalf("Attach failed, err: %v", err)
+				}
 
-			a, err := NewAttachPoint(path, c)
-			if err != nil {
-				t.Fatalf("NewAttachPoint failed: %v", err)
-			}
-			root, err := a.Attach()
-			if err != nil {
-				t.Fatalf("Attach failed, err: %v", err)
-			}
+				_, file, err := root.Walk([]string{name})
+				if err != nil {
+					root.Close()
+					t.Fatalf("root.Walk({%q}) failed, err: %v", "symlink", err)
+				}
 
-			_, file, err := root.Walk([]string{name})
-			if err != nil {
+				st := state{
+					root:     root.(*localFile),
+					file:     file.(*localFile),
+					conf:     c,
+					fileType: ft,
+				}
+				test(t, st)
+				file.Close()
 				root.Close()
-				t.Fatalf("root.Walk({%q}) failed, err: %v", "symlink", err)
-			}
-
-			st := state{root: root.(*localFile), file: file.(*localFile), conf: c, ft: ft}
-			test(t, st)
-			file.Close()
-			root.Close()
+			})
 		}
 	}
 }
 
-func setup(ft fileType) (string, string, error) {
-	path, err := ioutil.TempDir("", "root-")
+func setup(fileType uint32) (string, string, error) {
+	path, err := ioutil.TempDir(testutil.TmpDir(), "root-")
 	if err != nil {
 		return "", "", fmt.Errorf("ioutil.TempDir() failed, err: %v", err)
 	}
@@ -169,26 +194,26 @@ func setup(ft fileType) (string, string, error) {
 	defer root.Close()
 
 	var name string
-	switch ft {
-	case regular:
+	switch fileType {
+	case unix.S_IFREG:
 		name = "file"
 		_, f, _, _, err := root.Create(name, p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
 		if err != nil {
 			return "", "", fmt.Errorf("createFile(root, %q) failed, err: %v", "test", err)
 		}
 		defer f.Close()
-	case directory:
+	case unix.S_IFDIR:
 		name = "dir"
 		if _, err := root.Mkdir(name, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
 			return "", "", fmt.Errorf("root.MkDir(%q) failed, err: %v", name, err)
 		}
-	case symlink:
+	case unix.S_IFLNK:
 		name = "symlink"
 		if _, err := root.Symlink("/some/target", name, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
 			return "", "", fmt.Errorf("root.Symlink(%q) failed, err: %v", name, err)
 		}
 	default:
-		panic(fmt.Sprintf("unknown file type %v", ft))
+		panic(fmt.Sprintf("unknown file type %v", fileType))
 	}
 	return path, name, nil
 }
@@ -202,7 +227,7 @@ func createFile(dir *localFile, name string) (*localFile, error) {
 }
 
 func TestReadWrite(t *testing.T) {
-	runCustom(t, []fileType{directory}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
 		child, err := createFile(s.file, "test")
 		if err != nil {
 			t.Fatalf("%v: createFile() failed, err: %v", s, err)
@@ -221,8 +246,12 @@ func TestReadWrite(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v: Walk(%s) failed, err: %v", s, "test", err)
 			}
-			if _, _, _, err := l.Open(flags); err != nil {
+			fd, _, _, err := l.Open(flags)
+			if err != nil {
 				t.Fatalf("%v: Open(%v) failed, err: %v", s, flags, err)
+			}
+			if fd != nil {
+				defer fd.Close()
 			}
 			if err := testReadWrite(l, flags, want); err != nil {
 				t.Fatalf("%v: testReadWrite(%v) failed: %v", s, flags, err)
@@ -232,14 +261,14 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestCreate(t *testing.T) {
-	runCustom(t, []fileType{directory}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
 		for i, flags := range allOpenFlags {
 			_, l, _, _, err := s.file.Create(fmt.Sprintf("test-%d", i), flags, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
 			if err != nil {
 				t.Fatalf("%v, %v: WriteAt() failed, err: %v", s, flags, err)
 			}
 
-			if err := testReadWrite(l, flags, []byte{}); err != nil {
+			if err := testReadWrite(l, flags, nil); err != nil {
 				t.Fatalf("%v: testReadWrite(%v) failed: %v", s, flags, err)
 			}
 		}
@@ -249,7 +278,7 @@ func TestCreate(t *testing.T) {
 // TestReadWriteDup tests that a file opened in any mode can be dup'ed and
 // reopened in any other mode.
 func TestReadWriteDup(t *testing.T) {
-	runCustom(t, []fileType{directory}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
 		child, err := createFile(s.file, "test")
 		if err != nil {
 			t.Fatalf("%v: createFile() failed, err: %v", s, err)
@@ -279,8 +308,12 @@ func TestReadWriteDup(t *testing.T) {
 					t.Fatalf("%v: Walk(<empty>) failed: %v", s, err)
 				}
 				defer dup.Close()
-				if _, _, _, err := dup.Open(dupFlags); err != nil {
+				fd, _, _, err := dup.Open(dupFlags)
+				if err != nil {
 					t.Fatalf("%v: Open(%v) failed: %v", s, flags, err)
+				}
+				if fd != nil {
+					defer fd.Close()
 				}
 				if err := testReadWrite(dup, dupFlags, want); err != nil {
 					t.Fatalf("%v: testReadWrite(%v) failed: %v", s, dupFlags, err)
@@ -291,19 +324,45 @@ func TestReadWriteDup(t *testing.T) {
 }
 
 func TestUnopened(t *testing.T) {
-	runCustom(t, []fileType{regular}, allConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFREG}, allConfs, func(t *testing.T, s state) {
 		b := []byte("foobar")
-		if _, err := s.file.WriteAt(b, 0); err != syscall.EBADF {
-			t.Errorf("%v: WriteAt() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if _, err := s.file.WriteAt(b, 0); err != unix.EBADF {
+			t.Errorf("%v: WriteAt() should have failed, got: %v, expected: unix.EBADF", s, err)
 		}
-		if _, err := s.file.ReadAt(b, 0); err != syscall.EBADF {
-			t.Errorf("%v: ReadAt() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if _, err := s.file.ReadAt(b, 0); err != unix.EBADF {
+			t.Errorf("%v: ReadAt() should have failed, got: %v, expected: unix.EBADF", s, err)
 		}
-		if _, err := s.file.Readdir(0, 100); err != syscall.EBADF {
-			t.Errorf("%v: Readdir() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if _, err := s.file.Readdir(0, 100); err != unix.EBADF {
+			t.Errorf("%v: Readdir() should have failed, got: %v, expected: unix.EBADF", s, err)
 		}
-		if err := s.file.FSync(); err != syscall.EBADF {
-			t.Errorf("%v: FSync() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if err := s.file.FSync(); err != unix.EBADF {
+			t.Errorf("%v: FSync() should have failed, got: %v, expected: unix.EBADF", s, err)
+		}
+	})
+}
+
+// TestOpenOPath is a regression test to ensure that a file that cannot be open
+// for read is allowed to be open. This was happening because the control file
+// was open with O_PATH, but Open() was not checking for it and allowing the
+// control file to be reused.
+func TestOpenOPath(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFREG}, rwConfs, func(t *testing.T, s state) {
+		// Fist remove all permissions on the file.
+		if err := s.file.SetAttr(p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: p9.FileMode(0)}); err != nil {
+			t.Fatalf("SetAttr(): %v", err)
+		}
+		// Then walk to the file again to open a new control file.
+		filename := filepath.Base(s.file.hostPath)
+		_, newFile, err := s.root.Walk([]string{filename})
+		if err != nil {
+			t.Fatalf("root.Walk(%q): %v", filename, err)
+		}
+
+		if newFile.(*localFile).controlReadable {
+			t.Fatalf("control file didn't open with O_PATH: %+v", newFile)
+		}
+		if _, _, _, err := newFile.Open(p9.ReadOnly); err != unix.EACCES {
+			t.Fatalf("Open() should have failed, got: %v, wanted: EACCES", err)
 		}
 	})
 }
@@ -324,7 +383,7 @@ func TestSetAttrPerm(t *testing.T) {
 		valid := p9.SetAttrMask{Permissions: true}
 		attr := p9.SetAttr{Permissions: 0777}
 		got, err := SetGetAttr(s.file, valid, attr)
-		if s.ft == symlink {
+		if s.fileType == unix.S_IFLNK {
 			if err == nil {
 				t.Fatalf("%v: SetGetAttr(valid, %v) should have failed", s, attr.Permissions)
 			}
@@ -345,7 +404,7 @@ func TestSetAttrSize(t *testing.T) {
 			valid := p9.SetAttrMask{Size: true}
 			attr := p9.SetAttr{Size: size}
 			got, err := SetGetAttr(s.file, valid, attr)
-			if s.ft == symlink || s.ft == directory {
+			if s.fileType == unix.S_IFLNK || s.fileType == unix.S_IFDIR {
 				if err == nil {
 					t.Fatalf("%v: SetGetAttr(valid, %v) should have failed", s, attr.Permissions)
 				}
@@ -427,9 +486,9 @@ func TestLink(t *testing.T) {
 		}
 
 		err = dir.Link(s.file, linkFile)
-		if s.ft == directory {
-			if err != syscall.EPERM {
-				t.Errorf("%v: Link(target, %s) should have failed, got: %v, expected: syscall.EPERM", s, linkFile, err)
+		if s.fileType == unix.S_IFDIR {
+			if err != unix.EPERM {
+				t.Errorf("%v: Link(target, %s) should have failed, got: %v, expected: unix.EPERM", s, linkFile, err)
 			}
 			return
 		}
@@ -440,54 +499,64 @@ func TestLink(t *testing.T) {
 }
 
 func TestROMountChecks(t *testing.T) {
+	const want = unix.EROFS
+	uid := p9.UID(os.Getuid())
+	gid := p9.GID(os.Getgid())
+
 	runCustom(t, allTypes, roConfs, func(t *testing.T, s state) {
-		if _, _, _, _, err := s.file.Create("some_file", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
-			t.Errorf("%v: Create() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if s.fileType != unix.S_IFLNK {
+			if _, _, _, err := s.file.Open(p9.WriteOnly); err != want {
+				t.Errorf("Open() should have failed, got: %v, expected: %v", err, want)
+			}
+			if _, _, _, err := s.file.Open(p9.ReadWrite); err != want {
+				t.Errorf("Open() should have failed, got: %v, expected: %v", err, want)
+			}
+			if _, _, _, err := s.file.Open(p9.ReadOnly | p9.OpenTruncate); err != want {
+				t.Errorf("Open() should have failed, got: %v, expected: %v", err, want)
+			}
+			f, _, _, err := s.file.Open(p9.ReadOnly)
+			if err != nil {
+				t.Errorf("Open() failed: %v", err)
+			}
+			if f != nil {
+				_ = f.Close()
+			}
 		}
-		if _, err := s.file.Mkdir("some_dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
-			t.Errorf("%v: MkDir() should have failed, got: %v, expected: syscall.EBADF", s, err)
+
+		if _, _, _, _, err := s.file.Create("some_file", p9.ReadWrite, 0777, uid, gid); err != want {
+			t.Errorf("Create() should have failed, got: %v, expected: %v", err, want)
 		}
-		if err := s.file.RenameAt("some_file", s.file, "other_file"); err != syscall.EBADF {
-			t.Errorf("%v: Rename() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if _, err := s.file.Mkdir("some_dir", 0777, uid, gid); err != want {
+			t.Errorf("MkDir() should have failed, got: %v, expected: %v", err, want)
 		}
-		if _, err := s.file.Symlink("some_place", "some_symlink", p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
-			t.Errorf("%v: Symlink() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if err := s.file.RenameAt("some_file", s.file, "other_file"); err != want {
+			t.Errorf("Rename() should have failed, got: %v, expected: %v", err, want)
 		}
-		if err := s.file.UnlinkAt("some_file", 0); err != syscall.EBADF {
-			t.Errorf("%v: UnlinkAt() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if _, err := s.file.Symlink("some_place", "some_symlink", uid, gid); err != want {
+			t.Errorf("Symlink() should have failed, got: %v, expected: %v", err, want)
 		}
-		if err := s.file.Link(s.file, "some_link"); err != syscall.EBADF {
-			t.Errorf("%v: Link() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if err := s.file.UnlinkAt("some_file", 0); err != want {
+			t.Errorf("UnlinkAt() should have failed, got: %v, expected: %v", err, want)
+		}
+		if err := s.file.Link(s.file, "some_link"); err != want {
+			t.Errorf("Link() should have failed, got: %v, expected: %v", err, want)
+		}
+		if _, err := s.file.Mknod("some-nod", 0777, 1, 2, uid, gid); err != want {
+			t.Errorf("Mknod() should have failed, got: %v, expected: %v", err, want)
 		}
 
 		valid := p9.SetAttrMask{Size: true}
 		attr := p9.SetAttr{Size: 0}
-		if err := s.file.SetAttr(valid, attr); err != syscall.EBADF {
-			t.Errorf("%v: SetAttr() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		if err := s.file.SetAttr(valid, attr); err != want {
+			t.Errorf("SetAttr() should have failed, got: %v, expected: %v", err, want)
 		}
-	})
-}
-
-func TestROMountPanics(t *testing.T) {
-	conf := Config{ROMount: true, PanicOnWrite: true}
-	runCustom(t, allTypes, []Config{conf}, func(t *testing.T, s state) {
-		assertPanic(t, func() { s.file.Create("some_file", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
-		assertPanic(t, func() { s.file.Mkdir("some_dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
-		assertPanic(t, func() { s.file.RenameAt("some_file", s.file, "other_file") })
-		assertPanic(t, func() { s.file.Symlink("some_place", "some_symlink", p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
-		assertPanic(t, func() { s.file.UnlinkAt("some_file", 0) })
-		assertPanic(t, func() { s.file.Link(s.file, "some_link") })
-
-		valid := p9.SetAttrMask{Size: true}
-		attr := p9.SetAttr{Size: 0}
-		assertPanic(t, func() { s.file.SetAttr(valid, attr) })
 	})
 }
 
 func TestWalkNotFound(t *testing.T) {
-	runCustom(t, []fileType{directory}, allConfs, func(t *testing.T, s state) {
-		if _, _, err := s.file.Walk([]string{"nobody-here"}); err != syscall.ENOENT {
-			t.Errorf("%v: Walk(%q) should have failed, got: %v, expected: syscall.ENOENT", s, "nobody-here", err)
+	runCustom(t, []uint32{unix.S_IFDIR}, allConfs, func(t *testing.T, s state) {
+		if _, _, err := s.file.Walk([]string{"nobody-here"}); err != unix.ENOENT {
+			t.Errorf("%v: Walk(%q) should have failed, got: %v, expected: unix.ENOENT", s, "nobody-here", err)
 		}
 	})
 }
@@ -506,7 +575,7 @@ func TestWalkDup(t *testing.T) {
 }
 
 func TestReaddir(t *testing.T) {
-	runCustom(t, []fileType{directory}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
 		name := "dir"
 		if _, err := s.file.Mkdir(name, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
 			t.Fatalf("%v: MkDir(%s) failed, err: %v", s, name, err)
@@ -631,7 +700,7 @@ func TestAttachInvalidType(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	fifo := filepath.Join(dir, "fifo")
-	if err := syscall.Mkfifo(fifo, 0755); err != nil {
+	if err := unix.Mkfifo(fifo, 0755); err != nil {
 		t.Fatalf("Mkfifo(%q): %v", fifo, err)
 	}
 
@@ -689,4 +758,64 @@ func TestDoubleAttachError(t *testing.T) {
 	if _, err := a.Attach(); err == nil {
 		t.Fatalf("Attach should have failed, got %v want non-nil", err)
 	}
+}
+
+func TestTruncate(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+		child, err := createFile(s.file, "test")
+		if err != nil {
+			t.Fatalf("createFile() failed: %v", err)
+		}
+		defer child.Close()
+		want := []byte("foobar")
+		w, err := child.WriteAt(want, 0)
+		if err != nil {
+			t.Fatalf("Write() failed: %v", err)
+		}
+		if w != len(want) {
+			t.Fatalf("Write() was partial, got: %d, expected: %d", w, len(want))
+		}
+
+		_, l, err := s.file.Walk([]string{"test"})
+		if err != nil {
+			t.Fatalf("Walk(%s) failed: %v", "test", err)
+		}
+		if _, _, _, err := l.Open(p9.ReadOnly | p9.OpenTruncate); err != nil {
+			t.Fatalf("Open() failed: %v", err)
+		}
+		_, mask, attr, err := l.GetAttr(p9.AttrMask{Size: true})
+		if err != nil {
+			t.Fatalf("GetAttr() failed: %v", err)
+		}
+		if !mask.Size {
+			t.Fatalf("GetAttr() didn't return size: %+v", mask)
+		}
+		if attr.Size != 0 {
+			t.Fatalf("truncate didn't work, want: 0, got: %d", attr.Size)
+		}
+	})
+}
+
+func TestMknod(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+		_, err := s.file.Mknod("test", p9.ModeRegular|0777, 1, 2, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
+		if err != nil {
+			t.Fatalf("Mknod() failed: %v", err)
+		}
+
+		_, f, err := s.file.Walk([]string{"test"})
+		if err != nil {
+			t.Fatalf("Walk() failed: %v", err)
+		}
+		fd, _, _, err := f.Open(p9.ReadWrite)
+		if err != nil {
+			t.Fatalf("Open() failed: %v", err)
+		}
+		if fd != nil {
+			defer fd.Close()
+		}
+		if err := testReadWrite(f, p9.ReadWrite, nil); err != nil {
+			t.Fatalf("testReadWrite() failed: %v", err)
+		}
+	})
 }

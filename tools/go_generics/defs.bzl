@@ -1,11 +1,24 @@
+"""Generics support via go_generics."""
+
+TemplateInfo = provider(
+    fields = {
+        "types": "required types",
+        "opt_types": "optional types",
+        "consts": "required consts",
+        "opt_consts": "optional consts",
+        "deps": "package dependencies",
+        "file": "merged template",
+    },
+)
+
 def _go_template_impl(ctx):
-    input = ctx.files.srcs
+    srcs = ctx.files.srcs
     output = ctx.outputs.out
 
-    args = ["-o=%s" % output.path] + [f.path for f in input]
+    args = ["-o=%s" % output.path] + [f.path for f in srcs]
 
     ctx.actions.run(
-        inputs = input,
+        inputs = srcs,
         outputs = [output],
         mnemonic = "GoGenericsTemplate",
         progress_message = "Building Go template %s" % ctx.label,
@@ -13,14 +26,14 @@ def _go_template_impl(ctx):
         executable = ctx.executable._tool,
     )
 
-    return struct(
+    return [TemplateInfo(
         types = ctx.attr.types,
         opt_types = ctx.attr.opt_types,
         consts = ctx.attr.consts,
         opt_consts = ctx.attr.opt_consts,
         deps = ctx.attr.deps,
         file = output,
-    )
+    )]
 
 """
 Generates a Go template from a set of Go files.
@@ -43,7 +56,7 @@ go_template = rule(
     implementation = _go_template_impl,
     attrs = {
         "srcs": attr.label_list(mandatory = True, allow_files = True),
-        "deps": attr.label_list(allow_files = True),
+        "deps": attr.label_list(allow_files = True, cfg = "target"),
         "types": attr.string_list(),
         "opt_types": attr.string_list(),
         "consts": attr.string_list(),
@@ -55,8 +68,14 @@ go_template = rule(
     },
 )
 
+TemplateInstanceInfo = provider(
+    fields = {
+        "srcs": "source files",
+    },
+)
+
 def _go_template_instance_impl(ctx):
-    template = ctx.attr.template
+    template = ctx.attr.template[TemplateInfo]
     output = ctx.outputs.out
 
     # Check that all required types are defined.
@@ -81,20 +100,21 @@ def _go_template_instance_impl(ctx):
 
     # Build the argument list.
     args = ["-i=%s" % template.file.path, "-o=%s" % output.path]
-    args += ["-p=%s" % ctx.attr.package]
+    if ctx.attr.package:
+        args.append("-p=%s" % ctx.attr.package)
 
     if len(ctx.attr.prefix) > 0:
-        args += ["-prefix=%s" % ctx.attr.prefix]
+        args.append("-prefix=%s" % ctx.attr.prefix)
 
     if len(ctx.attr.suffix) > 0:
-        args += ["-suffix=%s" % ctx.attr.suffix]
+        args.append("-suffix=%s" % ctx.attr.suffix)
 
     args += [("-t=%s=%s" % (p[0], p[1])) for p in ctx.attr.types.items()]
     args += [("-c=%s=%s" % (p[0], p[1])) for p in ctx.attr.consts.items()]
     args += [("-import=%s=%s" % (p[0], p[1])) for p in ctx.attr.imports.items()]
 
     if ctx.attr.anon:
-        args += ["-anon"]
+        args.append("-anon")
 
     ctx.actions.run(
         inputs = [template.file],
@@ -105,9 +125,9 @@ def _go_template_instance_impl(ctx):
         executable = ctx.executable._tool,
     )
 
-    return struct(
-        files = depset([output]),
-    )
+    return [TemplateInstanceInfo(
+        srcs = [output],
+    )]
 
 """
 Instantiates a Go template by replacing all generic types with concrete ones.
@@ -125,14 +145,14 @@ Args:
 go_template_instance = rule(
     implementation = _go_template_instance_impl,
     attrs = {
-        "template": attr.label(mandatory = True, providers = ["types"]),
+        "template": attr.label(mandatory = True),
         "prefix": attr.string(),
         "suffix": attr.string(),
         "types": attr.string_dict(),
         "consts": attr.string_dict(),
         "imports": attr.string_dict(),
         "anon": attr.bool(mandatory = False, default = False),
-        "package": attr.string(mandatory = True),
+        "package": attr.string(mandatory = False),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics")),
     },

@@ -62,7 +62,7 @@ import (
 type LockType int
 
 // UniqueID is a unique identifier of the holder of a regional file lock.
-type UniqueID uint64
+type UniqueID interface{}
 
 const (
 	// ReadLock describes a POSIX regional file lock to be taken
@@ -98,12 +98,7 @@ type Lock struct {
 	// If len(Readers) > 0 then HasWriter must be false.
 	Readers map[UniqueID]bool
 
-	// HasWriter indicates that this is a write lock held by a single
-	// UniqueID.
-	HasWriter bool
-
-	// Writer is only valid if HasWriter is true.  It identifies a
-	// single write lock holder.
+	// Writer holds the writer unique ID. It's nil if there are no writers.
 	Writer UniqueID
 }
 
@@ -186,7 +181,6 @@ func makeLock(uid UniqueID, t LockType) Lock {
 	case ReadLock:
 		value.Readers[uid] = true
 	case WriteLock:
-		value.HasWriter = true
 		value.Writer = uid
 	default:
 		panic(fmt.Sprintf("makeLock: invalid lock type %d", t))
@@ -196,10 +190,7 @@ func makeLock(uid UniqueID, t LockType) Lock {
 
 // isHeld returns true if uid is a holder of Lock.
 func (l Lock) isHeld(uid UniqueID) bool {
-	if l.HasWriter && l.Writer == uid {
-		return true
-	}
-	return l.Readers[uid]
+	return l.Writer == uid || l.Readers[uid]
 }
 
 // lock sets uid as a holder of a typed lock on Lock.
@@ -214,20 +205,20 @@ func (l *Lock) lock(uid UniqueID, t LockType) {
 		}
 		// We cannot downgrade a write lock to a read lock unless the
 		// uid is the same.
-		if l.HasWriter {
+		if l.Writer != nil {
 			if l.Writer != uid {
 				panic(fmt.Sprintf("lock: cannot downgrade write lock to read lock for uid %d, writer is %d", uid, l.Writer))
 			}
 			// Ensure that there is only one reader if upgrading.
 			l.Readers = make(map[UniqueID]bool)
 			// Ensure that there is no longer a writer.
-			l.HasWriter = false
+			l.Writer = nil
 		}
 		l.Readers[uid] = true
 		return
 	case WriteLock:
 		// If we are already the writer, then this is a no-op.
-		if l.HasWriter && l.Writer == uid {
+		if l.Writer == uid {
 			return
 		}
 		// We can only upgrade a read lock to a write lock if there
@@ -243,7 +234,6 @@ func (l *Lock) lock(uid UniqueID, t LockType) {
 		}
 		// Ensure that there is only a writer.
 		l.Readers = make(map[UniqueID]bool)
-		l.HasWriter = true
 		l.Writer = uid
 	default:
 		panic(fmt.Sprintf("lock: invalid lock type %d", t))
@@ -277,9 +267,8 @@ func (l LockSet) canLock(uid UniqueID, t LockType, r LockRange) bool {
 	switch t {
 	case ReadLock:
 		return l.lockable(r, func(value Lock) bool {
-			// If there is no writer, there's no problem adding
-			// another reader.
-			if !value.HasWriter {
+			// If there is no writer, there's no problem adding another reader.
+			if value.Writer == nil {
 				return true
 			}
 			// If there is a writer, then it must be the same uid
@@ -289,10 +278,9 @@ func (l LockSet) canLock(uid UniqueID, t LockType, r LockRange) bool {
 	case WriteLock:
 		return l.lockable(r, func(value Lock) bool {
 			// If there are only readers.
-			if !value.HasWriter {
-				// Then this uid can only take a write lock if
-				// this is a private upgrade, meaning that the
-				// only reader is uid.
+			if value.Writer == nil {
+				// Then this uid can only take a write lock if this is a private
+				// upgrade, meaning that the only reader is uid.
 				return len(value.Readers) == 1 && value.Readers[uid]
 			}
 			// If the uid is already a writer on this region, then
@@ -304,7 +292,8 @@ func (l LockSet) canLock(uid UniqueID, t LockType, r LockRange) bool {
 	}
 }
 
-// lock returns true if uid took a lock of type t on the entire range of LockRange.
+// lock returns true if uid took a lock of type t on the entire range of
+// LockRange.
 //
 // Preconditions: r.Start <= r.End (will panic otherwise).
 func (l *LockSet) lock(uid UniqueID, t LockType, r LockRange) bool {
@@ -339,7 +328,7 @@ func (l *LockSet) lock(uid UniqueID, t LockType, r LockRange) bool {
 			seg, _ = l.SplitUnchecked(seg, r.End)
 		}
 
-		// Set the lock on the segment.  This is guaranteed to
+		// Set the lock on the segment. This is guaranteed to
 		// always be safe, given canLock above.
 		value := seg.ValuePtr()
 		value.lock(uid, t)
@@ -386,7 +375,7 @@ func (l *LockSet) unlock(uid UniqueID, r LockRange) {
 
 		value := seg.Value()
 		var remove bool
-		if value.HasWriter && value.Writer == uid {
+		if value.Writer == uid {
 			// If we are unlocking a writer, then since there can
 			// only ever be one writer and no readers, then this
 			// lock should always be removed from the set.

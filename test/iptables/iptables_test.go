@@ -15,8 +15,12 @@
 package iptables
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
+	"reflect"
+	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -33,24 +37,57 @@ import (
 // Container output is logged to $TEST_UNDECLARED_OUTPUTS_DIR if it exists, or
 // to stderr.
 func singleTest(t *testing.T, test TestCase) {
+	for _, tc := range []bool{false, true} {
+		subtest := "IPv4"
+		if tc {
+			subtest = "IPv6"
+		}
+		t.Run(subtest, func(t *testing.T) {
+			iptablesTest(t, test, tc)
+		})
+	}
+}
+
+func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	if _, ok := Tests[test.Name()]; !ok {
 		t.Fatalf("no test found with name %q. Has it been registered?", test.Name())
 	}
 
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	// Wait for the local and container goroutines to finish.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	ctx, cancel := context.WithTimeout(context.Background(), TestTimeout)
+	defer cancel()
+
+	d := dockerutil.MakeContainer(ctx, t)
+	defer func() {
+		if logs, err := d.Logs(context.Background()); err != nil {
+			t.Logf("Failed to retrieve container logs.")
+		} else {
+			t.Logf("=== Container logs: ===\n%s", logs)
+		}
+		// Use a new context, as cleanup should run even when we
+		// timeout.
+		d.CleanUp(context.Background())
+	}()
 
 	// Create and start the container.
-	d.CopyFiles("/runner", "test/iptables/runner/runner")
-	if err := d.Spawn(dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image:  "iptables",
 		CapAdd: []string{"NET_ADMIN"},
-	}, "/runner/runner", "-name", test.Name()); err != nil {
+	}
+	d.CopyFiles(&opts, "/runner", "test/iptables/runner/runner")
+	args := []string{"/runner/runner", "-name", test.Name()}
+	if ipv6 {
+		args = append(args, "-ipv6")
+	}
+	if err := d.Spawn(ctx, opts, args...); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
 	// Get the container IP.
-	ip, err := d.FindIP()
+	ip, err := d.FindIP(ctx, ipv6)
 	if err != nil {
 		t.Fatalf("failed to get container IP: %v", err)
 	}
@@ -61,15 +98,44 @@ func singleTest(t *testing.T, test TestCase) {
 	}
 
 	// Run our side of the test.
-	if err := test.LocalAction(ip); err != nil {
-		t.Fatalf("LocalAction failed: %v", err)
-	}
+	errCh := make(chan error, 2)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := test.LocalAction(ctx, ip, ipv6); err != nil && !errors.Is(err, context.Canceled) {
+			errCh <- fmt.Errorf("LocalAction failed: %v", err)
+		} else {
+			errCh <- nil
+		}
+		if test.LocalSufficient() {
+			errCh <- nil
+		}
+	}()
 
-	// Wait for the final statement. This structure has the side effect
-	// that all container logs will appear within the individual test
-	// context.
-	if _, err := d.WaitForOutput(TerminalStatement, TestTimeout); err != nil {
-		t.Fatalf("test failed: %v", err)
+	// Run the container side.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Wait for the final statement. This structure has the side
+		// effect that all container logs will appear within the
+		// individual test context.
+		if _, err := d.WaitForOutput(ctx, TerminalStatement, TestTimeout); err != nil && !errors.Is(err, context.Canceled) {
+			errCh <- fmt.Errorf("ContainerAction failed: %v", err)
+		} else {
+			errCh <- nil
+		}
+		if test.ContainerSufficient() {
+			errCh <- nil
+		}
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
 
@@ -82,7 +148,7 @@ func sendIP(ip net.IP) error {
 	// The container may not be listening when we first connect, so retry
 	// upon error.
 	cb := func() error {
-		c, err := net.DialTCP("tcp4", nil, &contAddr)
+		c, err := net.DialTCP("tcp", nil, &contAddr)
 		conn = c
 		return err
 	}
@@ -243,11 +309,11 @@ func TestInputInvertDestination(t *testing.T) {
 	singleTest(t, FilterInputInvertDestination{})
 }
 
-func TestOutputDestination(t *testing.T) {
+func TestFilterOutputDestination(t *testing.T) {
 	singleTest(t, FilterOutputDestination{})
 }
 
-func TestOutputInvertDestination(t *testing.T) {
+func TestFilterOutputInvertDestination(t *testing.T) {
 	singleTest(t, FilterOutputInvertDestination{})
 }
 
@@ -259,6 +325,13 @@ func TestNATPreRedirectTCPPort(t *testing.T) {
 	singleTest(t, NATPreRedirectTCPPort{})
 }
 
+func TestNATPreRedirectTCPOutgoing(t *testing.T) {
+	singleTest(t, NATPreRedirectTCPOutgoing{})
+}
+
+func TestNATOutRedirectTCPIncoming(t *testing.T) {
+	singleTest(t, NATOutRedirectTCPIncoming{})
+}
 func TestNATOutRedirectUDPPort(t *testing.T) {
 	singleTest(t, NATOutRedirectUDPPort{})
 }
@@ -301,4 +374,49 @@ func TestNATPreRedirectInvert(t *testing.T) {
 
 func TestNATRedirectRequiresProtocol(t *testing.T) {
 	singleTest(t, NATRedirectRequiresProtocol{})
+}
+
+func TestNATLoopbackSkipsPrerouting(t *testing.T) {
+	singleTest(t, NATLoopbackSkipsPrerouting{})
+}
+
+func TestInputSource(t *testing.T) {
+	singleTest(t, FilterInputSource{})
+}
+
+func TestInputInvertSource(t *testing.T) {
+	singleTest(t, FilterInputInvertSource{})
+}
+
+func TestFilterAddrs(t *testing.T) {
+	tcs := []struct {
+		ipv6  bool
+		addrs []string
+		want  []string
+	}{
+		{
+			ipv6:  false,
+			addrs: []string{"192.168.0.1", "192.168.0.2/24", "::1", "::2/128"},
+			want:  []string{"192.168.0.1", "192.168.0.2"},
+		},
+		{
+			ipv6:  true,
+			addrs: []string{"192.168.0.1", "192.168.0.2/24", "::1", "::2/128"},
+			want:  []string{"::1", "::2"},
+		},
+	}
+
+	for _, tc := range tcs {
+		if got := filterAddrs(tc.addrs, tc.ipv6); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%v with IPv6 %t: got %v, but wanted %v", tc.addrs, tc.ipv6, got, tc.want)
+		}
+	}
+}
+
+func TestNATPreOriginalDst(t *testing.T) {
+	singleTest(t, NATPreOriginalDst{})
+}
+
+func TestNATOutOriginalDst(t *testing.T) {
+	singleTest(t, NATOutOriginalDst{})
 }

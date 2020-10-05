@@ -96,51 +96,41 @@ func (*TCPMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (tm *TCPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceName string) (bool, bool) {
-	netHeader := header.IPv4(pkt.NetworkHeader)
-
-	if netHeader.TransportProtocol() != header.TCPProtocolNumber {
-		return false, false
-	}
-
-	// We dont't match fragments.
-	if frag := netHeader.FragmentOffset(); frag != 0 {
-		if frag == 1 {
-			return false, true
+func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
+	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
+	// into the stack.Check codepath as matchers are added.
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		netHeader := header.IPv4(pkt.NetworkHeader().View())
+		if netHeader.TransportProtocol() != header.TCPProtocolNumber {
+			return false, false
 		}
-		return false, false
-	}
 
-	// Now we need the transport header. However, this may not have been set
-	// yet.
-	// TODO(gvisor.dev/issue/170): Parsing the transport header should
-	// ultimately be moved into the stack.Check codepath as matchers are
-	// added.
-	var tcpHeader header.TCP
-	if pkt.TransportHeader != nil {
-		tcpHeader = header.TCP(pkt.TransportHeader)
-	} else {
-		var length int
-		if hook == stack.Prerouting {
-			// The network header hasn't been parsed yet. We have to do it here.
-			hdr, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
-			if !ok {
-				// There's no valid TCP header here, so we hotdrop the
-				// packet.
+		// We don't match fragments.
+		if frag := netHeader.FragmentOffset(); frag != 0 {
+			if frag == 1 {
 				return false, true
 			}
-			h := header.IPv4(hdr)
-			pkt.NetworkHeader = hdr
-			length = int(h.HeaderLength())
+			return false, false
 		}
-		// The TCP header hasn't been parsed yet. We have to do it here.
-		hdr, ok := pkt.Data.PullUp(length + header.TCPMinimumSize)
-		if !ok {
-			// There's no valid TCP header here, so we hotdrop the
-			// packet.
-			return false, true
+
+	case header.IPv6ProtocolNumber:
+		// As in Linux, we do not perform an IPv6 fragment check. See
+		// xt_action_param.fragoff in
+		// include/linux/netfilter/x_tables.h.
+		if header.IPv6(pkt.NetworkHeader().View()).TransportProtocol() != header.TCPProtocolNumber {
+			return false, false
 		}
-		tcpHeader = header.TCP(hdr[length:])
+
+	default:
+		// We don't know the network protocol.
+		return false, false
+	}
+
+	tcpHeader := header.TCP(pkt.TransportHeader().View())
+	if len(tcpHeader) < header.TCPMinimumSize {
+		// There's no valid TCP header here, so we drop the packet immediately.
+		return false, true
 	}
 
 	// Check whether the source and destination ports are within the

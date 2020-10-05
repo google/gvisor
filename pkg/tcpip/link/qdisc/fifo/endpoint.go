@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -102,8 +103,13 @@ func (q *queueDispatcher) dispatchLoop() {
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.DeliverNetworkPacket.
-func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
+func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.dispatcher.DeliverNetworkPacket(remote, local, protocol, pkt)
+}
+
+// DeliverOutboundPacket implements stack.NetworkDispatcher.DeliverOutboundPacket.
+func (e *endpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.dispatcher.DeliverOutboundPacket(remote, local, protocol, pkt)
 }
 
 // Attach implements stack.LinkEndpoint.Attach.
@@ -146,7 +152,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	// WritePacket caller's do not set the following fields in PacketBuffer
 	// so we populate them here.
 	newRoute := r.Clone()
@@ -154,7 +160,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	pkt.GSOOptions = gso
 	pkt.NetworkProtocolNumber = protocol
 	d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
-	if !d.q.enqueue(&pkt) {
+	if !d.q.enqueue(pkt) {
 		return tcpip.ErrNoBufferSpace
 	}
 	d.newPacketWaker.Assert()
@@ -193,6 +199,8 @@ func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, pkts stack.PacketB
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+	// TODO(gvisor.dev/issue/3267): Queue these packets as well once
+	// WriteRawPacket takes PacketBuffer instead of VectorisedView.
 	return e.lower.WriteRawPacket(vv)
 }
 
@@ -206,4 +214,14 @@ func (e *endpoint) Wait() {
 	}
 
 	e.wg.Wait()
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
+func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
+	return e.lower.ARPHardwareType()
+}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.lower.AddHeader(local, remote, protocol, pkt)
 }

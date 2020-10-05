@@ -7,7 +7,6 @@ go_library(
     srcs = ["context.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/amutex",
         "//pkg/log",
     ],
 )

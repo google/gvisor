@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -65,7 +66,7 @@ func Fchmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	return 0, nil, file.SetStat(t, vfs.SetStatOptions{
 		Stat: linux.Statx{
@@ -150,7 +151,7 @@ func Fchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	var opts vfs.SetStatOptions
 	if err := populateSetStatOptionsForChown(t, owner, group, &opts); err != nil {
@@ -178,6 +179,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			Mask: linux.STATX_SIZE,
 			Size: uint64(length),
 		},
+		NeedWritePerm: true,
 	})
 	return 0, nil, handleSetSizeError(t, err)
 }
@@ -195,7 +197,11 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
+
+	if !file.IsWritable() {
+		return 0, nil, syserror.EINVAL
+	}
 
 	err := file.SetStat(t, vfs.SetStatOptions{
 		Stat: linux.Statx{
@@ -204,6 +210,56 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		},
 	})
 	return 0, nil, handleSetSizeError(t, err)
+}
+
+// Fallocate implements linux system call fallocate(2).
+func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	mode := args[1].Uint64()
+	offset := args[2].Int64()
+	length := args[3].Int64()
+
+	file := t.GetFileVFS2(fd)
+
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef(t)
+
+	if !file.IsWritable() {
+		return 0, nil, syserror.EBADF
+	}
+
+	if mode != 0 {
+		return 0, nil, syserror.ENOTSUP
+	}
+
+	if offset < 0 || length <= 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	size := offset + length
+
+	if size < 0 {
+		return 0, nil, syserror.EFBIG
+	}
+
+	limit := limits.FromContext(t).Get(limits.FileSize).Cur
+
+	if uint64(size) >= limit {
+		t.SendSignal(&arch.SignalInfo{
+			Signo: int32(linux.SIGXFSZ),
+			Code:  arch.SignalInfoUser,
+		})
+		return 0, nil, syserror.EFBIG
+	}
+
+	if err := file.Allocate(t, mode, uint64(offset), uint64(length)); err != nil {
+		return 0, nil, err
+	}
+
+	file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
+	return 0, nil, nil
 }
 
 // Utime implements Linux syscall utime(2).
@@ -290,7 +346,7 @@ func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr usermem.Addr, opt
 		return nil
 	}
 	var times [2]linux.Timeval
-	if _, err := t.CopyIn(timesAddr, &times); err != nil {
+	if _, err := linux.CopyTimevalSliceIn(t, timesAddr, times[:]); err != nil {
 		return err
 	}
 	if times[0].Usec < 0 || times[0].Usec > 999999 || times[1].Usec < 0 || times[1].Usec > 999999 {
@@ -354,7 +410,7 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr usermem.Addr, op
 		return nil
 	}
 	var times [2]linux.Timespec
-	if _, err := t.CopyIn(timesAddr, &times); err != nil {
+	if _, err := linux.CopyTimespecSliceIn(t, timesAddr, times[:]); err != nil {
 		return err
 	}
 	if times[0].Nsec != linux.UTIME_OMIT {
@@ -382,7 +438,7 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr usermem.Addr, op
 
 func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPath shouldAllowEmptyPath, shouldFollowFinalSymlink shouldFollowFinalSymlink, opts *vfs.SetStatOptions) error {
 	root := t.FSContext().RootDirectoryVFS2()
-	defer root.DecRef()
+	defer root.DecRef(t)
 	start := root
 	if !path.Absolute {
 		if !path.HasComponents() && !bool(shouldAllowEmptyPath) {
@@ -390,7 +446,7 @@ func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPa
 		}
 		if dirfd == linux.AT_FDCWD {
 			start = t.FSContext().WorkingDirectoryVFS2()
-			defer start.DecRef()
+			defer start.DecRef(t)
 		} else {
 			dirfile := t.GetFileVFS2(dirfd)
 			if dirfile == nil {
@@ -401,13 +457,13 @@ func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPa
 				// VirtualFilesystem.SetStatAt(), since the former may be able
 				// to use opened file state to expedite the SetStat.
 				err := dirfile.SetStat(t, *opts)
-				dirfile.DecRef()
+				dirfile.DecRef(t)
 				return err
 			}
 			start = dirfile.VirtualDentry()
 			start.IncRef()
-			defer start.DecRef()
-			dirfile.DecRef()
+			defer start.DecRef(t)
+			dirfile.DecRef(t)
 		}
 	}
 	return t.Kernel().VFS().SetStatAt(t, t.Credentials(), &vfs.PathOperation{

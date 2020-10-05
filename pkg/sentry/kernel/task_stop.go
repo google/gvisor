@@ -99,8 +99,9 @@ type TaskStop interface {
 
 // beginInternalStop indicates the start of an internal stop that applies to t.
 //
-// Preconditions: The task must not already be in an internal stop (i.e. t.stop
-// == nil). The caller must be running on the task goroutine.
+// Preconditions:
+// * The caller must be running on the task goroutine.
+// * The task must not already be in an internal stop (i.e. t.stop == nil).
 func (t *Task) beginInternalStop(s TaskStop) {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
@@ -109,8 +110,8 @@ func (t *Task) beginInternalStop(s TaskStop) {
 	t.beginInternalStopLocked(s)
 }
 
-// Preconditions: The signal mutex must be locked. All preconditions for
-// Task.beginInternalStop also apply.
+// Preconditions: Same as beginInternalStop, plus:
+// * The signal mutex must be locked.
 func (t *Task) beginInternalStopLocked(s TaskStop) {
 	if t.stop != nil {
 		panic(fmt.Sprintf("Attempting to enter internal stop %#v when already in internal stop %#v", s, t.stop))
@@ -128,8 +129,9 @@ func (t *Task) beginInternalStopLocked(s TaskStop) {
 // t.stop, which is why there is no endInternalStop that locks the signal mutex
 // for you.
 //
-// Preconditions: The signal mutex must be locked. The task must be in an
-// internal stop (i.e. t.stop != nil).
+// Preconditions:
+// * The signal mutex must be locked.
+// * The task must be in an internal stop (i.e. t.stop != nil).
 func (t *Task) endInternalStopLocked() {
 	if t.stop == nil {
 		panic("Attempting to leave non-existent internal stop")
@@ -202,6 +204,22 @@ func (ts *TaskSet) BeginExternalStop() {
 		t.beginStopLocked()
 		t.tg.signalHandlers.mu.Unlock()
 		t.interrupt()
+	}
+}
+
+// PullFullState receives full states for all tasks.
+func (ts *TaskSet) PullFullState() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.Root == nil {
+		return
+	}
+	for t := range ts.Root.tids {
+		t.Activate()
+		if mm := t.MemoryManager(); mm != nil {
+			t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+		}
+		t.Deactivate()
 	}
 }
 

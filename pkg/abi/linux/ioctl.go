@@ -67,10 +67,29 @@ const (
 
 // ioctl(2) requests provided by uapi/linux/sockios.h
 const (
-	SIOCGIFMEM    = 0x891f
-	SIOCGIFPFLAGS = 0x8935
-	SIOCGMIIPHY   = 0x8947
-	SIOCGMIIREG   = 0x8948
+	SIOCGIFNAME    = 0x8910
+	SIOCGIFCONF    = 0x8912
+	SIOCGIFFLAGS   = 0x8913
+	SIOCGIFADDR    = 0x8915
+	SIOCGIFDSTADDR = 0x8917
+	SIOCGIFBRDADDR = 0x8919
+	SIOCGIFNETMASK = 0x891b
+	SIOCGIFMETRIC  = 0x891d
+	SIOCGIFMTU     = 0x8921
+	SIOCGIFMEM     = 0x891f
+	SIOCGIFHWADDR  = 0x8927
+	SIOCGIFINDEX   = 0x8933
+	SIOCGIFPFLAGS  = 0x8935
+	SIOCGIFTXQLEN  = 0x8942
+	SIOCETHTOOL    = 0x8946
+	SIOCGMIIPHY    = 0x8947
+	SIOCGMIIREG    = 0x8948
+	SIOCGIFMAP     = 0x8970
+)
+
+// ioctl(2) requests provided by uapi/asm-generic/sockios.h
+const (
+	SIOCGSTAMP = 0x8906
 )
 
 // ioctl(2) directions. Used to calculate requests number.
@@ -94,7 +113,57 @@ const (
 	_IOC_DIRSHIFT  = _IOC_SIZESHIFT + _IOC_SIZEBITS
 )
 
+// Constants from uapi/linux/fs.h.
+const (
+	FS_IOC_GETFLAGS = 2148034049
+	FS_VERITY_FL    = 1048576
+)
+
+// Constants from uapi/linux/fsverity.h.
+const (
+	FS_IOC_ENABLE_VERITY  = 1082156677
+	FS_IOC_MEASURE_VERITY = 3221513862
+)
+
+// DigestMetadata is a helper struct for VerityDigest.
+//
+// +marshal
+type DigestMetadata struct {
+	DigestAlgorithm uint16
+	DigestSize      uint16
+}
+
+// SizeOfDigestMetadata is the size of struct DigestMetadata.
+const SizeOfDigestMetadata = 4
+
+// VerityDigest is struct from uapi/linux/fsverity.h.
+type VerityDigest struct {
+	Metadata DigestMetadata
+	Digest   []byte
+}
+
 // IOC outputs the result of _IOC macro in asm-generic/ioctl.h.
 func IOC(dir, typ, nr, size uint32) uint32 {
 	return uint32(dir)<<_IOC_DIRSHIFT | typ<<_IOC_TYPESHIFT | nr<<_IOC_NRSHIFT | size<<_IOC_SIZESHIFT
 }
+
+// Kcov ioctls from kernel/kcov.h.
+var (
+	KCOV_INIT_TRACE = IOC(_IOC_READ, 'c', 1, 8)
+	KCOV_ENABLE     = IOC(_IOC_NONE, 'c', 100, 0)
+	KCOV_DISABLE    = IOC(_IOC_NONE, 'c', 101, 0)
+)
+
+// Kcov trace types from kernel/kcov.h.
+const (
+	KCOV_TRACE_PC  = 0
+	KCOV_TRACE_CMP = 1
+)
+
+// Kcov state constants from kernel/kcov.h.
+const (
+	KCOV_MODE_DISABLED  = 0
+	KCOV_MODE_INIT      = 1
+	KCOV_MODE_TRACE_PC  = 2
+	KCOV_MODE_TRACE_CMP = 3
+)

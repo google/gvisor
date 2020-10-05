@@ -97,8 +97,8 @@ func (s *System) WithTemporaryContext(ctx context.Context) *System {
 
 // Destroy release resources associated with a test system.
 func (s *System) Destroy() {
-	s.Root.DecRef()
-	s.MntNs.DecRef() // Reference on MntNs passed to NewSystem.
+	s.Root.DecRef(s.Ctx)
+	s.MntNs.DecRef(s.Ctx) // Reference on MntNs passed to NewSystem.
 }
 
 // ReadToEnd reads the contents of fd until EOF to a string.
@@ -149,7 +149,7 @@ func (s *System) ListDirents(pop *vfs.PathOperation) *DirentCollector {
 	if err != nil {
 		s.t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
 	}
-	defer fd.DecRef()
+	defer fd.DecRef(s.Ctx)
 
 	collector := &DirentCollector{}
 	if err := fd.IterDirents(s.Ctx, collector); err != nil {

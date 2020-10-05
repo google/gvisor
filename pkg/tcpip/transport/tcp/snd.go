@@ -191,6 +191,10 @@ type sender struct {
 
 	// cc is the congestion control algorithm in use for this sender.
 	cc congestionControl
+
+	// rc has the fields needed for implementing RACK loss detection
+	// algorithm.
+	rc rackControl
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -618,6 +622,20 @@ func (s *sender) splitSeg(seg *segment, size int) {
 	nSeg.data.TrimFront(size)
 	nSeg.sequenceNumber.UpdateForward(seqnum.Size(size))
 	s.writeList.InsertAfter(seg, nSeg)
+
+	// The segment being split does not carry PUSH flag because it is
+	// followed by the newly split segment.
+	// RFC1122 section 4.2.2.2: MUST set the PSH bit in the last buffered
+	// segment (i.e., when there is no more queued data to be sent).
+	// Linux removes PSH flag only when the segment is being split over MSS
+	// and retains it when we are splitting the segment over lack of sender
+	// window space.
+	// ref: net/ipv4/tcp_output.c::tcp_write_xmit(), tcp_mss_split_point()
+	// ref: net/ipv4/tcp_output.c::tcp_write_wakeup(), tcp_snd_wnd_test()
+	if seg.data.Size() > s.maxPayloadSize {
+		seg.flags ^= header.TCPFlagPsh
+	}
+
 	seg.data.CapLength(size)
 }
 
@@ -739,7 +757,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 	if !s.isAssignedSequenceNumber(seg) {
 		// Merge segments if allowed.
 		if seg.data.Size() != 0 {
-			available := int(seg.sequenceNumber.Size(end))
+			available := int(s.sndNxt.Size(end))
 			if available > limit {
 				available = limit
 			}
@@ -782,8 +800,11 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 					//   sent all at once.
 					return false
 				}
-				if atomic.LoadUint32(&s.ep.cork) != 0 {
-					// Hold back the segment until full.
+				// With TCP_CORK, hold back until minimum of the available
+				// send space and MSS.
+				// TODO(gvisor.dev/issue/2833): Drain the held segments after a
+				// timeout.
+				if seg.data.Size() < s.maxPayloadSize && atomic.LoadUint32(&s.ep.cork) != 0 {
 					return false
 				}
 			}
@@ -824,8 +845,50 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		if available == 0 {
 			return false
 		}
+
+		// If the whole segment or at least 1MSS sized segment cannot
+		// be accomodated in the receiver advertized window, skip
+		// splitting and sending of the segment. ref:
+		// net/ipv4/tcp_output.c::tcp_snd_wnd_test()
+		//
+		// Linux checks this for all segment transmits not triggered by
+		// a probe timer. On this condition, it defers the segment split
+		// and transmit to a short probe timer.
+		//
+		// ref: include/net/tcp.h::tcp_check_probe_timer()
+		// ref: net/ipv4/tcp_output.c::tcp_write_wakeup()
+		//
+		// Instead of defining a new transmit timer, we attempt to split
+		// the segment right here if there are no pending segments. If
+		// there are pending segments, segment transmits are deferred to
+		// the retransmit timer handler.
+		if s.sndUna != s.sndNxt {
+			switch {
+			case available >= seg.data.Size():
+				// OK to send, the whole segments fits in the
+				// receiver's advertised window.
+			case available >= s.maxPayloadSize:
+				// OK to send, at least 1 MSS sized segment fits
+				// in the receiver's advertised window.
+			default:
+				return false
+			}
+		}
+
+		// The segment size limit is computed as a function of sender
+		// congestion window and MSS. When sender congestion window is >
+		// 1, this limit can be larger than MSS. Ensure that the
+		// currently available send space is not greater than minimum of
+		// this limit and MSS.
 		if available > limit {
 			available = limit
+		}
+
+		// If GSO is not in use then cap available to
+		// maxPayloadSize. When GSO is in use the gVisor GSO logic or
+		// the host GSO logic will cap the segment to the correct size.
+		if s.ep.gso == nil && available > s.maxPayloadSize {
+			available = s.maxPayloadSize
 		}
 
 		if seg.data.Size() > available {
@@ -1213,21 +1276,21 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
-func (s *sender) handleRcvdSegment(seg *segment) {
+func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// Check if we can extract an RTT measurement from this ack.
-	if !seg.parsedOptions.TS && s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
+	if !rcvdSeg.parsedOptions.TS && s.rttMeasureSeqNum.LessThan(rcvdSeg.ackNumber) {
 		s.updateRTO(time.Now().Sub(s.rttMeasureTime))
 		s.rttMeasureSeqNum = s.sndNxt
 	}
 
 	// Update Timestamp if required. See RFC7323, section-4.3.
-	if s.ep.sendTSOk && seg.parsedOptions.TS {
-		s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
+	if s.ep.sendTSOk && rcvdSeg.parsedOptions.TS {
+		s.ep.updateRecentTimestamp(rcvdSeg.parsedOptions.TSVal, s.maxSentAck, rcvdSeg.sequenceNumber)
 	}
 
 	// Insert SACKBlock information into our scoreboard.
 	if s.ep.sackPermitted {
-		for _, sb := range seg.parsedOptions.SACKBlocks {
+		for _, sb := range rcvdSeg.parsedOptions.SACKBlocks {
 			// Only insert the SACK block if the following holds
 			// true:
 			//  * SACK block acks data after the ack number in the
@@ -1240,27 +1303,27 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			// NOTE: This check specifically excludes DSACK blocks
 			// which have start/end before sndUna and are used to
 			// indicate spurious retransmissions.
-			if seg.ackNumber.LessThan(sb.Start) && s.sndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.sndNxt) && !s.ep.scoreboard.IsSACKED(sb) {
+			if rcvdSeg.ackNumber.LessThan(sb.Start) && s.sndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.sndNxt) && !s.ep.scoreboard.IsSACKED(sb) {
 				s.ep.scoreboard.Insert(sb)
-				seg.hasNewSACKInfo = true
+				rcvdSeg.hasNewSACKInfo = true
 			}
 		}
 		s.SetPipe()
 	}
 
 	// Count the duplicates and do the fast retransmit if needed.
-	rtx := s.checkDuplicateAck(seg)
+	rtx := s.checkDuplicateAck(rcvdSeg)
 
 	// Stash away the current window size.
-	s.sndWnd = seg.window
+	s.sndWnd = rcvdSeg.window
 
-	ack := seg.ackNumber
+	ack := rcvdSeg.ackNumber
 
 	// Disable zero window probing if remote advertizes a non-zero receive
 	// window. This can be with an ACK to the zero window probe (where the
 	// acknumber refers to the already acknowledged byte) OR to any previously
 	// unacknowledged segment.
-	if s.zeroWindowProbing && seg.window > 0 &&
+	if s.zeroWindowProbing && rcvdSeg.window > 0 &&
 		(ack == s.sndUna || (ack-1).InRange(s.sndUna, s.sndNxt)) {
 		s.disableZeroWindowProbing()
 	}
@@ -1285,10 +1348,10 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		//    averaged RTT measurement only if the segment acknowledges
 		//    some new data, i.e., only if it advances the left edge of
 		//    the send window.
-		if s.ep.sendTSOk && seg.parsedOptions.TSEcr != 0 {
+		if s.ep.sendTSOk && rcvdSeg.parsedOptions.TSEcr != 0 {
 			// TSVal/Ecr values sent by Netstack are at a millisecond
 			// granularity.
-			elapsed := time.Duration(s.ep.timestamp()-seg.parsedOptions.TSEcr) * time.Millisecond
+			elapsed := time.Duration(s.ep.timestamp()-rcvdSeg.parsedOptions.TSEcr) * time.Millisecond
 			s.updateRTO(elapsed)
 		}
 
@@ -1319,6 +1382,11 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 			if s.writeNext == seg {
 				s.writeNext = seg.Next()
+			}
+
+			// Update the RACK fields if SACK is enabled.
+			if s.ep.sackPermitted {
+				s.rc.Update(seg, rcvdSeg, s.ep.tsOffset)
 			}
 
 			s.writeList.Remove(seg)
@@ -1376,7 +1444,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
-	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || seg.hasNewSACKInfo {
+	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || rcvdSeg.hasNewSACKInfo {
 		s.sendData()
 	}
 }

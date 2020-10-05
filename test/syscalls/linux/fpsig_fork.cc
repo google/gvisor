@@ -37,11 +37,11 @@ namespace {
 #define __stringify_1(x...) #x
 #define __stringify(x...) __stringify_1(x)
 #define GET_FPREG(var, regname) \
-  asm volatile("str "__stringify(regname) ", %0" : "=m"(var))
+  asm volatile("str " __stringify(regname) ", %0" : "=m"(var))
 #define SET_FPREG(var, regname) \
-  asm volatile("ldr "__stringify(regname) ", %0" : "=m"(var))
+  asm volatile("ldr " __stringify(regname) ", %0" : "=m"(var))
 #define GET_FP0(var) GET_FPREG(var, d0)
-#define SET_FP0(var) GET_FPREG(var, d0)
+#define SET_FP0(var) SET_FPREG(var, d0)
 #endif
 
 int parent, child;

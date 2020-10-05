@@ -21,32 +21,32 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestICMPv6ParamProblemTest sends a packet with a bad next header. The DUT
 // should respond with an ICMPv6 Parameter Problem message.
 func TestICMPv6ParamProblemTest(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	conn := tb.NewIPv6Conn(t, tb.IPv6{}, tb.IPv6{})
-	defer conn.Close()
-	ipv6 := tb.IPv6{
+	conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+	defer conn.Close(t)
+	ipv6 := testbench.IPv6{
 		// 254 is reserved and used for experimentation and testing. This should
 		// cause an error.
-		NextHeader: tb.Uint8(254),
+		NextHeader: testbench.Uint8(254),
 	}
-	icmpv6 := tb.ICMPv6{
-		Type:       tb.ICMPv6Type(header.ICMPv6EchoRequest),
-		NDPPayload: []byte("hello world"),
+	icmpv6 := testbench.ICMPv6{
+		Type:    testbench.ICMPv6Type(header.ICMPv6EchoRequest),
+		Payload: []byte("hello world"),
 	}
 
-	toSend := conn.CreateFrame(ipv6, &icmpv6)
-	conn.SendFrame(toSend)
+	toSend := (*testbench.Connection)(&conn).CreateFrame(t, testbench.Layers{&ipv6}, &icmpv6)
+	(*testbench.Connection)(&conn).SendFrame(t, toSend)
 
 	// Build the expected ICMPv6 payload, which includes an index to the
 	// problematic byte and also the problematic packet as described in
@@ -61,18 +61,18 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, header.IPv6NextHeaderOffset)
 	expectedPayload = append(b, expectedPayload...)
-	expectedICMPv6 := tb.ICMPv6{
-		Type:       tb.ICMPv6Type(header.ICMPv6ParamProblem),
-		NDPPayload: expectedPayload,
+	expectedICMPv6 := testbench.ICMPv6{
+		Type:    testbench.ICMPv6Type(header.ICMPv6ParamProblem),
+		Payload: expectedPayload,
 	}
 
-	paramProblem := tb.Layers{
-		&tb.Ether{},
-		&tb.IPv6{},
+	paramProblem := testbench.Layers{
+		&testbench.Ether{},
+		&testbench.IPv6{},
 		&expectedICMPv6,
 	}
 	timeout := time.Second
-	if _, err := conn.ExpectFrame(paramProblem, timeout); err != nil {
+	if _, err := conn.ExpectFrame(t, paramProblem, timeout); err != nil {
 		t.Errorf("expected %s within %s but got none: %s", paramProblem, timeout, err)
 	}
 }

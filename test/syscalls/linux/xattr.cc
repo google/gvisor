@@ -28,6 +28,7 @@
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -36,6 +37,8 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+using ::gvisor::testing::IsTmpfs;
 
 class XattrTest : public FileTest {};
 
@@ -73,9 +76,10 @@ TEST_F(XattrTest, XattrLargeName) {
   std::string name = "user.";
   name += std::string(XATTR_NAME_MAX - name.length(), 'a');
 
-  // An xattr should be whitelisted before it can be accessed--do not allow
-  // arbitrary xattrs to be read/written in gVisor.
   if (!IsRunningOnGvisor()) {
+    // In gVisor, access to xattrs is controlled with an explicit list of
+    // allowed names. This name isn't going to be configured to allow access, so
+    // don't test it.
     EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
                 SyscallSucceeds());
     EXPECT_THAT(getxattr(path, name.c_str(), nullptr, 0),
@@ -228,7 +232,7 @@ TEST_F(XattrTest, XattrOnInvalidFileTypes) {
   EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
 }
 
-TEST_F(XattrTest, SetxattrSizeSmallerThanValue) {
+TEST_F(XattrTest, SetXattrSizeSmallerThanValue) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -243,7 +247,7 @@ TEST_F(XattrTest, SetxattrSizeSmallerThanValue) {
   EXPECT_EQ(buf, expected_buf);
 }
 
-TEST_F(XattrTest, SetxattrZeroSize) {
+TEST_F(XattrTest, SetXattrZeroSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -255,7 +259,7 @@ TEST_F(XattrTest, SetxattrZeroSize) {
   EXPECT_EQ(buf, '-');
 }
 
-TEST_F(XattrTest, SetxattrSizeTooLarge) {
+TEST_F(XattrTest, SetXattrSizeTooLarge) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
 
@@ -270,7 +274,7 @@ TEST_F(XattrTest, SetxattrSizeTooLarge) {
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
 }
 
-TEST_F(XattrTest, SetxattrNullValueAndNonzeroSize) {
+TEST_F(XattrTest, SetXattrNullValueAndNonzeroSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 1, /*flags=*/0),
@@ -279,7 +283,7 @@ TEST_F(XattrTest, SetxattrNullValueAndNonzeroSize) {
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
 }
 
-TEST_F(XattrTest, SetxattrNullValueAndZeroSize) {
+TEST_F(XattrTest, SetXattrNullValueAndZeroSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
@@ -287,7 +291,7 @@ TEST_F(XattrTest, SetxattrNullValueAndZeroSize) {
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallSucceedsWithValue(0));
 }
 
-TEST_F(XattrTest, SetxattrValueTooLargeButOKSize) {
+TEST_F(XattrTest, SetXattrValueTooLargeButOKSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val(XATTR_SIZE_MAX + 1);
@@ -303,7 +307,7 @@ TEST_F(XattrTest, SetxattrValueTooLargeButOKSize) {
   EXPECT_EQ(buf, expected_buf);
 }
 
-TEST_F(XattrTest, SetxattrReplaceWithSmaller) {
+TEST_F(XattrTest, SetXattrReplaceWithSmaller) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -318,7 +322,7 @@ TEST_F(XattrTest, SetxattrReplaceWithSmaller) {
   EXPECT_EQ(buf, expected_buf);
 }
 
-TEST_F(XattrTest, SetxattrReplaceWithLarger) {
+TEST_F(XattrTest, SetXattrReplaceWithLarger) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -332,7 +336,7 @@ TEST_F(XattrTest, SetxattrReplaceWithLarger) {
   EXPECT_EQ(buf, val);
 }
 
-TEST_F(XattrTest, SetxattrCreateFlag) {
+TEST_F(XattrTest, SetXattrCreateFlag) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, XATTR_CREATE),
@@ -343,7 +347,7 @@ TEST_F(XattrTest, SetxattrCreateFlag) {
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallSucceedsWithValue(0));
 }
 
-TEST_F(XattrTest, SetxattrReplaceFlag) {
+TEST_F(XattrTest, SetXattrReplaceFlag) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, XATTR_REPLACE),
@@ -355,14 +359,14 @@ TEST_F(XattrTest, SetxattrReplaceFlag) {
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallSucceedsWithValue(0));
 }
 
-TEST_F(XattrTest, SetxattrInvalidFlags) {
+TEST_F(XattrTest, SetXattrInvalidFlags) {
   const char* path = test_file_name_.c_str();
   int invalid_flags = 0xff;
   EXPECT_THAT(setxattr(path, nullptr, nullptr, 0, invalid_flags),
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(XattrTest, Getxattr) {
+TEST_F(XattrTest, GetXattr) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   int val = 1234;
@@ -374,7 +378,7 @@ TEST_F(XattrTest, Getxattr) {
   EXPECT_EQ(buf, val);
 }
 
-TEST_F(XattrTest, GetxattrSizeSmallerThanValue) {
+TEST_F(XattrTest, GetXattrSizeSmallerThanValue) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -386,7 +390,7 @@ TEST_F(XattrTest, GetxattrSizeSmallerThanValue) {
   EXPECT_EQ(buf, '-');
 }
 
-TEST_F(XattrTest, GetxattrSizeLargerThanValue) {
+TEST_F(XattrTest, GetXattrSizeLargerThanValue) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -401,7 +405,7 @@ TEST_F(XattrTest, GetxattrSizeLargerThanValue) {
   EXPECT_EQ(buf, expected_buf);
 }
 
-TEST_F(XattrTest, GetxattrZeroSize) {
+TEST_F(XattrTest, GetXattrZeroSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -414,7 +418,7 @@ TEST_F(XattrTest, GetxattrZeroSize) {
   EXPECT_EQ(buf, '-');
 }
 
-TEST_F(XattrTest, GetxattrSizeTooLarge) {
+TEST_F(XattrTest, GetXattrSizeTooLarge) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -430,7 +434,7 @@ TEST_F(XattrTest, GetxattrSizeTooLarge) {
   EXPECT_EQ(buf, expected_buf);
 }
 
-TEST_F(XattrTest, GetxattrNullValue) {
+TEST_F(XattrTest, GetXattrNullValue) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -441,7 +445,7 @@ TEST_F(XattrTest, GetxattrNullValue) {
               SyscallFailsWithErrno(EFAULT));
 }
 
-TEST_F(XattrTest, GetxattrNullValueAndZeroSize) {
+TEST_F(XattrTest, GetXattrNullValueAndZeroSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -457,13 +461,13 @@ TEST_F(XattrTest, GetxattrNullValueAndZeroSize) {
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallSucceedsWithValue(size));
 }
 
-TEST_F(XattrTest, GetxattrNonexistentName) {
+TEST_F(XattrTest, GetXattrNonexistentName) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
 }
 
-TEST_F(XattrTest, Listxattr) {
+TEST_F(XattrTest, ListXattr) {
   const char* path = test_file_name_.c_str();
   const std::string name = "user.test";
   const std::string name2 = "user.test2";
@@ -489,7 +493,7 @@ TEST_F(XattrTest, Listxattr) {
   EXPECT_EQ(got, expected);
 }
 
-TEST_F(XattrTest, ListxattrNoXattrs) {
+TEST_F(XattrTest, ListXattrNoXattrs) {
   const char* path = test_file_name_.c_str();
 
   std::vector<char> list, expected;
@@ -497,13 +501,13 @@ TEST_F(XattrTest, ListxattrNoXattrs) {
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(list, expected);
 
-  // Listxattr should succeed if there are no attributes, even if the buffer
+  // ListXattr should succeed if there are no attributes, even if the buffer
   // passed in is a nullptr.
   EXPECT_THAT(listxattr(path, nullptr, sizeof(list)),
               SyscallSucceedsWithValue(0));
 }
 
-TEST_F(XattrTest, ListxattrNullBuffer) {
+TEST_F(XattrTest, ListXattrNullBuffer) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
@@ -512,7 +516,7 @@ TEST_F(XattrTest, ListxattrNullBuffer) {
               SyscallFailsWithErrno(EFAULT));
 }
 
-TEST_F(XattrTest, ListxattrSizeTooSmall) {
+TEST_F(XattrTest, ListXattrSizeTooSmall) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
@@ -522,7 +526,7 @@ TEST_F(XattrTest, ListxattrSizeTooSmall) {
               SyscallFailsWithErrno(ERANGE));
 }
 
-TEST_F(XattrTest, ListxattrZeroSize) {
+TEST_F(XattrTest, ListXattrZeroSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
@@ -601,6 +605,83 @@ TEST_F(XattrTest, XattrWithFD) {
   EXPECT_STREQ(list, name);
 
   EXPECT_THAT(fremovexattr(fd.get(), name), SyscallSucceeds());
+}
+
+TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
+  // Trusted namespace not supported in VFS1.
+  SKIP_IF(IsRunningWithVFS1());
+
+  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+
+  const char* path = test_file_name_.c_str();
+  const char name[] = "trusted.test";
+
+  // Writing to the trusted.* xattr namespace requires CAP_SYS_ADMIN in the root
+  // user namespace. There's no easy way to check that, other than trying the
+  // operation and seeing what happens. We'll call removexattr because it's
+  // simplest.
+  if (removexattr(path, name) < 0) {
+    SKIP_IF(errno == EPERM);
+    FAIL() << "unexpected errno from removexattr: " << errno;
+  }
+
+  // Set.
+  char val = 'a';
+  size_t size = sizeof(val);
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
+
+  // Get.
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallSucceedsWithValue(size));
+  EXPECT_EQ(val, got);
+
+  // List.
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  // Remove.
+  EXPECT_THAT(removexattr(path, name), SyscallSucceeds());
+
+  // Get should now return ENODATA.
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
+  // Trusted namespace not supported in VFS1.
+  SKIP_IF(IsRunningWithVFS1());
+
+  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+
+  // Drop CAP_SYS_ADMIN if we have it.
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
+    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
+  }
+
+  const char* path = test_file_name_.c_str();
+  const char name[] = "trusted.test";
+
+  // Set fails.
+  char val = 'a';
+  size_t size = sizeof(val);
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
+              SyscallFailsWithErrno(EPERM));
+
+  // Get fails.
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+
+  // List still works, but returns no items.
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)), SyscallSucceedsWithValue(0));
+
+  // Remove fails.
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
 }
 
 }  // namespace

@@ -198,7 +198,39 @@ TEST(SendFileTest, SendAndUpdateFileOffset) {
   EXPECT_EQ(absl::string_view(kData, kHalfDataSize),
             absl::string_view(actual, bytes_sent));
 
-  // Verify that the input file offset has been updated
+  // Verify that the input file offset has been updated.
+  ASSERT_THAT(read(inf.get(), &actual, kDataSize - bytes_sent),
+              SyscallSucceedsWithValue(kHalfDataSize));
+  EXPECT_EQ(
+      absl::string_view(kData + kDataSize - bytes_sent, kDataSize - bytes_sent),
+      absl::string_view(actual, kHalfDataSize));
+}
+
+TEST(SendFileTest, SendToDevZeroAndUpdateFileOffset) {
+  // Create temp files.
+  // Test input string length must be > 2 AND even.
+  constexpr char kData[] = "The slings and arrows of outrageous fortune,";
+  constexpr int kDataSize = sizeof(kData) - 1;
+  constexpr int kHalfDataSize = kDataSize / 2;
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
+
+  // Open the input file as read only.
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Open /dev/zero as write only.
+  const FileDescriptor outf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/zero", O_WRONLY));
+
+  // Send data and verify that sendfile returns the correct value.
+  int bytes_sent;
+  EXPECT_THAT(
+      bytes_sent = sendfile(outf.get(), inf.get(), nullptr, kHalfDataSize),
+      SyscallSucceedsWithValue(kHalfDataSize));
+
+  char actual[kHalfDataSize];
+  // Verify that the input file offset has been updated.
   ASSERT_THAT(read(inf.get(), &actual, kDataSize - bytes_sent),
               SyscallSucceedsWithValue(kHalfDataSize));
   EXPECT_EQ(
@@ -250,7 +282,7 @@ TEST(SendFileTest, SendAndUpdateFileOffsetFromNonzeroStartingPoint) {
   EXPECT_EQ(absl::string_view(kData + kQuarterDataSize, kHalfDataSize),
             absl::string_view(actual, bytes_sent));
 
-  // Verify that the input file offset has been updated
+  // Verify that the input file offset has been updated.
   ASSERT_THAT(read(inf.get(), &actual, kQuarterDataSize),
               SyscallSucceedsWithValue(kQuarterDataSize));
 
@@ -499,6 +531,22 @@ TEST(SendFileTest, SendPipeWouldBlock) {
 
   EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, kDataSize),
               SyscallFailsWithErrno(EWOULDBLOCK));
+}
+
+TEST(SendFileTest, SendPipeEOF) {
+  // Create and open an empty input file.
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Setup the output named pipe.
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, 123),
+              SyscallSucceedsWithValue(0));
 }
 
 TEST(SendFileTest, SendPipeBlocks) {

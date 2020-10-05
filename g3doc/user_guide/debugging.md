@@ -129,3 +129,13 @@ go tool pprof -top /usr/local/bin/runsc /tmp/cpu.prof
 ```
 
 [pprof]: https://github.com/google/pprof/blob/master/doc/README.md
+
+### Docker Proxy
+
+When forwarding a port to the container, Docker will likely route traffic
+through the [docker-proxy][]. This proxy may make profiling noisy, so it can be
+helpful to bypass it. Do so by sending traffic directly to the container IP and
+port. e.g., if the `docker0` IP is `192.168.9.1`, the container IP is likely a
+subsequent IP, such as `192.168.9.2`.
+
+[docker-proxy]: https://windsock.io/the-docker-proxy/

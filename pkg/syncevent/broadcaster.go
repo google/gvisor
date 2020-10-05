@@ -111,7 +111,9 @@ func (b *Broadcaster) SubscribeEvents(r *Receiver, filter Set) SubscriptionID {
 	return id
 }
 
-// Preconditions: table must not be full. len(table) is a power of 2.
+// Preconditions:
+// * table must not be full.
+// * len(table) is a power of 2.
 func broadcasterTableInsert(table []broadcasterSlot, id SubscriptionID, r *Receiver, filter Set) {
 	entry := broadcasterSlot{
 		receiver: r,

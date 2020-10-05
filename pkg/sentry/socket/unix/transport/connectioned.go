@@ -142,9 +142,9 @@ func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (E
 	}
 
 	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: initialLimit}
-	q1.EnableLeakCheck("transport.queue")
+	q1.EnableLeakCheck()
 	q2 := &queue{ReaderQueue: b.Queue, WriterQueue: a.Queue, limit: initialLimit}
-	q2.EnableLeakCheck("transport.queue")
+	q2.EnableLeakCheck()
 
 	if stype == linux.SOCK_STREAM {
 		a.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{q1}}
@@ -211,7 +211,7 @@ func (e *connectionedEndpoint) Listening() bool {
 // The socket will be a fresh state after a call to close and may be reused.
 // That is, close may be used to "unbind" or "disconnect" the socket in error
 // paths.
-func (e *connectionedEndpoint) Close() {
+func (e *connectionedEndpoint) Close(ctx context.Context) {
 	e.Lock()
 	var c ConnectedEndpoint
 	var r Receiver
@@ -233,7 +233,7 @@ func (e *connectionedEndpoint) Close() {
 	case e.Listening():
 		close(e.acceptedChan)
 		for n := range e.acceptedChan {
-			n.Close()
+			n.Close(ctx)
 		}
 		e.acceptedChan = nil
 		e.path = ""
@@ -241,18 +241,18 @@ func (e *connectionedEndpoint) Close() {
 	e.Unlock()
 	if c != nil {
 		c.CloseNotify()
-		c.Release()
+		c.Release(ctx)
 	}
 	if r != nil {
 		r.CloseNotify()
-		r.Release()
+		r.Release(ctx)
 	}
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
 	if ce.Type() != e.stype {
-		return syserr.ErrConnectionRefused
+		return syserr.ErrWrongProtocolForSocket
 	}
 
 	// Check if ce is e to avoid a deadlock.
@@ -300,14 +300,14 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	}
 
 	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: initialLimit}
-	readQueue.EnableLeakCheck("transport.queue")
+	readQueue.EnableLeakCheck()
 	ne.connected = &connectedEndpoint{
 		endpoint:   ce,
 		writeQueue: readQueue,
 	}
 
 	writeQueue := &queue{ReaderQueue: ne.Queue, WriterQueue: ce.WaiterQueue(), limit: initialLimit}
-	writeQueue.EnableLeakCheck("transport.queue")
+	writeQueue.EnableLeakCheck()
 	if e.stype == linux.SOCK_STREAM {
 		ne.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{readQueue: writeQueue}}
 	} else {
@@ -340,7 +340,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return ECONNREFUSED per spec.
-		ne.Close()
+		ne.Close(ctx)
 		e.Unlock()
 		ce.Unlock()
 		return syserr.ErrConnectionRefused
@@ -391,7 +391,7 @@ func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 }
 
 // Accept accepts a new connection.
-func (e *connectionedEndpoint) Accept() (Endpoint, *syserr.Error) {
+func (e *connectionedEndpoint) Accept(peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error) {
 	e.Lock()
 	defer e.Unlock()
 
@@ -401,6 +401,18 @@ func (e *connectionedEndpoint) Accept() (Endpoint, *syserr.Error) {
 
 	select {
 	case ne := <-e.acceptedChan:
+		if peerAddr != nil {
+			ne.Lock()
+			c := ne.connected
+			ne.Unlock()
+			if c != nil {
+				addr, err := c.GetLocalAddress()
+				if err != nil {
+					return nil, syserr.TranslateNetstackError(err)
+				}
+				*peerAddr = addr
+			}
+		}
 		return ne, nil
 
 	default:
@@ -476,6 +488,9 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 
 // State implements socket.Socket.State.
 func (e *connectionedEndpoint) State() uint32 {
+	e.Lock()
+	defer e.Unlock()
+
 	if e.Connected() {
 		return linux.SS_CONNECTED
 	}

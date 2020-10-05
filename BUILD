@@ -30,7 +30,7 @@ doc(
     permalink = "/community/governance/",
     subcategory = "Community",
     visibility = ["//website:__pkg__"],
-    weight = "91",
+    weight = "20",
 )
 
 doc(
@@ -57,6 +57,12 @@ build_test(
         "//test/e2e:integration_test",
         "//test/image:image_test",
         "//test/root:root_test",
+        "//test/benchmarks/base:base_test",
+        "//test/benchmarks/database:database_test",
+        "//test/benchmarks/fs:fs_test",
+        "//test/benchmarks/media:media_test",
+        "//test/benchmarks/ml:ml_test",
+        "//test/benchmarks/network:network_test",
     ],
 )
 
@@ -69,7 +75,10 @@ go_path(
     name = "gopath",
     mode = "link",
     deps = [
+        # Main binary.
         "//runsc",
+        "//shim/v1:gvisor-containerd-shim",
+        "//shim/v2:containerd-shim-runsc-v1",
 
         # Packages that are not dependencies of //runsc.
         "//pkg/sentry/kernel/memevent",

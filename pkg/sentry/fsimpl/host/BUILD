@@ -1,13 +1,39 @@
 load("//tools:defs.bzl", "go_library")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
+
+go_template_instance(
+    name = "inode_refs",
+    out = "inode_refs.go",
+    package = "host",
+    prefix = "inode",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "inode",
+    },
+)
+
+go_template_instance(
+    name = "connected_endpoint_refs",
+    out = "connected_endpoint_refs.go",
+    package = "host",
+    prefix = "ConnectedEndpoint",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "ConnectedEndpoint",
+    },
+)
 
 go_library(
     name = "host",
     srcs = [
+        "connected_endpoint_refs.go",
         "control.go",
         "host.go",
+        "inode_refs.go",
         "ioctl_unsafe.go",
+        "mmap.go",
         "socket.go",
         "socket_iovec.go",
         "socket_unsafe.go",
@@ -21,9 +47,14 @@ go_library(
         "//pkg/context",
         "//pkg/fdnotifier",
         "//pkg/fspath",
+        "//pkg/iovec",
         "//pkg/log",
+        "//pkg/marshal/primitive",
         "//pkg/refs",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fs/fsutil",
+        "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/hostfd",
         "//pkg/sentry/kernel",

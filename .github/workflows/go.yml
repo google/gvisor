@@ -6,18 +6,33 @@ on:
   pull_request:
     branches:
       - master
+      - feature/**
 
 jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
+    - id: setup
+      run: |
+        if ! [[ -z "${{ secrets.GO_TOKEN }}" ]]; then
+          echo ::set-output name=has_token::true
+        else
+          echo ::set-output name=has_token::false
+        fi
     - run: |
         jq -nc '{"state": "pending", "context": "go tests"}' | \
         curl -sL -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request.statuses_url }}"
+      if: github.event_name == 'pull_request'
     - uses: actions/checkout@v2
+      if: github.event_name == 'push' && steps.setup.outputs.has_token == 'true'
+      with:
+        fetch-depth: 0
+        token: '${{ secrets.GO_TOKEN }}'
+    - uses: actions/checkout@v2
+      if: github.event_name == 'pull_request' || steps.setup.outputs.has_token != 'true'
       with:
         fetch-depth: 0
     - uses: actions/setup-go@v2
@@ -35,26 +50,29 @@ jobs:
         key: ${{ runner.os }}-bazel-${{ hashFiles('WORKSPACE') }}
         restore-keys: |
           ${{ runner.os }}-bazel-
-    - run: make build TARGETS="//:gopath"
+      # Create gopath to merge the changes. The first execution will create
+      # symlinks to the cache, e.g. bazel-bin. Once the cache is setup, delete
+      # old gopath files that may exist from previous runs (and could contain
+      # files that are now deleted). Then run gopath again for good.
+    - run: |
+        make build TARGETS="//:gopath"
+        rm -rf bazel-bin/gopath
+        make build TARGETS="//:gopath"
     - run: tools/go_branch.sh
     - run: git checkout go && git clean -f
     - run: go build ./...
     - if: github.event_name == 'push'
       run: |
-        # Required dedicated credentials for the Go branch, due to the way
-        # branch protection rules are configured.
-        git config --global credential.helper cache
-        echo -e "protocol=https\nhost=github.com\nusername=${{ secrets.GO_TOKEN }}\npassword=x-oauth-basic" | git credential approve
         git remote add upstream "https://github.com/${{ github.repository }}"
         git push upstream go:go
-    - if: ${{ success() }}
+    - if: ${{ success() && github.event_name == 'pull_request' }}
       run: |
         jq -nc '{"state": "success", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request.statuses_url }}"
-    - if: ${{ failure() }}
+    - if: ${{ failure() && github.event_name == 'pull_request' }}
       run: |
         jq -nc '{"state": "failure", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \

@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -81,7 +80,9 @@ func NewHostFileMapper() *HostFileMapper {
 
 // IncRefOn increments the reference count on all offsets in mr.
 //
-// Preconditions: mr.Length() != 0. mr.Start and mr.End must be page-aligned.
+// Preconditions:
+// * mr.Length() != 0.
+// * mr.Start and mr.End must be page-aligned.
 func (f *HostFileMapper) IncRefOn(mr memmap.MappableRange) {
 	f.refsMu.Lock()
 	defer f.refsMu.Unlock()
@@ -98,7 +99,9 @@ func (f *HostFileMapper) IncRefOn(mr memmap.MappableRange) {
 
 // DecRefOn decrements the reference count on all offsets in mr.
 //
-// Preconditions: mr.Length() != 0. mr.Start and mr.End must be page-aligned.
+// Preconditions:
+// * mr.Length() != 0.
+// * mr.Start and mr.End must be page-aligned.
 func (f *HostFileMapper) DecRefOn(mr memmap.MappableRange) {
 	f.refsMu.Lock()
 	defer f.refsMu.Unlock()
@@ -126,7 +129,7 @@ func (f *HostFileMapper) DecRefOn(mr memmap.MappableRange) {
 // offsets in fr or until the next call to UnmapAll.
 //
 // Preconditions: The caller must hold a reference on all offsets in fr.
-func (f *HostFileMapper) MapInternal(fr platform.FileRange, fd int, write bool) (safemem.BlockSeq, error) {
+func (f *HostFileMapper) MapInternal(fr memmap.FileRange, fd int, write bool) (safemem.BlockSeq, error) {
 	chunks := ((fr.End + chunkMask) >> chunkShift) - (fr.Start >> chunkShift)
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
@@ -146,7 +149,7 @@ func (f *HostFileMapper) MapInternal(fr platform.FileRange, fd int, write bool) 
 }
 
 // Preconditions: f.mapsMu must be locked.
-func (f *HostFileMapper) forEachMappingBlockLocked(fr platform.FileRange, fd int, write bool, fn func(safemem.Block)) error {
+func (f *HostFileMapper) forEachMappingBlockLocked(fr memmap.FileRange, fd int, write bool, fn func(safemem.Block)) error {
 	prot := syscall.PROT_READ
 	if write {
 		prot |= syscall.PROT_WRITE
@@ -205,7 +208,9 @@ func (f *HostFileMapper) UnmapAll() {
 	}
 }
 
-// Preconditions: f.mapsMu must be locked. f.mappings[chunkStart] == m.
+// Preconditions:
+// * f.mapsMu must be locked.
+// * f.mappings[chunkStart] == m.
 func (f *HostFileMapper) unmapAndRemoveLocked(chunkStart uint64, m mapping) {
 	if _, _, errno := syscall.Syscall(syscall.SYS_MUNMAP, m.addr, chunkSize, 0); errno != 0 {
 		// This leaks address space and is unexpected, but is otherwise

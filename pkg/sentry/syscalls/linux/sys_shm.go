@@ -39,7 +39,7 @@ func Shmget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
-	defer segment.DecRef()
+	defer segment.DecRef(t)
 	return uintptr(segment.ID), nil, nil
 }
 
@@ -66,7 +66,7 @@ func Shmat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if err != nil {
 		return 0, nil, syserror.EINVAL
 	}
-	defer segment.DecRef()
+	defer segment.DecRef(t)
 
 	opts, err := segment.ConfigureAttach(t, addr, shm.AttachOpts{
 		Execute:  flag&linux.SHM_EXEC == linux.SHM_EXEC,
@@ -108,22 +108,22 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		if err != nil {
 			return 0, nil, syserror.EINVAL
 		}
-		defer segment.DecRef()
+		defer segment.DecRef(t)
 
 		stat, err := segment.IPCStat(t)
 		if err == nil {
-			_, err = t.CopyOut(buf, stat)
+			_, err = stat.CopyOut(t, buf)
 		}
 		return 0, nil, err
 
 	case linux.IPC_INFO:
 		params := r.IPCInfo()
-		_, err := t.CopyOut(buf, params)
+		_, err := params.CopyOut(t, buf)
 		return 0, nil, err
 
 	case linux.SHM_INFO:
 		info := r.ShmInfo()
-		_, err := t.CopyOut(buf, info)
+		_, err := info.CopyOut(t, buf)
 		return 0, nil, err
 	}
 
@@ -132,20 +132,19 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, syserror.EINVAL
 	}
-	defer segment.DecRef()
+	defer segment.DecRef(t)
 
 	switch cmd {
 	case linux.IPC_SET:
 		var ds linux.ShmidDS
-		_, err = t.CopyIn(buf, &ds)
-		if err != nil {
+		if _, err = ds.CopyIn(t, buf); err != nil {
 			return 0, nil, err
 		}
-		err = segment.Set(t, &ds)
+		err := segment.Set(t, &ds)
 		return 0, nil, err
 
 	case linux.IPC_RMID:
-		segment.MarkDestroyed()
+		segment.MarkDestroyed(t)
 		return 0, nil, nil
 
 	case linux.SHM_LOCK, linux.SHM_UNLOCK:

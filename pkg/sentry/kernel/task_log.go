@@ -27,6 +27,9 @@ const (
 	// maxStackDebugBytes is the maximum number of user stack bytes that may be
 	// printed by debugDumpStack.
 	maxStackDebugBytes = 1024
+	// maxCodeDebugBytes is the maximum number of user code bytes that may be
+	// printed by debugDumpCode.
+	maxCodeDebugBytes = 128
 )
 
 // Infof logs an formatted info message by calling log.Infof.
@@ -61,6 +64,7 @@ func (t *Task) IsLogging(level log.Level) bool {
 func (t *Task) DebugDumpState() {
 	t.debugDumpRegisters()
 	t.debugDumpStack()
+	t.debugDumpCode()
 	if mm := t.MemoryManager(); mm != nil {
 		t.Debugf("Mappings:\n%s", mm)
 	}
@@ -108,6 +112,45 @@ func (t *Task) debugDumpStack() {
 	start &= ^usermem.Addr(15)
 	// Print 16 bytes per line, one byte at a time.
 	for offset := uint64(0); offset < maxStackDebugBytes; offset += 16 {
+		addr, ok := start.AddLength(offset)
+		if !ok {
+			break
+		}
+		var data [16]byte
+		n, err := m.CopyIn(t, addr, data[:], usermem.IOOpts{
+			IgnorePermissions: true,
+		})
+		// Print as much of the line as we can, even if an error was
+		// encountered.
+		if n > 0 {
+			t.Debugf("%x: % x", addr, data[:n])
+		}
+		if err != nil {
+			t.Debugf("Error reading stack at address %x: %v", addr+usermem.Addr(n), err)
+			break
+		}
+	}
+}
+
+// debugDumpCode logs user code contents at log level debug.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) debugDumpCode() {
+	if !t.IsLogging(log.Debug) {
+		return
+	}
+	m := t.MemoryManager()
+	if m == nil {
+		t.Debugf("Memory manager for task is gone, skipping application code dump.")
+		return
+	}
+	t.Debugf("Code:")
+	// Print code on both sides of the instruction register.
+	start := usermem.Addr(t.Arch().IP()) - maxCodeDebugBytes/2
+	// Round addr down to a 16-byte boundary.
+	start &= ^usermem.Addr(15)
+	// Print 16 bytes per line, one byte at a time.
+	for offset := uint64(0); offset < maxCodeDebugBytes; offset += 16 {
 		addr, ok := start.AddLength(offset)
 		if !ok {
 			break
@@ -203,6 +246,6 @@ func (t *Task) traceExecEvent(tc *TaskContext) {
 		trace.Logf(t.traceContext, traceCategory, "exec: << unknown >>")
 		return
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 	trace.Logf(t.traceContext, traceCategory, "exec: %s", file.PathnameWithDeleted(t))
 }

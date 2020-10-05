@@ -21,122 +21,178 @@ import (
 )
 
 // AcceptTarget accepts packets.
-type AcceptTarget struct{}
+type AcceptTarget struct {
+	// NetworkProtocol is the network protocol the target is used with.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+// ID implements Target.ID.
+func (at *AcceptTarget) ID() TargetID {
+	return TargetID{
+		NetworkProtocol: at.NetworkProtocol,
+	}
+}
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleAccept, 0
 }
 
 // DropTarget drops packets.
-type DropTarget struct{}
+type DropTarget struct {
+	// NetworkProtocol is the network protocol the target is used with.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+// ID implements Target.ID.
+func (dt *DropTarget) ID() TargetID {
+	return TargetID{
+		NetworkProtocol: dt.NetworkProtocol,
+	}
+}
 
 // Action implements Target.Action.
-func (DropTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
 
+// ErrorTargetName is used to mark targets as error targets. Error targets
+// shouldn't be reached - an error has occurred if we fall through to one.
+const ErrorTargetName = "ERROR"
+
 // ErrorTarget logs an error and drops the packet. It represents a target that
 // should be unreachable.
-type ErrorTarget struct{}
+type ErrorTarget struct {
+	// NetworkProtocol is the network protocol the target is used with.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+// ID implements Target.ID.
+func (et *ErrorTarget) ID() TargetID {
+	return TargetID{
+		Name:            ErrorTargetName,
+		NetworkProtocol: et.NetworkProtocol,
+	}
+}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*ErrorTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, 0
 }
 
 // UserChainTarget marks a rule as the beginning of a user chain.
 type UserChainTarget struct {
+	// Name is the chain name.
 	Name string
+
+	// NetworkProtocol is the network protocol the target is used with.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+// ID implements Target.ID.
+func (uc *UserChainTarget) ID() TargetID {
+	return TargetID{
+		Name:            ErrorTargetName,
+		NetworkProtocol: uc.NetworkProtocol,
+	}
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
 // ReturnTarget returns from the current chain. If the chain is a built-in, the
 // hook's underflow should be called.
-type ReturnTarget struct{}
+type ReturnTarget struct {
+	// NetworkProtocol is the network protocol the target is used with.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+// ID implements Target.ID.
+func (rt *ReturnTarget) ID() TargetID {
+	return TargetID{
+		NetworkProtocol: rt.NetworkProtocol,
+	}
+}
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
 
+// RedirectTargetName is used to mark targets as redirect targets. Redirect
+// targets should be reached for only NAT and Mangle tables. These targets will
+// change the destination port/destination IP for packets.
+const RedirectTargetName = "REDIRECT"
+
 // RedirectTarget redirects the packet by modifying the destination port/IP.
-// Min and Max values for IP and Ports in the struct indicate the range of
-// values which can be used to redirect.
+// TODO(gvisor.dev/issue/170): Other flags need to be added after we support
+// them.
 type RedirectTarget struct {
-	// TODO(gvisor.dev/issue/170): Other flags need to be added after
-	// we support them.
-	// RangeProtoSpecified flag indicates single port is specified to
-	// redirect.
-	RangeProtoSpecified bool
+	// Addr indicates address used to redirect.
+	Addr tcpip.Address
 
-	// MinIP indicates address used to redirect.
-	MinIP tcpip.Address
+	// Port indicates port used to redirect.
+	Port uint16
 
-	// MaxIP indicates address used to redirect.
-	MaxIP tcpip.Address
+	// NetworkProtocol is the network protocol the target is used with.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
 
-	// MinPort indicates port used to redirect.
-	MinPort uint16
-
-	// MaxPort indicates port used to redirect.
-	MaxPort uint16
+// ID implements Target.ID.
+func (rt *RedirectTarget) ID() TargetID {
+	return TargetID{
+		Name:            RedirectTargetName,
+		NetworkProtocol: rt.NetworkProtocol,
+	}
 }
 
 // Action implements Target.Action.
 // TODO(gvisor.dev/issue/170): Parse headers without copying. The current
 // implementation only works for PREROUTING and calls pkt.Clone(), neither
 // of which should be the case.
-func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrackTable, hook Hook, gso *GSO, r *Route, address tcpip.Address) (RuleVerdict, int) {
+func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso *GSO, r *Route, address tcpip.Address) (RuleVerdict, int) {
 	// Packet is already manipulated.
 	if pkt.NatDone {
 		return RuleAccept, 0
 	}
 
-	// Set network header.
-	if hook == Prerouting {
-		parseHeaders(pkt)
-	}
-
 	// Drop the packet if network and transport header are not set.
-	if pkt.NetworkHeader == nil || pkt.TransportHeader == nil {
+	if pkt.NetworkHeader().View().IsEmpty() || pkt.TransportHeader().View().IsEmpty() {
 		return RuleDrop, 0
 	}
 
-	// Change the address to localhost (127.0.0.1) in Output and
-	// to primary address of the incoming interface in Prerouting.
+	// Change the address to localhost (127.0.0.1 or ::1) in Output and to
+	// the primary address of the incoming interface in Prerouting.
 	switch hook {
 	case Output:
-		rt.MinIP = tcpip.Address([]byte{127, 0, 0, 1})
-		rt.MaxIP = tcpip.Address([]byte{127, 0, 0, 1})
+		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+			rt.Addr = tcpip.Address([]byte{127, 0, 0, 1})
+		} else {
+			rt.Addr = header.IPv6Loopback
+		}
 	case Prerouting:
-		rt.MinIP = address
-		rt.MaxIP = address
+		rt.Addr = address
 	default:
 		panic("redirect target is supported only on output and prerouting hooks")
 	}
 
 	// TODO(gvisor.dev/issue/170): Check Flags in RedirectTarget if
 	// we need to change dest address (for OUTPUT chain) or ports.
-	netHeader := header.IPv4(pkt.NetworkHeader)
-	switch protocol := netHeader.TransportProtocol(); protocol {
+	switch protocol := pkt.TransportProtocolNumber; protocol {
 	case header.UDPProtocolNumber:
-		udpHeader := header.UDP(pkt.TransportHeader)
-		udpHeader.SetDestinationPort(rt.MinPort)
+		udpHeader := header.UDP(pkt.TransportHeader().View())
+		udpHeader.SetDestinationPort(rt.Port)
 
 		// Calculate UDP checksum and set it.
 		if hook == Output {
 			udpHeader.SetChecksum(0)
-			hdr := &pkt.Header
-			length := uint16(pkt.Data.Size()+hdr.UsedLength()) - uint16(netHeader.HeaderLength())
 
 			// Only calculate the checksum if offloading isn't supported.
 			if r.Capabilities()&CapabilityTXChecksumOffload == 0 {
+				length := uint16(pkt.Size()) - uint16(len(pkt.NetworkHeader().View()))
 				xsum := r.PseudoHeaderChecksum(protocol, length)
 				for _, v := range pkt.Data.Views() {
 					xsum = header.Checksum(v, xsum)
@@ -145,22 +201,26 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrackTable, hook Hook
 				udpHeader.SetChecksum(^udpHeader.CalculateChecksum(xsum))
 			}
 		}
-		// Change destination address.
-		netHeader.SetDestinationAddress(rt.MinIP)
-		netHeader.SetChecksum(0)
-		netHeader.SetChecksum(^netHeader.CalculateChecksum())
+
+		pkt.Network().SetDestinationAddress(rt.Addr)
+
+		// After modification, IPv4 packets need a valid checksum.
+		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+			netHeader := header.IPv4(pkt.NetworkHeader().View())
+			netHeader.SetChecksum(0)
+			netHeader.SetChecksum(^netHeader.CalculateChecksum())
+		}
 		pkt.NatDone = true
 	case header.TCPProtocolNumber:
 		if ct == nil {
 			return RuleAccept, 0
 		}
 
-		// Set up conection for matching NAT rule.
-		// Only the first packet of the connection comes here.
-		// Other packets will be manipulated in connection tracking.
-		if conn, _ := ct.connTrackForPacket(pkt, hook, true); conn != nil {
-			ct.SetNatInfo(pkt, rt, hook)
-			ct.HandlePacket(pkt, hook, gso, r)
+		// Set up conection for matching NAT rule. Only the first
+		// packet of the connection comes here. Other packets will be
+		// manipulated in connection tracking.
+		if conn := ct.insertRedirectConn(pkt, hook, rt); conn != nil {
+			ct.handlePacket(pkt, hook, gso, r)
 		}
 	default:
 		return RuleDrop, 0

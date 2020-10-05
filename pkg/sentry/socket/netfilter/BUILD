@@ -6,6 +6,8 @@ go_library(
     name = "netfilter",
     srcs = [
         "extensions.go",
+        "ipv4.go",
+        "ipv6.go",
         "netfilter.go",
         "owner_matcher.go",
         "targets.go",

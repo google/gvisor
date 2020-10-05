@@ -48,7 +48,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
@@ -71,7 +71,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := writev(t, file, src)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "write", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "write", file)
 }
 
 // Pwrite64 implements linux syscall pwrite64(2).
@@ -85,7 +85,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate and does not overflow.
 	if offset < 0 || offset+int64(size) < 0 {
@@ -118,7 +118,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	n, err := pwritev(t, file, src, offset)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "pwrite64", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwrite64", file)
 }
 
 // Writev implements linux syscall writev(2).
@@ -131,7 +131,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
@@ -148,7 +148,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := writev(t, file, src)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "writev", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "writev", file)
 }
 
 // Pwritev implements linux syscall pwritev(2).
@@ -162,7 +162,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < 0 {
@@ -189,7 +189,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := pwritev(t, file, src, offset)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "pwritev", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwritev", file)
 }
 
 // Pwritev2 implements linux syscall pwritev2(2).
@@ -215,7 +215,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < -1 {
@@ -250,12 +250,12 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if offset == -1 {
 		n, err := writev(t, file, src)
 		t.IOUsage().AccountWriteSyscall(n)
-		return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "pwritev2", file)
+		return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwritev2", file)
 	}
 
 	n, err := pwritev(t, file, src, offset)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "pwritev2", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwritev2", file)
 }
 
 func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {

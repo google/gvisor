@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -61,7 +62,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	}
 	defer func() {
 		if opts.MappingIdentity != nil {
-			opts.MappingIdentity.DecRef()
+			opts.MappingIdentity.DecRef(t)
 		}
 	}()
 
@@ -71,7 +72,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 
 		// mmap unconditionally requires that the FD is readable.
 		if !file.IsReadable() {
@@ -82,6 +83,17 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 			opts.MaxPerms.Write = false
 		}
 
+		if err := file.ConfigureMMap(t, &opts); err != nil {
+			return 0, nil, err
+		}
+	} else if shared {
+		// Back shared anonymous mappings with an anonymous tmpfs file.
+		opts.Offset = 0
+		file, err := tmpfs.NewZeroFile(t, t.Credentials(), t.Kernel().ShmMount(), opts.Length)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer file.DecRef(t)
 		if err := file.ConfigureMMap(t, &opts); err != nil {
 			return 0, nil, err
 		}

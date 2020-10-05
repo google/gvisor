@@ -44,10 +44,10 @@ into it in the next section!
 
 # Design Principles
 
-gVisor was designed with some
-[common secure design principles](https://www.owasp.org/index.php/Security_by_Design_Principles)
-in mind: Defense-in-Depth, Principle of Least-Privilege, Attack Surface
-Reduction and Secure-by-Default[^1].
+gVisor was designed with some common
+[secure design](https://en.wikipedia.org/wiki/Secure_by_design) principles in
+mind: Defense-in-Depth, Principle of Least-Privilege, Attack Surface Reduction
+and Secure-by-Default[^1].
 
 In general, Design Principles outline good engineering practices, but in the
 case of security, they also can be thought of as a set of tactics. In a
@@ -188,7 +188,7 @@ for direct access to some files. And most files will be remotely accessed
 through the Gofers, in which case no FDs are donated to the Sentry.
 
 The Sentry itself is only allowed access to specific
-[whitelisted syscalls](https://github.com/google/gvisor/blob/master/runsc/boot/config.go).
+[whitelisted syscalls](https://github.com/google/gvisor/blob/master/runsc/config/config.go).
 Without networking, the Sentry needs 53 host syscalls in order to function, and
 with networking, it uses an additional 15[^8]. By limiting the whitelist to only
 these needed syscalls, we radically reduce the amount of host OS attack surface.
@@ -279,19 +279,28 @@ weaknesses of each gVisor component.
 We will also use it to introduce Google's Vulnerability Reward Program[^14], and
 other ways the community can contribute to help make gVisor safe, fast and
 stable.
+<br>
+<br>
 
-## Notes
+--------------------------------------------------------------------------------
 
-[^1]: [https://www.owasp.org/index.php/Security_by_Design_Principles](https://www.owasp.org/index.php/Security_by_Design_Principles)
+[^1]: [https://en.wikipedia.org/wiki/Secure_by_design](https://en.wikipedia.org/wiki/Secure_by_design)
 [^2]: [https://gvisor.dev/docs/architecture_guide](https://gvisor.dev/docs/architecture_guide/)
 [^3]: [https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/linux/linux64_amd64.go](https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/syscalls.go)
-[^4]: Internally that is, it doesn't call to the Host OS to implement them, in
-    fact that is explicitly disallowed, more on that in the future.
+
+<!-- mdformat off(mdformat formats this into multiple lines) -->
+[^4]: Internally that is, it doesn't call to the Host OS to implement them, in fact that is explicitly disallowed, more on that in the future.
+<!-- mdformat on -->
+
 [^5]: [https://elixir.bootlin.com/linux/latest/source/arch/x86/entry/syscalls/syscall_64.tbl#L345](https://elixir.bootlin.com/linux/latest/source/arch/x86/entry/syscalls/syscall_64.tbl#L345)
 [^6]: [https://github.com/google/gvisor/tree/master/runsc/boot/filter](https://github.com/google/gvisor/tree/master/runsc/boot/filter)
 [^7]: [https://en.wikipedia.org/wiki/Dirty_COW](https://en.wikipedia.org/wiki/Dirty_COW)
 [^8]: [https://github.com/google/gvisor/blob/master/runsc/boot/config.go](https://github.com/google/gvisor/blob/master/runsc/boot/config.go)
-[^9]: [https://en.wikipedia.org/wiki/9P_(protocol)](https://en.wikipedia.org/wiki/9P_\(protocol\))
+
+<!-- mdformat off(mdformat breaks this url by escaping the parenthesis) -->
+[^9]: [https://en.wikipedia.org/wiki/9P_(protocol)](https://en.wikipedia.org/wiki/9P_(protocol))
+<!-- mdformat on -->
+
 [^10]: [https://gvisor.dev/docs/user_guide/networking/#network-passthrough](https://gvisor.dev/docs/user_guide/networking/#network-passthrough)
 [^11]: [https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390](https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390)
 [^12]: [https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ring0/kernel_amd64.go#L182](https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ring0/kernel_amd64.go#L182)

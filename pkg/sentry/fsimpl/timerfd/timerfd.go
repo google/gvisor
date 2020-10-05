@@ -26,12 +26,15 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// TimerFileDescription implements FileDescriptionImpl for timer fds. It also
+// TimerFileDescription implements vfs.FileDescriptionImpl for timer fds. It also
 // implements ktime.TimerListener.
+//
+// +stateify savable
 type TimerFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
 
 	events waiter.Queue
 	timer  *ktime.Timer
@@ -46,9 +49,9 @@ var _ vfs.FileDescriptionImpl = (*TimerFileDescription)(nil)
 var _ ktime.TimerListener = (*TimerFileDescription)(nil)
 
 // New returns a new timer fd.
-func New(vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.FileDescription, error) {
+func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[timerfd]")
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	tfd := &TimerFileDescription{}
 	tfd.timer = ktime.NewTimer(clock, tfd)
 	if err := tfd.vfsfd.Init(tfd, flags, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
@@ -61,7 +64,7 @@ func New(vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.F
 	return &tfd.vfsfd, nil
 }
 
-// Read implements FileDescriptionImpl.Read.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (tfd *TimerFileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	const sizeofUint64 = 8
 	if dst.NumBytes() < sizeofUint64 {
@@ -127,8 +130,8 @@ func (tfd *TimerFileDescription) ResumeTimer() {
 	tfd.timer.Resume()
 }
 
-// Release implements FileDescriptionImpl.Release()
-func (tfd *TimerFileDescription) Release() {
+// Release implements vfs.FileDescriptionImpl.Release.
+func (tfd *TimerFileDescription) Release(context.Context) {
 	tfd.timer.Destroy()
 }
 

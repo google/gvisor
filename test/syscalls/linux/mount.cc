@@ -147,8 +147,15 @@ TEST(MountTest, UmountDetach) {
   // Unmount the tmpfs.
   mount.Release()();
 
-  const struct stat after2 = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
-  EXPECT_EQ(before.st_ino, after2.st_ino);
+  // Only check for inode number equality if the directory is not in overlayfs.
+  // If xino option is not enabled and if all overlayfs layers do not belong to
+  // the same filesystem then "the value of st_ino for directory objects may not
+  // be persistent and could change even while the overlay filesystem is
+  // mounted."  -- Documentation/filesystems/overlayfs.txt
+  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
+    const struct stat after2 = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
+    EXPECT_EQ(before.st_ino, after2.st_ino);
+  }
 
   // Can still read file after unmounting.
   std::vector<char> buf(sizeof(kContents));
@@ -213,8 +220,15 @@ TEST(MountTest, MountTmpfs) {
   }
 
   // Now that dir is unmounted again, we should have the old inode back.
-  const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
-  EXPECT_EQ(before.st_ino, after.st_ino);
+  // Only check for inode number equality if the directory is not in overlayfs.
+  // If xino option is not enabled and if all overlayfs layers do not belong to
+  // the same filesystem then "the value of st_ino for directory objects may not
+  // be persistent and could change even while the overlay filesystem is
+  // mounted."  -- Documentation/filesystems/overlayfs.txt
+  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
+    const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
+    EXPECT_EQ(before.st_ino, after.st_ino);
+  }
 }
 
 TEST(MountTest, MountTmpfsMagicValIgnored) {
@@ -319,6 +333,42 @@ TEST(MountTest, RenameRemoveMountPoint) {
               SyscallFailsWithErrno(EBUSY));
 
   ASSERT_THAT(rmdir(dir.path().c_str()), SyscallFailsWithErrno(EBUSY));
+}
+
+TEST(MountTest, MountFuseFilesystemNoDevice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningOnGvisor() && !IsFUSEEnabled());
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // Before kernel version 4.16-rc6, FUSE mount is protected by
+  // capable(CAP_SYS_ADMIN). After this version, it uses
+  // ns_capable(CAP_SYS_ADMIN) to protect. Before the 4.16 kernel, it was not
+  // allowed to mount fuse file systems without the global CAP_SYS_ADMIN.
+  int res = mount("", dir.path().c_str(), "fuse", 0, "");
+  SKIP_IF(!IsRunningOnGvisor() && res == -1 && errno == EPERM);
+
+  EXPECT_THAT(mount("", dir.path().c_str(), "fuse", 0, ""),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MountTest, MountFuseFilesystem) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningOnGvisor() && !IsFUSEEnabled());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_WRONLY));
+  std::string mopts = "fd=" + std::to_string(fd.get());
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // See comments in MountFuseFilesystemNoDevice for the reason why we skip
+  // EPERM when running on Linux.
+  int res = mount("", dir.path().c_str(), "fuse", 0, "");
+  SKIP_IF(!IsRunningOnGvisor() && res == -1 && errno == EPERM);
+
+  auto const mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "fuse", 0, mopts, 0));
 }
 
 }  // namespace

@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#ifdef __linux__
+#include <linux/filter.h>
+#endif  // __linux__
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -715,6 +718,30 @@ TEST_P(TcpSocketTest, TcpSCMPriority) {
 
   cmsg = CMSG_NXTHDR(&msg, cmsg);
   ASSERT_EQ(cmsg, nullptr);
+}
+
+TEST_P(TcpSocketTest, TimeWaitPollHUP) {
+  shutdown(s_, SHUT_RDWR);
+  ScopedThread t([&]() {
+    constexpr int kTimeout = 10000;
+    constexpr int16_t want_events = POLLHUP;
+    struct pollfd pfd = {
+        .fd = s_,
+        .events = want_events,
+    };
+    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  });
+  shutdown(t_, SHUT_RDWR);
+  t.Join();
+  // At this point s_ should be in TIME-WAIT and polling for POLLHUP should
+  // return with 1 FD.
+  constexpr int kTimeout = 10000;
+  constexpr int16_t want_events = POLLHUP;
+  struct pollfd pfd = {
+      .fd = s_,
+      .events = want_events,
+  };
+  ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, TcpSocketTest,
@@ -1557,6 +1584,93 @@ TEST_P(SimpleTcpSocketTest, SetTCPWindowClampAboveHalfMinRcvBuf) {
     EXPECT_EQ(get_len, sizeof(get));
     EXPECT_EQ(above_half_min_rcv_buf, get);
   }
+}
+
+#ifdef __linux__
+
+// TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
+// gVisor currently silently ignores attaching a filter.
+TEST_P(SimpleTcpSocketTest, SetSocketAttachDetachFilter) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  // Program generated using sudo tcpdump -i lo tcp and port 1234 -dd
+  struct sock_filter code[] = {
+      {0x28, 0, 0, 0x0000000c},  {0x15, 0, 6, 0x000086dd},
+      {0x30, 0, 0, 0x00000014},  {0x15, 0, 15, 0x00000006},
+      {0x28, 0, 0, 0x00000036},  {0x15, 12, 0, 0x000004d2},
+      {0x28, 0, 0, 0x00000038},  {0x15, 10, 11, 0x000004d2},
+      {0x15, 0, 10, 0x00000800}, {0x30, 0, 0, 0x00000017},
+      {0x15, 0, 8, 0x00000006},  {0x28, 0, 0, 0x00000014},
+      {0x45, 6, 0, 0x00001fff},  {0xb1, 0, 0, 0x0000000e},
+      {0x48, 0, 0, 0x0000000e},  {0x15, 2, 0, 0x000004d2},
+      {0x48, 0, 0, 0x00000010},  {0x15, 0, 1, 0x000004d2},
+      {0x6, 0, 0, 0x00040000},   {0x6, 0, 0, 0x00000000},
+  };
+  struct sock_fprog bpf = {
+      .len = ABSL_ARRAYSIZE(code),
+      .filter = code,
+  };
+  ASSERT_THAT(
+      setsockopt(s.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf)),
+      SyscallSucceeds());
+
+  constexpr int val = 0;
+  ASSERT_THAT(
+      setsockopt(s.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+      SyscallSucceeds());
+}
+
+#endif  // __linux__
+
+TEST_P(SimpleTcpSocketTest, SetSocketDetachFilterNoInstalledFilter) {
+  // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
+  SKIP_IF(IsRunningOnGvisor());
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  constexpr int val = 0;
+  ASSERT_THAT(
+      setsockopt(s.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+      SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_P(SimpleTcpSocketTest, GetSocketDetachFilter) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
+TEST_P(SimpleTcpSocketTest, CloseNonConnectedLingerOption) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  constexpr int kLingerTimeout = 10;  // Seconds.
+
+  // Set the SO_LINGER option.
+  struct linger sl = {
+      .l_onoff = 1,
+      .l_linger = kLingerTimeout,
+  };
+  ASSERT_THAT(setsockopt(s.get(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+              SyscallSucceeds());
+
+  struct pollfd poll_fd = {
+      .fd = s.get(),
+      .events = POLLHUP,
+  };
+  constexpr int kPollTimeoutMs = 0;
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+
+  auto const start_time = absl::Now();
+  EXPECT_THAT(close(s.release()), SyscallSucceeds());
+  auto const end_time = absl::Now();
+
+  // Close() should not linger and return immediately.
+  ASSERT_LT((end_time - start_time), absl::Seconds(kLingerTimeout));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,

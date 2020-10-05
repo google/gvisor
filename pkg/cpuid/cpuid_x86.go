@@ -1057,9 +1057,9 @@ func HostFeatureSet() *FeatureSet {
 	}
 }
 
-// Reads max cpu frequency from host /proc/cpuinfo. Must run before
-// whitelisting. This value is used to create the fake /proc/cpuinfo from a
-// FeatureSet.
+// Reads max cpu frequency from host /proc/cpuinfo. Must run before syscall
+// filter installation. This value is used to create the fake /proc/cpuinfo
+// from a FeatureSet.
 func initCPUFreq() {
 	cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
 	if err != nil {
@@ -1106,7 +1106,6 @@ func initFeaturesFromString() {
 }
 
 func init() {
-	// initCpuFreq must be run before whitelists are enabled.
 	initCPUFreq()
 	initFeaturesFromString()
 }

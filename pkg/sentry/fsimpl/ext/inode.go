@@ -37,6 +37,8 @@ import (
 //           |-- regular--
 //                       |-- extent file
 //                       |-- block map file
+//
+// +stateify savable
 type inode struct {
 	// refs is a reference count. refs is accessed using atomic memory operations.
 	refs int64
@@ -53,6 +55,8 @@ type inode struct {
 
 	// diskInode gives us access to the inode struct on disk. Immutable.
 	diskInode disklayout.Inode
+
+	locks vfs.FileLocks
 
 	// This is immutable. The first field of the implementations must have inode
 	// as the first field to ensure temporality.
@@ -115,7 +119,7 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 	}
 
 	// Build the inode based on its type.
-	inode := inode{
+	args := inodeArgs{
 		fs:        fs,
 		inodeNum:  inodeNum,
 		blkSize:   blkSize,
@@ -124,19 +128,19 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 
 	switch diskInode.Mode().FileType() {
 	case linux.ModeSymlink:
-		f, err := newSymlink(inode)
+		f, err := newSymlink(args)
 		if err != nil {
 			return nil, err
 		}
 		return &f.inode, nil
 	case linux.ModeRegular:
-		f, err := newRegularFile(inode)
+		f, err := newRegularFile(args)
 		if err != nil {
 			return nil, err
 		}
 		return &f.inode, nil
 	case linux.ModeDirectory:
-		f, err := newDirectory(inode, fs.sb.IncompatibleFeatures().DirentFileType)
+		f, err := newDirectory(args, fs.sb.IncompatibleFeatures().DirentFileType)
 		if err != nil {
 			return nil, err
 		}
@@ -145,6 +149,21 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 		// TODO(b/134676337): Return appropriate errors for sockets, pipes and devices.
 		return nil, syserror.EINVAL
 	}
+}
+
+type inodeArgs struct {
+	fs        *filesystem
+	inodeNum  uint32
+	blkSize   uint64
+	diskInode disklayout.Inode
+}
+
+func (in *inode) init(args inodeArgs, impl interface{}) {
+	in.fs = args.fs
+	in.inodeNum = args.inodeNum
+	in.blkSize = args.blkSize
+	in.diskInode = args.diskInode
+	in.impl = impl
 }
 
 // open creates and returns a file description for the dentry passed in.
@@ -157,6 +176,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 	switch in.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
+		fd.LockFD.Init(&in.locks)
 		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
@@ -168,6 +188,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
+		fd.LockFD.Init(&in.locks)
 		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
@@ -178,6 +199,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 			return nil, syserror.ELOOP
 		}
 		var fd symlinkFD
+		fd.LockFD.Init(&in.locks)
 		fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	default:

@@ -14,7 +14,7 @@
 
 package arch
 
-import "gvisor.dev/gvisor/tools/go_marshal/marshal"
+import "gvisor.dev/gvisor/pkg/marshal"
 
 // Special values for SignalAct.Handler.
 const (

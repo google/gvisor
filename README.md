@@ -1,6 +1,8 @@
 ![gVisor](g3doc/logo.png)
 
 ![](https://github.com/google/gvisor/workflows/Build/badge.svg)
+[![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
+[![code search](https://img.shields.io/badge/code-search-blue)](https://cs.opensource.google/gvisor/gvisor)
 
 ## What is gVisor?
 
@@ -57,7 +59,7 @@ Make sure the following dependencies are installed:
 
 Build and install the `runsc` binary:
 
-```
+```sh
 make runsc
 sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 ```
@@ -66,15 +68,15 @@ sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 
 To run standard test suites, you can use:
 
-```
+```sh
 make unit-tests
 make tests
 ```
 
 To run specific tests, you can specify the target:
 
-```
-make test TARGET="//runsc:version_test"
+```sh
+make test TARGETS="//runsc:version_test"
 ```
 
 ### Using `go get`
@@ -83,12 +85,19 @@ This project uses [bazel][bazel] to build and manage dependencies. A synthetic
 `go` branch is maintained that is compatible with standard `go` tooling for
 convenience.
 
-For example, to build `runsc` directly from this branch:
+For example, to build and install `runsc` directly from this branch:
 
-```
+```sh
 echo "module runsc" > go.mod
 GO111MODULE=on go get gvisor.dev/gvisor/runsc@go
-CGO_ENABLED=0 GO111MODULE=on go install gvisor.dev/gvisor/runsc
+CGO_ENABLED=0 GO111MODULE=on sudo -E go build -o /usr/local/bin/runsc gvisor.dev/gvisor/runsc
+```
+
+Subsequently, you can build and install the shim binaries for `containerd`:
+
+```sh
+GO111MODULE=on sudo -E go build -o /usr/local/bin/gvisor-containerd-shim gvisor.dev/gvisor/shim/v1
+GO111MODULE=on sudo -E go build -o /usr/local/bin/containerd-shim-runsc-v1 gvisor.dev/gvisor/shim/v2
 ```
 
 Note that this branch is supported in a best effort capacity, and direct
@@ -97,7 +106,7 @@ development on this branch is not supported. Development should occur on the
 
 ## Community & Governance
 
-See [GOVERNANCE.md](GOVERANCE.md) for project governance information.
+See [GOVERNANCE.md](GOVERNANCE.md) for project governance information.
 
 The [gvisor-users mailing list][gvisor-users-list] and
 [gvisor-dev mailing list][gvisor-dev-list] are good starting points for
@@ -112,7 +121,6 @@ See [SECURITY.md](SECURITY.md).
 See [Contributing.md](CONTRIBUTING.md).
 
 [bazel]: https://bazel.build
-[community]: https://gvisor.googlesource.com/community
 [docker]: https://www.docker.com
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-dev]: https://gvisor.dev

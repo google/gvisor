@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -33,7 +34,7 @@ import (
 // the old fs architecture.
 
 // Release cleans up the pipe's state.
-func (p *Pipe) Release() {
+func (p *Pipe) Release(context.Context) {
 	p.rClose()
 	p.wClose()
 
@@ -145,9 +146,14 @@ func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 			v = math.MaxInt32 // Silently truncate.
 		}
 		// Copy result to userspace.
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		iocc := primitive.IOCopyContext{
+			IO:  io,
+			Ctx: ctx,
+			Opts: usermem.IOOpts{
+				AddressSpaceActive: true,
+			},
+		}
+		_, err := primitive.CopyInt32Out(&iocc, args[2].Pointer(), int32(v))
 		return 0, err
 	default:
 		return 0, syscall.ENOTTY

@@ -93,53 +93,41 @@ func (*UDPMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (um *UDPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceName string) (bool, bool) {
-	netHeader := header.IPv4(pkt.NetworkHeader)
-
+func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
 	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
 	// into the stack.Check codepath as matchers are added.
-	if netHeader.TransportProtocol() != header.UDPProtocolNumber {
-		return false, false
-	}
-
-	// We dont't match fragments.
-	if frag := netHeader.FragmentOffset(); frag != 0 {
-		if frag == 1 {
-			return false, true
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		netHeader := header.IPv4(pkt.NetworkHeader().View())
+		if netHeader.TransportProtocol() != header.UDPProtocolNumber {
+			return false, false
 		}
-		return false, false
-	}
 
-	// Now we need the transport header. However, this may not have been set
-	// yet.
-	// TODO(gvisor.dev/issue/170): Parsing the transport header should
-	// ultimately be moved into the stack.Check codepath as matchers are
-	// added.
-	var udpHeader header.UDP
-	if pkt.TransportHeader != nil {
-		udpHeader = header.UDP(pkt.TransportHeader)
-	} else {
-		var length int
-		if hook == stack.Prerouting {
-			// The network header hasn't been parsed yet. We have to do it here.
-			hdr, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
-			if !ok {
-				// There's no valid UDP header here, so we hotdrop the
-				// packet.
+		// We don't match fragments.
+		if frag := netHeader.FragmentOffset(); frag != 0 {
+			if frag == 1 {
 				return false, true
 			}
-			h := header.IPv4(hdr)
-			pkt.NetworkHeader = hdr
-			length = int(h.HeaderLength())
+			return false, false
 		}
-		// The UDP header hasn't been parsed yet. We have to do it here.
-		hdr, ok := pkt.Data.PullUp(length + header.UDPMinimumSize)
-		if !ok {
-			// There's no valid UDP header here, so we hotdrop the
-			// packet.
-			return false, true
+
+	case header.IPv6ProtocolNumber:
+		// As in Linux, we do not perform an IPv6 fragment check. See
+		// xt_action_param.fragoff in
+		// include/linux/netfilter/x_tables.h.
+		if header.IPv6(pkt.NetworkHeader().View()).TransportProtocol() != header.UDPProtocolNumber {
+			return false, false
 		}
-		udpHeader = header.UDP(hdr[length:])
+
+	default:
+		// We don't know the network protocol.
+		return false, false
+	}
+
+	udpHeader := header.UDP(pkt.TransportHeader().View())
+	if len(udpHeader) < header.UDPMinimumSize {
+		// There's no valid UDP header here, so we drop the packet immediately.
+		return false, true
 	}
 
 	// Check whether the source and destination ports are within the

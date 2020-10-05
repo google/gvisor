@@ -22,6 +22,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -33,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -101,14 +103,13 @@ const (
 
 // Profiling related commands (see pprof.go for more details).
 const (
-	StartCPUProfile  = "Profile.StartCPUProfile"
-	StopCPUProfile   = "Profile.StopCPUProfile"
-	HeapProfile      = "Profile.HeapProfile"
-	GoroutineProfile = "Profile.GoroutineProfile"
-	BlockProfile     = "Profile.BlockProfile"
-	MutexProfile     = "Profile.MutexProfile"
-	StartTrace       = "Profile.StartTrace"
-	StopTrace        = "Profile.StopTrace"
+	StartCPUProfile = "Profile.StartCPUProfile"
+	StopCPUProfile  = "Profile.StopCPUProfile"
+	HeapProfile     = "Profile.HeapProfile"
+	BlockProfile    = "Profile.BlockProfile"
+	MutexProfile    = "Profile.MutexProfile"
+	StartTrace      = "Profile.StartTrace"
+	StopTrace       = "Profile.StopTrace"
 )
 
 // Logging related commands (see logging.go for more details).
@@ -129,42 +130,52 @@ type controller struct {
 
 	// manager holds the containerManager methods.
 	manager *containerManager
+
+	// pprop holds the profile instance if enabled. It may be nil.
+	pprof *control.Profile
 }
 
 // newController creates a new controller. The caller must call
 // controller.srv.StartServing() to start the controller.
 func newController(fd int, l *Loader) (*controller, error) {
-	srv, err := server.CreateFromFD(fd)
+	ctrl := &controller{}
+	var err error
+	ctrl.srv, err = server.CreateFromFD(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	manager := &containerManager{
+	ctrl.manager = &containerManager{
 		startChan:       make(chan struct{}),
 		startResultChan: make(chan error),
 		l:               l,
 	}
-	srv.Register(manager)
+	ctrl.srv.Register(ctrl.manager)
 
 	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
 		net := &Network{
 			Stack: eps.Stack,
 		}
-		srv.Register(net)
+		ctrl.srv.Register(net)
 	}
 
-	srv.Register(&debug{})
-	srv.Register(&control.Logging{})
-	if l.conf.ProfileEnable {
-		srv.Register(&control.Profile{
-			Kernel: l.k,
-		})
+	ctrl.srv.Register(&debug{})
+	ctrl.srv.Register(&control.Logging{})
+
+	if l.root.conf.ProfileEnable {
+		ctrl.pprof = &control.Profile{Kernel: l.k}
+		ctrl.srv.Register(ctrl.pprof)
 	}
 
-	return &controller{
-		srv:     srv,
-		manager: manager,
-	}, nil
+	return ctrl, nil
+}
+
+func (c *controller) stop() {
+	if c.pprof != nil {
+		// These are noop if there is nothing being profiled.
+		_ = c.pprof.StopCPUProfile(nil, nil)
+		_ = c.pprof.StopTrace(nil, nil)
+	}
 }
 
 // containerManager manages sandbox containers.
@@ -211,7 +222,7 @@ type StartArgs struct {
 	Spec *specs.Spec
 
 	// Config is the runsc-specific configuration for the sandbox.
-	Conf *Config
+	Conf *config.Config
 
 	// CID is the ID of the container to start.
 	CID string
@@ -247,13 +258,20 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	// All validation passed, logs the spec for debugging.
 	specutils.LogSpec(args.Spec)
 
-	err := cm.l.startContainer(args.Spec, args.Conf, args.CID, args.FilePayload.Files)
+	fds, err := fd.NewFromFiles(args.FilePayload.Files)
 	if err != nil {
+		return err
+	}
+	defer func() {
+		for _, fd := range fds {
+			_ = fd.Close()
+		}
+	}()
+	if err := cm.l.startContainer(args.Spec, args.Conf, args.CID, fds); err != nil {
 		log.Debugf("containerManager.Start failed %q: %+v: %v", args.CID, args, err)
 		return err
 	}
 	log.Debugf("Container %q started", args.CID)
-
 	return nil
 }
 
@@ -333,7 +351,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
 
-	p, err := createPlatform(cm.l.conf, deviceFile)
+	p, err := createPlatform(cm.l.root.conf, deviceFile)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -349,8 +367,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 
 	// Set up the restore environment.
-	mntr := newContainerMounter(cm.l.spec, cm.l.goferFDs, cm.l.k, cm.l.mountHints)
-	renv, err := mntr.createRestoreEnvironment(cm.l.conf)
+	mntr := newContainerMounter(cm.l.root.spec, cm.l.root.goferFDs, cm.l.k, cm.l.mountHints)
+	renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
 	if err != nil {
 		return fmt.Errorf("creating RestoreEnvironment: %v", err)
 	}
@@ -368,7 +386,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("file cannot be empty")
 	}
 
-	if cm.l.conf.ProfileEnable {
+	if cm.l.root.conf.ProfileEnable {
 		// pprof.Initialize opens /proc/self/maps, so has to be called before
 		// installing seccomp filters.
 		pprof.Initialize()
@@ -387,13 +405,13 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Since we have a new kernel we also must make a new watchdog.
 	dogOpts := watchdog.DefaultOpts
-	dogOpts.TaskTimeoutAction = cm.l.conf.WatchdogAction
+	dogOpts.TaskTimeoutAction = cm.l.root.conf.WatchdogAction
 	dog := watchdog.New(k, dogOpts)
 
 	// Change the loader fields to reflect the changes made when restoring.
 	cm.l.k = k
 	cm.l.watchdog = dog
-	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
+	cm.l.root.procArgs = kernel.CreateProcessArgs{}
 	cm.l.restore = true
 
 	// Reinitialize the sandbox ID and processes map. Note that it doesn't

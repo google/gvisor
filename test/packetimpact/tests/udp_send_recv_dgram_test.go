@@ -16,85 +16,88 @@ package udp_send_recv_dgram_test
 
 import (
 	"flag"
-	"math/rand"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
-func generateRandomPayload(t *testing.T, n int) string {
-	t.Helper()
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		t.Fatalf("rand.Read(buf) failed: %s", err)
-	}
-	return string(buf)
+type udpConn interface {
+	Send(*testing.T, testbench.UDP, ...testbench.Layer)
+	ExpectData(*testing.T, testbench.UDP, testbench.Payload, time.Duration) (testbench.Layers, error)
+	Drain(*testing.T)
+	Close(*testing.T)
 }
 
-func TestUDPRecv(t *testing.T) {
-	dut := tb.NewDUT(t)
+func TestUDP(t *testing.T) {
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
-	defer dut.Close(boundFD)
-	conn := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
-	defer conn.Close()
 
-	testCases := []struct {
-		name    string
-		payload string
-	}{
-		{"emptypayload", ""},
-		{"small payload", "hello world"},
-		{"1kPayload", generateRandomPayload(t, 1<<10)},
-		// Even though UDP allows larger dgrams we don't test it here as
-		// they need to be fragmented and written out as individual
-		// frames.
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			frame := conn.CreateFrame(&tb.UDP{}, &tb.Payload{Bytes: []byte(tc.payload)})
-			conn.SendFrame(frame)
-			if got, want := string(dut.Recv(boundFD, int32(len(tc.payload)), 0)), tc.payload; got != want {
-				t.Fatalf("received payload does not match sent payload got: %s, want: %s", got, want)
+	for _, isIPv4 := range []bool{true, false} {
+		ipVersionName := "IPv6"
+		if isIPv4 {
+			ipVersionName = "IPv4"
+		}
+		t.Run(ipVersionName, func(t *testing.T) {
+			var addr string
+			if isIPv4 {
+				addr = testbench.RemoteIPv4
+			} else {
+				addr = testbench.RemoteIPv6
 			}
-		})
-	}
-}
+			boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(addr))
+			defer dut.Close(t, boundFD)
 
-func TestUDPSend(t *testing.T) {
-	dut := tb.NewDUT(t)
-	defer dut.TearDown()
-	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
-	defer dut.Close(boundFD)
-	conn := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
-	defer conn.Close()
-
-	testCases := []struct {
-		name    string
-		payload string
-	}{
-		{"emptypayload", ""},
-		{"small payload", "hello world"},
-		{"1kPayload", generateRandomPayload(t, 1<<10)},
-		// Even though UDP allows larger dgrams we don't test it here as
-		// they need to be fragmented and written out as individual
-		// frames.
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			conn.Drain()
-			if got, want := int(dut.SendTo(boundFD, []byte(tc.payload), 0, conn.LocalAddr())), len(tc.payload); got != want {
-				t.Fatalf("short write got: %d, want: %d", got, want)
+			var conn udpConn
+			var localAddr unix.Sockaddr
+			if isIPv4 {
+				v4Conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+				localAddr = v4Conn.LocalAddr(t)
+				conn = &v4Conn
+			} else {
+				v6Conn := testbench.NewUDPIPv6(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+				localAddr = v6Conn.LocalAddr(t)
+				conn = &v6Conn
 			}
-			if _, err := conn.ExpectData(tb.UDP{SrcPort: &remotePort}, tb.Payload{Bytes: []byte(tc.payload)}, 1*time.Second); err != nil {
-				t.Fatal(err)
+			defer conn.Close(t)
+
+			testCases := []struct {
+				name    string
+				payload []byte
+			}{
+				{"emptypayload", nil},
+				{"small payload", []byte("hello world")},
+				{"1kPayload", testbench.GenerateRandomPayload(t, 1<<10)},
+				// Even though UDP allows larger dgrams we don't test it here as
+				// they need to be fragmented and written out as individual
+				// frames.
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Run("Send", func(t *testing.T) {
+						conn.Send(t, testbench.UDP{}, &testbench.Payload{Bytes: tc.payload})
+						got, want := dut.Recv(t, boundFD, int32(len(tc.payload)+1), 0), tc.payload
+						if diff := cmp.Diff(want, got); diff != "" {
+							t.Fatalf("received payload does not match sent payload, diff (-want, +got):\n%s", diff)
+						}
+					})
+					t.Run("Recv", func(t *testing.T) {
+						conn.Drain(t)
+						if got, want := int(dut.SendTo(t, boundFD, tc.payload, 0, localAddr)), len(tc.payload); got != want {
+							t.Fatalf("short write got: %d, want: %d", got, want)
+						}
+						if _, err := conn.ExpectData(t, testbench.UDP{SrcPort: &remotePort}, testbench.Payload{Bytes: tc.payload}, time.Second); err != nil {
+							t.Fatal(err)
+						}
+					})
+				})
 			}
 		})
 	}

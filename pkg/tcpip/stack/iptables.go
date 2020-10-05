@@ -16,106 +16,186 @@ package stack
 
 import (
 	"fmt"
-	"strings"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// Table names.
+// tableID is an index into IPTables.tables.
+type tableID int
+
 const (
-	TablenameNat    = "nat"
-	TablenameMangle = "mangle"
-	TablenameFilter = "filter"
+	natID tableID = iota
+	mangleID
+	filterID
+	numTables
 )
 
-// Chain names as defined by net/ipv4/netfilter/ip_tables.c.
+// Table names.
 const (
-	ChainNamePrerouting  = "PREROUTING"
-	ChainNameInput       = "INPUT"
-	ChainNameForward     = "FORWARD"
-	ChainNameOutput      = "OUTPUT"
-	ChainNamePostrouting = "POSTROUTING"
+	NATTable    = "nat"
+	MangleTable = "mangle"
+	FilterTable = "filter"
 )
+
+// nameToID is immutable.
+var nameToID = map[string]tableID{
+	NATTable:    natID,
+	MangleTable: mangleID,
+	FilterTable: filterID,
+}
 
 // HookUnset indicates that there is no hook set for an entrypoint or
 // underflow.
 const HookUnset = -1
 
+// reaperDelay is how long to wait before starting to reap connections.
+const reaperDelay = 5 * time.Second
+
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
-func DefaultTables() IPTables {
-	// TODO(gvisor.dev/issue/170): We may be able to swap out some strings for
-	// iotas.
-	return IPTables{
-		Tables: map[string]Table{
-			TablenameNat: Table{
+func DefaultTables() *IPTables {
+	return &IPTables{
+		v4Tables: [numTables]Table{
+			natID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
-				BuiltinChains: map[Hook]int{
+				BuiltinChains: [NumHooks]int{
 					Prerouting:  0,
 					Input:       1,
+					Forward:     HookUnset,
 					Output:      2,
 					Postrouting: 3,
 				},
-				Underflows: map[Hook]int{
+				Underflows: [NumHooks]int{
 					Prerouting:  0,
 					Input:       1,
+					Forward:     HookUnset,
 					Output:      2,
 					Postrouting: 3,
 				},
-				UserChains: map[string]int{},
 			},
-			TablenameMangle: Table{
+			mangleID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
-				BuiltinChains: map[Hook]int{
+				BuiltinChains: [NumHooks]int{
 					Prerouting: 0,
 					Output:     1,
 				},
-				Underflows: map[Hook]int{
+				Underflows: [NumHooks]int{
+					Prerouting:  0,
+					Input:       HookUnset,
+					Forward:     HookUnset,
+					Output:      1,
+					Postrouting: HookUnset,
+				},
+			},
+			filterID: Table{
+				Rules: []Rule{
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+				},
+				BuiltinChains: [NumHooks]int{
+					Prerouting:  HookUnset,
+					Input:       0,
+					Forward:     1,
+					Output:      2,
+					Postrouting: HookUnset,
+				},
+				Underflows: [NumHooks]int{
+					Prerouting:  HookUnset,
+					Input:       0,
+					Forward:     1,
+					Output:      2,
+					Postrouting: HookUnset,
+				},
+			},
+		},
+		v6Tables: [numTables]Table{
+			natID: Table{
+				Rules: []Rule{
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+				},
+				BuiltinChains: [NumHooks]int{
+					Prerouting:  0,
+					Input:       1,
+					Forward:     HookUnset,
+					Output:      2,
+					Postrouting: 3,
+				},
+				Underflows: [NumHooks]int{
+					Prerouting:  0,
+					Input:       1,
+					Forward:     HookUnset,
+					Output:      2,
+					Postrouting: 3,
+				},
+			},
+			mangleID: Table{
+				Rules: []Rule{
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+				},
+				BuiltinChains: [NumHooks]int{
 					Prerouting: 0,
 					Output:     1,
 				},
-				UserChains: map[string]int{},
+				Underflows: [NumHooks]int{
+					Prerouting:  0,
+					Input:       HookUnset,
+					Forward:     HookUnset,
+					Output:      1,
+					Postrouting: HookUnset,
+				},
 			},
-			TablenameFilter: Table{
+			filterID: Table{
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					Rule{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 				},
-				BuiltinChains: map[Hook]int{
-					Input:   0,
-					Forward: 1,
-					Output:  2,
+				BuiltinChains: [NumHooks]int{
+					Prerouting:  HookUnset,
+					Input:       0,
+					Forward:     1,
+					Output:      2,
+					Postrouting: HookUnset,
 				},
-				Underflows: map[Hook]int{
-					Input:   0,
-					Forward: 1,
-					Output:  2,
+				Underflows: [NumHooks]int{
+					Prerouting:  HookUnset,
+					Input:       0,
+					Forward:     1,
+					Output:      2,
+					Postrouting: HookUnset,
 				},
-				UserChains: map[string]int{},
 			},
 		},
-		Priorities: map[Hook][]string{
-			Input:      []string{TablenameNat, TablenameFilter},
-			Prerouting: []string{TablenameMangle, TablenameNat},
-			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
+		priorities: [NumHooks][]tableID{
+			Prerouting: []tableID{mangleID, natID},
+			Input:      []tableID{natID, filterID},
+			Output:     []tableID{mangleID, natID, filterID},
 		},
-		connections: ConnTrackTable{
-			CtMap: make(map[uint32]ConnTrackTupleHolder),
-			Seed:  generateRandUint32(),
+		connections: ConnTrack{
+			seed: generateRandUint32(),
 		},
+		reaperDone: make(chan struct{}, 1),
 	}
 }
 
@@ -124,39 +204,66 @@ func DefaultTables() IPTables {
 func EmptyFilterTable() Table {
 	return Table{
 		Rules: []Rule{},
-		BuiltinChains: map[Hook]int{
-			Input:   HookUnset,
-			Forward: HookUnset,
-			Output:  HookUnset,
+		BuiltinChains: [NumHooks]int{
+			Prerouting:  HookUnset,
+			Postrouting: HookUnset,
 		},
-		Underflows: map[Hook]int{
-			Input:   HookUnset,
-			Forward: HookUnset,
-			Output:  HookUnset,
+		Underflows: [NumHooks]int{
+			Prerouting:  HookUnset,
+			Postrouting: HookUnset,
 		},
-		UserChains: map[string]int{},
 	}
 }
 
-// EmptyNatTable returns a Table with no rules and the filter table chains
+// EmptyNATTable returns a Table with no rules and the filter table chains
 // mapped to HookUnset.
-func EmptyNatTable() Table {
+func EmptyNATTable() Table {
 	return Table{
 		Rules: []Rule{},
-		BuiltinChains: map[Hook]int{
-			Prerouting:  HookUnset,
-			Input:       HookUnset,
-			Output:      HookUnset,
-			Postrouting: HookUnset,
+		BuiltinChains: [NumHooks]int{
+			Forward: HookUnset,
 		},
-		Underflows: map[Hook]int{
-			Prerouting:  HookUnset,
-			Input:       HookUnset,
-			Output:      HookUnset,
-			Postrouting: HookUnset,
+		Underflows: [NumHooks]int{
+			Forward: HookUnset,
 		},
-		UserChains: map[string]int{},
 	}
+}
+
+// GetTable returns a table by name.
+func (it *IPTables) GetTable(name string, ipv6 bool) (Table, bool) {
+	id, ok := nameToID[name]
+	if !ok {
+		return Table{}, false
+	}
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	if ipv6 {
+		return it.v6Tables[id], true
+	}
+	return it.v4Tables[id], true
+}
+
+// ReplaceTable replaces or inserts table by name.
+func (it *IPTables) ReplaceTable(name string, table Table, ipv6 bool) *tcpip.Error {
+	id, ok := nameToID[name]
+	if !ok {
+		return tcpip.ErrInvalidOptionValue
+	}
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	// If iptables is being enabled, initialize the conntrack table and
+	// reaper.
+	if !it.modified {
+		it.connections.buckets = make([]bucket, numBuckets)
+		it.startReaper(reaperDelay)
+	}
+	it.modified = true
+	if ipv6 {
+		it.v6Tables[id] = table
+	} else {
+		it.v4Tables[id] = table
+	}
+	return nil
 }
 
 // A chainVerdict is what a table decides should be done with a packet.
@@ -178,17 +285,43 @@ const (
 // should continue traversing the network stack and false when it should be
 // dropped.
 //
+// TODO(gvisor.dev/issue/170): PacketBuffer should hold the GSO and route, from
+// which address and nicName can be gathered. Currently, address is only
+// needed for prerouting and nicName is only needed for output.
+//
 // Precondition: pkt.NetworkHeader is set.
-func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, address tcpip.Address, nicName string) bool {
+func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, preroutingAddr tcpip.Address, nicName string) bool {
+	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber && pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+		return true
+	}
+	// Many users never configure iptables. Spare them the cost of rule
+	// traversal if rules have never been set.
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	if !it.modified {
+		return true
+	}
+
 	// Packets are manipulated only if connection and matching
 	// NAT rule exists.
-	it.connections.HandlePacket(pkt, hook, gso, r)
+	shouldTrack := it.connections.handlePacket(pkt, hook, gso, r)
 
 	// Go through each table containing the hook.
-	for _, tablename := range it.Priorities[hook] {
-		table := it.Tables[tablename]
+	priorities := it.priorities[hook]
+	for _, tableID := range priorities {
+		// If handlePacket already NATed the packet, we don't need to
+		// check the NAT table.
+		if tableID == natID && pkt.NatDone {
+			continue
+		}
+		var table Table
+		if pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber {
+			table = it.v6Tables[tableID]
+		} else {
+			table = it.v4Tables[tableID]
+		}
 		ruleIdx := table.BuiltinChains[hook]
-		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, gso, r, address, nicName); verdict {
+		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, gso, r, preroutingAddr, nicName); verdict {
 		// If the table returns Accept, move on to the next table.
 		case chainAccept:
 			continue
@@ -199,7 +332,7 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 			// Any Return from a built-in chain means we have to
 			// call the underflow.
 			underflow := table.Rules[table.Underflows[hook]]
-			switch v, _ := underflow.Target.Action(pkt, &it.connections, hook, gso, r, address); v {
+			switch v, _ := underflow.Target.Action(pkt, &it.connections, hook, gso, r, preroutingAddr); v {
 			case RuleAccept:
 				continue
 			case RuleDrop:
@@ -215,17 +348,59 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 		}
 	}
 
+	// If this connection should be tracked, try to add an entry for it. If
+	// traversing the nat table didn't end in adding an entry,
+	// maybeInsertNoop will add a no-op entry for the connection. This is
+	// needeed when establishing connections so that the SYN/ACK reply to an
+	// outgoing SYN is delivered to the correct endpoint rather than being
+	// redirected by a prerouting rule.
+	//
+	// From the iptables documentation: "If there is no rule, a `null'
+	// binding is created: this usually does not map the packet, but exists
+	// to ensure we don't map another stream over an existing one."
+	if shouldTrack {
+		it.connections.maybeInsertNoop(pkt, hook)
+	}
+
 	// Every table returned Accept.
 	return true
+}
+
+// beforeSave is invoked by stateify.
+func (it *IPTables) beforeSave() {
+	// Ensure the reaper exits cleanly.
+	it.reaperDone <- struct{}{}
+	// Prevent others from modifying the connection table.
+	it.connections.mu.Lock()
+}
+
+// afterLoad is invoked by stateify.
+func (it *IPTables) afterLoad() {
+	it.startReaper(reaperDelay)
+}
+
+// startReaper starts a goroutine that wakes up periodically to reap timed out
+// connections.
+func (it *IPTables) startReaper(interval time.Duration) {
+	go func() { // S/R-SAFE: reaperDone is signalled when iptables is saved.
+		bucket := 0
+		for {
+			select {
+			case <-it.reaperDone:
+				return
+			case <-time.After(interval):
+				bucket, interval = it.connections.reapUnused(bucket, interval)
+			}
+		}
+	}()
 }
 
 // CheckPackets runs pkts through the rules for hook and returns a map of packets that
 // should not go forward.
 //
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-//
-// TODO(gvisor.dev/issue/170): pk.NetworkHeader will always be set as a
-// precondition.
+// Preconditions:
+// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// * pkt.NetworkHeader is not nil.
 //
 // NOTE: unlike the Check API the returned map contains packets that should be
 // dropped.
@@ -249,14 +424,14 @@ func (it *IPTables) CheckPackets(hook Hook, pkts PacketBufferList, gso *GSO, r *
 	return drop, natPkts
 }
 
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// TODO(gvisor.dev/issue/170): pkt.NetworkHeader will always be set as a
-// precondition.
-func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, address tcpip.Address, nicName string) chainVerdict {
+// Preconditions:
+// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// * pkt.NetworkHeader is not nil.
+func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, preroutingAddr tcpip.Address, nicName string) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
 	for ruleIdx < len(table.Rules) {
-		switch verdict, jumpTo := it.checkRule(hook, pkt, table, ruleIdx, gso, r, address, nicName); verdict {
+		switch verdict, jumpTo := it.checkRule(hook, pkt, table, ruleIdx, gso, r, preroutingAddr, nicName); verdict {
 		case RuleAccept:
 			return chainAccept
 
@@ -273,7 +448,7 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 				ruleIdx++
 				continue
 			}
-			switch verdict := it.checkChain(hook, pkt, table, jumpTo, gso, r, address, nicName); verdict {
+			switch verdict := it.checkChain(hook, pkt, table, jumpTo, gso, r, preroutingAddr, nicName); verdict {
 			case chainAccept:
 				return chainAccept
 			case chainDrop:
@@ -296,25 +471,14 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 	return chainDrop
 }
 
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// TODO(gvisor.dev/issue/170): pkt.NetworkHeader will always be set as a
-// precondition.
-func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, address tcpip.Address, nicName string) (RuleVerdict, int) {
+// Preconditions:
+// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// * pkt.NetworkHeader is not nil.
+func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, preroutingAddr tcpip.Address, nicName string) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 
-	// If pkt.NetworkHeader hasn't been set yet, it will be contained in
-	// pkt.Data.
-	if pkt.NetworkHeader == nil {
-		var ok bool
-		pkt.NetworkHeader, ok = pkt.Data.PullUp(header.IPv4MinimumSize)
-		if !ok {
-			// Precondition has been violated.
-			panic(fmt.Sprintf("iptables checks require IPv4 headers of at least %d bytes", header.IPv4MinimumSize))
-		}
-	}
-
 	// Check whether the packet matches the IP header filter.
-	if !filterMatch(rule.Filter, header.IPv4(pkt.NetworkHeader), hook, nicName) {
+	if !rule.Filter.match(pkt, hook, nicName) {
 		// Continue on to the next rule.
 		return RuleJump, ruleIdx + 1
 	}
@@ -322,7 +486,7 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	// Go through each rule matcher. If they all match, run
 	// the rule target.
 	for _, matcher := range rule.Matchers {
-		matches, hotdrop := matcher.Match(hook, *pkt, "")
+		matches, hotdrop := matcher.Match(hook, pkt, "")
 		if hotdrop {
 			return RuleDrop, 0
 		}
@@ -333,49 +497,16 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	}
 
 	// All the matchers matched, so run the target.
-	return rule.Target.Action(pkt, &it.connections, hook, gso, r, address)
+	return rule.Target.Action(pkt, &it.connections, hook, gso, r, preroutingAddr)
 }
 
-func filterMatch(filter IPHeaderFilter, hdr header.IPv4, hook Hook, nicName string) bool {
-	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
-	// Check the transport protocol.
-	if filter.Protocol != 0 && filter.Protocol != hdr.TransportProtocol() {
-		return false
+// OriginalDst returns the original destination of redirected connections. It
+// returns an error if the connection doesn't exist or isn't redirected.
+func (it *IPTables) OriginalDst(epID TransportEndpointID, netProto tcpip.NetworkProtocolNumber) (tcpip.Address, uint16, *tcpip.Error) {
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	if !it.modified {
+		return "", 0, tcpip.ErrNotConnected
 	}
-
-	// Check the destination IP.
-	dest := hdr.DestinationAddress()
-	matches := true
-	for i := range filter.Dst {
-		if dest[i]&filter.DstMask[i] != filter.Dst[i] {
-			matches = false
-			break
-		}
-	}
-	if matches == filter.DstInvert {
-		return false
-	}
-
-	// Check the output interface.
-	// TODO(gvisor.dev/issue/170): Add the check for FORWARD and POSTROUTING
-	// hooks after supported.
-	if hook == Output {
-		n := len(filter.OutputInterface)
-		if n == 0 {
-			return true
-		}
-
-		// If the interface name ends with '+', any interface which begins
-		// with the name should be matched.
-		ifName := filter.OutputInterface
-		matches = true
-		if strings.HasSuffix(ifName, "+") {
-			matches = strings.HasPrefix(nicName, ifName[:n-1])
-		} else {
-			matches = nicName == ifName
-		}
-		return filter.OutputInterfaceInvert != matches
-	}
-
-	return true
+	return it.connections.originalDst(epID, netProto)
 }

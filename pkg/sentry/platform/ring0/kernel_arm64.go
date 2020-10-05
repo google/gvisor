@@ -25,13 +25,13 @@ func HaltAndResume()
 func HaltEl1SvcAndResume()
 
 // init initializes architecture-specific state.
-func (k *Kernel) init(opts KernelOpts) {
+func (k *Kernel) init(opts KernelOpts, maxCPUs int) {
 	// Save the root page tables.
 	k.PageTables = opts.PageTables
 }
 
 // init initializes architecture-specific state.
-func (c *CPU) init() {
+func (c *CPU) init(cpuID int) {
 	// Set the kernel stack pointer(virtual address).
 	c.registers.Sp = uint64(c.StackTop())
 
@@ -53,14 +53,25 @@ func IsCanonical(addr uint64) bool {
 
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
-	// Sanitize registers.
+	storeAppASID(uintptr(switchOpts.UserASID))
+	if switchOpts.Flush {
+		FlushTlbAll()
+	}
+
 	regs := switchOpts.Registers
 
-	regs.Pstate &= ^uint64(UserFlagsClear)
+	regs.Pstate &= ^uint64(PsrFlagsClear)
 	regs.Pstate |= UserFlagsSet
+
+	LoadFloatingPoint(switchOpts.FloatingPointState)
+	SetTLS(regs.TPIDR_EL0)
+
 	kernelExitToEl0()
+
+	regs.TPIDR_EL0 = GetTLS()
+	SaveFloatingPoint(switchOpts.FloatingPointState)
+
 	vector = c.vecCode
 
-	// Perform the switch.
 	return
 }

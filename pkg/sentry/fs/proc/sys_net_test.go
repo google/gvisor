@@ -123,3 +123,76 @@ func TestConfigureRecvBufferSize(t *testing.T) {
 		}
 	}
 }
+
+// TestIPForwarding tests the implementation of
+// /proc/sys/net/ipv4/ip_forwarding
+func TestIPForwarding(t *testing.T) {
+	ctx := context.Background()
+	s := inet.NewTestStack()
+
+	var cases = []struct {
+		comment string
+		initial bool
+		str     string
+		final   bool
+	}{
+		{
+			comment: `Forwarding is disabled; write 1 and enable forwarding`,
+			initial: false,
+			str:     "1",
+			final:   true,
+		},
+		{
+			comment: `Forwarding is disabled; write 0 and disable forwarding`,
+			initial: false,
+			str:     "0",
+			final:   false,
+		},
+		{
+			comment: `Forwarding is enabled; write 1 and enable forwarding`,
+			initial: true,
+			str:     "1",
+			final:   true,
+		},
+		{
+			comment: `Forwarding is enabled; write 0 and disable forwarding`,
+			initial: true,
+			str:     "0",
+			final:   false,
+		},
+		{
+			comment: `Forwarding is disabled; write 2404 and enable forwarding`,
+			initial: false,
+			str:     "2404",
+			final:   true,
+		},
+		{
+			comment: `Forwarding is enabled; write 2404 and enable forwarding`,
+			initial: true,
+			str:     "2404",
+			final:   true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.comment, func(t *testing.T) {
+			s.IPForwarding = c.initial
+			ipf := &ipForwarding{stack: s}
+			file := &ipForwardingFile{
+				stack: s,
+				ipf:   ipf,
+			}
+
+			// Write the values.
+			src := usermem.BytesIOSequence([]byte(c.str))
+			if n, err := file.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
+				t.Errorf("file.Write(ctx, nil, %q, 0) = (%d, %v); want (%d, nil)", c.str, n, err, len(c.str))
+			}
+
+			// Read the values from the stack and check them.
+			if got, want := s.IPForwarding, c.final; got != want {
+				t.Errorf("s.IPForwarding incorrect; got: %v, want: %v", got, want)
+			}
+
+		})
+	}
+}

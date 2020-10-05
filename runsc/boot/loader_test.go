@@ -26,6 +26,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -34,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 )
 
@@ -43,15 +45,19 @@ func init() {
 	if err := fsgofer.OpenProcSelfFD(); err != nil {
 		panic(err)
 	}
+	config.RegisterFlags()
 }
 
-func testConfig() *Config {
-	return &Config{
-		RootDir:        "unused_root_dir",
-		Network:        NetworkNone,
-		DisableSeccomp: true,
-		Platform:       "ptrace",
+func testConfig() *config.Config {
+	conf, err := config.NewFromFlags()
+	if err != nil {
+		panic(err)
 	}
+	// Change test defaults.
+	conf.RootDir = "unused_root_dir"
+	conf.Network = config.NetworkNone
+	conf.DisableSeccomp = true
+	return conf
 }
 
 // testSpec returns a simple spec that can be used in tests.
@@ -439,7 +445,7 @@ func TestCreateMountNamespace(t *testing.T) {
 			}
 			defer cleanup()
 
-			mntr := newContainerMounter(&tc.spec, []int{sandEnd}, nil, &podMountHints{})
+			mntr := newContainerMounter(&tc.spec, []*fd.FD{fd.New(sandEnd)}, nil, &podMountHints{})
 			mns, err := mntr.createMountNamespace(ctx, conf)
 			if err != nil {
 				t.Fatalf("failed to create mount namespace: %v", err)
@@ -450,13 +456,13 @@ func TestCreateMountNamespace(t *testing.T) {
 			}
 
 			root := mns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			for _, p := range tc.expectedPaths {
 				maxTraversals := uint(0)
 				if d, err := mns.FindInode(ctx, root, root, p, &maxTraversals); err != nil {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
 				} else {
-					d.DecRef()
+					d.DecRef(ctx)
 				}
 			}
 		})
@@ -479,19 +485,19 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			defer l.Destroy()
 			defer loaderCleanup()
 
-			mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
-			if err := mntr.processHints(l.conf); err != nil {
+			mntr := newContainerMounter(l.root.spec, l.root.goferFDs, l.k, l.mountHints)
+			if err := mntr.processHints(l.root.conf, l.root.procArgs.Credentials); err != nil {
 				t.Fatalf("failed process hints: %v", err)
 			}
 
 			ctx := l.k.SupervisorContext()
-			mns, err := mntr.setupVFS2(ctx, l.conf, &l.rootProcArgs)
+			mns, err := mntr.mountAll(l.root.conf, &l.root.procArgs)
 			if err != nil {
-				t.Fatalf("failed to setupVFS2: %v", err)
+				t.Fatalf("mountAll: %v", err)
 			}
 
 			root := mns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			for _, p := range tc.expectedPaths {
 				target := &vfs.PathOperation{
 					Root:  root,
@@ -499,10 +505,10 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 					Path:  fspath.Parse(p),
 				}
 
-				if d, err := l.k.VFS().GetDentryAt(ctx, l.rootProcArgs.Credentials, target, &vfs.GetDentryOptions{}); err != nil {
+				if d, err := l.k.VFS().GetDentryAt(ctx, l.root.procArgs.Credentials, target, &vfs.GetDentryOptions{}); err != nil {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
 				} else {
-					d.DecRef()
+					d.DecRef(ctx)
 				}
 			}
 		})
@@ -545,7 +551,7 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:        "9pfs-/",
 							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
+							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
 						},
 					},
 					"tmpfs": {
@@ -599,7 +605,7 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:        "9pfs-/",
 							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
+							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
 						},
 						{
 							Dev:        "9pfs-/dev/fd-foo",
@@ -657,7 +663,7 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:        "9pfs-/",
 							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
+							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
 						},
 					},
 					"tmpfs": {
@@ -697,7 +703,11 @@ func TestRestoreEnvironment(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
-			mntr := newContainerMounter(tc.spec, tc.ioFDs, nil, &podMountHints{})
+			var ioFDs []*fd.FD
+			for _, ioFD := range tc.ioFDs {
+				ioFDs = append(ioFDs, fd.New(ioFD))
+			}
+			mntr := newContainerMounter(tc.spec, ioFDs, nil, &podMountHints{})
 			actualRenv, err := mntr.createRestoreEnvironment(conf)
 			if !tc.errorExpected && err != nil {
 				t.Fatalf("could not create restore environment for test:%s", tc.name)

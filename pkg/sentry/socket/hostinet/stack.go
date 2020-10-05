@@ -30,6 +30,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -53,11 +56,14 @@ type Stack struct {
 	interfaceAddrs map[int32][]inet.InterfaceAddr
 	routes         []inet.Route
 	supportsIPv6   bool
+	tcpRecovery    inet.TCPLossRecovery
 	tcpRecvBufSize inet.TCPBufferSize
 	tcpSendBufSize inet.TCPBufferSize
 	tcpSACKEnabled bool
 	netDevFile     *os.File
 	netSNMPFile    *os.File
+	ipv4Forwarding bool
+	ipv6Forwarding bool
 }
 
 // NewStack returns an empty Stack containing no configuration.
@@ -115,6 +121,13 @@ func (s *Stack) Configure() error {
 		log.Warningf("Failed to open /proc/net/snmp: %v", err)
 	} else {
 		s.netSNMPFile = f
+	}
+
+	s.ipv6Forwarding = false
+	if ipForwarding, err := ioutil.ReadFile("/proc/sys/net/ipv6/conf/all/forwarding"); err == nil {
+		s.ipv6Forwarding = strings.TrimSpace(string(ipForwarding)) != "0"
+	} else {
+		log.Warningf("Failed to read if ipv6 forwarding is enabled, setting to false")
 	}
 
 	return nil
@@ -350,6 +363,16 @@ func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 	return syserror.EACCES
 }
 
+// TCPRecovery implements inet.Stack.TCPRecovery.
+func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
+	return s.tcpRecovery, nil
+}
+
+// SetTCPRecovery implements inet.Stack.SetTCPRecovery.
+func (s *Stack) SetTCPRecovery(recovery inet.TCPLossRecovery) error {
+	return syserror.EACCES
+}
+
 // getLine reads one line from proc file, with specified prefix.
 // The last argument, withHeader, specifies if it contains line header.
 func getLine(f *os.File, prefix string, withHeader bool) string {
@@ -457,3 +480,21 @@ func (s *Stack) CleanupEndpoints() []stack.TransportEndpoint { return nil }
 
 // RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
 func (s *Stack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
+
+// Forwarding implements inet.Stack.Forwarding.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	switch protocol {
+	case ipv4.ProtocolNumber:
+		return s.ipv4Forwarding
+	case ipv6.ProtocolNumber:
+		return s.ipv6Forwarding
+	default:
+		log.Warningf("Forwarding(%v) failed: unsupported protocol", protocol)
+		return false
+	}
+}
+
+// SetForwarding implements inet.Stack.SetForwarding.
+func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	return syserror.EACCES
+}

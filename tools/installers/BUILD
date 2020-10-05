@@ -5,15 +5,12 @@ package(
     licenses = ["notice"],
 )
 
-filegroup(
-    name = "runsc",
-    srcs = ["//runsc"],
-)
-
 sh_binary(
     name = "head",
     srcs = ["head.sh"],
-    data = [":runsc"],
+    data = [
+        "//runsc",
+    ],
 )
 
 sh_binary(
@@ -30,6 +27,15 @@ sh_binary(
 )
 
 sh_binary(
+    name = "containerd",
+    srcs = ["containerd.sh"],
+)
+
+sh_binary(
     name = "shim",
     srcs = ["shim.sh"],
+    data = [
+        "//shim/v1:gvisor-containerd-shim",
+        "//shim/v2:containerd-shim-runsc-v1",
+    ],
 )

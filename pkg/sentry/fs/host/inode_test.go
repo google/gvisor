@@ -36,7 +36,7 @@ func TestCloseFD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create File: %v", err)
 	}
-	file.DecRef()
+	file.DecRef(ctx)
 
 	s := make([]byte, 10)
 	if c, err := syscall.Read(p[0], s); c != 0 || err != nil {

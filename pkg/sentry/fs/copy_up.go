@@ -107,8 +107,7 @@ func copyUp(ctx context.Context, d *Dirent) error {
 // leave the upper filesystem filled with any number of parent directories
 // but the upper filesystem will never be in an inconsistent state.
 //
-// Preconditions:
-// - d.Inode.overlay is non-nil.
+// Preconditions: d.Inode.overlay is non-nil.
 func copyUpLockedForRename(ctx context.Context, d *Dirent) error {
 	for {
 		// Did we race with another copy up or does there
@@ -183,12 +182,12 @@ func doCopyUp(ctx context.Context, d *Dirent) error {
 // Returns a generic error on failure.
 //
 // Preconditions:
-// - parent.Inode.overlay.upper must be non-nil.
-// - next.Inode.overlay.copyMu must be locked writable.
-// - next.Inode.overlay.lower must be non-nil.
-// - next.Inode.overlay.lower.StableAttr.Type must be RegularFile, Directory,
+// * parent.Inode.overlay.upper must be non-nil.
+// * next.Inode.overlay.copyMu must be locked writable.
+// * next.Inode.overlay.lower must be non-nil.
+// * next.Inode.overlay.lower.StableAttr.Type must be RegularFile, Directory,
 //   or Symlink.
-// - upper filesystem must support setting file ownership and timestamps.
+// * upper filesystem must support setting file ownership and timestamps.
 func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	// Extract the attributes of the file we wish to copy.
 	attrs, err := next.Inode.overlay.lower.UnstableAttr(ctx)
@@ -201,7 +200,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	parentUpper := parent.Inode.overlay.upper
 	root := RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 
 	// Create the file in the upper filesystem and get an Inode for it.
@@ -212,7 +211,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 			log.Warningf("copy up failed to create file: %v", err)
 			return syserror.EIO
 		}
-		defer childFile.DecRef()
+		defer childFile.DecRef(ctx)
 		childUpperInode = childFile.Dirent.Inode
 
 	case Directory:
@@ -226,7 +225,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 			cleanupUpper(ctx, parentUpper, next.name, werr)
 			return syserror.EIO
 		}
-		defer childUpper.DecRef()
+		defer childUpper.DecRef(ctx)
 		childUpperInode = childUpper.Inode
 
 	case Symlink:
@@ -246,7 +245,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 			cleanupUpper(ctx, parentUpper, next.name, werr)
 			return syserror.EIO
 		}
-		defer childUpper.DecRef()
+		defer childUpper.DecRef(ctx)
 		childUpperInode = childUpper.Inode
 
 	default:
@@ -352,14 +351,14 @@ func copyContentsLocked(ctx context.Context, upper *Inode, lower *Inode, size in
 	if err != nil {
 		return err
 	}
-	defer upperFile.DecRef()
+	defer upperFile.DecRef(ctx)
 
 	// Get a handle to the lower filesystem, which we will read from.
 	lowerFile, err := overlayFile(ctx, lower, FileFlags{Read: true})
 	if err != nil {
 		return err
 	}
-	defer lowerFile.DecRef()
+	defer lowerFile.DecRef(ctx)
 
 	// Use a buffer pool to minimize allocations.
 	buf := copyUpBuffers.Get().([]byte)

@@ -44,7 +44,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the size is legitimate.
 	si := int(size)
@@ -62,7 +62,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	n, err := read(t, file, dst, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "read", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "read", file)
 }
 
 // Readv implements Linux syscall readv(2).
@@ -75,7 +75,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Get the destination of the read.
 	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
@@ -87,17 +87,23 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := read(t, file, dst, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "readv", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "readv", file)
 }
 
 func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	n, err := file.Read(t, dst, opts)
 	if err != syserror.ErrWouldBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
@@ -128,6 +134,9 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	}
 	file.EventUnregister(&w)
 
+	if total > 0 {
+		file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+	}
 	return total, err
 }
 
@@ -142,7 +151,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate and does not overflow.
 	if offset < 0 || offset+int64(size) < 0 {
@@ -165,7 +174,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := pread(t, file, dst, offset, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pread64", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pread64", file)
 }
 
 // Preadv implements Linux syscall preadv(2).
@@ -179,7 +188,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < 0 {
@@ -196,7 +205,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := pread(t, file, dst, offset, vfs.ReadOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "preadv", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "preadv", file)
 }
 
 // Preadv2 implements Linux syscall preadv2(2).
@@ -217,7 +226,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < -1 {
@@ -242,17 +251,23 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		n, err = pread(t, file, dst, offset, opts)
 	}
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "preadv2", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "preadv2", file)
 }
 
 func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	n, err := file.PRead(t, dst, offset, opts)
 	if err != syserror.ErrWouldBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
@@ -283,6 +298,9 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 	}
 	file.EventUnregister(&w)
 
+	if total > 0 {
+		file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+	}
 	return total, err
 }
 
@@ -296,7 +314,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the size is legitimate.
 	si := int(size)
@@ -314,7 +332,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := write(t, file, src, vfs.WriteOptions{})
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "write", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "write", file)
 }
 
 // Writev implements Linux syscall writev(2).
@@ -327,7 +345,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Get the source of the write.
 	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
@@ -339,17 +357,23 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := write(t, file, src, vfs.WriteOptions{})
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "writev", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "writev", file)
 }
 
 func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	n, err := file.Write(t, src, opts)
 	if err != syserror.ErrWouldBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
@@ -380,6 +404,9 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 	}
 	file.EventUnregister(&w)
 
+	if total > 0 {
+		file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
+	}
 	return total, err
 }
 
@@ -394,7 +421,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate and does not overflow.
 	if offset < 0 || offset+int64(size) < 0 {
@@ -417,7 +444,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	n, err := pwrite(t, file, src, offset, vfs.WriteOptions{})
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pwrite64", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pwrite64", file)
 }
 
 // Pwritev implements Linux syscall pwritev(2).
@@ -431,7 +458,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < 0 {
@@ -448,7 +475,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := pwrite(t, file, src, offset, vfs.WriteOptions{})
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pwritev", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pwritev", file)
 }
 
 // Pwritev2 implements Linux syscall pwritev2(2).
@@ -469,7 +496,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < -1 {
@@ -494,17 +521,23 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		n, err = pwrite(t, file, src, offset, opts)
 	}
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, kernel.ERESTARTSYS, "pwritev2", file)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "pwritev2", file)
 }
 
 func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	n, err := file.PWrite(t, src, offset, opts)
 	if err != syserror.ErrWouldBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
+		if n > 0 {
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+		}
 		return n, err
 	}
 
@@ -535,6 +568,9 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 	}
 	file.EventUnregister(&w)
 
+	if total > 0 {
+		file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+	}
 	return total, err
 }
 
@@ -565,8 +601,41 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	newoff, err := file.Seek(t, offset, whence)
 	return uintptr(newoff), nil, err
+}
+
+// Readahead implements readahead(2).
+func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	offset := args[1].Int64()
+	size := args[2].SizeT()
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef(t)
+
+	// Check that the file is readable.
+	if !file.IsReadable() {
+		return 0, nil, syserror.EBADF
+	}
+
+	// Check that the size is valid.
+	if int(size) < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Check that the offset is legitimate and does not overflow.
+	if offset < 0 || offset+int64(size) < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Return EINVAL; if the underlying file type does not support readahead,
+	// then Linux will return EINVAL to indicate as much. In the future, we
+	// may extend this function to actually support readahead hints.
+	return 0, nil, syserror.EINVAL
 }

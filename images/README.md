@@ -7,7 +7,7 @@ Note that all these images must be pushed to the testing project hosted on
 continuous integration. This will speed up loading as images will not need to be
 built from scratch for each test run.
 
-Image tooling is accessible via `make`, specifically via `tools/images.mk`.
+Image tooling is accessible via `make`, specifically via `images/Makefile`.
 
 ## Why make?
 
@@ -59,3 +59,12 @@ project.
 The continuous integration system can either take fine-grained dependencies on
 individual `push` targets, or ensure all images are up-to-date with a single
 `push-all-images` invocation.
+
+## Multi-Arch images
+
+By default, the image is built for host architecture. Cross-building can be
+achieved by specifying `ARCH` variable to make. For example:
+
+```
+$ make ARCH=aarch64 rebuild-default
+```

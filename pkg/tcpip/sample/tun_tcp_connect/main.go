@@ -127,8 +127,8 @@ func main() {
 	// Create the stack with ipv4 and tcp protocols, then add a tun-based
 	// NIC and ipv4 address.
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 	})
 
 	mtu, err := rawfile.GetMTU(tunName)
@@ -182,7 +182,7 @@ func main() {
 	if terr == tcpip.ErrConnectStarted {
 		fmt.Println("Connect is pending...")
 		<-notifyCh
-		terr = ep.GetSockOpt(tcpip.ErrorOption{})
+		terr = ep.LastError()
 	}
 	wq.EventUnregister(&waitEntry)
 

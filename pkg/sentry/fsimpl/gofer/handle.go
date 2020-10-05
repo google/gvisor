@@ -25,6 +25,8 @@ import (
 
 // handle represents a remote "open file descriptor", consisting of an opened
 // fid (p9.File) and optionally a host file descriptor.
+//
+// These are explicitly not savable.
 type handle struct {
 	file p9file
 	fd   int32 // -1 if unavailable
@@ -61,6 +63,10 @@ func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (hand
 		file: newfile,
 		fd:   fd,
 	}, nil
+}
+
+func (h *handle) isOpen() bool {
+	return !h.file.isNil()
 }
 
 func (h *handle) close(ctx context.Context) {
@@ -123,14 +129,4 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 		return uint64(n), err
 	}
 	return cp, cperr
-}
-
-func (h *handle) sync(ctx context.Context) error {
-	if h.fd >= 0 {
-		ctx.UninterruptibleSleepStart(false)
-		err := syscall.Fsync(int(h.fd))
-		ctx.UninterruptibleSleepFinish(false)
-		return err
-	}
-	return h.file.fsync(ctx)
 }

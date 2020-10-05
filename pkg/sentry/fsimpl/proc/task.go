@@ -32,11 +32,15 @@ import (
 //
 // +stateify savable
 type taskInode struct {
-	kernfs.InodeNotSymlink
+	implStatFS
+	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNoDynamicLookup
-	kernfs.InodeAttrs
+	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
+	taskInodeRefs
+
+	locks vfs.FileLocks
 
 	task *kernel.Task
 }
@@ -49,6 +53,7 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 		"auxv":      fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &auxvData{task: task}),
 		"cmdline":   fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
 		"comm":      fs.newComm(task, fs.NextIno(), 0444),
+		"cwd":       fs.newCwdSymlink(task, fs.NextIno()),
 		"environ":   fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: environDataArg}),
 		"exe":       fs.newExeSymlink(task, fs.NextIno()),
 		"fd":        fs.newFDDirInode(task),
@@ -82,6 +87,7 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 	taskInode := &taskInode{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
 	taskInode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	taskInode.EnableLeakCheck()
 
 	inode := &taskOwnedInode{Inode: taskInode, owner: task}
 	dentry := &kernfs.Dentry{}
@@ -101,22 +107,31 @@ func (i *taskInode) Valid(ctx context.Context) bool {
 	return i.task.ExitState() != kernel.TaskExitDead
 }
 
-// Open implements kernfs.Inode.
-func (i *taskInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+// Open implements kernfs.Inode.Open.
+func (i *taskInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
+		SeekEnd: kernfs.SeekEndZero,
+	})
 	if err != nil {
 		return nil, err
 	}
 	return fd.VFSFileDescription(), nil
 }
 
-// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*taskInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 
+// DecRef implements kernfs.Inode.DecRef.
+func (i *taskInode) DecRef(context.Context) {
+	i.taskInodeRefs.DecRef(i.Destroy)
+}
+
 // taskOwnedInode implements kernfs.Inode and overrides inode owner with task
 // effective user and group.
+//
+// +stateify savable
 type taskOwnedInode struct {
 	kernfs.Inode
 
@@ -140,7 +155,10 @@ func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.
 	dir := &kernfs.StaticDirectory{}
 
 	// Note: credentials are overridden by taskOwnedInode.
-	dir.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm)
+	dir.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm, kernfs.GenericDirectoryFDOptions{
+		SeekEnd: kernfs.SeekEndZero,
+	})
+	dir.EnableLeakCheck()
 
 	inode := &taskOwnedInode{Inode: dir, owner: task}
 	d := &kernfs.Dentry{}
@@ -153,9 +171,9 @@ func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.
 	return d
 }
 
-// Stat implements kernfs.Inode.
-func (i *taskOwnedInode) Stat(fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
-	stat, err := i.Inode.Stat(fs, opts)
+// Stat implements kernfs.Inode.Stat.
+func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.Inode.Stat(ctx, fs, opts)
 	if err != nil {
 		return linux.Statx{}, err
 	}
@@ -171,7 +189,7 @@ func (i *taskOwnedInode) Stat(fs *vfs.Filesystem, opts vfs.StatOptions) (linux.S
 	return stat, nil
 }
 
-// CheckPermissions implements kernfs.Inode.
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *taskOwnedInode) CheckPermissions(_ context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)

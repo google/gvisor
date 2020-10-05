@@ -161,6 +161,10 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		return 0, nil, syserror.EINVAL
 	}
 
+	// Pull task registers and FPU state, a cloned task will inherit the
+	// state of the current task.
+	t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+
 	// "If CLONE_NEWUSER is specified along with other CLONE_NEW* flags in a
 	// single clone(2) or unshare(2) call, the user namespace is guaranteed to
 	// be created first, giving the child (clone(2)) or caller (unshare(2))
@@ -237,7 +241,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 
 	var fdTable *FDTable
 	if opts.NewFiles {
-		fdTable = t.fdTable.Fork()
+		fdTable = t.fdTable.Fork(t)
 	} else {
 		fdTable = t.fdTable
 		fdTable.IncRef()
@@ -294,7 +298,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	nt, err := t.tg.pidns.owner.NewTask(cfg)
 	if err != nil {
 		if opts.NewThreadGroup {
-			tg.release()
+			tg.release(t)
 		}
 		return 0, nil, err
 	}
@@ -337,12 +341,12 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		nt.SetClearTID(opts.ChildTID)
 	}
 	if opts.ChildSetTID {
-		// Can't use Task.CopyOut, which assumes AddressSpaceActive.
-		usermem.CopyObjectOut(t, nt.MemoryManager(), opts.ChildTID, nt.ThreadID(), usermem.IOOpts{})
+		ctid := nt.ThreadID()
+		ctid.CopyOut(nt.AsCopyContext(usermem.IOOpts{AddressSpaceActive: false}), opts.ChildTID)
 	}
 	ntid := t.tg.pidns.IDOfTask(nt)
 	if opts.ParentSetTID {
-		t.CopyOut(opts.ParentTID, ntid)
+		ntid.CopyOut(t, opts.ParentTID)
 	}
 
 	kind := ptraceCloneKindClone
@@ -510,7 +514,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	var oldFDTable *FDTable
 	if opts.NewFiles {
 		oldFDTable = t.fdTable
-		t.fdTable = oldFDTable.Fork()
+		t.fdTable = oldFDTable.Fork(t)
 	}
 	var oldFSContext *FSContext
 	if opts.NewFSContext {
@@ -519,10 +523,10 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	}
 	t.mu.Unlock()
 	if oldFDTable != nil {
-		oldFDTable.DecRef()
+		oldFDTable.DecRef(t)
 	}
 	if oldFSContext != nil {
-		oldFSContext.DecRef()
+		oldFSContext.DecRef(t)
 	}
 	return nil
 }

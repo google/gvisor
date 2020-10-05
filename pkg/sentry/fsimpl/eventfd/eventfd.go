@@ -30,13 +30,16 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// EventFileDescription implements FileDescriptionImpl for file-based event
+// EventFileDescription implements vfs.FileDescriptionImpl for file-based event
 // notification (eventfd). Eventfds are usually internal to the Sentry but in
 // certain situations they may be converted into a host-backed eventfd.
+//
+// +stateify savable
 type EventFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
 
 	// queue is used to notify interested parties when the event object
 	// becomes readable or writable.
@@ -58,9 +61,9 @@ type EventFileDescription struct {
 var _ vfs.FileDescriptionImpl = (*EventFileDescription)(nil)
 
 // New creates a new event fd.
-func New(vfsObj *vfs.VirtualFilesystem, initVal uint64, semMode bool, flags uint32) (*vfs.FileDescription, error) {
+func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, initVal uint64, semMode bool, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[eventfd]")
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	efd := &EventFileDescription{
 		val:     initVal,
 		semMode: semMode,
@@ -105,8 +108,8 @@ func (efd *EventFileDescription) HostFD() (int, error) {
 	return efd.hostfd, nil
 }
 
-// Release implements FileDescriptionImpl.Release()
-func (efd *EventFileDescription) Release() {
+// Release implements vfs.FileDescriptionImpl.Release.
+func (efd *EventFileDescription) Release(context.Context) {
 	efd.mu.Lock()
 	defer efd.mu.Unlock()
 	if efd.hostfd >= 0 {
@@ -118,7 +121,7 @@ func (efd *EventFileDescription) Release() {
 	}
 }
 
-// Read implements FileDescriptionImpl.Read.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	if dst.NumBytes() < 8 {
 		return 0, syscall.EINVAL
@@ -129,7 +132,7 @@ func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 	return 8, nil
 }
 
-// Write implements FileDescriptionImpl.Write.
+// Write implements vfs.FileDescriptionImpl.Write.
 func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
 	if src.NumBytes() < 8 {
 		return 0, syscall.EINVAL

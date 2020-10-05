@@ -51,6 +51,7 @@ using ::testing::AnyOf;
 using ::testing::Contains;
 using ::testing::Eq;
 using ::testing::Not;
+using SubprocessCallback = std::function<void()>;
 
 // Tests Unix98 pseudoterminals.
 //
@@ -364,6 +365,12 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
     ssize_t n =
         ReadFd(fd, static_cast<char*>(buf) + completed, count - completed);
     if (n < 0) {
+      if (errno == EAGAIN) {
+        // Linux sometimes returns EAGAIN from this read, despite the fact that
+        // poll returned success. Let's just do what do as we are told and try
+        // again.
+        continue;
+      }
       return PosixError(errno, "read failed");
     }
     completed += n;
@@ -383,15 +390,15 @@ TEST(PtyTrunc, Truncate) {
   // (f)truncate should.
   FileDescriptor master =
       ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_TRUNC));
-  int n = ASSERT_NO_ERRNO_AND_VALUE(SlaveID(master));
+  int n = ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(master));
   std::string spath = absl::StrCat("/dev/pts/", n);
-  FileDescriptor slave =
+  FileDescriptor replica =
       ASSERT_NO_ERRNO_AND_VALUE(Open(spath, O_RDWR | O_NONBLOCK | O_TRUNC));
 
   EXPECT_THAT(truncate(kMasterPath, 0), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(truncate(spath.c_str(), 0), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(ftruncate(master.get(), 0), SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(ftruncate(slave.get(), 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(ftruncate(replica.get(), 0), SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(BasicPtyTest, StatUnopenedMaster) {
@@ -447,16 +454,16 @@ void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   EXPECT_EQ(expected, n);
 }
 
-TEST(BasicPtyTest, OpenMasterSlave) {
+TEST(BasicPtyTest, OpenMasterReplica) {
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
-  FileDescriptor slave = ASSERT_NO_ERRNO_AND_VALUE(OpenSlave(master));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
 }
 
-// The slave entry in /dev/pts/ disappears when the master is closed, even if
-// the slave is still open.
-TEST(BasicPtyTest, SlaveEntryGoneAfterMasterClose) {
+// The replica entry in /dev/pts/ disappears when the master is closed, even if
+// the replica is still open.
+TEST(BasicPtyTest, ReplicaEntryGoneAfterMasterClose) {
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
-  FileDescriptor slave = ASSERT_NO_ERRNO_AND_VALUE(OpenSlave(master));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
 
   // Get pty index.
   int index = -1;
@@ -476,12 +483,12 @@ TEST(BasicPtyTest, Getdents) {
   FileDescriptor master1 = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   int index1 = -1;
   ASSERT_THAT(ioctl(master1.get(), TIOCGPTN, &index1), SyscallSucceeds());
-  FileDescriptor slave1 = ASSERT_NO_ERRNO_AND_VALUE(OpenSlave(master1));
+  FileDescriptor replica1 = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master1));
 
   FileDescriptor master2 = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   int index2 = -1;
   ASSERT_THAT(ioctl(master2.get(), TIOCGPTN, &index2), SyscallSucceeds());
-  FileDescriptor slave2 = ASSERT_NO_ERRNO_AND_VALUE(OpenSlave(master2));
+  FileDescriptor replica2 = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master2));
 
   // The directory contains ptmx, index1, and index2. (Plus any additional PTYs
   // unrelated to this test.)
@@ -513,59 +520,60 @@ class PtyTest : public ::testing::Test {
  protected:
   void SetUp() override {
     master_ = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
-    slave_ = ASSERT_NO_ERRNO_AND_VALUE(OpenSlave(master_));
+    replica_ = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master_));
   }
 
   void DisableCanonical() {
     struct kernel_termios t = {};
-    EXPECT_THAT(ioctl(slave_.get(), TCGETS, &t), SyscallSucceeds());
+    EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
     t.c_lflag &= ~ICANON;
-    EXPECT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+    EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
   }
 
   void EnableCanonical() {
     struct kernel_termios t = {};
-    EXPECT_THAT(ioctl(slave_.get(), TCGETS, &t), SyscallSucceeds());
+    EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
     t.c_lflag |= ICANON;
-    EXPECT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+    EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
   }
 
-  // Master and slave ends of the PTY. Non-blocking.
+  // Master and replica ends of the PTY. Non-blocking.
   FileDescriptor master_;
-  FileDescriptor slave_;
+  FileDescriptor replica_;
 };
 
-// Master to slave sanity test.
-TEST_F(PtyTest, WriteMasterToSlave) {
-  // N.B. by default, the slave reads nothing until the master writes a newline.
+// Master to replica sanity test.
+TEST_F(PtyTest, WriteMasterToReplica) {
+  // N.B. by default, the replica reads nothing until the master writes a
+  // newline.
   constexpr char kBuf[] = "hello\n";
 
   EXPECT_THAT(WriteFd(master_.get(), kBuf, sizeof(kBuf) - 1),
               SyscallSucceedsWithValue(sizeof(kBuf) - 1));
 
-  // Linux moves data from the master to the slave via async work scheduled via
-  // tty_flip_buffer_push. Since it is asynchronous, the data may not be
+  // Linux moves data from the master to the replica via async work scheduled
+  // via tty_flip_buffer_push. Since it is asynchronous, the data may not be
   // available for reading immediately. Instead we must poll and assert that it
   // becomes available "soon".
 
   char buf[sizeof(kBuf)] = {};
-  ExpectReadable(slave_, sizeof(buf) - 1, buf);
+  ExpectReadable(replica_, sizeof(buf) - 1, buf);
 
   EXPECT_EQ(memcmp(buf, kBuf, sizeof(kBuf)), 0);
 }
 
-// Slave to master sanity test.
-TEST_F(PtyTest, WriteSlaveToMaster) {
-  // N.B. by default, the master reads nothing until the slave writes a newline,
-  // and the master gets a carriage return.
+// Replica to master sanity test.
+TEST_F(PtyTest, WriteReplicaToMaster) {
+  // N.B. by default, the master reads nothing until the replica writes a
+  // newline, and the master gets a carriage return.
   constexpr char kInput[] = "hello\n";
   constexpr char kExpected[] = "hello\r\n";
 
-  EXPECT_THAT(WriteFd(slave_.get(), kInput, sizeof(kInput) - 1),
+  EXPECT_THAT(WriteFd(replica_.get(), kInput, sizeof(kInput) - 1),
               SyscallSucceedsWithValue(sizeof(kInput) - 1));
 
-  // Linux moves data from the master to the slave via async work scheduled via
-  // tty_flip_buffer_push. Since it is asynchronous, the data may not be
+  // Linux moves data from the master to the replica via async work scheduled
+  // via tty_flip_buffer_push. Since it is asynchronous, the data may not be
   // available for reading immediately. Instead we must poll and assert that it
   // becomes available "soon".
 
@@ -581,32 +589,33 @@ TEST_F(PtyTest, WriteInvalidUTF8) {
               SyscallSucceedsWithValue(sizeof(c)));
 }
 
-// Both the master and slave report the standard default termios settings.
+// Both the master and replica report the standard default termios settings.
 //
-// Note that TCGETS on the master actually redirects to the slave (see comment
+// Note that TCGETS on the master actually redirects to the replica (see comment
 // on MasterTermiosUnchangable).
 TEST_F(PtyTest, DefaultTermios) {
   struct kernel_termios t = {};
-  EXPECT_THAT(ioctl(slave_.get(), TCGETS, &t), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
   EXPECT_EQ(t, DefaultTermios());
 
   EXPECT_THAT(ioctl(master_.get(), TCGETS, &t), SyscallSucceeds());
   EXPECT_EQ(t, DefaultTermios());
 }
 
-// Changing termios from the master actually affects the slave.
+// Changing termios from the master actually affects the replica.
 //
-// TCSETS on the master actually redirects to the slave (see comment on
+// TCSETS on the master actually redirects to the replica (see comment on
 // MasterTermiosUnchangable).
-TEST_F(PtyTest, TermiosAffectsSlave) {
+TEST_F(PtyTest, TermiosAffectsReplica) {
   struct kernel_termios master_termios = {};
   EXPECT_THAT(ioctl(master_.get(), TCGETS, &master_termios), SyscallSucceeds());
   master_termios.c_lflag ^= ICANON;
   EXPECT_THAT(ioctl(master_.get(), TCSETS, &master_termios), SyscallSucceeds());
 
-  struct kernel_termios slave_termios = {};
-  EXPECT_THAT(ioctl(slave_.get(), TCGETS, &slave_termios), SyscallSucceeds());
-  EXPECT_EQ(master_termios, slave_termios);
+  struct kernel_termios replica_termios = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS, &replica_termios),
+              SyscallSucceeds());
+  EXPECT_EQ(master_termios, replica_termios);
 }
 
 // The master end of the pty has termios:
@@ -621,15 +630,20 @@ TEST_F(PtyTest, TermiosAffectsSlave) {
 //
 // (From drivers/tty/pty.c:unix98_pty_init)
 //
-// All termios control ioctls on the master actually redirect to the slave
+// All termios control ioctls on the master actually redirect to the replica
 // (drivers/tty/tty_ioctl.c:tty_mode_ioctl), making it impossible to change the
 // master termios.
 //
 // Verify this by setting ICRNL (which rewrites input \r to \n) and verify that
 // it has no effect on the master.
 TEST_F(PtyTest, MasterTermiosUnchangable) {
+  struct kernel_termios master_termios = {};
+  EXPECT_THAT(ioctl(master_.get(), TCGETS, &master_termios), SyscallSucceeds());
+  master_termios.c_lflag |= ICRNL;
+  EXPECT_THAT(ioctl(master_.get(), TCSETS, &master_termios), SyscallSucceeds());
+
   char c = '\r';
-  ASSERT_THAT(WriteFd(slave_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   ExpectReadable(master_, 1, &c);
   EXPECT_EQ(c, '\r');  // ICRNL had no effect!
@@ -642,15 +656,15 @@ TEST_F(PtyTest, TermiosICRNL) {
   struct kernel_termios t = DefaultTermios();
   t.c_iflag |= ICRNL;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   char c = '\r';
   ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
-  ExpectReadable(slave_, 1, &c);
+  ExpectReadable(replica_, 1, &c);
   EXPECT_EQ(c, '\n');
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 // ONLCR rewrites output \n to \r\n.
@@ -658,42 +672,42 @@ TEST_F(PtyTest, TermiosONLCR) {
   struct kernel_termios t = DefaultTermios();
   t.c_oflag |= ONLCR;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   char c = '\n';
-  ASSERT_THAT(WriteFd(slave_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Extra byte for NUL for EXPECT_STREQ.
   char buf[3] = {};
   ExpectReadable(master_, 2, buf);
   EXPECT_STREQ(buf, "\r\n");
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, TermiosIGNCR) {
   struct kernel_termios t = DefaultTermios();
   t.c_iflag |= IGNCR;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   char c = '\r';
   ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
-  ASSERT_THAT(PollAndReadFd(slave_.get(), &c, 1, kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), &c, 1, kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 }
 
-// Test that we can successfully poll for readable data from the slave.
-TEST_F(PtyTest, TermiosPollSlave) {
+// Test that we can successfully poll for readable data from the replica.
+TEST_F(PtyTest, TermiosPollReplica) {
   struct kernel_termios t = DefaultTermios();
   t.c_iflag |= IGNCR;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   absl::Notification notify;
-  int sfd = slave_.get();
+  int sfd = replica_.get();
   ScopedThread th([sfd, &notify]() {
     notify.Notify();
 
@@ -742,33 +756,33 @@ TEST_F(PtyTest, TermiosPollMaster) {
   absl::SleepFor(absl::Seconds(1));
 
   char s[] = "foo\n";
-  ASSERT_THAT(WriteFd(slave_.get(), s, strlen(s) + 1), SyscallSucceeds());
+  ASSERT_THAT(WriteFd(replica_.get(), s, strlen(s) + 1), SyscallSucceeds());
 }
 
 TEST_F(PtyTest, TermiosINLCR) {
   struct kernel_termios t = DefaultTermios();
   t.c_iflag |= INLCR;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   char c = '\n';
   ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
-  ExpectReadable(slave_, 1, &c);
+  ExpectReadable(replica_, 1, &c);
   EXPECT_EQ(c, '\r');
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, TermiosONOCR) {
   struct kernel_termios t = DefaultTermios();
   t.c_oflag |= ONOCR;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   // The terminal is at column 0, so there should be no CR to read.
   char c = '\r';
-  ASSERT_THAT(WriteFd(slave_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
   ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeout),
@@ -778,7 +792,7 @@ TEST_F(PtyTest, TermiosONOCR) {
   // out of the other end.
   constexpr char kInput[] = "foo\r";
   constexpr int kInputSize = sizeof(kInput) - 1;
-  ASSERT_THAT(WriteFd(slave_.get(), kInput, kInputSize),
+  ASSERT_THAT(WriteFd(replica_.get(), kInput, kInputSize),
               SyscallSucceedsWithValue(kInputSize));
 
   char buf[kInputSize] = {};
@@ -789,7 +803,7 @@ TEST_F(PtyTest, TermiosONOCR) {
   ExpectFinished(master_);
 
   // Terminal should be at column 0 again, so no CR can be read.
-  ASSERT_THAT(WriteFd(slave_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
   ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeout),
@@ -800,11 +814,11 @@ TEST_F(PtyTest, TermiosOCRNL) {
   struct kernel_termios t = DefaultTermios();
   t.c_oflag |= OCRNL;
   t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
 
   // The terminal is at column 0, so there should be no CR to read.
   char c = '\r';
-  ASSERT_THAT(WriteFd(slave_.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   ExpectReadable(master_, 1, &c);
   EXPECT_EQ(c, '\n');
@@ -820,24 +834,24 @@ TEST_F(PtyTest, VEOLTermination) {
   ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput)),
               SyscallSucceedsWithValue(sizeof(kInput)));
   char buf[sizeof(kInput)] = {};
-  ASSERT_THAT(PollAndReadFd(slave_.get(), buf, sizeof(kInput), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(kInput), kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   // Set the EOL character to '=' and write it.
   constexpr char delim = '=';
   struct kernel_termios t = DefaultTermios();
   t.c_cc[VEOL] = delim;
-  ASSERT_THAT(ioctl(slave_.get(), TCSETS, &t), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
   ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
   // Now we can read, as sending EOL caused the line to become available.
-  ExpectReadable(slave_, sizeof(kInput), buf);
+  ExpectReadable(replica_, sizeof(kInput), buf);
   EXPECT_EQ(memcmp(buf, kInput, sizeof(kInput)), 0);
 
-  ExpectReadable(slave_, 1, buf);
+  ExpectReadable(replica_, 1, buf);
   EXPECT_EQ(buf[0], '=');
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 // Tests that we can write more than the 4096 character limit, then a
@@ -853,9 +867,9 @@ TEST_F(PtyTest, CanonBigWrite) {
 
   // We can read the line.
   char buf[kMaxLineSize] = {};
-  ExpectReadable(slave_, kMaxLineSize, buf);
+  ExpectReadable(replica_, kMaxLineSize, buf);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 // Tests that data written in canonical mode can be read immediately once
@@ -869,15 +883,15 @@ TEST_F(PtyTest, SwitchCanonToNoncanon) {
 
   // Nothing available yet.
   char buf[sizeof(kInput)] = {};
-  ASSERT_THAT(PollAndReadFd(slave_.get(), buf, sizeof(kInput), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(kInput), kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   DisableCanonical();
 
-  ExpectReadable(slave_, sizeof(kInput), buf);
+  ExpectReadable(replica_, sizeof(kInput), buf);
   EXPECT_STREQ(buf, kInput);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, SwitchCanonToNonCanonNewline) {
@@ -890,10 +904,10 @@ TEST_F(PtyTest, SwitchCanonToNonCanonNewline) {
 
   // We can read the line.
   char buf[sizeof(kInput)] = {};
-  ExpectReadable(slave_, sizeof(kInput), buf);
+  ExpectReadable(replica_, sizeof(kInput), buf);
   EXPECT_STREQ(buf, kInput);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, SwitchNoncanonToCanonNewlineBig) {
@@ -906,7 +920,7 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNewlineBig) {
   ASSERT_THAT(WriteFd(master_.get(), input, kWriteLen),
               SyscallSucceedsWithValue(kWriteLen));
   // Wait for the input queue to fill.
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), kMaxLineSize - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), kMaxLineSize - 1));
   constexpr char delim = '\n';
   ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
@@ -914,12 +928,12 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNewlineBig) {
 
   // We can read the line.
   char buf[kMaxLineSize] = {};
-  ExpectReadable(slave_, kMaxLineSize - 1, buf);
+  ExpectReadable(replica_, kMaxLineSize - 1, buf);
 
   // We can also read the remaining characters.
-  ExpectReadable(slave_, 6, buf);
+  ExpectReadable(replica_, 6, buf);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, SwitchNoncanonToCanonNoNewline) {
@@ -931,15 +945,15 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNoNewline) {
   ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput) - 1),
               SyscallSucceedsWithValue(sizeof(kInput) - 1));
 
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), sizeof(kInput) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(kInput) - 1));
   EnableCanonical();
 
   // We can read the line.
   char buf[sizeof(kInput)] = {};
-  ExpectReadable(slave_, sizeof(kInput) - 1, buf);
+  ExpectReadable(replica_, sizeof(kInput) - 1, buf);
   EXPECT_STREQ(buf, kInput);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, SwitchNoncanonToCanonNoNewlineBig) {
@@ -953,14 +967,14 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNoNewlineBig) {
   ASSERT_THAT(WriteFd(master_.get(), input, kWriteLen),
               SyscallSucceedsWithValue(kWriteLen));
 
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), kMaxLineSize - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), kMaxLineSize - 1));
   EnableCanonical();
 
   // We can read the line.
   char buf[kMaxLineSize] = {};
-  ExpectReadable(slave_, kMaxLineSize - 1, buf);
+  ExpectReadable(replica_, kMaxLineSize - 1, buf);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 // Tests that we can write over the 4095 noncanonical limit, then read out
@@ -979,17 +993,17 @@ TEST_F(PtyTest, NoncanonBigWrite) {
   }
 
   // We should be able to read out everything. Sleep a bit so that Linux has a
-  // chance to move data from the master to the slave.
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), kMaxLineSize - 1));
+  // chance to move data from the master to the replica.
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), kMaxLineSize - 1));
   for (int i = 0; i < kInputSize; i++) {
     // This makes too many syscalls for save/restore.
     const DisableSave ds;
     char c;
-    ExpectReadable(slave_, 1, &c);
+    ExpectReadable(replica_, 1, &c);
     ASSERT_EQ(c, kInput);
   }
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 // ICANON doesn't make input available until a line delimiter is typed.
@@ -1004,18 +1018,18 @@ TEST_F(PtyTest, TermiosICANONNewline) {
   char buf[5] = {};
 
   // Nothing available yet.
-  ASSERT_THAT(PollAndReadFd(slave_.get(), buf, sizeof(input), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(input), kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   char delim = '\n';
   ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
   // Now it is available.
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), sizeof(input) + 1));
-  ExpectReadable(slave_, sizeof(input) + 1, buf);
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(input) + 1));
+  ExpectReadable(replica_, sizeof(input) + 1, buf);
   EXPECT_STREQ(buf, "abc\n");
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 // ICANON doesn't make input available until a line delimiter is typed.
@@ -1030,16 +1044,16 @@ TEST_F(PtyTest, TermiosICANONEOF) {
   char buf[4] = {};
 
   // Nothing available yet.
-  ASSERT_THAT(PollAndReadFd(slave_.get(), buf, sizeof(input), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(input), kTimeout),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
   char delim = ControlCharacter('D');
   ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
 
   // Now it is available. Note that ^D is not included.
-  ExpectReadable(slave_, sizeof(input), buf);
+  ExpectReadable(replica_, sizeof(input), buf);
   EXPECT_STREQ(buf, "abc");
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 // ICANON limits us to 4096 bytes including a terminating character. Anything
@@ -1065,12 +1079,12 @@ TEST_F(PtyTest, CanonDiscard) {
   // There should be multiple truncated lines available to read.
   for (int i = 0; i < kIter; i++) {
     char buf[kInputSize] = {};
-    ExpectReadable(slave_, kMaxLineSize, buf);
+    ExpectReadable(replica_, kMaxLineSize, buf);
     EXPECT_EQ(buf[kMaxLineSize - 1], delim);
     EXPECT_EQ(buf[kMaxLineSize - 2], kInput);
   }
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, CanonMultiline) {
@@ -1085,15 +1099,15 @@ TEST_F(PtyTest, CanonMultiline) {
 
   // Get the first line.
   char line1[8] = {};
-  ExpectReadable(slave_, sizeof(kInput1) - 1, line1);
+  ExpectReadable(replica_, sizeof(kInput1) - 1, line1);
   EXPECT_STREQ(line1, kInput1);
 
   // Get the second line.
   char line2[8] = {};
-  ExpectReadable(slave_, sizeof(kInput2) - 1, line2);
+  ExpectReadable(replica_, sizeof(kInput2) - 1, line2);
   EXPECT_STREQ(line2, kInput2);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, SwitchNoncanonToCanonMultiline) {
@@ -1110,15 +1124,15 @@ TEST_F(PtyTest, SwitchNoncanonToCanonMultiline) {
               SyscallSucceedsWithValue(sizeof(kInput2) - 1));
 
   ASSERT_NO_ERRNO(
-      WaitUntilReceived(slave_.get(), sizeof(kInput1) + sizeof(kInput2) - 2));
+      WaitUntilReceived(replica_.get(), sizeof(kInput1) + sizeof(kInput2) - 2));
   EnableCanonical();
 
   // Get all together as one line.
   char line[9] = {};
-  ExpectReadable(slave_, 8, line);
+  ExpectReadable(replica_, 8, line);
   EXPECT_STREQ(line, kExpected);
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, SwitchTwiceMultiline) {
@@ -1135,15 +1149,15 @@ TEST_F(PtyTest, SwitchTwiceMultiline) {
   // All written characters have to make it into the input queue before
   // canonical mode is re-enabled. If the final '!' character hasn't been
   // enqueued before canonical mode is re-enabled, it won't be readable.
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), kExpected.size()));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), kExpected.size()));
   EnableCanonical();
 
   // Get all together as one line.
   char line[10] = {};
-  ExpectReadable(slave_, 9, line);
+  ExpectReadable(replica_, 9, line);
   EXPECT_STREQ(line, kExpected.c_str());
 
-  ExpectFinished(slave_);
+  ExpectFinished(replica_);
 }
 
 TEST_F(PtyTest, QueueSize) {
@@ -1151,7 +1165,7 @@ TEST_F(PtyTest, QueueSize) {
   constexpr char kInput1[] = "GO\n";
   ASSERT_THAT(WriteFd(master_.get(), kInput1, sizeof(kInput1) - 1),
               SyscallSucceedsWithValue(sizeof(kInput1) - 1));
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), sizeof(kInput1) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(kInput1) - 1));
 
   // Ensure that writing more (beyond what is readable) does not impact the
   // readable size.
@@ -1160,7 +1174,7 @@ TEST_F(PtyTest, QueueSize) {
   ASSERT_THAT(WriteFd(master_.get(), input, kMaxLineSize),
               SyscallSucceedsWithValue(kMaxLineSize));
   int inputBufSize = ASSERT_NO_ERRNO_AND_VALUE(
-      WaitUntilReceived(slave_.get(), sizeof(kInput1) - 1));
+      WaitUntilReceived(replica_.get(), sizeof(kInput1) - 1));
   EXPECT_EQ(inputBufSize, sizeof(kInput1) - 1);
 }
 
@@ -1185,9 +1199,9 @@ TEST_F(PtyTest, PartialBadBuffer) {
   EXPECT_THAT(WriteFd(master_.get(), kBuf, size),
               SyscallSucceedsWithValue(size));
 
-  // Read from the slave into bad_buffer.
-  ASSERT_NO_ERRNO(WaitUntilReceived(slave_.get(), size));
-  EXPECT_THAT(ReadFd(slave_.get(), bad_buffer, size),
+  // Read from the replica into bad_buffer.
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), size));
+  EXPECT_THAT(ReadFd(replica_.get(), bad_buffer, size),
               SyscallFailsWithErrno(EFAULT));
 
   EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds()) << addr;
@@ -1207,16 +1221,16 @@ TEST_F(PtyTest, SimpleEcho) {
 
 TEST_F(PtyTest, GetWindowSize) {
   struct winsize ws;
-  ASSERT_THAT(ioctl(slave_.get(), TIOCGWINSZ, &ws), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TIOCGWINSZ, &ws), SyscallSucceeds());
   EXPECT_EQ(ws.ws_row, 0);
   EXPECT_EQ(ws.ws_col, 0);
 }
 
-TEST_F(PtyTest, SetSlaveWindowSize) {
+TEST_F(PtyTest, SetReplicaWindowSize) {
   constexpr uint16_t kRows = 343;
   constexpr uint16_t kCols = 2401;
   struct winsize ws = {.ws_row = kRows, .ws_col = kCols};
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
 
   struct winsize retrieved_ws = {};
   ASSERT_THAT(ioctl(master_.get(), TIOCGWINSZ, &retrieved_ws),
@@ -1232,7 +1246,7 @@ TEST_F(PtyTest, SetMasterWindowSize) {
   ASSERT_THAT(ioctl(master_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
 
   struct winsize retrieved_ws = {};
-  ASSERT_THAT(ioctl(slave_.get(), TIOCGWINSZ, &retrieved_ws),
+  ASSERT_THAT(ioctl(replica_.get(), TIOCGWINSZ, &retrieved_ws),
               SyscallSucceeds());
   EXPECT_EQ(retrieved_ws.ws_row, kRows);
   EXPECT_EQ(retrieved_ws.ws_col, kCols);
@@ -1242,7 +1256,7 @@ class JobControlTest : public ::testing::Test {
  protected:
   void SetUp() override {
     master_ = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NONBLOCK));
-    slave_ = ASSERT_NO_ERRNO_AND_VALUE(OpenSlave(master_));
+    replica_ = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master_));
 
     // Make this a session leader, which also drops the controlling terminal.
     // In the gVisor test environment, this test will be run as the session
@@ -1252,61 +1266,82 @@ class JobControlTest : public ::testing::Test {
     }
   }
 
-  // Master and slave ends of the PTY. Non-blocking.
+  PosixError RunInChild(SubprocessCallback childFunc) {
+    pid_t child = fork();
+    if (!child) {
+      childFunc();
+      _exit(0);
+    }
+    int wstatus;
+    if (waitpid(child, &wstatus, 0) != child) {
+      return PosixError(
+          errno, absl::StrCat("child failed with wait status: ", wstatus));
+    }
+    return PosixError(wstatus, "process returned");
+  }
+
+  // Master and replica ends of the PTY. Non-blocking.
   FileDescriptor master_;
-  FileDescriptor slave_;
+  FileDescriptor replica_;
 };
 
 TEST_F(JobControlTest, SetTTYMaster) {
-  ASSERT_THAT(ioctl(master_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(master_.get(), TIOCSCTTY, 0));
+  });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, SetTTY) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(ioctl(!replica_.get(), TIOCSCTTY, 0));
+  });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, SetTTYNonLeader) {
   // Fork a process that won't be the session leader.
-  pid_t child = fork();
-  if (!child) {
-    // We shouldn't be able to set the terminal.
-    TEST_PCHECK(ioctl(slave_.get(), TIOCSCTTY, 0));
-    _exit(0);
-  }
-
-  int wstatus;
-  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
-  ASSERT_EQ(wstatus, 0);
+  auto res =
+      RunInChild([=]() { TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0)); });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, SetTTYBadArg) {
-  // Despite the man page saying arg should be 0 here, Linux doesn't actually
-  // check.
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 1), SyscallSucceeds());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 1));
+  });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, SetTTYDifferentSession) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
-
-  // Fork, join a new session, and try to steal the parent's controlling
-  // terminal, which should fail.
-  pid_t child = fork();
-  if (!child) {
+  auto res = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);
-    // We shouldn't be able to steal the terminal.
-    TEST_PCHECK(ioctl(slave_.get(), TIOCSCTTY, 1));
-    _exit(0);
-  }
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 1));
 
-  int wstatus;
-  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
-  ASSERT_EQ(wstatus, 0);
+    // Fork, join a new session, and try to steal the parent's controlling
+    // terminal, which should fail.
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      TEST_PCHECK(setsid() >= 0);
+      // We shouldn't be able to steal the terminal.
+      TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 1));
+      _exit(0);
+    }
+
+    int gcwstatus;
+    TEST_PCHECK(waitpid(grandchild, &gcwstatus, 0) == grandchild);
+    TEST_PCHECK(gcwstatus == 0);
+  });
 }
 
 TEST_F(JobControlTest, ReleaseTTY) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect they TTY.
@@ -1316,48 +1351,60 @@ TEST_F(JobControlTest, ReleaseTTY) {
   sigemptyset(&sa.sa_mask);
   struct sigaction old_sa;
   EXPECT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
-  EXPECT_THAT(ioctl(slave_.get(), TIOCNOTTY), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TIOCNOTTY), SyscallSucceeds());
   EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
 }
 
 TEST_F(JobControlTest, ReleaseUnsetTTY) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCNOTTY), SyscallFailsWithErrno(ENOTTY));
+  ASSERT_THAT(ioctl(replica_.get(), TIOCNOTTY), SyscallFailsWithErrno(ENOTTY));
 }
 
 TEST_F(JobControlTest, ReleaseWrongTTY) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
-
-  ASSERT_THAT(ioctl(master_.get(), TIOCNOTTY), SyscallFailsWithErrno(ENOTTY));
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    TEST_PCHECK(ioctl(master_.get(), TIOCNOTTY) < 0 && errno == ENOTTY);
+  });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, ReleaseTTYNonLeader) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  auto ret = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
-  pid_t child = fork();
-  if (!child) {
-    TEST_PCHECK(!ioctl(slave_.get(), TIOCNOTTY));
-    _exit(0);
-  }
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      TEST_PCHECK(!ioctl(replica_.get(), TIOCNOTTY));
+      _exit(0);
+    }
 
-  int wstatus;
-  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
-  ASSERT_EQ(wstatus, 0);
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, 0) == grandchild);
+    TEST_PCHECK(wstatus == 0);
+  });
+  ASSERT_NO_ERRNO(ret);
 }
 
 TEST_F(JobControlTest, ReleaseTTYDifferentSession) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
-
-  pid_t child = fork();
-  if (!child) {
-    // Join a new session, then try to disconnect.
+  auto ret = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);
-    TEST_PCHECK(ioctl(slave_.get(), TIOCNOTTY));
-    _exit(0);
-  }
 
-  int wstatus;
-  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
-  ASSERT_EQ(wstatus, 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      // Join a new session, then try to disconnect.
+      TEST_PCHECK(setsid() >= 0);
+      TEST_PCHECK(ioctl(replica_.get(), TIOCNOTTY));
+      _exit(0);
+    }
+
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, 0) == grandchild);
+    TEST_PCHECK(wstatus == 0);
+  });
+  ASSERT_NO_ERRNO(ret);
 }
 
 // Used by the child process spawned in ReleaseTTYSignals to track received
@@ -1376,7 +1423,7 @@ void sig_handler(int signum) { received |= signum; }
 // - Checks that thread 1 got both signals
 // - Checks that thread 2 didn't get any signals.
 TEST_F(JobControlTest, ReleaseTTYSignals) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   received = 0;
   struct sigaction sa = {};
@@ -1428,7 +1475,7 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
 
   // Release the controlling terminal, sending SIGHUP and SIGCONT to all other
   // processes in this process group.
-  EXPECT_THAT(ioctl(slave_.get(), TIOCNOTTY), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TIOCNOTTY), SyscallSucceeds());
 
   EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
 
@@ -1445,20 +1492,21 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
 }
 
 TEST_F(JobControlTest, GetForegroundProcessGroup) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
-  pid_t foreground_pgid;
-  pid_t pid;
-  ASSERT_THAT(ioctl(slave_.get(), TIOCGPGRP, &foreground_pgid),
-              SyscallSucceeds());
-  ASSERT_THAT(pid = getpid(), SyscallSucceeds());
-
-  ASSERT_EQ(foreground_pgid, pid);
+  auto res = RunInChild([=]() {
+    pid_t pid, foreground_pgid;
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 1));
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCGPGRP, &foreground_pgid));
+    TEST_PCHECK((pid = getpid()) >= 0);
+    TEST_PCHECK(pid == foreground_pgid);
+  });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, GetForegroundProcessGroupNonControlling) {
   // At this point there's no controlling terminal, so TIOCGPGRP should fail.
   pid_t foreground_pgid;
-  ASSERT_THAT(ioctl(slave_.get(), TIOCGPGRP, &foreground_pgid),
+  ASSERT_THAT(ioctl(replica_.get(), TIOCGPGRP, &foreground_pgid),
               SyscallFailsWithErrno(ENOTTY));
 }
 
@@ -1468,113 +1516,125 @@ TEST_F(JobControlTest, GetForegroundProcessGroupNonControlling) {
 // - sets that child as the foreground process group
 // - kills its child and sets itself as the foreground process group.
 TEST_F(JobControlTest, SetForegroundProcessGroup) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
-  // Ignore SIGTTOU so that we don't stop ourself when calling tcsetpgrp.
-  struct sigaction sa = {};
-  sa.sa_handler = SIG_IGN;
-  sa.sa_flags = 0;
-  sigemptyset(&sa.sa_mask);
-  sigaction(SIGTTOU, &sa, NULL);
+    // Ignore SIGTTOU so that we don't stop ourself when calling tcsetpgrp.
+    struct sigaction sa = {};
+    sa.sa_handler = SIG_IGN;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTTOU, &sa, NULL);
 
-  // Set ourself as the foreground process group.
-  ASSERT_THAT(tcsetpgrp(slave_.get(), getpgid(0)), SyscallSucceeds());
+    // Set ourself as the foreground process group.
+    TEST_PCHECK(!tcsetpgrp(replica_.get(), getpgid(0)));
 
-  // Create a new process that just waits to be signaled.
-  pid_t child = fork();
-  if (!child) {
-    TEST_PCHECK(!pause());
-    // We should never reach this.
-    _exit(1);
-  }
+    // Create a new process that just waits to be signaled.
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      TEST_PCHECK(!pause());
+      // We should never reach this.
+      _exit(1);
+    }
 
-  // Make the child its own process group, then make it the controlling process
-  // group of the terminal.
-  ASSERT_THAT(setpgid(child, child), SyscallSucceeds());
-  ASSERT_THAT(tcsetpgrp(slave_.get(), child), SyscallSucceeds());
+    // Make the child its own process group, then make it the controlling
+    // process group of the terminal.
+    TEST_PCHECK(!setpgid(grandchild, grandchild));
+    TEST_PCHECK(!tcsetpgrp(replica_.get(), grandchild));
 
-  // Sanity check - we're still the controlling session.
-  ASSERT_EQ(getsid(0), getsid(child));
+    // Sanity check - we're still the controlling session.
+    TEST_PCHECK(getsid(0) == getsid(grandchild));
 
-  // Signal the child, wait for it to exit, then retake the terminal.
-  ASSERT_THAT(kill(child, SIGTERM), SyscallSucceeds());
-  int wstatus;
-  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
-  ASSERT_TRUE(WIFSIGNALED(wstatus));
-  ASSERT_EQ(WTERMSIG(wstatus), SIGTERM);
+    // Signal the child, wait for it to exit, then retake the terminal.
+    TEST_PCHECK(!kill(grandchild, SIGTERM));
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, 0) == grandchild);
+    TEST_PCHECK(WIFSIGNALED(wstatus));
+    TEST_PCHECK(WTERMSIG(wstatus) == SIGTERM);
 
-  // Set ourself as the foreground process.
-  pid_t pgid;
-  ASSERT_THAT(pgid = getpgid(0), SyscallSucceeds());
-  ASSERT_THAT(tcsetpgrp(slave_.get(), pgid), SyscallSucceeds());
+    // Set ourself as the foreground process.
+    pid_t pgid;
+    TEST_PCHECK(pgid = getpgid(0) == 0);
+    TEST_PCHECK(!tcsetpgrp(replica_.get(), pgid));
+  });
 }
 
 TEST_F(JobControlTest, SetForegroundProcessGroupWrongTTY) {
   pid_t pid = getpid();
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSPGRP, &pid),
+  ASSERT_THAT(ioctl(replica_.get(), TIOCSPGRP, &pid),
               SyscallFailsWithErrno(ENOTTY));
 }
 
 TEST_F(JobControlTest, SetForegroundProcessGroupNegPgid) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  auto ret = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
-  pid_t pid = -1;
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSPGRP, &pid),
-              SyscallFailsWithErrno(EINVAL));
+    pid_t pid = -1;
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSPGRP, &pid) && errno == EINVAL);
+  });
+  ASSERT_NO_ERRNO(ret);
 }
 
 TEST_F(JobControlTest, SetForegroundProcessGroupEmptyProcessGroup) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+  auto ret = RunInChild([=]() {
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
-  // Create a new process, put it in a new process group, make that group the
-  // foreground process group, then have the process wait.
-  pid_t child = fork();
-  if (!child) {
-    TEST_PCHECK(!setpgid(0, 0));
-    _exit(0);
-  }
+    // Create a new process, put it in a new process group, make that group the
+    // foreground process group, then have the process wait.
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      TEST_PCHECK(!setpgid(0, 0));
+      _exit(0);
+    }
 
-  // Wait for the child to exit.
-  int wstatus;
-  EXPECT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
-  // The child's process group doesn't exist anymore - this should fail.
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSPGRP, &child),
-              SyscallFailsWithErrno(ESRCH));
+    // Wait for the child to exit.
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, 0) == grandchild);
+    // The child's process group doesn't exist anymore - this should fail.
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSPGRP, &grandchild) != 0 &&
+                errno == ESRCH);
+  });
 }
 
 TEST_F(JobControlTest, SetForegroundProcessGroupDifferentSession) {
-  ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
-
-  int sync_setsid[2];
-  int sync_exit[2];
-  ASSERT_THAT(pipe(sync_setsid), SyscallSucceeds());
-  ASSERT_THAT(pipe(sync_exit), SyscallSucceeds());
-
-  // Create a new process and put it in a new session.
-  pid_t child = fork();
-  if (!child) {
+  auto ret = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);
-    // Tell the parent we're in a new session.
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+
+    int sync_setsid[2];
+    int sync_exit[2];
+    TEST_PCHECK(pipe(sync_setsid) >= 0);
+    TEST_PCHECK(pipe(sync_exit) >= 0);
+
+    // Create a new process and put it in a new session.
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      TEST_PCHECK(setsid() >= 0);
+      // Tell the parent we're in a new session.
+      char c = 'c';
+      TEST_PCHECK(WriteFd(sync_setsid[1], &c, 1) == 1);
+      TEST_PCHECK(ReadFd(sync_exit[0], &c, 1) == 1);
+      _exit(0);
+    }
+
+    // Wait for the child to tell us it's in a new session.
     char c = 'c';
-    TEST_PCHECK(WriteFd(sync_setsid[1], &c, 1) == 1);
-    TEST_PCHECK(ReadFd(sync_exit[0], &c, 1) == 1);
-    _exit(0);
-  }
+    TEST_PCHECK(ReadFd(sync_setsid[0], &c, 1) == 1);
 
-  // Wait for the child to tell us it's in a new session.
-  char c = 'c';
-  ASSERT_THAT(ReadFd(sync_setsid[0], &c, 1), SyscallSucceedsWithValue(1));
+    // Child is in a new session, so we can't make it the foregroup process
+    // group.
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSPGRP, &grandchild) &&
+                errno == EPERM);
 
-  // Child is in a new session, so we can't make it the foregroup process group.
-  EXPECT_THAT(ioctl(slave_.get(), TIOCSPGRP, &child),
-              SyscallFailsWithErrno(EPERM));
+    TEST_PCHECK(WriteFd(sync_exit[1], &c, 1) == 1);
 
-  EXPECT_THAT(WriteFd(sync_exit[1], &c, 1), SyscallSucceedsWithValue(1));
-
-  int wstatus;
-  EXPECT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
-  EXPECT_TRUE(WIFEXITED(wstatus));
-  EXPECT_EQ(WEXITSTATUS(wstatus), 0);
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, 0) == grandchild);
+    TEST_PCHECK(WIFEXITED(wstatus));
+    TEST_PCHECK(!WEXITSTATUS(wstatus));
+  });
+  ASSERT_NO_ERRNO(ret);
 }
 
 // Verify that we don't hang when creating a new session from an orphaned

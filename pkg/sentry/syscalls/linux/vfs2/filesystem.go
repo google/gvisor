@@ -56,7 +56,7 @@ func linkat(t *kernel.Task, olddirfd int32, oldpathAddr usermem.Addr, newdirfd i
 	if err != nil {
 		return err
 	}
-	defer oldtpop.Release()
+	defer oldtpop.Release(t)
 
 	newpath, err := copyInPath(t, newpathAddr)
 	if err != nil {
@@ -66,7 +66,7 @@ func linkat(t *kernel.Task, olddirfd int32, oldpathAddr usermem.Addr, newdirfd i
 	if err != nil {
 		return err
 	}
-	defer newtpop.Release()
+	defer newtpop.Release(t)
 
 	return t.Kernel().VFS().LinkAt(t, t.Credentials(), &oldtpop.pop, &newtpop.pop)
 }
@@ -95,7 +95,7 @@ func mkdirat(t *kernel.Task, dirfd int32, addr usermem.Addr, mode uint) error {
 	if err != nil {
 		return err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 	return t.Kernel().VFS().MkdirAt(t, t.Credentials(), &tpop.pop, &vfs.MkdirOptions{
 		Mode: linux.FileMode(mode & (0777 | linux.S_ISVTX) &^ t.FSContext().Umask()),
 	})
@@ -106,7 +106,7 @@ func Mknod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	addr := args[0].Pointer()
 	mode := args[1].ModeT()
 	dev := args[2].Uint()
-	return 0, nil, mknodat(t, linux.AT_FDCWD, addr, mode, dev)
+	return 0, nil, mknodat(t, linux.AT_FDCWD, addr, linux.FileMode(mode), dev)
 }
 
 // Mknodat implements Linux syscall mknodat(2).
@@ -115,10 +115,10 @@ func Mknodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	addr := args[1].Pointer()
 	mode := args[2].ModeT()
 	dev := args[3].Uint()
-	return 0, nil, mknodat(t, dirfd, addr, mode, dev)
+	return 0, nil, mknodat(t, dirfd, addr, linux.FileMode(mode), dev)
 }
 
-func mknodat(t *kernel.Task, dirfd int32, addr usermem.Addr, mode uint, dev uint32) error {
+func mknodat(t *kernel.Task, dirfd int32, addr usermem.Addr, mode linux.FileMode, dev uint32) error {
 	path, err := copyInPath(t, addr)
 	if err != nil {
 		return err
@@ -127,10 +127,15 @@ func mknodat(t *kernel.Task, dirfd int32, addr usermem.Addr, mode uint, dev uint
 	if err != nil {
 		return err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
+
+	// "Zero file type is equivalent to type S_IFREG." - mknod(2)
+	if mode.FileType() == 0 {
+		mode |= linux.ModeRegular
+	}
 	major, minor := linux.DecodeDeviceID(dev)
 	return t.Kernel().VFS().MknodAt(t, t.Credentials(), &tpop.pop, &vfs.MknodOptions{
-		Mode:     linux.FileMode(mode &^ t.FSContext().Umask()),
+		Mode:     mode &^ linux.FileMode(t.FSContext().Umask()),
 		DevMajor: uint32(major),
 		DevMinor: minor,
 	})
@@ -169,7 +174,7 @@ func openat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, flags uint32, mo
 	if err != nil {
 		return 0, nil, err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 
 	file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &tpop.pop, &vfs.OpenOptions{
 		Flags: flags | linux.O_LARGEFILE,
@@ -178,7 +183,7 @@ func openat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, flags uint32, mo
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
@@ -222,7 +227,7 @@ func renameat(t *kernel.Task, olddirfd int32, oldpathAddr usermem.Addr, newdirfd
 	if err != nil {
 		return err
 	}
-	defer oldtpop.Release()
+	defer oldtpop.Release(t)
 
 	newpath, err := copyInPath(t, newpathAddr)
 	if err != nil {
@@ -232,7 +237,7 @@ func renameat(t *kernel.Task, olddirfd int32, oldpathAddr usermem.Addr, newdirfd
 	if err != nil {
 		return err
 	}
-	defer newtpop.Release()
+	defer newtpop.Release(t)
 
 	return t.Kernel().VFS().RenameAt(t, t.Credentials(), &oldtpop.pop, &newtpop.pop, &vfs.RenameOptions{
 		Flags: flags,
@@ -254,7 +259,7 @@ func rmdirat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr) error {
 	if err != nil {
 		return err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 	return t.Kernel().VFS().RmdirAt(t, t.Credentials(), &tpop.pop)
 }
 
@@ -273,7 +278,7 @@ func unlinkat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr) error {
 	if err != nil {
 		return err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 	return t.Kernel().VFS().UnlinkAt(t, t.Credentials(), &tpop.pop)
 }
 
@@ -313,6 +318,9 @@ func symlinkat(t *kernel.Task, targetAddr usermem.Addr, newdirfd int32, linkpath
 	if err != nil {
 		return err
 	}
+	if len(target) == 0 {
+		return syserror.ENOENT
+	}
 	linkpath, err := copyInPath(t, linkpathAddr)
 	if err != nil {
 		return err
@@ -321,6 +329,6 @@ func symlinkat(t *kernel.Task, targetAddr usermem.Addr, newdirfd int32, linkpath
 	if err != nil {
 		return err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 	return t.Kernel().VFS().SymlinkAt(t, t.Credentials(), &tpop.pop, target)
 }

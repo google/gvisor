@@ -73,8 +73,8 @@ func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, fo
 		err = t.BlockWithDeadline(w.C, true, ktime.FromTimespec(ts))
 	}
 
-	t.Futex().WaitComplete(w)
-	return 0, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+	t.Futex().WaitComplete(w, t)
+	return 0, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 }
 
 // futexWaitDuration performs a FUTEX_WAIT, blocking until the wait is
@@ -95,7 +95,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 	}
 
 	remaining, err := t.BlockWithTimeout(w.C, !forever, duration)
-	t.Futex().WaitComplete(w)
+	t.Futex().WaitComplete(w, t)
 	if err == nil {
 		return 0, nil
 	}
@@ -110,7 +110,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 
 	// The wait duration was absolute, restart with the original arguments.
 	if forever {
-		return 0, kernel.ERESTARTSYS
+		return 0, syserror.ERESTARTSYS
 	}
 
 	// The wait duration was relative, restart with the remaining duration.
@@ -121,7 +121,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 		val:      val,
 		mask:     mask,
 	})
-	return 0, kernel.ERESTART_RESTARTBLOCK
+	return 0, syserror.ERESTART_RESTARTBLOCK
 }
 
 func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr usermem.Addr, private bool) error {
@@ -148,8 +148,8 @@ func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr usermem.A
 		timer.Destroy()
 	}
 
-	t.Futex().WaitComplete(w)
-	return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+	t.Futex().WaitComplete(w, t)
+	return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 }
 
 func tryLockPI(t *kernel.Task, addr usermem.Addr, private bool) error {
@@ -198,7 +198,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		switch cmd {
 		case linux.FUTEX_WAIT:
 			// WAIT uses a relative timeout.
-			mask = ^uint32(0)
+			mask = linux.FUTEX_BITSET_MATCH_ANY
 			var timeoutDur time.Duration
 			if !forever {
 				timeoutDur = time.Duration(timespec.ToNsecCapped()) * time.Nanosecond
@@ -285,4 +285,54 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		// We don't even know about this command.
 		return 0, nil, syserror.ENOSYS
 	}
+}
+
+// SetRobustList implements linux syscall set_robust_list(2).
+func SetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// Despite the syscall using the name 'pid' for this variable, it is
+	// very much a tid.
+	head := args[0].Pointer()
+	length := args[1].SizeT()
+
+	if length != uint(linux.SizeOfRobustListHead) {
+		return 0, nil, syserror.EINVAL
+	}
+	t.SetRobustList(head)
+	return 0, nil, nil
+}
+
+// GetRobustList implements linux syscall get_robust_list(2).
+func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// Despite the syscall using the name 'pid' for this variable, it is
+	// very much a tid.
+	tid := args[0].Int()
+	headAddr := args[1].Pointer()
+	sizeAddr := args[2].Pointer()
+
+	if tid < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	ot := t
+	if tid != 0 {
+		if ot = t.PIDNamespace().TaskWithID(kernel.ThreadID(tid)); ot == nil {
+			return 0, nil, syserror.ESRCH
+		}
+	}
+
+	// Copy out head pointer.
+	head := t.Arch().Native(uintptr(ot.GetRobustList()))
+	if _, err := head.CopyOut(t, headAddr); err != nil {
+		return 0, nil, err
+	}
+
+	// Copy out size, which is a constant. Note that while size isn't
+	// an address, it is defined as the arch-dependent size_t, so it
+	// needs to be converted to a native-sized int.
+	size := t.Arch().Native(uintptr(linux.SizeOfRobustListHead))
+	if _, err := size.CopyOut(t, sizeAddr); err != nil {
+		return 0, nil, err
+	}
+
+	return 0, nil, nil
 }

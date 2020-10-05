@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -224,8 +225,9 @@ func (s *ptraceStop) Killable() bool {
 // beginPtraceStopLocked does not signal t's tracer or wake it if it is
 // waiting.
 //
-// Preconditions: The TaskSet mutex must be locked. The caller must be running
-// on the task goroutine.
+// Preconditions:
+// * The TaskSet mutex must be locked.
+// * The caller must be running on the task goroutine.
 func (t *Task) beginPtraceStopLocked() bool {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
@@ -270,8 +272,9 @@ func (t *Task) ptraceTrapLocked(code int32) {
 // ptraceStop, temporarily preventing it from being removed by a concurrent
 // Task.Kill, and returns true. Otherwise it returns false.
 //
-// Preconditions: The TaskSet mutex must be locked. The caller must be running
-// on the task goroutine of t's tracer.
+// Preconditions:
+// * The TaskSet mutex must be locked.
+// * The caller must be running on the task goroutine of t's tracer.
 func (t *Task) ptraceFreeze() bool {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
@@ -301,8 +304,9 @@ func (t *Task) ptraceUnfreeze() {
 	t.ptraceUnfreezeLocked()
 }
 
-// Preconditions: t must be in a frozen ptraceStop. t's signal mutex must be
-// locked.
+// Preconditions:
+// * t must be in a frozen ptraceStop.
+// * t's signal mutex must be locked.
 func (t *Task) ptraceUnfreezeLocked() {
 	// Do this even if the task has been killed to ensure a panic if t.stop is
 	// nil or not a ptraceStop.
@@ -497,8 +501,9 @@ func (t *Task) forgetTracerLocked() {
 // ptraceSignalLocked is called after signal dequeueing to check if t should
 // enter ptrace signal-delivery-stop.
 //
-// Preconditions: The signal mutex must be locked. The caller must be running
-// on the task goroutine.
+// Preconditions:
+// * The signal mutex must be locked.
+// * The caller must be running on the task goroutine.
 func (t *Task) ptraceSignalLocked(info *arch.SignalInfo) bool {
 	if linux.Signal(info.Signo) == linux.SIGKILL {
 		return false
@@ -828,8 +833,9 @@ func (t *Task) ptraceInterrupt(target *Task) error {
 	return nil
 }
 
-// Preconditions: The TaskSet mutex must be locked for writing. t must have a
-// tracer.
+// Preconditions:
+// * The TaskSet mutex must be locked for writing.
+// * t must have a tracer.
 func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
 	const valid = uintptr(linux.PTRACE_O_EXITKILL |
 		linux.PTRACE_O_TRACESYSGOOD |
@@ -994,18 +1000,15 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		// at the address specified by the data parameter, and the return value
 		// is the error flag." - ptrace(2)
 		word := t.Arch().Native(0)
-		if _, err := usermem.CopyObjectIn(t, target.MemoryManager(), addr, word, usermem.IOOpts{
-			IgnorePermissions: true,
-		}); err != nil {
+		if _, err := word.CopyIn(target.AsCopyContext(usermem.IOOpts{IgnorePermissions: true}), addr); err != nil {
 			return err
 		}
-		_, err := t.CopyOut(data, word)
+		_, err := word.CopyOut(t, data)
 		return err
 
 	case linux.PTRACE_POKETEXT, linux.PTRACE_POKEDATA:
-		_, err := usermem.CopyObjectOut(t, target.MemoryManager(), addr, t.Arch().Native(uintptr(data)), usermem.IOOpts{
-			IgnorePermissions: true,
-		})
+		word := t.Arch().Native(uintptr(data))
+		_, err := word.CopyOut(target.AsCopyContext(usermem.IOOpts{IgnorePermissions: true}), addr)
 		return err
 
 	case linux.PTRACE_GETREGSET:
@@ -1018,6 +1021,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if err != nil {
 			return err
 		}
+
+		t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+
 		ar := ars.Head()
 		n, err := target.Arch().PtraceGetRegSet(uintptr(addr), &usermem.IOReadWriter{
 			Ctx:  t,
@@ -1044,10 +1050,14 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if err != nil {
 			return err
 		}
+
+		mm := t.MemoryManager()
+		t.p.PullFullState(mm.AddressSpace(), t.Arch())
+
 		ar := ars.Head()
 		n, err := target.Arch().PtraceSetRegSet(uintptr(addr), &usermem.IOReadWriter{
 			Ctx:  t,
-			IO:   t.MemoryManager(),
+			IO:   mm,
 			Addr: ar.Start,
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
@@ -1056,6 +1066,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if err != nil {
 			return err
 		}
+		t.p.FullStateChanged()
 		ar.End -= usermem.Addr(n)
 		return t.CopyOutIovecs(data, usermem.AddrRangeSeqOf(ar))
 
@@ -1065,12 +1076,12 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if target.ptraceSiginfo == nil {
 			return syserror.EINVAL
 		}
-		_, err := t.CopyOut(data, target.ptraceSiginfo)
+		_, err := target.ptraceSiginfo.CopyOut(t, data)
 		return err
 
 	case linux.PTRACE_SETSIGINFO:
 		var info arch.SignalInfo
-		if _, err := t.CopyIn(data, &info); err != nil {
+		if _, err := info.CopyIn(t, data); err != nil {
 			return err
 		}
 		t.tg.pidns.owner.mu.RLock()
@@ -1085,7 +1096,8 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if addr != linux.SignalSetSize {
 			return syserror.EINVAL
 		}
-		_, err := t.CopyOut(data, target.SignalMask())
+		mask := target.SignalMask()
+		_, err := mask.CopyOut(t, data)
 		return err
 
 	case linux.PTRACE_SETSIGMASK:
@@ -1093,7 +1105,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 			return syserror.EINVAL
 		}
 		var mask linux.SignalSet
-		if _, err := t.CopyIn(data, &mask); err != nil {
+		if _, err := mask.CopyIn(t, data); err != nil {
 			return err
 		}
 		// The target's task goroutine is stopped, so this is safe:
@@ -1108,7 +1120,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 	case linux.PTRACE_GETEVENTMSG:
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
-		_, err := t.CopyOut(usermem.Addr(data), target.ptraceEventMsg)
+		_, err := primitive.CopyUint64Out(t, usermem.Addr(data), target.ptraceEventMsg)
 		return err
 
 	// PEEKSIGINFO is unimplemented but seems to have no users anywhere.

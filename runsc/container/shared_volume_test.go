@@ -25,14 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 // TestSharedVolume checks that modifications to a volume mount are propagated
 // into and out of the sandbox.
 func TestSharedVolume(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.FileAccess = boot.FileAccessShared
+	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of
 	// the filesystem.
@@ -168,11 +168,7 @@ func TestSharedVolume(t *testing.T) {
 
 func checkFile(c *Container, filename string, want []byte) error {
 	cpy := filename + ".copy"
-	argsCp := &control.ExecArgs{
-		Filename: "/bin/cp",
-		Argv:     []string{"cp", "-f", filename, cpy},
-	}
-	if _, err := c.executeSync(argsCp); err != nil {
+	if _, err := execute(c, "/bin/cp", "-f", filename, cpy); err != nil {
 		return fmt.Errorf("unexpected error copying file %q to %q: %v", filename, cpy, err)
 	}
 	got, err := ioutil.ReadFile(cpy)
@@ -189,7 +185,7 @@ func checkFile(c *Container, filename string, want []byte) error {
 // is reflected inside.
 func TestSharedVolumeFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.FileAccess = boot.FileAccessShared
+	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of
 	// the filesystem.
@@ -235,11 +231,7 @@ func TestSharedVolumeFile(t *testing.T) {
 	}
 
 	// Append to file inside the container and check that content is not lost.
-	argsAppend := &control.ExecArgs{
-		Filename: "/bin/bash",
-		Argv:     []string{"bash", "-c", "echo -n sandbox- >> " + filename},
-	}
-	if _, err := c.executeSync(argsAppend); err != nil {
+	if _, err := execute(c, "/bin/bash", "-c", "echo -n sandbox- >> "+filename); err != nil {
 		t.Fatalf("unexpected error appending file %q: %v", filename, err)
 	}
 	want = []byte("host-sandbox-")

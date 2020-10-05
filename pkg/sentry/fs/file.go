@@ -142,17 +142,17 @@ func NewFile(ctx context.Context, dirent *Dirent, flags FileFlags, fops FileOper
 }
 
 // DecRef destroys the File when it is no longer referenced.
-func (f *File) DecRef() {
-	f.DecRefWithDestructor(func() {
+func (f *File) DecRef(ctx context.Context) {
+	f.DecRefWithDestructor(ctx, func(context.Context) {
 		// Drop BSD style locks.
 		lockRng := lock.LockRange{Start: 0, End: lock.LockEOF}
-		f.Dirent.Inode.LockCtx.BSD.UnlockRegion(lock.UniqueID(f.UniqueID), lockRng)
+		f.Dirent.Inode.LockCtx.BSD.UnlockRegion(f, lockRng)
 
 		// Release resources held by the FileOperations.
-		f.FileOperations.Release()
+		f.FileOperations.Release(ctx)
 
 		// Release a reference on the Dirent.
-		f.Dirent.DecRef()
+		f.Dirent.DecRef(ctx)
 
 		// Only unregister if we are currently registered. There is nothing
 		// to register if f.async is nil (this happens when async mode is
@@ -310,7 +310,6 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	if !f.mu.Lock(ctx) {
 		return 0, syserror.ErrInterrupted
 	}
-
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	// Handle append mode.
 	if f.Flags().Append {
@@ -355,7 +354,6 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 	// offset."
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	defer unlockAppendMu()
-
 	if f.Flags().Append {
 		if err := f.offsetForAppend(ctx, &offset); err != nil {
 			return 0, err
@@ -374,9 +372,10 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 	return f.FileOperations.Write(ctx, f, src, offset)
 }
 
-// offsetForAppend sets the given offset to the end of the file.
+// offsetForAppend atomically sets the given offset to the end of the file.
 //
-// Precondition: the file.Dirent.Inode.appendMu mutex should be held for writing.
+// Precondition: the file.Dirent.Inode.appendMu mutex should be held for
+// writing.
 func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
 	uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
 	if err != nil {
@@ -386,7 +385,7 @@ func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
 	}
 
 	// Update the offset.
-	*offset = uattr.Size
+	atomic.StoreInt64(offset, uattr.Size)
 
 	return nil
 }
@@ -461,7 +460,7 @@ func (f *File) UnstableAttr(ctx context.Context) (UnstableAttr, error) {
 func (f *File) MappedName(ctx context.Context) string {
 	root := RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 	name, _ := f.Dirent.FullName(root)
 	return name

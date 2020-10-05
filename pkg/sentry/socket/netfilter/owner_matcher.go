@@ -111,7 +111,7 @@ func (*OwnerMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (om *OwnerMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceName string) (bool, bool) {
+func (om *OwnerMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
 	// Support only for OUTPUT chain.
 	// TODO(gvisor.dev/issue/170): Need to support for POSTROUTING chain also.
 	if hook != stack.Output {

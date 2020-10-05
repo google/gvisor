@@ -18,12 +18,13 @@ import (
 	"io"
 	"sort"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // extentFile is a type of regular file which uses extents to store file data.
+//
+// +stateify savable
 type extentFile struct {
 	regFile regularFile
 
@@ -38,9 +39,10 @@ var _ io.ReaderAt = (*extentFile)(nil)
 // newExtentFile is the extent file constructor. It reads the entire extent
 // tree into memory.
 // TODO(b/134676337): Build extent tree on demand to reduce memory usage.
-func newExtentFile(regFile regularFile) (*extentFile, error) {
-	file := &extentFile{regFile: regFile}
+func newExtentFile(args inodeArgs) (*extentFile, error) {
+	file := &extentFile{}
 	file.regFile.impl = file
+	file.regFile.inode.init(args, &file.regFile)
 	err := file.buildExtTree()
 	if err != nil {
 		return nil, err
@@ -57,7 +59,7 @@ func newExtentFile(regFile regularFile) (*extentFile, error) {
 func (f *extentFile) buildExtTree() error {
 	rootNodeData := f.regFile.inode.diskInode.Data()
 
-	binary.Unmarshal(rootNodeData[:disklayout.ExtentHeaderSize], binary.LittleEndian, &f.root.Header)
+	f.root.Header.UnmarshalBytes(rootNodeData[:disklayout.ExtentHeaderSize])
 
 	// Root node can not have more than 4 entries: 60 bytes = 1 header + 4 entries.
 	if f.root.Header.NumEntries > 4 {
@@ -76,7 +78,7 @@ func (f *extentFile) buildExtTree() error {
 			// Internal node.
 			curEntry = &disklayout.ExtentIdx{}
 		}
-		binary.Unmarshal(rootNodeData[off:off+disklayout.ExtentEntrySize], binary.LittleEndian, curEntry)
+		curEntry.UnmarshalBytes(rootNodeData[off : off+disklayout.ExtentEntrySize])
 		f.root.Entries[i].Entry = curEntry
 	}
 

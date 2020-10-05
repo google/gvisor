@@ -167,7 +167,7 @@ func TestClosedReaderBlocksWriteOpen(t *testing.T) {
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rFile, _ := testOpenOrDie(ctx, t, f, fs.FileFlags{Read: true, NonBlocking: true}, nil)
-	rFile.DecRef()
+	rFile.DecRef(ctx)
 
 	wDone := make(chan struct{})
 	// This open for write should block because the reader is now gone.

@@ -16,7 +16,6 @@ package signalfd
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -26,11 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// SignalFileDescription implements FileDescriptionImpl for signal fds.
+// SignalFileDescription implements vfs.FileDescriptionImpl for signal fds.
+//
+// +stateify savable
 type SignalFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
 
 	// target is the original signal target task.
 	//
@@ -42,7 +44,7 @@ type SignalFileDescription struct {
 	target *kernel.Task
 
 	// mu protects mask.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// mask is the signal mask. Protected by mu.
 	mask linux.SignalSet
@@ -53,7 +55,7 @@ var _ vfs.FileDescriptionImpl = (*SignalFileDescription)(nil)
 // New creates a new signal fd.
 func New(vfsObj *vfs.VirtualFilesystem, target *kernel.Task, mask linux.SignalSet, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[signalfd]")
-	defer vd.DecRef()
+	defer vd.DecRef(target)
 	sfd := &SignalFileDescription{
 		target: target,
 		mask:   mask,
@@ -82,7 +84,7 @@ func (sfd *SignalFileDescription) SetMask(mask linux.SignalSet) {
 	sfd.mask = mask
 }
 
-// Read implements FileDescriptionImpl.Read.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	// Attempt to dequeue relevant signals.
 	info, err := sfd.target.Sigtimedwait(sfd.Mask(), 0)
@@ -92,8 +94,7 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 	}
 
 	// Copy out the signal info using the specified format.
-	var buf [128]byte
-	binary.Marshal(buf[:0], usermem.ByteOrder, &linux.SignalfdSiginfo{
+	infoNative := linux.SignalfdSiginfo{
 		Signo:   uint32(info.Signo),
 		Errno:   info.Errno,
 		Code:    info.Code,
@@ -102,9 +103,13 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 		Status:  info.Status(),
 		Overrun: uint32(info.Overrun()),
 		Addr:    info.Addr(),
-	})
-	n, err := dst.CopyOut(ctx, buf[:])
-	return int64(n), err
+	}
+	n, err := infoNative.WriteTo(dst.Writer(ctx))
+	if err == usermem.ErrEndOfIOSequence {
+		// Partial copy-out ok.
+		err = nil
+	}
+	return n, err
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -131,5 +136,5 @@ func (sfd *SignalFileDescription) EventUnregister(entry *waiter.Entry) {
 	sfd.target.SignalUnregister(entry)
 }
 
-// Release implements FileDescriptionImpl.Release()
-func (sfd *SignalFileDescription) Release() {}
+// Release implements vfs.FileDescriptionImpl.Release.
+func (sfd *SignalFileDescription) Release(context.Context) {}

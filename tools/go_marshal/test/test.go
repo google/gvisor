@@ -174,3 +174,27 @@ type Type9 struct {
 	x int64
 	y [sizeA]int32
 }
+
+// Type10Embed is a test data type which is be embedded into another type.
+//
+// +marshal
+type Type10Embed struct {
+	x int64
+}
+
+// Type10 is a test data type which contains an embedded struct.
+//
+// +marshal
+type Type10 struct {
+	Type10Embed
+	y int64
+}
+
+// Type11 is a test data type which contains an embedded struct from an external
+// package.
+//
+// +marshal
+type Type11 struct {
+	ex.External
+	y int64
+}

@@ -15,8 +15,6 @@
 package vfs
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -34,9 +32,7 @@ import (
 //
 // +stateify savable
 type Filesystem struct {
-	// refs is the reference count. refs is accessed using atomic memory
-	// operations.
-	refs int64
+	FilesystemRefs
 
 	// vfs is the VirtualFilesystem that uses this Filesystem. vfs is
 	// immutable.
@@ -52,7 +48,7 @@ type Filesystem struct {
 
 // Init must be called before first use of fs.
 func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, fsType FilesystemType, impl FilesystemImpl) {
-	fs.refs = 1
+	fs.EnableLeakCheck()
 	fs.vfs = vfsObj
 	fs.fsType = fsType
 	fs.impl = impl
@@ -76,39 +72,14 @@ func (fs *Filesystem) Impl() FilesystemImpl {
 	return fs.impl
 }
 
-// IncRef increments fs' reference count.
-func (fs *Filesystem) IncRef() {
-	if atomic.AddInt64(&fs.refs, 1) <= 1 {
-		panic("Filesystem.IncRef() called without holding a reference")
-	}
-}
-
-// TryIncRef increments fs' reference count and returns true. If fs' reference
-// count is zero, TryIncRef does nothing and returns false.
-//
-// TryIncRef does not require that a reference is held on fs.
-func (fs *Filesystem) TryIncRef() bool {
-	for {
-		refs := atomic.LoadInt64(&fs.refs)
-		if refs <= 0 {
-			return false
-		}
-		if atomic.CompareAndSwapInt64(&fs.refs, refs, refs+1) {
-			return true
-		}
-	}
-}
-
 // DecRef decrements fs' reference count.
-func (fs *Filesystem) DecRef() {
-	if refs := atomic.AddInt64(&fs.refs, -1); refs == 0 {
+func (fs *Filesystem) DecRef(ctx context.Context) {
+	fs.FilesystemRefs.DecRef(func() {
 		fs.vfs.filesystemsMu.Lock()
 		delete(fs.vfs.filesystems, fs)
 		fs.vfs.filesystemsMu.Unlock()
-		fs.impl.Release()
-	} else if refs < 0 {
-		panic("Filesystem.decRef() called without holding a reference")
-	}
+		fs.impl.Release(ctx)
+	})
 }
 
 // FilesystemImpl contains implementation details for a Filesystem.
@@ -149,7 +120,7 @@ func (fs *Filesystem) DecRef() {
 type FilesystemImpl interface {
 	// Release is called when the associated Filesystem reaches zero
 	// references.
-	Release()
+	Release(ctx context.Context)
 
 	// Sync "causes all pending modifications to filesystem metadata and cached
 	// file data to be written to the underlying [filesystem]", as by syncfs(2).
@@ -212,8 +183,9 @@ type FilesystemImpl interface {
 	// ENOENT. Equivalently, if vd represents a file with a link count of 0 not
 	// created by open(O_TMPFILE) without O_EXCL, LinkAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If LinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -231,8 +203,9 @@ type FilesystemImpl interface {
 	// - If the directory in which the new directory would be created has been
 	// removed by RmdirAt or RenameAt, MkdirAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If MkdirAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -253,8 +226,9 @@ type FilesystemImpl interface {
 	// - If the directory in which the file would be created has been removed
 	// by RmdirAt or RenameAt, MknodAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If MknodAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -345,11 +319,12 @@ type FilesystemImpl interface {
 	// - If renaming would replace a non-empty directory, RenameAt returns
 	// ENOTEMPTY.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink(). oldParentVD.Dentry() was obtained from a
-	// previous call to
-	// oldParentVD.Mount().Filesystem().Impl().GetParentDentryAt(). oldName is
-	// not "." or "..".
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	// * oldParentVD.Dentry() was obtained from a previous call to
+	//   oldParentVD.Mount().Filesystem().Impl().GetParentDentryAt().
+	// * oldName is not "." or "..".
 	//
 	// Postconditions: If RenameAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -372,8 +347,9 @@ type FilesystemImpl interface {
 	// - If the file at rp exists but is not a directory, RmdirAt returns
 	// ENOTDIR.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If RmdirAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -410,8 +386,9 @@ type FilesystemImpl interface {
 	// - If the directory in which the symbolic link would be created has been
 	// removed by RmdirAt or RenameAt, SymlinkAt returns ENOENT.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If SymlinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -431,33 +408,34 @@ type FilesystemImpl interface {
 	//
 	// - If the file at rp exists but is a directory, UnlinkAt returns EISDIR.
 	//
-	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink().
+	// Preconditions:
+	// * !rp.Done().
+	// * For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If UnlinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
 	UnlinkAt(ctx context.Context, rp *ResolvingPath) error
 
-	// ListxattrAt returns all extended attribute names for the file at rp.
+	// ListXattrAt returns all extended attribute names for the file at rp.
 	//
 	// Errors:
 	//
 	// - If extended attributes are not supported by the filesystem,
-	// ListxattrAt returns ENOTSUP.
+	// ListXattrAt returns ENOTSUP.
 	//
 	// - If the size of the list (including a NUL terminating byte after every
 	// entry) would exceed size, ERANGE may be returned. Note that
 	// implementations are free to ignore size entirely and return without
 	// error). In all cases, if size is 0, the list should be returned without
 	// error, regardless of size.
-	ListxattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error)
+	ListXattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error)
 
-	// GetxattrAt returns the value associated with the given extended
+	// GetXattrAt returns the value associated with the given extended
 	// attribute for the file at rp.
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem, GetxattrAt
+	// - If extended attributes are not supported by the filesystem, GetXattrAt
 	// returns ENOTSUP.
 	//
 	// - If an extended attribute named opts.Name does not exist, ENODATA is
@@ -467,30 +445,30 @@ type FilesystemImpl interface {
 	// returned (note that implementations are free to ignore opts.Size entirely
 	// and return without error). In all cases, if opts.Size is 0, the value
 	// should be returned without error, regardless of size.
-	GetxattrAt(ctx context.Context, rp *ResolvingPath, opts GetxattrOptions) (string, error)
+	GetXattrAt(ctx context.Context, rp *ResolvingPath, opts GetXattrOptions) (string, error)
 
-	// SetxattrAt changes the value associated with the given extended
+	// SetXattrAt changes the value associated with the given extended
 	// attribute for the file at rp.
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem, SetxattrAt
+	// - If extended attributes are not supported by the filesystem, SetXattrAt
 	// returns ENOTSUP.
 	//
 	// - If XATTR_CREATE is set in opts.Flag and opts.Name already exists,
 	// EEXIST is returned. If XATTR_REPLACE is set and opts.Name does not exist,
 	// ENODATA is returned.
-	SetxattrAt(ctx context.Context, rp *ResolvingPath, opts SetxattrOptions) error
+	SetXattrAt(ctx context.Context, rp *ResolvingPath, opts SetXattrOptions) error
 
-	// RemovexattrAt removes the given extended attribute from the file at rp.
+	// RemoveXattrAt removes the given extended attribute from the file at rp.
 	//
 	// Errors:
 	//
 	// - If extended attributes are not supported by the filesystem,
-	// RemovexattrAt returns ENOTSUP.
+	// RemoveXattrAt returns ENOTSUP.
 	//
 	// - If name does not exist, ENODATA is returned.
-	RemovexattrAt(ctx context.Context, rp *ResolvingPath, name string) error
+	RemoveXattrAt(ctx context.Context, rp *ResolvingPath, name string) error
 
 	// BoundEndpointAt returns the Unix socket endpoint bound at the path rp.
 	//
@@ -524,12 +502,12 @@ type FilesystemImpl interface {
 	//
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
-
-	// TODO(gvisor.dev/issue/1479): inotify_add_watch()
 }
 
 // PrependPathAtVFSRootError is returned by implementations of
 // FilesystemImpl.PrependPath() when they encounter the contextual VFS root.
+//
+// +stateify savable
 type PrependPathAtVFSRootError struct{}
 
 // Error implements error.Error.
@@ -540,6 +518,8 @@ func (PrependPathAtVFSRootError) Error() string {
 // PrependPathAtNonMountRootError is returned by implementations of
 // FilesystemImpl.PrependPath() when they encounter an independent ancestor
 // Dentry that is not the Mount root.
+//
+// +stateify savable
 type PrependPathAtNonMountRootError struct{}
 
 // Error implements error.Error.
@@ -550,6 +530,8 @@ func (PrependPathAtNonMountRootError) Error() string {
 // PrependPathSyntheticError is returned by implementations of
 // FilesystemImpl.PrependPath() for which prepended names do not represent real
 // paths.
+//
+// +stateify savable
 type PrependPathSyntheticError struct{}
 
 // Error implements error.Error.

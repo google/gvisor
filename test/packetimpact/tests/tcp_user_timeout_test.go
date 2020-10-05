@@ -16,35 +16,32 @@ package tcp_user_timeout_test
 
 import (
 	"flag"
-	"fmt"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
-func sendPayload(conn *tb.TCPIPv4, dut *tb.DUT, fd int32) error {
+func sendPayload(t *testing.T, conn *testbench.TCPIPv4, dut *testbench.DUT, fd int32) {
 	sampleData := make([]byte, 100)
 	for i := range sampleData {
 		sampleData[i] = uint8(i)
 	}
-	conn.Drain()
-	dut.Send(fd, sampleData, 0)
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, &tb.Payload{Bytes: sampleData}, time.Second); err != nil {
-		return fmt.Errorf("expected data but got none: %w", err)
+	conn.Drain(t)
+	dut.Send(t, fd, sampleData, 0)
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, &testbench.Payload{Bytes: sampleData}, time.Second); err != nil {
+		t.Fatalf("expected data but got none: %w", err)
 	}
-	return nil
 }
 
-func sendFIN(conn *tb.TCPIPv4, dut *tb.DUT, fd int32) error {
-	dut.Close(fd)
-	return nil
+func sendFIN(t *testing.T, conn *testbench.TCPIPv4, dut *testbench.DUT, fd int32) {
+	dut.Close(t, fd)
 }
 
 func TestTCPUserTimeout(t *testing.T) {
@@ -59,40 +56,38 @@ func TestTCPUserTimeout(t *testing.T) {
 	} {
 		for _, ttf := range []struct {
 			description string
-			f           func(conn *tb.TCPIPv4, dut *tb.DUT, fd int32) error
+			f           func(_ *testing.T, _ *testbench.TCPIPv4, _ *testbench.DUT, fd int32)
 		}{
 			{"AfterPayload", sendPayload},
 			{"AfterFIN", sendFIN},
 		} {
 			t.Run(tt.description+ttf.description, func(t *testing.T) {
 				// Create a socket, listen, TCP handshake, and accept.
-				dut := tb.NewDUT(t)
+				dut := testbench.NewDUT(t)
 				defer dut.TearDown()
-				listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-				defer dut.Close(listenFD)
-				conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
-				defer conn.Close()
-				conn.Handshake()
-				acceptFD, _ := dut.Accept(listenFD)
+				listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+				defer dut.Close(t, listenFD)
+				conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+				defer conn.Close(t)
+				conn.Connect(t)
+				acceptFD, _ := dut.Accept(t, listenFD)
 
 				if tt.userTimeout != 0 {
-					dut.SetSockOptInt(acceptFD, unix.SOL_TCP, unix.TCP_USER_TIMEOUT, int32(tt.userTimeout.Milliseconds()))
+					dut.SetSockOptInt(t, acceptFD, unix.SOL_TCP, unix.TCP_USER_TIMEOUT, int32(tt.userTimeout.Milliseconds()))
 				}
 
-				if err := ttf.f(&conn, &dut, acceptFD); err != nil {
-					t.Fatal(err)
-				}
+				ttf.f(t, &conn, &dut, acceptFD)
 
 				time.Sleep(tt.sendDelay)
-				conn.Drain()
-				conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+				conn.Drain(t)
+				conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
 				// If TCP_USER_TIMEOUT was set and the above delay was longer than the
 				// TCP_USER_TIMEOUT then the DUT should send a RST in response to the
 				// testbench's packet.
 				expectRST := tt.userTimeout != 0 && tt.sendDelay > tt.userTimeout
 				expectTimeout := 5 * time.Second
-				got, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, expectTimeout)
+				got, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, expectTimeout)
 				if expectRST && err != nil {
 					t.Errorf("expected RST packet within %s but got none: %s", expectTimeout, err)
 				}

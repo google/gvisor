@@ -33,18 +33,39 @@ go_template_instance(
     out = "usage_set.go",
     consts = {
         "minDegree": "10",
+        "trackGaps": "1",
     },
     imports = {
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
     },
     package = "pgalloc",
     prefix = "usage",
     template = "//pkg/segment:generic_set",
     types = {
         "Key": "uint64",
-        "Range": "platform.FileRange",
+        "Range": "memmap.FileRange",
         "Value": "usageInfo",
         "Functions": "usageSetFunctions",
+    },
+)
+
+go_template_instance(
+    name = "reclaim_set",
+    out = "reclaim_set.go",
+    consts = {
+        "minDegree": "10",
+    },
+    imports = {
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
+    },
+    package = "pgalloc",
+    prefix = "reclaim",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "uint64",
+        "Range": "memmap.FileRange",
+        "Value": "reclaimSetValue",
+        "Functions": "reclaimSetFunctions",
     },
 )
 
@@ -56,6 +77,7 @@ go_library(
         "evictable_range_set.go",
         "pgalloc.go",
         "pgalloc_unsafe.go",
+        "reclaim_set.go",
         "save_restore.go",
         "usage_set.go",
     ],
@@ -67,9 +89,10 @@ go_library(
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/hostmm",
-        "//pkg/sentry/platform",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/usage",
         "//pkg/state",
+        "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",

@@ -244,7 +244,7 @@ func (c *linkAddrCache) startAddressResolution(k tcpip.FullAddress, linkRes Link
 	for i := 0; ; i++ {
 		// Send link request, then wait for the timeout limit and check
 		// whether the request succeeded.
-		linkRes.LinkAddressRequest(k.Addr, localAddr, linkEP)
+		linkRes.LinkAddressRequest(k.Addr, localAddr, "" /* linkAddr */, linkEP)
 
 		select {
 		case now := <-time.After(c.resolutionTimeout):

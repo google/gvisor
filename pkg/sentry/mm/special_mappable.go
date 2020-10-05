@@ -16,10 +16,8 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -32,10 +30,10 @@ import (
 //
 // +stateify savable
 type SpecialMappable struct {
-	refs.AtomicRefCount
+	SpecialMappableRefs
 
 	mfp  pgalloc.MemoryFileProvider
-	fr   platform.FileRange
+	fr   memmap.FileRange
 	name string
 }
 
@@ -44,15 +42,15 @@ type SpecialMappable struct {
 // SpecialMappable will use the given name in /proc/[pid]/maps.
 //
 // Preconditions: fr.Length() != 0.
-func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr platform.FileRange) *SpecialMappable {
+func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *SpecialMappable {
 	m := SpecialMappable{mfp: mfp, fr: fr, name: name}
-	m.EnableLeakCheck("mm.SpecialMappable")
+	m.EnableLeakCheck()
 	return &m
 }
 
 // DecRef implements refs.RefCounter.DecRef.
-func (m *SpecialMappable) DecRef() {
-	m.AtomicRefCount.DecRefWithDestructor(func() {
+func (m *SpecialMappable) DecRef(ctx context.Context) {
+	m.SpecialMappableRefs.DecRef(func() {
 		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }
@@ -126,7 +124,7 @@ func (m *SpecialMappable) MemoryFileProvider() pgalloc.MemoryFileProvider {
 
 // FileRange returns the offsets into MemoryFileProvider().MemoryFile() that
 // store the SpecialMappable's contents.
-func (m *SpecialMappable) FileRange() platform.FileRange {
+func (m *SpecialMappable) FileRange() memmap.FileRange {
 	return m.fr
 }
 
@@ -138,9 +136,12 @@ func (m *SpecialMappable) Length() uint64 {
 // NewSharedAnonMappable returns a SpecialMappable that implements the
 // semantics of mmap(MAP_SHARED|MAP_ANONYMOUS) and mappings of /dev/zero.
 //
-// TODO(jamieliu): The use of SpecialMappable is a lazy code reuse hack. Linux
-// uses an ephemeral file created by mm/shmem.c:shmem_zero_setup(); we should
-// do the same to get non-zero device and inode IDs.
+// TODO(gvisor.dev/issue/1624): Linux uses an ephemeral file created by
+// mm/shmem.c:shmem_zero_setup(), and VFS2 does something analogous. VFS1 uses
+// a SpecialMappable instead, incorrectly getting device and inode IDs of zero
+// and causing memory for shared anonymous mappings to be allocated up-front
+// instead of on first touch; this is to avoid exacerbating the fs.MountSource
+// leak (b/143656263). Delete this function along with VFS1.
 func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*SpecialMappable, error) {
 	if length == 0 {
 		return nil, syserror.EINVAL

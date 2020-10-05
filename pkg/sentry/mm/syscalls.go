@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -93,18 +92,6 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 		}
 	} else {
 		opts.Offset = 0
-		if !opts.Private {
-			if opts.MappingIdentity != nil {
-				return 0, syserror.EINVAL
-			}
-			m, err := NewSharedAnonMappable(opts.Length, pgalloc.MemoryFileProviderFromContext(ctx))
-			if err != nil {
-				return 0, err
-			}
-			defer m.DecRef()
-			opts.MappingIdentity = m
-			opts.Mappable = m
-		}
 	}
 
 	if opts.Addr.RoundDown() != opts.Addr {
@@ -166,7 +153,9 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 // populateVMA obtains pmas for addresses in ar in the given vma, and maps them
 // into mm.as if it is active.
 //
-// Preconditions: mm.mappingMu must be locked. vseg.Range().IsSupersetOf(ar).
+// Preconditions:
+// * mm.mappingMu must be locked.
+// * vseg.Range().IsSupersetOf(ar).
 func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		// Linux doesn't populate inaccessible pages. See
@@ -208,8 +197,9 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar u
 // preferable to populateVMA since it unlocks mm.mappingMu before performing
 // expensive operations that don't require it to be locked.
 //
-// Preconditions: mm.mappingMu must be locked for writing.
-// vseg.Range().IsSupersetOf(ar).
+// Preconditions:
+// * mm.mappingMu must be locked for writing.
+// * vseg.Range().IsSupersetOf(ar).
 //
 // Postconditions: mm.mappingMu will be unlocked.
 func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
@@ -1191,7 +1181,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr usermem.Addr, length ui
 			mr := vseg.mappableRangeOf(vseg.Range().Intersect(ar))
 			mm.mappingMu.RUnlock()
 			err := id.Msync(ctx, mr)
-			id.DecRef()
+			id.DecRef(ctx)
 			if err != nil {
 				return err
 			}

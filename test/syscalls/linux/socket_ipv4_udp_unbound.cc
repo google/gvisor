@@ -18,6 +18,7 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
 
 #include <cstdio>
@@ -26,6 +27,7 @@
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -72,9 +74,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNoGroup) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that not setting a default send interface prevents multicast packets
@@ -206,8 +208,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackAddr) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -261,8 +264,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNic) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -316,8 +320,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddr) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -371,8 +376,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNic) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -430,8 +436,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrConnect) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -489,8 +496,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicConnect) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -544,8 +552,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelf) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -599,8 +608,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelf) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -658,9 +668,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfConnect) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that multicast works when the default send interface is configured by
@@ -716,9 +726,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfConnect) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that multicast works when the default send interface is configured by
@@ -774,8 +784,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfNoLoop) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -833,8 +844,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfNoLoop) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket1->get(), recv_buf, sizeof(recv_buf), 0),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket1->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
 
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
@@ -906,9 +918,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastDropAddr) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that dropping a group membership prevents multicast packets from being
@@ -964,9 +976,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastDropNic) {
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIfZero) {
@@ -1318,9 +1330,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionOnTwoSockets) {
     // Check that we received the multicast packet on both sockets.
     for (auto& sockets : socket_pairs) {
       char recv_buf[sizeof(send_buf)] = {};
-      ASSERT_THAT(
-          RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf), 0),
-          SyscallSucceedsWithValue(sizeof(recv_buf)));
+      ASSERT_THAT(RecvMsgTimeout(sockets->second_fd(), recv_buf,
+                                 sizeof(recv_buf), 1 /*timeout*/),
+                  IsPosixErrorOkAndHolds(sizeof(recv_buf)));
       EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
     }
   }
@@ -1397,9 +1409,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
     // Check that we received the multicast packet on both sockets.
     for (auto& sockets : socket_pairs) {
       char recv_buf[sizeof(send_buf)] = {};
-      ASSERT_THAT(
-          RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf), 0),
-          SyscallSucceedsWithValue(sizeof(recv_buf)));
+      ASSERT_THAT(RecvMsgTimeout(sockets->second_fd(), recv_buf,
+                                 sizeof(recv_buf), 1 /*timeout*/),
+                  IsPosixErrorOkAndHolds(sizeof(recv_buf)));
       EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
     }
   }
@@ -1420,9 +1432,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
 
     char recv_buf[sizeof(send_buf)] = {};
     for (auto& sockets : socket_pairs) {
-      ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf,
-                                   sizeof(recv_buf), MSG_DONTWAIT),
-                  SyscallFailsWithErrno(EAGAIN));
+      ASSERT_THAT(RecvMsgTimeout(sockets->second_fd(), recv_buf,
+                                 sizeof(recv_buf), 1 /*timeout*/),
+                  PosixErrorIs(EAGAIN, ::testing::_));
     }
   }
 }
@@ -1473,9 +1485,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenJoinThenReceive) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
@@ -1517,9 +1529,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenNoJoinThenNoReceive) {
 
   // Check that we don't receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      PosixErrorIs(EAGAIN, ::testing::_));
 }
 
 // Check that a socket can bind to a multicast address and still send out
@@ -1567,9 +1579,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenSend) {
 
   // Check that we received the packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
@@ -1614,9 +1626,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToBcastThenReceive) {
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
@@ -1665,17 +1677,17 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToBcastThenSend) {
 
   // Check that we received the packet.
   char recv_buf[sizeof(send_buf)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(socket2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
 // Check that SO_REUSEADDR always delivers to the most recently bound socket.
-TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
+//
+// FIXME(gvisor.dev/issue/873): Endpoint order is not restored correctly. Enable
+// random and co-op save (below) once that is fixed.
+TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution_NoRandomSave) {
   std::vector<std::unique_ptr<FileDescriptor>> sockets;
   sockets.emplace_back(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()));
 
@@ -1695,6 +1707,9 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
   EXPECT_EQ(addr_len, addr.addr_len);
 
   constexpr int kMessageSize = 200;
+
+  // FIXME(gvisor.dev/issue/873): Endpoint order is not restored correctly.
+  const DisableSave ds;
 
   for (int i = 0; i < 10; i++) {
     // Add a new receiver.
@@ -1722,17 +1737,17 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
     // of the other sockets to have received it, but we will check that later.
     char recv_buf[sizeof(send_buf)] = {};
     EXPECT_THAT(
-        RetryEINTR(recv)(last->get(), recv_buf, sizeof(recv_buf), MSG_DONTWAIT),
-        SyscallSucceedsWithValue(sizeof(send_buf)));
+        RecvMsgTimeout(last->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+        IsPosixErrorOkAndHolds(sizeof(send_buf)));
     EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
   }
 
   // Verify that no other messages were received.
   for (auto& socket : sockets) {
     char recv_buf[kMessageSize] = {};
-    EXPECT_THAT(RetryEINTR(recv)(socket->get(), recv_buf, sizeof(recv_buf),
-                                 MSG_DONTWAIT),
-                SyscallFailsWithErrno(EAGAIN));
+    EXPECT_THAT(RecvMsgTimeout(socket->get(), recv_buf, sizeof(recv_buf),
+                               1 /*timeout*/),
+                PosixErrorIs(EAGAIN, ::testing::_));
   }
 }
 
@@ -1836,9 +1851,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReusePort) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -1880,9 +1892,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReuseAddr) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable1) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -1927,9 +1936,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable1) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable2) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -2020,9 +2026,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindDoubleReuseAddrReusePortThenReusePort) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindDoubleReuseAddrReusePortThenReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -2121,12 +2124,12 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
   // balancing (REUSEPORT) instead of the most recently bound socket
   // (REUSEADDR).
   char recv_buf[kMessageSize] = {};
-  EXPECT_THAT(RetryEINTR(recv)(receiver1->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(kMessageSize));
-  EXPECT_THAT(RetryEINTR(recv)(receiver2->get(), recv_buf, sizeof(recv_buf),
-                               MSG_DONTWAIT),
-              SyscallSucceedsWithValue(kMessageSize));
+  EXPECT_THAT(RecvMsgTimeout(receiver1->get(), recv_buf, sizeof(recv_buf),
+                             1 /*timeout*/),
+              IsPosixErrorOkAndHolds(kMessageSize));
+  EXPECT_THAT(RecvMsgTimeout(receiver2->get(), recv_buf, sizeof(recv_buf),
+                             1 /*timeout*/),
+              IsPosixErrorOkAndHolds(kMessageSize));
 }
 
 // Test that socket will receive packet info control message.
@@ -2212,5 +2215,320 @@ TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPPKTINFO) {
   EXPECT_EQ(received_pktinfo.ipi_spec_dst.s_addr, htonl(INADDR_LOOPBACK));
   EXPECT_EQ(received_pktinfo.ipi_addr.s_addr, htonl(INADDR_LOOPBACK));
 }
+
+// Check that setting SO_RCVBUF below min is clamped to the minimum
+// receive buffer size.
+TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufBelowMin) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Discover minimum buffer size by setting it to zero.
+  constexpr int kRcvBufSz = 0;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                         sizeof(kRcvBufSz)),
+              SyscallSucceeds());
+
+  int min = 0;
+  socklen_t min_len = sizeof(min);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &min, &min_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value so let's use a value that when doubled will still
+  // be smaller than min.
+  int below_min = min / 2 - 1;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &below_min,
+                         sizeof(below_min)),
+              SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  ASSERT_EQ(min, val);
+}
+
+// Check that setting SO_RCVBUF above max is clamped to the maximum
+// receive buffer size.
+TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufAboveMax) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Discover maxmimum buffer size by setting to a really large value.
+  constexpr int kRcvBufSz = 0xffffffff;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                         sizeof(kRcvBufSz)),
+              SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+              SyscallSucceeds());
+
+  int above_max = max + 1;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &above_max,
+                         sizeof(above_max)),
+              SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+  ASSERT_EQ(max, val);
+}
+
+// Check that setting SO_RCVBUF min <= rcvBufSz <= max is honored.
+TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBuf) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  int max = 0;
+  int min = 0;
+  {
+    // Discover maxmimum buffer size by setting to a really large value.
+    constexpr int kRcvBufSz = 0xffffffff;
+    ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                           sizeof(kRcvBufSz)),
+                SyscallSucceeds());
+
+    max = 0;
+    socklen_t max_len = sizeof(max);
+    ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+                SyscallSucceeds());
+  }
+
+  {
+    // Discover minimum buffer size by setting it to zero.
+    constexpr int kRcvBufSz = 0;
+    ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                           sizeof(kRcvBufSz)),
+                SyscallSucceeds());
+
+    socklen_t min_len = sizeof(min);
+    ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &min, &min_len),
+                SyscallSucceeds());
+  }
+
+  int quarter_sz = min + (max - min) / 4;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &quarter_sz,
+                         sizeof(quarter_sz)),
+              SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value set by SO_SNDBUF/SO_RCVBUF.
+  if (!IsRunningOnGvisor()) {
+    quarter_sz *= 2;
+  }
+  ASSERT_EQ(quarter_sz, val);
+}
+
+// Check that setting SO_SNDBUF below min is clamped to the minimum
+// send buffer size.
+TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBufBelowMin) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Discover minimum buffer size by setting it to zero.
+  constexpr int kSndBufSz = 0;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
+                         sizeof(kSndBufSz)),
+              SyscallSucceeds());
+
+  int min = 0;
+  socklen_t min_len = sizeof(min);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &min, &min_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value so let's use a value that when doubled will still
+  // be smaller than min.
+  int below_min = min / 2 - 1;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &below_min,
+                         sizeof(below_min)),
+              SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  ASSERT_EQ(min, val);
+}
+
+// Check that setting SO_SNDBUF above max is clamped to the maximum
+// send buffer size.
+TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBufAboveMax) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Discover maxmimum buffer size by setting to a really large value.
+  constexpr int kSndBufSz = 0xffffffff;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
+                         sizeof(kSndBufSz)),
+              SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &max, &max_len),
+              SyscallSucceeds());
+
+  int above_max = max + 1;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &above_max,
+                         sizeof(above_max)),
+              SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &val, &val_len),
+              SyscallSucceeds());
+  ASSERT_EQ(max, val);
+}
+
+// Check that setting SO_SNDBUF min <= kSndBufSz <= max is honored.
+TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBuf) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  int max = 0;
+  int min = 0;
+  {
+    // Discover maxmimum buffer size by setting to a really large value.
+    constexpr int kSndBufSz = 0xffffffff;
+    ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
+                           sizeof(kSndBufSz)),
+                SyscallSucceeds());
+
+    max = 0;
+    socklen_t max_len = sizeof(max);
+    ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &max, &max_len),
+                SyscallSucceeds());
+  }
+
+  {
+    // Discover minimum buffer size by setting it to zero.
+    constexpr int kSndBufSz = 0;
+    ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
+                           sizeof(kSndBufSz)),
+                SyscallSucceeds());
+
+    socklen_t min_len = sizeof(min);
+    ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &min, &min_len),
+                SyscallSucceeds());
+  }
+
+  int quarter_sz = min + (max - min) / 4;
+  ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &quarter_sz,
+                         sizeof(quarter_sz)),
+              SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value set by SO_SNDBUF/SO_RCVBUF.
+  if (!IsRunningOnGvisor()) {
+    quarter_sz *= 2;
+  }
+
+  ASSERT_EQ(quarter_sz, val);
+}
+
+TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIPPacketInfo) {
+  auto sender_socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver_socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind the first FD to the loopback. This is an alternative to
+  // IP_MULTICAST_IF for setting the default send interface.
+  auto sender_addr = V4Loopback();
+  ASSERT_THAT(
+      bind(sender_socket->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
+           sender_addr.addr_len),
+      SyscallSucceeds());
+
+  // Bind the second FD to the v4 any address to ensure that we can receive the
+  // multicast packet.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(bind(receiver_socket->get(),
+                   reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver_socket->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Register to receive multicast packets.
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  ASSERT_THAT(setsockopt(receiver_socket->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallSucceeds());
+
+  // Register to receive IP packet info.
+  const int one = 1;
+  ASSERT_THAT(setsockopt(receiver_socket->get(), IPPROTO_IP, IP_PKTINFO, &one,
+                         sizeof(one)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender_socket->get(), send_buf, sizeof(send_buf), 0,
+                         reinterpret_cast<sockaddr*>(&send_addr.addr),
+                         send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  msghdr recv_msg = {};
+  iovec recv_iov = {};
+  char recv_buf[sizeof(send_buf)];
+  char recv_cmsg_buf[CMSG_SPACE(sizeof(in_pktinfo))] = {};
+  size_t cmsg_data_len = sizeof(in_pktinfo);
+  recv_iov.iov_base = recv_buf;
+  recv_iov.iov_len = sizeof(recv_buf);
+  recv_msg.msg_iov = &recv_iov;
+  recv_msg.msg_iovlen = 1;
+  recv_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
+  recv_msg.msg_control = recv_cmsg_buf;
+  ASSERT_THAT(RetryEINTR(recvmsg)(receiver_socket->get(), &recv_msg, 0),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+
+  // Check the IP_PKTINFO control message.
+  cmsghdr* cmsg = CMSG_FIRSTHDR(&recv_msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
+  EXPECT_EQ(cmsg->cmsg_level, IPPROTO_IP);
+  EXPECT_EQ(cmsg->cmsg_type, IP_PKTINFO);
+
+  // Get loopback index.
+  ifreq ifr = {};
+  absl::SNPrintF(ifr.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(receiver_socket->get(), SIOCGIFINDEX, &ifr),
+              SyscallSucceeds());
+  ASSERT_NE(ifr.ifr_ifindex, 0);
+
+  in_pktinfo received_pktinfo = {};
+  memcpy(&received_pktinfo, CMSG_DATA(cmsg), sizeof(in_pktinfo));
+  EXPECT_EQ(received_pktinfo.ipi_ifindex, ifr.ifr_ifindex);
+  if (IsRunningOnGvisor()) {
+    // This should actually be a unicast address assigned to the interface.
+    //
+    // TODO(gvisor.dev/issue/3556): This check is validating incorrect
+    // behaviour. We still include the test so that once the bug is
+    // resolved, this test will start to fail and the individual tasked
+    // with fixing this bug knows to also fix this test :).
+    EXPECT_EQ(received_pktinfo.ipi_spec_dst.s_addr, group.imr_multiaddr.s_addr);
+  } else {
+    EXPECT_EQ(received_pktinfo.ipi_spec_dst.s_addr, htonl(INADDR_LOOPBACK));
+  }
+  EXPECT_EQ(received_pktinfo.ipi_addr.s_addr, group.imr_multiaddr.s_addr);
+}
+
 }  // namespace testing
 }  // namespace gvisor

@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -53,10 +54,6 @@ type Boot struct {
 	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
 	// provided in that order.
 	stdioFDs intFlags
-
-	// console is set to true if the sandbox should allow terminal ioctl(2)
-	// syscalls.
-	console bool
 
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
@@ -115,7 +112,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
-	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
@@ -136,9 +132,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
-	debug.SetTraceback("all")
+	debug.SetTraceback("system")
 
-	conf := args[0].(*boot.Config)
+	conf := args[0].(*config.Config)
 
 	if b.attached {
 		// Ensure this process is killed after parent process terminates when
@@ -172,7 +168,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Get the spec from the specFD.
 	specFile := os.NewFile(uintptr(b.specFD), "spec file")
 	defer specFile.Close()
-	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile)
+	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
 	if err != nil {
 		Fatalf("reading spec: %v", err)
 	}
@@ -229,7 +225,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Device:       os.NewFile(uintptr(b.deviceFD), "platform device"),
 		GoferFDs:     b.ioFDs.GetArray(),
 		StdioFDs:     b.stdioFDs.GetArray(),
-		Console:      b.console,
 		NumCPU:       b.cpuNum,
 		TotalMem:     b.totalMem,
 		UserLogFD:    b.userLogFD,

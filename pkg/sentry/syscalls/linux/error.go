@@ -36,8 +36,8 @@ var (
 // errors, we may consume the error and return only the partial read/write.
 //
 // op and f are used only for panics.
-func HandleIOErrorVFS2(t *kernel.Task, partialResult bool, err, intr error, op string, f *vfs.FileDescription) error {
-	known, err := handleIOErrorImpl(t, partialResult, err, intr, op)
+func HandleIOErrorVFS2(t *kernel.Task, partialResult bool, ioerr, intr error, op string, f *vfs.FileDescription) error {
+	known, err := handleIOErrorImpl(t, partialResult, ioerr, intr, op)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func HandleIOErrorVFS2(t *kernel.Task, partialResult bool, err, intr error, op s
 		fs := f.Mount().Filesystem().VirtualFilesystem()
 		root := vfs.RootFromContext(t)
 		name, _ := fs.PathnameWithDeleted(t, root, f.VirtualDentry())
-		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q", partialResult, err, err, op, name)
+		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q", partialResult, ioerr, ioerr, op, name)
 		partialResultOnce.Do(partialResultMetric.Increment)
 	}
 	return nil
@@ -56,15 +56,15 @@ func HandleIOErrorVFS2(t *kernel.Task, partialResult bool, err, intr error, op s
 // errors, we may consume the error and return only the partial read/write.
 //
 // op and f are used only for panics.
-func handleIOError(t *kernel.Task, partialResult bool, err, intr error, op string, f *fs.File) error {
-	known, err := handleIOErrorImpl(t, partialResult, err, intr, op)
+func handleIOError(t *kernel.Task, partialResult bool, ioerr, intr error, op string, f *fs.File) error {
+	known, err := handleIOErrorImpl(t, partialResult, ioerr, intr, op)
 	if err != nil {
 		return err
 	}
 	if !known {
 		// An unknown error is encountered with a partial read/write.
 		name, _ := f.Dirent.FullName(nil /* ignore chroot */)
-		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q, %T", partialResult, err, err, op, name, f.FileOperations)
+		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q, %T", partialResult, ioerr, ioerr, op, name, f.FileOperations)
 		partialResultOnce.Do(partialResultMetric.Increment)
 	}
 	return nil
@@ -147,7 +147,7 @@ func handleIOErrorImpl(t *kernel.Task, partialResult bool, err, intr error, op s
 	}
 
 	switch err.(type) {
-	case kernel.SyscallRestartErrno:
+	case syserror.SyscallRestartErrno:
 		// Identical to the EINTR case.
 		return true, nil
 	}

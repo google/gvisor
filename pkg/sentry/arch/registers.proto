@@ -83,6 +83,7 @@ message ARM64Registers {
   uint64 sp = 32;
   uint64 pc = 33;
   uint64 pstate = 34;
+  uint64 tls = 35;
 }
 message Registers {
   oneof arch {

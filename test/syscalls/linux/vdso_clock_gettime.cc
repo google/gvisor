@@ -38,8 +38,6 @@ std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
   switch (info.param) {
     case CLOCK_MONOTONIC:
       return "CLOCK_MONOTONIC";
-    case CLOCK_REALTIME:
-      return "CLOCK_REALTIME";
     case CLOCK_BOOTTIME:
       return "CLOCK_BOOTTIME";
     default:
@@ -47,59 +45,36 @@ std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
   }
 }
 
-class CorrectVDSOClockTest : public ::testing::TestWithParam<clockid_t> {};
+class MonotonicVDSOClockTest : public ::testing::TestWithParam<clockid_t> {};
 
-TEST_P(CorrectVDSOClockTest, IsCorrect) {
+TEST_P(MonotonicVDSOClockTest, IsCorrect) {
+  // The VDSO implementation of clock_gettime() uses the TSC. On KVM, sentry and
+  // application TSCs can be very desynchronized; see
+  // sentry/platform/kvm/kvm.vCPU.setSystemTime().
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
+  // Check that when we alternate readings from the clock_gettime syscall and
+  // the VDSO's implementation, we observe the combined sequence as being
+  // monotonic.
   struct timespec tvdso, tsys;
   absl::Time vdso_time, sys_time;
-  uint64_t total_calls = 0;
-
-  // It is expected that 82.5% of clock_gettime calls will be less than 100us
-  // skewed from the system time.
-  // Unfortunately this is not only influenced by the VDSO clock skew, but also
-  // by arbitrary scheduling delays and the like. The test is therefore
-  // regularly disabled.
-  std::map<absl::Duration, std::tuple<double, uint64_t, uint64_t>> confidence =
-      {
-          {absl::Microseconds(100), std::make_tuple(0.825, 0, 0)},
-          {absl::Microseconds(250), std::make_tuple(0.94, 0, 0)},
-          {absl::Milliseconds(1), std::make_tuple(0.999, 0, 0)},
-      };
-
-  absl::Time start = absl::Now();
-  while (absl::Now() < start + absl::Seconds(30)) {
-    EXPECT_THAT(clock_gettime(GetParam(), &tvdso), SyscallSucceeds());
-    EXPECT_THAT(syscall(__NR_clock_gettime, GetParam(), &tsys),
-                SyscallSucceeds());
-
+  ASSERT_THAT(syscall(__NR_clock_gettime, GetParam(), &tsys),
+              SyscallSucceeds());
+  sys_time = absl::TimeFromTimespec(tsys);
+  auto end = absl::Now() + absl::Seconds(10);
+  while (absl::Now() < end) {
+    ASSERT_THAT(clock_gettime(GetParam(), &tvdso), SyscallSucceeds());
     vdso_time = absl::TimeFromTimespec(tvdso);
-
-    for (auto const& conf : confidence) {
-      std::get<1>(confidence[conf.first]) +=
-          (sys_time - vdso_time) < conf.first;
-    }
-
+    EXPECT_LE(sys_time, vdso_time);
+    ASSERT_THAT(syscall(__NR_clock_gettime, GetParam(), &tsys),
+                SyscallSucceeds());
     sys_time = absl::TimeFromTimespec(tsys);
-
-    for (auto const& conf : confidence) {
-      std::get<2>(confidence[conf.first]) +=
-          (vdso_time - sys_time) < conf.first;
-    }
-
-    ++total_calls;
-  }
-
-  for (auto const& conf : confidence) {
-    EXPECT_GE(std::get<1>(conf.second) / static_cast<double>(total_calls),
-              std::get<0>(conf.second));
-    EXPECT_GE(std::get<2>(conf.second) / static_cast<double>(total_calls),
-              std::get<0>(conf.second));
+    EXPECT_LE(vdso_time, sys_time);
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(ClockGettime, CorrectVDSOClockTest,
-                         ::testing::Values(CLOCK_MONOTONIC, CLOCK_REALTIME,
-                                           CLOCK_BOOTTIME),
+INSTANTIATE_TEST_SUITE_P(ClockGettime, MonotonicVDSOClockTest,
+                         ::testing::Values(CLOCK_MONOTONIC, CLOCK_BOOTTIME),
                          PrintClockId);
 
 }  // namespace

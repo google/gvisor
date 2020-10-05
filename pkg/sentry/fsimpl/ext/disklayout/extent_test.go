@@ -21,7 +21,10 @@ import (
 // TestExtentSize tests that the extent structs are of the correct
 // size.
 func TestExtentSize(t *testing.T) {
-	assertSize(t, ExtentHeader{}, ExtentHeaderSize)
-	assertSize(t, ExtentIdx{}, ExtentEntrySize)
-	assertSize(t, Extent{}, ExtentEntrySize)
+	var h ExtentHeader
+	assertSize(t, &h, ExtentHeaderSize)
+	var i ExtentIdx
+	assertSize(t, &i, ExtentEntrySize)
+	var e Extent
+	assertSize(t, &e, ExtentEntrySize)
 }

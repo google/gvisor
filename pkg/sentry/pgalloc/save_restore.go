@@ -26,11 +26,12 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state/wire"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SaveTo writes f's state to the given stream.
-func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer) error {
+func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 	// Wait for reclaim.
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -79,10 +80,10 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer) error {
 	}
 
 	// Save metadata.
-	if err := state.Save(ctx, w, &f.fileSize, nil); err != nil {
+	if _, err := state.Save(ctx, w, &f.fileSize); err != nil {
 		return err
 	}
-	if err := state.Save(ctx, w, &f.usage, nil); err != nil {
+	if _, err := state.Save(ctx, w, &f.usage); err != nil {
 		return err
 	}
 
@@ -115,9 +116,9 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer) error {
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
-func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader) error {
+func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 	// Load metadata.
-	if err := state.Load(ctx, r, &f.fileSize, nil); err != nil {
+	if _, err := state.Load(ctx, r, &f.fileSize); err != nil {
 		return err
 	}
 	if err := f.file.Truncate(f.fileSize); err != nil {
@@ -125,7 +126,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader) error {
 	}
 	newMappings := make([]uintptr, f.fileSize>>chunkShift)
 	f.mappings.Store(newMappings)
-	if err := state.Load(ctx, r, &f.usage, nil); err != nil {
+	if _, err := state.Load(ctx, r, &f.usage); err != nil {
 		return err
 	}
 

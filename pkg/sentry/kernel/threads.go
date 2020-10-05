@@ -36,6 +36,8 @@ import (
 const TasksLimit = (1 << 16)
 
 // ThreadID is a generic thread identifier.
+//
+// +marshal
 type ThreadID int32
 
 // String returns a decimal representation of the ThreadID.
@@ -87,6 +89,13 @@ type TaskSet struct {
 	// at time of save (but note that this is not necessarily the same thing as
 	// sync.WaitGroup's zero value).
 	runningGoroutines sync.WaitGroup `state:"nosave"`
+
+	// aioGoroutines is the number of goroutines running async I/O
+	// callbacks.
+	//
+	// aioGoroutines is not saved but is required to be zero at the time of
+	// save.
+	aioGoroutines sync.WaitGroup `state:"nosave"`
 }
 
 // newTaskSet returns a new, empty TaskSet.

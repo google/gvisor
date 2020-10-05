@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -181,13 +182,13 @@ func (e *Endpoint) NumQueued() int {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.InjectLinkAddr(protocol, "", pkt)
 }
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
-func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt stack.PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(e, remote, "" /* local */, protocol, pkt)
+func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt *stack.PacketBuffer) {
+	e.dispatcher.DeliverNetworkPacket(remote, "" /* local */, protocol, pkt)
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets
@@ -229,13 +230,13 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	// Clone r then release its resource so we only get the relevant fields from
 	// stack.Route without holding a reference to a NIC's endpoint.
 	route := r.Clone()
 	route.Release()
 	p := PacketInfo{
-		Pkt:   &pkt,
+		Pkt:   pkt,
 		Proto: protocol,
 		GSO:   gso,
 		Route: route,
@@ -273,7 +274,9 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	p := PacketInfo{
-		Pkt:   &stack.PacketBuffer{Data: vv},
+		Pkt: stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: vv,
+		}),
 		Proto: 0,
 		GSO:   nil,
 	}
@@ -295,4 +298,13 @@ func (e *Endpoint) AddNotify(notify Notification) *NotificationHandle {
 // RemoveNotify removes handle from the list of notification targets.
 func (e *Endpoint) RemoveNotify(handle *NotificationHandle) {
 	e.q.RemoveNotify(handle)
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
+	return header.ARPHardwareNone
+}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 }

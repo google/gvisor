@@ -20,10 +20,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
 func TestDestroyIdempotent(t *testing.T) {
+	ctx := contexttest.Context(t)
 	fs := filesystem{
+		mfp:              pgalloc.MemoryFileProviderFromContext(ctx),
 		syncableDentries: make(map[*dentry]struct{}),
 		opts: filesystemOptions{
 			// Test relies on no dentry being held in the cache.
@@ -31,7 +34,6 @@ func TestDestroyIdempotent(t *testing.T) {
 		},
 	}
 
-	ctx := contexttest.Context(t)
 	attr := &p9.Attr{
 		Mode: p9.ModeRegular,
 	}
@@ -50,7 +52,9 @@ func TestDestroyIdempotent(t *testing.T) {
 	}
 	parent.cacheNewChildLocked(child, "child")
 
-	child.checkCachingLocked()
+	fs.renameMu.Lock()
+	defer fs.renameMu.Unlock()
+	child.checkCachingLocked(ctx)
 	if got := atomic.LoadInt64(&child.refs); got != -1 {
 		t.Fatalf("child.refs=%d, want: -1", got)
 	}
@@ -58,6 +62,6 @@ func TestDestroyIdempotent(t *testing.T) {
 	if got := atomic.LoadInt64(&parent.refs); got != -1 {
 		t.Fatalf("parent.refs=%d, want: -1", got)
 	}
-	child.checkCachingLocked()
-	child.checkCachingLocked()
+	child.checkCachingLocked(ctx)
+	child.checkCachingLocked(ctx)
 }

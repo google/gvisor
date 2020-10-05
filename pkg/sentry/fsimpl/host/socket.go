@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
@@ -47,11 +46,6 @@ func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transpor
 	return ep, nil
 }
 
-// maxSendBufferSize is the maximum host send buffer size allowed for endpoint.
-//
-// N.B. 8MB is the default maximum on Linux (2 * sysctl_wmem_max).
-const maxSendBufferSize = 8 << 20
-
 // ConnectedEndpoint is an implementation of transport.ConnectedEndpoint and
 // transport.Receiver. It is backed by a host fd that was imported at sentry
 // startup. This fd is shared with a hostfs inode, which retains ownership of
@@ -64,8 +58,7 @@ const maxSendBufferSize = 8 << 20
 //
 // +stateify savable
 type ConnectedEndpoint struct {
-	// ref keeps track of references to a ConnectedEndpoint.
-	ref refs.AtomicRefCount
+	ConnectedEndpointRefs
 
 	// mu protects fd below.
 	mu sync.RWMutex `state:"nosave"`
@@ -114,10 +107,6 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 	if err != nil {
 		return syserr.FromError(err)
 	}
-	if sndbuf > maxSendBufferSize {
-		log.Warningf("Socket send buffer too large: %d", sndbuf)
-		return syserr.ErrInvalidEndpointState
-	}
 
 	c.stype = linux.SockType(stype)
 	c.sndbuf = int64(sndbuf)
@@ -141,14 +130,14 @@ func NewConnectedEndpoint(ctx context.Context, hostFD int, addr string, saveable
 		return nil, err
 	}
 
-	// AtomicRefCounters start off with a single reference. We need two.
-	e.ref.IncRef()
-	e.ref.EnableLeakCheck("host.ConnectedEndpoint")
+	// ConnectedEndpointRefs start off with a single reference. We need two.
+	e.IncRef()
+	e.EnableLeakCheck()
 	return &e, nil
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
-func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -225,7 +214,7 @@ func (c *ConnectedEndpoint) EventUpdate() {
 }
 
 // Recv implements transport.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -326,8 +315,8 @@ func (c *ConnectedEndpoint) destroyLocked() {
 
 // Release implements transport.ConnectedEndpoint.Release and
 // transport.Receiver.Release.
-func (c *ConnectedEndpoint) Release() {
-	c.ref.DecRefWithDestructor(func() {
+func (c *ConnectedEndpoint) Release(ctx context.Context) {
+	c.DecRef(func() {
 		c.mu.Lock()
 		c.destroyLocked()
 		c.mu.Unlock()
@@ -356,13 +345,13 @@ func (e *SCMConnectedEndpoint) Init() error {
 
 // Release implements transport.ConnectedEndpoint.Release and
 // transport.Receiver.Release.
-func (e *SCMConnectedEndpoint) Release() {
-	e.ref.DecRefWithDestructor(func() {
+func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
+	e.DecRef(func() {
 		e.mu.Lock()
+		fdnotifier.RemoveFD(int32(e.fd))
 		if err := syscall.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", err)
 		}
-		fdnotifier.RemoveFD(int32(e.fd))
 		e.destroyLocked()
 		e.mu.Unlock()
 	})
@@ -387,8 +376,8 @@ func NewSCMEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr s
 		return nil, err
 	}
 
-	// AtomicRefCounters start off with a single reference. We need two.
-	e.ref.IncRef()
-	e.ref.EnableLeakCheck("host.SCMConnectedEndpoint")
+	// ConnectedEndpointRefs start off with a single reference. We need two.
+	e.IncRef()
+	e.EnableLeakCheck()
 	return &e, nil
 }

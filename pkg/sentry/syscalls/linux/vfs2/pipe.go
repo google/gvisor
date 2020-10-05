@@ -16,6 +16,7 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -42,8 +43,8 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags int32) error {
 		return syserror.EINVAL
 	}
 	r, w := pipefs.NewConnectedPipeFDs(t, t.Kernel().PipeMount(), uint32(flags&linux.O_NONBLOCK))
-	defer r.DecRef()
-	defer w.DecRef()
+	defer r.DecRef(t)
+	defer w.DecRef(t)
 
 	fds, err := t.NewFDsVFS2(0, []*vfs.FileDescription{r, w}, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
@@ -51,10 +52,10 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags int32) error {
 	if err != nil {
 		return err
 	}
-	if _, err := t.CopyOut(addr, fds); err != nil {
+	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
-			if _, file := t.FDTable().Remove(fd); file != nil {
-				file.DecRef()
+			if _, file := t.FDTable().Remove(t, fd); file != nil {
+				file.DecRef(t)
 			}
 		}
 		return err

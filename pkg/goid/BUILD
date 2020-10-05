@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "goid.go",
         "goid_amd64.s",
+        "goid_arm64.s",
         "goid_race.go",
         "goid_unsafe.go",
     ],

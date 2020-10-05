@@ -119,9 +119,10 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 
 // Test that an pty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("true")
+			spec.Process.Terminal = true
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
 				t.Fatalf("error setting up container: %v", err)
@@ -184,14 +185,14 @@ func TestJobControlSignalExec(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	// Create a pty master/slave. The slave will be passed to the exec
+	// Create a pty master/replica. The replica will be passed to the exec
 	// process.
-	ptyMaster, ptySlave, err := pty.Open()
+	ptyMaster, ptyReplica, err := pty.Open()
 	if err != nil {
 		t.Fatalf("error opening pty: %v", err)
 	}
 	defer ptyMaster.Close()
-	defer ptySlave.Close()
+	defer ptyReplica.Close()
 
 	// Exec bash and attach a terminal. Note that occasionally /bin/sh
 	// may be a different shell or have a different configuration (such
@@ -202,9 +203,9 @@ func TestJobControlSignalExec(t *testing.T) {
 		// Don't let bash execute from profile or rc files, otherwise
 		// our PID counts get messed up.
 		Argv: []string{"/bin/bash", "--noprofile", "--norc"},
-		// Pass the pty slave as FD 0, 1, and 2.
+		// Pass the pty replica as FD 0, 1, and 2.
 		FilePayload: urpc.FilePayload{
-			Files: []*os.File{ptySlave, ptySlave, ptySlave},
+			Files: []*os.File{ptyReplica, ptyReplica, ptyReplica},
 		},
 		StdioIsPty: true,
 	}

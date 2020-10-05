@@ -18,6 +18,8 @@ import (
 	"math"
 	"reflect"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
 
 type updateHolesInput struct {
@@ -94,7 +96,7 @@ var holesTestCases = []struct {
 
 func TestUpdateHoles(t *testing.T) {
 	for _, c := range holesTestCases {
-		r := newReassembler(0)
+		r := newReassembler(FragmentID{}, &faketime.NullClock{})
 		for _, i := range c.in {
 			r.updateHoles(i.first, i.last, i.more)
 		}

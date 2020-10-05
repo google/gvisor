@@ -62,6 +62,7 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
 
+	kernel.VFS2Enabled = true
 	k := &kernel.Kernel{
 		Platform: plat,
 	}
@@ -73,7 +74,7 @@ func Boot() (*kernel.Kernel, error) {
 	k.SetMemoryFile(mf)
 
 	// Pass k as the platform since it is savable, unlike the actual platform.
-	vdso, err := loader.PrepareVDSO(nil, k)
+	vdso, err := loader.PrepareVDSO(k)
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %v", err)
 	}
@@ -103,11 +104,6 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
 
-	kernel.VFS2Enabled = true
-
-	if err := k.VFS().Init(); err != nil {
-		return nil, fmt.Errorf("VFS init: %v", err)
-	}
 	k.VFS().MustRegisterFilesystemType(tmpfs.Name, &tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 		AllowUserList:  true,
@@ -126,12 +122,16 @@ func Boot() (*kernel.Kernel, error) {
 // CreateTask creates a new bare bones task for tests.
 func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns *vfs.MountNamespace, root, cwd vfs.VirtualDentry) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
+	if k == nil {
+		return nil, fmt.Errorf("cannot find kernel from context")
+	}
+
 	exe, err := newFakeExecutable(ctx, k.VFS(), auth.CredentialsFromContext(ctx), root)
 	if err != nil {
 		return nil, err
 	}
 	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
-	m.SetExecutable(fsbridge.NewVFSFile(exe))
+	m.SetExecutable(ctx, fsbridge.NewVFSFile(exe))
 
 	config := &kernel.TaskConfig{
 		Kernel:                  k,

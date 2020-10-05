@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -43,16 +42,19 @@ func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) 
 	return file, flags
 }
 
-func taskFDExists(t *kernel.Task, fd int32) bool {
+func taskFDExists(ctx context.Context, t *kernel.Task, fd int32) bool {
 	file, _ := getTaskFD(t, fd)
 	if file == nil {
 		return false
 	}
-	file.DecRef()
+	file.DecRef(ctx)
 	return true
 }
 
+// +stateify savable
 type fdDir struct {
+	locks vfs.FileLocks
+
 	fs   *filesystem
 	task *kernel.Task
 
@@ -61,16 +63,15 @@ type fdDir struct {
 	produceSymlink bool
 }
 
-// IterDirents implements kernfs.inodeDynamicLookup.
-func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, absOffset, relOffset int64) (int64, error) {
+// IterDirents implements kernfs.inodeDynamicLookup.IterDirents.
+func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	var fds []int32
 	i.task.WithMuLocked(func(t *kernel.Task) {
 		if fdTable := t.FDTable(); fdTable != nil {
-			fds = fdTable.GetFDs()
+			fds = fdTable.GetFDs(ctx)
 		}
 	})
 
-	offset := absOffset + relOffset
 	typ := uint8(linux.DT_REG)
 	if i.produceSymlink {
 		typ = linux.DT_LNK
@@ -86,26 +87,33 @@ func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, abs
 			Name:    strconv.FormatUint(uint64(fd), 10),
 			Type:    typ,
 			Ino:     i.fs.NextIno(),
-			NextOff: offset + 1,
+			NextOff: int64(fd) + 3,
 		}
 		if err := cb.Handle(dirent); err != nil {
-			return offset, err
+			// Getdents should iterate correctly despite mutation
+			// of fds, so we return the next fd to serialize plus
+			// 2 (which accounts for the "." and ".." tracked by
+			// kernfs) as the offset.
+			return int64(fd) + 2, err
 		}
-		offset++
 	}
-	return offset, nil
+	// We serialized them all.  Next offset should be higher than last
+	// serialized fd.
+	return int64(fds[len(fds)-1]) + 3, nil
 }
 
 // fdDirInode represents the inode for /proc/[pid]/fd directory.
 //
 // +stateify savable
 type fdDirInode struct {
-	kernfs.InodeNotSymlink
-	kernfs.InodeDirectoryNoNewChildren
-	kernfs.InodeAttrs
-	kernfs.OrderedChildren
-	kernfs.AlwaysValid
 	fdDir
+	fdDirInodeRefs
+	implStatFS
+	kernfs.AlwaysValid
+	kernfs.InodeAttrs
+	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotSymlink
+	kernfs.OrderedChildren
 }
 
 var _ kernfs.Inode = (*fdDirInode)(nil)
@@ -119,6 +127,7 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) *kernfs.Dentry {
 		},
 	}
 	inode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.EnableLeakCheck()
 
 	dentry := &kernfs.Dentry{}
 	dentry.Init(inode)
@@ -127,30 +136,31 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) *kernfs.Dentry {
 	return dentry
 }
 
-// Lookup implements kernfs.inodeDynamicLookup.
-func (i *fdDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+// Lookup implements kernfs.inodeDynamicLookup.Lookup.
+func (i *fdDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
 		return nil, syserror.ENOENT
 	}
 	fd := int32(fdInt)
-	if !taskFDExists(i.task, fd) {
+	if !taskFDExists(ctx, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
-	taskDentry := i.fs.newFDSymlink(i.task, fd, i.fs.NextIno())
-	return taskDentry.VFSDentry(), nil
+	return i.fs.newFDSymlink(i.task, fd, i.fs.NextIno()), nil
 }
 
-// Open implements kernfs.Inode.
-func (i *fdDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+// Open implements kernfs.Inode.Open.
+func (i *fdDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
+		SeekEnd: kernfs.SeekEndZero,
+	})
 	if err != nil {
 		return nil, err
 	}
 	return fd.VFSFileDescription(), nil
 }
 
-// CheckPermissions implements kernfs.Inode.
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
 //
 // This is to match Linux, which uses a special permission handler to guarantee
 // that a process can still access /proc/self/fd after it has executed
@@ -172,10 +182,16 @@ func (i *fdDirInode) CheckPermissions(ctx context.Context, creds *auth.Credentia
 	return err
 }
 
+// DecRef implements kernfs.Inode.DecRef.
+func (i *fdDirInode) DecRef(context.Context) {
+	i.fdDirInodeRefs.DecRef(i.Destroy)
+}
+
 // fdSymlink is an symlink for the /proc/[pid]/fd/[fd] file.
 //
 // +stateify savable
 type fdSymlink struct {
+	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
@@ -198,14 +214,14 @@ func (fs *filesystem) newFDSymlink(task *kernel.Task, fd int32, ino uint64) *ker
 	return d
 }
 
-func (s *fdSymlink) Readlink(ctx context.Context) (string, error) {
+func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	file, _ := getTaskFD(s.task, s.fd)
 	if file == nil {
 		return "", syserror.ENOENT
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 	root := vfs.RootFromContext(ctx)
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 	return s.task.Kernel().VFS().PathnameWithDeleted(ctx, root, file.VirtualDentry())
 }
 
@@ -214,7 +230,7 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 	if file == nil {
 		return vfs.VirtualDentry{}, "", syserror.ENOENT
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 	vd := file.VirtualDentry()
 	vd.IncRef()
 	return vd, "", nil
@@ -224,12 +240,14 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 //
 // +stateify savable
 type fdInfoDirInode struct {
-	kernfs.InodeNotSymlink
-	kernfs.InodeDirectoryNoNewChildren
-	kernfs.InodeAttrs
-	kernfs.OrderedChildren
-	kernfs.AlwaysValid
 	fdDir
+	fdInfoDirInodeRefs
+	implStatFS
+	kernfs.AlwaysValid
+	kernfs.InodeAttrs
+	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotSymlink
+	kernfs.OrderedChildren
 }
 
 var _ kernfs.Inode = (*fdInfoDirInode)(nil)
@@ -242,6 +260,7 @@ func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) *kernfs.Dentry {
 		},
 	}
 	inode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.EnableLeakCheck()
 
 	dentry := &kernfs.Dentry{}
 	dentry.Init(inode)
@@ -250,31 +269,37 @@ func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) *kernfs.Dentry {
 	return dentry
 }
 
-// Lookup implements kernfs.inodeDynamicLookup.
-func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+// Lookup implements kernfs.inodeDynamicLookup.Lookup.
+func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*kernfs.Dentry, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
 		return nil, syserror.ENOENT
 	}
 	fd := int32(fdInt)
-	if !taskFDExists(i.task, fd) {
+	if !taskFDExists(ctx, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
 	data := &fdInfoData{
 		task: i.task,
 		fd:   fd,
 	}
-	dentry := i.fs.newTaskOwnedFile(i.task, i.fs.NextIno(), 0444, data)
-	return dentry.VFSDentry(), nil
+	return i.fs.newTaskOwnedFile(i.task, i.fs.NextIno(), 0444, data), nil
 }
 
-// Open implements kernfs.Inode.
-func (i *fdInfoDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+// Open implements kernfs.Inode.Open.
+func (i *fdInfoDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
+		SeekEnd: kernfs.SeekEndZero,
+	})
 	if err != nil {
 		return nil, err
 	}
 	return fd.VFSFileDescription(), nil
+}
+
+// DecRef implements kernfs.Inode.DecRef.
+func (i *fdInfoDirInode) DecRef(context.Context) {
+	i.fdInfoDirInodeRefs.DecRef(i.Destroy)
 }
 
 // fdInfoData implements vfs.DynamicBytesSource for /proc/[pid]/fdinfo/[fd].
@@ -282,7 +307,6 @@ func (i *fdInfoDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *
 // +stateify savable
 type fdInfoData struct {
 	kernfs.DynamicBytesFile
-	refs.AtomicRefCount
 
 	task *kernel.Task
 	fd   int32
@@ -296,7 +320,7 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if file == nil {
 		return syserror.ENOENT
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 	// TODO(b/121266871): Include pos, locks, and other data. For now we only
 	// have flags.
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt

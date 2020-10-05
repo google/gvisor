@@ -48,6 +48,7 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
@@ -95,7 +96,8 @@ type context struct {
 }
 
 // Switch runs the provided context in the given address space.
-func (c *context) Switch(as platform.AddressSpace, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error) {
+func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error) {
+	as := mm.AddressSpace()
 	s := as.(*subprocess)
 	isSyscall := s.switchToApp(c, ac)
 
@@ -179,6 +181,12 @@ func (c *context) Interrupt() {
 
 // Release implements platform.Context.Release().
 func (c *context) Release() {}
+
+// FullStateChanged implements platform.Context.FullStateChanged.
+func (c *context) FullStateChanged() {}
+
+// PullFullState implements platform.Context.PullFullState.
+func (c *context) PullFullState(as platform.AddressSpace, ac arch.Context) {}
 
 // PTrace represents a collection of ptrace subprocesses.
 type PTrace struct {

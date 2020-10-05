@@ -81,14 +81,9 @@ func dynamicCrossPkg(f func()) {
 	test1.Dynamic(f)
 }
 
-// +mustescape:unknown
-//go:noinline
-func unknownCrossPkg() {
-	test1.Unknown()
-}
-
 // +mustescape:stack
 //go:noinline
+//go:nosplit
 func splitCrosssPkt() {
 	test1.Split()
 }

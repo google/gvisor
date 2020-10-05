@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -37,11 +36,17 @@ import (
 )
 
 // regularFile is a regular (=S_IFREG) tmpfs file.
+//
+// +stateify savable
 type regularFile struct {
 	inode inode
 
 	// memFile is a platform.File used to allocate pages to this regularFile.
 	memFile *pgalloc.MemoryFile
+
+	// memoryUsageKind is the memory accounting category under which pages backing
+	// this regularFile's contents are accounted.
+	memoryUsageKind usage.MemoryKind
 
 	// mapsMu protects mappings.
 	mapsMu sync.Mutex `state:"nosave"`
@@ -63,7 +68,7 @@ type regularFile struct {
 	writableMappingPages uint64
 
 	// dataMu protects the fields below.
-	dataMu sync.RWMutex
+	dataMu sync.RWMutex `state:"nosave"`
 
 	// data maps offsets into the file to offsets into memFile that store
 	// the file's data.
@@ -85,14 +90,75 @@ type regularFile struct {
 	size uint64
 }
 
-func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode linux.FileMode) *inode {
+func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) *inode {
 	file := &regularFile{
-		memFile: fs.memFile,
-		seals:   linux.F_SEAL_SEAL,
+		memFile:         fs.memFile,
+		memoryUsageKind: usage.Tmpfs,
+		seals:           linux.F_SEAL_SEAL,
 	}
-	file.inode.init(file, fs, creds, linux.S_IFREG|mode)
+	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
+}
+
+// newUnlinkedRegularFileDescription creates a regular file on the tmpfs
+// filesystem represented by mount and returns an FD representing that file.
+// The new file is not reachable by path traversal from any other file.
+//
+// newUnlinkedRegularFileDescription is analogous to Linux's
+// mm/shmem.c:__shmem_file_setup().
+//
+// Preconditions: mount must be a tmpfs mount.
+func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, name string) (*regularFileFD, error) {
+	fs, ok := mount.Filesystem().Impl().(*filesystem)
+	if !ok {
+		panic("tmpfs.newUnlinkedRegularFileDescription() called with non-tmpfs mount")
+	}
+
+	inode := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777)
+	d := fs.newDentry(inode)
+	defer d.DecRef(ctx)
+	d.name = name
+
+	fd := &regularFileFD{}
+	fd.Init(&inode.locks)
+	flags := uint32(linux.O_RDWR)
+	if err := fd.vfsfd.Init(fd, flags, mount, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
+	return fd, nil
+}
+
+// NewZeroFile creates a new regular file and file description as for
+// mmap(MAP_SHARED | MAP_ANONYMOUS). The file has the given size and is
+// initially (implicitly) filled with zeroes.
+//
+// Preconditions: mount must be a tmpfs mount.
+func NewZeroFile(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, size uint64) (*vfs.FileDescription, error) {
+	// Compare mm/shmem.c:shmem_zero_setup().
+	fd, err := newUnlinkedRegularFileDescription(ctx, creds, mount, "dev/zero")
+	if err != nil {
+		return nil, err
+	}
+	rf := fd.inode().impl.(*regularFile)
+	rf.memoryUsageKind = usage.Anonymous
+	rf.size = size
+	return &fd.vfsfd, err
+}
+
+// NewMemfd creates a new regular file and file description as for
+// memfd_create.
+//
+// Preconditions: mount must be a tmpfs mount.
+func NewMemfd(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, allowSeals bool, name string) (*vfs.FileDescription, error) {
+	fd, err := newUnlinkedRegularFileDescription(ctx, creds, mount, name)
+	if err != nil {
+		return nil, err
+	}
+	if allowSeals {
+		fd.inode().impl.(*regularFile).seals = 0
+	}
+	return &fd.vfsfd, nil
 }
 
 // truncate grows or shrinks the file to the given size. It returns true if the
@@ -227,7 +293,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		optional.End = pgend
 	}
 
-	cerr := rf.data.Fill(ctx, required, optional, rf.memFile, usage.Tmpfs, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	cerr := rf.data.Fill(ctx, required, optional, rf.memFile, rf.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -261,18 +327,34 @@ func (*regularFile) InvalidateUnsavable(context.Context) error {
 	return nil
 }
 
+// +stateify savable
 type regularFileFD struct {
 	fileDescription
 
 	// off is the file offset. off is accessed using atomic memory operations.
 	// offMu serializes operations that may mutate off.
 	off   int64
-	offMu sync.Mutex
+	offMu sync.Mutex `state:"nosave"`
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *regularFileFD) Release() {
+func (fd *regularFileFD) Release(context.Context) {
 	// noop
+}
+
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	f := fd.inode().impl.(*regularFile)
+
+	f.inode.mu.Lock()
+	defer f.inode.mu.Unlock()
+	oldSize := f.size
+	size := offset + length
+	if oldSize >= size {
+		return nil
+	}
+	_, err := f.truncateLocked(size)
+	return err
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
@@ -280,6 +362,15 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
+
+	// Check that flags are supported. RWF_DSYNC/RWF_SYNC can be ignored since
+	// all state is in-memory.
+	//
+	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
+	if opts.Flags&^(linux.RWF_HIPRI|linux.RWF_DSYNC|linux.RWF_SYNC) != 0 {
+		return 0, syserror.EOPNOTSUPP
+	}
+
 	if dst.NumBytes() == 0 {
 		return 0, nil
 	}
@@ -302,40 +393,60 @@ func (fd *regularFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	n, _, err := fd.pwrite(ctx, src, offset, opts)
+	return n, err
+}
+
+// pwrite returns the number of bytes written, final offset and error. The
+// final offset should be ignored by PWrite.
+func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
 	if offset < 0 {
-		return 0, syserror.EINVAL
-	}
-	srclen := src.NumBytes()
-	if srclen == 0 {
-		return 0, nil
-	}
-	f := fd.inode().impl.(*regularFile)
-	if end := offset + srclen; end < offset {
-		// Overflow.
-		return 0, syserror.EFBIG
+		return 0, offset, syserror.EINVAL
 	}
 
-	var err error
+	// Check that flags are supported. RWF_DSYNC/RWF_SYNC can be ignored since
+	// all state is in-memory.
+	//
+	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
+	if opts.Flags&^(linux.RWF_HIPRI|linux.RWF_DSYNC|linux.RWF_SYNC) != 0 {
+		return 0, offset, syserror.EOPNOTSUPP
+	}
+
+	srclen := src.NumBytes()
+	if srclen == 0 {
+		return 0, offset, nil
+	}
+	f := fd.inode().impl.(*regularFile)
+	f.inode.mu.Lock()
+	defer f.inode.mu.Unlock()
+	// If the file is opened with O_APPEND, update offset to file size.
+	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
+		// Locking f.inode.mu is sufficient for reading f.size.
+		offset = int64(f.size)
+	}
+	if end := offset + srclen; end < offset {
+		// Overflow.
+		return 0, offset, syserror.EINVAL
+	}
+
 	srclen, err = vfs.CheckLimit(ctx, offset, srclen)
 	if err != nil {
-		return 0, err
+		return 0, offset, err
 	}
 	src = src.TakeFirst64(srclen)
 
-	f.inode.mu.Lock()
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := src.CopyInTo(ctx, rw)
-	fd.inode().touchCMtimeLocked()
-	f.inode.mu.Unlock()
+	f.inode.touchCMtimeLocked()
 	putRegularFileReadWriter(rw)
-	return n, err
+	return n, n + offset, err
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	fd.offMu.Lock()
-	n, err := fd.PWrite(ctx, src, fd.off, opts)
-	fd.off += n
+	n, off, err := fd.pwrite(ctx, src, fd.off, opts)
+	fd.off = off
 	fd.offMu.Unlock()
 	return n, err
 }
@@ -359,33 +470,6 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 	}
 	fd.off = offset
 	return offset, nil
-}
-
-// Sync implements vfs.FileDescriptionImpl.Sync.
-func (fd *regularFileFD) Sync(ctx context.Context) error {
-	return nil
-}
-
-// LockBSD implements vfs.FileDescriptionImpl.LockBSD.
-func (fd *regularFileFD) LockBSD(ctx context.Context, uid lock.UniqueID, t lock.LockType, block lock.Blocker) error {
-	return fd.inode().lockBSD(uid, t, block)
-}
-
-// UnlockBSD implements vfs.FileDescriptionImpl.UnlockBSD.
-func (fd *regularFileFD) UnlockBSD(ctx context.Context, uid lock.UniqueID) error {
-	fd.inode().unlockBSD(uid)
-	return nil
-}
-
-// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (fd *regularFileFD) LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, rng lock.LockRange, block lock.Blocker) error {
-	return fd.inode().lockPOSIX(uid, t, rng, block)
-}
-
-// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
-func (fd *regularFileFD) UnlockPOSIX(ctx context.Context, uid lock.UniqueID, rng lock.LockRange) error {
-	fd.inode().unlockPOSIX(uid, rng)
-	return nil
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
@@ -559,7 +643,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		case gap.Ok():
 			// Allocate memory for the write.
 			gapMR := gap.Range().Intersect(pgMR)
-			fr, err := rw.file.memFile.Allocate(gapMR.Length(), usage.Tmpfs)
+			fr, err := rw.file.memFile.Allocate(gapMR.Length(), rw.file.memoryUsageKind)
 			if err != nil {
 				retErr = err
 				goto exitLoop

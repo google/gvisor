@@ -16,10 +16,10 @@ package ext
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -27,6 +27,8 @@ import (
 )
 
 // directory represents a directory inode. It holds the childList in memory.
+//
+// +stateify savable
 type directory struct {
 	inode inode
 
@@ -38,7 +40,7 @@ type directory struct {
 	// Lock Order (outermost locks must be taken first):
 	//   directory.mu
 	//     filesystem.mu
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// childList is a list containing (1) child dirents and (2) fake dirents
 	// (with diskDirent == nil) that represent the iteration position of
@@ -54,16 +56,15 @@ type directory struct {
 }
 
 // newDirectory is the directory constructor.
-func newDirectory(inode inode, newDirent bool) (*directory, error) {
+func newDirectory(args inodeArgs, newDirent bool) (*directory, error) {
 	file := &directory{
-		inode:      inode,
 		childCache: make(map[string]*dentry),
 		childMap:   make(map[string]*dirent),
 	}
-	file.inode.impl = file
+	file.inode.init(args, file)
 
 	// Initialize childList by reading dirents from the underlying file.
-	if inode.diskInode.Flags().Index {
+	if args.diskInode.Flags().Index {
 		// TODO(b/134676337): Support hash tree directories. Currently only the '.'
 		// and '..' entries are read in.
 
@@ -74,7 +75,7 @@ func newDirectory(inode inode, newDirent bool) (*directory, error) {
 
 	// The dirents are organized in a linear array in the file data.
 	// Extract the file data and decode the dirents.
-	regFile, err := newRegularFile(inode)
+	regFile, err := newRegularFile(args)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +83,7 @@ func newDirectory(inode inode, newDirent bool) (*directory, error) {
 	// buf is used as scratch space for reading in dirents from disk and
 	// unmarshalling them into dirent structs.
 	buf := make([]byte, disklayout.DirentSize)
-	size := inode.diskInode.Size()
+	size := args.diskInode.Size()
 	for off, inc := uint64(0), uint64(0); off < size; off += inc {
 		toRead := size - off
 		if toRead > disklayout.DirentSize {
@@ -98,7 +99,7 @@ func newDirectory(inode inode, newDirent bool) (*directory, error) {
 		} else {
 			curDirent.diskDirent = &disklayout.DirentOld{}
 		}
-		binary.Unmarshal(buf, binary.LittleEndian, curDirent.diskDirent)
+		curDirent.diskDirent.UnmarshalBytes(buf)
 
 		if curDirent.diskDirent.Inode() != 0 && len(curDirent.diskDirent.FileName()) != 0 {
 			// Inode number and name length fields being set to 0 is used to indicate
@@ -120,6 +121,8 @@ func (i *inode) isDir() bool {
 }
 
 // dirent is the directory.childList node.
+//
+// +stateify savable
 type dirent struct {
 	diskDirent disklayout.Dirent
 
@@ -129,6 +132,8 @@ type dirent struct {
 
 // directoryFD represents a directory file description. It implements
 // vfs.FileDescriptionImpl.
+//
+// +stateify savable
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl
@@ -142,7 +147,7 @@ type directoryFD struct {
 var _ vfs.FileDescriptionImpl = (*directoryFD)(nil)
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *directoryFD) Release() {
+func (fd *directoryFD) Release(ctx context.Context) {
 	if fd.iter == nil {
 		return
 	}
@@ -305,4 +310,14 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	dir.childList.PushBack(fd.iter)
 	fd.off = offset
 	return offset, nil
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (fd *directoryFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	return fd.Locks().LockPOSIX(ctx, &fd.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (fd *directoryFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return fd.Locks().UnlockPOSIX(ctx, &fd.vfsfd, uid, start, length, whence)
 }

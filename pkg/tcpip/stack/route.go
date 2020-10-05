@@ -42,17 +42,27 @@ type Route struct {
 	// NetProto is the network-layer protocol.
 	NetProto tcpip.NetworkProtocolNumber
 
-	// ref a reference to the network endpoint through which the route
-	// starts.
-	ref *referencedNetworkEndpoint
-
 	// Loop controls where WritePacket should send packets.
 	Loop PacketLooping
+
+	// nic is the NIC the route goes through.
+	nic *NIC
+
+	// addressEndpoint is the local address this route is associated with.
+	addressEndpoint AssignableAddressEndpoint
+
+	// linkCache is set if link address resolution is enabled for this protocol on
+	// the route's NIC.
+	linkCache LinkAddressCache
+
+	// linkRes is set if link address resolution is enabled for this protocol on
+	// the route's NIC.
+	linkRes LinkAddressResolver
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
-// reference to a network endpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, handleLocal, multicastLoop bool) Route {
+// AssignableAddressEndpoint.
+func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, nic *NIC, addressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) Route {
 	loop := PacketOut
 	if handleLocal && localAddr != "" && remoteAddr == localAddr {
 		loop = PacketLoop
@@ -62,29 +72,40 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		loop |= PacketLoop
 	}
 
-	return Route{
+	linkEP := nic.LinkEndpoint()
+	r := Route{
 		NetProto:         netProto,
 		LocalAddress:     localAddr,
-		LocalLinkAddress: localLinkAddr,
+		LocalLinkAddress: linkEP.LinkAddress(),
 		RemoteAddress:    remoteAddr,
-		ref:              ref,
+		addressEndpoint:  addressEndpoint,
+		nic:              nic,
 		Loop:             loop,
 	}
+
+	if nic := r.nic; linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
+		if linkRes, ok := nic.stack.linkAddrResolvers[r.NetProto]; ok {
+			r.linkRes = linkRes
+			r.linkCache = nic.stack
+		}
+	}
+
+	return r
 }
 
 // NICID returns the id of the NIC from which this route originates.
 func (r *Route) NICID() tcpip.NICID {
-	return r.ref.ep.NICID()
+	return r.nic.ID()
 }
 
 // MaxHeaderLength forwards the call to the network endpoint's implementation.
 func (r *Route) MaxHeaderLength() uint16 {
-	return r.ref.ep.MaxHeaderLength()
+	return r.addressEndpoint.NetworkEndpoint().MaxHeaderLength()
 }
 
 // Stats returns a mutable copy of current stats.
 func (r *Route) Stats() tcpip.Stats {
-	return r.ref.nic.stack.Stats()
+	return r.nic.stack.Stats()
 }
 
 // PseudoHeaderChecksum forwards the call to the network endpoint's
@@ -95,15 +116,21 @@ func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, tot
 
 // Capabilities returns the link-layer capabilities of the route.
 func (r *Route) Capabilities() LinkEndpointCapabilities {
-	return r.ref.ep.Capabilities()
+	return r.nic.LinkEndpoint().Capabilities()
 }
 
 // GSOMaxSize returns the maximum GSO packet size.
 func (r *Route) GSOMaxSize() uint32 {
-	if gso, ok := r.ref.ep.(GSOEndpoint); ok {
+	if gso, ok := r.addressEndpoint.NetworkEndpoint().(GSOEndpoint); ok {
 		return gso.GSOMaxSize()
 	}
 	return 0
+}
+
+// ResolveWith immediately resolves a route with the specified remote link
+// address.
+func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
+	r.RemoteLinkAddress = addr
 }
 
 // Resolve attempts to resolve the link address if necessary. Returns ErrWouldBlock in
@@ -113,6 +140,8 @@ func (r *Route) GSOMaxSize() uint32 {
 // If address resolution is required, ErrNoLinkAddress and a notification channel is
 // returned for the top level caller to block. Channel is closed once address resolution
 // is complete (success or not).
+//
+// The NIC r uses must not be locked.
 func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 	if !r.IsResolutionRequired() {
 		// Nothing to do if there is no cache (which does the resolution on cache miss) or
@@ -129,7 +158,17 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		}
 		nextAddr = r.RemoteAddress
 	}
-	linkAddr, ch, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
+
+	if neigh := r.nic.neigh; neigh != nil {
+		entry, ch, err := neigh.entry(nextAddr, r.LocalAddress, r.linkRes, waker)
+		if err != nil {
+			return ch, err
+		}
+		r.RemoteLinkAddress = entry.LinkAddr
+		return nil, nil
+	}
+
+	linkAddr, ch, err := r.linkCache.GetLinkAddress(r.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
 	if err != nil {
 		return ch, err
 	}
@@ -143,99 +182,108 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 	if nextAddr == "" {
 		nextAddr = r.RemoteAddress
 	}
-	r.ref.linkCache.RemoveWaker(r.ref.nic.ID(), nextAddr, waker)
+
+	if neigh := r.nic.neigh; neigh != nil {
+		neigh.removeWaker(nextAddr, waker)
+		return
+	}
+
+	r.linkCache.RemoveWaker(r.nic.ID(), nextAddr, waker)
 }
 
 // IsResolutionRequired returns true if Resolve() must be called to resolve
 // the link address before the this route can be written to.
+//
+// The NIC r uses must not be locked.
 func (r *Route) IsResolutionRequired() bool {
-	return r.ref.isValidForOutgoing() && r.ref.linkCache != nil && r.RemoteLinkAddress == ""
+	if r.nic.neigh != nil {
+		return r.nic.isValidForOutgoing(r.addressEndpoint) && r.linkRes != nil && r.RemoteLinkAddress == ""
+	}
+	return r.nic.isValidForOutgoing(r.addressEndpoint) && r.linkCache != nil && r.RemoteLinkAddress == ""
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt PacketBuffer) *tcpip.Error {
-	if !r.ref.isValidForOutgoing() {
+func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) *tcpip.Error {
+	if !r.nic.isValidForOutgoing(r.addressEndpoint) {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	err := r.ref.ep.WritePacket(r, gso, params, pkt)
-	if err != nil {
-		r.Stats().IP.OutgoingPacketErrors.Increment()
-	} else {
-		r.ref.nic.stats.Tx.Packets.Increment()
-		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
+	// WritePacket takes ownership of pkt, calculate numBytes first.
+	numBytes := pkt.Size()
+
+	if err := r.addressEndpoint.NetworkEndpoint().WritePacket(r, gso, params, pkt); err != nil {
+		return err
 	}
-	return err
+
+	r.nic.stats.Tx.Packets.Increment()
+	r.nic.stats.Tx.Bytes.IncrementBy(uint64(numBytes))
+	return nil
 }
 
 // WritePackets writes a list of n packets through the given route and returns
 // the number of packets written.
 func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error) {
-	if !r.ref.isValidForOutgoing() {
+	if !r.nic.isValidForOutgoing(r.addressEndpoint) {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	n, err := r.ref.ep.WritePackets(r, gso, pkts, params)
-	if err != nil {
-		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n))
-	}
-	r.ref.nic.stats.Tx.Packets.IncrementBy(uint64(n))
-
+	n, err := r.addressEndpoint.NetworkEndpoint().WritePackets(r, gso, pkts, params)
+	r.nic.stats.Tx.Packets.IncrementBy(uint64(n))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < n && pb != nil; i, pb = i+1, pb.Next() {
-		writtenBytes += pb.Header.UsedLength()
-		writtenBytes += pb.Data.Size()
+		writtenBytes += pb.Size()
 	}
 
-	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(writtenBytes))
+	r.nic.stats.Tx.Bytes.IncrementBy(uint64(writtenBytes))
 	return n, err
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (r *Route) WriteHeaderIncludedPacket(pkt PacketBuffer) *tcpip.Error {
-	if !r.ref.isValidForOutgoing() {
+func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) *tcpip.Error {
+	if !r.nic.isValidForOutgoing(r.addressEndpoint) {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	if err := r.ref.ep.WriteHeaderIncludedPacket(r, pkt); err != nil {
-		r.Stats().IP.OutgoingPacketErrors.Increment()
+	// WriteHeaderIncludedPacket takes ownership of pkt, calculate numBytes first.
+	numBytes := pkt.Data.Size()
+
+	if err := r.addressEndpoint.NetworkEndpoint().WriteHeaderIncludedPacket(r, pkt); err != nil {
 		return err
 	}
-	r.ref.nic.stats.Tx.Packets.Increment()
-	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
+	r.nic.stats.Tx.Packets.Increment()
+	r.nic.stats.Tx.Bytes.IncrementBy(uint64(numBytes))
 	return nil
 }
 
 // DefaultTTL returns the default TTL of the underlying network endpoint.
 func (r *Route) DefaultTTL() uint8 {
-	return r.ref.ep.DefaultTTL()
+	return r.addressEndpoint.NetworkEndpoint().DefaultTTL()
 }
 
 // MTU returns the MTU of the underlying network endpoint.
 func (r *Route) MTU() uint32 {
-	return r.ref.ep.MTU()
+	return r.addressEndpoint.NetworkEndpoint().MTU()
 }
 
 // NetworkProtocolNumber returns the NetworkProtocolNumber of the underlying
 // network endpoint.
 func (r *Route) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
-	return r.ref.ep.NetworkProtocolNumber()
+	return r.addressEndpoint.NetworkEndpoint().NetworkProtocolNumber()
 }
 
 // Release frees all resources associated with the route.
 func (r *Route) Release() {
-	if r.ref != nil {
-		r.ref.decRef()
-		r.ref = nil
+	if r.addressEndpoint != nil {
+		r.addressEndpoint.DecRef()
+		r.addressEndpoint = nil
 	}
 }
 
-// Clone Clone a route such that the original one can be released and the new
-// one will remain valid.
+// Clone clones the route.
 func (r *Route) Clone() Route {
-	if r.ref != nil {
-		r.ref.incRef()
+	if r.addressEndpoint != nil {
+		_ = r.addressEndpoint.IncRef()
 	}
 	return *r
 }
@@ -259,7 +307,30 @@ func (r *Route) MakeLoopedRoute() Route {
 
 // Stack returns the instance of the Stack that owns this route.
 func (r *Route) Stack() *Stack {
-	return r.ref.stack()
+	return r.nic.stack
+}
+
+func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
+	if addr == header.IPv4Broadcast {
+		return true
+	}
+
+	subnet := r.addressEndpoint.AddressWithPrefix().Subnet()
+	return subnet.IsBroadcast(addr)
+}
+
+// IsOutboundBroadcast returns true if the route is for an outbound broadcast
+// packet.
+func (r *Route) IsOutboundBroadcast() bool {
+	// Only IPv4 has a notion of broadcast.
+	return r.isV4Broadcast(r.RemoteAddress)
+}
+
+// IsInboundBroadcast returns true if the route is for an inbound broadcast
+// packet.
+func (r *Route) IsInboundBroadcast() bool {
+	// Only IPv4 has a notion of broadcast.
+	return r.isV4Broadcast(r.LocalAddress)
 }
 
 // ReverseRoute returns new route with given source and destination address.
@@ -270,7 +341,10 @@ func (r *Route) ReverseRoute(src tcpip.Address, dst tcpip.Address) Route {
 		LocalLinkAddress:  r.RemoteLinkAddress,
 		RemoteAddress:     src,
 		RemoteLinkAddress: r.LocalLinkAddress,
-		ref:               r.ref,
 		Loop:              r.Loop,
+		addressEndpoint:   r.addressEndpoint,
+		nic:               r.nic,
+		linkCache:         r.linkCache,
+		linkRes:           r.linkRes,
 	}
 }

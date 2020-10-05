@@ -39,13 +39,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -253,7 +251,7 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.Fi
 		creatorPID:    pid,
 		changeTime:    ktime.NowFromContext(ctx),
 	}
-	shm.EnableLeakCheck("kernel.Shm")
+	shm.EnableLeakCheck()
 
 	// Find the next available ID.
 	for id := r.lastIDUsed + 1; id != r.lastIDUsed; id++ {
@@ -338,14 +336,14 @@ func (r *Registry) remove(s *Shm) {
 //
 // +stateify savable
 type Shm struct {
-	// AtomicRefCount tracks the number of references to this segment.
+	// ShmRefs tracks the number of references to this segment.
 	//
 	// A segment holds a reference to itself until it is marked for
 	// destruction.
 	//
 	// In addition to direct users, the MemoryManager will hold references
 	// via MappingIdentity.
-	refs.AtomicRefCount
+	ShmRefs
 
 	mfp pgalloc.MemoryFileProvider
 
@@ -370,7 +368,7 @@ type Shm struct {
 
 	// fr is the offset into mfp.MemoryFile() that backs this contents of this
 	// segment. Immutable.
-	fr platform.FileRange
+	fr memmap.FileRange
 
 	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
@@ -429,11 +427,14 @@ func (s *Shm) InodeID() uint64 {
 	return uint64(s.ID)
 }
 
-// DecRef overrides refs.RefCount.DecRef with a destructor.
+// DecRef drops a reference on s.
 //
 // Precondition: Caller must not hold s.mu.
-func (s *Shm) DecRef() {
-	s.DecRefWithDestructor(s.destroy)
+func (s *Shm) DecRef(ctx context.Context) {
+	s.ShmRefs.DecRef(func() {
+		s.mfp.MemoryFile().DecRef(s.fr)
+		s.registry.remove(s)
+	})
 }
 
 // Msync implements memmap.MappingIdentity.Msync. Msync is a no-op for shm
@@ -643,16 +644,11 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	return nil
 }
 
-func (s *Shm) destroy() {
-	s.mfp.MemoryFile().DecRef(s.fr)
-	s.registry.remove(s)
-}
-
 // MarkDestroyed marks a segment for destruction. The segment is actually
 // destroyed once it has no references. MarkDestroyed may be called multiple
 // times, and is safe to call after a segment has already been destroyed. See
 // shmctl(IPC_RMID).
-func (s *Shm) MarkDestroyed() {
+func (s *Shm) MarkDestroyed(ctx context.Context) {
 	s.registry.dissociateKey(s)
 
 	s.mu.Lock()
@@ -664,7 +660,7 @@ func (s *Shm) MarkDestroyed() {
 		//
 		// N.B. This cannot be the final DecRef, as the caller also
 		// holds a reference.
-		s.DecRef()
+		s.DecRef(ctx)
 		return
 	}
 }

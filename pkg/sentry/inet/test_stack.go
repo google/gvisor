@@ -14,7 +14,10 @@
 
 package inet
 
-import "gvisor.dev/gvisor/pkg/tcpip/stack"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+)
 
 // TestStack is a dummy implementation of Stack for tests.
 type TestStack struct {
@@ -25,6 +28,8 @@ type TestStack struct {
 	TCPRecvBufSize    TCPBufferSize
 	TCPSendBufSize    TCPBufferSize
 	TCPSACKFlag       bool
+	Recovery          TCPLossRecovery
+	IPForwarding      bool
 }
 
 // NewTestStack returns a TestStack with no network interfaces. The value of
@@ -91,6 +96,17 @@ func (s *TestStack) SetTCPSACKEnabled(enabled bool) error {
 	return nil
 }
 
+// TCPRecovery implements Stack.TCPRecovery.
+func (s *TestStack) TCPRecovery() (TCPLossRecovery, error) {
+	return s.Recovery, nil
+}
+
+// SetTCPRecovery implements Stack.SetTCPRecovery.
+func (s *TestStack) SetTCPRecovery(recovery TCPLossRecovery) error {
+	s.Recovery = recovery
+	return nil
+}
+
 // Statistics implements inet.Stack.Statistics.
 func (s *TestStack) Statistics(stat interface{}, arg string) error {
 	return nil
@@ -116,3 +132,14 @@ func (s *TestStack) CleanupEndpoints() []stack.TransportEndpoint {
 
 // RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
 func (s *TestStack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
+
+// Forwarding implements inet.Stack.Forwarding.
+func (s *TestStack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	return s.IPForwarding
+}
+
+// SetForwarding implements inet.Stack.SetForwarding.
+func (s *TestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	s.IPForwarding = enable
+	return nil
+}

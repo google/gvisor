@@ -49,16 +49,6 @@ func wouldBlock(fileType uint32) bool {
 	return fileType == syscall.S_IFIFO || fileType == syscall.S_IFCHR || fileType == syscall.S_IFSOCK
 }
 
-// canMap returns true if a file with fileType is allowed to be memory mapped.
-// This is ported over from VFS1, but it's probably not the best way for us
-// to check if a file can be memory mapped.
-func canMap(fileType uint32) bool {
-	// TODO(gvisor.dev/issue/1672): Also allow "special files" to be mapped (see fs/host:canMap()).
-	//
-	// TODO(b/38213152): Some obscure character devices can be mapped.
-	return fileType == syscall.S_IFREG
-}
-
 // isBlockError checks if an error is EAGAIN or EWOULDBLOCK.
 // If so, they can be transformed into syserror.ErrWouldBlock.
 func isBlockError(err error) bool {

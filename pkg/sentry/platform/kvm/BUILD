@@ -6,15 +6,15 @@ go_library(
     name = "kvm",
     srcs = [
         "address_space.go",
-        "allocator.go",
         "bluepill.go",
+        "bluepill_allocator.go",
         "bluepill_amd64.go",
-        "bluepill_amd64.s",
         "bluepill_amd64_unsafe.go",
         "bluepill_arm64.go",
         "bluepill_arm64.s",
         "bluepill_arm64_unsafe.go",
         "bluepill_fault.go",
+        "bluepill_impl_amd64.s",
         "bluepill_unsafe.go",
         "context.go",
         "filters_amd64.go",
@@ -41,12 +41,14 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/procid",
         "//pkg/safecopy",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/ring0",
@@ -60,6 +62,7 @@ go_library(
 go_test(
     name = "kvm_test",
     srcs = [
+        "kvm_amd64_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
     ],
@@ -77,4 +80,12 @@ go_test(
         "//pkg/sentry/platform/ring0/pagetables",
         "//pkg/usermem",
     ],
+)
+
+genrule(
+    name = "bluepill_impl_amd64",
+    srcs = ["bluepill_amd64.s"],
+    outs = ["bluepill_impl_amd64.s"],
+    cmd = "(echo -e '// build +amd64\\n' && $(location //pkg/sentry/platform/ring0/gen_offsets) && cat $(SRCS)) > $@",
+    tools = ["//pkg/sentry/platform/ring0/gen_offsets"],
 )

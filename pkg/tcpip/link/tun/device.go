@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -64,14 +64,14 @@ func (d *Device) beforeSave() {
 }
 
 // Release implements fs.FileOperations.Release.
-func (d *Device) Release() {
+func (d *Device) Release(ctx context.Context) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	// Decrease refcount if there is an endpoint associated with this file.
 	if d.endpoint != nil {
 		d.endpoint.RemoveNotify(d.notifyHandle)
-		d.endpoint.DecRef()
+		d.endpoint.DecRef(ctx)
 		d.endpoint = nil
 	}
 }
@@ -134,11 +134,13 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 
 		// 2. Creating a new NIC.
 		id := tcpip.NICID(s.UniqueID())
+		// TODO(gvisor.dev/1486): enable leak check for tunEndpoint.
 		endpoint := &tunEndpoint{
 			Endpoint: channel.New(defaultDevOutQueueLen, defaultDevMtu, ""),
 			stack:    s,
 			nicID:    id,
 			name:     name,
+			isTap:    prefix == "tap",
 		}
 		endpoint.Endpoint.LinkEPCapabilities = linkCaps
 		if endpoint.name == "" {
@@ -213,12 +215,11 @@ func (d *Device) Write(data []byte) (int64, error) {
 		remote = tcpip.LinkAddress(zeroMAC[:])
 	}
 
-	pkt := stack.PacketBuffer{
-		Data: buffer.View(data).ToVectorisedView(),
-	}
-	if ethHdr != nil {
-		pkt.LinkHeader = buffer.View(ethHdr)
-	}
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: len(ethHdr),
+		Data:               buffer.View(data).ToVectorisedView(),
+	})
+	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
 	endpoint.InjectLinkAddr(protocol, remote, pkt)
 	return dataLen, nil
 }
@@ -263,33 +264,22 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	// If the packet does not already have link layer header, and the route
 	// does not exist, we can't compute it. This is possibly a raw packet, tun
 	// device doesn't support this at the moment.
-	if info.Pkt.LinkHeader == nil && info.Route.RemoteLinkAddress == "" {
+	if info.Pkt.LinkHeader().View().IsEmpty() && info.Route.RemoteLinkAddress == "" {
 		return nil, false
 	}
 
 	// Ethernet header (TAP only).
 	if d.hasFlags(linux.IFF_TAP) {
 		// Add ethernet header if not provided.
-		if info.Pkt.LinkHeader == nil {
-			hdr := &header.EthernetFields{
-				SrcAddr: info.Route.LocalLinkAddress,
-				DstAddr: info.Route.RemoteLinkAddress,
-				Type:    info.Proto,
-			}
-			if hdr.SrcAddr == "" {
-				hdr.SrcAddr = d.endpoint.LinkAddress()
-			}
-
-			eth := make(header.Ethernet, header.EthernetMinimumSize)
-			eth.Encode(hdr)
-			vv.AppendView(buffer.View(eth))
-		} else {
-			vv.AppendView(info.Pkt.LinkHeader)
+		if info.Pkt.LinkHeader().View().IsEmpty() {
+			d.endpoint.AddHeader(info.Route.LocalLinkAddress, info.Route.RemoteLinkAddress, info.Proto, info.Pkt)
 		}
+		vv.AppendView(info.Pkt.LinkHeader().View())
 	}
 
 	// Append upper headers.
-	vv.AppendView(buffer.View(info.Pkt.Header.View()[len(info.Pkt.LinkHeader):]))
+	vv.AppendView(info.Pkt.NetworkHeader().View())
+	vv.AppendView(info.Pkt.TransportHeader().View())
 	// Append data payload.
 	vv.Append(info.Pkt.Data)
 
@@ -341,18 +331,52 @@ func (d *Device) WriteNotify() {
 // It is ref-counted as multiple opening files can attach to the same NIC.
 // The last owner is responsible for deleting the NIC.
 type tunEndpoint struct {
+	tunEndpointRefs
 	*channel.Endpoint
-
-	refs.AtomicRefCount
 
 	stack *stack.Stack
 	nicID tcpip.NICID
 	name  string
+	isTap bool
 }
 
-// DecRef decrements refcount of e, removes NIC if refcount goes to 0.
-func (e *tunEndpoint) DecRef() {
-	e.DecRefWithDestructor(func() {
+// DecRef decrements refcount of e, removing NIC if it reaches 0.
+func (e *tunEndpoint) DecRef(ctx context.Context) {
+	e.tunEndpointRefs.DecRef(func() {
 		e.stack.RemoveNIC(e.nicID)
 	})
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (e *tunEndpoint) ARPHardwareType() header.ARPHardwareType {
+	if e.isTap {
+		return header.ARPHardwareEther
+	}
+	return header.ARPHardwareNone
+}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *tunEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	if !e.isTap {
+		return
+	}
+	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
+	hdr := &header.EthernetFields{
+		SrcAddr: local,
+		DstAddr: remote,
+		Type:    protocol,
+	}
+	if hdr.SrcAddr == "" {
+		hdr.SrcAddr = e.LinkAddress()
+	}
+
+	eth.Encode(hdr)
+}
+
+// MaxHeaderLength returns the maximum size of the link layer header.
+func (e *tunEndpoint) MaxHeaderLength() uint16 {
+	if e.isTap {
+		return header.EthernetMinimumSize
+	}
+	return 0
 }
