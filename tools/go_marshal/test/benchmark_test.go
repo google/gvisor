@@ -16,12 +16,11 @@ package benchmark_test
 
 import (
 	"bytes"
-	encbin "encoding/binary"
+	"encoding/binary"
 	"fmt"
 	"reflect"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/tools/go_marshal/analysis"
 	"gvisor.dev/gvisor/tools/go_marshal/test"
@@ -32,42 +31,18 @@ func BenchmarkEncodingBinary(b *testing.B) {
 	var s1, s2 test.Stat
 	analysis.RandomizeValue(&s1)
 
-	size := encbin.Size(&s1)
+	size := binary.Size(&s1)
 
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		buf := bytes.NewBuffer(make([]byte, size))
-		buf.Reset()
-		if err := encbin.Write(buf, hostarch.ByteOrder, &s1); err != nil {
+		buf := bytes.NewBuffer(make([]byte, 0, size))
+		if err := binary.Write(buf, hostarch.ByteOrder, &s1); err != nil {
 			b.Error("Write:", err)
 		}
-		if err := encbin.Read(buf, hostarch.ByteOrder, &s2); err != nil {
+		if err := binary.Read(buf, hostarch.ByteOrder, &s2); err != nil {
 			b.Error("Read:", err)
 		}
-	}
-
-	b.StopTimer()
-
-	// Sanity check, make sure the values were preserved.
-	if !reflect.DeepEqual(s1, s2) {
-		panic(fmt.Sprintf("Data corruption across marshal/unmarshal cycle:\nBefore: %+v\nAfter: %+v\n", s1, s2))
-	}
-}
-
-// Marshalling using the sentry's binary.Marshal.
-func BenchmarkBinary(b *testing.B) {
-	var s1, s2 test.Stat
-	analysis.RandomizeValue(&s1)
-
-	size := binary.Size(s1)
-
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		buf := make([]byte, 0, size)
-		buf = binary.Marshal(buf, hostarch.ByteOrder, &s1)
-		binary.Unmarshal(buf, hostarch.ByteOrder, &s2)
 	}
 
 	b.StopTimer()
@@ -86,26 +61,44 @@ func BenchmarkMarshalManual(b *testing.B) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		buf := make([]byte, 0, s1.SizeBytes())
+		buf := make([]byte, binary.Size(s1))
 
 		// Marshal
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Dev)
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Ino)
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Nlink)
-		buf = binary.AppendUint32(buf, hostarch.ByteOrder, s1.Mode)
-		buf = binary.AppendUint32(buf, hostarch.ByteOrder, s1.UID)
-		buf = binary.AppendUint32(buf, hostarch.ByteOrder, s1.GID)
-		buf = binary.AppendUint32(buf, hostarch.ByteOrder, 0)
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Rdev)
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.Size))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.Blksize))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.Blocks))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.ATime.Sec))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.ATime.Nsec))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.MTime.Sec))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.MTime.Nsec))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.CTime.Sec))
-		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.CTime.Nsec))
+		off := 0
+		hostarch.ByteOrder.PutUint64(buf[off:], s1.Dev)
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], s1.Ino)
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], s1.Nlink)
+		off += 8
+		hostarch.ByteOrder.PutUint32(buf[off:], s1.Mode)
+		off += 4
+		hostarch.ByteOrder.PutUint32(buf[off:], s1.UID)
+		off += 4
+		hostarch.ByteOrder.PutUint32(buf[off:], s1.GID)
+		off += 4
+		hostarch.ByteOrder.PutUint32(buf[off:], 0)
+		off += 4
+		hostarch.ByteOrder.PutUint64(buf[off:], s1.Rdev)
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.Size))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.Blksize))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.Blocks))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.ATime.Sec))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.ATime.Nsec))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.MTime.Sec))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.MTime.Nsec))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.CTime.Sec))
+		off += 8
+		hostarch.ByteOrder.PutUint64(buf[off:], uint64(s1.CTime.Nsec))
+		off += 8
 
 		// Unmarshal
 		s2.Dev = hostarch.ByteOrder.Uint64(buf[0:8])
@@ -186,9 +179,13 @@ func BenchmarkBinarySlice(b *testing.B) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		buf := make([]byte, 0, size)
-		buf = binary.Marshal(buf, hostarch.ByteOrder, &s1)
-		binary.Unmarshal(buf, hostarch.ByteOrder, &s2)
+		buf := bytes.NewBuffer(make([]byte, 0, size))
+		if err := binary.Write(buf, hostarch.ByteOrder, s1[:]); err != nil {
+			b.Error("Write:", err)
+		}
+		if err := binary.Read(buf, hostarch.ByteOrder, s2[:]); err != nil {
+			b.Error("Read:", err)
+		}
 	}
 
 	b.StopTimer()

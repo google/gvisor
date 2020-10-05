@@ -208,7 +208,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					}
 					return
 				}
-				g.unmarshalScalar(g.fieldAccessor(n), t.Name, "src")
+				g.unmarshalScalar(g.fieldAccessor(n), t.Name, "src", "")
 			},
 			selector: func(n, tX, tSel *ast.Ident) {
 				if n.Name == "_" {
@@ -217,7 +217,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					g.recordPotentiallyNonPackedField(fmt.Sprintf("(*%s.%s)(nil)", tX.Name, tSel.Name))
 					return
 				}
-				g.unmarshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "src")
+				g.unmarshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "src", "")
 			},
 			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
 				lenExpr := g.arrayLenExpr(a)
@@ -237,7 +237,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 
 				g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
 				g.inIndent(func() {
-					g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "src")
+					g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "src", fmt.Sprintf("%s[0]", g.fieldAccessor(n)))
 				})
 				g.emit("}\n")
 			},
