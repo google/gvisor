@@ -264,7 +264,7 @@ type CreateMountTestcase struct {
 	expectedPaths []string
 }
 
-func createMountTestcases(vfs2 bool) []*CreateMountTestcase {
+func createMountTestcases() []*CreateMountTestcase {
 	testCases := []*CreateMountTestcase{
 		&CreateMountTestcase{
 			// Only proc.
@@ -409,32 +409,26 @@ func createMountTestcases(vfs2 bool) []*CreateMountTestcase {
 					Destination: "/proc",
 					Type:        "tmpfs",
 				},
-				// TODO (gvisor.dev/issue/1487): Re-add this case when sysfs supports
-				//  MkDirAt in VFS2 (and remove the reduntant append).
-				// {
-				//		Destination: "/sys/bar",
-				//		Type:        "tmpfs",
-				//	},
-				//
+				{
+					Destination: "/sys/bar",
+					Type:        "tmpfs",
+				},
+
 				{
 					Destination: "/tmp/baz",
 					Type:        "tmpfs",
 				},
 			},
 		},
-		expectedPaths: []string{"/proc", "/sys" /* "/sys/bar" ,*/, "/tmp", "/tmp/baz"},
+		expectedPaths: []string{"/proc", "/sys", "/sys/bar", "/tmp", "/tmp/baz"},
 	}
 
-	if !vfs2 {
-		vfsCase.spec.Mounts = append(vfsCase.spec.Mounts, specs.Mount{Destination: "/sys/bar", Type: "tmpfs"})
-		vfsCase.expectedPaths = append(vfsCase.expectedPaths, "/sys/bar")
-	}
 	return append(testCases, vfsCase)
 }
 
 // Test that MountNamespace can be created with various specs.
 func TestCreateMountNamespace(t *testing.T) {
-	for _, tc := range createMountTestcases(false /* vfs2 */) {
+	for _, tc := range createMountTestcases() {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
 			ctx := contexttest.Context(t)
@@ -471,7 +465,7 @@ func TestCreateMountNamespace(t *testing.T) {
 
 // Test that MountNamespace can be created with various specs.
 func TestCreateMountNamespaceVFS2(t *testing.T) {
-	for _, tc := range createMountTestcases(true /* vfs2 */) {
+	for _, tc := range createMountTestcases() {
 		t.Run(tc.name, func(t *testing.T) {
 			spec := testSpec()
 			spec.Mounts = tc.spec.Mounts

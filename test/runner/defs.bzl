@@ -203,7 +203,6 @@ def syscall_test(
             tags = platform_tags + tags,
         )
 
-    # TODO(gvisor.dev/issue/1487): Enable VFS2 overlay tests.
     if add_overlay:
         _syscall_test(
             test = test,
@@ -214,6 +213,23 @@ def syscall_test(
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
             overlay = True,
+        )
+
+        # TODO(gvisor.dev/issue/4407): Remove tags to enable VFS2 overlay tests.
+        overlay_vfs2_tags = list(vfs2_tags)
+        overlay_vfs2_tags.append("manual")
+        overlay_vfs2_tags.append("noguitar")
+        overlay_vfs2_tags.append("notap")
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            add_uds_tree = add_uds_tree,
+            tags = platforms[default_platform] + overlay_vfs2_tags,
+            overlay = True,
+            vfs2 = True,
         )
 
     if add_hostinet:
