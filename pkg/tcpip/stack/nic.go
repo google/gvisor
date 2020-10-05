@@ -38,8 +38,11 @@ type NIC struct {
 	linkEP  LinkEndpoint
 	context NICContext
 
-	stats            NICStats
-	neigh            *neighborCache
+	stats NICStats
+	neigh *neighborCache
+
+	// The network endpoints themselves may be modified by calling the interface's
+	// methods, but the map reference and entries must be constant.
 	networkEndpoints map[tcpip.NetworkProtocolNumber]NetworkEndpoint
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
@@ -132,6 +135,10 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	return nic
 }
 
+func (n *NIC) getNetworkEndpoint(proto tcpip.NetworkProtocolNumber) NetworkEndpoint {
+	return n.networkEndpoints[proto]
+}
+
 // Enabled implements NetworkInterface.
 func (n *NIC) Enabled() bool {
 	return atomic.LoadUint32(&n.enabled) == 1
@@ -211,7 +218,6 @@ func (n *NIC) remove() *tcpip.Error {
 	for _, ep := range n.networkEndpoints {
 		ep.Close()
 	}
-	n.networkEndpoints = nil
 
 	// Detach from link endpoint, so no packet comes in.
 	n.linkEP.Attach(nil)
@@ -483,9 +489,9 @@ func (n *NIC) isInGroup(addr tcpip.Address) bool {
 
 func (n *NIC) handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, remotelinkAddr tcpip.LinkAddress, addressEndpoint AssignableAddressEndpoint, pkt *PacketBuffer) {
 	r := makeRoute(protocol, dst, src, n, addressEndpoint, false /* handleLocal */, false /* multicastLoop */)
+	defer r.Release()
 	r.RemoteLinkAddress = remotelinkAddr
-	addressEndpoint.NetworkEndpoint().HandlePacket(&r, pkt)
-	addressEndpoint.DecRef()
+	n.getNetworkEndpoint(protocol).HandlePacket(&r, pkt)
 }
 
 // DeliverNetworkPacket finds the appropriate network protocol endpoint and
@@ -603,7 +609,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 				r.RemoteLinkAddress = remote
 				r.RemoteAddress = src
 				// TODO(b/123449044): Update the source NIC as well.
-				addressEndpoint.NetworkEndpoint().HandlePacket(&r, pkt)
+				n.getNetworkEndpoint(protocol).HandlePacket(&r, pkt)
 				addressEndpoint.DecRef()
 				r.Release()
 				return

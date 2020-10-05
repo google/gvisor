@@ -679,11 +679,6 @@ type addressState struct {
 	}
 }
 
-// NetworkEndpoint implements AddressEndpoint.
-func (a *addressState) NetworkEndpoint() NetworkEndpoint {
-	return a.addressableEndpointState.networkEndpoint
-}
-
 // AddressWithPrefix implements AddressEndpoint.
 func (a *addressState) AddressWithPrefix() tcpip.AddressWithPrefix {
 	return a.addr
