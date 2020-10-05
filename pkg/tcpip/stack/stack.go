@@ -1796,7 +1796,7 @@ func (s *Stack) GetNetworkEndpoint(nicID tcpip.NICID, proto tcpip.NetworkProtoco
 		return nil, tcpip.ErrUnknownNICID
 	}
 
-	return nic.networkEndpoints[proto], nil
+	return nic.getNetworkEndpoint(proto), nil
 }
 
 // NUDConfigurations gets the per-interface NUD configurations.
@@ -1873,10 +1873,8 @@ func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, addres
 		if addressEndpoint == nil {
 			continue
 		}
-
-		ep := addressEndpoint.NetworkEndpoint()
 		addressEndpoint.DecRef()
-		return ep, nil
+		return nic.getNetworkEndpoint(netProto), nil
 	}
 	return nil, tcpip.ErrBadAddress
 }

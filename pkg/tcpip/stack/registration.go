@@ -326,10 +326,6 @@ const (
 // AssignableAddressEndpoint is a reference counted address endpoint that may be
 // assigned to a NetworkEndpoint.
 type AssignableAddressEndpoint interface {
-	// NetworkEndpoint returns the NetworkEndpoint the receiver is associated
-	// with.
-	NetworkEndpoint() NetworkEndpoint
-
 	// AddressWithPrefix returns the endpoint's address.
 	AddressWithPrefix() tcpip.AddressWithPrefix
 

@@ -100,7 +100,7 @@ func (r *Route) NICID() tcpip.NICID {
 
 // MaxHeaderLength forwards the call to the network endpoint's implementation.
 func (r *Route) MaxHeaderLength() uint16 {
-	return r.addressEndpoint.NetworkEndpoint().MaxHeaderLength()
+	return r.nic.getNetworkEndpoint(r.NetProto).MaxHeaderLength()
 }
 
 // Stats returns a mutable copy of current stats.
@@ -121,7 +121,7 @@ func (r *Route) Capabilities() LinkEndpointCapabilities {
 
 // GSOMaxSize returns the maximum GSO packet size.
 func (r *Route) GSOMaxSize() uint32 {
-	if gso, ok := r.addressEndpoint.NetworkEndpoint().(GSOEndpoint); ok {
+	if gso, ok := r.nic.getNetworkEndpoint(r.NetProto).(GSOEndpoint); ok {
 		return gso.GSOMaxSize()
 	}
 	return 0
@@ -211,7 +211,7 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuf
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
-	if err := r.addressEndpoint.NetworkEndpoint().WritePacket(r, gso, params, pkt); err != nil {
+	if err := r.nic.getNetworkEndpoint(r.NetProto).WritePacket(r, gso, params, pkt); err != nil {
 		return err
 	}
 
@@ -227,7 +227,7 @@ func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHead
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	n, err := r.addressEndpoint.NetworkEndpoint().WritePackets(r, gso, pkts, params)
+	n, err := r.nic.getNetworkEndpoint(r.NetProto).WritePackets(r, gso, pkts, params)
 	r.nic.stats.Tx.Packets.IncrementBy(uint64(n))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < n && pb != nil; i, pb = i+1, pb.Next() {
@@ -248,7 +248,7 @@ func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) *tcpip.Error {
 	// WriteHeaderIncludedPacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Data.Size()
 
-	if err := r.addressEndpoint.NetworkEndpoint().WriteHeaderIncludedPacket(r, pkt); err != nil {
+	if err := r.nic.getNetworkEndpoint(r.NetProto).WriteHeaderIncludedPacket(r, pkt); err != nil {
 		return err
 	}
 	r.nic.stats.Tx.Packets.Increment()
@@ -258,18 +258,12 @@ func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) *tcpip.Error {
 
 // DefaultTTL returns the default TTL of the underlying network endpoint.
 func (r *Route) DefaultTTL() uint8 {
-	return r.addressEndpoint.NetworkEndpoint().DefaultTTL()
+	return r.nic.getNetworkEndpoint(r.NetProto).DefaultTTL()
 }
 
 // MTU returns the MTU of the underlying network endpoint.
 func (r *Route) MTU() uint32 {
-	return r.addressEndpoint.NetworkEndpoint().MTU()
-}
-
-// NetworkProtocolNumber returns the NetworkProtocolNumber of the underlying
-// network endpoint.
-func (r *Route) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
-	return r.addressEndpoint.NetworkEndpoint().NetworkProtocolNumber()
+	return r.nic.getNetworkEndpoint(r.NetProto).MTU()
 }
 
 // Release frees all resources associated with the route.
