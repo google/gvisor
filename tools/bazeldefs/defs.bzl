@@ -191,3 +191,6 @@ def default_installer():
 
 def default_net_util():
     return []  # Nothing needed.
+
+def coreutil():
+    return []  # Nothing needed.

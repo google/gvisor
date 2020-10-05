@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_library", "cc_test", "gbenchmark", "gtest", "select_system")
+load("//tools:defs.bzl", "cc_library", "cc_test", "coreutil", "gbenchmark", "gtest", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -254,7 +254,7 @@ cc_library(
     ],
     hdrs = ["test_util.h"],
     defines = select_system(),
-    deps = [
+    deps = coreutil() + [
         ":fs_util",
         ":logging",
         ":posix_error",
