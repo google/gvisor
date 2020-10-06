@@ -84,8 +84,8 @@ type VectorisedView struct {
 	size  int
 }
 
-// NewVectorisedView creates a new vectorised view from an already-allocated slice
-// of View and sets its size.
+// NewVectorisedView creates a new vectorised view from an already-allocated
+// slice of View and sets its size.
 func NewVectorisedView(size int, views []View) VectorisedView {
 	return VectorisedView{views: views, size: size}
 }
@@ -170,8 +170,9 @@ func (vv *VectorisedView) CapLength(length int) {
 }
 
 // Clone returns a clone of this VectorisedView.
-// If the buffer argument is large enough to contain all the Views of this VectorisedView,
-// the method will avoid allocations and use the buffer to store the Views of the clone.
+// If the buffer argument is large enough to contain all the Views of this
+// VectorisedView, the method will avoid allocations and use the buffer to
+// store the Views of the clone.
 func (vv *VectorisedView) Clone(buffer []View) VectorisedView {
 	return VectorisedView{views: append(buffer[:0], vv.views...), size: vv.size}
 }
@@ -209,7 +210,8 @@ func (vv *VectorisedView) PullUp(count int) (View, bool) {
 	return newFirst, true
 }
 
-// Size returns the size in bytes of the entire content stored in the vectorised view.
+// Size returns the size in bytes of the entire content stored in the
+// vectorised view.
 func (vv *VectorisedView) Size() int {
 	return vv.size
 }
@@ -222,6 +224,12 @@ func (vv *VectorisedView) ToView() View {
 	if len(vv.views) == 1 {
 		return vv.views[0]
 	}
+	return vv.ToOwnedView()
+}
+
+// ToOwnedView returns a single view containing the content of the vectorised
+// view that vv does not own.
+func (vv *VectorisedView) ToOwnedView() View {
 	u := make([]byte, 0, vv.size)
 	for _, v := range vv.views {
 		u = append(u, v...)

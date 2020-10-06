@@ -16,10 +16,29 @@ package header
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// RFC 971 defines the fields of the IPv4 header on page 11 using the following
+// diagram: ("Figure 4")
+//    0                   1                   2                   3
+//    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |Version|  IHL  |Type of Service|          Total Length         |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |         Identification        |Flags|      Fragment Offset    |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |  Time to Live |    Protocol   |         Header Checksum       |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |                       Source Address                          |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |                    Destination Address                        |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |                    Options                    |    Padding    |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//
 const (
 	versIHL = 0
 	tos     = 1
@@ -33,6 +52,7 @@ const (
 	checksum           = 10
 	srcAddr            = 12
 	dstAddr            = 16
+	options            = 20
 )
 
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
@@ -76,7 +96,8 @@ type IPv4Fields struct {
 // IPv4 represents an ipv4 header stored in a byte array.
 // Most of the methods of IPv4 access to the underlying slice without
 // checking the boundaries and could panic because of 'index out of range'.
-// Always call IsValid() to validate an instance of IPv4 before using other methods.
+// Always call IsValid() to validate an instance of IPv4 before using other
+// methods.
 type IPv4 []byte
 
 const (
@@ -151,13 +172,44 @@ func IPVersion(b []byte) int {
 	if len(b) < versIHL+1 {
 		return -1
 	}
-	return int(b[versIHL] >> 4)
+	return int(b[versIHL] >> ipVersionShift)
 }
+
+// RFC 791 page 11 shows the header length (IHL) is in the lower 4 bits
+// of the first byte, and is counted in multiples of 4 bytes.
+//
+//     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |Version|  IHL  |Type of Service|          Total Length         |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      (...)
+//     Version:  4 bits
+//       The Version field indicates the format of the internet header.  This
+//       document describes version 4.
+//
+//     IHL:  4 bits
+//       Internet Header Length is the length of the internet header in 32
+//       bit words, and thus points to the beginning of the data.  Note that
+//       the minimum value for a correct header is 5.
+//
+const (
+	ipVersionShift = 4
+	ipIHLMask      = 0x0f
+	IPv4IHLStride  = 4
+)
 
 // HeaderLength returns the value of the "header length" field of the ipv4
 // header. The length returned is in bytes.
 func (b IPv4) HeaderLength() uint8 {
-	return (b[versIHL] & 0xf) * 4
+	return (b[versIHL] & ipIHLMask) * IPv4IHLStride
+}
+
+// SetHeaderLength sets the value of the "Internet Header Length" field.
+func (b IPv4) SetHeaderLength(hdrLen uint8) {
+	if hdrLen > IPv4MaximumHeaderSize {
+		panic(fmt.Sprintf("got IPv4 Header size = %d, want <= %d", hdrLen, IPv4MaximumHeaderSize))
+	}
+	b[versIHL] = (IPv4Version << ipVersionShift) | ((hdrLen / IPv4IHLStride) & ipIHLMask)
 }
 
 // ID returns the value of the identifier field of the ipv4 header.
@@ -211,6 +263,12 @@ func (b IPv4) DestinationAddress() tcpip.Address {
 	return tcpip.Address(b[dstAddr : dstAddr+IPv4AddressSize])
 }
 
+// Options returns a a buffer holding the options.
+func (b IPv4) Options() []byte {
+	hdrLen := b.HeaderLength()
+	return b[options:hdrLen:hdrLen]
+}
+
 // TransportProtocol implements Network.TransportProtocol.
 func (b IPv4) TransportProtocol() tcpip.TransportProtocolNumber {
 	return tcpip.TransportProtocolNumber(b.Protocol())
@@ -234,6 +292,11 @@ func (b IPv4) TOS() (uint8, uint32) {
 // SetTOS sets the "type of service" field of the ipv4 header.
 func (b IPv4) SetTOS(v uint8, _ uint32) {
 	b[tos] = v
+}
+
+// SetTTL sets the "Time to Live" field of the IPv4 header.
+func (b IPv4) SetTTL(v byte) {
+	b[ttl] = v
 }
 
 // SetTotalLength sets the "total length" field of the ipv4 header.
@@ -276,7 +339,7 @@ func (b IPv4) CalculateChecksum() uint16 {
 
 // Encode encodes all the fields of the ipv4 header.
 func (b IPv4) Encode(i *IPv4Fields) {
-	b[versIHL] = (4 << 4) | ((i.IHL / 4) & 0xf)
+	b.SetHeaderLength(i.IHL)
 	b[tos] = i.TOS
 	b.SetTotalLength(i.TotalLength)
 	binary.BigEndian.PutUint16(b[id:], i.ID)
