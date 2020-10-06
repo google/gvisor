@@ -192,6 +192,7 @@ func (c *context) PullFullState(as platform.AddressSpace, ac arch.Context) {}
 type PTrace struct {
 	platform.MMapMinAddr
 	platform.NoCPUPreemptionDetection
+	platform.UseHostGlobalMemoryBarrier
 }
 
 // New returns a new ptrace-based implementation of the platform interface.

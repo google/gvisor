@@ -17,13 +17,22 @@ package kvm
 import (
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 // SyscallFilters returns syscalls made exclusively by the KVM platform.
 func (*KVM) SyscallFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		syscall.SYS_IOCTL:           {},
+		syscall.SYS_IOCTL: {},
+		unix.SYS_MEMBARRIER: []seccomp.Rule{
+			{
+				seccomp.EqualTo(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED),
+				seccomp.EqualTo(0),
+			},
+		},
 		syscall.SYS_MMAP:            {},
 		syscall.SYS_RT_SIGSUSPEND:   {},
 		syscall.SYS_RT_SIGTIMEDWAIT: {},

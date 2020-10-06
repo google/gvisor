@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -51,6 +52,10 @@ type Platform interface {
 	// DetectsCPUPreemption returns true if Contexts returned by the Platform
 	// can reliably return ErrContextCPUPreempted.
 	DetectsCPUPreemption() bool
+
+	// HaveGlobalMemoryBarrier returns true if the GlobalMemoryBarrier method
+	// is supported.
+	HaveGlobalMemoryBarrier() bool
 
 	// MapUnit returns the alignment used for optional mappings into this
 	// platform's AddressSpaces. Higher values indicate lower per-page costs
@@ -97,6 +102,15 @@ type Platform interface {
 	// called.
 	PreemptAllCPUs() error
 
+	// GlobalMemoryBarrier blocks until all threads running application code
+	// (via Context.Switch) and all task goroutines "have passed through a
+	// state where all memory accesses to user-space addresses match program
+	// order between entry to and return from [GlobalMemoryBarrier]", as for
+	// membarrier(2).
+	//
+	// Preconditions: HaveGlobalMemoryBarrier() == true.
+	GlobalMemoryBarrier() error
+
 	// SyscallFilters returns syscalls made exclusively by this platform.
 	SyscallFilters() seccomp.SyscallRules
 }
@@ -113,6 +127,43 @@ func (NoCPUPreemptionDetection) DetectsCPUPreemption() bool {
 // PreemptAllCPUs implements Platform.PreemptAllCPUs.
 func (NoCPUPreemptionDetection) PreemptAllCPUs() error {
 	panic("This platform does not support CPU preemption detection")
+}
+
+// UseHostGlobalMemoryBarrier implements Platform.HaveGlobalMemoryBarrier and
+// Platform.GlobalMemoryBarrier by invoking equivalent functionality on the
+// host.
+type UseHostGlobalMemoryBarrier struct{}
+
+// HaveGlobalMemoryBarrier implements Platform.HaveGlobalMemoryBarrier.
+func (UseHostGlobalMemoryBarrier) HaveGlobalMemoryBarrier() bool {
+	return hostmm.HaveGlobalMemoryBarrier()
+}
+
+// GlobalMemoryBarrier implements Platform.GlobalMemoryBarrier.
+func (UseHostGlobalMemoryBarrier) GlobalMemoryBarrier() error {
+	return hostmm.GlobalMemoryBarrier()
+}
+
+// UseHostProcessMemoryBarrier implements Platform.HaveGlobalMemoryBarrier and
+// Platform.GlobalMemoryBarrier by invoking a process-local memory barrier.
+// This is faster than UseHostGlobalMemoryBarrier, but is only appropriate for
+// platforms for which application code executes while using the sentry's
+// mm_struct.
+type UseHostProcessMemoryBarrier struct{}
+
+// HaveGlobalMemoryBarrier implements Platform.HaveGlobalMemoryBarrier.
+func (UseHostProcessMemoryBarrier) HaveGlobalMemoryBarrier() bool {
+	// Fall back to a global memory barrier if a process-local one isn't
+	// available.
+	return hostmm.HaveProcessMemoryBarrier() || hostmm.HaveGlobalMemoryBarrier()
+}
+
+// GlobalMemoryBarrier implements Platform.GlobalMemoryBarrier.
+func (UseHostProcessMemoryBarrier) GlobalMemoryBarrier() error {
+	if hostmm.HaveProcessMemoryBarrier() {
+		return hostmm.ProcessMemoryBarrier()
+	}
+	return hostmm.GlobalMemoryBarrier()
 }
 
 // MemoryManager represents an abstraction above the platform address space
