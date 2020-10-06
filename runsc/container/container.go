@@ -327,7 +327,16 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 		if cg != nil {
 			// If there is cgroup config, install it before creating sandbox process.
 			if err := cg.Install(args.Spec.Linux.Resources); err != nil {
-				return nil, fmt.Errorf("configuring cgroup: %v", err)
+				switch {
+				case errors.Is(err, syscall.EROFS) && conf.TestOnlyAllowRunAsCurrentUserWithoutChroot:
+					log.Warningf("Skipping cgroup configuration in test mode: %v", err)
+					cg = nil
+				case errors.Is(err, syscall.EACCES) && conf.Rootless:
+					log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
+					cg = nil
+				default:
+					return nil, fmt.Errorf("configuring cgroup: %v", err)
+				}
 			}
 		}
 		if err := runInCgroup(cg, func() error {
