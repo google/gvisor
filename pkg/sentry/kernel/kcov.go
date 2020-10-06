@@ -215,9 +215,7 @@ func (kcov *Kcov) Clear() {
 func (kcov *Kcov) clearLocked() {
 	kcov.mode = linux.KCOV_MODE_INIT
 	kcov.owningTask = nil
-	if kcov.mappable != nil {
-		kcov.mappable = nil
-	}
+	kcov.mappable = nil
 }
 
 // OnTaskExit is called when the owning task exits. It is similar to
