@@ -2,9 +2,9 @@
 
 [TOC]
 
-gVisor implements its own network stack called [netstack][netstack]. All aspects
-of the network stack are handled inside the Sentry — including TCP connection
-state, control messages, and packet assembly — keeping it isolated from the host
+gVisor implements its own network stack called netstack. All aspects of the
+network stack are handled inside the Sentry — including TCP connection state,
+control messages, and packet assembly — keeping it isolated from the host
 network stack. Data link layer packets are written directly to the virtual
 device inside the network namespace setup by Docker or Kubernetes.
 
@@ -82,4 +82,3 @@ Offload (GSO) to run with a kernel that is newer than 3.17. Add the
 }
 ```
 
-[netstack]: https://github.com/google/netstack
