@@ -203,7 +203,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, expectedDst)
 			}
 
-			src, dst := s.NetworkProtocolInstance(protoNum).ParseAddresses(pkt.Pkt.NetworkHeader().View())
+			src, dst := s.NetworkProtocolInstance(protoNum).ParseAddresses(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
 			if src != expectedSrc {
 				t.Errorf("got pkt source = %s, want = %s", src, expectedSrc)
 			}
