@@ -8,6 +8,7 @@ go_library(
         "testutil.go",
     ],
     visibility = [
+        "//pkg/tcpip/network/fragmentation:__pkg__",
         "//pkg/tcpip/network/ipv4:__pkg__",
         "//pkg/tcpip/network/ipv6:__pkg__",
     ],

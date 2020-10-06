@@ -310,8 +310,6 @@ packetimpact_go_test(
 packetimpact_go_test(
     name = "ipv6_fragment_reassembly",
     srcs = ["ipv6_fragment_reassembly_test.go"],
-    # TODO(b/160919104): Fix netstack then remove the line below.
-    expect_netstack_failure = True,
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

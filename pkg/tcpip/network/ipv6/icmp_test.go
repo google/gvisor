@@ -50,6 +50,10 @@ type stubLinkEndpoint struct {
 	stack.LinkEndpoint
 }
 
+func (*stubLinkEndpoint) MTU() uint32 {
+	return defaultMTU
+}
+
 func (*stubLinkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	// Indicate that resolution for link layer addresses is required to send
 	// packets over this link. This is needed so the NIC knows to allocate a
