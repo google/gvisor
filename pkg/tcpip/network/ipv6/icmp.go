@@ -286,6 +286,17 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			e.linkAddrCache.AddLinkAddress(e.nic.ID(), r.RemoteAddress, sourceLinkAddr)
 		}
 
+		// As per RFC 4861 section 7.1.1:
+		//   A node MUST silently discard any received Neighbor Solicitation
+		//   messages that do not satisfy all of the following validity checks:
+		//    ...
+		//    - If the IP source address is the unspecified address, the IP
+		//      destination address is a solicited-node multicast address.
+		if unspecifiedSource && !header.IsSolicitedNodeAddr(r.LocalAddress) {
+			received.Invalid.Increment()
+			return
+		}
+
 		// ICMPv6 Neighbor Solicit messages are always sent to
 		// specially crafted IPv6 multicast addresses. As a result, the
 		// route we end up with here has as its LocalAddress such a
