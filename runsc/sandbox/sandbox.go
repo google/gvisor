@@ -72,11 +72,14 @@ type Sandbox struct {
 	// will have it as a child process.
 	child bool
 
-	// status is an exit status of a sandbox process.
-	status syscall.WaitStatus
-
 	// statusMu protects status.
 	statusMu sync.Mutex
+
+	// status is the exit status of a sandbox process. It's only set if the
+	// child==true and the sandbox was waited on. This field allows for multiple
+	// threads to wait on sandbox and get the exit code, since Linux will return
+	// WaitStatus to one of the waiters only.
+	status syscall.WaitStatus
 }
 
 // Args is used to configure a new sandbox.
@@ -746,35 +749,47 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 // Wait waits for the containerized process to exit, and returns its WaitStatus.
 func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	log.Debugf("Waiting for container %q in sandbox %q", cid, s.ID)
-	var ws syscall.WaitStatus
 
 	if conn, err := s.sandboxConnect(); err != nil {
-		// The sandbox may have exited while before we had a chance to
-		// wait on it.
+		// The sandbox may have exited while before we had a chance to wait on it.
+		// There is nothing we can do for subcontainers. For the init container, we
+		// can try to get the sandbox exit code.
+		if !s.IsRootContainer(cid) {
+			return syscall.WaitStatus(0), err
+		}
 		log.Warningf("Wait on container %q failed: %v. Will try waiting on the sandbox process instead.", cid, err)
 	} else {
 		defer conn.Close()
+
 		// Try the Wait RPC to the sandbox.
+		var ws syscall.WaitStatus
 		err = conn.Call(boot.ContainerWait, &cid, &ws)
 		if err == nil {
 			// It worked!
 			return ws, nil
 		}
+		// See comment above.
+		if !s.IsRootContainer(cid) {
+			return syscall.WaitStatus(0), err
+		}
+
 		// The sandbox may have exited after we connected, but before
 		// or during the Wait RPC.
 		log.Warningf("Wait RPC to container %q failed: %v. Will try waiting on the sandbox process instead.", cid, err)
 	}
 
-	// The sandbox may have already exited, or exited while handling the
-	// Wait RPC. The best we can do is ask Linux what the sandbox exit
-	// status was, since in most cases that will be the same as the
-	// container exit status.
+	// The sandbox may have already exited, or exited while handling the Wait RPC.
+	// The best we can do is ask Linux what the sandbox exit status was, since in
+	// most cases that will be the same as the container exit status.
 	if err := s.waitForStopped(); err != nil {
-		return ws, err
+		return syscall.WaitStatus(0), err
 	}
 	if !s.child {
-		return ws, fmt.Errorf("sandbox no longer running and its exit status is unavailable")
+		return syscall.WaitStatus(0), fmt.Errorf("sandbox no longer running and its exit status is unavailable")
 	}
+
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
 	return s.status, nil
 }
 
