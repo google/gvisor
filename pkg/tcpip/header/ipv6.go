@@ -309,12 +309,19 @@ func IsV6UnicastAddress(addr tcpip.Address) bool {
 	return addr[0] != 0xff
 }
 
+const solicitedNodeMulticastPrefix = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff"
+
 // SolicitedNodeAddr computes the solicited-node multicast address. This is
 // used for NDP. Described in RFC 4291. The argument must be a full-length IPv6
 // address.
 func SolicitedNodeAddr(addr tcpip.Address) tcpip.Address {
-	const solicitedNodeMulticastPrefix = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff"
 	return solicitedNodeMulticastPrefix + addr[len(addr)-3:]
+}
+
+// IsSolicitedNodeAddr determines whether the address is a solicited-node
+// multicast address.
+func IsSolicitedNodeAddr(addr tcpip.Address) bool {
+	return solicitedNodeMulticastPrefix == addr[:len(addr)-3]
 }
 
 // EthernetAdddressToModifiedEUI64IntoBuf populates buf with a modified EUI-64
