@@ -162,6 +162,12 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 	syscall.SYS_LSEEK:   {},
 	syscall.SYS_MADVISE: {},
+	unix.SYS_MEMBARRIER: []seccomp.Rule{
+		{
+			seccomp.EqualTo(linux.MEMBARRIER_CMD_GLOBAL),
+			seccomp.EqualTo(0),
+		},
+	},
 	syscall.SYS_MINCORE: {},
 	// Used by the Go runtime as a temporarily workaround for a Linux
 	// 5.2-5.4 bug.

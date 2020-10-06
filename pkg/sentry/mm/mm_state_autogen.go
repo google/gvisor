@@ -315,6 +315,7 @@ func (x *MemoryManager) StateFields() []string {
 		"aioManager",
 		"sleepForActivation",
 		"vdsoSigReturnAddr",
+		"membarrierPrivateEnabled",
 	}
 }
 
@@ -348,6 +349,7 @@ func (x *MemoryManager) StateSave(m state.Sink) {
 	m.Save(19, &x.aioManager)
 	m.Save(20, &x.sleepForActivation)
 	m.Save(21, &x.vdsoSigReturnAddr)
+	m.Save(22, &x.membarrierPrivateEnabled)
 }
 
 func (x *MemoryManager) StateLoad(m state.Source) {
@@ -373,6 +375,7 @@ func (x *MemoryManager) StateLoad(m state.Source) {
 	m.Load(19, &x.aioManager)
 	m.Load(20, &x.sleepForActivation)
 	m.Load(21, &x.vdsoSigReturnAddr)
+	m.Load(22, &x.membarrierPrivateEnabled)
 	m.AfterLoad(x.afterLoad)
 }
 
