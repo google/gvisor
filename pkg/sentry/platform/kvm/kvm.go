@@ -63,6 +63,9 @@ type runData struct {
 type KVM struct {
 	platform.NoCPUPreemptionDetection
 
+	// KVM never changes mm_structs.
+	platform.UseHostProcessMemoryBarrier
+
 	// machine is the backing VM.
 	machine *machine
 }

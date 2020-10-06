@@ -38,6 +38,7 @@ go_library(
         "ipc.go",
         "limits.go",
         "linux.go",
+        "membarrier.go",
         "mm.go",
         "netdevice.go",
         "netfilter.go",

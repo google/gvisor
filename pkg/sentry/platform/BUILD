@@ -15,6 +15,7 @@ go_library(
         "//pkg/context",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
         "//pkg/usermem",
     ],

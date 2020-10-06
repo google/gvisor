@@ -286,6 +286,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:membarrier_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:memory_accounting_test",
 )
 
