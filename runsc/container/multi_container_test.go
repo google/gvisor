@@ -480,7 +480,7 @@ func TestMultiContainerMount(t *testing.T) {
 // TestMultiContainerSignal checks that it is possible to signal individual
 // containers without killing the entire sandbox.
 func TestMultiContainerSignal(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1691,12 +1691,11 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 }
 
 // TestMultiContainerHomeEnvDir tests that the HOME environment variable is set
-// for root containers, sub-containers, and execed processes.
+// for root containers, sub-containers, and exec'ed processes.
 func TestMultiContainerHomeEnvDir(t *testing.T) {
-	// TODO(gvisor.dev/issue/1487): VFSv2 configs failing.
 	// NOTE: Don't use overlay since we need changes to persist to the temp dir
 	// outside the sandbox.
-	for testName, conf := range configs(t, noOverlay...) {
+	for testName, conf := range configsWithVFS2(t, noOverlay...) {
 		t.Run(testName, func(t *testing.T) {
 
 			rootDir, cleanup, err := testutil.SetupRootDir()
@@ -1718,9 +1717,9 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 
 			// We will sleep in the root container in order to ensure that the root
 			//container doesn't terminate before sub containers can be created.
-			rootCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s; sleep 1000", homeDirs["root"].Name())}
-			subCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["sub"].Name())}
-			execCmd := fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["exec"].Name())
+			rootCmd := []string{"/bin/sh", "-c", fmt.Sprintf(`printf "$HOME" > %s; sleep 1000`, homeDirs["root"].Name())}
+			subCmd := []string{"/bin/sh", "-c", fmt.Sprintf(`printf "$HOME" > %s`, homeDirs["sub"].Name())}
+			execCmd := fmt.Sprintf(`printf "$HOME" > %s`, homeDirs["exec"].Name())
 
 			// Setup the containers, a root container and sub container.
 			specConfig, ids := createSpecs(rootCmd, subCmd)
