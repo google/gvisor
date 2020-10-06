@@ -202,9 +202,18 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		ns := header.NDPNeighborSolicit(payload.ToView())
 		targetAddr := ns.TargetAddress()
 
-		// As per RFC 4861 section 4.3, the Target Address MUST NOT be a multicast
-		// address.
+		// As per RFC 4861 section 4.3:
+		//   Target Address: The IP address of the target of the solicitation. It
+		//                   MUST NOT be a multicast address.
 		if header.IsV6MulticastAddress(targetAddr) {
+			received.Invalid.Increment()
+			return
+		}
+
+		// As per RFC 4861 section 7.1.1:
+		//   If the IP source address is the unspecified address, the IP destination
+		//   address is a solicited-node multicast address.
+		if tcpip.IsZeros(iph.SourceAddress()) && !header.IsV6MulticastAddress(iph.DestinationAddress()) {
 			received.Invalid.Increment()
 			return
 		}

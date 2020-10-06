@@ -1838,7 +1838,7 @@ func (a Address) To4() Address {
 		return a
 	}
 	if len(a) == ipv6len &&
-		isZeros(a[0:10]) &&
+		IsZeros(a[0:10]) &&
 		a[10] == 0xff &&
 		a[11] == 0xff {
 		return a[12:16]
@@ -1846,8 +1846,8 @@ func (a Address) To4() Address {
 	return ""
 }
 
-// isZeros reports whether a is all zeros.
-func isZeros(a Address) bool {
+// IsZeros reports whether a is all zeros.
+func IsZeros(a Address) bool {
 	for i := 0; i < len(a); i++ {
 		if a[i] != 0 {
 			return false
