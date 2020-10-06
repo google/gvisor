@@ -27,8 +27,10 @@ go_test(
     srcs = ["seccomp_test.go"],
     library = ":seccomp",
     deps = [
-        "//pkg/binary",
+        "//pkg/abi/linux",
         "//pkg/bpf",
+        "//pkg/marshal",
+        "//pkg/usermem",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )

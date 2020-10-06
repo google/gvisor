@@ -19,12 +19,10 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // emptyIPv6Filter is for comparison with a rule's filters to determine whether
@@ -145,10 +143,9 @@ func modifyEntries6(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 			return nil, syserr.ErrInvalidArgument
 		}
 		var entry linux.IP6TEntry
-		buf := optVal[:linux.SizeOfIP6TEntry]
-		binary.Unmarshal(buf, usermem.ByteOrder, &entry)
+		entry.UnmarshalUnsafe(optVal[:entry.SizeBytes()])
 		initialOptValLen := len(optVal)
-		optVal = optVal[linux.SizeOfIP6TEntry:]
+		optVal = optVal[entry.SizeBytes():]
 
 		if entry.TargetOffset < linux.SizeOfIP6TEntry {
 			nflog("entry has too-small target offset %d", entry.TargetOffset)

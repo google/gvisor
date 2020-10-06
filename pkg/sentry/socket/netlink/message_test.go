@@ -20,11 +20,17 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 )
 
 type dummyNetlinkMsg struct {
+	marshal.StubMarshallable
 	Foo uint16
+}
+
+func (*dummyNetlinkMsg) SizeBytes() int {
+	return 2
 }
 
 func TestParseMessage(t *testing.T) {

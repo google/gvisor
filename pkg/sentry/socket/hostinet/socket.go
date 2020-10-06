@@ -20,7 +20,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
@@ -517,12 +516,14 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 			switch unixCmsg.Header.Type {
 			case syscall.IP_TOS:
 				controlMessages.IP.HasTOS = true
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageTOS], usermem.ByteOrder, &controlMessages.IP.TOS)
+				var tos primitive.Uint8
+				tos.UnmarshalUnsafe(unixCmsg.Data[:tos.SizeBytes()])
+				controlMessages.IP.TOS = uint8(tos)
 
 			case syscall.IP_PKTINFO:
 				controlMessages.IP.HasIPPacketInfo = true
 				var packetInfo linux.ControlMessageIPPacketInfo
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageIPPacketInfo], usermem.ByteOrder, &packetInfo)
+				packetInfo.UnmarshalUnsafe(unixCmsg.Data[:packetInfo.SizeBytes()])
 				controlMessages.IP.PacketInfo = control.NewIPPacketInfo(packetInfo)
 			}
 
@@ -530,7 +531,9 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 			switch unixCmsg.Header.Type {
 			case syscall.IPV6_TCLASS:
 				controlMessages.IP.HasTClass = true
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageTClass], usermem.ByteOrder, &controlMessages.IP.TClass)
+				var tclass primitive.Uint32
+				tclass.UnmarshalUnsafe(unixCmsg.Data[:tclass.SizeBytes()])
+				controlMessages.IP.TClass = uint32(tclass)
 			}
 		}
 	}
@@ -645,7 +648,7 @@ func (s *socketOpsCommon) State() uint32 {
 		return 0
 	}
 
-	binary.Unmarshal(buf, usermem.ByteOrder, &info)
+	info.UnmarshalUnsafe(buf[:info.SizeBytes()])
 	return uint32(info.State)
 }
 

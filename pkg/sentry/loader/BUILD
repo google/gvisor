@@ -19,11 +19,12 @@ go_library(
         "vdso_state.go",
         ":vdso_bin",
     ],
+    marshal = True,
+    marshal_debug = True,
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",

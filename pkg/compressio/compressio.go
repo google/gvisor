@@ -48,12 +48,12 @@ import (
 	"compress/flate"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"hash"
 	"io"
 	"runtime"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -130,6 +130,10 @@ type worker struct {
 	hashPool *hashPool
 	input    chan *chunk
 	output   chan result
+
+	// scratch is a temporary buffer used for marshalling. This is declared
+	// unfront here to avoid reallocation.
+	scratch [4]byte
 }
 
 // work is the main work routine; see worker.
@@ -167,7 +171,8 @@ func (w *worker) work(compress bool, level int) {
 
 			// Write the hash, if enabled.
 			if h != nil {
-				binary.WriteUint32(h, binary.BigEndian, uint32(c.compressed.Len()))
+				binary.BigEndian.PutUint32(w.scratch[:], uint32(c.compressed.Len()))
+				h.Write(w.scratch[:4])
 				c.h = h
 				h = nil
 			}
@@ -175,7 +180,8 @@ func (w *worker) work(compress bool, level int) {
 			// Check the hash of the compressed contents.
 			if h != nil {
 				h.Write(c.compressed.Bytes())
-				binary.WriteUint32(h, binary.BigEndian, uint32(c.compressed.Len()))
+				binary.BigEndian.PutUint32(w.scratch[:], uint32(c.compressed.Len()))
+				h.Write(w.scratch[:4])
 				io.CopyN(h, bytes.NewReader(c.lastSum), int64(len(c.lastSum)))
 
 				sum := h.Sum(nil)
@@ -352,6 +358,10 @@ type Reader struct {
 
 	// in is the source.
 	in io.Reader
+
+	// scratch is a temporary buffer used for marshalling. This is declared
+	// unfront here to avoid reallocation.
+	scratch [4]byte
 }
 
 var _ io.Reader = (*Reader)(nil)
@@ -368,14 +378,15 @@ func NewReader(in io.Reader, key []byte) (*Reader, error) {
 	// Use double buffering for read.
 	r.init(key, 2*runtime.GOMAXPROCS(0), false, 0)
 
-	var err error
-	if r.chunkSize, err = binary.ReadUint32(in, binary.BigEndian); err != nil {
+	if _, err := io.ReadFull(in, r.scratch[:4]); err != nil {
 		return nil, err
 	}
+	r.chunkSize = binary.BigEndian.Uint32(r.scratch[:4])
 
 	if r.hashPool != nil {
 		h := r.hashPool.getHash()
-		binary.WriteUint32(h, binary.BigEndian, r.chunkSize)
+		binary.BigEndian.PutUint32(r.scratch[:], r.chunkSize)
+		h.Write(r.scratch[:4])
 		r.lastSum = h.Sum(nil)
 		r.hashPool.putHash(h)
 		sum := make([]byte, len(r.lastSum))
@@ -467,8 +478,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 		// reader. The length is used to limit the reader.
 		//
 		// See writer.flush.
-		l, err := binary.ReadUint32(r.in, binary.BigEndian)
-		if err != nil {
+		if _, err := io.ReadFull(r.in, r.scratch[:4]); err != nil {
 			// This is generally okay as long as there
 			// are still buffers outstanding. We actually
 			// just wait for completion of those buffers here
@@ -488,6 +498,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 				return done, err
 			}
 		}
+		l := binary.BigEndian.Uint32(r.scratch[:4])
 
 		// Read this chunk and schedule decompression.
 		compressed := bufPool.Get().(*bytes.Buffer)
@@ -573,6 +584,10 @@ type Writer struct {
 
 	// closed indicates whether the file has been closed.
 	closed bool
+
+	// scratch is a temporary buffer used for marshalling. This is declared
+	// unfront here to avoid reallocation.
+	scratch [4]byte
 }
 
 var _ io.Writer = (*Writer)(nil)
@@ -594,13 +609,15 @@ func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer,
 	}
 	w.init(key, 1+runtime.GOMAXPROCS(0), true, level)
 
-	if err := binary.WriteUint32(w.out, binary.BigEndian, chunkSize); err != nil {
+	binary.BigEndian.PutUint32(w.scratch[:], chunkSize)
+	if _, err := w.out.Write(w.scratch[:4]); err != nil {
 		return nil, err
 	}
 
 	if w.hashPool != nil {
 		h := w.hashPool.getHash()
-		binary.WriteUint32(h, binary.BigEndian, chunkSize)
+		binary.BigEndian.PutUint32(w.scratch[:], chunkSize)
+		h.Write(w.scratch[:4])
 		w.lastSum = h.Sum(nil)
 		w.hashPool.putHash(h)
 		if _, err := io.CopyN(w.out, bytes.NewReader(w.lastSum), int64(len(w.lastSum))); err != nil {
@@ -616,7 +633,9 @@ func (w *Writer) flush(c *chunk) error {
 	// Prefix each chunk with a length; this allows the reader to safely
 	// limit reads while buffering.
 	l := uint32(c.compressed.Len())
-	if err := binary.WriteUint32(w.out, binary.BigEndian, l); err != nil {
+
+	binary.BigEndian.PutUint32(w.scratch[:], l)
+	if _, err := w.out.Write(w.scratch[:4]); err != nil {
 		return err
 	}
 

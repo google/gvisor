@@ -6,10 +6,7 @@ go_library(
     name = "compressio",
     srcs = ["compressio.go"],
     visibility = ["//:sandbox"],
-    deps = [
-        "//pkg/binary",
-        "//pkg/sync",
-    ],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

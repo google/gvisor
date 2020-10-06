@@ -15,6 +15,7 @@
 package hostinet
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -24,9 +25,10 @@ import (
 	"strings"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -144,8 +146,8 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 		if len(link.Data) < syscall.SizeofIfInfomsg {
 			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(link.Data), syscall.SizeofIfInfomsg)
 		}
-		var ifinfo syscall.IfInfomsg
-		binary.Unmarshal(link.Data[:syscall.SizeofIfInfomsg], usermem.ByteOrder, &ifinfo)
+		var ifinfo linux.InterfaceInfoMessage
+		ifinfo.UnmarshalUnsafe(link.Data[:ifinfo.SizeBytes()])
 		inetIF := inet.Interface{
 			DeviceType: ifinfo.Type,
 			Flags:      ifinfo.Flags,
@@ -175,11 +177,11 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 		if len(addr.Data) < syscall.SizeofIfAddrmsg {
 			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(addr.Data), syscall.SizeofIfAddrmsg)
 		}
-		var ifaddr syscall.IfAddrmsg
-		binary.Unmarshal(addr.Data[:syscall.SizeofIfAddrmsg], usermem.ByteOrder, &ifaddr)
+		var ifaddr linux.InterfaceAddrMessage
+		ifaddr.UnmarshalUnsafe(addr.Data[:ifaddr.SizeBytes()])
 		inetAddr := inet.InterfaceAddr{
 			Family:    ifaddr.Family,
-			PrefixLen: ifaddr.Prefixlen,
+			PrefixLen: ifaddr.PrefixLen,
 			Flags:     ifaddr.Flags,
 		}
 		attrs, err := syscall.ParseNetlinkRouteAttr(&addr)
@@ -207,13 +209,13 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 			continue
 		}
 
-		var ifRoute syscall.RtMsg
-		binary.Unmarshal(routeMsg.Data[:syscall.SizeofRtMsg], usermem.ByteOrder, &ifRoute)
+		var ifRoute linux.RouteMessage
+		ifRoute.UnmarshalUnsafe(routeMsg.Data[:ifRoute.SizeBytes()])
 		inetRoute := inet.Route{
 			Family:   ifRoute.Family,
-			DstLen:   ifRoute.Dst_len,
-			SrcLen:   ifRoute.Src_len,
-			TOS:      ifRoute.Tos,
+			DstLen:   ifRoute.DstLen,
+			SrcLen:   ifRoute.SrcLen,
+			TOS:      ifRoute.TOS,
 			Table:    ifRoute.Table,
 			Protocol: ifRoute.Protocol,
 			Scope:    ifRoute.Scope,
@@ -242,7 +244,9 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 				if len(attr.Value) != expected {
 					return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid attribute data length (%d bytes, expected %d bytes)", len(attr.Value), expected)
 				}
-				binary.Unmarshal(attr.Value, usermem.ByteOrder, &inetRoute.OutputInterface)
+				var outputIF primitive.Int32
+				outputIF.UnmarshalUnsafe(attr.Value)
+				inetRoute.OutputInterface = int32(outputIF)
 			}
 		}
 

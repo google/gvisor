@@ -14,8 +14,6 @@
 
 package linux
 
-import "gvisor.dev/gvisor/pkg/binary"
-
 const (
 	// IFNAMSIZ is the size of the name field for IFReq.
 	IFNAMSIZ = 16
@@ -66,7 +64,7 @@ func (ifr *IFReq) SetName(name string) {
 }
 
 // SizeOfIFReq is the binary size of an IFReq struct (40 bytes).
-var SizeOfIFReq = binary.Size(IFReq{})
+var SizeOfIFReq = (*IFReq)(nil).SizeBytes()
 
 // IFMap contains interface hardware parameters.
 type IFMap struct {

@@ -14,10 +14,6 @@
 
 package linux
 
-import (
-	"gvisor.dev/gvisor/pkg/binary"
-)
-
 // Event masks.
 const (
 	EPOLLIN     = 0x1
@@ -59,4 +55,4 @@ const (
 )
 
 // SizeOfEpollEvent is the size of EpollEvent struct.
-var SizeOfEpollEvent = int(binary.Size(EpollEvent{}))
+var SizeOfEpollEvent = (*EpollEvent)(nil).SizeBytes()
