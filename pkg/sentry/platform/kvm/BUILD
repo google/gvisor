@@ -56,6 +56,7 @@ go_library(
         "//pkg/sentry/time",
         "//pkg/sync",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
