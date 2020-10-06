@@ -178,12 +178,32 @@ func PayloadLen(payloadLength int) NetworkChecker {
 	}
 }
 
+// IPv4Options returns a checker that checks the options in an IPv4 packet.
+func IPv4Options(want []byte) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
+		ip, ok := h[0].(header.IPv4)
+		if !ok {
+			t.Fatalf("unexpected network header passed to checker, got = %T, want = header.IPv4", h[0])
+		}
+		options := ip.Options()
+		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
+		if len(want) == 0 && len(options) == 0 {
+			return
+		}
+		if diff := cmp.Diff(want, options); diff != "" {
+			t.Errorf("options mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
 // FragmentOffset creates a checker that checks the FragmentOffset field.
 func FragmentOffset(offset uint16) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
 
-		// We only do this of IPv4 for now.
+		// We only do this for IPv4 for now.
 		switch ip := h[0].(type) {
 		case header.IPv4:
 			if v := ip.FragmentOffset(); v != offset {
@@ -198,7 +218,7 @@ func FragmentFlags(flags uint8) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
 
-		// We only do this of IPv4 for now.
+		// We only do this for IPv4 for now.
 		switch ip := h[0].(type) {
 		case header.IPv4:
 			if v := ip.Flags(); v != flags {
@@ -664,8 +684,8 @@ func TCPTimestampChecker(wantTS bool, wantTSVal uint32, wantTSEcr uint32) Transp
 	}
 }
 
-// TCPNoSACKBlockChecker creates a checker that verifies that the segment does not
-// contain any SACK blocks in the TCP options.
+// TCPNoSACKBlockChecker creates a checker that verifies that the segment does
+// not contain any SACK blocks in the TCP options.
 func TCPNoSACKBlockChecker() TransportChecker {
 	return TCPSACKBlockChecker(nil)
 }
@@ -739,8 +759,8 @@ func Payload(want []byte) TransportChecker {
 	}
 }
 
-// ICMPv4 creates a checker that checks that the transport protocol is ICMPv4 and
-// potentially additional ICMPv4 header fields.
+// ICMPv4 creates a checker that checks that the transport protocol is ICMPv4
+// and potentially additional ICMPv4 header fields.
 func ICMPv4(checkers ...TransportChecker) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
@@ -851,8 +871,8 @@ func ICMPv4Payload(want []byte) TransportChecker {
 			t.Fatalf("unexpected transport header passed to checker, got = %T, want = header.ICMPv4", h)
 		}
 		payload := icmpv4.Payload()
-		if diff := cmp.Diff(payload, want); diff != "" {
-			t.Errorf("got ICMP payload mismatch (-want +got):\n%s", diff)
+		if diff := cmp.Diff(want, payload); diff != "" {
+			t.Errorf("ICMP payload mismatch (-want +got):\n%s", diff)
 		}
 	}
 }

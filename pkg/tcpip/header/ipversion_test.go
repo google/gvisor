@@ -22,7 +22,7 @@ import (
 
 func TestIPv4(t *testing.T) {
 	b := header.IPv4(make([]byte, header.IPv4MinimumSize))
-	b.Encode(&header.IPv4Fields{})
+	b.Encode(&header.IPv4Fields{IHL: header.IPv4MinimumSize})
 
 	const want = header.IPv4Version
 	if v := header.IPVersion(b); v != want {

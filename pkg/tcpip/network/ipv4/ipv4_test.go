@@ -115,22 +115,21 @@ func TestIPv4Sanity(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		headerLength      uint8
-		minTotalLength    uint16
+		headerLength      uint8 // value of 0 means "use correct size"
+		maxTotalLength    uint16
 		transportProtocol uint8
 		TTL               uint8
 		shouldFail        bool
 		expectICMP        bool
 		ICMPType          header.ICMPv4Type
 		ICMPCode          header.ICMPv4Code
+		options           []byte
 	}{
 		{
 			name:              "valid",
-			headerLength:      header.IPv4MinimumSize,
-			minTotalLength:    defaultMTU,
+			maxTotalLength:    defaultMTU,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			shouldFail:        false,
 		},
 		// The TTL tests check that we are not rejecting an incoming packet
 		// with a zero or one TTL, which has been a point of confusion in the
@@ -145,24 +144,43 @@ func TestIPv4Sanity(t *testing.T) {
 		//      received with TTL less than 2.
 		{
 			name:              "zero TTL",
-			headerLength:      header.IPv4MinimumSize,
-			minTotalLength:    defaultMTU,
+			maxTotalLength:    defaultMTU,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               0,
 			shouldFail:        false,
 		},
 		{
 			name:              "one TTL",
-			headerLength:      header.IPv4MinimumSize,
-			minTotalLength:    defaultMTU,
+			maxTotalLength:    defaultMTU,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               1,
 			shouldFail:        false,
 		},
 		{
+			name:              "End options",
+			maxTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options:           []byte{0, 0, 0, 0},
+		},
+		{
+			name:              "NOP options",
+			maxTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options:           []byte{1, 1, 1, 1},
+		},
+		{
+			name:              "NOP and End options",
+			maxTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options:           []byte{1, 1, 0, 0},
+		},
+		{
 			name:              "bad header length",
 			headerLength:      header.IPv4MinimumSize - 1,
-			minTotalLength:    defaultMTU,
+			maxTotalLength:    defaultMTU,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			shouldFail:        true,
@@ -170,8 +188,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad total length (0)",
-			headerLength:      header.IPv4MinimumSize,
-			minTotalLength:    0,
+			maxTotalLength:    0,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			shouldFail:        true,
@@ -179,8 +196,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad total length (ip - 1)",
-			headerLength:      header.IPv4MinimumSize,
-			minTotalLength:    uint16(header.IPv4MinimumSize - 1),
+			maxTotalLength:    uint16(header.IPv4MinimumSize - 1),
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			shouldFail:        true,
@@ -188,8 +204,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad total length (ip + icmp - 1)",
-			headerLength:      header.IPv4MinimumSize,
-			minTotalLength:    uint16(header.IPv4MinimumSize + header.ICMPv4MinimumSize - 1),
+			maxTotalLength:    uint16(header.IPv4MinimumSize + header.ICMPv4MinimumSize - 1),
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			shouldFail:        true,
@@ -197,8 +212,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad protocol",
-			headerLength:      header.IPv4MinimumSize,
-			minTotalLength:    defaultMTU,
+			maxTotalLength:    defaultMTU,
 			transportProtocol: 99,
 			TTL:               ttl,
 			shouldFail:        true,
@@ -233,7 +247,15 @@ func TestIPv4Sanity(t *testing.T) {
 				},
 			})
 
-			ipHeaderLength := header.IPv4MinimumSize
+			// Round up the header size to the next multiple of 4 as RFC 791, page 11
+			// says: "Internet Header Length is the length of the internet header
+			// in 32 bit words..." and on page 23: "The internet header padding is
+			// used to ensure that the internet header ends on a 32 bit boundary."
+			ipHeaderLength := ((header.IPv4MinimumSize + len(test.options)) + header.IPv4IHLStride - 1) & ^(header.IPv4IHLStride - 1)
+
+			if ipHeaderLength > header.IPv4MaximumHeaderSize {
+				t.Fatalf("too many bytes in options: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
+			}
 			totalLen := uint16(ipHeaderLength + header.ICMPv4MinimumSize)
 			hdr := buffer.NewPrependable(int(totalLen))
 			icmp := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
@@ -246,17 +268,24 @@ func TestIPv4Sanity(t *testing.T) {
 			icmp.SetChecksum(0)
 			icmp.SetChecksum(^header.Checksum(icmp, 0))
 			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
-			if test.minTotalLength < totalLen {
-				totalLen = test.minTotalLength
+			if test.maxTotalLength < totalLen {
+				totalLen = test.maxTotalLength
 			}
 			ip.Encode(&header.IPv4Fields{
-				IHL:         test.headerLength,
+				IHL:         uint8(ipHeaderLength),
 				TotalLength: totalLen,
 				Protocol:    test.transportProtocol,
 				TTL:         test.TTL,
 				SrcAddr:     remoteIPv4Addr,
 				DstAddr:     ipv4Addr.Address,
 			})
+			if n := copy(ip.Options(), test.options); n != len(test.options) {
+				t.Fatalf("options larger than available space: copied %d/%d bytes", n, len(test.options))
+			}
+			// Override the correct value if the test case specified one.
+			if test.headerLength != 0 {
+				ip.SetHeaderLength(test.headerLength)
+			}
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			})
@@ -301,7 +330,7 @@ func TestIPv4Sanity(t *testing.T) {
 			case header.ICMPv4DstUnreachable:
 				checker.IPv4(t, replyIPHeader,
 					checker.IPFullLength(uint16(header.IPv4MinimumSize+header.ICMPv4MinimumSize+requestPkt.Size())),
-					checker.IPv4HeaderLength(ipHeaderLength),
+					checker.IPv4HeaderLength(header.IPv4MinimumSize),
 					checker.ICMPv4(
 						checker.ICMPv4Code(test.ICMPCode),
 						checker.ICMPv4Checksum(),
@@ -316,9 +345,10 @@ func TestIPv4Sanity(t *testing.T) {
 			case header.ICMPv4EchoReply:
 				checker.IPv4(t, replyIPHeader,
 					checker.IPv4HeaderLength(ipHeaderLength),
+					checker.IPv4Options(test.options),
 					checker.IPFullLength(uint16(requestPkt.Size())),
 					checker.ICMPv4(
-						checker.ICMPv4Code(test.ICMPCode),
+						checker.ICMPv4Code(header.ICMPv4UnusedCode),
 						checker.ICMPv4Seq(randomSequence),
 						checker.ICMPv4Ident(randomIdent),
 						checker.ICMPv4Checksum(),
