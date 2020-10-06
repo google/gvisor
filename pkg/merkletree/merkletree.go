@@ -41,7 +41,7 @@ type Layout struct {
 	blockSize int64
 	// digestSize is the size of a generated hash.
 	digestSize int64
-	// levelOffset contains the offset of the begnning of each level in
+	// levelOffset contains the offset of the beginning of each level in
 	// bytes. The number of levels in the tree is the length of the slice.
 	// The leaf nodes (level 0) contain hashes of blocks of the input data.
 	// Each level N contains hashes of the blocks in level N-1. The highest
