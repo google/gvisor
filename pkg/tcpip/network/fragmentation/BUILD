@@ -29,6 +29,8 @@ go_library(
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/stack",
     ],
 )
 
@@ -44,5 +46,7 @@ go_test(
     deps = [
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
+        "//pkg/tcpip/network/testutil",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
