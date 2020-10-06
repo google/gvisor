@@ -410,7 +410,7 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 		naDst         tcpip.Address
 	}{
 		{
-			name:          "Unspecified source to multicast destination",
+			name:          "Unspecified source to solicited-node multicast destination",
 			nsOpts:        nil,
 			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         header.IPv6Any,
@@ -437,11 +437,7 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         header.IPv6Any,
 			nsDst:         nicAddr,
-			nsInvalid:     false,
-			naDstLinkAddr: remoteLinkAddr0,
-			naSolicited:   false,
-			naSrc:         nicAddr,
-			naDst:         header.IPv6AllNodesMulticastAddress,
+			nsInvalid:     true,
 		},
 		{
 			name: "Unspecified source with source ll option to unicast destination",
