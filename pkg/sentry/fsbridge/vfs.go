@@ -122,7 +122,7 @@ func NewVFSLookup(mntns *vfs.MountNamespace, root, workingDir vfs.VirtualDentry)
 // remainingTraversals is not configurable in VFS2, all callers are using the
 // default anyways.
 func (l *vfsLookup) OpenPath(ctx context.Context, pathname string, opts vfs.OpenOptions, _ *uint, resolveFinal bool) (File, error) {
-	vfsObj := l.mntns.Root().Mount().Filesystem().VirtualFilesystem()
+	vfsObj := l.root.Mount().Filesystem().VirtualFilesystem()
 	creds := auth.CredentialsFromContext(ctx)
 	path := fspath.Parse(pathname)
 	pop := &vfs.PathOperation{
