@@ -152,8 +152,9 @@ build_cmd = docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefai
 
 build_paths = $(build_cmd) 2>&1 \
 		| tee /proc/self/fd/2 \
-		| grep -E "^  bazel-bin/" \
-		| tr -d '\r' \
+		| grep "  bazel-bin/" \
+		| sed "s/ /\n/g" \
+		| strings -n 10 \
 		| awk '{$$1=$$1};1' \
 		| xargs -n 1 -I {} sh -c "$(1)"
 
