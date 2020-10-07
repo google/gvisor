@@ -114,6 +114,11 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		}
 		return nil, err
 	}
+
+	if cfg.Kernel.SecurityHooks != nil {
+		cfg.Kernel.SecurityHooks.OnTaskNew(t)
+	}
+
 	return t, nil
 }
 

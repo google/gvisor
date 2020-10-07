@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/securityhooks"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -80,6 +81,10 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 		ipcns := t.ipcns
 		ipcns.IncRef()
 		return ipcns
+	case CtxContainerID:
+		return t.containerID
+	case securityhooks.CtxSecurityHooks:
+		return t.k.SecurityHooks
 	case CtxTask:
 		return t
 	case auth.CtxCredentials:

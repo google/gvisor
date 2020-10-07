@@ -66,6 +66,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/securityhooks"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
@@ -282,6 +283,8 @@ type Kernel struct {
 	// If set to true, report address space activation waits as if the task is in
 	// external wait so that the watchdog doesn't report the task stuck.
 	SleepForAddressSpaceActivation bool
+
+	SecurityHooks securityhooks.SecurityHooks
 }
 
 // InitKernelArgs holds arguments to Init.

@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -81,6 +82,11 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		// MAP_SHARED requires that the FD be writable for PROT_WRITE.
 		if shared && !file.IsWritable() {
 			opts.MaxPerms.Write = false
+		}
+
+		if t.Kernel().SecurityHooks != nil {
+			fb := fsbridge.NewVFSFile(file)
+			t.Kernel().SecurityHooks.OnFileMMap(t, fb, opts.Perms, flags)
 		}
 
 		if err := file.ConfigureMMap(t, &opts); err != nil {

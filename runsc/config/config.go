@@ -178,6 +178,9 @@ type Config struct {
 	// multiple tests are run in parallel, since there is no way to pass
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string `flag:"TESTONLY-test-name-env"`
+
+	// SecurityModule is the name of the security module.
+	SecurityModule string `flag:"security-module"`
 }
 
 func (c *Config) validate() error {

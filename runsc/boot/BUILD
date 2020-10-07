@@ -74,6 +74,7 @@ go_library(
         "//pkg/sentry/loader",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
+        "//pkg/sentry/securityhooks",
         "//pkg/sentry/sighandling",
         "//pkg/sentry/socket/hostinet",
         "//pkg/sentry/socket/netfilter",

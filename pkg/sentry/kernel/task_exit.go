@@ -286,6 +286,9 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.
 	if lastExiter {
+		if t.k.SecurityHooks != nil {
+			t.k.SecurityHooks.OnTaskExit(t)
+		}
 		t.tg.Release(t)
 	}
 

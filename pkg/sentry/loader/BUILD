@@ -29,6 +29,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/securityhooks",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
