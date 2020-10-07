@@ -312,6 +312,13 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	if isRoot(args.Spec) {
 		log.Debugf("Creating new sandbox for container %q", args.ID)
 
+		if args.Spec.Linux == nil {
+			args.Spec.Linux = &specs.Linux{}
+		}
+		if args.Spec.Linux.CgroupsPath == "" {
+			args.Spec.Linux.CgroupsPath = "/" + args.ID
+		}
+
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all their children processes).
 		cg, err := cgroup.New(args.Spec)
@@ -321,7 +328,16 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if cg != nil {
 			// If there is cgroup config, install it before creating sandbox process.
 			if err := cg.Install(args.Spec.Linux.Resources); err != nil {
-				return nil, fmt.Errorf("configuring cgroup: %v", err)
+				switch {
+				case errors.Is(err, syscall.EROFS) && conf.TestOnlyAllowRunAsCurrentUserWithoutChroot:
+					log.Warningf("Skipping cgroup configuration in test mode: %v", err)
+					cg = nil
+				case errors.Is(err, syscall.EACCES) && conf.Rootless:
+					log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
+					cg = nil
+				default:
+					return nil, fmt.Errorf("configuring cgroup: %v", err)
+				}
 			}
 		}
 		if err := runInCgroup(cg, func() error {
