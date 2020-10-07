@@ -29,6 +29,8 @@ import (
 )
 
 const (
+	// maxInt is the largest representable value of type int.
+	maxInt = int(^uint(0) >> 1)
 	// MinRTO is the minimum allowed value for the retransmit timeout.
 	MinRTO = 200 * time.Millisecond
 
@@ -314,7 +316,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 // their initial values.
 func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
 	s.sndCwnd = InitialCwnd
-	s.sndSsthresh = math.MaxInt64
+	s.sndSsthresh = maxInt
 
 	switch congestionControlName {
 	case ccCubic:
