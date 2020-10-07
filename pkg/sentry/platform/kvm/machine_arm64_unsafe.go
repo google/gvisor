@@ -191,42 +191,6 @@ func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
 	return nil
 }
 
-// setCPUID sets the CPUID to be used by the guest.
-func (c *vCPU) setCPUID() error {
-	return nil
-}
-
-// setSystemTime sets the TSC for the vCPU.
-func (c *vCPU) setSystemTime() error {
-	return nil
-}
-
-// setSignalMask sets the vCPU signal mask.
-//
-// This must be called prior to running the vCPU.
-func (c *vCPU) setSignalMask() error {
-	// The layout of this structure implies that it will not necessarily be
-	// the same layout chosen by the Go compiler. It gets fudged here.
-	var data struct {
-		length uint32
-		mask1  uint32
-		mask2  uint32
-		_      uint32
-	}
-	data.length = 8 // Fixed sigset size.
-	data.mask1 = ^uint32(bounceSignalMask & 0xffffffff)
-	data.mask2 = ^uint32(bounceSignalMask >> 32)
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_SET_SIGNAL_MASK,
-		uintptr(unsafe.Pointer(&data))); errno != 0 {
-		return fmt.Errorf("error setting signal mask: %v", errno)
-	}
-
-	return nil
-}
-
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (usermem.AccessType, error) {
 	// Check for canonical addresses.
