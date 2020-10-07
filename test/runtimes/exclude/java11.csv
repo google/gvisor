@@ -57,6 +57,7 @@ java/nio/channels/SocketChannel/SocketOptionTests.java,b/77965901,
 java/nio/channels/spi/SelectorProvider/inheritedChannel/InheritedChannelTest.java,,Fails in Docker
 java/rmi/activation/Activatable/extLoadedImpl/ext.sh,,
 java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,
+java/security/cert/PolicyNode/GetPolicyQualifiers.java,b/170263154,Kokoro executor cert expired
 java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
 java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
 java/util/Calendar/JapaneseEraNameTest.java,,
