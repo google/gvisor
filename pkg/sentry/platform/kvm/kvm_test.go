@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
+	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -439,6 +440,22 @@ func TestWrongVCPU(t *testing.T) {
 			return false
 		})
 		return false
+	})
+}
+
+func TestRdtsc(t *testing.T) {
+	var i int // Iteration count.
+	kvmTest(t, nil, func(c *vCPU) bool {
+		start := ktime.Rdtsc()
+		bluepill(c)
+		guest := ktime.Rdtsc()
+		redpill()
+		end := ktime.Rdtsc()
+		if start > guest || guest > end {
+			t.Errorf("inconsistent time: start=%d, guest=%d, end=%d", start, guest, end)
+		}
+		i++
+		return i < 100
 	})
 }
 

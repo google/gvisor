@@ -18,14 +18,17 @@ package kvm
 
 import (
 	"fmt"
+	"math/big"
 	"reflect"
 	"runtime/debug"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
+	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -165,6 +168,133 @@ func (c *vCPU) initArchState() error {
 
 	// Set the time offset to the host native time.
 	return c.setSystemTime()
+}
+
+// bitsForScaling returns the bits available for storing the fraction component
+// of the TSC scaling ratio. This allows us to replicate the (bad) math done by
+// the kernel below in scaledTSC, and ensure we can compute an exact zero
+// offset in setSystemTime.
+//
+// These constants correspond to kvm_tsc_scaling_ratio_frac_bits.
+var bitsForScaling = func() int64 {
+	fs := cpuid.HostFeatureSet()
+	if fs.Intel() {
+		return 48 // See vmx.c (kvm sources).
+	} else if fs.AMD() {
+		return 32 // See svm.c (svm sources).
+	} else {
+		return 63 // Unknown: theoretical maximum.
+	}
+}()
+
+// scaledTSC returns the host TSC scaled by the given frequency.
+//
+// This assumes a current frequency of 1. We require only the unitless ratio of
+// rawFreq to some current frequency. See setSystemTime for context.
+//
+// The kernel math guarantees that all bits of the multiplication and division
+// will be correctly preserved and applied. However, it is not possible to
+// actually store the ratio correctly.  So we need to use the same schema in
+// order to calculate the scaled frequency and get the same result.
+//
+// We can assume that the current frequency is (1), so we are calculating a
+// strict inverse of this value. This simplifies this function considerably.
+//
+// Roughly, the returned value "scaledTSC" will have:
+// 	scaledTSC/hostTSC == 1/rawFreq
+//
+//go:nosplit
+func scaledTSC(rawFreq uintptr) int64 {
+	scale := int64(1 << bitsForScaling)
+	ratio := big.NewInt(scale / int64(rawFreq))
+	ratio.Mul(ratio, big.NewInt(int64(ktime.Rdtsc())))
+	ratio.Div(ratio, big.NewInt(scale))
+	return ratio.Int64()
+}
+
+// setSystemTime sets the vCPU to the system time.
+func (c *vCPU) setSystemTime() error {
+	// First, scale down the clock frequency to the lowest value allowed by
+	// the API itself.  How low we can go depends on the underlying
+	// hardware, but it is typically ~1/2^48 for Intel, ~1/2^32 for AMD.
+	// Even the lower bound here will take a 4GHz frequency down to 1Hz,
+	// meaning that everything should be able to handle a Khz setting of 1
+	// with bits to spare.
+	//
+	// Note that reducing the clock does not typically require special
+	// capabilities as it is emulated in KVM. We don't actually use this
+	// capability, but it means that this method should be robust to
+	// different hardware configurations.
+	rawFreq, err := c.getTSCFreq()
+	if err != nil {
+		return c.setSystemTimeLegacy()
+	}
+	if err := c.setTSCFreq(1); err != nil {
+		return c.setSystemTimeLegacy()
+	}
+
+	// Always restore the original frequency.
+	defer func() {
+		if err := c.setTSCFreq(rawFreq); err != nil {
+			panic(err.Error())
+		}
+	}()
+
+	// Attempt to set the system time in this compressed world. The
+	// calculation for offset normally looks like:
+	//
+	//	offset = target_tsc - kvm_scale_tsc(vcpu, rdtsc());
+	//
+	// So as long as the kvm_scale_tsc component is constant before and
+	// after the call to set the TSC value (and it is passes as the
+	// target_tsc), we will compute an offset value of zero.
+	//
+	// This is effectively cheating to make our "setSystemTime" call so
+	// unbelievably, incredibly fast that we do it "instantly" and all the
+	// calculations result in an offset of zero.
+	lastTSC := scaledTSC(rawFreq)
+	for {
+		if err := c.setTSC(uint64(lastTSC)); err != nil {
+			return err
+		}
+		nextTSC := scaledTSC(rawFreq)
+		if lastTSC == nextTSC {
+			return nil
+		}
+		lastTSC = nextTSC // Try again.
+	}
+}
+
+// setSystemTimeLegacy calibrates and sets an approximate system time.
+func (c *vCPU) setSystemTimeLegacy() error {
+	const minIterations = 10
+	minimum := uint64(0)
+	for iter := 0; ; iter++ {
+		// Try to set the TSC to an estimate of where it will be
+		// on the host during a "fast" system call iteration.
+		start := uint64(ktime.Rdtsc())
+		if err := c.setTSC(start + (minimum / 2)); err != nil {
+			return err
+		}
+		// See if this is our new minimum call time. Note that this
+		// serves two functions: one, we make sure that we are
+		// accurately predicting the offset we need to set. Second, we
+		// don't want to do the final set on a slow call, which could
+		// produce a really bad result.
+		end := uint64(ktime.Rdtsc())
+		if end < start {
+			continue // Totally bogus: unstable TSC?
+		}
+		current := end - start
+		if current < minimum || iter == 0 {
+			minimum = current // Set our new minimum.
+		}
+		// Is this past minIterations and within ~10% of minimum?
+		upperThreshold := (((minimum << 3) + minimum) >> 3)
+		if iter >= minIterations && current <= upperThreshold {
+			return nil
+		}
+	}
 }
 
 // nonCanonical generates a canonical address return.
@@ -347,19 +477,17 @@ func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 	return physicalRegions
 }
 
-var execRegions []region
-
-func init() {
+var execRegions = func() (regions []region) {
 	applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
 			return
 		}
-
 		if vr.accessType.Execute {
-			execRegions = append(execRegions, vr.region)
+			regions = append(regions, vr.region)
 		}
 	})
-}
+	return
+}()
 
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	for _, r := range execRegions {
