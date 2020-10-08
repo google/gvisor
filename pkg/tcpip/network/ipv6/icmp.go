@@ -646,18 +646,21 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
 func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkEP stack.LinkEndpoint) *tcpip.Error {
-	snaddr := header.SolicitedNodeAddr(addr)
-
 	// TODO(b/148672031): Use stack.FindRoute instead of manually creating the
 	// route here. Note, we would need the nicID to do this properly so the right
 	// NIC (associated to linkEP) is used to send the NDP NS message.
-	r := &stack.Route{
+	r := stack.Route{
 		LocalAddress:      localAddr,
-		RemoteAddress:     snaddr,
+		RemoteAddress:     addr,
 		RemoteLinkAddress: remoteLinkAddr,
 	}
+
+	// If a remote address is not already known, then send a multicast
+	// solicitation since multicast addresses have a static mapping to link
+	// addresses.
 	if len(r.RemoteLinkAddress) == 0 {
-		r.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(snaddr)
+		r.RemoteAddress = header.SolicitedNodeAddr(addr)
+		r.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(r.RemoteAddress)
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -683,7 +686,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAdd
 	})
 
 	// TODO(stijlist): count this in ICMP stats.
-	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
+	return linkEP.WritePacket(&r, nil /* gso */, ProtocolNumber, pkt)
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.
