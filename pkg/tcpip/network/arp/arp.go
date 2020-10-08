@@ -49,7 +49,6 @@ type endpoint struct {
 	enabled uint32
 
 	nic           stack.NetworkInterface
-	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	nud           stack.NUDHandler
 }
@@ -92,12 +91,12 @@ func (e *endpoint) DefaultTTL() uint8 {
 }
 
 func (e *endpoint) MTU() uint32 {
-	lmtu := e.linkEP.MTU()
+	lmtu := e.nic.MTU()
 	return lmtu - uint32(e.MaxHeaderLength())
 }
 
 func (e *endpoint) MaxHeaderLength() uint16 {
-	return e.linkEP.MaxHeaderLength() + header.ARPSize
+	return e.nic.MaxHeaderLength() + header.ARPSize
 }
 
 func (e *endpoint) Close() {
@@ -154,17 +153,25 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			e.nud.HandleProbe(remoteAddr, localAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
 		}
 
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(e.linkEP.MaxHeaderLength()) + header.ARPSize,
+		// As per RFC 826, under Packet Reception:
+		//   Swap hardware and protocol fields, putting the local hardware and
+		//   protocol addresses in the sender fields.
+		//
+		//   Send the packet to the (new) target hardware address on the same
+		//   hardware on which the request was received.
+		origSender := h.HardwareAddressSender()
+		r.RemoteLinkAddress = tcpip.LinkAddress(origSender)
+		respPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.ARPSize,
 		})
-		packet := header.ARP(pkt.NetworkHeader().Push(header.ARPSize))
+		packet := header.ARP(respPkt.NetworkHeader().Push(header.ARPSize))
 		packet.SetIPv4OverEthernet()
 		packet.SetOp(header.ARPReply)
 		copy(packet.HardwareAddressSender(), r.LocalLinkAddress[:])
 		copy(packet.ProtocolAddressSender(), h.ProtocolAddressTarget())
-		copy(packet.HardwareAddressTarget(), h.HardwareAddressSender())
+		copy(packet.HardwareAddressTarget(), origSender)
 		copy(packet.ProtocolAddressTarget(), h.ProtocolAddressSender())
-		_ = e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
+		_ = e.nic.WritePacket(r, nil /* gso */, ProtocolNumber, respPkt)
 
 	case header.ARPReply:
 		addr := tcpip.Address(h.ProtocolAddressSender())
@@ -207,7 +214,6 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.L
 	e := &endpoint{
 		protocol:      p,
 		nic:           nic,
-		linkEP:        nic.LinkEndpoint(),
 		linkAddrCache: linkAddrCache,
 		nud:           nud,
 	}
@@ -223,6 +229,7 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 // LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
 func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkEP stack.LinkEndpoint) *tcpip.Error {
 	r := &stack.Route{
+		NetProto:          ProtocolNumber,
 		RemoteLinkAddress: remoteLinkAddr,
 	}
 	if len(r.RemoteLinkAddress) == 0 {
