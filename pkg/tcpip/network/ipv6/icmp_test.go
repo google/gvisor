@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -1223,19 +1224,22 @@ func TestLinkAddressRequest(t *testing.T) {
 	mcaddr := header.EthernetAddressFromMulticastIPv6Address(snaddr)
 
 	tests := []struct {
-		name           string
-		remoteLinkAddr tcpip.LinkAddress
-		expectLinkAddr tcpip.LinkAddress
+		name             string
+		remoteLinkAddr   tcpip.LinkAddress
+		expectedLinkAddr tcpip.LinkAddress
+		expectedAddr     tcpip.Address
 	}{
 		{
-			name:           "Unicast",
-			remoteLinkAddr: linkAddr1,
-			expectLinkAddr: linkAddr1,
+			name:             "Unicast",
+			remoteLinkAddr:   linkAddr1,
+			expectedLinkAddr: linkAddr1,
+			expectedAddr:     lladdr0,
 		},
 		{
-			name:           "Multicast",
-			remoteLinkAddr: "",
-			expectLinkAddr: mcaddr,
+			name:             "Multicast",
+			remoteLinkAddr:   "",
+			expectedLinkAddr: mcaddr,
+			expectedAddr:     snaddr,
 		},
 	}
 
@@ -1258,9 +1262,22 @@ func TestLinkAddressRequest(t *testing.T) {
 		if !ok {
 			t.Fatal("expected to send a link address request")
 		}
-
-		if got, want := pkt.Route.RemoteLinkAddress, test.expectLinkAddr; got != want {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", got, want)
+		if pkt.Route.RemoteLinkAddress != test.expectedLinkAddr {
+			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedLinkAddr)
 		}
+		if pkt.Route.RemoteAddress != test.expectedAddr {
+			t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.expectedAddr)
+		}
+		if pkt.Route.LocalAddress != lladdr1 {
+			t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, lladdr1)
+		}
+		checker.IPv6(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()),
+			checker.SrcAddr(lladdr1),
+			checker.DstAddr(test.expectedAddr),
+			checker.TTL(header.NDPHopLimit),
+			checker.NDPNS(
+				checker.NDPNSTargetAddress(lladdr0),
+				checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(linkAddr0)}),
+			))
 	}
 }
