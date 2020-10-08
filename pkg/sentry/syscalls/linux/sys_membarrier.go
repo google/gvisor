@@ -24,47 +24,80 @@ import (
 // Membarrier implements syscall membarrier(2).
 func Membarrier(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	cmd := args[0].Int()
-	flags := args[1].Int()
-
-	p := t.Kernel().Platform
-	if !p.HaveGlobalMemoryBarrier() {
-		// Event for applications that want membarrier on a configuration that
-		// doesn't support them.
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
-	}
-
-	if flags != 0 {
-		return 0, nil, syserror.EINVAL
-	}
+	flags := args[1].Uint()
 
 	switch cmd {
 	case linux.MEMBARRIER_CMD_QUERY:
-		const supportedCommands = linux.MEMBARRIER_CMD_GLOBAL |
-			linux.MEMBARRIER_CMD_GLOBAL_EXPEDITED |
-			linux.MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED |
-			linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED |
-			linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
+		if flags != 0 {
+			return 0, nil, syserror.EINVAL
+		}
+		var supportedCommands uintptr
+		if t.Kernel().Platform.HaveGlobalMemoryBarrier() {
+			supportedCommands |= linux.MEMBARRIER_CMD_GLOBAL |
+				linux.MEMBARRIER_CMD_GLOBAL_EXPEDITED |
+				linux.MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED |
+				linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED |
+				linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
+		}
+		if t.RSeqAvailable() {
+			supportedCommands |= linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ |
+				linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ
+		}
 		return supportedCommands, nil, nil
-	case linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED:
-		if !t.MemoryManager().IsMembarrierPrivateEnabled() {
+	case linux.MEMBARRIER_CMD_GLOBAL, linux.MEMBARRIER_CMD_GLOBAL_EXPEDITED, linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED:
+		if flags != 0 {
+			return 0, nil, syserror.EINVAL
+		}
+		if !t.Kernel().Platform.HaveGlobalMemoryBarrier() {
+			return 0, nil, syserror.EINVAL
+		}
+		if cmd == linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED && !t.MemoryManager().IsMembarrierPrivateEnabled() {
 			return 0, nil, syserror.EPERM
 		}
-		fallthrough
-	case linux.MEMBARRIER_CMD_GLOBAL, linux.MEMBARRIER_CMD_GLOBAL_EXPEDITED:
-		return 0, nil, p.GlobalMemoryBarrier()
+		return 0, nil, t.Kernel().Platform.GlobalMemoryBarrier()
 	case linux.MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED:
+		if flags != 0 {
+			return 0, nil, syserror.EINVAL
+		}
+		if !t.Kernel().Platform.HaveGlobalMemoryBarrier() {
+			return 0, nil, syserror.EINVAL
+		}
 		// no-op
 		return 0, nil, nil
 	case linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED:
+		if flags != 0 {
+			return 0, nil, syserror.EINVAL
+		}
+		if !t.Kernel().Platform.HaveGlobalMemoryBarrier() {
+			return 0, nil, syserror.EINVAL
+		}
 		t.MemoryManager().EnableMembarrierPrivate()
 		return 0, nil, nil
-	case linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE, linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE:
-		// We're aware of these, but they aren't implemented since no platform
-		// supports them yet.
-		t.Kernel().EmitUnimplementedEvent(t)
-		fallthrough
+	case linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ:
+		if flags&^linux.MEMBARRIER_CMD_FLAG_CPU != 0 {
+			return 0, nil, syserror.EINVAL
+		}
+		if !t.RSeqAvailable() {
+			return 0, nil, syserror.EINVAL
+		}
+		if !t.MemoryManager().IsMembarrierRSeqEnabled() {
+			return 0, nil, syserror.EPERM
+		}
+		// MEMBARRIER_CMD_FLAG_CPU and cpu_id are ignored since we don't have
+		// the ability to preempt specific CPUs.
+		return 0, nil, t.Kernel().Platform.PreemptAllCPUs()
+	case linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ:
+		if flags != 0 {
+			return 0, nil, syserror.EINVAL
+		}
+		if !t.RSeqAvailable() {
+			return 0, nil, syserror.EINVAL
+		}
+		t.MemoryManager().EnableMembarrierRSeq()
+		return 0, nil, nil
 	default:
+		// Probably a command we don't implement.
+		t.Kernel().EmitUnimplementedEvent(t)
 		return 0, nil, syserror.EINVAL
 	}
 }

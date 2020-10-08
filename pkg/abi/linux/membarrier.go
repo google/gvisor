@@ -14,7 +14,7 @@
 
 package linux
 
-// membarrier(2) commands, from include/uapi/linux/membarrier.h
+// membarrier(2) commands, from include/uapi/linux/membarrier.h.
 const (
 	MEMBARRIER_CMD_QUERY                                = 0
 	MEMBARRIER_CMD_GLOBAL                               = (1 << 0)
@@ -24,4 +24,11 @@ const (
 	MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED           = (1 << 4)
 	MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE          = (1 << 5)
 	MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE = (1 << 6)
+	MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ               = (1 << 7)
+	MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ      = (1 << 8)
+)
+
+// membarrier(2) flags, from include/uapi/linux/membarrier.h.
+const (
+	MEMBARRIER_CMD_FLAG_CPU = (1 << 0)
 )

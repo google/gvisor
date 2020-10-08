@@ -243,6 +243,12 @@ type MemoryManager struct {
 	//
 	// membarrierPrivateEnabled is accessed using atomic memory operations.
 	membarrierPrivateEnabled uint32
+
+	// membarrierRSeqEnabled is non-zero if EnableMembarrierRSeq has previously
+	// been called.
+	//
+	// membarrierRSeqEnabled is accessed using atomic memory operations.
+	membarrierRSeqEnabled uint32
 }
 
 // vma represents a virtual memory area.

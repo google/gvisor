@@ -316,6 +316,7 @@ func (m *MemoryManager) StateFields() []string {
 		"sleepForActivation",
 		"vdsoSigReturnAddr",
 		"membarrierPrivateEnabled",
+		"membarrierRSeqEnabled",
 	}
 }
 
@@ -350,6 +351,7 @@ func (m *MemoryManager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(20, &m.sleepForActivation)
 	stateSinkObject.Save(21, &m.vdsoSigReturnAddr)
 	stateSinkObject.Save(22, &m.membarrierPrivateEnabled)
+	stateSinkObject.Save(23, &m.membarrierRSeqEnabled)
 }
 
 func (m *MemoryManager) StateLoad(stateSourceObject state.Source) {
@@ -376,6 +378,7 @@ func (m *MemoryManager) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(20, &m.sleepForActivation)
 	stateSourceObject.Load(21, &m.vdsoSigReturnAddr)
 	stateSourceObject.Load(22, &m.membarrierPrivateEnabled)
+	stateSourceObject.Load(23, &m.membarrierRSeqEnabled)
 	stateSourceObject.AfterLoad(m.afterLoad)
 }
 
