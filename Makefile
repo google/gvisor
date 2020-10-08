@@ -384,3 +384,7 @@ nogo: ## Surfaces all nogo findings.
 	@$(call submake,build OPTIONS="--build_tag_filters nogo" TARGETS="//...")
 	@$(call submake,run TARGETS="//tools/github" ARGS="-path=$(BUILD_ROOT) -dry-run nogo")
 .PHONY: nogo
+
+gazelle: ## Runs gazelle to update WORKSPACE.
+	@$(call submake,run TARGETS="//:gazelle" ARGS="update-repos -from_file=go.mod -prune")
+.PHONY: gazelle

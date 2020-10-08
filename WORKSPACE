@@ -43,7 +43,7 @@ http_archive(
 )
 
 http_archive(
-    name = "io_bazel_rules_go_bazel3", # To replace the above.
+    name = "io_bazel_rules_go_bazel3",  # To replace the above.
     patch_args = ["-p1"],
     patches = [
         "//tools/nogo:io_bazel_rules_go-visibility.patch",
@@ -56,7 +56,7 @@ http_archive(
 )
 
 http_archive(
-    name = "bazel_gazelle_bazel3", # To replace the above.
+    name = "bazel_gazelle_bazel3",  # To replace the above.
     sha256 = "bfd86b3cbe855d6c16c6fce60d76bd51f5c8dbc9cfcaef7a2bb5c1aafd0710e8",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.0/bazel-gazelle-v0.21.0.tar.gz",
@@ -81,8 +81,8 @@ gazelle_dependencies()
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
-    sum = "h1:uYVVQ9WP/Ds2ROhcaGPeIdVq0RIXVLwsHlnvJ+cT1So=",
-    version = "v0.0.0-20200302150141-5c8b2ff67527",
+    sum = "h1:xhmwyvizuTgC2qz7ZlMluP20uW+C3Rm0FD/WLDX8884=",
+    version = "v0.0.0-20200323222414-85ca7c5b95cd",
 )
 
 # Load C++ rules.
@@ -126,7 +126,7 @@ http_archive(
 )
 
 http_archive(
-    name = "bazel_toolchains_bazel3", # To replace the above.
+    name = "bazel_toolchains_bazel3",  # To replace the above.
     sha256 = "144290c4166bd67e76a54f96cd504ed86416ca3ca82030282760f0823c10be48",
     strip_prefix = "bazel-toolchains-3.1.1",
     urls = [
@@ -208,8 +208,7 @@ http_archive(
 go_repository(
     name = "com_github_sirupsen_logrus",
     importpath = "github.com/sirupsen/logrus",
-    replace = "github.com/Sirupsen/logrus",
-    sum = "h1:cWjBmzJnL1sO88XdqJYmq7aiWClqXIQQMJ3Utgy1f+I=",
+    sum = "h1:SPIRibHv4MatM3XXNO2BJeFLZwZ2LvZgfQ5+UNI2im4=",
     version = "v1.4.2",
 )
 
@@ -330,8 +329,8 @@ go_repository(
 go_repository(
     name = "org_golang_x_net",
     importpath = "golang.org/x/net",
-    sum = "h1:vGXIOMxbNfDTk/aXCmfdLgkrSV+Z2tcbze+pEc3v5W4=",
-    version = "v0.0.0-20200625001655-4c5254603344",
+    sum = "h1:VvcQYSHwXgi7W+TpUR6A9g6Up98WAHf3f/ulnJ62IyA=",
+    version = "v0.0.0-20200822124328-c89045814202",
 )
 
 go_repository(
@@ -358,15 +357,15 @@ go_repository(
 go_repository(
     name = "org_golang_x_tools",
     importpath = "golang.org/x/tools",
-    sum = "h1:YAl/dx/kLsMMIWGqfhFHW9ckqGhmq7Ki0dfoKAgvFTE=",
-    version = "v0.0.0-20200707200213-416e8f4faf8a",
+    sum = "h1:k7tVuG0g1JwmD3Jh8oAl1vQ1C3jb4Hi/dUl1wWDBJpQ=",
+    version = "v0.0.0-20200918232735-d647fc253266",
 )
 
 go_repository(
     name = "org_golang_x_xerrors",
     importpath = "golang.org/x/xerrors",
-    sum = "h1:E7g+9GITq07hpfrRu66IVDexMakfv52eLZ2CXBWiKr4=",
-    version = "v0.0.0-20191204190536-9bdfabe68543",
+    sum = "h1:go1bK/D/BFZV2I8cIQd1NKEZ+0owSTG1fDTci4IqFcE=",
+    version = "v0.0.0-20200804184101-5ec99f83aff1",
 )
 
 go_repository(
@@ -470,8 +469,8 @@ go_repository(
 go_repository(
     name = "com_github_microsoft_go_winio",
     importpath = "github.com/Microsoft/go-winio",
-    sum = "h1:ygIc8M6trr62pF5DucadTWGdEB4mEyvzi0e2nbcmcyA=",
-    version = "v0.4.15-0.20190919025122-fc70bd9a86b5",
+    sum = "h1:9pygWVFqbY9lPxM0peffumuVDyMuIMzNLyO9uFjJuQo=",
+    version = "v0.4.15-0.20200908182639-5b44b70ab3ab",
 )
 
 go_repository(
@@ -484,8 +483,8 @@ go_repository(
 go_repository(
     name = "org_uber_go_atomic",
     importpath = "go.uber.org/atomic",
-    sum = "h1:Ezj3JGmsOnG1MoRWQkPBsKLe9DwWD9QeXzTRzzldNVk=",
-    version = "v1.6.0",
+    sum = "h1:ADUqmZGgLDDfbSL9ZmPxKTybcoEYHgpYfELNoN+7hsw=",
+    version = "v1.7.0",
 )
 
 go_repository(
@@ -660,8 +659,8 @@ go_repository(
 go_repository(
     name = "com_github_google_go_cmp",
     importpath = "github.com/google/go-cmp",
-    sum = "h1:/QaMHBdZ26BB3SSst0Iwl10Epc+xhTquomWX0oZEB6w=",
-    version = "v0.5.0",
+    sum = "h1:JFrFEBb2xKufg6XkJsJr+WbKb4FQlURi5RUcBveYu9k=",
+    version = "v0.5.1",
 )
 
 go_repository(
@@ -786,15 +785,15 @@ go_repository(
 go_repository(
     name = "com_github_urfave_cli",
     importpath = "github.com/urfave/cli",
-    sum = "h1:MCfT24H3f//U5+UCrZp1/riVO3B50BovxtDiNn0XKkk=",
-    version = "v0.0.0-20171014202726-7bc6a0acffa5",
+    sum = "h1:gsqYFH8bb9ekPA12kRo0hfjngWQjkJPlN9R0N78BoUo=",
+    version = "v1.22.2",
 )
 
 go_repository(
     name = "com_github_yuin_goldmark",
     importpath = "github.com/yuin/goldmark",
-    sum = "h1:5tjfNdR2ki3yYQ842+eX2sQHeiwpKJ0RnHO4IYOc4V8=",
-    version = "v1.1.32",
+    sum = "h1:ruQGxdhGHe7FWOJPT0mKs5+pD2Xs1Bm/kdGlHO04FmM=",
+    version = "v1.2.1",
 )
 
 go_repository(
@@ -1024,8 +1023,8 @@ go_repository(
 go_repository(
     name = "com_github_vishvananda_netns",
     importpath = "github.com/vishvananda/netns",
-    sum = "h1:mjAZxE1nh8yvuwhGHpdDqdhtNu2dgbpk93TwoXuk5so=",
-    version = "v0.0.0-20200520041808-52d707b772fe",
+    sum = "h1:4hwBBUfQCFe3Cym0ZtKyq7L16eZUtYKs+BaHDN6mAns=",
+    version = "v0.0.0-20200728191858-db3c7e526aae",
 )
 
 go_repository(
@@ -1073,6 +1072,48 @@ go_repository(
 go_repository(
     name = "com_github_dpjacques_clockwork",
     importpath = "github.com/dpjacques/clockwork",
-    sum = "h1:7krODee+eIlZYoLiEDmP1kLFNCvd0bQ0eEXOympdN6U=",
-    version = "v0.1.1-0.20190114191937-d864eecc357b",
+    sum = "h1:l+j1wSnHcimOzeeKxtspsl6tCBTyikdYxcWqFZ+Ho2c=",
+    version = "v0.1.1-0.20200827220843-c1f524b839be",
+)
+
+go_repository(
+    name = "com_github_cilium_ebpf",
+    importpath = "github.com/cilium/ebpf",
+    sum = "h1:i8+1fuPLjSgAYXUyBlHNhFwjcfAsP4ufiuH1+PWkyDU=",
+    version = "v0.0.0-20200110133405-4032b1d8aae3",
+)
+
+go_repository(
+    name = "com_github_coreos_go_systemd_v22",
+    importpath = "github.com/coreos/go-systemd/v22",
+    sum = "h1:XJIw/+VlJ+87J+doOxznsAWIdmWuViOVhkQamW5YV28=",
+    version = "v22.0.0",
+)
+
+go_repository(
+    name = "com_github_cpuguy83_go_md2man_v2",
+    importpath = "github.com/cpuguy83/go-md2man/v2",
+    sum = "h1:EoUDS0afbrsXAZ9YQ9jdu/mZ2sXgT1/2yyNng4PGlyM=",
+    version = "v2.0.0",
+)
+
+go_repository(
+    name = "com_github_godbus_dbus_v5",
+    importpath = "github.com/godbus/dbus/v5",
+    sum = "h1:ZqHaoEF7TBzh4jzPmqVhE/5A1z9of6orkAe5uHoAeME=",
+    version = "v5.0.3",
+)
+
+go_repository(
+    name = "com_github_russross_blackfriday_v2",
+    importpath = "github.com/russross/blackfriday/v2",
+    sum = "h1:lPqVAte+HuHNfhJ/0LC98ESWRz8afy9tM/0RK8m9o+Q=",
+    version = "v2.0.1",
+)
+
+go_repository(
+    name = "com_github_shurcool_sanitized_anchor_name",
+    importpath = "github.com/shurcooL/sanitized_anchor_name",
+    sum = "h1:PdmoCO6wvbs+7yrJyMORt4/BmY5IYyJwS/kOiWx8mHo=",
+    version = "v1.0.0",
 )

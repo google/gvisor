@@ -27,6 +27,8 @@ go_library(
     deps = [
         "//tools/checkescape",
         "//tools/checkunsafe",
+        "@co_honnef_go_tools//staticcheck:go_default_library",
+        "@co_honnef_go_tools//stylecheck:go_default_library",
         "@org_golang_x_tools//go/analysis:go_tool_library",
         "@org_golang_x_tools//go/analysis/internal/facts:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/asmdecl:go_tool_library",
