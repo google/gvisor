@@ -26,6 +26,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/testutil"
 )
 
+// reassembleTimeout is dummy timeout used for testing, where the clock never
+// advances.
+const reassembleTimeout = 1
+
 // vv is a helper to build VectorisedView from different strings.
 func vv(size int, pieces ...string) buffer.VectorisedView {
 	views := make([]buffer.View, len(pieces))
@@ -98,7 +102,7 @@ var processTestCases = []struct {
 func TestFragmentationProcess(t *testing.T) {
 	for _, c := range processTestCases {
 		t.Run(c.comment, func(t *testing.T) {
-			f := NewFragmentation(minBlockSize, 1024, 512, DefaultReassembleTimeout, &faketime.NullClock{})
+			f := NewFragmentation(minBlockSize, 1024, 512, reassembleTimeout, &faketime.NullClock{})
 			firstFragmentProto := c.in[0].proto
 			for i, in := range c.in {
 				vv, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.vv)
@@ -253,7 +257,7 @@ func TestReassemblingTimeout(t *testing.T) {
 }
 
 func TestMemoryLimits(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 3, 1, DefaultReassembleTimeout, &faketime.NullClock{})
+	f := NewFragmentation(minBlockSize, 3, 1, reassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, vv(1, "0"))
 	// Send first fragment with id = 1.
@@ -277,7 +281,7 @@ func TestMemoryLimits(t *testing.T) {
 }
 
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 1, 0, DefaultReassembleTimeout, &faketime.NullClock{})
+	f := NewFragmentation(minBlockSize, 1, 0, reassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"))
 	// Send the same packet again.
@@ -372,7 +376,7 @@ func TestErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, DefaultReassembleTimeout, &faketime.NullClock{})
+			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
 			_, _, done, err := f.Process(FragmentID{}, test.first, test.last, test.more, 0, vv(len(test.data), test.data))
 			if !errors.Is(err, test.err) {
 				t.Errorf("got Process(_, %d, %d, %t, _, %q) = (_, _, _, %v), want = (_, _, _, %v)", test.first, test.last, test.more, test.data, err, test.err)
