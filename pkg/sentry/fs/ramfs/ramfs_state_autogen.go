@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Dir) StateTypeName() string {
+func (d *Dir) StateTypeName() string {
 	return "pkg/sentry/fs/ramfs.Dir"
 }
 
-func (x *Dir) StateFields() []string {
+func (d *Dir) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 		"InodeSimpleExtendedAttributes",
@@ -19,56 +19,56 @@ func (x *Dir) StateFields() []string {
 	}
 }
 
-func (x *Dir) beforeSave() {}
+func (d *Dir) beforeSave() {}
 
-func (x *Dir) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
-	m.Save(1, &x.InodeSimpleExtendedAttributes)
-	m.Save(2, &x.children)
-	m.Save(3, &x.dentryMap)
+func (d *Dir) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.InodeSimpleAttributes)
+	stateSinkObject.Save(1, &d.InodeSimpleExtendedAttributes)
+	stateSinkObject.Save(2, &d.children)
+	stateSinkObject.Save(3, &d.dentryMap)
 }
 
-func (x *Dir) afterLoad() {}
+func (d *Dir) afterLoad() {}
 
-func (x *Dir) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
-	m.Load(1, &x.InodeSimpleExtendedAttributes)
-	m.Load(2, &x.children)
-	m.Load(3, &x.dentryMap)
+func (d *Dir) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.InodeSimpleAttributes)
+	stateSourceObject.Load(1, &d.InodeSimpleExtendedAttributes)
+	stateSourceObject.Load(2, &d.children)
+	stateSourceObject.Load(3, &d.dentryMap)
 }
 
-func (x *dirFileOperations) StateTypeName() string {
+func (d *dirFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/ramfs.dirFileOperations"
 }
 
-func (x *dirFileOperations) StateFields() []string {
+func (d *dirFileOperations) StateFields() []string {
 	return []string{
 		"dirCursor",
 		"dir",
 	}
 }
 
-func (x *dirFileOperations) beforeSave() {}
+func (d *dirFileOperations) beforeSave() {}
 
-func (x *dirFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.dirCursor)
-	m.Save(1, &x.dir)
+func (d *dirFileOperations) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dirCursor)
+	stateSinkObject.Save(1, &d.dir)
 }
 
-func (x *dirFileOperations) afterLoad() {}
+func (d *dirFileOperations) afterLoad() {}
 
-func (x *dirFileOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.dirCursor)
-	m.Load(1, &x.dir)
+func (d *dirFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dirCursor)
+	stateSourceObject.Load(1, &d.dir)
 }
 
-func (x *Socket) StateTypeName() string {
+func (s *Socket) StateTypeName() string {
 	return "pkg/sentry/fs/ramfs.Socket"
 }
 
-func (x *Socket) StateFields() []string {
+func (s *Socket) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 		"InodeSimpleExtendedAttributes",
@@ -76,47 +76,47 @@ func (x *Socket) StateFields() []string {
 	}
 }
 
-func (x *Socket) beforeSave() {}
+func (s *Socket) beforeSave() {}
 
-func (x *Socket) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
-	m.Save(1, &x.InodeSimpleExtendedAttributes)
-	m.Save(2, &x.ep)
+func (s *Socket) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.InodeSimpleAttributes)
+	stateSinkObject.Save(1, &s.InodeSimpleExtendedAttributes)
+	stateSinkObject.Save(2, &s.ep)
 }
 
-func (x *Socket) afterLoad() {}
+func (s *Socket) afterLoad() {}
 
-func (x *Socket) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
-	m.Load(1, &x.InodeSimpleExtendedAttributes)
-	m.Load(2, &x.ep)
+func (s *Socket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.InodeSimpleAttributes)
+	stateSourceObject.Load(1, &s.InodeSimpleExtendedAttributes)
+	stateSourceObject.Load(2, &s.ep)
 }
 
-func (x *socketFileOperations) StateTypeName() string {
+func (s *socketFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/ramfs.socketFileOperations"
 }
 
-func (x *socketFileOperations) StateFields() []string {
+func (s *socketFileOperations) StateFields() []string {
 	return []string{}
 }
 
-func (x *socketFileOperations) beforeSave() {}
+func (s *socketFileOperations) beforeSave() {}
 
-func (x *socketFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
+func (s *socketFileOperations) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
 }
 
-func (x *socketFileOperations) afterLoad() {}
+func (s *socketFileOperations) afterLoad() {}
 
-func (x *socketFileOperations) StateLoad(m state.Source) {
+func (s *socketFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *Symlink) StateTypeName() string {
+func (s *Symlink) StateTypeName() string {
 	return "pkg/sentry/fs/ramfs.Symlink"
 }
 
-func (x *Symlink) StateFields() []string {
+func (s *Symlink) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 		"InodeSimpleExtendedAttributes",
@@ -124,40 +124,40 @@ func (x *Symlink) StateFields() []string {
 	}
 }
 
-func (x *Symlink) beforeSave() {}
+func (s *Symlink) beforeSave() {}
 
-func (x *Symlink) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
-	m.Save(1, &x.InodeSimpleExtendedAttributes)
-	m.Save(2, &x.Target)
+func (s *Symlink) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.InodeSimpleAttributes)
+	stateSinkObject.Save(1, &s.InodeSimpleExtendedAttributes)
+	stateSinkObject.Save(2, &s.Target)
 }
 
-func (x *Symlink) afterLoad() {}
+func (s *Symlink) afterLoad() {}
 
-func (x *Symlink) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
-	m.Load(1, &x.InodeSimpleExtendedAttributes)
-	m.Load(2, &x.Target)
+func (s *Symlink) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.InodeSimpleAttributes)
+	stateSourceObject.Load(1, &s.InodeSimpleExtendedAttributes)
+	stateSourceObject.Load(2, &s.Target)
 }
 
-func (x *symlinkFileOperations) StateTypeName() string {
+func (s *symlinkFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/ramfs.symlinkFileOperations"
 }
 
-func (x *symlinkFileOperations) StateFields() []string {
+func (s *symlinkFileOperations) StateFields() []string {
 	return []string{}
 }
 
-func (x *symlinkFileOperations) beforeSave() {}
+func (s *symlinkFileOperations) beforeSave() {}
 
-func (x *symlinkFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
+func (s *symlinkFileOperations) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
 }
 
-func (x *symlinkFileOperations) afterLoad() {}
+func (s *symlinkFileOperations) afterLoad() {}
 
-func (x *symlinkFileOperations) StateLoad(m state.Source) {
+func (s *symlinkFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {

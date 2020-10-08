@@ -6,37 +6,37 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *SACKBlock) StateTypeName() string {
+func (s *SACKBlock) StateTypeName() string {
 	return "pkg/tcpip/header.SACKBlock"
 }
 
-func (x *SACKBlock) StateFields() []string {
+func (s *SACKBlock) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (x *SACKBlock) beforeSave() {}
+func (s *SACKBlock) beforeSave() {}
 
-func (x *SACKBlock) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
+func (s *SACKBlock) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Start)
+	stateSinkObject.Save(1, &s.End)
 }
 
-func (x *SACKBlock) afterLoad() {}
+func (s *SACKBlock) afterLoad() {}
 
-func (x *SACKBlock) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
+func (s *SACKBlock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Start)
+	stateSourceObject.Load(1, &s.End)
 }
 
-func (x *TCPOptions) StateTypeName() string {
+func (t *TCPOptions) StateTypeName() string {
 	return "pkg/tcpip/header.TCPOptions"
 }
 
-func (x *TCPOptions) StateFields() []string {
+func (t *TCPOptions) StateFields() []string {
 	return []string{
 		"TS",
 		"TSVal",
@@ -45,23 +45,23 @@ func (x *TCPOptions) StateFields() []string {
 	}
 }
 
-func (x *TCPOptions) beforeSave() {}
+func (t *TCPOptions) beforeSave() {}
 
-func (x *TCPOptions) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.TS)
-	m.Save(1, &x.TSVal)
-	m.Save(2, &x.TSEcr)
-	m.Save(3, &x.SACKBlocks)
+func (t *TCPOptions) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.TS)
+	stateSinkObject.Save(1, &t.TSVal)
+	stateSinkObject.Save(2, &t.TSEcr)
+	stateSinkObject.Save(3, &t.SACKBlocks)
 }
 
-func (x *TCPOptions) afterLoad() {}
+func (t *TCPOptions) afterLoad() {}
 
-func (x *TCPOptions) StateLoad(m state.Source) {
-	m.Load(0, &x.TS)
-	m.Load(1, &x.TSVal)
-	m.Load(2, &x.TSEcr)
-	m.Load(3, &x.SACKBlocks)
+func (t *TCPOptions) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.TS)
+	stateSourceObject.Load(1, &t.TSVal)
+	stateSourceObject.Load(2, &t.TSEcr)
+	stateSourceObject.Load(3, &t.SACKBlocks)
 }
 
 func init() {

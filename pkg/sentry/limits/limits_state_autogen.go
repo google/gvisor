@@ -6,53 +6,53 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Limit) StateTypeName() string {
+func (l *Limit) StateTypeName() string {
 	return "pkg/sentry/limits.Limit"
 }
 
-func (x *Limit) StateFields() []string {
+func (l *Limit) StateFields() []string {
 	return []string{
 		"Cur",
 		"Max",
 	}
 }
 
-func (x *Limit) beforeSave() {}
+func (l *Limit) beforeSave() {}
 
-func (x *Limit) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Cur)
-	m.Save(1, &x.Max)
+func (l *Limit) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.Cur)
+	stateSinkObject.Save(1, &l.Max)
 }
 
-func (x *Limit) afterLoad() {}
+func (l *Limit) afterLoad() {}
 
-func (x *Limit) StateLoad(m state.Source) {
-	m.Load(0, &x.Cur)
-	m.Load(1, &x.Max)
+func (l *Limit) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.Cur)
+	stateSourceObject.Load(1, &l.Max)
 }
 
-func (x *LimitSet) StateTypeName() string {
+func (l *LimitSet) StateTypeName() string {
 	return "pkg/sentry/limits.LimitSet"
 }
 
-func (x *LimitSet) StateFields() []string {
+func (l *LimitSet) StateFields() []string {
 	return []string{
 		"data",
 	}
 }
 
-func (x *LimitSet) beforeSave() {}
+func (l *LimitSet) beforeSave() {}
 
-func (x *LimitSet) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.data)
+func (l *LimitSet) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.data)
 }
 
-func (x *LimitSet) afterLoad() {}
+func (l *LimitSet) afterLoad() {}
 
-func (x *LimitSet) StateLoad(m state.Source) {
-	m.Load(0, &x.data)
+func (l *LimitSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.data)
 }
 
 func init() {

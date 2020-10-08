@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *connectionedEndpoint) StateTypeName() string {
+func (c *connectionedEndpoint) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.connectionedEndpoint"
 }
 
-func (x *connectionedEndpoint) StateFields() []string {
+func (c *connectionedEndpoint) StateFields() []string {
 	return []string{
 		"baseEndpoint",
 		"id",
@@ -20,56 +20,56 @@ func (x *connectionedEndpoint) StateFields() []string {
 	}
 }
 
-func (x *connectionedEndpoint) beforeSave() {}
+func (c *connectionedEndpoint) beforeSave() {}
 
-func (x *connectionedEndpoint) StateSave(m state.Sink) {
-	x.beforeSave()
-	var acceptedChan []*connectionedEndpoint = x.saveAcceptedChan()
-	m.SaveValue(4, acceptedChan)
-	m.Save(0, &x.baseEndpoint)
-	m.Save(1, &x.id)
-	m.Save(2, &x.idGenerator)
-	m.Save(3, &x.stype)
+func (c *connectionedEndpoint) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	var acceptedChanValue []*connectionedEndpoint = c.saveAcceptedChan()
+	stateSinkObject.SaveValue(4, acceptedChanValue)
+	stateSinkObject.Save(0, &c.baseEndpoint)
+	stateSinkObject.Save(1, &c.id)
+	stateSinkObject.Save(2, &c.idGenerator)
+	stateSinkObject.Save(3, &c.stype)
 }
 
-func (x *connectionedEndpoint) afterLoad() {}
+func (c *connectionedEndpoint) afterLoad() {}
 
-func (x *connectionedEndpoint) StateLoad(m state.Source) {
-	m.Load(0, &x.baseEndpoint)
-	m.Load(1, &x.id)
-	m.Load(2, &x.idGenerator)
-	m.Load(3, &x.stype)
-	m.LoadValue(4, new([]*connectionedEndpoint), func(y interface{}) { x.loadAcceptedChan(y.([]*connectionedEndpoint)) })
+func (c *connectionedEndpoint) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.baseEndpoint)
+	stateSourceObject.Load(1, &c.id)
+	stateSourceObject.Load(2, &c.idGenerator)
+	stateSourceObject.Load(3, &c.stype)
+	stateSourceObject.LoadValue(4, new([]*connectionedEndpoint), func(y interface{}) { c.loadAcceptedChan(y.([]*connectionedEndpoint)) })
 }
 
-func (x *connectionlessEndpoint) StateTypeName() string {
+func (c *connectionlessEndpoint) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.connectionlessEndpoint"
 }
 
-func (x *connectionlessEndpoint) StateFields() []string {
+func (c *connectionlessEndpoint) StateFields() []string {
 	return []string{
 		"baseEndpoint",
 	}
 }
 
-func (x *connectionlessEndpoint) beforeSave() {}
+func (c *connectionlessEndpoint) beforeSave() {}
 
-func (x *connectionlessEndpoint) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.baseEndpoint)
+func (c *connectionlessEndpoint) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.baseEndpoint)
 }
 
-func (x *connectionlessEndpoint) afterLoad() {}
+func (c *connectionlessEndpoint) afterLoad() {}
 
-func (x *connectionlessEndpoint) StateLoad(m state.Source) {
-	m.Load(0, &x.baseEndpoint)
+func (c *connectionlessEndpoint) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.baseEndpoint)
 }
 
-func (x *queue) StateTypeName() string {
+func (q *queue) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.queue"
 }
 
-func (x *queue) StateFields() []string {
+func (q *queue) StateFields() []string {
 	return []string{
 		"queueRefs",
 		"ReaderQueue",
@@ -82,139 +82,139 @@ func (x *queue) StateFields() []string {
 	}
 }
 
-func (x *queue) beforeSave() {}
+func (q *queue) beforeSave() {}
 
-func (x *queue) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.queueRefs)
-	m.Save(1, &x.ReaderQueue)
-	m.Save(2, &x.WriterQueue)
-	m.Save(3, &x.closed)
-	m.Save(4, &x.unread)
-	m.Save(5, &x.used)
-	m.Save(6, &x.limit)
-	m.Save(7, &x.dataList)
+func (q *queue) StateSave(stateSinkObject state.Sink) {
+	q.beforeSave()
+	stateSinkObject.Save(0, &q.queueRefs)
+	stateSinkObject.Save(1, &q.ReaderQueue)
+	stateSinkObject.Save(2, &q.WriterQueue)
+	stateSinkObject.Save(3, &q.closed)
+	stateSinkObject.Save(4, &q.unread)
+	stateSinkObject.Save(5, &q.used)
+	stateSinkObject.Save(6, &q.limit)
+	stateSinkObject.Save(7, &q.dataList)
 }
 
-func (x *queue) afterLoad() {}
+func (q *queue) afterLoad() {}
 
-func (x *queue) StateLoad(m state.Source) {
-	m.Load(0, &x.queueRefs)
-	m.Load(1, &x.ReaderQueue)
-	m.Load(2, &x.WriterQueue)
-	m.Load(3, &x.closed)
-	m.Load(4, &x.unread)
-	m.Load(5, &x.used)
-	m.Load(6, &x.limit)
-	m.Load(7, &x.dataList)
+func (q *queue) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &q.queueRefs)
+	stateSourceObject.Load(1, &q.ReaderQueue)
+	stateSourceObject.Load(2, &q.WriterQueue)
+	stateSourceObject.Load(3, &q.closed)
+	stateSourceObject.Load(4, &q.unread)
+	stateSourceObject.Load(5, &q.used)
+	stateSourceObject.Load(6, &q.limit)
+	stateSourceObject.Load(7, &q.dataList)
 }
 
-func (x *queueRefs) StateTypeName() string {
+func (q *queueRefs) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.queueRefs"
 }
 
-func (x *queueRefs) StateFields() []string {
+func (q *queueRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (x *queueRefs) beforeSave() {}
+func (q *queueRefs) beforeSave() {}
 
-func (x *queueRefs) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.refCount)
+func (q *queueRefs) StateSave(stateSinkObject state.Sink) {
+	q.beforeSave()
+	stateSinkObject.Save(0, &q.refCount)
 }
 
-func (x *queueRefs) afterLoad() {}
+func (q *queueRefs) afterLoad() {}
 
-func (x *queueRefs) StateLoad(m state.Source) {
-	m.Load(0, &x.refCount)
+func (q *queueRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &q.refCount)
 }
 
-func (x *messageList) StateTypeName() string {
+func (m *messageList) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.messageList"
 }
 
-func (x *messageList) StateFields() []string {
+func (m *messageList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (x *messageList) beforeSave() {}
+func (m *messageList) beforeSave() {}
 
-func (x *messageList) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
+func (m *messageList) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.head)
+	stateSinkObject.Save(1, &m.tail)
 }
 
-func (x *messageList) afterLoad() {}
+func (m *messageList) afterLoad() {}
 
-func (x *messageList) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
+func (m *messageList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.head)
+	stateSourceObject.Load(1, &m.tail)
 }
 
-func (x *messageEntry) StateTypeName() string {
+func (m *messageEntry) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.messageEntry"
 }
 
-func (x *messageEntry) StateFields() []string {
+func (m *messageEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (x *messageEntry) beforeSave() {}
+func (m *messageEntry) beforeSave() {}
 
-func (x *messageEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
+func (m *messageEntry) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.next)
+	stateSinkObject.Save(1, &m.prev)
 }
 
-func (x *messageEntry) afterLoad() {}
+func (m *messageEntry) afterLoad() {}
 
-func (x *messageEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
+func (m *messageEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.next)
+	stateSourceObject.Load(1, &m.prev)
 }
 
-func (x *ControlMessages) StateTypeName() string {
+func (c *ControlMessages) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.ControlMessages"
 }
 
-func (x *ControlMessages) StateFields() []string {
+func (c *ControlMessages) StateFields() []string {
 	return []string{
 		"Rights",
 		"Credentials",
 	}
 }
 
-func (x *ControlMessages) beforeSave() {}
+func (c *ControlMessages) beforeSave() {}
 
-func (x *ControlMessages) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Rights)
-	m.Save(1, &x.Credentials)
+func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Rights)
+	stateSinkObject.Save(1, &c.Credentials)
 }
 
-func (x *ControlMessages) afterLoad() {}
+func (c *ControlMessages) afterLoad() {}
 
-func (x *ControlMessages) StateLoad(m state.Source) {
-	m.Load(0, &x.Rights)
-	m.Load(1, &x.Credentials)
+func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Rights)
+	stateSourceObject.Load(1, &c.Credentials)
 }
 
-func (x *message) StateTypeName() string {
+func (m *message) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.message"
 }
 
-func (x *message) StateFields() []string {
+func (m *message) StateFields() []string {
 	return []string{
 		"messageEntry",
 		"Data",
@@ -223,53 +223,53 @@ func (x *message) StateFields() []string {
 	}
 }
 
-func (x *message) beforeSave() {}
+func (m *message) beforeSave() {}
 
-func (x *message) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.messageEntry)
-	m.Save(1, &x.Data)
-	m.Save(2, &x.Control)
-	m.Save(3, &x.Address)
+func (m *message) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.messageEntry)
+	stateSinkObject.Save(1, &m.Data)
+	stateSinkObject.Save(2, &m.Control)
+	stateSinkObject.Save(3, &m.Address)
 }
 
-func (x *message) afterLoad() {}
+func (m *message) afterLoad() {}
 
-func (x *message) StateLoad(m state.Source) {
-	m.Load(0, &x.messageEntry)
-	m.Load(1, &x.Data)
-	m.Load(2, &x.Control)
-	m.Load(3, &x.Address)
+func (m *message) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.messageEntry)
+	stateSourceObject.Load(1, &m.Data)
+	stateSourceObject.Load(2, &m.Control)
+	stateSourceObject.Load(3, &m.Address)
 }
 
-func (x *queueReceiver) StateTypeName() string {
+func (q *queueReceiver) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.queueReceiver"
 }
 
-func (x *queueReceiver) StateFields() []string {
+func (q *queueReceiver) StateFields() []string {
 	return []string{
 		"readQueue",
 	}
 }
 
-func (x *queueReceiver) beforeSave() {}
+func (q *queueReceiver) beforeSave() {}
 
-func (x *queueReceiver) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.readQueue)
+func (q *queueReceiver) StateSave(stateSinkObject state.Sink) {
+	q.beforeSave()
+	stateSinkObject.Save(0, &q.readQueue)
 }
 
-func (x *queueReceiver) afterLoad() {}
+func (q *queueReceiver) afterLoad() {}
 
-func (x *queueReceiver) StateLoad(m state.Source) {
-	m.Load(0, &x.readQueue)
+func (q *queueReceiver) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &q.readQueue)
 }
 
-func (x *streamQueueReceiver) StateTypeName() string {
+func (s *streamQueueReceiver) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.streamQueueReceiver"
 }
 
-func (x *streamQueueReceiver) StateFields() []string {
+func (s *streamQueueReceiver) StateFields() []string {
 	return []string{
 		"queueReceiver",
 		"buffer",
@@ -278,56 +278,56 @@ func (x *streamQueueReceiver) StateFields() []string {
 	}
 }
 
-func (x *streamQueueReceiver) beforeSave() {}
+func (s *streamQueueReceiver) beforeSave() {}
 
-func (x *streamQueueReceiver) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.queueReceiver)
-	m.Save(1, &x.buffer)
-	m.Save(2, &x.control)
-	m.Save(3, &x.addr)
+func (s *streamQueueReceiver) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.queueReceiver)
+	stateSinkObject.Save(1, &s.buffer)
+	stateSinkObject.Save(2, &s.control)
+	stateSinkObject.Save(3, &s.addr)
 }
 
-func (x *streamQueueReceiver) afterLoad() {}
+func (s *streamQueueReceiver) afterLoad() {}
 
-func (x *streamQueueReceiver) StateLoad(m state.Source) {
-	m.Load(0, &x.queueReceiver)
-	m.Load(1, &x.buffer)
-	m.Load(2, &x.control)
-	m.Load(3, &x.addr)
+func (s *streamQueueReceiver) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.queueReceiver)
+	stateSourceObject.Load(1, &s.buffer)
+	stateSourceObject.Load(2, &s.control)
+	stateSourceObject.Load(3, &s.addr)
 }
 
-func (x *connectedEndpoint) StateTypeName() string {
+func (c *connectedEndpoint) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.connectedEndpoint"
 }
 
-func (x *connectedEndpoint) StateFields() []string {
+func (c *connectedEndpoint) StateFields() []string {
 	return []string{
 		"endpoint",
 		"writeQueue",
 	}
 }
 
-func (x *connectedEndpoint) beforeSave() {}
+func (c *connectedEndpoint) beforeSave() {}
 
-func (x *connectedEndpoint) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.endpoint)
-	m.Save(1, &x.writeQueue)
+func (c *connectedEndpoint) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.endpoint)
+	stateSinkObject.Save(1, &c.writeQueue)
 }
 
-func (x *connectedEndpoint) afterLoad() {}
+func (c *connectedEndpoint) afterLoad() {}
 
-func (x *connectedEndpoint) StateLoad(m state.Source) {
-	m.Load(0, &x.endpoint)
-	m.Load(1, &x.writeQueue)
+func (c *connectedEndpoint) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.endpoint)
+	stateSourceObject.Load(1, &c.writeQueue)
 }
 
-func (x *baseEndpoint) StateTypeName() string {
+func (b *baseEndpoint) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.baseEndpoint"
 }
 
-func (x *baseEndpoint) StateFields() []string {
+func (b *baseEndpoint) StateFields() []string {
 	return []string{
 		"Queue",
 		"passcred",
@@ -338,27 +338,27 @@ func (x *baseEndpoint) StateFields() []string {
 	}
 }
 
-func (x *baseEndpoint) beforeSave() {}
+func (b *baseEndpoint) beforeSave() {}
 
-func (x *baseEndpoint) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Queue)
-	m.Save(1, &x.passcred)
-	m.Save(2, &x.receiver)
-	m.Save(3, &x.connected)
-	m.Save(4, &x.path)
-	m.Save(5, &x.linger)
+func (b *baseEndpoint) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+	stateSinkObject.Save(0, &b.Queue)
+	stateSinkObject.Save(1, &b.passcred)
+	stateSinkObject.Save(2, &b.receiver)
+	stateSinkObject.Save(3, &b.connected)
+	stateSinkObject.Save(4, &b.path)
+	stateSinkObject.Save(5, &b.linger)
 }
 
-func (x *baseEndpoint) afterLoad() {}
+func (b *baseEndpoint) afterLoad() {}
 
-func (x *baseEndpoint) StateLoad(m state.Source) {
-	m.Load(0, &x.Queue)
-	m.Load(1, &x.passcred)
-	m.Load(2, &x.receiver)
-	m.Load(3, &x.connected)
-	m.Load(4, &x.path)
-	m.Load(5, &x.linger)
+func (b *baseEndpoint) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &b.Queue)
+	stateSourceObject.Load(1, &b.passcred)
+	stateSourceObject.Load(2, &b.receiver)
+	stateSourceObject.Load(3, &b.connected)
+	stateSourceObject.Load(4, &b.path)
+	stateSourceObject.Load(5, &b.linger)
 }
 
 func init() {

@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *EventOperations) StateTypeName() string {
+func (e *EventOperations) StateTypeName() string {
 	return "pkg/sentry/kernel/eventfd.EventOperations"
 }
 
-func (x *EventOperations) StateFields() []string {
+func (e *EventOperations) StateFields() []string {
 	return []string{
 		"val",
 		"semMode",
@@ -18,24 +18,24 @@ func (x *EventOperations) StateFields() []string {
 	}
 }
 
-func (x *EventOperations) beforeSave() {}
+func (e *EventOperations) beforeSave() {}
 
-func (x *EventOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	if !state.IsZeroValue(&x.wq) {
-		state.Failf("wq is %#v, expected zero", &x.wq)
+func (e *EventOperations) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	if !state.IsZeroValue(&e.wq) {
+		state.Failf("wq is %#v, expected zero", &e.wq)
 	}
-	m.Save(0, &x.val)
-	m.Save(1, &x.semMode)
-	m.Save(2, &x.hostfd)
+	stateSinkObject.Save(0, &e.val)
+	stateSinkObject.Save(1, &e.semMode)
+	stateSinkObject.Save(2, &e.hostfd)
 }
 
-func (x *EventOperations) afterLoad() {}
+func (e *EventOperations) afterLoad() {}
 
-func (x *EventOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.val)
-	m.Load(1, &x.semMode)
-	m.Load(2, &x.hostfd)
+func (e *EventOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.val)
+	stateSourceObject.Load(1, &e.semMode)
+	stateSourceObject.Load(2, &e.hostfd)
 }
 
 func init() {

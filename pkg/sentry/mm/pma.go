@@ -36,7 +36,7 @@ import (
 // * ar.Length() != 0.
 func (mm *MemoryManager) existingPMAsLocked(ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool, needInternalMappings bool) pmaIterator {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 {
+		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
@@ -100,7 +100,7 @@ func (mm *MemoryManager) existingVecPMAsLocked(ars usermem.AddrRangeSeq, at user
 //   (i.e. permission checks must have been performed against vmas).
 func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, at usermem.AccessType) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 {
+		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 		if !vseg.Ok() {
@@ -193,7 +193,7 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars usermem.AddrR
 // getVecPMAsLocked; other clients should call one of those instead.
 func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, at usermem.AccessType) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
+		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 		if !vseg.Ok() {
@@ -223,7 +223,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 				// Need a pma here.
 				optAR := vseg.Range().Intersect(pgap.Range())
 				if checkInvariants {
-					if optAR.Length() <= 0 {
+					if optAR.Length() == 0 {
 						panic(fmt.Sprintf("vseg %v and pgap %v do not overlap", vseg, pgap))
 					}
 				}
@@ -560,7 +560,7 @@ func (mm *MemoryManager) isPMACopyOnWriteLocked(vseg vmaIterator, pseg pmaIterat
 // Invalidate implements memmap.MappingSpace.Invalidate.
 func (mm *MemoryManager) Invalidate(ar usermem.AddrRange, opts memmap.InvalidateOpts) {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
+		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
@@ -583,7 +583,7 @@ func (mm *MemoryManager) Invalidate(ar usermem.AddrRange, opts memmap.Invalidate
 // * ar must be page-aligned.
 func (mm *MemoryManager) invalidateLocked(ar usermem.AddrRange, invalidatePrivate, invalidateShared bool) {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
+		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
@@ -629,7 +629,7 @@ func (mm *MemoryManager) invalidateLocked(ar usermem.AddrRange, invalidatePrivat
 // * ar must be page-aligned.
 func (mm *MemoryManager) Pin(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) ([]PinnedRange, error) {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
+		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
@@ -715,10 +715,10 @@ func Unpin(prs []PinnedRange) {
 // * oldAR and newAR must be page-aligned.
 func (mm *MemoryManager) movePMAsLocked(oldAR, newAR usermem.AddrRange) {
 	if checkInvariants {
-		if !oldAR.WellFormed() || oldAR.Length() <= 0 || !oldAR.IsPageAligned() {
+		if !oldAR.WellFormed() || oldAR.Length() == 0 || !oldAR.IsPageAligned() {
 			panic(fmt.Sprintf("invalid oldAR: %v", oldAR))
 		}
-		if !newAR.WellFormed() || newAR.Length() <= 0 || !newAR.IsPageAligned() {
+		if !newAR.WellFormed() || newAR.Length() == 0 || !newAR.IsPageAligned() {
 			panic(fmt.Sprintf("invalid newAR: %v", newAR))
 		}
 		if oldAR.Length() > newAR.Length() {
@@ -778,7 +778,7 @@ func (mm *MemoryManager) movePMAsLocked(oldAR, newAR usermem.AddrRange) {
 // into mm.pmas.
 func (mm *MemoryManager) getPMAInternalMappingsLocked(pseg pmaIterator, ar usermem.AddrRange) (pmaGapIterator, error) {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 {
+		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 		if !pseg.Range().Contains(ar.Start) {
@@ -831,7 +831,7 @@ func (mm *MemoryManager) getVecPMAInternalMappingsLocked(ars usermem.AddrRangeSe
 // * pseg.Range().Contains(ar.Start).
 func (mm *MemoryManager) internalMappingsLocked(pseg pmaIterator, ar usermem.AddrRange) safemem.BlockSeq {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 {
+		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 		if !pseg.Range().Contains(ar.Start) {
@@ -1050,7 +1050,7 @@ func (pseg pmaIterator) fileRangeOf(ar usermem.AddrRange) memmap.FileRange {
 		if !pseg.Ok() {
 			panic("terminal pma iterator")
 		}
-		if !ar.WellFormed() || ar.Length() <= 0 {
+		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 		if !pseg.Range().IsSupersetOf(ar) {

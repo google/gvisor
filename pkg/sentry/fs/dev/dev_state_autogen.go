@@ -6,279 +6,279 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *filesystem) StateTypeName() string {
+func (f *filesystem) StateTypeName() string {
 	return "pkg/sentry/fs/dev.filesystem"
 }
 
-func (x *filesystem) StateFields() []string {
+func (f *filesystem) StateFields() []string {
 	return []string{}
 }
 
-func (x *filesystem) beforeSave() {}
+func (f *filesystem) beforeSave() {}
 
-func (x *filesystem) StateSave(m state.Sink) {
-	x.beforeSave()
+func (f *filesystem) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
 }
 
-func (x *filesystem) afterLoad() {}
+func (f *filesystem) afterLoad() {}
 
-func (x *filesystem) StateLoad(m state.Source) {
+func (f *filesystem) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *fullDevice) StateTypeName() string {
+func (f *fullDevice) StateTypeName() string {
 	return "pkg/sentry/fs/dev.fullDevice"
 }
 
-func (x *fullDevice) StateFields() []string {
+func (f *fullDevice) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 	}
 }
 
-func (x *fullDevice) beforeSave() {}
+func (f *fullDevice) beforeSave() {}
 
-func (x *fullDevice) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
+func (f *fullDevice) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.InodeSimpleAttributes)
 }
 
-func (x *fullDevice) afterLoad() {}
+func (f *fullDevice) afterLoad() {}
 
-func (x *fullDevice) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
+func (f *fullDevice) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.InodeSimpleAttributes)
 }
 
-func (x *fullFileOperations) StateTypeName() string {
+func (f *fullFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.fullFileOperations"
 }
 
-func (x *fullFileOperations) StateFields() []string {
+func (f *fullFileOperations) StateFields() []string {
 	return []string{}
 }
 
-func (x *fullFileOperations) beforeSave() {}
+func (f *fullFileOperations) beforeSave() {}
 
-func (x *fullFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
+func (f *fullFileOperations) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
 }
 
-func (x *fullFileOperations) afterLoad() {}
+func (f *fullFileOperations) afterLoad() {}
 
-func (x *fullFileOperations) StateLoad(m state.Source) {
+func (f *fullFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *netTunInodeOperations) StateTypeName() string {
+func (n *netTunInodeOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.netTunInodeOperations"
 }
 
-func (x *netTunInodeOperations) StateFields() []string {
+func (n *netTunInodeOperations) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 	}
 }
 
-func (x *netTunInodeOperations) beforeSave() {}
+func (n *netTunInodeOperations) beforeSave() {}
 
-func (x *netTunInodeOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
+func (n *netTunInodeOperations) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.InodeSimpleAttributes)
 }
 
-func (x *netTunInodeOperations) afterLoad() {}
+func (n *netTunInodeOperations) afterLoad() {}
 
-func (x *netTunInodeOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
+func (n *netTunInodeOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.InodeSimpleAttributes)
 }
 
-func (x *netTunFileOperations) StateTypeName() string {
+func (n *netTunFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.netTunFileOperations"
 }
 
-func (x *netTunFileOperations) StateFields() []string {
+func (n *netTunFileOperations) StateFields() []string {
 	return []string{
 		"device",
 	}
 }
 
-func (x *netTunFileOperations) beforeSave() {}
+func (n *netTunFileOperations) beforeSave() {}
 
-func (x *netTunFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.device)
+func (n *netTunFileOperations) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.device)
 }
 
-func (x *netTunFileOperations) afterLoad() {}
+func (n *netTunFileOperations) afterLoad() {}
 
-func (x *netTunFileOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.device)
+func (n *netTunFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.device)
 }
 
-func (x *nullDevice) StateTypeName() string {
+func (n *nullDevice) StateTypeName() string {
 	return "pkg/sentry/fs/dev.nullDevice"
 }
 
-func (x *nullDevice) StateFields() []string {
+func (n *nullDevice) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 	}
 }
 
-func (x *nullDevice) beforeSave() {}
+func (n *nullDevice) beforeSave() {}
 
-func (x *nullDevice) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
+func (n *nullDevice) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.InodeSimpleAttributes)
 }
 
-func (x *nullDevice) afterLoad() {}
+func (n *nullDevice) afterLoad() {}
 
-func (x *nullDevice) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
+func (n *nullDevice) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.InodeSimpleAttributes)
 }
 
-func (x *nullFileOperations) StateTypeName() string {
+func (n *nullFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.nullFileOperations"
 }
 
-func (x *nullFileOperations) StateFields() []string {
+func (n *nullFileOperations) StateFields() []string {
 	return []string{}
 }
 
-func (x *nullFileOperations) beforeSave() {}
+func (n *nullFileOperations) beforeSave() {}
 
-func (x *nullFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
+func (n *nullFileOperations) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
 }
 
-func (x *nullFileOperations) afterLoad() {}
+func (n *nullFileOperations) afterLoad() {}
 
-func (x *nullFileOperations) StateLoad(m state.Source) {
+func (n *nullFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *zeroDevice) StateTypeName() string {
+func (z *zeroDevice) StateTypeName() string {
 	return "pkg/sentry/fs/dev.zeroDevice"
 }
 
-func (x *zeroDevice) StateFields() []string {
+func (z *zeroDevice) StateFields() []string {
 	return []string{
 		"nullDevice",
 	}
 }
 
-func (x *zeroDevice) beforeSave() {}
+func (z *zeroDevice) beforeSave() {}
 
-func (x *zeroDevice) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.nullDevice)
+func (z *zeroDevice) StateSave(stateSinkObject state.Sink) {
+	z.beforeSave()
+	stateSinkObject.Save(0, &z.nullDevice)
 }
 
-func (x *zeroDevice) afterLoad() {}
+func (z *zeroDevice) afterLoad() {}
 
-func (x *zeroDevice) StateLoad(m state.Source) {
-	m.Load(0, &x.nullDevice)
+func (z *zeroDevice) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &z.nullDevice)
 }
 
-func (x *zeroFileOperations) StateTypeName() string {
+func (z *zeroFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.zeroFileOperations"
 }
 
-func (x *zeroFileOperations) StateFields() []string {
+func (z *zeroFileOperations) StateFields() []string {
 	return []string{}
 }
 
-func (x *zeroFileOperations) beforeSave() {}
+func (z *zeroFileOperations) beforeSave() {}
 
-func (x *zeroFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
+func (z *zeroFileOperations) StateSave(stateSinkObject state.Sink) {
+	z.beforeSave()
 }
 
-func (x *zeroFileOperations) afterLoad() {}
+func (z *zeroFileOperations) afterLoad() {}
 
-func (x *zeroFileOperations) StateLoad(m state.Source) {
+func (z *zeroFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *randomDevice) StateTypeName() string {
+func (r *randomDevice) StateTypeName() string {
 	return "pkg/sentry/fs/dev.randomDevice"
 }
 
-func (x *randomDevice) StateFields() []string {
+func (r *randomDevice) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 	}
 }
 
-func (x *randomDevice) beforeSave() {}
+func (r *randomDevice) beforeSave() {}
 
-func (x *randomDevice) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
+func (r *randomDevice) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.InodeSimpleAttributes)
 }
 
-func (x *randomDevice) afterLoad() {}
+func (r *randomDevice) afterLoad() {}
 
-func (x *randomDevice) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
+func (r *randomDevice) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.InodeSimpleAttributes)
 }
 
-func (x *randomFileOperations) StateTypeName() string {
+func (r *randomFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.randomFileOperations"
 }
 
-func (x *randomFileOperations) StateFields() []string {
+func (r *randomFileOperations) StateFields() []string {
 	return []string{}
 }
 
-func (x *randomFileOperations) beforeSave() {}
+func (r *randomFileOperations) beforeSave() {}
 
-func (x *randomFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
+func (r *randomFileOperations) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
 }
 
-func (x *randomFileOperations) afterLoad() {}
+func (r *randomFileOperations) afterLoad() {}
 
-func (x *randomFileOperations) StateLoad(m state.Source) {
+func (r *randomFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *ttyInodeOperations) StateTypeName() string {
+func (t *ttyInodeOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.ttyInodeOperations"
 }
 
-func (x *ttyInodeOperations) StateFields() []string {
+func (t *ttyInodeOperations) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 	}
 }
 
-func (x *ttyInodeOperations) beforeSave() {}
+func (t *ttyInodeOperations) beforeSave() {}
 
-func (x *ttyInodeOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
+func (t *ttyInodeOperations) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.InodeSimpleAttributes)
 }
 
-func (x *ttyInodeOperations) afterLoad() {}
+func (t *ttyInodeOperations) afterLoad() {}
 
-func (x *ttyInodeOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
+func (t *ttyInodeOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.InodeSimpleAttributes)
 }
 
-func (x *ttyFileOperations) StateTypeName() string {
+func (t *ttyFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/dev.ttyFileOperations"
 }
 
-func (x *ttyFileOperations) StateFields() []string {
+func (t *ttyFileOperations) StateFields() []string {
 	return []string{}
 }
 
-func (x *ttyFileOperations) beforeSave() {}
+func (t *ttyFileOperations) beforeSave() {}
 
-func (x *ttyFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
+func (t *ttyFileOperations) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
 }
 
-func (x *ttyFileOperations) afterLoad() {}
+func (t *ttyFileOperations) afterLoad() {}
 
-func (x *ttyFileOperations) StateLoad(m state.Source) {
+func (t *ttyFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {

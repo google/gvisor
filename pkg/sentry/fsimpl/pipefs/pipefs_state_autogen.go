@@ -6,56 +6,56 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *filesystemType) StateTypeName() string {
+func (f *filesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/pipefs.filesystemType"
 }
 
-func (x *filesystemType) StateFields() []string {
+func (f *filesystemType) StateFields() []string {
 	return []string{}
 }
 
-func (x *filesystemType) beforeSave() {}
+func (f *filesystemType) beforeSave() {}
 
-func (x *filesystemType) StateSave(m state.Sink) {
-	x.beforeSave()
+func (f *filesystemType) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
 }
 
-func (x *filesystemType) afterLoad() {}
+func (f *filesystemType) afterLoad() {}
 
-func (x *filesystemType) StateLoad(m state.Source) {
+func (f *filesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *filesystem) StateTypeName() string {
+func (f *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/pipefs.filesystem"
 }
 
-func (x *filesystem) StateFields() []string {
+func (f *filesystem) StateFields() []string {
 	return []string{
 		"Filesystem",
 		"devMinor",
 	}
 }
 
-func (x *filesystem) beforeSave() {}
+func (f *filesystem) beforeSave() {}
 
-func (x *filesystem) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Filesystem)
-	m.Save(1, &x.devMinor)
+func (f *filesystem) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.Filesystem)
+	stateSinkObject.Save(1, &f.devMinor)
 }
 
-func (x *filesystem) afterLoad() {}
+func (f *filesystem) afterLoad() {}
 
-func (x *filesystem) StateLoad(m state.Source) {
-	m.Load(0, &x.Filesystem)
-	m.Load(1, &x.devMinor)
+func (f *filesystem) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.Filesystem)
+	stateSourceObject.Load(1, &f.devMinor)
 }
 
-func (x *inode) StateTypeName() string {
+func (i *inode) StateTypeName() string {
 	return "pkg/sentry/fsimpl/pipefs.inode"
 }
 
-func (x *inode) StateFields() []string {
+func (i *inode) StateFields() []string {
 	return []string{
 		"InodeNotDirectory",
 		"InodeNotSymlink",
@@ -69,33 +69,33 @@ func (x *inode) StateFields() []string {
 	}
 }
 
-func (x *inode) beforeSave() {}
+func (i *inode) beforeSave() {}
 
-func (x *inode) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeNotDirectory)
-	m.Save(1, &x.InodeNotSymlink)
-	m.Save(2, &x.InodeNoopRefCount)
-	m.Save(3, &x.locks)
-	m.Save(4, &x.pipe)
-	m.Save(5, &x.ino)
-	m.Save(6, &x.uid)
-	m.Save(7, &x.gid)
-	m.Save(8, &x.ctime)
+func (i *inode) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.InodeNotDirectory)
+	stateSinkObject.Save(1, &i.InodeNotSymlink)
+	stateSinkObject.Save(2, &i.InodeNoopRefCount)
+	stateSinkObject.Save(3, &i.locks)
+	stateSinkObject.Save(4, &i.pipe)
+	stateSinkObject.Save(5, &i.ino)
+	stateSinkObject.Save(6, &i.uid)
+	stateSinkObject.Save(7, &i.gid)
+	stateSinkObject.Save(8, &i.ctime)
 }
 
-func (x *inode) afterLoad() {}
+func (i *inode) afterLoad() {}
 
-func (x *inode) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeNotDirectory)
-	m.Load(1, &x.InodeNotSymlink)
-	m.Load(2, &x.InodeNoopRefCount)
-	m.Load(3, &x.locks)
-	m.Load(4, &x.pipe)
-	m.Load(5, &x.ino)
-	m.Load(6, &x.uid)
-	m.Load(7, &x.gid)
-	m.Load(8, &x.ctime)
+func (i *inode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.InodeNotDirectory)
+	stateSourceObject.Load(1, &i.InodeNotSymlink)
+	stateSourceObject.Load(2, &i.InodeNoopRefCount)
+	stateSourceObject.Load(3, &i.locks)
+	stateSourceObject.Load(4, &i.pipe)
+	stateSourceObject.Load(5, &i.ino)
+	stateSourceObject.Load(6, &i.uid)
+	stateSourceObject.Load(7, &i.gid)
+	stateSourceObject.Load(8, &i.ctime)
 }
 
 func init() {

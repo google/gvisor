@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Flags) StateTypeName() string {
+func (f *Flags) StateTypeName() string {
 	return "pkg/tcpip/ports.Flags"
 }
 
-func (x *Flags) StateFields() []string {
+func (f *Flags) StateFields() []string {
 	return []string{
 		"MostRecent",
 		"LoadBalanced",
@@ -18,21 +18,21 @@ func (x *Flags) StateFields() []string {
 	}
 }
 
-func (x *Flags) beforeSave() {}
+func (f *Flags) beforeSave() {}
 
-func (x *Flags) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.MostRecent)
-	m.Save(1, &x.LoadBalanced)
-	m.Save(2, &x.TupleOnly)
+func (f *Flags) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.MostRecent)
+	stateSinkObject.Save(1, &f.LoadBalanced)
+	stateSinkObject.Save(2, &f.TupleOnly)
 }
 
-func (x *Flags) afterLoad() {}
+func (f *Flags) afterLoad() {}
 
-func (x *Flags) StateLoad(m state.Source) {
-	m.Load(0, &x.MostRecent)
-	m.Load(1, &x.LoadBalanced)
-	m.Load(2, &x.TupleOnly)
+func (f *Flags) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.MostRecent)
+	stateSourceObject.Load(1, &f.LoadBalanced)
+	stateSourceObject.Load(2, &f.TupleOnly)
 }
 
 func init() {

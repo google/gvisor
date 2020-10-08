@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *TCPBufferSize) StateTypeName() string {
+func (t *TCPBufferSize) StateTypeName() string {
 	return "pkg/sentry/inet.TCPBufferSize"
 }
 
-func (x *TCPBufferSize) StateFields() []string {
+func (t *TCPBufferSize) StateFields() []string {
 	return []string{
 		"Min",
 		"Default",
@@ -18,46 +18,46 @@ func (x *TCPBufferSize) StateFields() []string {
 	}
 }
 
-func (x *TCPBufferSize) beforeSave() {}
+func (t *TCPBufferSize) beforeSave() {}
 
-func (x *TCPBufferSize) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Min)
-	m.Save(1, &x.Default)
-	m.Save(2, &x.Max)
+func (t *TCPBufferSize) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.Min)
+	stateSinkObject.Save(1, &t.Default)
+	stateSinkObject.Save(2, &t.Max)
 }
 
-func (x *TCPBufferSize) afterLoad() {}
+func (t *TCPBufferSize) afterLoad() {}
 
-func (x *TCPBufferSize) StateLoad(m state.Source) {
-	m.Load(0, &x.Min)
-	m.Load(1, &x.Default)
-	m.Load(2, &x.Max)
+func (t *TCPBufferSize) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.Min)
+	stateSourceObject.Load(1, &t.Default)
+	stateSourceObject.Load(2, &t.Max)
 }
 
-func (x *Namespace) StateTypeName() string {
+func (n *Namespace) StateTypeName() string {
 	return "pkg/sentry/inet.Namespace"
 }
 
-func (x *Namespace) StateFields() []string {
+func (n *Namespace) StateFields() []string {
 	return []string{
 		"creator",
 		"isRoot",
 	}
 }
 
-func (x *Namespace) beforeSave() {}
+func (n *Namespace) beforeSave() {}
 
-func (x *Namespace) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.creator)
-	m.Save(1, &x.isRoot)
+func (n *Namespace) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.creator)
+	stateSinkObject.Save(1, &n.isRoot)
 }
 
-func (x *Namespace) StateLoad(m state.Source) {
-	m.LoadWait(0, &x.creator)
-	m.Load(1, &x.isRoot)
-	m.AfterLoad(x.afterLoad)
+func (n *Namespace) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadWait(0, &n.creator)
+	stateSourceObject.Load(1, &n.isRoot)
+	stateSourceObject.AfterLoad(n.afterLoad)
 }
 
 func init() {

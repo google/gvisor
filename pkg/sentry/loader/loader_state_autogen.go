@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *VDSO) StateTypeName() string {
+func (v *VDSO) StateTypeName() string {
 	return "pkg/sentry/loader.VDSO"
 }
 
-func (x *VDSO) StateFields() []string {
+func (v *VDSO) StateFields() []string {
 	return []string{
 		"ParamPage",
 		"vdso",
@@ -20,33 +20,33 @@ func (x *VDSO) StateFields() []string {
 	}
 }
 
-func (x *VDSO) beforeSave() {}
+func (v *VDSO) beforeSave() {}
 
-func (x *VDSO) StateSave(m state.Sink) {
-	x.beforeSave()
-	var phdrs []elfProgHeader = x.savePhdrs()
-	m.SaveValue(4, phdrs)
-	m.Save(0, &x.ParamPage)
-	m.Save(1, &x.vdso)
-	m.Save(2, &x.os)
-	m.Save(3, &x.arch)
+func (v *VDSO) StateSave(stateSinkObject state.Sink) {
+	v.beforeSave()
+	var phdrsValue []elfProgHeader = v.savePhdrs()
+	stateSinkObject.SaveValue(4, phdrsValue)
+	stateSinkObject.Save(0, &v.ParamPage)
+	stateSinkObject.Save(1, &v.vdso)
+	stateSinkObject.Save(2, &v.os)
+	stateSinkObject.Save(3, &v.arch)
 }
 
-func (x *VDSO) afterLoad() {}
+func (v *VDSO) afterLoad() {}
 
-func (x *VDSO) StateLoad(m state.Source) {
-	m.Load(0, &x.ParamPage)
-	m.Load(1, &x.vdso)
-	m.Load(2, &x.os)
-	m.Load(3, &x.arch)
-	m.LoadValue(4, new([]elfProgHeader), func(y interface{}) { x.loadPhdrs(y.([]elfProgHeader)) })
+func (v *VDSO) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &v.ParamPage)
+	stateSourceObject.Load(1, &v.vdso)
+	stateSourceObject.Load(2, &v.os)
+	stateSourceObject.Load(3, &v.arch)
+	stateSourceObject.LoadValue(4, new([]elfProgHeader), func(y interface{}) { v.loadPhdrs(y.([]elfProgHeader)) })
 }
 
-func (x *elfProgHeader) StateTypeName() string {
+func (e *elfProgHeader) StateTypeName() string {
 	return "pkg/sentry/loader.elfProgHeader"
 }
 
-func (x *elfProgHeader) StateFields() []string {
+func (e *elfProgHeader) StateFields() []string {
 	return []string{
 		"Type",
 		"Flags",
@@ -59,31 +59,31 @@ func (x *elfProgHeader) StateFields() []string {
 	}
 }
 
-func (x *elfProgHeader) beforeSave() {}
+func (e *elfProgHeader) beforeSave() {}
 
-func (x *elfProgHeader) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Type)
-	m.Save(1, &x.Flags)
-	m.Save(2, &x.Off)
-	m.Save(3, &x.Vaddr)
-	m.Save(4, &x.Paddr)
-	m.Save(5, &x.Filesz)
-	m.Save(6, &x.Memsz)
-	m.Save(7, &x.Align)
+func (e *elfProgHeader) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.Type)
+	stateSinkObject.Save(1, &e.Flags)
+	stateSinkObject.Save(2, &e.Off)
+	stateSinkObject.Save(3, &e.Vaddr)
+	stateSinkObject.Save(4, &e.Paddr)
+	stateSinkObject.Save(5, &e.Filesz)
+	stateSinkObject.Save(6, &e.Memsz)
+	stateSinkObject.Save(7, &e.Align)
 }
 
-func (x *elfProgHeader) afterLoad() {}
+func (e *elfProgHeader) afterLoad() {}
 
-func (x *elfProgHeader) StateLoad(m state.Source) {
-	m.Load(0, &x.Type)
-	m.Load(1, &x.Flags)
-	m.Load(2, &x.Off)
-	m.Load(3, &x.Vaddr)
-	m.Load(4, &x.Paddr)
-	m.Load(5, &x.Filesz)
-	m.Load(6, &x.Memsz)
-	m.Load(7, &x.Align)
+func (e *elfProgHeader) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.Type)
+	stateSourceObject.Load(1, &e.Flags)
+	stateSourceObject.Load(2, &e.Off)
+	stateSourceObject.Load(3, &e.Vaddr)
+	stateSourceObject.Load(4, &e.Paddr)
+	stateSourceObject.Load(5, &e.Filesz)
+	stateSourceObject.Load(6, &e.Memsz)
+	stateSourceObject.Load(7, &e.Align)
 }
 
 func init() {

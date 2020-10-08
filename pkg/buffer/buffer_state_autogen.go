@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *buffer) StateTypeName() string {
+func (b *buffer) StateTypeName() string {
 	return "pkg/buffer.buffer"
 }
 
-func (x *buffer) StateFields() []string {
+func (b *buffer) StateFields() []string {
 	return []string{
 		"data",
 		"read",
@@ -19,107 +19,107 @@ func (x *buffer) StateFields() []string {
 	}
 }
 
-func (x *buffer) beforeSave() {}
+func (b *buffer) beforeSave() {}
 
-func (x *buffer) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.data)
-	m.Save(1, &x.read)
-	m.Save(2, &x.write)
-	m.Save(3, &x.bufferEntry)
+func (b *buffer) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+	stateSinkObject.Save(0, &b.data)
+	stateSinkObject.Save(1, &b.read)
+	stateSinkObject.Save(2, &b.write)
+	stateSinkObject.Save(3, &b.bufferEntry)
 }
 
-func (x *buffer) afterLoad() {}
+func (b *buffer) afterLoad() {}
 
-func (x *buffer) StateLoad(m state.Source) {
-	m.Load(0, &x.data)
-	m.Load(1, &x.read)
-	m.Load(2, &x.write)
-	m.Load(3, &x.bufferEntry)
+func (b *buffer) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &b.data)
+	stateSourceObject.Load(1, &b.read)
+	stateSourceObject.Load(2, &b.write)
+	stateSourceObject.Load(3, &b.bufferEntry)
 }
 
-func (x *bufferList) StateTypeName() string {
+func (b *bufferList) StateTypeName() string {
 	return "pkg/buffer.bufferList"
 }
 
-func (x *bufferList) StateFields() []string {
+func (b *bufferList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (x *bufferList) beforeSave() {}
+func (b *bufferList) beforeSave() {}
 
-func (x *bufferList) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
+func (b *bufferList) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+	stateSinkObject.Save(0, &b.head)
+	stateSinkObject.Save(1, &b.tail)
 }
 
-func (x *bufferList) afterLoad() {}
+func (b *bufferList) afterLoad() {}
 
-func (x *bufferList) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
+func (b *bufferList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &b.head)
+	stateSourceObject.Load(1, &b.tail)
 }
 
-func (x *bufferEntry) StateTypeName() string {
+func (b *bufferEntry) StateTypeName() string {
 	return "pkg/buffer.bufferEntry"
 }
 
-func (x *bufferEntry) StateFields() []string {
+func (b *bufferEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (x *bufferEntry) beforeSave() {}
+func (b *bufferEntry) beforeSave() {}
 
-func (x *bufferEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
+func (b *bufferEntry) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+	stateSinkObject.Save(0, &b.next)
+	stateSinkObject.Save(1, &b.prev)
 }
 
-func (x *bufferEntry) afterLoad() {}
+func (b *bufferEntry) afterLoad() {}
 
-func (x *bufferEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
+func (b *bufferEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &b.next)
+	stateSourceObject.Load(1, &b.prev)
 }
 
-func (x *pool) StateTypeName() string {
+func (p *pool) StateTypeName() string {
 	return "pkg/buffer.pool"
 }
 
-func (x *pool) StateFields() []string {
+func (p *pool) StateFields() []string {
 	return []string{
 		"bufferSize",
 		"embeddedStorage",
 	}
 }
 
-func (x *pool) beforeSave() {}
+func (p *pool) beforeSave() {}
 
-func (x *pool) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.bufferSize)
-	m.Save(1, &x.embeddedStorage)
+func (p *pool) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.bufferSize)
+	stateSinkObject.Save(1, &p.embeddedStorage)
 }
 
-func (x *pool) StateLoad(m state.Source) {
-	m.Load(0, &x.bufferSize)
-	m.LoadWait(1, &x.embeddedStorage)
-	m.AfterLoad(x.afterLoad)
+func (p *pool) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.bufferSize)
+	stateSourceObject.LoadWait(1, &p.embeddedStorage)
+	stateSourceObject.AfterLoad(p.afterLoad)
 }
 
-func (x *View) StateTypeName() string {
+func (v *View) StateTypeName() string {
 	return "pkg/buffer.View"
 }
 
-func (x *View) StateFields() []string {
+func (v *View) StateFields() []string {
 	return []string{
 		"data",
 		"size",
@@ -127,21 +127,21 @@ func (x *View) StateFields() []string {
 	}
 }
 
-func (x *View) beforeSave() {}
+func (v *View) beforeSave() {}
 
-func (x *View) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.data)
-	m.Save(1, &x.size)
-	m.Save(2, &x.pool)
+func (v *View) StateSave(stateSinkObject state.Sink) {
+	v.beforeSave()
+	stateSinkObject.Save(0, &v.data)
+	stateSinkObject.Save(1, &v.size)
+	stateSinkObject.Save(2, &v.pool)
 }
 
-func (x *View) afterLoad() {}
+func (v *View) afterLoad() {}
 
-func (x *View) StateLoad(m state.Source) {
-	m.Load(0, &x.data)
-	m.Load(1, &x.size)
-	m.Load(2, &x.pool)
+func (v *View) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &v.data)
+	stateSourceObject.Load(1, &v.size)
+	stateSourceObject.Load(2, &v.pool)
 }
 
 func init() {

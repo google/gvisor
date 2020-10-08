@@ -6,30 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *fullDevice) StateTypeName() string {
+func (f *fullDevice) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.fullDevice"
 }
 
-func (x *fullDevice) StateFields() []string {
+func (f *fullDevice) StateFields() []string {
 	return []string{}
 }
 
-func (x *fullDevice) beforeSave() {}
+func (f *fullDevice) beforeSave() {}
 
-func (x *fullDevice) StateSave(m state.Sink) {
-	x.beforeSave()
+func (f *fullDevice) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
 }
 
-func (x *fullDevice) afterLoad() {}
+func (f *fullDevice) afterLoad() {}
 
-func (x *fullDevice) StateLoad(m state.Source) {
+func (f *fullDevice) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *fullFD) StateTypeName() string {
+func (f *fullFD) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.fullFD"
 }
 
-func (x *fullFD) StateFields() []string {
+func (f *fullFD) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -38,49 +38,49 @@ func (x *fullFD) StateFields() []string {
 	}
 }
 
-func (x *fullFD) beforeSave() {}
+func (f *fullFD) beforeSave() {}
 
-func (x *fullFD) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsfd)
-	m.Save(1, &x.FileDescriptionDefaultImpl)
-	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Save(3, &x.NoLockFD)
+func (f *fullFD) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.vfsfd)
+	stateSinkObject.Save(1, &f.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &f.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &f.NoLockFD)
 }
 
-func (x *fullFD) afterLoad() {}
+func (f *fullFD) afterLoad() {}
 
-func (x *fullFD) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsfd)
-	m.Load(1, &x.FileDescriptionDefaultImpl)
-	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Load(3, &x.NoLockFD)
+func (f *fullFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.vfsfd)
+	stateSourceObject.Load(1, &f.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &f.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &f.NoLockFD)
 }
 
-func (x *nullDevice) StateTypeName() string {
+func (n *nullDevice) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.nullDevice"
 }
 
-func (x *nullDevice) StateFields() []string {
+func (n *nullDevice) StateFields() []string {
 	return []string{}
 }
 
-func (x *nullDevice) beforeSave() {}
+func (n *nullDevice) beforeSave() {}
 
-func (x *nullDevice) StateSave(m state.Sink) {
-	x.beforeSave()
+func (n *nullDevice) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
 }
 
-func (x *nullDevice) afterLoad() {}
+func (n *nullDevice) afterLoad() {}
 
-func (x *nullDevice) StateLoad(m state.Source) {
+func (n *nullDevice) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *nullFD) StateTypeName() string {
+func (n *nullFD) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.nullFD"
 }
 
-func (x *nullFD) StateFields() []string {
+func (n *nullFD) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -89,49 +89,49 @@ func (x *nullFD) StateFields() []string {
 	}
 }
 
-func (x *nullFD) beforeSave() {}
+func (n *nullFD) beforeSave() {}
 
-func (x *nullFD) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsfd)
-	m.Save(1, &x.FileDescriptionDefaultImpl)
-	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Save(3, &x.NoLockFD)
+func (n *nullFD) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.vfsfd)
+	stateSinkObject.Save(1, &n.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &n.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &n.NoLockFD)
 }
 
-func (x *nullFD) afterLoad() {}
+func (n *nullFD) afterLoad() {}
 
-func (x *nullFD) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsfd)
-	m.Load(1, &x.FileDescriptionDefaultImpl)
-	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Load(3, &x.NoLockFD)
+func (n *nullFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.vfsfd)
+	stateSourceObject.Load(1, &n.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &n.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &n.NoLockFD)
 }
 
-func (x *randomDevice) StateTypeName() string {
+func (r *randomDevice) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.randomDevice"
 }
 
-func (x *randomDevice) StateFields() []string {
+func (r *randomDevice) StateFields() []string {
 	return []string{}
 }
 
-func (x *randomDevice) beforeSave() {}
+func (r *randomDevice) beforeSave() {}
 
-func (x *randomDevice) StateSave(m state.Sink) {
-	x.beforeSave()
+func (r *randomDevice) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
 }
 
-func (x *randomDevice) afterLoad() {}
+func (r *randomDevice) afterLoad() {}
 
-func (x *randomDevice) StateLoad(m state.Source) {
+func (r *randomDevice) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *randomFD) StateTypeName() string {
+func (r *randomFD) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.randomFD"
 }
 
-func (x *randomFD) StateFields() []string {
+func (r *randomFD) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -141,51 +141,51 @@ func (x *randomFD) StateFields() []string {
 	}
 }
 
-func (x *randomFD) beforeSave() {}
+func (r *randomFD) beforeSave() {}
 
-func (x *randomFD) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsfd)
-	m.Save(1, &x.FileDescriptionDefaultImpl)
-	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Save(3, &x.NoLockFD)
-	m.Save(4, &x.off)
+func (r *randomFD) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.vfsfd)
+	stateSinkObject.Save(1, &r.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &r.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &r.NoLockFD)
+	stateSinkObject.Save(4, &r.off)
 }
 
-func (x *randomFD) afterLoad() {}
+func (r *randomFD) afterLoad() {}
 
-func (x *randomFD) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsfd)
-	m.Load(1, &x.FileDescriptionDefaultImpl)
-	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Load(3, &x.NoLockFD)
-	m.Load(4, &x.off)
+func (r *randomFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.vfsfd)
+	stateSourceObject.Load(1, &r.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &r.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &r.NoLockFD)
+	stateSourceObject.Load(4, &r.off)
 }
 
-func (x *zeroDevice) StateTypeName() string {
+func (z *zeroDevice) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.zeroDevice"
 }
 
-func (x *zeroDevice) StateFields() []string {
+func (z *zeroDevice) StateFields() []string {
 	return []string{}
 }
 
-func (x *zeroDevice) beforeSave() {}
+func (z *zeroDevice) beforeSave() {}
 
-func (x *zeroDevice) StateSave(m state.Sink) {
-	x.beforeSave()
+func (z *zeroDevice) StateSave(stateSinkObject state.Sink) {
+	z.beforeSave()
 }
 
-func (x *zeroDevice) afterLoad() {}
+func (z *zeroDevice) afterLoad() {}
 
-func (x *zeroDevice) StateLoad(m state.Source) {
+func (z *zeroDevice) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *zeroFD) StateTypeName() string {
+func (z *zeroFD) StateTypeName() string {
 	return "pkg/sentry/devices/memdev.zeroFD"
 }
 
-func (x *zeroFD) StateFields() []string {
+func (z *zeroFD) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -194,23 +194,23 @@ func (x *zeroFD) StateFields() []string {
 	}
 }
 
-func (x *zeroFD) beforeSave() {}
+func (z *zeroFD) beforeSave() {}
 
-func (x *zeroFD) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsfd)
-	m.Save(1, &x.FileDescriptionDefaultImpl)
-	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Save(3, &x.NoLockFD)
+func (z *zeroFD) StateSave(stateSinkObject state.Sink) {
+	z.beforeSave()
+	stateSinkObject.Save(0, &z.vfsfd)
+	stateSinkObject.Save(1, &z.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &z.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &z.NoLockFD)
 }
 
-func (x *zeroFD) afterLoad() {}
+func (z *zeroFD) afterLoad() {}
 
-func (x *zeroFD) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsfd)
-	m.Load(1, &x.FileDescriptionDefaultImpl)
-	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Load(3, &x.NoLockFD)
+func (z *zeroFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &z.vfsfd)
+	stateSourceObject.Load(1, &z.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &z.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &z.NoLockFD)
 }
 
 func init() {

@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *AccessType) StateTypeName() string {
+func (a *AccessType) StateTypeName() string {
 	return "pkg/usermem.AccessType"
 }
 
-func (x *AccessType) StateFields() []string {
+func (a *AccessType) StateFields() []string {
 	return []string{
 		"Read",
 		"Write",
@@ -18,55 +18,55 @@ func (x *AccessType) StateFields() []string {
 	}
 }
 
-func (x *AccessType) beforeSave() {}
+func (a *AccessType) beforeSave() {}
 
-func (x *AccessType) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Read)
-	m.Save(1, &x.Write)
-	m.Save(2, &x.Execute)
+func (a *AccessType) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.Read)
+	stateSinkObject.Save(1, &a.Write)
+	stateSinkObject.Save(2, &a.Execute)
 }
 
-func (x *AccessType) afterLoad() {}
+func (a *AccessType) afterLoad() {}
 
-func (x *AccessType) StateLoad(m state.Source) {
-	m.Load(0, &x.Read)
-	m.Load(1, &x.Write)
-	m.Load(2, &x.Execute)
+func (a *AccessType) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.Read)
+	stateSourceObject.Load(1, &a.Write)
+	stateSourceObject.Load(2, &a.Execute)
 }
 
-func (x *Addr) StateTypeName() string {
+func (a *Addr) StateTypeName() string {
 	return "pkg/usermem.Addr"
 }
 
-func (x *Addr) StateFields() []string {
+func (a *Addr) StateFields() []string {
 	return nil
 }
 
-func (x *AddrRange) StateTypeName() string {
+func (a *AddrRange) StateTypeName() string {
 	return "pkg/usermem.AddrRange"
 }
 
-func (x *AddrRange) StateFields() []string {
+func (a *AddrRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (x *AddrRange) beforeSave() {}
+func (a *AddrRange) beforeSave() {}
 
-func (x *AddrRange) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
+func (a *AddrRange) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.Start)
+	stateSinkObject.Save(1, &a.End)
 }
 
-func (x *AddrRange) afterLoad() {}
+func (a *AddrRange) afterLoad() {}
 
-func (x *AddrRange) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
+func (a *AddrRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.Start)
+	stateSourceObject.Load(1, &a.End)
 }
 
 func init() {

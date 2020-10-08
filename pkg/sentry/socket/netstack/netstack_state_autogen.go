@@ -6,34 +6,34 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *SocketOperations) StateTypeName() string {
+func (s *SocketOperations) StateTypeName() string {
 	return "pkg/sentry/socket/netstack.SocketOperations"
 }
 
-func (x *SocketOperations) StateFields() []string {
+func (s *SocketOperations) StateFields() []string {
 	return []string{
 		"socketOpsCommon",
 	}
 }
 
-func (x *SocketOperations) beforeSave() {}
+func (s *SocketOperations) beforeSave() {}
 
-func (x *SocketOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.socketOpsCommon)
+func (s *SocketOperations) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.socketOpsCommon)
 }
 
-func (x *SocketOperations) afterLoad() {}
+func (s *SocketOperations) afterLoad() {}
 
-func (x *SocketOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.socketOpsCommon)
+func (s *SocketOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.socketOpsCommon)
 }
 
-func (x *socketOpsCommon) StateTypeName() string {
+func (s *socketOpsCommon) StateTypeName() string {
 	return "pkg/sentry/socket/netstack.socketOpsCommon"
 }
 
-func (x *socketOpsCommon) StateFields() []string {
+func (s *socketOpsCommon) StateFields() []string {
 	return []string{
 		"SendReceiveTimeout",
 		"Queue",
@@ -53,63 +53,63 @@ func (x *socketOpsCommon) StateFields() []string {
 	}
 }
 
-func (x *socketOpsCommon) beforeSave() {}
+func (s *socketOpsCommon) beforeSave() {}
 
-func (x *socketOpsCommon) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.SendReceiveTimeout)
-	m.Save(1, &x.Queue)
-	m.Save(2, &x.family)
-	m.Save(3, &x.Endpoint)
-	m.Save(4, &x.skType)
-	m.Save(5, &x.protocol)
-	m.Save(6, &x.readViewHasData)
-	m.Save(7, &x.readView)
-	m.Save(8, &x.readCM)
-	m.Save(9, &x.sender)
-	m.Save(10, &x.linkPacketInfo)
-	m.Save(11, &x.sockOptTimestamp)
-	m.Save(12, &x.timestampValid)
-	m.Save(13, &x.timestampNS)
-	m.Save(14, &x.sockOptInq)
+func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.SendReceiveTimeout)
+	stateSinkObject.Save(1, &s.Queue)
+	stateSinkObject.Save(2, &s.family)
+	stateSinkObject.Save(3, &s.Endpoint)
+	stateSinkObject.Save(4, &s.skType)
+	stateSinkObject.Save(5, &s.protocol)
+	stateSinkObject.Save(6, &s.readViewHasData)
+	stateSinkObject.Save(7, &s.readView)
+	stateSinkObject.Save(8, &s.readCM)
+	stateSinkObject.Save(9, &s.sender)
+	stateSinkObject.Save(10, &s.linkPacketInfo)
+	stateSinkObject.Save(11, &s.sockOptTimestamp)
+	stateSinkObject.Save(12, &s.timestampValid)
+	stateSinkObject.Save(13, &s.timestampNS)
+	stateSinkObject.Save(14, &s.sockOptInq)
 }
 
-func (x *socketOpsCommon) afterLoad() {}
+func (s *socketOpsCommon) afterLoad() {}
 
-func (x *socketOpsCommon) StateLoad(m state.Source) {
-	m.Load(0, &x.SendReceiveTimeout)
-	m.Load(1, &x.Queue)
-	m.Load(2, &x.family)
-	m.Load(3, &x.Endpoint)
-	m.Load(4, &x.skType)
-	m.Load(5, &x.protocol)
-	m.Load(6, &x.readViewHasData)
-	m.Load(7, &x.readView)
-	m.Load(8, &x.readCM)
-	m.Load(9, &x.sender)
-	m.Load(10, &x.linkPacketInfo)
-	m.Load(11, &x.sockOptTimestamp)
-	m.Load(12, &x.timestampValid)
-	m.Load(13, &x.timestampNS)
-	m.Load(14, &x.sockOptInq)
+func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.SendReceiveTimeout)
+	stateSourceObject.Load(1, &s.Queue)
+	stateSourceObject.Load(2, &s.family)
+	stateSourceObject.Load(3, &s.Endpoint)
+	stateSourceObject.Load(4, &s.skType)
+	stateSourceObject.Load(5, &s.protocol)
+	stateSourceObject.Load(6, &s.readViewHasData)
+	stateSourceObject.Load(7, &s.readView)
+	stateSourceObject.Load(8, &s.readCM)
+	stateSourceObject.Load(9, &s.sender)
+	stateSourceObject.Load(10, &s.linkPacketInfo)
+	stateSourceObject.Load(11, &s.sockOptTimestamp)
+	stateSourceObject.Load(12, &s.timestampValid)
+	stateSourceObject.Load(13, &s.timestampNS)
+	stateSourceObject.Load(14, &s.sockOptInq)
 }
 
-func (x *Stack) StateTypeName() string {
+func (s *Stack) StateTypeName() string {
 	return "pkg/sentry/socket/netstack.Stack"
 }
 
-func (x *Stack) StateFields() []string {
+func (s *Stack) StateFields() []string {
 	return []string{}
 }
 
-func (x *Stack) beforeSave() {}
+func (s *Stack) beforeSave() {}
 
-func (x *Stack) StateSave(m state.Sink) {
-	x.beforeSave()
+func (s *Stack) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
 }
 
-func (x *Stack) StateLoad(m state.Source) {
-	m.AfterLoad(x.afterLoad)
+func (s *Stack) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.AfterLoad(s.afterLoad)
 }
 
 func init() {

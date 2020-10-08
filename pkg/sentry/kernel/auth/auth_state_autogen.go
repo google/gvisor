@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Credentials) StateTypeName() string {
+func (c *Credentials) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.Credentials"
 }
 
-func (x *Credentials) StateFields() []string {
+func (c *Credentials) StateFields() []string {
 	return []string{
 		"RealKUID",
 		"EffectiveKUID",
@@ -28,48 +28,48 @@ func (x *Credentials) StateFields() []string {
 	}
 }
 
-func (x *Credentials) beforeSave() {}
+func (c *Credentials) beforeSave() {}
 
-func (x *Credentials) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.RealKUID)
-	m.Save(1, &x.EffectiveKUID)
-	m.Save(2, &x.SavedKUID)
-	m.Save(3, &x.RealKGID)
-	m.Save(4, &x.EffectiveKGID)
-	m.Save(5, &x.SavedKGID)
-	m.Save(6, &x.ExtraKGIDs)
-	m.Save(7, &x.PermittedCaps)
-	m.Save(8, &x.InheritableCaps)
-	m.Save(9, &x.EffectiveCaps)
-	m.Save(10, &x.BoundingCaps)
-	m.Save(11, &x.KeepCaps)
-	m.Save(12, &x.UserNamespace)
+func (c *Credentials) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.RealKUID)
+	stateSinkObject.Save(1, &c.EffectiveKUID)
+	stateSinkObject.Save(2, &c.SavedKUID)
+	stateSinkObject.Save(3, &c.RealKGID)
+	stateSinkObject.Save(4, &c.EffectiveKGID)
+	stateSinkObject.Save(5, &c.SavedKGID)
+	stateSinkObject.Save(6, &c.ExtraKGIDs)
+	stateSinkObject.Save(7, &c.PermittedCaps)
+	stateSinkObject.Save(8, &c.InheritableCaps)
+	stateSinkObject.Save(9, &c.EffectiveCaps)
+	stateSinkObject.Save(10, &c.BoundingCaps)
+	stateSinkObject.Save(11, &c.KeepCaps)
+	stateSinkObject.Save(12, &c.UserNamespace)
 }
 
-func (x *Credentials) afterLoad() {}
+func (c *Credentials) afterLoad() {}
 
-func (x *Credentials) StateLoad(m state.Source) {
-	m.Load(0, &x.RealKUID)
-	m.Load(1, &x.EffectiveKUID)
-	m.Load(2, &x.SavedKUID)
-	m.Load(3, &x.RealKGID)
-	m.Load(4, &x.EffectiveKGID)
-	m.Load(5, &x.SavedKGID)
-	m.Load(6, &x.ExtraKGIDs)
-	m.Load(7, &x.PermittedCaps)
-	m.Load(8, &x.InheritableCaps)
-	m.Load(9, &x.EffectiveCaps)
-	m.Load(10, &x.BoundingCaps)
-	m.Load(11, &x.KeepCaps)
-	m.Load(12, &x.UserNamespace)
+func (c *Credentials) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.RealKUID)
+	stateSourceObject.Load(1, &c.EffectiveKUID)
+	stateSourceObject.Load(2, &c.SavedKUID)
+	stateSourceObject.Load(3, &c.RealKGID)
+	stateSourceObject.Load(4, &c.EffectiveKGID)
+	stateSourceObject.Load(5, &c.SavedKGID)
+	stateSourceObject.Load(6, &c.ExtraKGIDs)
+	stateSourceObject.Load(7, &c.PermittedCaps)
+	stateSourceObject.Load(8, &c.InheritableCaps)
+	stateSourceObject.Load(9, &c.EffectiveCaps)
+	stateSourceObject.Load(10, &c.BoundingCaps)
+	stateSourceObject.Load(11, &c.KeepCaps)
+	stateSourceObject.Load(12, &c.UserNamespace)
 }
 
-func (x *IDMapEntry) StateTypeName() string {
+func (i *IDMapEntry) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.IDMapEntry"
 }
 
-func (x *IDMapEntry) StateFields() []string {
+func (i *IDMapEntry) StateFields() []string {
 	return []string{
 		"FirstID",
 		"FirstParentID",
@@ -77,78 +77,78 @@ func (x *IDMapEntry) StateFields() []string {
 	}
 }
 
-func (x *IDMapEntry) beforeSave() {}
+func (i *IDMapEntry) beforeSave() {}
 
-func (x *IDMapEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.FirstID)
-	m.Save(1, &x.FirstParentID)
-	m.Save(2, &x.Length)
+func (i *IDMapEntry) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.FirstID)
+	stateSinkObject.Save(1, &i.FirstParentID)
+	stateSinkObject.Save(2, &i.Length)
 }
 
-func (x *IDMapEntry) afterLoad() {}
+func (i *IDMapEntry) afterLoad() {}
 
-func (x *IDMapEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.FirstID)
-	m.Load(1, &x.FirstParentID)
-	m.Load(2, &x.Length)
+func (i *IDMapEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.FirstID)
+	stateSourceObject.Load(1, &i.FirstParentID)
+	stateSourceObject.Load(2, &i.Length)
 }
 
-func (x *idMapRange) StateTypeName() string {
+func (i *idMapRange) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.idMapRange"
 }
 
-func (x *idMapRange) StateFields() []string {
+func (i *idMapRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (x *idMapRange) beforeSave() {}
+func (i *idMapRange) beforeSave() {}
 
-func (x *idMapRange) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
+func (i *idMapRange) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Start)
+	stateSinkObject.Save(1, &i.End)
 }
 
-func (x *idMapRange) afterLoad() {}
+func (i *idMapRange) afterLoad() {}
 
-func (x *idMapRange) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
+func (i *idMapRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Start)
+	stateSourceObject.Load(1, &i.End)
 }
 
-func (x *idMapSet) StateTypeName() string {
+func (i *idMapSet) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.idMapSet"
 }
 
-func (x *idMapSet) StateFields() []string {
+func (i *idMapSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (x *idMapSet) beforeSave() {}
+func (i *idMapSet) beforeSave() {}
 
-func (x *idMapSet) StateSave(m state.Sink) {
-	x.beforeSave()
-	var root *idMapSegmentDataSlices = x.saveRoot()
-	m.SaveValue(0, root)
+func (i *idMapSet) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	var rootValue *idMapSegmentDataSlices = i.saveRoot()
+	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (x *idMapSet) afterLoad() {}
+func (i *idMapSet) afterLoad() {}
 
-func (x *idMapSet) StateLoad(m state.Source) {
-	m.LoadValue(0, new(*idMapSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*idMapSegmentDataSlices)) })
+func (i *idMapSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*idMapSegmentDataSlices), func(y interface{}) { i.loadRoot(y.(*idMapSegmentDataSlices)) })
 }
 
-func (x *idMapnode) StateTypeName() string {
+func (i *idMapnode) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.idMapnode"
 }
 
-func (x *idMapnode) StateFields() []string {
+func (i *idMapnode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -161,38 +161,38 @@ func (x *idMapnode) StateFields() []string {
 	}
 }
 
-func (x *idMapnode) beforeSave() {}
+func (i *idMapnode) beforeSave() {}
 
-func (x *idMapnode) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.nrSegments)
-	m.Save(1, &x.parent)
-	m.Save(2, &x.parentIndex)
-	m.Save(3, &x.hasChildren)
-	m.Save(4, &x.maxGap)
-	m.Save(5, &x.keys)
-	m.Save(6, &x.values)
-	m.Save(7, &x.children)
+func (i *idMapnode) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.nrSegments)
+	stateSinkObject.Save(1, &i.parent)
+	stateSinkObject.Save(2, &i.parentIndex)
+	stateSinkObject.Save(3, &i.hasChildren)
+	stateSinkObject.Save(4, &i.maxGap)
+	stateSinkObject.Save(5, &i.keys)
+	stateSinkObject.Save(6, &i.values)
+	stateSinkObject.Save(7, &i.children)
 }
 
-func (x *idMapnode) afterLoad() {}
+func (i *idMapnode) afterLoad() {}
 
-func (x *idMapnode) StateLoad(m state.Source) {
-	m.Load(0, &x.nrSegments)
-	m.Load(1, &x.parent)
-	m.Load(2, &x.parentIndex)
-	m.Load(3, &x.hasChildren)
-	m.Load(4, &x.maxGap)
-	m.Load(5, &x.keys)
-	m.Load(6, &x.values)
-	m.Load(7, &x.children)
+func (i *idMapnode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.nrSegments)
+	stateSourceObject.Load(1, &i.parent)
+	stateSourceObject.Load(2, &i.parentIndex)
+	stateSourceObject.Load(3, &i.hasChildren)
+	stateSourceObject.Load(4, &i.maxGap)
+	stateSourceObject.Load(5, &i.keys)
+	stateSourceObject.Load(6, &i.values)
+	stateSourceObject.Load(7, &i.children)
 }
 
-func (x *idMapSegmentDataSlices) StateTypeName() string {
+func (i *idMapSegmentDataSlices) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.idMapSegmentDataSlices"
 }
 
-func (x *idMapSegmentDataSlices) StateFields() []string {
+func (i *idMapSegmentDataSlices) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
@@ -200,28 +200,28 @@ func (x *idMapSegmentDataSlices) StateFields() []string {
 	}
 }
 
-func (x *idMapSegmentDataSlices) beforeSave() {}
+func (i *idMapSegmentDataSlices) beforeSave() {}
 
-func (x *idMapSegmentDataSlices) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
-	m.Save(2, &x.Values)
+func (i *idMapSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Start)
+	stateSinkObject.Save(1, &i.End)
+	stateSinkObject.Save(2, &i.Values)
 }
 
-func (x *idMapSegmentDataSlices) afterLoad() {}
+func (i *idMapSegmentDataSlices) afterLoad() {}
 
-func (x *idMapSegmentDataSlices) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
-	m.Load(2, &x.Values)
+func (i *idMapSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Start)
+	stateSourceObject.Load(1, &i.End)
+	stateSourceObject.Load(2, &i.Values)
 }
 
-func (x *UserNamespace) StateTypeName() string {
+func (u *UserNamespace) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.UserNamespace"
 }
 
-func (x *UserNamespace) StateFields() []string {
+func (u *UserNamespace) StateFields() []string {
 	return []string{
 		"parent",
 		"owner",
@@ -232,27 +232,27 @@ func (x *UserNamespace) StateFields() []string {
 	}
 }
 
-func (x *UserNamespace) beforeSave() {}
+func (u *UserNamespace) beforeSave() {}
 
-func (x *UserNamespace) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.parent)
-	m.Save(1, &x.owner)
-	m.Save(2, &x.uidMapFromParent)
-	m.Save(3, &x.uidMapToParent)
-	m.Save(4, &x.gidMapFromParent)
-	m.Save(5, &x.gidMapToParent)
+func (u *UserNamespace) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+	stateSinkObject.Save(0, &u.parent)
+	stateSinkObject.Save(1, &u.owner)
+	stateSinkObject.Save(2, &u.uidMapFromParent)
+	stateSinkObject.Save(3, &u.uidMapToParent)
+	stateSinkObject.Save(4, &u.gidMapFromParent)
+	stateSinkObject.Save(5, &u.gidMapToParent)
 }
 
-func (x *UserNamespace) afterLoad() {}
+func (u *UserNamespace) afterLoad() {}
 
-func (x *UserNamespace) StateLoad(m state.Source) {
-	m.Load(0, &x.parent)
-	m.Load(1, &x.owner)
-	m.Load(2, &x.uidMapFromParent)
-	m.Load(3, &x.uidMapToParent)
-	m.Load(4, &x.gidMapFromParent)
-	m.Load(5, &x.gidMapToParent)
+func (u *UserNamespace) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &u.parent)
+	stateSourceObject.Load(1, &u.owner)
+	stateSourceObject.Load(2, &u.uidMapFromParent)
+	stateSourceObject.Load(3, &u.uidMapToParent)
+	stateSourceObject.Load(4, &u.gidMapFromParent)
+	stateSourceObject.Load(5, &u.gidMapToParent)
 }
 
 func init() {

@@ -6,56 +6,56 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *reassemblerList) StateTypeName() string {
+func (r *reassemblerList) StateTypeName() string {
 	return "pkg/tcpip/network/fragmentation.reassemblerList"
 }
 
-func (x *reassemblerList) StateFields() []string {
+func (r *reassemblerList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (x *reassemblerList) beforeSave() {}
+func (r *reassemblerList) beforeSave() {}
 
-func (x *reassemblerList) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
+func (r *reassemblerList) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.head)
+	stateSinkObject.Save(1, &r.tail)
 }
 
-func (x *reassemblerList) afterLoad() {}
+func (r *reassemblerList) afterLoad() {}
 
-func (x *reassemblerList) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
+func (r *reassemblerList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.head)
+	stateSourceObject.Load(1, &r.tail)
 }
 
-func (x *reassemblerEntry) StateTypeName() string {
+func (r *reassemblerEntry) StateTypeName() string {
 	return "pkg/tcpip/network/fragmentation.reassemblerEntry"
 }
 
-func (x *reassemblerEntry) StateFields() []string {
+func (r *reassemblerEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (x *reassemblerEntry) beforeSave() {}
+func (r *reassemblerEntry) beforeSave() {}
 
-func (x *reassemblerEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
+func (r *reassemblerEntry) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.next)
+	stateSinkObject.Save(1, &r.prev)
 }
 
-func (x *reassemblerEntry) afterLoad() {}
+func (r *reassemblerEntry) afterLoad() {}
 
-func (x *reassemblerEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
+func (r *reassemblerEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.next)
+	stateSourceObject.Load(1, &r.prev)
 }
 
 func init() {

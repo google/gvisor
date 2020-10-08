@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *futexWaitRestartBlock) StateTypeName() string {
+func (f *futexWaitRestartBlock) StateTypeName() string {
 	return "pkg/sentry/syscalls/linux.futexWaitRestartBlock"
 }
 
-func (x *futexWaitRestartBlock) StateFields() []string {
+func (f *futexWaitRestartBlock) StateFields() []string {
 	return []string{
 		"duration",
 		"addr",
@@ -20,32 +20,32 @@ func (x *futexWaitRestartBlock) StateFields() []string {
 	}
 }
 
-func (x *futexWaitRestartBlock) beforeSave() {}
+func (f *futexWaitRestartBlock) beforeSave() {}
 
-func (x *futexWaitRestartBlock) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.duration)
-	m.Save(1, &x.addr)
-	m.Save(2, &x.private)
-	m.Save(3, &x.val)
-	m.Save(4, &x.mask)
+func (f *futexWaitRestartBlock) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.duration)
+	stateSinkObject.Save(1, &f.addr)
+	stateSinkObject.Save(2, &f.private)
+	stateSinkObject.Save(3, &f.val)
+	stateSinkObject.Save(4, &f.mask)
 }
 
-func (x *futexWaitRestartBlock) afterLoad() {}
+func (f *futexWaitRestartBlock) afterLoad() {}
 
-func (x *futexWaitRestartBlock) StateLoad(m state.Source) {
-	m.Load(0, &x.duration)
-	m.Load(1, &x.addr)
-	m.Load(2, &x.private)
-	m.Load(3, &x.val)
-	m.Load(4, &x.mask)
+func (f *futexWaitRestartBlock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.duration)
+	stateSourceObject.Load(1, &f.addr)
+	stateSourceObject.Load(2, &f.private)
+	stateSourceObject.Load(3, &f.val)
+	stateSourceObject.Load(4, &f.mask)
 }
 
-func (x *pollRestartBlock) StateTypeName() string {
+func (p *pollRestartBlock) StateTypeName() string {
 	return "pkg/sentry/syscalls/linux.pollRestartBlock"
 }
 
-func (x *pollRestartBlock) StateFields() []string {
+func (p *pollRestartBlock) StateFields() []string {
 	return []string{
 		"pfdAddr",
 		"nfds",
@@ -53,28 +53,28 @@ func (x *pollRestartBlock) StateFields() []string {
 	}
 }
 
-func (x *pollRestartBlock) beforeSave() {}
+func (p *pollRestartBlock) beforeSave() {}
 
-func (x *pollRestartBlock) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.pfdAddr)
-	m.Save(1, &x.nfds)
-	m.Save(2, &x.timeout)
+func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.pfdAddr)
+	stateSinkObject.Save(1, &p.nfds)
+	stateSinkObject.Save(2, &p.timeout)
 }
 
-func (x *pollRestartBlock) afterLoad() {}
+func (p *pollRestartBlock) afterLoad() {}
 
-func (x *pollRestartBlock) StateLoad(m state.Source) {
-	m.Load(0, &x.pfdAddr)
-	m.Load(1, &x.nfds)
-	m.Load(2, &x.timeout)
+func (p *pollRestartBlock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.pfdAddr)
+	stateSourceObject.Load(1, &p.nfds)
+	stateSourceObject.Load(2, &p.timeout)
 }
 
-func (x *clockNanosleepRestartBlock) StateTypeName() string {
+func (c *clockNanosleepRestartBlock) StateTypeName() string {
 	return "pkg/sentry/syscalls/linux.clockNanosleepRestartBlock"
 }
 
-func (x *clockNanosleepRestartBlock) StateFields() []string {
+func (c *clockNanosleepRestartBlock) StateFields() []string {
 	return []string{
 		"c",
 		"duration",
@@ -82,21 +82,21 @@ func (x *clockNanosleepRestartBlock) StateFields() []string {
 	}
 }
 
-func (x *clockNanosleepRestartBlock) beforeSave() {}
+func (c *clockNanosleepRestartBlock) beforeSave() {}
 
-func (x *clockNanosleepRestartBlock) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.c)
-	m.Save(1, &x.duration)
-	m.Save(2, &x.rem)
+func (c *clockNanosleepRestartBlock) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.c)
+	stateSinkObject.Save(1, &c.duration)
+	stateSinkObject.Save(2, &c.rem)
 }
 
-func (x *clockNanosleepRestartBlock) afterLoad() {}
+func (c *clockNanosleepRestartBlock) afterLoad() {}
 
-func (x *clockNanosleepRestartBlock) StateLoad(m state.Source) {
-	m.Load(0, &x.c)
-	m.Load(1, &x.duration)
-	m.Load(2, &x.rem)
+func (c *clockNanosleepRestartBlock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.c)
+	stateSourceObject.Load(1, &c.duration)
+	stateSourceObject.Load(2, &c.rem)
 }
 
 func init() {

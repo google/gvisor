@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Device) StateTypeName() string {
+func (d *Device) StateTypeName() string {
 	return "pkg/tcpip/link/tun.Device"
 }
 
-func (x *Device) StateFields() []string {
+func (d *Device) StateFields() []string {
 	return []string{
 		"Queue",
 		"endpoint",
@@ -19,44 +19,44 @@ func (x *Device) StateFields() []string {
 	}
 }
 
-func (x *Device) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Queue)
-	m.Save(1, &x.endpoint)
-	m.Save(2, &x.notifyHandle)
-	m.Save(3, &x.flags)
+func (d *Device) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.Queue)
+	stateSinkObject.Save(1, &d.endpoint)
+	stateSinkObject.Save(2, &d.notifyHandle)
+	stateSinkObject.Save(3, &d.flags)
 }
 
-func (x *Device) afterLoad() {}
+func (d *Device) afterLoad() {}
 
-func (x *Device) StateLoad(m state.Source) {
-	m.Load(0, &x.Queue)
-	m.Load(1, &x.endpoint)
-	m.Load(2, &x.notifyHandle)
-	m.Load(3, &x.flags)
+func (d *Device) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.Queue)
+	stateSourceObject.Load(1, &d.endpoint)
+	stateSourceObject.Load(2, &d.notifyHandle)
+	stateSourceObject.Load(3, &d.flags)
 }
 
-func (x *tunEndpointRefs) StateTypeName() string {
+func (t *tunEndpointRefs) StateTypeName() string {
 	return "pkg/tcpip/link/tun.tunEndpointRefs"
 }
 
-func (x *tunEndpointRefs) StateFields() []string {
+func (t *tunEndpointRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (x *tunEndpointRefs) beforeSave() {}
+func (t *tunEndpointRefs) beforeSave() {}
 
-func (x *tunEndpointRefs) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.refCount)
+func (t *tunEndpointRefs) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.refCount)
 }
 
-func (x *tunEndpointRefs) afterLoad() {}
+func (t *tunEndpointRefs) afterLoad() {}
 
-func (x *tunEndpointRefs) StateLoad(m state.Source) {
-	m.Load(0, &x.refCount)
+func (t *tunEndpointRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.refCount)
 }
 
 func init() {

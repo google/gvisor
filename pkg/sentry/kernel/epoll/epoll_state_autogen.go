@@ -6,37 +6,37 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *FileIdentifier) StateTypeName() string {
+func (f *FileIdentifier) StateTypeName() string {
 	return "pkg/sentry/kernel/epoll.FileIdentifier"
 }
 
-func (x *FileIdentifier) StateFields() []string {
+func (f *FileIdentifier) StateFields() []string {
 	return []string{
 		"File",
 		"Fd",
 	}
 }
 
-func (x *FileIdentifier) beforeSave() {}
+func (f *FileIdentifier) beforeSave() {}
 
-func (x *FileIdentifier) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.File)
-	m.Save(1, &x.Fd)
+func (f *FileIdentifier) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.File)
+	stateSinkObject.Save(1, &f.Fd)
 }
 
-func (x *FileIdentifier) afterLoad() {}
+func (f *FileIdentifier) afterLoad() {}
 
-func (x *FileIdentifier) StateLoad(m state.Source) {
-	m.LoadWait(0, &x.File)
-	m.Load(1, &x.Fd)
+func (f *FileIdentifier) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadWait(0, &f.File)
+	stateSourceObject.Load(1, &f.Fd)
 }
 
-func (x *pollEntry) StateTypeName() string {
+func (p *pollEntry) StateTypeName() string {
 	return "pkg/sentry/kernel/epoll.pollEntry"
 }
 
-func (x *pollEntry) StateFields() []string {
+func (p *pollEntry) StateFields() []string {
 	return []string{
 		"pollEntryEntry",
 		"id",
@@ -47,33 +47,33 @@ func (x *pollEntry) StateFields() []string {
 	}
 }
 
-func (x *pollEntry) beforeSave() {}
+func (p *pollEntry) beforeSave() {}
 
-func (x *pollEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.pollEntryEntry)
-	m.Save(1, &x.id)
-	m.Save(2, &x.userData)
-	m.Save(3, &x.mask)
-	m.Save(4, &x.flags)
-	m.Save(5, &x.epoll)
+func (p *pollEntry) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.pollEntryEntry)
+	stateSinkObject.Save(1, &p.id)
+	stateSinkObject.Save(2, &p.userData)
+	stateSinkObject.Save(3, &p.mask)
+	stateSinkObject.Save(4, &p.flags)
+	stateSinkObject.Save(5, &p.epoll)
 }
 
-func (x *pollEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.pollEntryEntry)
-	m.LoadWait(1, &x.id)
-	m.Load(2, &x.userData)
-	m.Load(3, &x.mask)
-	m.Load(4, &x.flags)
-	m.Load(5, &x.epoll)
-	m.AfterLoad(x.afterLoad)
+func (p *pollEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.pollEntryEntry)
+	stateSourceObject.LoadWait(1, &p.id)
+	stateSourceObject.Load(2, &p.userData)
+	stateSourceObject.Load(3, &p.mask)
+	stateSourceObject.Load(4, &p.flags)
+	stateSourceObject.Load(5, &p.epoll)
+	stateSourceObject.AfterLoad(p.afterLoad)
 }
 
-func (x *EventPoll) StateTypeName() string {
+func (e *EventPoll) StateTypeName() string {
 	return "pkg/sentry/kernel/epoll.EventPoll"
 }
 
-func (x *EventPoll) StateFields() []string {
+func (e *EventPoll) StateFields() []string {
 	return []string{
 		"files",
 		"readyList",
@@ -82,95 +82,95 @@ func (x *EventPoll) StateFields() []string {
 	}
 }
 
-func (x *EventPoll) beforeSave() {}
+func (e *EventPoll) beforeSave() {}
 
-func (x *EventPoll) StateSave(m state.Sink) {
-	x.beforeSave()
-	if !state.IsZeroValue(&x.FilePipeSeek) {
-		state.Failf("FilePipeSeek is %#v, expected zero", &x.FilePipeSeek)
+func (e *EventPoll) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	if !state.IsZeroValue(&e.FilePipeSeek) {
+		state.Failf("FilePipeSeek is %#v, expected zero", &e.FilePipeSeek)
 	}
-	if !state.IsZeroValue(&x.FileNotDirReaddir) {
-		state.Failf("FileNotDirReaddir is %#v, expected zero", &x.FileNotDirReaddir)
+	if !state.IsZeroValue(&e.FileNotDirReaddir) {
+		state.Failf("FileNotDirReaddir is %#v, expected zero", &e.FileNotDirReaddir)
 	}
-	if !state.IsZeroValue(&x.FileNoFsync) {
-		state.Failf("FileNoFsync is %#v, expected zero", &x.FileNoFsync)
+	if !state.IsZeroValue(&e.FileNoFsync) {
+		state.Failf("FileNoFsync is %#v, expected zero", &e.FileNoFsync)
 	}
-	if !state.IsZeroValue(&x.FileNoopFlush) {
-		state.Failf("FileNoopFlush is %#v, expected zero", &x.FileNoopFlush)
+	if !state.IsZeroValue(&e.FileNoopFlush) {
+		state.Failf("FileNoopFlush is %#v, expected zero", &e.FileNoopFlush)
 	}
-	if !state.IsZeroValue(&x.FileNoIoctl) {
-		state.Failf("FileNoIoctl is %#v, expected zero", &x.FileNoIoctl)
+	if !state.IsZeroValue(&e.FileNoIoctl) {
+		state.Failf("FileNoIoctl is %#v, expected zero", &e.FileNoIoctl)
 	}
-	if !state.IsZeroValue(&x.FileNoMMap) {
-		state.Failf("FileNoMMap is %#v, expected zero", &x.FileNoMMap)
+	if !state.IsZeroValue(&e.FileNoMMap) {
+		state.Failf("FileNoMMap is %#v, expected zero", &e.FileNoMMap)
 	}
-	if !state.IsZeroValue(&x.Queue) {
-		state.Failf("Queue is %#v, expected zero", &x.Queue)
+	if !state.IsZeroValue(&e.Queue) {
+		state.Failf("Queue is %#v, expected zero", &e.Queue)
 	}
-	m.Save(0, &x.files)
-	m.Save(1, &x.readyList)
-	m.Save(2, &x.waitingList)
-	m.Save(3, &x.disabledList)
+	stateSinkObject.Save(0, &e.files)
+	stateSinkObject.Save(1, &e.readyList)
+	stateSinkObject.Save(2, &e.waitingList)
+	stateSinkObject.Save(3, &e.disabledList)
 }
 
-func (x *EventPoll) StateLoad(m state.Source) {
-	m.Load(0, &x.files)
-	m.Load(1, &x.readyList)
-	m.Load(2, &x.waitingList)
-	m.Load(3, &x.disabledList)
-	m.AfterLoad(x.afterLoad)
+func (e *EventPoll) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.files)
+	stateSourceObject.Load(1, &e.readyList)
+	stateSourceObject.Load(2, &e.waitingList)
+	stateSourceObject.Load(3, &e.disabledList)
+	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
-func (x *pollEntryList) StateTypeName() string {
+func (p *pollEntryList) StateTypeName() string {
 	return "pkg/sentry/kernel/epoll.pollEntryList"
 }
 
-func (x *pollEntryList) StateFields() []string {
+func (p *pollEntryList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (x *pollEntryList) beforeSave() {}
+func (p *pollEntryList) beforeSave() {}
 
-func (x *pollEntryList) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
+func (p *pollEntryList) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.head)
+	stateSinkObject.Save(1, &p.tail)
 }
 
-func (x *pollEntryList) afterLoad() {}
+func (p *pollEntryList) afterLoad() {}
 
-func (x *pollEntryList) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
+func (p *pollEntryList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.head)
+	stateSourceObject.Load(1, &p.tail)
 }
 
-func (x *pollEntryEntry) StateTypeName() string {
+func (p *pollEntryEntry) StateTypeName() string {
 	return "pkg/sentry/kernel/epoll.pollEntryEntry"
 }
 
-func (x *pollEntryEntry) StateFields() []string {
+func (p *pollEntryEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (x *pollEntryEntry) beforeSave() {}
+func (p *pollEntryEntry) beforeSave() {}
 
-func (x *pollEntryEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
+func (p *pollEntryEntry) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.next)
+	stateSinkObject.Save(1, &p.prev)
 }
 
-func (x *pollEntryEntry) afterLoad() {}
+func (p *pollEntryEntry) afterLoad() {}
 
-func (x *pollEntryEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
+func (p *pollEntryEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.next)
+	stateSourceObject.Load(1, &p.prev)
 }
 
 func init() {

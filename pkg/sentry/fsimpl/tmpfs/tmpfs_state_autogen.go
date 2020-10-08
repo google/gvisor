@@ -6,63 +6,63 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *dentryList) StateTypeName() string {
+func (d *dentryList) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.dentryList"
 }
 
-func (x *dentryList) StateFields() []string {
+func (d *dentryList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (x *dentryList) beforeSave() {}
+func (d *dentryList) beforeSave() {}
 
-func (x *dentryList) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
+func (d *dentryList) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.head)
+	stateSinkObject.Save(1, &d.tail)
 }
 
-func (x *dentryList) afterLoad() {}
+func (d *dentryList) afterLoad() {}
 
-func (x *dentryList) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
+func (d *dentryList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.head)
+	stateSourceObject.Load(1, &d.tail)
 }
 
-func (x *dentryEntry) StateTypeName() string {
+func (d *dentryEntry) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.dentryEntry"
 }
 
-func (x *dentryEntry) StateFields() []string {
+func (d *dentryEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (x *dentryEntry) beforeSave() {}
+func (d *dentryEntry) beforeSave() {}
 
-func (x *dentryEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
+func (d *dentryEntry) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.next)
+	stateSinkObject.Save(1, &d.prev)
 }
 
-func (x *dentryEntry) afterLoad() {}
+func (d *dentryEntry) afterLoad() {}
 
-func (x *dentryEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
+func (d *dentryEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.next)
+	stateSourceObject.Load(1, &d.prev)
 }
 
-func (x *deviceFile) StateTypeName() string {
+func (d *deviceFile) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.deviceFile"
 }
 
-func (x *deviceFile) StateFields() []string {
+func (d *deviceFile) StateFields() []string {
 	return []string{
 		"inode",
 		"kind",
@@ -71,30 +71,30 @@ func (x *deviceFile) StateFields() []string {
 	}
 }
 
-func (x *deviceFile) beforeSave() {}
+func (d *deviceFile) beforeSave() {}
 
-func (x *deviceFile) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.inode)
-	m.Save(1, &x.kind)
-	m.Save(2, &x.major)
-	m.Save(3, &x.minor)
+func (d *deviceFile) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.inode)
+	stateSinkObject.Save(1, &d.kind)
+	stateSinkObject.Save(2, &d.major)
+	stateSinkObject.Save(3, &d.minor)
 }
 
-func (x *deviceFile) afterLoad() {}
+func (d *deviceFile) afterLoad() {}
 
-func (x *deviceFile) StateLoad(m state.Source) {
-	m.Load(0, &x.inode)
-	m.Load(1, &x.kind)
-	m.Load(2, &x.major)
-	m.Load(3, &x.minor)
+func (d *deviceFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.inode)
+	stateSourceObject.Load(1, &d.kind)
+	stateSourceObject.Load(2, &d.major)
+	stateSourceObject.Load(3, &d.minor)
 }
 
-func (x *directory) StateTypeName() string {
+func (d *directory) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.directory"
 }
 
-func (x *directory) StateFields() []string {
+func (d *directory) StateFields() []string {
 	return []string{
 		"dentry",
 		"inode",
@@ -104,32 +104,32 @@ func (x *directory) StateFields() []string {
 	}
 }
 
-func (x *directory) beforeSave() {}
+func (d *directory) beforeSave() {}
 
-func (x *directory) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.dentry)
-	m.Save(1, &x.inode)
-	m.Save(2, &x.childMap)
-	m.Save(3, &x.numChildren)
-	m.Save(4, &x.childList)
+func (d *directory) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dentry)
+	stateSinkObject.Save(1, &d.inode)
+	stateSinkObject.Save(2, &d.childMap)
+	stateSinkObject.Save(3, &d.numChildren)
+	stateSinkObject.Save(4, &d.childList)
 }
 
-func (x *directory) afterLoad() {}
+func (d *directory) afterLoad() {}
 
-func (x *directory) StateLoad(m state.Source) {
-	m.Load(0, &x.dentry)
-	m.Load(1, &x.inode)
-	m.Load(2, &x.childMap)
-	m.Load(3, &x.numChildren)
-	m.Load(4, &x.childList)
+func (d *directory) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dentry)
+	stateSourceObject.Load(1, &d.inode)
+	stateSourceObject.Load(2, &d.childMap)
+	stateSourceObject.Load(3, &d.numChildren)
+	stateSourceObject.Load(4, &d.childList)
 }
 
-func (x *directoryFD) StateTypeName() string {
+func (d *directoryFD) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.directoryFD"
 }
 
-func (x *directoryFD) StateFields() []string {
+func (d *directoryFD) StateFields() []string {
 	return []string{
 		"fileDescription",
 		"DirectoryFileDescriptionDefaultImpl",
@@ -138,79 +138,79 @@ func (x *directoryFD) StateFields() []string {
 	}
 }
 
-func (x *directoryFD) beforeSave() {}
+func (d *directoryFD) beforeSave() {}
 
-func (x *directoryFD) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.fileDescription)
-	m.Save(1, &x.DirectoryFileDescriptionDefaultImpl)
-	m.Save(2, &x.iter)
-	m.Save(3, &x.off)
+func (d *directoryFD) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.fileDescription)
+	stateSinkObject.Save(1, &d.DirectoryFileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &d.iter)
+	stateSinkObject.Save(3, &d.off)
 }
 
-func (x *directoryFD) afterLoad() {}
+func (d *directoryFD) afterLoad() {}
 
-func (x *directoryFD) StateLoad(m state.Source) {
-	m.Load(0, &x.fileDescription)
-	m.Load(1, &x.DirectoryFileDescriptionDefaultImpl)
-	m.Load(2, &x.iter)
-	m.Load(3, &x.off)
+func (d *directoryFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.fileDescription)
+	stateSourceObject.Load(1, &d.DirectoryFileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &d.iter)
+	stateSourceObject.Load(3, &d.off)
 }
 
-func (x *inodeRefs) StateTypeName() string {
+func (i *inodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.inodeRefs"
 }
 
-func (x *inodeRefs) StateFields() []string {
+func (i *inodeRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (x *inodeRefs) beforeSave() {}
+func (i *inodeRefs) beforeSave() {}
 
-func (x *inodeRefs) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.refCount)
+func (i *inodeRefs) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.refCount)
 }
 
-func (x *inodeRefs) afterLoad() {}
+func (i *inodeRefs) afterLoad() {}
 
-func (x *inodeRefs) StateLoad(m state.Source) {
-	m.Load(0, &x.refCount)
+func (i *inodeRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.refCount)
 }
 
-func (x *namedPipe) StateTypeName() string {
+func (n *namedPipe) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.namedPipe"
 }
 
-func (x *namedPipe) StateFields() []string {
+func (n *namedPipe) StateFields() []string {
 	return []string{
 		"inode",
 		"pipe",
 	}
 }
 
-func (x *namedPipe) beforeSave() {}
+func (n *namedPipe) beforeSave() {}
 
-func (x *namedPipe) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.inode)
-	m.Save(1, &x.pipe)
+func (n *namedPipe) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.inode)
+	stateSinkObject.Save(1, &n.pipe)
 }
 
-func (x *namedPipe) afterLoad() {}
+func (n *namedPipe) afterLoad() {}
 
-func (x *namedPipe) StateLoad(m state.Source) {
-	m.Load(0, &x.inode)
-	m.Load(1, &x.pipe)
+func (n *namedPipe) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.inode)
+	stateSourceObject.Load(1, &n.pipe)
 }
 
-func (x *regularFile) StateTypeName() string {
+func (r *regularFile) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.regularFile"
 }
 
-func (x *regularFile) StateFields() []string {
+func (r *regularFile) StateFields() []string {
 	return []string{
 		"inode",
 		"memFile",
@@ -223,135 +223,135 @@ func (x *regularFile) StateFields() []string {
 	}
 }
 
-func (x *regularFile) beforeSave() {}
+func (r *regularFile) beforeSave() {}
 
-func (x *regularFile) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.inode)
-	m.Save(1, &x.memFile)
-	m.Save(2, &x.memoryUsageKind)
-	m.Save(3, &x.mappings)
-	m.Save(4, &x.writableMappingPages)
-	m.Save(5, &x.data)
-	m.Save(6, &x.seals)
-	m.Save(7, &x.size)
+func (r *regularFile) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.inode)
+	stateSinkObject.Save(1, &r.memFile)
+	stateSinkObject.Save(2, &r.memoryUsageKind)
+	stateSinkObject.Save(3, &r.mappings)
+	stateSinkObject.Save(4, &r.writableMappingPages)
+	stateSinkObject.Save(5, &r.data)
+	stateSinkObject.Save(6, &r.seals)
+	stateSinkObject.Save(7, &r.size)
 }
 
-func (x *regularFile) afterLoad() {}
+func (r *regularFile) afterLoad() {}
 
-func (x *regularFile) StateLoad(m state.Source) {
-	m.Load(0, &x.inode)
-	m.Load(1, &x.memFile)
-	m.Load(2, &x.memoryUsageKind)
-	m.Load(3, &x.mappings)
-	m.Load(4, &x.writableMappingPages)
-	m.Load(5, &x.data)
-	m.Load(6, &x.seals)
-	m.Load(7, &x.size)
+func (r *regularFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.inode)
+	stateSourceObject.Load(1, &r.memFile)
+	stateSourceObject.Load(2, &r.memoryUsageKind)
+	stateSourceObject.Load(3, &r.mappings)
+	stateSourceObject.Load(4, &r.writableMappingPages)
+	stateSourceObject.Load(5, &r.data)
+	stateSourceObject.Load(6, &r.seals)
+	stateSourceObject.Load(7, &r.size)
 }
 
-func (x *regularFileFD) StateTypeName() string {
+func (r *regularFileFD) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.regularFileFD"
 }
 
-func (x *regularFileFD) StateFields() []string {
+func (r *regularFileFD) StateFields() []string {
 	return []string{
 		"fileDescription",
 		"off",
 	}
 }
 
-func (x *regularFileFD) beforeSave() {}
+func (r *regularFileFD) beforeSave() {}
 
-func (x *regularFileFD) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.fileDescription)
-	m.Save(1, &x.off)
+func (r *regularFileFD) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.fileDescription)
+	stateSinkObject.Save(1, &r.off)
 }
 
-func (x *regularFileFD) afterLoad() {}
+func (r *regularFileFD) afterLoad() {}
 
-func (x *regularFileFD) StateLoad(m state.Source) {
-	m.Load(0, &x.fileDescription)
-	m.Load(1, &x.off)
+func (r *regularFileFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.fileDescription)
+	stateSourceObject.Load(1, &r.off)
 }
 
-func (x *socketFile) StateTypeName() string {
+func (s *socketFile) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.socketFile"
 }
 
-func (x *socketFile) StateFields() []string {
+func (s *socketFile) StateFields() []string {
 	return []string{
 		"inode",
 		"ep",
 	}
 }
 
-func (x *socketFile) beforeSave() {}
+func (s *socketFile) beforeSave() {}
 
-func (x *socketFile) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.inode)
-	m.Save(1, &x.ep)
+func (s *socketFile) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.inode)
+	stateSinkObject.Save(1, &s.ep)
 }
 
-func (x *socketFile) afterLoad() {}
+func (s *socketFile) afterLoad() {}
 
-func (x *socketFile) StateLoad(m state.Source) {
-	m.Load(0, &x.inode)
-	m.Load(1, &x.ep)
+func (s *socketFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.inode)
+	stateSourceObject.Load(1, &s.ep)
 }
 
-func (x *symlink) StateTypeName() string {
+func (s *symlink) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.symlink"
 }
 
-func (x *symlink) StateFields() []string {
+func (s *symlink) StateFields() []string {
 	return []string{
 		"inode",
 		"target",
 	}
 }
 
-func (x *symlink) beforeSave() {}
+func (s *symlink) beforeSave() {}
 
-func (x *symlink) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.inode)
-	m.Save(1, &x.target)
+func (s *symlink) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.inode)
+	stateSinkObject.Save(1, &s.target)
 }
 
-func (x *symlink) afterLoad() {}
+func (s *symlink) afterLoad() {}
 
-func (x *symlink) StateLoad(m state.Source) {
-	m.Load(0, &x.inode)
-	m.Load(1, &x.target)
+func (s *symlink) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.inode)
+	stateSourceObject.Load(1, &s.target)
 }
 
-func (x *FilesystemType) StateTypeName() string {
+func (f *FilesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.FilesystemType"
 }
 
-func (x *FilesystemType) StateFields() []string {
+func (f *FilesystemType) StateFields() []string {
 	return []string{}
 }
 
-func (x *FilesystemType) beforeSave() {}
+func (f *FilesystemType) beforeSave() {}
 
-func (x *FilesystemType) StateSave(m state.Sink) {
-	x.beforeSave()
+func (f *FilesystemType) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
 }
 
-func (x *FilesystemType) afterLoad() {}
+func (f *FilesystemType) afterLoad() {}
 
-func (x *FilesystemType) StateLoad(m state.Source) {
+func (f *FilesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *filesystem) StateTypeName() string {
+func (f *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.filesystem"
 }
 
-func (x *filesystem) StateFields() []string {
+func (f *filesystem) StateFields() []string {
 	return []string{
 		"vfsfs",
 		"memFile",
@@ -361,32 +361,32 @@ func (x *filesystem) StateFields() []string {
 	}
 }
 
-func (x *filesystem) beforeSave() {}
+func (f *filesystem) beforeSave() {}
 
-func (x *filesystem) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsfs)
-	m.Save(1, &x.memFile)
-	m.Save(2, &x.clock)
-	m.Save(3, &x.devMinor)
-	m.Save(4, &x.nextInoMinusOne)
+func (f *filesystem) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.vfsfs)
+	stateSinkObject.Save(1, &f.memFile)
+	stateSinkObject.Save(2, &f.clock)
+	stateSinkObject.Save(3, &f.devMinor)
+	stateSinkObject.Save(4, &f.nextInoMinusOne)
 }
 
-func (x *filesystem) afterLoad() {}
+func (f *filesystem) afterLoad() {}
 
-func (x *filesystem) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsfs)
-	m.Load(1, &x.memFile)
-	m.Load(2, &x.clock)
-	m.Load(3, &x.devMinor)
-	m.Load(4, &x.nextInoMinusOne)
+func (f *filesystem) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.vfsfs)
+	stateSourceObject.Load(1, &f.memFile)
+	stateSourceObject.Load(2, &f.clock)
+	stateSourceObject.Load(3, &f.devMinor)
+	stateSourceObject.Load(4, &f.nextInoMinusOne)
 }
 
-func (x *FilesystemOpts) StateTypeName() string {
+func (f *FilesystemOpts) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.FilesystemOpts"
 }
 
-func (x *FilesystemOpts) StateFields() []string {
+func (f *FilesystemOpts) StateFields() []string {
 	return []string{
 		"RootFileType",
 		"RootSymlinkTarget",
@@ -394,28 +394,28 @@ func (x *FilesystemOpts) StateFields() []string {
 	}
 }
 
-func (x *FilesystemOpts) beforeSave() {}
+func (f *FilesystemOpts) beforeSave() {}
 
-func (x *FilesystemOpts) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.RootFileType)
-	m.Save(1, &x.RootSymlinkTarget)
-	m.Save(2, &x.FilesystemType)
+func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.RootFileType)
+	stateSinkObject.Save(1, &f.RootSymlinkTarget)
+	stateSinkObject.Save(2, &f.FilesystemType)
 }
 
-func (x *FilesystemOpts) afterLoad() {}
+func (f *FilesystemOpts) afterLoad() {}
 
-func (x *FilesystemOpts) StateLoad(m state.Source) {
-	m.Load(0, &x.RootFileType)
-	m.Load(1, &x.RootSymlinkTarget)
-	m.Load(2, &x.FilesystemType)
+func (f *FilesystemOpts) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.RootFileType)
+	stateSourceObject.Load(1, &f.RootSymlinkTarget)
+	stateSourceObject.Load(2, &f.FilesystemType)
 }
 
-func (x *dentry) StateTypeName() string {
+func (d *dentry) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.dentry"
 }
 
-func (x *dentry) StateFields() []string {
+func (d *dentry) StateFields() []string {
 	return []string{
 		"vfsd",
 		"parent",
@@ -425,32 +425,32 @@ func (x *dentry) StateFields() []string {
 	}
 }
 
-func (x *dentry) beforeSave() {}
+func (d *dentry) beforeSave() {}
 
-func (x *dentry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsd)
-	m.Save(1, &x.parent)
-	m.Save(2, &x.name)
-	m.Save(3, &x.dentryEntry)
-	m.Save(4, &x.inode)
+func (d *dentry) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.vfsd)
+	stateSinkObject.Save(1, &d.parent)
+	stateSinkObject.Save(2, &d.name)
+	stateSinkObject.Save(3, &d.dentryEntry)
+	stateSinkObject.Save(4, &d.inode)
 }
 
-func (x *dentry) afterLoad() {}
+func (d *dentry) afterLoad() {}
 
-func (x *dentry) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsd)
-	m.Load(1, &x.parent)
-	m.Load(2, &x.name)
-	m.Load(3, &x.dentryEntry)
-	m.Load(4, &x.inode)
+func (d *dentry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.vfsd)
+	stateSourceObject.Load(1, &d.parent)
+	stateSourceObject.Load(2, &d.name)
+	stateSourceObject.Load(3, &d.dentryEntry)
+	stateSourceObject.Load(4, &d.inode)
 }
 
-func (x *inode) StateTypeName() string {
+func (i *inode) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.inode"
 }
 
-func (x *inode) StateFields() []string {
+func (i *inode) StateFields() []string {
 	return []string{
 		"fs",
 		"refs",
@@ -469,50 +469,50 @@ func (x *inode) StateFields() []string {
 	}
 }
 
-func (x *inode) beforeSave() {}
+func (i *inode) beforeSave() {}
 
-func (x *inode) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.fs)
-	m.Save(1, &x.refs)
-	m.Save(2, &x.xattrs)
-	m.Save(3, &x.mode)
-	m.Save(4, &x.nlink)
-	m.Save(5, &x.uid)
-	m.Save(6, &x.gid)
-	m.Save(7, &x.ino)
-	m.Save(8, &x.atime)
-	m.Save(9, &x.ctime)
-	m.Save(10, &x.mtime)
-	m.Save(11, &x.locks)
-	m.Save(12, &x.watches)
-	m.Save(13, &x.impl)
+func (i *inode) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.fs)
+	stateSinkObject.Save(1, &i.refs)
+	stateSinkObject.Save(2, &i.xattrs)
+	stateSinkObject.Save(3, &i.mode)
+	stateSinkObject.Save(4, &i.nlink)
+	stateSinkObject.Save(5, &i.uid)
+	stateSinkObject.Save(6, &i.gid)
+	stateSinkObject.Save(7, &i.ino)
+	stateSinkObject.Save(8, &i.atime)
+	stateSinkObject.Save(9, &i.ctime)
+	stateSinkObject.Save(10, &i.mtime)
+	stateSinkObject.Save(11, &i.locks)
+	stateSinkObject.Save(12, &i.watches)
+	stateSinkObject.Save(13, &i.impl)
 }
 
-func (x *inode) afterLoad() {}
+func (i *inode) afterLoad() {}
 
-func (x *inode) StateLoad(m state.Source) {
-	m.Load(0, &x.fs)
-	m.Load(1, &x.refs)
-	m.Load(2, &x.xattrs)
-	m.Load(3, &x.mode)
-	m.Load(4, &x.nlink)
-	m.Load(5, &x.uid)
-	m.Load(6, &x.gid)
-	m.Load(7, &x.ino)
-	m.Load(8, &x.atime)
-	m.Load(9, &x.ctime)
-	m.Load(10, &x.mtime)
-	m.Load(11, &x.locks)
-	m.Load(12, &x.watches)
-	m.Load(13, &x.impl)
+func (i *inode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.fs)
+	stateSourceObject.Load(1, &i.refs)
+	stateSourceObject.Load(2, &i.xattrs)
+	stateSourceObject.Load(3, &i.mode)
+	stateSourceObject.Load(4, &i.nlink)
+	stateSourceObject.Load(5, &i.uid)
+	stateSourceObject.Load(6, &i.gid)
+	stateSourceObject.Load(7, &i.ino)
+	stateSourceObject.Load(8, &i.atime)
+	stateSourceObject.Load(9, &i.ctime)
+	stateSourceObject.Load(10, &i.mtime)
+	stateSourceObject.Load(11, &i.locks)
+	stateSourceObject.Load(12, &i.watches)
+	stateSourceObject.Load(13, &i.impl)
 }
 
-func (x *fileDescription) StateTypeName() string {
+func (f *fileDescription) StateTypeName() string {
 	return "pkg/sentry/fsimpl/tmpfs.fileDescription"
 }
 
-func (x *fileDescription) StateFields() []string {
+func (f *fileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -520,21 +520,21 @@ func (x *fileDescription) StateFields() []string {
 	}
 }
 
-func (x *fileDescription) beforeSave() {}
+func (f *fileDescription) beforeSave() {}
 
-func (x *fileDescription) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsfd)
-	m.Save(1, &x.FileDescriptionDefaultImpl)
-	m.Save(2, &x.LockFD)
+func (f *fileDescription) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.vfsfd)
+	stateSinkObject.Save(1, &f.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &f.LockFD)
 }
 
-func (x *fileDescription) afterLoad() {}
+func (f *fileDescription) afterLoad() {}
 
-func (x *fileDescription) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsfd)
-	m.Load(1, &x.FileDescriptionDefaultImpl)
-	m.Load(2, &x.LockFD)
+func (f *fileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.vfsfd)
+	stateSourceObject.Load(1, &f.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &f.LockFD)
 }
 
 func init() {

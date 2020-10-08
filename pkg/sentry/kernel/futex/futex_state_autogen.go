@@ -6,104 +6,104 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *bucket) StateTypeName() string {
+func (b *bucket) StateTypeName() string {
 	return "pkg/sentry/kernel/futex.bucket"
 }
 
-func (x *bucket) StateFields() []string {
+func (b *bucket) StateFields() []string {
 	return []string{}
 }
 
-func (x *bucket) beforeSave() {}
+func (b *bucket) beforeSave() {}
 
-func (x *bucket) StateSave(m state.Sink) {
-	x.beforeSave()
-	if !state.IsZeroValue(&x.waiters) {
-		state.Failf("waiters is %#v, expected zero", &x.waiters)
+func (b *bucket) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+	if !state.IsZeroValue(&b.waiters) {
+		state.Failf("waiters is %#v, expected zero", &b.waiters)
 	}
 }
 
-func (x *bucket) afterLoad() {}
+func (b *bucket) afterLoad() {}
 
-func (x *bucket) StateLoad(m state.Source) {
+func (b *bucket) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *Manager) StateTypeName() string {
+func (m *Manager) StateTypeName() string {
 	return "pkg/sentry/kernel/futex.Manager"
 }
 
-func (x *Manager) StateFields() []string {
+func (m *Manager) StateFields() []string {
 	return []string{
 		"sharedBucket",
 	}
 }
 
-func (x *Manager) beforeSave() {}
+func (m *Manager) beforeSave() {}
 
-func (x *Manager) StateSave(m state.Sink) {
-	x.beforeSave()
-	if !state.IsZeroValue(&x.privateBuckets) {
-		state.Failf("privateBuckets is %#v, expected zero", &x.privateBuckets)
+func (m *Manager) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	if !state.IsZeroValue(&m.privateBuckets) {
+		state.Failf("privateBuckets is %#v, expected zero", &m.privateBuckets)
 	}
-	m.Save(0, &x.sharedBucket)
+	stateSinkObject.Save(0, &m.sharedBucket)
 }
 
-func (x *Manager) afterLoad() {}
+func (m *Manager) afterLoad() {}
 
-func (x *Manager) StateLoad(m state.Source) {
-	m.Load(0, &x.sharedBucket)
+func (m *Manager) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.sharedBucket)
 }
 
-func (x *waiterList) StateTypeName() string {
+func (w *waiterList) StateTypeName() string {
 	return "pkg/sentry/kernel/futex.waiterList"
 }
 
-func (x *waiterList) StateFields() []string {
+func (w *waiterList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (x *waiterList) beforeSave() {}
+func (w *waiterList) beforeSave() {}
 
-func (x *waiterList) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
+func (w *waiterList) StateSave(stateSinkObject state.Sink) {
+	w.beforeSave()
+	stateSinkObject.Save(0, &w.head)
+	stateSinkObject.Save(1, &w.tail)
 }
 
-func (x *waiterList) afterLoad() {}
+func (w *waiterList) afterLoad() {}
 
-func (x *waiterList) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
+func (w *waiterList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &w.head)
+	stateSourceObject.Load(1, &w.tail)
 }
 
-func (x *waiterEntry) StateTypeName() string {
+func (w *waiterEntry) StateTypeName() string {
 	return "pkg/sentry/kernel/futex.waiterEntry"
 }
 
-func (x *waiterEntry) StateFields() []string {
+func (w *waiterEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (x *waiterEntry) beforeSave() {}
+func (w *waiterEntry) beforeSave() {}
 
-func (x *waiterEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
+func (w *waiterEntry) StateSave(stateSinkObject state.Sink) {
+	w.beforeSave()
+	stateSinkObject.Save(0, &w.next)
+	stateSinkObject.Save(1, &w.prev)
 }
 
-func (x *waiterEntry) afterLoad() {}
+func (w *waiterEntry) afterLoad() {}
 
-func (x *waiterEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
+func (w *waiterEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &w.next)
+	stateSourceObject.Load(1, &w.prev)
 }
 
 func init() {

@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *MmapLayout) StateTypeName() string {
+func (m *MmapLayout) StateTypeName() string {
 	return "pkg/sentry/arch.MmapLayout"
 }
 
-func (x *MmapLayout) StateFields() []string {
+func (m *MmapLayout) StateFields() []string {
 	return []string{
 		"MinAddr",
 		"MaxAddr",
@@ -23,60 +23,60 @@ func (x *MmapLayout) StateFields() []string {
 	}
 }
 
-func (x *MmapLayout) beforeSave() {}
+func (m *MmapLayout) beforeSave() {}
 
-func (x *MmapLayout) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.MinAddr)
-	m.Save(1, &x.MaxAddr)
-	m.Save(2, &x.BottomUpBase)
-	m.Save(3, &x.TopDownBase)
-	m.Save(4, &x.DefaultDirection)
-	m.Save(5, &x.MaxStackRand)
+func (m *MmapLayout) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.MinAddr)
+	stateSinkObject.Save(1, &m.MaxAddr)
+	stateSinkObject.Save(2, &m.BottomUpBase)
+	stateSinkObject.Save(3, &m.TopDownBase)
+	stateSinkObject.Save(4, &m.DefaultDirection)
+	stateSinkObject.Save(5, &m.MaxStackRand)
 }
 
-func (x *MmapLayout) afterLoad() {}
+func (m *MmapLayout) afterLoad() {}
 
-func (x *MmapLayout) StateLoad(m state.Source) {
-	m.Load(0, &x.MinAddr)
-	m.Load(1, &x.MaxAddr)
-	m.Load(2, &x.BottomUpBase)
-	m.Load(3, &x.TopDownBase)
-	m.Load(4, &x.DefaultDirection)
-	m.Load(5, &x.MaxStackRand)
+func (m *MmapLayout) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.MinAddr)
+	stateSourceObject.Load(1, &m.MaxAddr)
+	stateSourceObject.Load(2, &m.BottomUpBase)
+	stateSourceObject.Load(3, &m.TopDownBase)
+	stateSourceObject.Load(4, &m.DefaultDirection)
+	stateSourceObject.Load(5, &m.MaxStackRand)
 }
 
-func (x *AuxEntry) StateTypeName() string {
+func (a *AuxEntry) StateTypeName() string {
 	return "pkg/sentry/arch.AuxEntry"
 }
 
-func (x *AuxEntry) StateFields() []string {
+func (a *AuxEntry) StateFields() []string {
 	return []string{
 		"Key",
 		"Value",
 	}
 }
 
-func (x *AuxEntry) beforeSave() {}
+func (a *AuxEntry) beforeSave() {}
 
-func (x *AuxEntry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Key)
-	m.Save(1, &x.Value)
+func (a *AuxEntry) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.Key)
+	stateSinkObject.Save(1, &a.Value)
 }
 
-func (x *AuxEntry) afterLoad() {}
+func (a *AuxEntry) afterLoad() {}
 
-func (x *AuxEntry) StateLoad(m state.Source) {
-	m.Load(0, &x.Key)
-	m.Load(1, &x.Value)
+func (a *AuxEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.Key)
+	stateSourceObject.Load(1, &a.Value)
 }
 
-func (x *SignalAct) StateTypeName() string {
+func (s *SignalAct) StateTypeName() string {
 	return "pkg/sentry/arch.SignalAct"
 }
 
-func (x *SignalAct) StateFields() []string {
+func (s *SignalAct) StateFields() []string {
 	return []string{
 		"Handler",
 		"Flags",
@@ -85,30 +85,30 @@ func (x *SignalAct) StateFields() []string {
 	}
 }
 
-func (x *SignalAct) beforeSave() {}
+func (s *SignalAct) beforeSave() {}
 
-func (x *SignalAct) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Handler)
-	m.Save(1, &x.Flags)
-	m.Save(2, &x.Restorer)
-	m.Save(3, &x.Mask)
+func (s *SignalAct) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Handler)
+	stateSinkObject.Save(1, &s.Flags)
+	stateSinkObject.Save(2, &s.Restorer)
+	stateSinkObject.Save(3, &s.Mask)
 }
 
-func (x *SignalAct) afterLoad() {}
+func (s *SignalAct) afterLoad() {}
 
-func (x *SignalAct) StateLoad(m state.Source) {
-	m.Load(0, &x.Handler)
-	m.Load(1, &x.Flags)
-	m.Load(2, &x.Restorer)
-	m.Load(3, &x.Mask)
+func (s *SignalAct) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Handler)
+	stateSourceObject.Load(1, &s.Flags)
+	stateSourceObject.Load(2, &s.Restorer)
+	stateSourceObject.Load(3, &s.Mask)
 }
 
-func (x *SignalStack) StateTypeName() string {
+func (s *SignalStack) StateTypeName() string {
 	return "pkg/sentry/arch.SignalStack"
 }
 
-func (x *SignalStack) StateFields() []string {
+func (s *SignalStack) StateFields() []string {
 	return []string{
 		"Addr",
 		"Flags",
@@ -116,28 +116,28 @@ func (x *SignalStack) StateFields() []string {
 	}
 }
 
-func (x *SignalStack) beforeSave() {}
+func (s *SignalStack) beforeSave() {}
 
-func (x *SignalStack) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Addr)
-	m.Save(1, &x.Flags)
-	m.Save(2, &x.Size)
+func (s *SignalStack) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Addr)
+	stateSinkObject.Save(1, &s.Flags)
+	stateSinkObject.Save(2, &s.Size)
 }
 
-func (x *SignalStack) afterLoad() {}
+func (s *SignalStack) afterLoad() {}
 
-func (x *SignalStack) StateLoad(m state.Source) {
-	m.Load(0, &x.Addr)
-	m.Load(1, &x.Flags)
-	m.Load(2, &x.Size)
+func (s *SignalStack) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Addr)
+	stateSourceObject.Load(1, &s.Flags)
+	stateSourceObject.Load(2, &s.Size)
 }
 
-func (x *SignalInfo) StateTypeName() string {
+func (s *SignalInfo) StateTypeName() string {
 	return "pkg/sentry/arch.SignalInfo"
 }
 
-func (x *SignalInfo) StateFields() []string {
+func (s *SignalInfo) StateFields() []string {
 	return []string{
 		"Signo",
 		"Errno",
@@ -146,23 +146,23 @@ func (x *SignalInfo) StateFields() []string {
 	}
 }
 
-func (x *SignalInfo) beforeSave() {}
+func (s *SignalInfo) beforeSave() {}
 
-func (x *SignalInfo) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Signo)
-	m.Save(1, &x.Errno)
-	m.Save(2, &x.Code)
-	m.Save(3, &x.Fields)
+func (s *SignalInfo) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Signo)
+	stateSinkObject.Save(1, &s.Errno)
+	stateSinkObject.Save(2, &s.Code)
+	stateSinkObject.Save(3, &s.Fields)
 }
 
-func (x *SignalInfo) afterLoad() {}
+func (s *SignalInfo) afterLoad() {}
 
-func (x *SignalInfo) StateLoad(m state.Source) {
-	m.Load(0, &x.Signo)
-	m.Load(1, &x.Errno)
-	m.Load(2, &x.Code)
-	m.Load(3, &x.Fields)
+func (s *SignalInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Signo)
+	stateSourceObject.Load(1, &s.Errno)
+	stateSourceObject.Load(2, &s.Code)
+	stateSourceObject.Load(3, &s.Fields)
 }
 
 func init() {

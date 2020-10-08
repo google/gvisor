@@ -6,34 +6,34 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Time) StateTypeName() string {
+func (t *Time) StateTypeName() string {
 	return "pkg/sentry/kernel/time.Time"
 }
 
-func (x *Time) StateFields() []string {
+func (t *Time) StateFields() []string {
 	return []string{
 		"ns",
 	}
 }
 
-func (x *Time) beforeSave() {}
+func (t *Time) beforeSave() {}
 
-func (x *Time) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.ns)
+func (t *Time) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.ns)
 }
 
-func (x *Time) afterLoad() {}
+func (t *Time) afterLoad() {}
 
-func (x *Time) StateLoad(m state.Source) {
-	m.Load(0, &x.ns)
+func (t *Time) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.ns)
 }
 
-func (x *Setting) StateTypeName() string {
+func (s *Setting) StateTypeName() string {
 	return "pkg/sentry/kernel/time.Setting"
 }
 
-func (x *Setting) StateFields() []string {
+func (s *Setting) StateFields() []string {
 	return []string{
 		"Enabled",
 		"Next",
@@ -41,28 +41,28 @@ func (x *Setting) StateFields() []string {
 	}
 }
 
-func (x *Setting) beforeSave() {}
+func (s *Setting) beforeSave() {}
 
-func (x *Setting) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Enabled)
-	m.Save(1, &x.Next)
-	m.Save(2, &x.Period)
+func (s *Setting) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Enabled)
+	stateSinkObject.Save(1, &s.Next)
+	stateSinkObject.Save(2, &s.Period)
 }
 
-func (x *Setting) afterLoad() {}
+func (s *Setting) afterLoad() {}
 
-func (x *Setting) StateLoad(m state.Source) {
-	m.Load(0, &x.Enabled)
-	m.Load(1, &x.Next)
-	m.Load(2, &x.Period)
+func (s *Setting) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Enabled)
+	stateSourceObject.Load(1, &s.Next)
+	stateSourceObject.Load(2, &s.Period)
 }
 
-func (x *Timer) StateTypeName() string {
+func (t *Timer) StateTypeName() string {
 	return "pkg/sentry/kernel/time.Timer"
 }
 
-func (x *Timer) StateFields() []string {
+func (t *Timer) StateFields() []string {
 	return []string{
 		"clock",
 		"listener",
@@ -71,23 +71,23 @@ func (x *Timer) StateFields() []string {
 	}
 }
 
-func (x *Timer) beforeSave() {}
+func (t *Timer) beforeSave() {}
 
-func (x *Timer) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.clock)
-	m.Save(1, &x.listener)
-	m.Save(2, &x.setting)
-	m.Save(3, &x.paused)
+func (t *Timer) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.clock)
+	stateSinkObject.Save(1, &t.listener)
+	stateSinkObject.Save(2, &t.setting)
+	stateSinkObject.Save(3, &t.paused)
 }
 
-func (x *Timer) afterLoad() {}
+func (t *Timer) afterLoad() {}
 
-func (x *Timer) StateLoad(m state.Source) {
-	m.Load(0, &x.clock)
-	m.Load(1, &x.listener)
-	m.Load(2, &x.setting)
-	m.Load(3, &x.paused)
+func (t *Timer) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.clock)
+	stateSourceObject.Load(1, &t.listener)
+	stateSourceObject.Load(2, &t.setting)
+	stateSourceObject.Load(3, &t.paused)
 }
 
 func init() {

@@ -11,11 +11,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *PtraceRegs) StateTypeName() string {
+func (p *PtraceRegs) StateTypeName() string {
 	return "pkg/abi/linux.PtraceRegs"
 }
 
-func (x *PtraceRegs) StateFields() []string {
+func (p *PtraceRegs) StateFields() []string {
 	return []string{
 		"R15",
 		"R14",
@@ -47,69 +47,69 @@ func (x *PtraceRegs) StateFields() []string {
 	}
 }
 
-func (x *PtraceRegs) beforeSave() {}
+func (p *PtraceRegs) beforeSave() {}
 
-func (x *PtraceRegs) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.R15)
-	m.Save(1, &x.R14)
-	m.Save(2, &x.R13)
-	m.Save(3, &x.R12)
-	m.Save(4, &x.Rbp)
-	m.Save(5, &x.Rbx)
-	m.Save(6, &x.R11)
-	m.Save(7, &x.R10)
-	m.Save(8, &x.R9)
-	m.Save(9, &x.R8)
-	m.Save(10, &x.Rax)
-	m.Save(11, &x.Rcx)
-	m.Save(12, &x.Rdx)
-	m.Save(13, &x.Rsi)
-	m.Save(14, &x.Rdi)
-	m.Save(15, &x.Orig_rax)
-	m.Save(16, &x.Rip)
-	m.Save(17, &x.Cs)
-	m.Save(18, &x.Eflags)
-	m.Save(19, &x.Rsp)
-	m.Save(20, &x.Ss)
-	m.Save(21, &x.Fs_base)
-	m.Save(22, &x.Gs_base)
-	m.Save(23, &x.Ds)
-	m.Save(24, &x.Es)
-	m.Save(25, &x.Fs)
-	m.Save(26, &x.Gs)
+func (p *PtraceRegs) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.R15)
+	stateSinkObject.Save(1, &p.R14)
+	stateSinkObject.Save(2, &p.R13)
+	stateSinkObject.Save(3, &p.R12)
+	stateSinkObject.Save(4, &p.Rbp)
+	stateSinkObject.Save(5, &p.Rbx)
+	stateSinkObject.Save(6, &p.R11)
+	stateSinkObject.Save(7, &p.R10)
+	stateSinkObject.Save(8, &p.R9)
+	stateSinkObject.Save(9, &p.R8)
+	stateSinkObject.Save(10, &p.Rax)
+	stateSinkObject.Save(11, &p.Rcx)
+	stateSinkObject.Save(12, &p.Rdx)
+	stateSinkObject.Save(13, &p.Rsi)
+	stateSinkObject.Save(14, &p.Rdi)
+	stateSinkObject.Save(15, &p.Orig_rax)
+	stateSinkObject.Save(16, &p.Rip)
+	stateSinkObject.Save(17, &p.Cs)
+	stateSinkObject.Save(18, &p.Eflags)
+	stateSinkObject.Save(19, &p.Rsp)
+	stateSinkObject.Save(20, &p.Ss)
+	stateSinkObject.Save(21, &p.Fs_base)
+	stateSinkObject.Save(22, &p.Gs_base)
+	stateSinkObject.Save(23, &p.Ds)
+	stateSinkObject.Save(24, &p.Es)
+	stateSinkObject.Save(25, &p.Fs)
+	stateSinkObject.Save(26, &p.Gs)
 }
 
-func (x *PtraceRegs) afterLoad() {}
+func (p *PtraceRegs) afterLoad() {}
 
-func (x *PtraceRegs) StateLoad(m state.Source) {
-	m.Load(0, &x.R15)
-	m.Load(1, &x.R14)
-	m.Load(2, &x.R13)
-	m.Load(3, &x.R12)
-	m.Load(4, &x.Rbp)
-	m.Load(5, &x.Rbx)
-	m.Load(6, &x.R11)
-	m.Load(7, &x.R10)
-	m.Load(8, &x.R9)
-	m.Load(9, &x.R8)
-	m.Load(10, &x.Rax)
-	m.Load(11, &x.Rcx)
-	m.Load(12, &x.Rdx)
-	m.Load(13, &x.Rsi)
-	m.Load(14, &x.Rdi)
-	m.Load(15, &x.Orig_rax)
-	m.Load(16, &x.Rip)
-	m.Load(17, &x.Cs)
-	m.Load(18, &x.Eflags)
-	m.Load(19, &x.Rsp)
-	m.Load(20, &x.Ss)
-	m.Load(21, &x.Fs_base)
-	m.Load(22, &x.Gs_base)
-	m.Load(23, &x.Ds)
-	m.Load(24, &x.Es)
-	m.Load(25, &x.Fs)
-	m.Load(26, &x.Gs)
+func (p *PtraceRegs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.R15)
+	stateSourceObject.Load(1, &p.R14)
+	stateSourceObject.Load(2, &p.R13)
+	stateSourceObject.Load(3, &p.R12)
+	stateSourceObject.Load(4, &p.Rbp)
+	stateSourceObject.Load(5, &p.Rbx)
+	stateSourceObject.Load(6, &p.R11)
+	stateSourceObject.Load(7, &p.R10)
+	stateSourceObject.Load(8, &p.R9)
+	stateSourceObject.Load(9, &p.R8)
+	stateSourceObject.Load(10, &p.Rax)
+	stateSourceObject.Load(11, &p.Rcx)
+	stateSourceObject.Load(12, &p.Rdx)
+	stateSourceObject.Load(13, &p.Rsi)
+	stateSourceObject.Load(14, &p.Rdi)
+	stateSourceObject.Load(15, &p.Orig_rax)
+	stateSourceObject.Load(16, &p.Rip)
+	stateSourceObject.Load(17, &p.Cs)
+	stateSourceObject.Load(18, &p.Eflags)
+	stateSourceObject.Load(19, &p.Rsp)
+	stateSourceObject.Load(20, &p.Ss)
+	stateSourceObject.Load(21, &p.Fs_base)
+	stateSourceObject.Load(22, &p.Gs_base)
+	stateSourceObject.Load(23, &p.Ds)
+	stateSourceObject.Load(24, &p.Es)
+	stateSourceObject.Load(25, &p.Fs)
+	stateSourceObject.Load(26, &p.Gs)
 }
 
 func init() {

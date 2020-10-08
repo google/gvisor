@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Cache) StateTypeName() string {
+func (c *Cache) StateTypeName() string {
 	return "pkg/cpuid.Cache"
 }
 
-func (x *Cache) StateFields() []string {
+func (c *Cache) StateFields() []string {
 	return []string{
 		"Level",
 		"Type",
@@ -26,40 +26,40 @@ func (x *Cache) StateFields() []string {
 	}
 }
 
-func (x *Cache) beforeSave() {}
+func (c *Cache) beforeSave() {}
 
-func (x *Cache) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Level)
-	m.Save(1, &x.Type)
-	m.Save(2, &x.FullyAssociative)
-	m.Save(3, &x.Partitions)
-	m.Save(4, &x.Ways)
-	m.Save(5, &x.Sets)
-	m.Save(6, &x.InvalidateHierarchical)
-	m.Save(7, &x.Inclusive)
-	m.Save(8, &x.DirectMapped)
+func (c *Cache) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Level)
+	stateSinkObject.Save(1, &c.Type)
+	stateSinkObject.Save(2, &c.FullyAssociative)
+	stateSinkObject.Save(3, &c.Partitions)
+	stateSinkObject.Save(4, &c.Ways)
+	stateSinkObject.Save(5, &c.Sets)
+	stateSinkObject.Save(6, &c.InvalidateHierarchical)
+	stateSinkObject.Save(7, &c.Inclusive)
+	stateSinkObject.Save(8, &c.DirectMapped)
 }
 
-func (x *Cache) afterLoad() {}
+func (c *Cache) afterLoad() {}
 
-func (x *Cache) StateLoad(m state.Source) {
-	m.Load(0, &x.Level)
-	m.Load(1, &x.Type)
-	m.Load(2, &x.FullyAssociative)
-	m.Load(3, &x.Partitions)
-	m.Load(4, &x.Ways)
-	m.Load(5, &x.Sets)
-	m.Load(6, &x.InvalidateHierarchical)
-	m.Load(7, &x.Inclusive)
-	m.Load(8, &x.DirectMapped)
+func (c *Cache) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Level)
+	stateSourceObject.Load(1, &c.Type)
+	stateSourceObject.Load(2, &c.FullyAssociative)
+	stateSourceObject.Load(3, &c.Partitions)
+	stateSourceObject.Load(4, &c.Ways)
+	stateSourceObject.Load(5, &c.Sets)
+	stateSourceObject.Load(6, &c.InvalidateHierarchical)
+	stateSourceObject.Load(7, &c.Inclusive)
+	stateSourceObject.Load(8, &c.DirectMapped)
 }
 
-func (x *FeatureSet) StateTypeName() string {
+func (f *FeatureSet) StateTypeName() string {
 	return "pkg/cpuid.FeatureSet"
 }
 
-func (x *FeatureSet) StateFields() []string {
+func (f *FeatureSet) StateFields() []string {
 	return []string{
 		"Set",
 		"VendorID",
@@ -74,35 +74,35 @@ func (x *FeatureSet) StateFields() []string {
 	}
 }
 
-func (x *FeatureSet) beforeSave() {}
+func (f *FeatureSet) beforeSave() {}
 
-func (x *FeatureSet) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Set)
-	m.Save(1, &x.VendorID)
-	m.Save(2, &x.ExtendedFamily)
-	m.Save(3, &x.ExtendedModel)
-	m.Save(4, &x.ProcessorType)
-	m.Save(5, &x.Family)
-	m.Save(6, &x.Model)
-	m.Save(7, &x.SteppingID)
-	m.Save(8, &x.Caches)
-	m.Save(9, &x.CacheLine)
+func (f *FeatureSet) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.Set)
+	stateSinkObject.Save(1, &f.VendorID)
+	stateSinkObject.Save(2, &f.ExtendedFamily)
+	stateSinkObject.Save(3, &f.ExtendedModel)
+	stateSinkObject.Save(4, &f.ProcessorType)
+	stateSinkObject.Save(5, &f.Family)
+	stateSinkObject.Save(6, &f.Model)
+	stateSinkObject.Save(7, &f.SteppingID)
+	stateSinkObject.Save(8, &f.Caches)
+	stateSinkObject.Save(9, &f.CacheLine)
 }
 
-func (x *FeatureSet) afterLoad() {}
+func (f *FeatureSet) afterLoad() {}
 
-func (x *FeatureSet) StateLoad(m state.Source) {
-	m.Load(0, &x.Set)
-	m.Load(1, &x.VendorID)
-	m.Load(2, &x.ExtendedFamily)
-	m.Load(3, &x.ExtendedModel)
-	m.Load(4, &x.ProcessorType)
-	m.Load(5, &x.Family)
-	m.Load(6, &x.Model)
-	m.Load(7, &x.SteppingID)
-	m.Load(8, &x.Caches)
-	m.Load(9, &x.CacheLine)
+func (f *FeatureSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.Set)
+	stateSourceObject.Load(1, &f.VendorID)
+	stateSourceObject.Load(2, &f.ExtendedFamily)
+	stateSourceObject.Load(3, &f.ExtendedModel)
+	stateSourceObject.Load(4, &f.ProcessorType)
+	stateSourceObject.Load(5, &f.Family)
+	stateSourceObject.Load(6, &f.Model)
+	stateSourceObject.Load(7, &f.SteppingID)
+	stateSourceObject.Load(8, &f.Caches)
+	stateSourceObject.Load(9, &f.CacheLine)
 }
 
 func init() {

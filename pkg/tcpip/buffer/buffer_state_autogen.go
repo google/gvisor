@@ -6,30 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *VectorisedView) StateTypeName() string {
+func (v *VectorisedView) StateTypeName() string {
 	return "pkg/tcpip/buffer.VectorisedView"
 }
 
-func (x *VectorisedView) StateFields() []string {
+func (v *VectorisedView) StateFields() []string {
 	return []string{
 		"views",
 		"size",
 	}
 }
 
-func (x *VectorisedView) beforeSave() {}
+func (v *VectorisedView) beforeSave() {}
 
-func (x *VectorisedView) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.views)
-	m.Save(1, &x.size)
+func (v *VectorisedView) StateSave(stateSinkObject state.Sink) {
+	v.beforeSave()
+	stateSinkObject.Save(0, &v.views)
+	stateSinkObject.Save(1, &v.size)
 }
 
-func (x *VectorisedView) afterLoad() {}
+func (v *VectorisedView) afterLoad() {}
 
-func (x *VectorisedView) StateLoad(m state.Source) {
-	m.Load(0, &x.views)
-	m.Load(1, &x.size)
+func (v *VectorisedView) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &v.views)
+	stateSourceObject.Load(1, &v.size)
 }
 
 func init() {

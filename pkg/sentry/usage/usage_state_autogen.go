@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *CPUStats) StateTypeName() string {
+func (c *CPUStats) StateTypeName() string {
 	return "pkg/sentry/usage.CPUStats"
 }
 
-func (x *CPUStats) StateFields() []string {
+func (c *CPUStats) StateFields() []string {
 	return []string{
 		"UserTime",
 		"SysTime",
@@ -18,28 +18,28 @@ func (x *CPUStats) StateFields() []string {
 	}
 }
 
-func (x *CPUStats) beforeSave() {}
+func (c *CPUStats) beforeSave() {}
 
-func (x *CPUStats) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.UserTime)
-	m.Save(1, &x.SysTime)
-	m.Save(2, &x.VoluntarySwitches)
+func (c *CPUStats) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.UserTime)
+	stateSinkObject.Save(1, &c.SysTime)
+	stateSinkObject.Save(2, &c.VoluntarySwitches)
 }
 
-func (x *CPUStats) afterLoad() {}
+func (c *CPUStats) afterLoad() {}
 
-func (x *CPUStats) StateLoad(m state.Source) {
-	m.Load(0, &x.UserTime)
-	m.Load(1, &x.SysTime)
-	m.Load(2, &x.VoluntarySwitches)
+func (c *CPUStats) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.UserTime)
+	stateSourceObject.Load(1, &c.SysTime)
+	stateSourceObject.Load(2, &c.VoluntarySwitches)
 }
 
-func (x *IO) StateTypeName() string {
+func (i *IO) StateTypeName() string {
 	return "pkg/sentry/usage.IO"
 }
 
-func (x *IO) StateFields() []string {
+func (i *IO) StateFields() []string {
 	return []string{
 		"CharsRead",
 		"CharsWritten",
@@ -51,29 +51,29 @@ func (x *IO) StateFields() []string {
 	}
 }
 
-func (x *IO) beforeSave() {}
+func (i *IO) beforeSave() {}
 
-func (x *IO) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.CharsRead)
-	m.Save(1, &x.CharsWritten)
-	m.Save(2, &x.ReadSyscalls)
-	m.Save(3, &x.WriteSyscalls)
-	m.Save(4, &x.BytesRead)
-	m.Save(5, &x.BytesWritten)
-	m.Save(6, &x.BytesWriteCancelled)
+func (i *IO) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.CharsRead)
+	stateSinkObject.Save(1, &i.CharsWritten)
+	stateSinkObject.Save(2, &i.ReadSyscalls)
+	stateSinkObject.Save(3, &i.WriteSyscalls)
+	stateSinkObject.Save(4, &i.BytesRead)
+	stateSinkObject.Save(5, &i.BytesWritten)
+	stateSinkObject.Save(6, &i.BytesWriteCancelled)
 }
 
-func (x *IO) afterLoad() {}
+func (i *IO) afterLoad() {}
 
-func (x *IO) StateLoad(m state.Source) {
-	m.Load(0, &x.CharsRead)
-	m.Load(1, &x.CharsWritten)
-	m.Load(2, &x.ReadSyscalls)
-	m.Load(3, &x.WriteSyscalls)
-	m.Load(4, &x.BytesRead)
-	m.Load(5, &x.BytesWritten)
-	m.Load(6, &x.BytesWriteCancelled)
+func (i *IO) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.CharsRead)
+	stateSourceObject.Load(1, &i.CharsWritten)
+	stateSourceObject.Load(2, &i.ReadSyscalls)
+	stateSourceObject.Load(3, &i.WriteSyscalls)
+	stateSourceObject.Load(4, &i.BytesRead)
+	stateSourceObject.Load(5, &i.BytesWritten)
+	stateSourceObject.Load(6, &i.BytesWriteCancelled)
 }
 
 func init() {
