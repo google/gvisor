@@ -2,8 +2,7 @@
 
 load("//tools/bazeldefs:defs.bzl", "go_context", "go_importpath", "go_rule", "go_test_library")
 
-def _nogo_dump_tool_impl(ctx):
-    # Extract the Go context.
+def _nogo_objdump_tool_impl(ctx):
     go_ctx = go_context(ctx)
 
     # Construct the magic dump command.
@@ -40,9 +39,9 @@ def _nogo_dump_tool_impl(ctx):
         executable = dumper,
     )]
 
-nogo_dump_tool = go_rule(
+nogo_objdump_tool = go_rule(
     rule,
-    implementation = _nogo_dump_tool_impl,
+    implementation = _nogo_objdump_tool_impl,
 )
 
 # NogoStdlibInfo is the set of standard library facts.
@@ -55,7 +54,6 @@ NogoStdlibInfo = provider(
 )
 
 def _nogo_stdlib_impl(ctx):
-    # Extract the Go context.
     go_ctx = go_context(ctx)
 
     # Build the standard library facts.
@@ -72,12 +70,12 @@ def _nogo_stdlib_impl(ctx):
     ctx.actions.run(
         inputs = [config_file] + go_ctx.stdlib_srcs,
         outputs = [facts, findings],
-        tools = depset(go_ctx.runfiles.to_list() + ctx.files._dump_tool),
+        tools = depset(go_ctx.runfiles.to_list() + ctx.files._objdump_tool),
         executable = ctx.files._nogo[0],
         mnemonic = "GoStandardLibraryAnalysis",
         progress_message = "Analyzing Go Standard Library",
         arguments = go_ctx.nogo_args + [
-            "-dump_tool=%s" % ctx.files._dump_tool[0].path,
+            "-objdump_tool=%s" % ctx.files._objdump_tool[0].path,
             "-stdlib=%s" % config_file.path,
             "-findings=%s" % findings.path,
             "-facts=%s" % facts.path,
@@ -97,8 +95,8 @@ nogo_stdlib = go_rule(
         "_nogo": attr.label(
             default = "//tools/nogo/check:check",
         ),
-        "_dump_tool": attr.label(
-            default = "//tools/nogo:dump_tool",
+        "_objdump_tool": attr.label(
+            default = "//tools/nogo:objdump_tool",
         ),
     },
 )
@@ -121,6 +119,8 @@ NogoInfo = provider(
 )
 
 def _nogo_aspect_impl(target, ctx):
+    go_ctx = go_context(ctx)
+
     # If this is a nogo rule itself (and not the shadow of a go_library or
     # go_binary rule created by such a rule), then we simply return nothing.
     # All work is done in the shadow properties for go rules. For a proto
@@ -134,9 +134,6 @@ def _nogo_aspect_impl(target, ctx):
         deps = ctx.rule.attr.deps
     else:
         return [NogoInfo()]
-
-    # Extract the Go context.
-    go_ctx = go_context(ctx)
 
     # If we're using the "library" attribute, then we need to aggregate the
     # original library sources and dependencies into this target to perform
@@ -227,13 +224,13 @@ def _nogo_aspect_impl(target, ctx):
     ctx.actions.run(
         inputs = inputs,
         outputs = [facts, findings, escapes],
-        tools = depset(go_ctx.runfiles.to_list() + ctx.files._dump_tool),
+        tools = depset(go_ctx.runfiles.to_list() + ctx.files._objdump_tool),
         executable = ctx.files._nogo[0],
         mnemonic = "GoStaticAnalysis",
         progress_message = "Analyzing %s" % target.label,
         arguments = go_ctx.nogo_args + [
             "-binary=%s" % target_objfile.path,
-            "-dump_tool=%s" % ctx.files._dump_tool[0].path,
+            "-objdump_tool=%s" % ctx.files._objdump_tool[0].path,
             "-package=%s" % config_file.path,
             "-findings=%s" % findings.path,
             "-facts=%s" % facts.path,
@@ -271,7 +268,7 @@ nogo_aspect = go_rule(
     attrs = {
         "_nogo": attr.label(default = "//tools/nogo/check:check"),
         "_nogo_stdlib": attr.label(default = "//tools/nogo:stdlib"),
-        "_dump_tool": attr.label(default = "//tools/nogo:dump_tool"),
+        "_objdump_tool": attr.label(default = "//tools/nogo:objdump_tool"),
     },
 )
 
@@ -314,15 +311,17 @@ def _nogo_test_impl(ctx):
 _nogo_test = rule(
     implementation = _nogo_test_impl,
     attrs = {
+        # deps should have only a single element.
         "deps": attr.label_list(aspects = [nogo_aspect]),
     },
     test = True,
 )
 
-def nogo_test(name, **kwargs):
+def nogo_test(name, library, **kwargs):
     tags = kwargs.pop("tags", []) + ["nogo"]
     _nogo_test(
         name = name,
+        deps = [library],
         tags = tags,
         **kwargs
     )
