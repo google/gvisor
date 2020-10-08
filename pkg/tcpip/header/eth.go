@@ -117,25 +117,31 @@ func (b Ethernet) Encode(e *EthernetFields) {
 	copy(b[dstMAC:][:EthernetAddressSize], e.DstAddr)
 }
 
-// IsValidUnicastEthernetAddress returns true if addr is a valid unicast
+// IsMulticastEthernetAddress returns true if the address is a multicast
 // ethernet address.
-func IsValidUnicastEthernetAddress(addr tcpip.LinkAddress) bool {
-	// Must be of the right length.
+func IsMulticastEthernetAddress(addr tcpip.LinkAddress) bool {
 	if len(addr) != EthernetAddressSize {
 		return false
 	}
 
-	// Must not be unspecified.
+	return addr[unicastMulticastFlagByteIdx]&unicastMulticastFlagMask != 0
+}
+
+// IsValidUnicastEthernetAddress returns true if the address is a unicast
+// ethernet address.
+func IsValidUnicastEthernetAddress(addr tcpip.LinkAddress) bool {
+	if len(addr) != EthernetAddressSize {
+		return false
+	}
+
 	if addr == unspecifiedEthernetAddress {
 		return false
 	}
 
-	// Must not be a multicast.
 	if addr[unicastMulticastFlagByteIdx]&unicastMulticastFlagMask != 0 {
 		return false
 	}
 
-	// addr is a valid unicast ethernet address.
 	return true
 }
 
