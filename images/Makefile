@@ -23,7 +23,7 @@ ARCH := $(shell uname -m)
 # tests are using locally-defined images (that are consistent and idempotent).
 REMOTE_IMAGE_PREFIX ?= gcr.io/gvisor-presubmit
 LOCAL_IMAGE_PREFIX ?= gvisor.dev/images
-ALL_IMAGES := $(subst /,_,$(subst ./,,$(shell find . -name Dockerfile -exec dirname {} \;)))
+ALL_IMAGES := $(subst /,_,$(subst ./,,$(shell find . -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq)))
 ifneq ($(ARCH),$(shell uname -m))
 DOCKER_PLATFORM_ARGS := --platform=$(ARCH)
 else
@@ -51,6 +51,7 @@ load-%-images:
 # ensuring that images will always be sourced using the local files if there
 # are changes.
 path = $(subst _,/,$(1))
+dockerfile = $$(if [ -f "$(call path,$(1))/Dockerfile.$(ARCH)" ]; then echo Dockerfile.$(ARCH); else echo Dockerfile; fi)
 tag = $(shell find $(call path,$(1)) -type f -print | sort | xargs -n 1 sha256sum | sha256sum - | cut -c 1-16)
 remote_image = $(REMOTE_IMAGE_PREFIX)/$(subst _,/,$(1))_$(ARCH):$(call tag,$(1))
 local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
@@ -59,11 +60,17 @@ local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
 # we need to explicitly repull the base layer in order to ensure that the
 # architecture is correct. Note that we use the term "rebuild" here to avoid
 # conflicting with the bazel "build" terminology, which is used elsewhere.
-rebuild-%: FROM=$(shell grep FROM $(call path,$*)/Dockerfile | cut -d' ' -f2)
+rebuild-%: FROM=$(shell grep FROM "$(call path,$*)/$(call dockerfile,$*)" | cut -d' ' -f2)
 rebuild-%: register-cross
+	@if ! [ -f "$(call path,$*)/$(call dockerfile,$*)" ]; then \
+		(echo "ERROR: Dockerfile for $* not found (is it available for $(ARCH)?)." >&2 && exit 1); \
+	fi
 	$(foreach IMAGE,$(FROM),docker pull $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) \
 	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
-		docker build $(DOCKER_PLATFORM_ARGS) -t $(call remote_image,$*) $$T && \
+		docker build $(DOCKER_PLATFORM_ARGS) \
+			-f "$$T/$(call dockerfile,$*)" \
+			-t "$(call remote_image,$*)" \
+			$$T && \
 		rm -rf $$T
 
 # pull will check the "remote" image and pull if necessary. If the remote image
