@@ -102,8 +102,8 @@ var (
 	// This may be set instead of Binary.
 	Reader io.Reader
 
-	// Tool is the tool used to dump a binary.
-	tool = flag.String("dump_tool", "", "tool used to dump a binary")
+	// objdumpTool is the tool used to dump a binary.
+	objdumpTool = flag.String("objdump_tool", "", "tool used to dump a binary")
 )
 
 // EscapeReason is an escape reason.
@@ -387,7 +387,7 @@ func loadObjdump() (map[string][]string, error) {
 	}
 
 	// Construct our command.
-	cmd := exec.Command(*tool, args...)
+	cmd := exec.Command(*objdumpTool, args...)
 	cmd.Stdin = stdin
 	cmd.Stderr = os.Stderr
 	out, err := cmd.StdoutPipe()

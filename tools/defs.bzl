@@ -72,7 +72,7 @@ def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **
         )
         nogo_test(
             name = name + "_nogo",
-            deps = [":" + name + "_nogo_library"],
+            library = ":" + name + "_nogo_library",
         )
 
 def calculate_sets(srcs):
@@ -203,7 +203,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
     if nogo:
         nogo_test(
             name = name + "_nogo",
-            deps = [":" + name],
+            library = ":" + name,
         )
 
     if marshal:
@@ -239,7 +239,7 @@ def go_test(name, nogo = True, **kwargs):
     if nogo:
         nogo_test(
             name = name + "_nogo",
-            deps = [":" + name],
+            library = ":" + name,
         )
 
 def proto_library(name, srcs, deps = None, has_services = 0, **kwargs):
