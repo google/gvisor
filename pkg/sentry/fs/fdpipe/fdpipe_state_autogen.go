@@ -7,11 +7,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *pipeOperations) StateTypeName() string {
+func (p *pipeOperations) StateTypeName() string {
 	return "pkg/sentry/fs/fdpipe.pipeOperations"
 }
 
-func (x *pipeOperations) StateFields() []string {
+func (p *pipeOperations) StateFields() []string {
 	return []string{
 		"flags",
 		"opener",
@@ -19,19 +19,19 @@ func (x *pipeOperations) StateFields() []string {
 	}
 }
 
-func (x *pipeOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	var flags fs.FileFlags = x.saveFlags()
-	m.SaveValue(0, flags)
-	m.Save(1, &x.opener)
-	m.Save(2, &x.readAheadBuffer)
+func (p *pipeOperations) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	var flagsValue fs.FileFlags = p.saveFlags()
+	stateSinkObject.SaveValue(0, flagsValue)
+	stateSinkObject.Save(1, &p.opener)
+	stateSinkObject.Save(2, &p.readAheadBuffer)
 }
 
-func (x *pipeOperations) StateLoad(m state.Source) {
-	m.LoadWait(1, &x.opener)
-	m.Load(2, &x.readAheadBuffer)
-	m.LoadValue(0, new(fs.FileFlags), func(y interface{}) { x.loadFlags(y.(fs.FileFlags)) })
-	m.AfterLoad(x.afterLoad)
+func (p *pipeOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadWait(1, &p.opener)
+	stateSourceObject.Load(2, &p.readAheadBuffer)
+	stateSourceObject.LoadValue(0, new(fs.FileFlags), func(y interface{}) { p.loadFlags(y.(fs.FileFlags)) })
+	stateSourceObject.AfterLoad(p.afterLoad)
 }
 
 func init() {

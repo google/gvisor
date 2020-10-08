@@ -6,34 +6,34 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Socket) StateTypeName() string {
+func (s *Socket) StateTypeName() string {
 	return "pkg/sentry/socket/netlink.Socket"
 }
 
-func (x *Socket) StateFields() []string {
+func (s *Socket) StateFields() []string {
 	return []string{
 		"socketOpsCommon",
 	}
 }
 
-func (x *Socket) beforeSave() {}
+func (s *Socket) beforeSave() {}
 
-func (x *Socket) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.socketOpsCommon)
+func (s *Socket) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.socketOpsCommon)
 }
 
-func (x *Socket) afterLoad() {}
+func (s *Socket) afterLoad() {}
 
-func (x *Socket) StateLoad(m state.Source) {
-	m.Load(0, &x.socketOpsCommon)
+func (s *Socket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.socketOpsCommon)
 }
 
-func (x *socketOpsCommon) StateTypeName() string {
+func (s *socketOpsCommon) StateTypeName() string {
 	return "pkg/sentry/socket/netlink.socketOpsCommon"
 }
 
-func (x *socketOpsCommon) StateFields() []string {
+func (s *socketOpsCommon) StateFields() []string {
 	return []string{
 		"SendReceiveTimeout",
 		"ports",
@@ -49,56 +49,56 @@ func (x *socketOpsCommon) StateFields() []string {
 	}
 }
 
-func (x *socketOpsCommon) beforeSave() {}
+func (s *socketOpsCommon) beforeSave() {}
 
-func (x *socketOpsCommon) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.SendReceiveTimeout)
-	m.Save(1, &x.ports)
-	m.Save(2, &x.protocol)
-	m.Save(3, &x.skType)
-	m.Save(4, &x.ep)
-	m.Save(5, &x.connection)
-	m.Save(6, &x.bound)
-	m.Save(7, &x.portID)
-	m.Save(8, &x.sendBufferSize)
-	m.Save(9, &x.passcred)
-	m.Save(10, &x.filter)
+func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.SendReceiveTimeout)
+	stateSinkObject.Save(1, &s.ports)
+	stateSinkObject.Save(2, &s.protocol)
+	stateSinkObject.Save(3, &s.skType)
+	stateSinkObject.Save(4, &s.ep)
+	stateSinkObject.Save(5, &s.connection)
+	stateSinkObject.Save(6, &s.bound)
+	stateSinkObject.Save(7, &s.portID)
+	stateSinkObject.Save(8, &s.sendBufferSize)
+	stateSinkObject.Save(9, &s.passcred)
+	stateSinkObject.Save(10, &s.filter)
 }
 
-func (x *socketOpsCommon) afterLoad() {}
+func (s *socketOpsCommon) afterLoad() {}
 
-func (x *socketOpsCommon) StateLoad(m state.Source) {
-	m.Load(0, &x.SendReceiveTimeout)
-	m.Load(1, &x.ports)
-	m.Load(2, &x.protocol)
-	m.Load(3, &x.skType)
-	m.Load(4, &x.ep)
-	m.Load(5, &x.connection)
-	m.Load(6, &x.bound)
-	m.Load(7, &x.portID)
-	m.Load(8, &x.sendBufferSize)
-	m.Load(9, &x.passcred)
-	m.Load(10, &x.filter)
+func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.SendReceiveTimeout)
+	stateSourceObject.Load(1, &s.ports)
+	stateSourceObject.Load(2, &s.protocol)
+	stateSourceObject.Load(3, &s.skType)
+	stateSourceObject.Load(4, &s.ep)
+	stateSourceObject.Load(5, &s.connection)
+	stateSourceObject.Load(6, &s.bound)
+	stateSourceObject.Load(7, &s.portID)
+	stateSourceObject.Load(8, &s.sendBufferSize)
+	stateSourceObject.Load(9, &s.passcred)
+	stateSourceObject.Load(10, &s.filter)
 }
 
-func (x *kernelSCM) StateTypeName() string {
+func (k *kernelSCM) StateTypeName() string {
 	return "pkg/sentry/socket/netlink.kernelSCM"
 }
 
-func (x *kernelSCM) StateFields() []string {
+func (k *kernelSCM) StateFields() []string {
 	return []string{}
 }
 
-func (x *kernelSCM) beforeSave() {}
+func (k *kernelSCM) beforeSave() {}
 
-func (x *kernelSCM) StateSave(m state.Sink) {
-	x.beforeSave()
+func (k *kernelSCM) StateSave(stateSinkObject state.Sink) {
+	k.beforeSave()
 }
 
-func (x *kernelSCM) afterLoad() {}
+func (k *kernelSCM) afterLoad() {}
 
-func (x *kernelSCM) StateLoad(m state.Source) {
+func (k *kernelSCM) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {

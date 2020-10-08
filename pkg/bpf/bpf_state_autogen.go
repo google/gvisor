@@ -6,27 +6,27 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Program) StateTypeName() string {
+func (p *Program) StateTypeName() string {
 	return "pkg/bpf.Program"
 }
 
-func (x *Program) StateFields() []string {
+func (p *Program) StateFields() []string {
 	return []string{
 		"instructions",
 	}
 }
 
-func (x *Program) beforeSave() {}
+func (p *Program) beforeSave() {}
 
-func (x *Program) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.instructions)
+func (p *Program) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.instructions)
 }
 
-func (x *Program) afterLoad() {}
+func (p *Program) afterLoad() {}
 
-func (x *Program) StateLoad(m state.Source) {
-	m.Load(0, &x.instructions)
+func (p *Program) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.instructions)
 }
 
 func init() {

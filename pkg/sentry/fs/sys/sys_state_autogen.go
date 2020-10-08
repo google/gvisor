@@ -6,49 +6,49 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *cpunum) StateTypeName() string {
+func (c *cpunum) StateTypeName() string {
 	return "pkg/sentry/fs/sys.cpunum"
 }
 
-func (x *cpunum) StateFields() []string {
+func (c *cpunum) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 		"InodeStaticFileGetter",
 	}
 }
 
-func (x *cpunum) beforeSave() {}
+func (c *cpunum) beforeSave() {}
 
-func (x *cpunum) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
-	m.Save(1, &x.InodeStaticFileGetter)
+func (c *cpunum) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.InodeSimpleAttributes)
+	stateSinkObject.Save(1, &c.InodeStaticFileGetter)
 }
 
-func (x *cpunum) afterLoad() {}
+func (c *cpunum) afterLoad() {}
 
-func (x *cpunum) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
-	m.Load(1, &x.InodeStaticFileGetter)
+func (c *cpunum) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.InodeSimpleAttributes)
+	stateSourceObject.Load(1, &c.InodeStaticFileGetter)
 }
 
-func (x *filesystem) StateTypeName() string {
+func (f *filesystem) StateTypeName() string {
 	return "pkg/sentry/fs/sys.filesystem"
 }
 
-func (x *filesystem) StateFields() []string {
+func (f *filesystem) StateFields() []string {
 	return []string{}
 }
 
-func (x *filesystem) beforeSave() {}
+func (f *filesystem) beforeSave() {}
 
-func (x *filesystem) StateSave(m state.Sink) {
-	x.beforeSave()
+func (f *filesystem) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
 }
 
-func (x *filesystem) afterLoad() {}
+func (f *filesystem) afterLoad() {}
 
-func (x *filesystem) StateLoad(m state.Source) {
+func (f *filesystem) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {

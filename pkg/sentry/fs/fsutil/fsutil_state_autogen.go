@@ -6,124 +6,124 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *DirtyInfo) StateTypeName() string {
+func (d *DirtyInfo) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.DirtyInfo"
 }
 
-func (x *DirtyInfo) StateFields() []string {
+func (d *DirtyInfo) StateFields() []string {
 	return []string{
 		"Keep",
 	}
 }
 
-func (x *DirtyInfo) beforeSave() {}
+func (d *DirtyInfo) beforeSave() {}
 
-func (x *DirtyInfo) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Keep)
+func (d *DirtyInfo) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.Keep)
 }
 
-func (x *DirtyInfo) afterLoad() {}
+func (d *DirtyInfo) afterLoad() {}
 
-func (x *DirtyInfo) StateLoad(m state.Source) {
-	m.Load(0, &x.Keep)
+func (d *DirtyInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.Keep)
 }
 
-func (x *StaticDirFileOperations) StateTypeName() string {
+func (s *StaticDirFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.StaticDirFileOperations"
 }
 
-func (x *StaticDirFileOperations) StateFields() []string {
+func (s *StaticDirFileOperations) StateFields() []string {
 	return []string{
 		"dentryMap",
 		"dirCursor",
 	}
 }
 
-func (x *StaticDirFileOperations) beforeSave() {}
+func (s *StaticDirFileOperations) beforeSave() {}
 
-func (x *StaticDirFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.dentryMap)
-	m.Save(1, &x.dirCursor)
+func (s *StaticDirFileOperations) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.dentryMap)
+	stateSinkObject.Save(1, &s.dirCursor)
 }
 
-func (x *StaticDirFileOperations) afterLoad() {}
+func (s *StaticDirFileOperations) afterLoad() {}
 
-func (x *StaticDirFileOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.dentryMap)
-	m.Load(1, &x.dirCursor)
+func (s *StaticDirFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.dentryMap)
+	stateSourceObject.Load(1, &s.dirCursor)
 }
 
-func (x *NoReadWriteFile) StateTypeName() string {
+func (n *NoReadWriteFile) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.NoReadWriteFile"
 }
 
-func (x *NoReadWriteFile) StateFields() []string {
+func (n *NoReadWriteFile) StateFields() []string {
 	return []string{}
 }
 
-func (x *NoReadWriteFile) beforeSave() {}
+func (n *NoReadWriteFile) beforeSave() {}
 
-func (x *NoReadWriteFile) StateSave(m state.Sink) {
-	x.beforeSave()
+func (n *NoReadWriteFile) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
 }
 
-func (x *NoReadWriteFile) afterLoad() {}
+func (n *NoReadWriteFile) afterLoad() {}
 
-func (x *NoReadWriteFile) StateLoad(m state.Source) {
+func (n *NoReadWriteFile) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *FileStaticContentReader) StateTypeName() string {
+func (f *FileStaticContentReader) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.FileStaticContentReader"
 }
 
-func (x *FileStaticContentReader) StateFields() []string {
+func (f *FileStaticContentReader) StateFields() []string {
 	return []string{
 		"content",
 	}
 }
 
-func (x *FileStaticContentReader) beforeSave() {}
+func (f *FileStaticContentReader) beforeSave() {}
 
-func (x *FileStaticContentReader) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.content)
+func (f *FileStaticContentReader) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.content)
 }
 
-func (x *FileStaticContentReader) afterLoad() {}
+func (f *FileStaticContentReader) afterLoad() {}
 
-func (x *FileStaticContentReader) StateLoad(m state.Source) {
-	m.Load(0, &x.content)
+func (f *FileStaticContentReader) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.content)
 }
 
-func (x *HostFileMapper) StateTypeName() string {
+func (h *HostFileMapper) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.HostFileMapper"
 }
 
-func (x *HostFileMapper) StateFields() []string {
+func (h *HostFileMapper) StateFields() []string {
 	return []string{
 		"refs",
 	}
 }
 
-func (x *HostFileMapper) beforeSave() {}
+func (h *HostFileMapper) beforeSave() {}
 
-func (x *HostFileMapper) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.refs)
+func (h *HostFileMapper) StateSave(stateSinkObject state.Sink) {
+	h.beforeSave()
+	stateSinkObject.Save(0, &h.refs)
 }
 
-func (x *HostFileMapper) StateLoad(m state.Source) {
-	m.Load(0, &x.refs)
-	m.AfterLoad(x.afterLoad)
+func (h *HostFileMapper) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &h.refs)
+	stateSourceObject.AfterLoad(h.afterLoad)
 }
 
-func (x *HostMappable) StateTypeName() string {
+func (h *HostMappable) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.HostMappable"
 }
 
-func (x *HostMappable) StateFields() []string {
+func (h *HostMappable) StateFields() []string {
 	return []string{
 		"hostFileMapper",
 		"backingFile",
@@ -131,169 +131,169 @@ func (x *HostMappable) StateFields() []string {
 	}
 }
 
-func (x *HostMappable) beforeSave() {}
+func (h *HostMappable) beforeSave() {}
 
-func (x *HostMappable) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.hostFileMapper)
-	m.Save(1, &x.backingFile)
-	m.Save(2, &x.mappings)
+func (h *HostMappable) StateSave(stateSinkObject state.Sink) {
+	h.beforeSave()
+	stateSinkObject.Save(0, &h.hostFileMapper)
+	stateSinkObject.Save(1, &h.backingFile)
+	stateSinkObject.Save(2, &h.mappings)
 }
 
-func (x *HostMappable) afterLoad() {}
+func (h *HostMappable) afterLoad() {}
 
-func (x *HostMappable) StateLoad(m state.Source) {
-	m.Load(0, &x.hostFileMapper)
-	m.Load(1, &x.backingFile)
-	m.Load(2, &x.mappings)
+func (h *HostMappable) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &h.hostFileMapper)
+	stateSourceObject.Load(1, &h.backingFile)
+	stateSourceObject.Load(2, &h.mappings)
 }
 
-func (x *SimpleFileInode) StateTypeName() string {
+func (s *SimpleFileInode) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.SimpleFileInode"
 }
 
-func (x *SimpleFileInode) StateFields() []string {
+func (s *SimpleFileInode) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 	}
 }
 
-func (x *SimpleFileInode) beforeSave() {}
+func (s *SimpleFileInode) beforeSave() {}
 
-func (x *SimpleFileInode) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
+func (s *SimpleFileInode) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.InodeSimpleAttributes)
 }
 
-func (x *SimpleFileInode) afterLoad() {}
+func (s *SimpleFileInode) afterLoad() {}
 
-func (x *SimpleFileInode) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
+func (s *SimpleFileInode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.InodeSimpleAttributes)
 }
 
-func (x *NoReadWriteFileInode) StateTypeName() string {
+func (n *NoReadWriteFileInode) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.NoReadWriteFileInode"
 }
 
-func (x *NoReadWriteFileInode) StateFields() []string {
+func (n *NoReadWriteFileInode) StateFields() []string {
 	return []string{
 		"InodeSimpleAttributes",
 	}
 }
 
-func (x *NoReadWriteFileInode) beforeSave() {}
+func (n *NoReadWriteFileInode) beforeSave() {}
 
-func (x *NoReadWriteFileInode) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.InodeSimpleAttributes)
+func (n *NoReadWriteFileInode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.InodeSimpleAttributes)
 }
 
-func (x *NoReadWriteFileInode) afterLoad() {}
+func (n *NoReadWriteFileInode) afterLoad() {}
 
-func (x *NoReadWriteFileInode) StateLoad(m state.Source) {
-	m.Load(0, &x.InodeSimpleAttributes)
+func (n *NoReadWriteFileInode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.InodeSimpleAttributes)
 }
 
-func (x *InodeSimpleAttributes) StateTypeName() string {
+func (i *InodeSimpleAttributes) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.InodeSimpleAttributes"
 }
 
-func (x *InodeSimpleAttributes) StateFields() []string {
+func (i *InodeSimpleAttributes) StateFields() []string {
 	return []string{
 		"fsType",
 		"unstable",
 	}
 }
 
-func (x *InodeSimpleAttributes) beforeSave() {}
+func (i *InodeSimpleAttributes) beforeSave() {}
 
-func (x *InodeSimpleAttributes) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.fsType)
-	m.Save(1, &x.unstable)
+func (i *InodeSimpleAttributes) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.fsType)
+	stateSinkObject.Save(1, &i.unstable)
 }
 
-func (x *InodeSimpleAttributes) afterLoad() {}
+func (i *InodeSimpleAttributes) afterLoad() {}
 
-func (x *InodeSimpleAttributes) StateLoad(m state.Source) {
-	m.Load(0, &x.fsType)
-	m.Load(1, &x.unstable)
+func (i *InodeSimpleAttributes) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.fsType)
+	stateSourceObject.Load(1, &i.unstable)
 }
 
-func (x *InodeSimpleExtendedAttributes) StateTypeName() string {
+func (i *InodeSimpleExtendedAttributes) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.InodeSimpleExtendedAttributes"
 }
 
-func (x *InodeSimpleExtendedAttributes) StateFields() []string {
+func (i *InodeSimpleExtendedAttributes) StateFields() []string {
 	return []string{
 		"xattrs",
 	}
 }
 
-func (x *InodeSimpleExtendedAttributes) beforeSave() {}
+func (i *InodeSimpleExtendedAttributes) beforeSave() {}
 
-func (x *InodeSimpleExtendedAttributes) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.xattrs)
+func (i *InodeSimpleExtendedAttributes) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.xattrs)
 }
 
-func (x *InodeSimpleExtendedAttributes) afterLoad() {}
+func (i *InodeSimpleExtendedAttributes) afterLoad() {}
 
-func (x *InodeSimpleExtendedAttributes) StateLoad(m state.Source) {
-	m.Load(0, &x.xattrs)
+func (i *InodeSimpleExtendedAttributes) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.xattrs)
 }
 
-func (x *staticFile) StateTypeName() string {
+func (s *staticFile) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.staticFile"
 }
 
-func (x *staticFile) StateFields() []string {
+func (s *staticFile) StateFields() []string {
 	return []string{
 		"FileStaticContentReader",
 	}
 }
 
-func (x *staticFile) beforeSave() {}
+func (s *staticFile) beforeSave() {}
 
-func (x *staticFile) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.FileStaticContentReader)
+func (s *staticFile) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.FileStaticContentReader)
 }
 
-func (x *staticFile) afterLoad() {}
+func (s *staticFile) afterLoad() {}
 
-func (x *staticFile) StateLoad(m state.Source) {
-	m.Load(0, &x.FileStaticContentReader)
+func (s *staticFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.FileStaticContentReader)
 }
 
-func (x *InodeStaticFileGetter) StateTypeName() string {
+func (i *InodeStaticFileGetter) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.InodeStaticFileGetter"
 }
 
-func (x *InodeStaticFileGetter) StateFields() []string {
+func (i *InodeStaticFileGetter) StateFields() []string {
 	return []string{
 		"Contents",
 	}
 }
 
-func (x *InodeStaticFileGetter) beforeSave() {}
+func (i *InodeStaticFileGetter) beforeSave() {}
 
-func (x *InodeStaticFileGetter) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Contents)
+func (i *InodeStaticFileGetter) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Contents)
 }
 
-func (x *InodeStaticFileGetter) afterLoad() {}
+func (i *InodeStaticFileGetter) afterLoad() {}
 
-func (x *InodeStaticFileGetter) StateLoad(m state.Source) {
-	m.Load(0, &x.Contents)
+func (i *InodeStaticFileGetter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Contents)
 }
 
-func (x *CachingInodeOperations) StateTypeName() string {
+func (c *CachingInodeOperations) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.CachingInodeOperations"
 }
 
-func (x *CachingInodeOperations) StateFields() []string {
+func (c *CachingInodeOperations) StateFields() []string {
 	return []string{
 		"backingFile",
 		"mfp",
@@ -308,61 +308,61 @@ func (x *CachingInodeOperations) StateFields() []string {
 	}
 }
 
-func (x *CachingInodeOperations) beforeSave() {}
+func (c *CachingInodeOperations) beforeSave() {}
 
-func (x *CachingInodeOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.backingFile)
-	m.Save(1, &x.mfp)
-	m.Save(2, &x.opts)
-	m.Save(3, &x.attr)
-	m.Save(4, &x.dirtyAttr)
-	m.Save(5, &x.mappings)
-	m.Save(6, &x.cache)
-	m.Save(7, &x.dirty)
-	m.Save(8, &x.hostFileMapper)
-	m.Save(9, &x.refs)
+func (c *CachingInodeOperations) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.backingFile)
+	stateSinkObject.Save(1, &c.mfp)
+	stateSinkObject.Save(2, &c.opts)
+	stateSinkObject.Save(3, &c.attr)
+	stateSinkObject.Save(4, &c.dirtyAttr)
+	stateSinkObject.Save(5, &c.mappings)
+	stateSinkObject.Save(6, &c.cache)
+	stateSinkObject.Save(7, &c.dirty)
+	stateSinkObject.Save(8, &c.hostFileMapper)
+	stateSinkObject.Save(9, &c.refs)
 }
 
-func (x *CachingInodeOperations) afterLoad() {}
+func (c *CachingInodeOperations) afterLoad() {}
 
-func (x *CachingInodeOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.backingFile)
-	m.Load(1, &x.mfp)
-	m.Load(2, &x.opts)
-	m.Load(3, &x.attr)
-	m.Load(4, &x.dirtyAttr)
-	m.Load(5, &x.mappings)
-	m.Load(6, &x.cache)
-	m.Load(7, &x.dirty)
-	m.Load(8, &x.hostFileMapper)
-	m.Load(9, &x.refs)
+func (c *CachingInodeOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.backingFile)
+	stateSourceObject.Load(1, &c.mfp)
+	stateSourceObject.Load(2, &c.opts)
+	stateSourceObject.Load(3, &c.attr)
+	stateSourceObject.Load(4, &c.dirtyAttr)
+	stateSourceObject.Load(5, &c.mappings)
+	stateSourceObject.Load(6, &c.cache)
+	stateSourceObject.Load(7, &c.dirty)
+	stateSourceObject.Load(8, &c.hostFileMapper)
+	stateSourceObject.Load(9, &c.refs)
 }
 
-func (x *CachingInodeOperationsOptions) StateTypeName() string {
+func (c *CachingInodeOperationsOptions) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.CachingInodeOperationsOptions"
 }
 
-func (x *CachingInodeOperationsOptions) StateFields() []string {
+func (c *CachingInodeOperationsOptions) StateFields() []string {
 	return []string{
 		"ForcePageCache",
 		"LimitHostFDTranslation",
 	}
 }
 
-func (x *CachingInodeOperationsOptions) beforeSave() {}
+func (c *CachingInodeOperationsOptions) beforeSave() {}
 
-func (x *CachingInodeOperationsOptions) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.ForcePageCache)
-	m.Save(1, &x.LimitHostFDTranslation)
+func (c *CachingInodeOperationsOptions) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.ForcePageCache)
+	stateSinkObject.Save(1, &c.LimitHostFDTranslation)
 }
 
-func (x *CachingInodeOperationsOptions) afterLoad() {}
+func (c *CachingInodeOperationsOptions) afterLoad() {}
 
-func (x *CachingInodeOperationsOptions) StateLoad(m state.Source) {
-	m.Load(0, &x.ForcePageCache)
-	m.Load(1, &x.LimitHostFDTranslation)
+func (c *CachingInodeOperationsOptions) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.ForcePageCache)
+	stateSourceObject.Load(1, &c.LimitHostFDTranslation)
 }
 
 func init() {

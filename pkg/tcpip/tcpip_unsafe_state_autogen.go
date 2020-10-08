@@ -9,23 +9,23 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *StdClock) StateTypeName() string {
+func (s *StdClock) StateTypeName() string {
 	return "pkg/tcpip.StdClock"
 }
 
-func (x *StdClock) StateFields() []string {
+func (s *StdClock) StateFields() []string {
 	return []string{}
 }
 
-func (x *StdClock) beforeSave() {}
+func (s *StdClock) beforeSave() {}
 
-func (x *StdClock) StateSave(m state.Sink) {
-	x.beforeSave()
+func (s *StdClock) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
 }
 
-func (x *StdClock) afterLoad() {}
+func (s *StdClock) afterLoad() {}
 
-func (x *StdClock) StateLoad(m state.Source) {
+func (s *StdClock) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {

@@ -9,27 +9,27 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Registers) StateTypeName() string {
+func (r *Registers) StateTypeName() string {
 	return "pkg/sentry/arch.Registers"
 }
 
-func (x *Registers) StateFields() []string {
+func (r *Registers) StateFields() []string {
 	return []string{
 		"PtraceRegs",
 	}
 }
 
-func (x *Registers) beforeSave() {}
+func (r *Registers) beforeSave() {}
 
-func (x *Registers) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.PtraceRegs)
+func (r *Registers) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.PtraceRegs)
 }
 
-func (x *Registers) afterLoad() {}
+func (r *Registers) afterLoad() {}
 
-func (x *Registers) StateLoad(m state.Source) {
-	m.Load(0, &x.PtraceRegs)
+func (r *Registers) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.PtraceRegs)
 }
 
 func init() {

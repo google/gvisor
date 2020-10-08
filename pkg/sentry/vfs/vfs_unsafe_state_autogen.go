@@ -9,30 +9,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *mountTable) StateTypeName() string {
+func (m *mountTable) StateTypeName() string {
 	return "pkg/sentry/vfs.mountTable"
 }
 
-func (x *mountTable) StateFields() []string {
+func (m *mountTable) StateFields() []string {
 	return []string{
 		"seed",
 		"size",
 	}
 }
 
-func (x *mountTable) beforeSave() {}
+func (m *mountTable) beforeSave() {}
 
-func (x *mountTable) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.seed)
-	m.Save(1, &x.size)
+func (m *mountTable) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.seed)
+	stateSinkObject.Save(1, &m.size)
 }
 
-func (x *mountTable) afterLoad() {}
+func (m *mountTable) afterLoad() {}
 
-func (x *mountTable) StateLoad(m state.Source) {
-	m.Load(0, &x.seed)
-	m.Load(1, &x.size)
+func (m *mountTable) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.seed)
+	stateSourceObject.Load(1, &m.size)
 }
 
 func init() {

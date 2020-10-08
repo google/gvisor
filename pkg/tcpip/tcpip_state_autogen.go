@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *FullAddress) StateTypeName() string {
+func (f *FullAddress) StateTypeName() string {
 	return "pkg/tcpip.FullAddress"
 }
 
-func (x *FullAddress) StateFields() []string {
+func (f *FullAddress) StateFields() []string {
 	return []string{
 		"NIC",
 		"Addr",
@@ -18,28 +18,28 @@ func (x *FullAddress) StateFields() []string {
 	}
 }
 
-func (x *FullAddress) beforeSave() {}
+func (f *FullAddress) beforeSave() {}
 
-func (x *FullAddress) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.NIC)
-	m.Save(1, &x.Addr)
-	m.Save(2, &x.Port)
+func (f *FullAddress) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.NIC)
+	stateSinkObject.Save(1, &f.Addr)
+	stateSinkObject.Save(2, &f.Port)
 }
 
-func (x *FullAddress) afterLoad() {}
+func (f *FullAddress) afterLoad() {}
 
-func (x *FullAddress) StateLoad(m state.Source) {
-	m.Load(0, &x.NIC)
-	m.Load(1, &x.Addr)
-	m.Load(2, &x.Port)
+func (f *FullAddress) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.NIC)
+	stateSourceObject.Load(1, &f.Addr)
+	stateSourceObject.Load(2, &f.Port)
 }
 
-func (x *ControlMessages) StateTypeName() string {
+func (c *ControlMessages) StateTypeName() string {
 	return "pkg/tcpip.ControlMessages"
 }
 
-func (x *ControlMessages) StateFields() []string {
+func (c *ControlMessages) StateFields() []string {
 	return []string{
 		"HasTimestamp",
 		"Timestamp",
@@ -54,94 +54,94 @@ func (x *ControlMessages) StateFields() []string {
 	}
 }
 
-func (x *ControlMessages) beforeSave() {}
+func (c *ControlMessages) beforeSave() {}
 
-func (x *ControlMessages) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.HasTimestamp)
-	m.Save(1, &x.Timestamp)
-	m.Save(2, &x.HasInq)
-	m.Save(3, &x.Inq)
-	m.Save(4, &x.HasTOS)
-	m.Save(5, &x.TOS)
-	m.Save(6, &x.HasTClass)
-	m.Save(7, &x.TClass)
-	m.Save(8, &x.HasIPPacketInfo)
-	m.Save(9, &x.PacketInfo)
+func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.HasTimestamp)
+	stateSinkObject.Save(1, &c.Timestamp)
+	stateSinkObject.Save(2, &c.HasInq)
+	stateSinkObject.Save(3, &c.Inq)
+	stateSinkObject.Save(4, &c.HasTOS)
+	stateSinkObject.Save(5, &c.TOS)
+	stateSinkObject.Save(6, &c.HasTClass)
+	stateSinkObject.Save(7, &c.TClass)
+	stateSinkObject.Save(8, &c.HasIPPacketInfo)
+	stateSinkObject.Save(9, &c.PacketInfo)
 }
 
-func (x *ControlMessages) afterLoad() {}
+func (c *ControlMessages) afterLoad() {}
 
-func (x *ControlMessages) StateLoad(m state.Source) {
-	m.Load(0, &x.HasTimestamp)
-	m.Load(1, &x.Timestamp)
-	m.Load(2, &x.HasInq)
-	m.Load(3, &x.Inq)
-	m.Load(4, &x.HasTOS)
-	m.Load(5, &x.TOS)
-	m.Load(6, &x.HasTClass)
-	m.Load(7, &x.TClass)
-	m.Load(8, &x.HasIPPacketInfo)
-	m.Load(9, &x.PacketInfo)
+func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.HasTimestamp)
+	stateSourceObject.Load(1, &c.Timestamp)
+	stateSourceObject.Load(2, &c.HasInq)
+	stateSourceObject.Load(3, &c.Inq)
+	stateSourceObject.Load(4, &c.HasTOS)
+	stateSourceObject.Load(5, &c.TOS)
+	stateSourceObject.Load(6, &c.HasTClass)
+	stateSourceObject.Load(7, &c.TClass)
+	stateSourceObject.Load(8, &c.HasIPPacketInfo)
+	stateSourceObject.Load(9, &c.PacketInfo)
 }
 
-func (x *LinkPacketInfo) StateTypeName() string {
+func (l *LinkPacketInfo) StateTypeName() string {
 	return "pkg/tcpip.LinkPacketInfo"
 }
 
-func (x *LinkPacketInfo) StateFields() []string {
+func (l *LinkPacketInfo) StateFields() []string {
 	return []string{
 		"Protocol",
 		"PktType",
 	}
 }
 
-func (x *LinkPacketInfo) beforeSave() {}
+func (l *LinkPacketInfo) beforeSave() {}
 
-func (x *LinkPacketInfo) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Protocol)
-	m.Save(1, &x.PktType)
+func (l *LinkPacketInfo) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.Protocol)
+	stateSinkObject.Save(1, &l.PktType)
 }
 
-func (x *LinkPacketInfo) afterLoad() {}
+func (l *LinkPacketInfo) afterLoad() {}
 
-func (x *LinkPacketInfo) StateLoad(m state.Source) {
-	m.Load(0, &x.Protocol)
-	m.Load(1, &x.PktType)
+func (l *LinkPacketInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.Protocol)
+	stateSourceObject.Load(1, &l.PktType)
 }
 
-func (x *LingerOption) StateTypeName() string {
+func (l *LingerOption) StateTypeName() string {
 	return "pkg/tcpip.LingerOption"
 }
 
-func (x *LingerOption) StateFields() []string {
+func (l *LingerOption) StateFields() []string {
 	return []string{
 		"Enabled",
 		"Timeout",
 	}
 }
 
-func (x *LingerOption) beforeSave() {}
+func (l *LingerOption) beforeSave() {}
 
-func (x *LingerOption) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Enabled)
-	m.Save(1, &x.Timeout)
+func (l *LingerOption) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.Enabled)
+	stateSinkObject.Save(1, &l.Timeout)
 }
 
-func (x *LingerOption) afterLoad() {}
+func (l *LingerOption) afterLoad() {}
 
-func (x *LingerOption) StateLoad(m state.Source) {
-	m.Load(0, &x.Enabled)
-	m.Load(1, &x.Timeout)
+func (l *LingerOption) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.Enabled)
+	stateSourceObject.Load(1, &l.Timeout)
 }
 
-func (x *IPPacketInfo) StateTypeName() string {
+func (i *IPPacketInfo) StateTypeName() string {
 	return "pkg/tcpip.IPPacketInfo"
 }
 
-func (x *IPPacketInfo) StateFields() []string {
+func (i *IPPacketInfo) StateFields() []string {
 	return []string{
 		"NIC",
 		"LocalAddr",
@@ -149,21 +149,21 @@ func (x *IPPacketInfo) StateFields() []string {
 	}
 }
 
-func (x *IPPacketInfo) beforeSave() {}
+func (i *IPPacketInfo) beforeSave() {}
 
-func (x *IPPacketInfo) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.NIC)
-	m.Save(1, &x.LocalAddr)
-	m.Save(2, &x.DestinationAddr)
+func (i *IPPacketInfo) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.NIC)
+	stateSinkObject.Save(1, &i.LocalAddr)
+	stateSinkObject.Save(2, &i.DestinationAddr)
 }
 
-func (x *IPPacketInfo) afterLoad() {}
+func (i *IPPacketInfo) afterLoad() {}
 
-func (x *IPPacketInfo) StateLoad(m state.Source) {
-	m.Load(0, &x.NIC)
-	m.Load(1, &x.LocalAddr)
-	m.Load(2, &x.DestinationAddr)
+func (i *IPPacketInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.NIC)
+	stateSourceObject.Load(1, &i.LocalAddr)
+	stateSourceObject.Load(2, &i.DestinationAddr)
 }
 
 func init() {

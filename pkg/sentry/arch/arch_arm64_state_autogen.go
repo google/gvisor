@@ -10,30 +10,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *context64) StateTypeName() string {
+func (c *context64) StateTypeName() string {
 	return "pkg/sentry/arch.context64"
 }
 
-func (x *context64) StateFields() []string {
+func (c *context64) StateFields() []string {
 	return []string{
 		"State",
 		"sigFPState",
 	}
 }
 
-func (x *context64) beforeSave() {}
+func (c *context64) beforeSave() {}
 
-func (x *context64) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.State)
-	m.Save(1, &x.sigFPState)
+func (c *context64) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.State)
+	stateSinkObject.Save(1, &c.sigFPState)
 }
 
-func (x *context64) afterLoad() {}
+func (c *context64) afterLoad() {}
 
-func (x *context64) StateLoad(m state.Source) {
-	m.Load(0, &x.State)
-	m.Load(1, &x.sigFPState)
+func (c *context64) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.State)
+	stateSourceObject.Load(1, &c.sigFPState)
 }
 
 func init() {

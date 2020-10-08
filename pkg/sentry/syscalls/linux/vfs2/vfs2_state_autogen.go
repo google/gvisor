@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *pollRestartBlock) StateTypeName() string {
+func (p *pollRestartBlock) StateTypeName() string {
 	return "pkg/sentry/syscalls/linux/vfs2.pollRestartBlock"
 }
 
-func (x *pollRestartBlock) StateFields() []string {
+func (p *pollRestartBlock) StateFields() []string {
 	return []string{
 		"pfdAddr",
 		"nfds",
@@ -18,21 +18,21 @@ func (x *pollRestartBlock) StateFields() []string {
 	}
 }
 
-func (x *pollRestartBlock) beforeSave() {}
+func (p *pollRestartBlock) beforeSave() {}
 
-func (x *pollRestartBlock) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.pfdAddr)
-	m.Save(1, &x.nfds)
-	m.Save(2, &x.timeout)
+func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.pfdAddr)
+	stateSinkObject.Save(1, &p.nfds)
+	stateSinkObject.Save(2, &p.timeout)
 }
 
-func (x *pollRestartBlock) afterLoad() {}
+func (p *pollRestartBlock) afterLoad() {}
 
-func (x *pollRestartBlock) StateLoad(m state.Source) {
-	m.Load(0, &x.pfdAddr)
-	m.Load(1, &x.nfds)
-	m.Load(2, &x.timeout)
+func (p *pollRestartBlock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.pfdAddr)
+	stateSourceObject.Load(1, &p.nfds)
+	stateSourceObject.Load(2, &p.timeout)
 }
 
 func init() {

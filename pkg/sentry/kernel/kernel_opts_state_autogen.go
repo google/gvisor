@@ -6,23 +6,23 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *SpecialOpts) StateTypeName() string {
+func (s *SpecialOpts) StateTypeName() string {
 	return "pkg/sentry/kernel.SpecialOpts"
 }
 
-func (x *SpecialOpts) StateFields() []string {
+func (s *SpecialOpts) StateFields() []string {
 	return []string{}
 }
 
-func (x *SpecialOpts) beforeSave() {}
+func (s *SpecialOpts) beforeSave() {}
 
-func (x *SpecialOpts) StateSave(m state.Sink) {
-	x.beforeSave()
+func (s *SpecialOpts) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
 }
 
-func (x *SpecialOpts) afterLoad() {}
+func (s *SpecialOpts) afterLoad() {}
 
-func (x *SpecialOpts) StateLoad(m state.Source) {
+func (s *SpecialOpts) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {

@@ -6,82 +6,82 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Registry) StateTypeName() string {
+func (r *Registry) StateTypeName() string {
 	return "pkg/sentry/device.Registry"
 }
 
-func (x *Registry) StateFields() []string {
+func (r *Registry) StateFields() []string {
 	return []string{
 		"lastAnonDeviceMinor",
 		"devices",
 	}
 }
 
-func (x *Registry) beforeSave() {}
+func (r *Registry) beforeSave() {}
 
-func (x *Registry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.lastAnonDeviceMinor)
-	m.Save(1, &x.devices)
+func (r *Registry) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.lastAnonDeviceMinor)
+	stateSinkObject.Save(1, &r.devices)
 }
 
-func (x *Registry) afterLoad() {}
+func (r *Registry) afterLoad() {}
 
-func (x *Registry) StateLoad(m state.Source) {
-	m.Load(0, &x.lastAnonDeviceMinor)
-	m.Load(1, &x.devices)
+func (r *Registry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.lastAnonDeviceMinor)
+	stateSourceObject.Load(1, &r.devices)
 }
 
-func (x *ID) StateTypeName() string {
+func (i *ID) StateTypeName() string {
 	return "pkg/sentry/device.ID"
 }
 
-func (x *ID) StateFields() []string {
+func (i *ID) StateFields() []string {
 	return []string{
 		"Major",
 		"Minor",
 	}
 }
 
-func (x *ID) beforeSave() {}
+func (i *ID) beforeSave() {}
 
-func (x *ID) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Major)
-	m.Save(1, &x.Minor)
+func (i *ID) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Major)
+	stateSinkObject.Save(1, &i.Minor)
 }
 
-func (x *ID) afterLoad() {}
+func (i *ID) afterLoad() {}
 
-func (x *ID) StateLoad(m state.Source) {
-	m.Load(0, &x.Major)
-	m.Load(1, &x.Minor)
+func (i *ID) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Major)
+	stateSourceObject.Load(1, &i.Minor)
 }
 
-func (x *Device) StateTypeName() string {
+func (d *Device) StateTypeName() string {
 	return "pkg/sentry/device.Device"
 }
 
-func (x *Device) StateFields() []string {
+func (d *Device) StateFields() []string {
 	return []string{
 		"ID",
 		"last",
 	}
 }
 
-func (x *Device) beforeSave() {}
+func (d *Device) beforeSave() {}
 
-func (x *Device) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.ID)
-	m.Save(1, &x.last)
+func (d *Device) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.ID)
+	stateSinkObject.Save(1, &d.last)
 }
 
-func (x *Device) afterLoad() {}
+func (d *Device) afterLoad() {}
 
-func (x *Device) StateLoad(m state.Source) {
-	m.Load(0, &x.ID)
-	m.Load(1, &x.last)
+func (d *Device) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.ID)
+	stateSourceObject.Load(1, &d.last)
 }
 
 func init() {

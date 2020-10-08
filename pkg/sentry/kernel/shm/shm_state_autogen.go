@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Registry) StateTypeName() string {
+func (r *Registry) StateTypeName() string {
 	return "pkg/sentry/kernel/shm.Registry"
 }
 
-func (x *Registry) StateFields() []string {
+func (r *Registry) StateFields() []string {
 	return []string{
 		"userNS",
 		"shms",
@@ -20,32 +20,32 @@ func (x *Registry) StateFields() []string {
 	}
 }
 
-func (x *Registry) beforeSave() {}
+func (r *Registry) beforeSave() {}
 
-func (x *Registry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.userNS)
-	m.Save(1, &x.shms)
-	m.Save(2, &x.keysToShms)
-	m.Save(3, &x.totalPages)
-	m.Save(4, &x.lastIDUsed)
+func (r *Registry) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.userNS)
+	stateSinkObject.Save(1, &r.shms)
+	stateSinkObject.Save(2, &r.keysToShms)
+	stateSinkObject.Save(3, &r.totalPages)
+	stateSinkObject.Save(4, &r.lastIDUsed)
 }
 
-func (x *Registry) afterLoad() {}
+func (r *Registry) afterLoad() {}
 
-func (x *Registry) StateLoad(m state.Source) {
-	m.Load(0, &x.userNS)
-	m.Load(1, &x.shms)
-	m.Load(2, &x.keysToShms)
-	m.Load(3, &x.totalPages)
-	m.Load(4, &x.lastIDUsed)
+func (r *Registry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.userNS)
+	stateSourceObject.Load(1, &r.shms)
+	stateSourceObject.Load(2, &r.keysToShms)
+	stateSourceObject.Load(3, &r.totalPages)
+	stateSourceObject.Load(4, &r.lastIDUsed)
 }
 
-func (x *Shm) StateTypeName() string {
+func (s *Shm) StateTypeName() string {
 	return "pkg/sentry/kernel/shm.Shm"
 }
 
-func (x *Shm) StateFields() []string {
+func (s *Shm) StateFields() []string {
 	return []string{
 		"ShmRefs",
 		"mfp",
@@ -67,72 +67,72 @@ func (x *Shm) StateFields() []string {
 	}
 }
 
-func (x *Shm) beforeSave() {}
+func (s *Shm) beforeSave() {}
 
-func (x *Shm) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.ShmRefs)
-	m.Save(1, &x.mfp)
-	m.Save(2, &x.registry)
-	m.Save(3, &x.ID)
-	m.Save(4, &x.creator)
-	m.Save(5, &x.size)
-	m.Save(6, &x.effectiveSize)
-	m.Save(7, &x.fr)
-	m.Save(8, &x.key)
-	m.Save(9, &x.perms)
-	m.Save(10, &x.owner)
-	m.Save(11, &x.attachTime)
-	m.Save(12, &x.detachTime)
-	m.Save(13, &x.changeTime)
-	m.Save(14, &x.creatorPID)
-	m.Save(15, &x.lastAttachDetachPID)
-	m.Save(16, &x.pendingDestruction)
+func (s *Shm) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.ShmRefs)
+	stateSinkObject.Save(1, &s.mfp)
+	stateSinkObject.Save(2, &s.registry)
+	stateSinkObject.Save(3, &s.ID)
+	stateSinkObject.Save(4, &s.creator)
+	stateSinkObject.Save(5, &s.size)
+	stateSinkObject.Save(6, &s.effectiveSize)
+	stateSinkObject.Save(7, &s.fr)
+	stateSinkObject.Save(8, &s.key)
+	stateSinkObject.Save(9, &s.perms)
+	stateSinkObject.Save(10, &s.owner)
+	stateSinkObject.Save(11, &s.attachTime)
+	stateSinkObject.Save(12, &s.detachTime)
+	stateSinkObject.Save(13, &s.changeTime)
+	stateSinkObject.Save(14, &s.creatorPID)
+	stateSinkObject.Save(15, &s.lastAttachDetachPID)
+	stateSinkObject.Save(16, &s.pendingDestruction)
 }
 
-func (x *Shm) afterLoad() {}
+func (s *Shm) afterLoad() {}
 
-func (x *Shm) StateLoad(m state.Source) {
-	m.Load(0, &x.ShmRefs)
-	m.Load(1, &x.mfp)
-	m.Load(2, &x.registry)
-	m.Load(3, &x.ID)
-	m.Load(4, &x.creator)
-	m.Load(5, &x.size)
-	m.Load(6, &x.effectiveSize)
-	m.Load(7, &x.fr)
-	m.Load(8, &x.key)
-	m.Load(9, &x.perms)
-	m.Load(10, &x.owner)
-	m.Load(11, &x.attachTime)
-	m.Load(12, &x.detachTime)
-	m.Load(13, &x.changeTime)
-	m.Load(14, &x.creatorPID)
-	m.Load(15, &x.lastAttachDetachPID)
-	m.Load(16, &x.pendingDestruction)
+func (s *Shm) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.ShmRefs)
+	stateSourceObject.Load(1, &s.mfp)
+	stateSourceObject.Load(2, &s.registry)
+	stateSourceObject.Load(3, &s.ID)
+	stateSourceObject.Load(4, &s.creator)
+	stateSourceObject.Load(5, &s.size)
+	stateSourceObject.Load(6, &s.effectiveSize)
+	stateSourceObject.Load(7, &s.fr)
+	stateSourceObject.Load(8, &s.key)
+	stateSourceObject.Load(9, &s.perms)
+	stateSourceObject.Load(10, &s.owner)
+	stateSourceObject.Load(11, &s.attachTime)
+	stateSourceObject.Load(12, &s.detachTime)
+	stateSourceObject.Load(13, &s.changeTime)
+	stateSourceObject.Load(14, &s.creatorPID)
+	stateSourceObject.Load(15, &s.lastAttachDetachPID)
+	stateSourceObject.Load(16, &s.pendingDestruction)
 }
 
-func (x *ShmRefs) StateTypeName() string {
+func (s *ShmRefs) StateTypeName() string {
 	return "pkg/sentry/kernel/shm.ShmRefs"
 }
 
-func (x *ShmRefs) StateFields() []string {
+func (s *ShmRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (x *ShmRefs) beforeSave() {}
+func (s *ShmRefs) beforeSave() {}
 
-func (x *ShmRefs) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.refCount)
+func (s *ShmRefs) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.refCount)
 }
 
-func (x *ShmRefs) afterLoad() {}
+func (s *ShmRefs) afterLoad() {}
 
-func (x *ShmRefs) StateLoad(m state.Source) {
-	m.Load(0, &x.refCount)
+func (s *ShmRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.refCount)
 }
 
 func init() {

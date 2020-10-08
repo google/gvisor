@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *socketOpsCommon) StateTypeName() string {
+func (s *socketOpsCommon) StateTypeName() string {
 	return "pkg/sentry/socket/hostinet.socketOpsCommon"
 }
 
-func (x *socketOpsCommon) StateFields() []string {
+func (s *socketOpsCommon) StateFields() []string {
 	return []string{
 		"SendReceiveTimeout",
 		"family",
@@ -21,27 +21,27 @@ func (x *socketOpsCommon) StateFields() []string {
 	}
 }
 
-func (x *socketOpsCommon) beforeSave() {}
+func (s *socketOpsCommon) beforeSave() {}
 
-func (x *socketOpsCommon) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.SendReceiveTimeout)
-	m.Save(1, &x.family)
-	m.Save(2, &x.stype)
-	m.Save(3, &x.protocol)
-	m.Save(4, &x.queue)
-	m.Save(5, &x.fd)
+func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.SendReceiveTimeout)
+	stateSinkObject.Save(1, &s.family)
+	stateSinkObject.Save(2, &s.stype)
+	stateSinkObject.Save(3, &s.protocol)
+	stateSinkObject.Save(4, &s.queue)
+	stateSinkObject.Save(5, &s.fd)
 }
 
-func (x *socketOpsCommon) afterLoad() {}
+func (s *socketOpsCommon) afterLoad() {}
 
-func (x *socketOpsCommon) StateLoad(m state.Source) {
-	m.Load(0, &x.SendReceiveTimeout)
-	m.Load(1, &x.family)
-	m.Load(2, &x.stype)
-	m.Load(3, &x.protocol)
-	m.Load(4, &x.queue)
-	m.Load(5, &x.fd)
+func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.SendReceiveTimeout)
+	stateSourceObject.Load(1, &s.family)
+	stateSourceObject.Load(2, &s.stype)
+	stateSourceObject.Load(3, &s.protocol)
+	stateSourceObject.Load(4, &s.queue)
+	stateSourceObject.Load(5, &s.fd)
 }
 
 func init() {

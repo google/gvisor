@@ -6,23 +6,23 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *ttyDevice) StateTypeName() string {
+func (t *ttyDevice) StateTypeName() string {
 	return "pkg/sentry/devices/ttydev.ttyDevice"
 }
 
-func (x *ttyDevice) StateFields() []string {
+func (t *ttyDevice) StateFields() []string {
 	return []string{}
 }
 
-func (x *ttyDevice) beforeSave() {}
+func (t *ttyDevice) beforeSave() {}
 
-func (x *ttyDevice) StateSave(m state.Sink) {
-	x.beforeSave()
+func (t *ttyDevice) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
 }
 
-func (x *ttyDevice) afterLoad() {}
+func (t *ttyDevice) afterLoad() {}
 
-func (x *ttyDevice) StateLoad(m state.Source) {
+func (t *ttyDevice) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {

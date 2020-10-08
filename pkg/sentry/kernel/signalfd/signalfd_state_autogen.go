@@ -6,30 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *SignalOperations) StateTypeName() string {
+func (s *SignalOperations) StateTypeName() string {
 	return "pkg/sentry/kernel/signalfd.SignalOperations"
 }
 
-func (x *SignalOperations) StateFields() []string {
+func (s *SignalOperations) StateFields() []string {
 	return []string{
 		"target",
 		"mask",
 	}
 }
 
-func (x *SignalOperations) beforeSave() {}
+func (s *SignalOperations) beforeSave() {}
 
-func (x *SignalOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.target)
-	m.Save(1, &x.mask)
+func (s *SignalOperations) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.target)
+	stateSinkObject.Save(1, &s.mask)
 }
 
-func (x *SignalOperations) afterLoad() {}
+func (s *SignalOperations) afterLoad() {}
 
-func (x *SignalOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.target)
-	m.Load(1, &x.mask)
+func (s *SignalOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.target)
+	stateSourceObject.Load(1, &s.mask)
 }
 
 func init() {

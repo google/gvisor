@@ -6,56 +6,56 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *List) StateTypeName() string {
+func (l *List) StateTypeName() string {
 	return "pkg/ilist.List"
 }
 
-func (x *List) StateFields() []string {
+func (l *List) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (x *List) beforeSave() {}
+func (l *List) beforeSave() {}
 
-func (x *List) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.head)
-	m.Save(1, &x.tail)
+func (l *List) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (x *List) afterLoad() {}
+func (l *List) afterLoad() {}
 
-func (x *List) StateLoad(m state.Source) {
-	m.Load(0, &x.head)
-	m.Load(1, &x.tail)
+func (l *List) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (x *Entry) StateTypeName() string {
+func (e *Entry) StateTypeName() string {
 	return "pkg/ilist.Entry"
 }
 
-func (x *Entry) StateFields() []string {
+func (e *Entry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (x *Entry) beforeSave() {}
+func (e *Entry) beforeSave() {}
 
-func (x *Entry) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.next)
-	m.Save(1, &x.prev)
+func (e *Entry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (x *Entry) afterLoad() {}
+func (e *Entry) afterLoad() {}
 
-func (x *Entry) StateLoad(m state.Source) {
-	m.Load(0, &x.next)
-	m.Load(1, &x.prev)
+func (e *Entry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

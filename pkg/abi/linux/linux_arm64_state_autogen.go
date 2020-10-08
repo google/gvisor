@@ -10,11 +10,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *PtraceRegs) StateTypeName() string {
+func (p *PtraceRegs) StateTypeName() string {
 	return "pkg/abi/linux.PtraceRegs"
 }
 
-func (x *PtraceRegs) StateFields() []string {
+func (p *PtraceRegs) StateFields() []string {
 	return []string{
 		"Regs",
 		"Sp",
@@ -23,23 +23,23 @@ func (x *PtraceRegs) StateFields() []string {
 	}
 }
 
-func (x *PtraceRegs) beforeSave() {}
+func (p *PtraceRegs) beforeSave() {}
 
-func (x *PtraceRegs) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Regs)
-	m.Save(1, &x.Sp)
-	m.Save(2, &x.Pc)
-	m.Save(3, &x.Pstate)
+func (p *PtraceRegs) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.Regs)
+	stateSinkObject.Save(1, &p.Sp)
+	stateSinkObject.Save(2, &p.Pc)
+	stateSinkObject.Save(3, &p.Pstate)
 }
 
-func (x *PtraceRegs) afterLoad() {}
+func (p *PtraceRegs) afterLoad() {}
 
-func (x *PtraceRegs) StateLoad(m state.Source) {
-	m.Load(0, &x.Regs)
-	m.Load(1, &x.Sp)
-	m.Load(2, &x.Pc)
-	m.Load(3, &x.Pstate)
+func (p *PtraceRegs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.Regs)
+	stateSourceObject.Load(1, &p.Sp)
+	stateSourceObject.Load(2, &p.Pc)
+	stateSourceObject.Load(3, &p.Pstate)
 }
 
 func init() {

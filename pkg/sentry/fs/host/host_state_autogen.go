@@ -6,105 +6,105 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *descriptor) StateTypeName() string {
+func (d *descriptor) StateTypeName() string {
 	return "pkg/sentry/fs/host.descriptor"
 }
 
-func (x *descriptor) StateFields() []string {
+func (d *descriptor) StateFields() []string {
 	return []string{
 		"origFD",
 		"wouldBlock",
 	}
 }
 
-func (x *descriptor) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.origFD)
-	m.Save(1, &x.wouldBlock)
+func (d *descriptor) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.origFD)
+	stateSinkObject.Save(1, &d.wouldBlock)
 }
 
-func (x *descriptor) StateLoad(m state.Source) {
-	m.Load(0, &x.origFD)
-	m.Load(1, &x.wouldBlock)
-	m.AfterLoad(x.afterLoad)
+func (d *descriptor) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.origFD)
+	stateSourceObject.Load(1, &d.wouldBlock)
+	stateSourceObject.AfterLoad(d.afterLoad)
 }
 
-func (x *fileOperations) StateTypeName() string {
+func (f *fileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/host.fileOperations"
 }
 
-func (x *fileOperations) StateFields() []string {
+func (f *fileOperations) StateFields() []string {
 	return []string{
 		"iops",
 		"dirCursor",
 	}
 }
 
-func (x *fileOperations) beforeSave() {}
+func (f *fileOperations) beforeSave() {}
 
-func (x *fileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.iops)
-	m.Save(1, &x.dirCursor)
+func (f *fileOperations) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.iops)
+	stateSinkObject.Save(1, &f.dirCursor)
 }
 
-func (x *fileOperations) afterLoad() {}
+func (f *fileOperations) afterLoad() {}
 
-func (x *fileOperations) StateLoad(m state.Source) {
-	m.LoadWait(0, &x.iops)
-	m.Load(1, &x.dirCursor)
+func (f *fileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadWait(0, &f.iops)
+	stateSourceObject.Load(1, &f.dirCursor)
 }
 
-func (x *filesystem) StateTypeName() string {
+func (f *filesystem) StateTypeName() string {
 	return "pkg/sentry/fs/host.filesystem"
 }
 
-func (x *filesystem) StateFields() []string {
+func (f *filesystem) StateFields() []string {
 	return []string{}
 }
 
-func (x *filesystem) beforeSave() {}
+func (f *filesystem) beforeSave() {}
 
-func (x *filesystem) StateSave(m state.Sink) {
-	x.beforeSave()
+func (f *filesystem) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
 }
 
-func (x *filesystem) afterLoad() {}
+func (f *filesystem) afterLoad() {}
 
-func (x *filesystem) StateLoad(m state.Source) {
+func (f *filesystem) StateLoad(stateSourceObject state.Source) {
 }
 
-func (x *inodeOperations) StateTypeName() string {
+func (i *inodeOperations) StateTypeName() string {
 	return "pkg/sentry/fs/host.inodeOperations"
 }
 
-func (x *inodeOperations) StateFields() []string {
+func (i *inodeOperations) StateFields() []string {
 	return []string{
 		"fileState",
 		"cachingInodeOps",
 	}
 }
 
-func (x *inodeOperations) beforeSave() {}
+func (i *inodeOperations) beforeSave() {}
 
-func (x *inodeOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.fileState)
-	m.Save(1, &x.cachingInodeOps)
+func (i *inodeOperations) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.fileState)
+	stateSinkObject.Save(1, &i.cachingInodeOps)
 }
 
-func (x *inodeOperations) afterLoad() {}
+func (i *inodeOperations) afterLoad() {}
 
-func (x *inodeOperations) StateLoad(m state.Source) {
-	m.LoadWait(0, &x.fileState)
-	m.Load(1, &x.cachingInodeOps)
+func (i *inodeOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadWait(0, &i.fileState)
+	stateSourceObject.Load(1, &i.cachingInodeOps)
 }
 
-func (x *inodeFileState) StateTypeName() string {
+func (i *inodeFileState) StateTypeName() string {
 	return "pkg/sentry/fs/host.inodeFileState"
 }
 
-func (x *inodeFileState) StateFields() []string {
+func (i *inodeFileState) StateFields() []string {
 	return []string{
 		"descriptor",
 		"sattr",
@@ -112,30 +112,30 @@ func (x *inodeFileState) StateFields() []string {
 	}
 }
 
-func (x *inodeFileState) beforeSave() {}
+func (i *inodeFileState) beforeSave() {}
 
-func (x *inodeFileState) StateSave(m state.Sink) {
-	x.beforeSave()
-	if !state.IsZeroValue(&x.queue) {
-		state.Failf("queue is %#v, expected zero", &x.queue)
+func (i *inodeFileState) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	if !state.IsZeroValue(&i.queue) {
+		state.Failf("queue is %#v, expected zero", &i.queue)
 	}
-	m.Save(0, &x.descriptor)
-	m.Save(1, &x.sattr)
-	m.Save(2, &x.savedUAttr)
+	stateSinkObject.Save(0, &i.descriptor)
+	stateSinkObject.Save(1, &i.sattr)
+	stateSinkObject.Save(2, &i.savedUAttr)
 }
 
-func (x *inodeFileState) StateLoad(m state.Source) {
-	m.LoadWait(0, &x.descriptor)
-	m.LoadWait(1, &x.sattr)
-	m.Load(2, &x.savedUAttr)
-	m.AfterLoad(x.afterLoad)
+func (i *inodeFileState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadWait(0, &i.descriptor)
+	stateSourceObject.LoadWait(1, &i.sattr)
+	stateSourceObject.Load(2, &i.savedUAttr)
+	stateSourceObject.AfterLoad(i.afterLoad)
 }
 
-func (x *ConnectedEndpoint) StateTypeName() string {
+func (c *ConnectedEndpoint) StateTypeName() string {
 	return "pkg/sentry/fs/host.ConnectedEndpoint"
 }
 
-func (x *ConnectedEndpoint) StateFields() []string {
+func (c *ConnectedEndpoint) StateFields() []string {
 	return []string{
 		"ref",
 		"queue",
@@ -145,29 +145,29 @@ func (x *ConnectedEndpoint) StateFields() []string {
 	}
 }
 
-func (x *ConnectedEndpoint) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.ref)
-	m.Save(1, &x.queue)
-	m.Save(2, &x.path)
-	m.Save(3, &x.srfd)
-	m.Save(4, &x.stype)
+func (c *ConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.ref)
+	stateSinkObject.Save(1, &c.queue)
+	stateSinkObject.Save(2, &c.path)
+	stateSinkObject.Save(3, &c.srfd)
+	stateSinkObject.Save(4, &c.stype)
 }
 
-func (x *ConnectedEndpoint) StateLoad(m state.Source) {
-	m.Load(0, &x.ref)
-	m.Load(1, &x.queue)
-	m.Load(2, &x.path)
-	m.LoadWait(3, &x.srfd)
-	m.Load(4, &x.stype)
-	m.AfterLoad(x.afterLoad)
+func (c *ConnectedEndpoint) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.ref)
+	stateSourceObject.Load(1, &c.queue)
+	stateSourceObject.Load(2, &c.path)
+	stateSourceObject.LoadWait(3, &c.srfd)
+	stateSourceObject.Load(4, &c.stype)
+	stateSourceObject.AfterLoad(c.afterLoad)
 }
 
-func (x *TTYFileOperations) StateTypeName() string {
+func (t *TTYFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/host.TTYFileOperations"
 }
 
-func (x *TTYFileOperations) StateFields() []string {
+func (t *TTYFileOperations) StateFields() []string {
 	return []string{
 		"fileOperations",
 		"session",
@@ -176,23 +176,23 @@ func (x *TTYFileOperations) StateFields() []string {
 	}
 }
 
-func (x *TTYFileOperations) beforeSave() {}
+func (t *TTYFileOperations) beforeSave() {}
 
-func (x *TTYFileOperations) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.fileOperations)
-	m.Save(1, &x.session)
-	m.Save(2, &x.fgProcessGroup)
-	m.Save(3, &x.termios)
+func (t *TTYFileOperations) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.fileOperations)
+	stateSinkObject.Save(1, &t.session)
+	stateSinkObject.Save(2, &t.fgProcessGroup)
+	stateSinkObject.Save(3, &t.termios)
 }
 
-func (x *TTYFileOperations) afterLoad() {}
+func (t *TTYFileOperations) afterLoad() {}
 
-func (x *TTYFileOperations) StateLoad(m state.Source) {
-	m.Load(0, &x.fileOperations)
-	m.Load(1, &x.session)
-	m.Load(2, &x.fgProcessGroup)
-	m.Load(3, &x.termios)
+func (t *TTYFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.fileOperations)
+	stateSourceObject.Load(1, &t.session)
+	stateSourceObject.Load(2, &t.fgProcessGroup)
+	stateSourceObject.Load(3, &t.termios)
 }
 
 func init() {

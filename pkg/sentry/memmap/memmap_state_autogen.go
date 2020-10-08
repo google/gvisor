@@ -6,63 +6,63 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *FileRange) StateTypeName() string {
+func (f *FileRange) StateTypeName() string {
 	return "pkg/sentry/memmap.FileRange"
 }
 
-func (x *FileRange) StateFields() []string {
+func (f *FileRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (x *FileRange) beforeSave() {}
+func (f *FileRange) beforeSave() {}
 
-func (x *FileRange) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
+func (f *FileRange) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.Start)
+	stateSinkObject.Save(1, &f.End)
 }
 
-func (x *FileRange) afterLoad() {}
+func (f *FileRange) afterLoad() {}
 
-func (x *FileRange) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
+func (f *FileRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.Start)
+	stateSourceObject.Load(1, &f.End)
 }
 
-func (x *MappableRange) StateTypeName() string {
+func (m *MappableRange) StateTypeName() string {
 	return "pkg/sentry/memmap.MappableRange"
 }
 
-func (x *MappableRange) StateFields() []string {
+func (m *MappableRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (x *MappableRange) beforeSave() {}
+func (m *MappableRange) beforeSave() {}
 
-func (x *MappableRange) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
+func (m *MappableRange) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.Start)
+	stateSinkObject.Save(1, &m.End)
 }
 
-func (x *MappableRange) afterLoad() {}
+func (m *MappableRange) afterLoad() {}
 
-func (x *MappableRange) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
+func (m *MappableRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.Start)
+	stateSourceObject.Load(1, &m.End)
 }
 
-func (x *MappingOfRange) StateTypeName() string {
+func (m *MappingOfRange) StateTypeName() string {
 	return "pkg/sentry/memmap.MappingOfRange"
 }
 
-func (x *MappingOfRange) StateFields() []string {
+func (m *MappingOfRange) StateFields() []string {
 	return []string{
 		"MappingSpace",
 		"AddrRange",
@@ -70,21 +70,21 @@ func (x *MappingOfRange) StateFields() []string {
 	}
 }
 
-func (x *MappingOfRange) beforeSave() {}
+func (m *MappingOfRange) beforeSave() {}
 
-func (x *MappingOfRange) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.MappingSpace)
-	m.Save(1, &x.AddrRange)
-	m.Save(2, &x.Writable)
+func (m *MappingOfRange) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.MappingSpace)
+	stateSinkObject.Save(1, &m.AddrRange)
+	stateSinkObject.Save(2, &m.Writable)
 }
 
-func (x *MappingOfRange) afterLoad() {}
+func (m *MappingOfRange) afterLoad() {}
 
-func (x *MappingOfRange) StateLoad(m state.Source) {
-	m.Load(0, &x.MappingSpace)
-	m.Load(1, &x.AddrRange)
-	m.Load(2, &x.Writable)
+func (m *MappingOfRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.MappingSpace)
+	stateSourceObject.Load(1, &m.AddrRange)
+	stateSourceObject.Load(2, &m.Writable)
 }
 
 func init() {

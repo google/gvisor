@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *State) StateTypeName() string {
+func (s *State) StateTypeName() string {
 	return "pkg/sentry/arch.State"
 }
 
-func (x *State) StateFields() []string {
+func (s *State) StateFields() []string {
 	return []string{
 		"Regs",
 		"x86FPState",
@@ -20,20 +20,20 @@ func (x *State) StateFields() []string {
 	}
 }
 
-func (x *State) beforeSave() {}
+func (s *State) beforeSave() {}
 
-func (x *State) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Regs)
-	m.Save(1, &x.x86FPState)
-	m.Save(2, &x.FeatureSet)
+func (s *State) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Regs)
+	stateSinkObject.Save(1, &s.x86FPState)
+	stateSinkObject.Save(2, &s.FeatureSet)
 }
 
-func (x *State) StateLoad(m state.Source) {
-	m.Load(0, &x.Regs)
-	m.LoadWait(1, &x.x86FPState)
-	m.Load(2, &x.FeatureSet)
-	m.AfterLoad(x.afterLoad)
+func (s *State) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Regs)
+	stateSourceObject.LoadWait(1, &s.x86FPState)
+	stateSourceObject.Load(2, &s.FeatureSet)
+	stateSourceObject.AfterLoad(s.afterLoad)
 }
 
 func init() {

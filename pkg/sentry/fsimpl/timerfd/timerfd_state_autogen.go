@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *TimerFileDescription) StateTypeName() string {
+func (t *TimerFileDescription) StateTypeName() string {
 	return "pkg/sentry/fsimpl/timerfd.TimerFileDescription"
 }
 
-func (x *TimerFileDescription) StateFields() []string {
+func (t *TimerFileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -22,29 +22,29 @@ func (x *TimerFileDescription) StateFields() []string {
 	}
 }
 
-func (x *TimerFileDescription) beforeSave() {}
+func (t *TimerFileDescription) beforeSave() {}
 
-func (x *TimerFileDescription) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.vfsfd)
-	m.Save(1, &x.FileDescriptionDefaultImpl)
-	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Save(3, &x.NoLockFD)
-	m.Save(4, &x.events)
-	m.Save(5, &x.timer)
-	m.Save(6, &x.val)
+func (t *TimerFileDescription) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.vfsfd)
+	stateSinkObject.Save(1, &t.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &t.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &t.NoLockFD)
+	stateSinkObject.Save(4, &t.events)
+	stateSinkObject.Save(5, &t.timer)
+	stateSinkObject.Save(6, &t.val)
 }
 
-func (x *TimerFileDescription) afterLoad() {}
+func (t *TimerFileDescription) afterLoad() {}
 
-func (x *TimerFileDescription) StateLoad(m state.Source) {
-	m.Load(0, &x.vfsfd)
-	m.Load(1, &x.FileDescriptionDefaultImpl)
-	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
-	m.Load(3, &x.NoLockFD)
-	m.Load(4, &x.events)
-	m.Load(5, &x.timer)
-	m.Load(6, &x.val)
+func (t *TimerFileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.vfsfd)
+	stateSourceObject.Load(1, &t.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &t.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &t.NoLockFD)
+	stateSourceObject.Load(4, &t.events)
+	stateSourceObject.Load(5, &t.timer)
+	stateSourceObject.Load(6, &t.val)
 }
 
 func init() {

@@ -6,113 +6,113 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Lock) StateTypeName() string {
+func (l *Lock) StateTypeName() string {
 	return "pkg/sentry/fs/lock.Lock"
 }
 
-func (x *Lock) StateFields() []string {
+func (l *Lock) StateFields() []string {
 	return []string{
 		"Readers",
 		"Writer",
 	}
 }
 
-func (x *Lock) beforeSave() {}
+func (l *Lock) beforeSave() {}
 
-func (x *Lock) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Readers)
-	m.Save(1, &x.Writer)
+func (l *Lock) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.Readers)
+	stateSinkObject.Save(1, &l.Writer)
 }
 
-func (x *Lock) afterLoad() {}
+func (l *Lock) afterLoad() {}
 
-func (x *Lock) StateLoad(m state.Source) {
-	m.Load(0, &x.Readers)
-	m.Load(1, &x.Writer)
+func (l *Lock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.Readers)
+	stateSourceObject.Load(1, &l.Writer)
 }
 
-func (x *Locks) StateTypeName() string {
+func (l *Locks) StateTypeName() string {
 	return "pkg/sentry/fs/lock.Locks"
 }
 
-func (x *Locks) StateFields() []string {
+func (l *Locks) StateFields() []string {
 	return []string{
 		"locks",
 	}
 }
 
-func (x *Locks) beforeSave() {}
+func (l *Locks) beforeSave() {}
 
-func (x *Locks) StateSave(m state.Sink) {
-	x.beforeSave()
-	if !state.IsZeroValue(&x.blockedQueue) {
-		state.Failf("blockedQueue is %#v, expected zero", &x.blockedQueue)
+func (l *Locks) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	if !state.IsZeroValue(&l.blockedQueue) {
+		state.Failf("blockedQueue is %#v, expected zero", &l.blockedQueue)
 	}
-	m.Save(0, &x.locks)
+	stateSinkObject.Save(0, &l.locks)
 }
 
-func (x *Locks) afterLoad() {}
+func (l *Locks) afterLoad() {}
 
-func (x *Locks) StateLoad(m state.Source) {
-	m.Load(0, &x.locks)
+func (l *Locks) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.locks)
 }
 
-func (x *LockRange) StateTypeName() string {
+func (l *LockRange) StateTypeName() string {
 	return "pkg/sentry/fs/lock.LockRange"
 }
 
-func (x *LockRange) StateFields() []string {
+func (l *LockRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (x *LockRange) beforeSave() {}
+func (l *LockRange) beforeSave() {}
 
-func (x *LockRange) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
+func (l *LockRange) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.Start)
+	stateSinkObject.Save(1, &l.End)
 }
 
-func (x *LockRange) afterLoad() {}
+func (l *LockRange) afterLoad() {}
 
-func (x *LockRange) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
+func (l *LockRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.Start)
+	stateSourceObject.Load(1, &l.End)
 }
 
-func (x *LockSet) StateTypeName() string {
+func (l *LockSet) StateTypeName() string {
 	return "pkg/sentry/fs/lock.LockSet"
 }
 
-func (x *LockSet) StateFields() []string {
+func (l *LockSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (x *LockSet) beforeSave() {}
+func (l *LockSet) beforeSave() {}
 
-func (x *LockSet) StateSave(m state.Sink) {
-	x.beforeSave()
-	var root *LockSegmentDataSlices = x.saveRoot()
-	m.SaveValue(0, root)
+func (l *LockSet) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	var rootValue *LockSegmentDataSlices = l.saveRoot()
+	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (x *LockSet) afterLoad() {}
+func (l *LockSet) afterLoad() {}
 
-func (x *LockSet) StateLoad(m state.Source) {
-	m.LoadValue(0, new(*LockSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*LockSegmentDataSlices)) })
+func (l *LockSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*LockSegmentDataSlices), func(y interface{}) { l.loadRoot(y.(*LockSegmentDataSlices)) })
 }
 
-func (x *Locknode) StateTypeName() string {
+func (l *Locknode) StateTypeName() string {
 	return "pkg/sentry/fs/lock.Locknode"
 }
 
-func (x *Locknode) StateFields() []string {
+func (l *Locknode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -125,38 +125,38 @@ func (x *Locknode) StateFields() []string {
 	}
 }
 
-func (x *Locknode) beforeSave() {}
+func (l *Locknode) beforeSave() {}
 
-func (x *Locknode) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.nrSegments)
-	m.Save(1, &x.parent)
-	m.Save(2, &x.parentIndex)
-	m.Save(3, &x.hasChildren)
-	m.Save(4, &x.maxGap)
-	m.Save(5, &x.keys)
-	m.Save(6, &x.values)
-	m.Save(7, &x.children)
+func (l *Locknode) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.nrSegments)
+	stateSinkObject.Save(1, &l.parent)
+	stateSinkObject.Save(2, &l.parentIndex)
+	stateSinkObject.Save(3, &l.hasChildren)
+	stateSinkObject.Save(4, &l.maxGap)
+	stateSinkObject.Save(5, &l.keys)
+	stateSinkObject.Save(6, &l.values)
+	stateSinkObject.Save(7, &l.children)
 }
 
-func (x *Locknode) afterLoad() {}
+func (l *Locknode) afterLoad() {}
 
-func (x *Locknode) StateLoad(m state.Source) {
-	m.Load(0, &x.nrSegments)
-	m.Load(1, &x.parent)
-	m.Load(2, &x.parentIndex)
-	m.Load(3, &x.hasChildren)
-	m.Load(4, &x.maxGap)
-	m.Load(5, &x.keys)
-	m.Load(6, &x.values)
-	m.Load(7, &x.children)
+func (l *Locknode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.nrSegments)
+	stateSourceObject.Load(1, &l.parent)
+	stateSourceObject.Load(2, &l.parentIndex)
+	stateSourceObject.Load(3, &l.hasChildren)
+	stateSourceObject.Load(4, &l.maxGap)
+	stateSourceObject.Load(5, &l.keys)
+	stateSourceObject.Load(6, &l.values)
+	stateSourceObject.Load(7, &l.children)
 }
 
-func (x *LockSegmentDataSlices) StateTypeName() string {
+func (l *LockSegmentDataSlices) StateTypeName() string {
 	return "pkg/sentry/fs/lock.LockSegmentDataSlices"
 }
 
-func (x *LockSegmentDataSlices) StateFields() []string {
+func (l *LockSegmentDataSlices) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
@@ -164,21 +164,21 @@ func (x *LockSegmentDataSlices) StateFields() []string {
 	}
 }
 
-func (x *LockSegmentDataSlices) beforeSave() {}
+func (l *LockSegmentDataSlices) beforeSave() {}
 
-func (x *LockSegmentDataSlices) StateSave(m state.Sink) {
-	x.beforeSave()
-	m.Save(0, &x.Start)
-	m.Save(1, &x.End)
-	m.Save(2, &x.Values)
+func (l *LockSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.Start)
+	stateSinkObject.Save(1, &l.End)
+	stateSinkObject.Save(2, &l.Values)
 }
 
-func (x *LockSegmentDataSlices) afterLoad() {}
+func (l *LockSegmentDataSlices) afterLoad() {}
 
-func (x *LockSegmentDataSlices) StateLoad(m state.Source) {
-	m.Load(0, &x.Start)
-	m.Load(1, &x.End)
-	m.Load(2, &x.Values)
+func (l *LockSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.Start)
+	stateSourceObject.Load(1, &l.End)
+	stateSourceObject.Load(2, &l.Values)
 }
 
 func init() {
