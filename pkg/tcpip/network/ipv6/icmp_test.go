@@ -16,9 +16,11 @@ package ipv6
 
 import (
 	"context"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -28,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -40,6 +43,9 @@ const (
 
 	defaultChannelSize = 1
 	defaultMTU         = 65536
+
+	// Extra time to use when waiting for an async event to occur.
+	defaultAsyncPositiveEventTimeout = 30 * time.Second
 )
 
 var (
@@ -110,7 +116,9 @@ func (*stubNUDHandler) HandleUpperLevelConfirmation(addr tcpip.Address) {
 
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
-type testInterface struct{}
+type testInterface struct {
+	stack.NetworkLinkEndpoint
+}
 
 func (*testInterface) ID() tcpip.NICID {
 	return 0
@@ -126,10 +134,6 @@ func (*testInterface) Name() string {
 
 func (*testInterface) Enabled() bool {
 	return true
-}
-
-func (*testInterface) LinkEndpoint() stack.LinkEndpoint {
-	return nil
 }
 
 func TestICMPCounts(t *testing.T) {
@@ -1279,5 +1283,212 @@ func TestLinkAddressRequest(t *testing.T) {
 				checker.NDPNSTargetAddress(lladdr0),
 				checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(linkAddr0)}),
 			))
+	}
+}
+
+func TestPacketQueing(t *testing.T) {
+	const nicID = 1
+
+	var (
+		host1NICLinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
+		host2NICLinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
+
+		host1IPv6Addr = tcpip.ProtocolAddress{
+			Protocol: ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(net.ParseIP("a::1").To16()),
+				PrefixLen: 64,
+			},
+		}
+		host2IPv6Addr = tcpip.ProtocolAddress{
+			Protocol: ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(net.ParseIP("a::2").To16()),
+				PrefixLen: 64,
+			},
+		}
+	)
+
+	tests := []struct {
+		name      string
+		rxPkt     func(*channel.Endpoint)
+		checkResp func(*testing.T, *channel.Endpoint)
+	}{
+		{
+			name: "ICMP Error",
+			rxPkt: func(e *channel.Endpoint) {
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.UDPMinimumSize)
+				u := header.UDP(hdr.Prepend(header.UDPMinimumSize))
+				u.Encode(&header.UDPFields{
+					SrcPort: 5555,
+					DstPort: 80,
+					Length:  header.UDPMinimumSize,
+				})
+				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
+				sum = header.Checksum(header.UDP([]byte{}), sum)
+				u.SetChecksum(^u.CalculateChecksum(sum))
+				payloadLength := hdr.UsedLength()
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength: uint16(payloadLength),
+					NextHeader:    uint8(udp.ProtocolNumber),
+					HopLimit:      DefaultTTL,
+					SrcAddr:       host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+				})
+				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: hdr.View().ToVectorisedView(),
+				}))
+			},
+			checkResp: func(t *testing.T, e *channel.Endpoint) {
+				p, ok := e.ReadContext(context.Background())
+				if !ok {
+					t.Fatalf("timed out waiting for packet")
+				}
+				if p.Proto != ProtocolNumber {
+					t.Errorf("got p.Proto = %d, want = %d", p.Proto, ProtocolNumber)
+				}
+				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				}
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
+					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6DstUnreachable),
+						checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
+			},
+		},
+
+		{
+			name: "Ping",
+			rxPkt: func(e *channel.Endpoint) {
+				totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+				hdr := buffer.NewPrependable(totalLen)
+				pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+				pkt.SetType(header.ICMPv6EchoRequest)
+				pkt.SetCode(0)
+				pkt.SetChecksum(0)
+				pkt.SetChecksum(header.ICMPv6Checksum(pkt, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, buffer.VectorisedView{}))
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength: header.ICMPv6MinimumSize,
+					NextHeader:    uint8(icmp.ProtocolNumber6),
+					HopLimit:      DefaultTTL,
+					SrcAddr:       host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+				})
+				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: hdr.View().ToVectorisedView(),
+				}))
+			},
+			checkResp: func(t *testing.T, e *channel.Endpoint) {
+				p, ok := e.ReadContext(context.Background())
+				if !ok {
+					t.Fatalf("timed out waiting for packet")
+				}
+				if p.Proto != ProtocolNumber {
+					t.Errorf("got p.Proto = %d, want = %d", p.Proto, ProtocolNumber)
+				}
+				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				}
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
+					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6EchoReply),
+						checker.ICMPv6Code(header.ICMPv6UnusedCode)))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			e := channel.New(1, header.IPv6MinimumMTU, host1NICLinkAddr)
+			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+			})
+
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+			}
+			if err := s.AddProtocolAddress(nicID, host1IPv6Addr); err != nil {
+				t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID, host1IPv6Addr, err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				tcpip.Route{
+					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+					NIC:         nicID,
+				},
+			})
+
+			// Receive a packet to trigger link resolution before a response is sent.
+			test.rxPkt(e)
+
+			// Wait for a neighbor solicitation since link address resolution should
+			// be performed.
+			{
+				p, ok := e.ReadContext(context.Background())
+				if !ok {
+					t.Fatalf("timed out waiting for packet")
+				}
+				if p.Proto != ProtocolNumber {
+					t.Errorf("got Proto = %d, want = %d", p.Proto, ProtocolNumber)
+				}
+				snmc := header.SolicitedNodeAddr(host2IPv6Addr.AddressWithPrefix.Address)
+				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Route.RemoteLinkAddress != want {
+					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, want)
+				}
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
+					checker.DstAddr(snmc),
+					checker.TTL(header.NDPHopLimit),
+					checker.NDPNS(
+						checker.NDPNSTargetAddress(host2IPv6Addr.AddressWithPrefix.Address),
+						checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(host1NICLinkAddr)}),
+					))
+			}
+
+			// Send a neighbor advertisement to complete link address resolution.
+			{
+				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + naSize)
+				pkt := header.ICMPv6(hdr.Prepend(naSize))
+				pkt.SetType(header.ICMPv6NeighborAdvert)
+				na := header.NDPNeighborAdvert(pkt.NDPPayload())
+				na.SetSolicitedFlag(true)
+				na.SetOverrideFlag(true)
+				na.SetTargetAddress(host2IPv6Addr.AddressWithPrefix.Address)
+				na.Options().Serialize(header.NDPOptionsSerializer{
+					header.NDPTargetLinkLayerAddressOption(host2NICLinkAddr),
+				})
+				pkt.SetChecksum(header.ICMPv6Checksum(pkt, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, buffer.VectorisedView{}))
+				payloadLength := hdr.UsedLength()
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength: uint16(payloadLength),
+					NextHeader:    uint8(icmp.ProtocolNumber6),
+					HopLimit:      header.NDPHopLimit,
+					SrcAddr:       host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+				})
+				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: hdr.View().ToVectorisedView(),
+				}))
+			}
+
+			// Expect the response now that the link address has resolved.
+			test.checkResp(t, e)
+
+			// Since link resolution was already performed, it shouldn't be performed
+			// again.
+			test.rxPkt(e)
+			test.checkResp(t, e)
+		})
 	}
 }
