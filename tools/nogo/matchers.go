@@ -102,6 +102,14 @@ func internalMatches() *pathRegexps {
 	}
 }
 
+// generatedExcluded excludes all generated code.
+func generatedExcluded() *pathRegexps {
+	return &pathRegexps{
+		expr:    buildRegexps(generatedPrefix, ".*"),
+		include: false,
+	}
+}
+
 // resultExcluded excludes explicit message contents.
 type resultExcluded []string
 
@@ -117,20 +125,23 @@ func (r resultExcluded) ShouldReport(d analysis.Diagnostic, _ *token.FileSet) bo
 
 // andMatcher is a composite matcher.
 type andMatcher struct {
-	first  matcher
-	second matcher
+	all []matcher
 }
 
 // ShouldReport implements matcher.ShouldReport.
 func (a *andMatcher) ShouldReport(d analysis.Diagnostic, fs *token.FileSet) bool {
-	return a.first.ShouldReport(d, fs) && a.second.ShouldReport(d, fs)
+	for _, m := range a.all {
+		if !m.ShouldReport(d, fs) {
+			return false
+		}
+	}
+	return true
 }
 
 // and is a syntactic convension for andMatcher.
-func and(first matcher, second matcher) *andMatcher {
+func and(ms ...matcher) *andMatcher {
 	return &andMatcher{
-		first:  first,
-		second: second,
+		all: ms,
 	}
 }
 

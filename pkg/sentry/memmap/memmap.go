@@ -127,7 +127,7 @@ func (t Translation) FileRange() FileRange {
 // Preconditions: Same as Mappable.Translate.
 func CheckTranslateResult(required, optional MappableRange, at usermem.AccessType, ts []Translation, terr error) error {
 	// Verify that the inputs to Mappable.Translate were valid.
-	if !required.WellFormed() || required.Length() <= 0 {
+	if !required.WellFormed() || required.Length() == 0 {
 		panic(fmt.Sprintf("invalid required range: %v", required))
 	}
 	if !usermem.Addr(required.Start).IsPageAligned() || !usermem.Addr(required.End).IsPageAligned() {
@@ -145,7 +145,7 @@ func CheckTranslateResult(required, optional MappableRange, at usermem.AccessTyp
 		return fmt.Errorf("first Translation %+v does not cover start of required range %v", ts[0], required)
 	}
 	for i, t := range ts {
-		if !t.Source.WellFormed() || t.Source.Length() <= 0 {
+		if !t.Source.WellFormed() || t.Source.Length() == 0 {
 			return fmt.Errorf("Translation %+v has invalid Source", t)
 		}
 		if !usermem.Addr(t.Source.Start).IsPageAligned() || !usermem.Addr(t.Source.End).IsPageAligned() {

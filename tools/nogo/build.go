@@ -29,6 +29,9 @@ var (
 	// internalDefault is applied when no paths are provided.
 	internalDefault = fmt.Sprintf("%s/.*", notPath("external"))
 
+	// generatedPrefix is a regex for generated files.
+	generatedPrefix = "^(.*/)?(bazel-genfiles|bazel-out|bazel-bin)/"
+
 	// externalPrefix is external workspace packages.
 	externalPrefix = "^external/"
 )

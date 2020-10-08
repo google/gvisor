@@ -80,15 +80,15 @@ type Generator struct {
 func NewGenerator(srcs []string, out, outTest, outTestUnconditional, pkg string, imports []string) (*Generator, error) {
 	f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't open output file %q: %v", out, err)
+		return nil, fmt.Errorf("couldn't open output file %q: %w", out, err)
 	}
 	fTest, err := os.OpenFile(outTest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't open test output file %q: %v", out, err)
+		return nil, fmt.Errorf("couldn't open test output file %q: %w", out, err)
 	}
 	fTestUC, err := os.OpenFile(outTestUnconditional, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't open unconditional test output file %q: %v", out, err)
+		return nil, fmt.Errorf("couldn't open unconditional test output file %q: %w", out, err)
 	}
 	g := Generator{
 		inputs:       srcs,
@@ -181,7 +181,7 @@ func (g *Generator) parse() ([]*ast.File, []*token.FileSet, error) {
 		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 		if err != nil {
 			// Not a valid input file?
-			return nil, nil, fmt.Errorf("Input %q can't be parsed: %v", path, err)
+			return nil, nil, fmt.Errorf("input %q can't be parsed: %w", path, err)
 		}
 
 		if debugEnabled() {

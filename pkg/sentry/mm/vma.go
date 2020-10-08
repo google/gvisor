@@ -266,7 +266,7 @@ func (mm *MemoryManager) mlockedBytesRangeLocked(ar usermem.AddrRange) uint64 {
 // * ar.Length() != 0.
 func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) (vmaIterator, vmaGapIterator, error) {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 {
+		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
@@ -350,7 +350,7 @@ const guardBytes = 256 * usermem.PageSize
 // * ar must be page-aligned.
 func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
+		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
@@ -371,7 +371,7 @@ func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) 
 // * ar must be page-aligned.
 func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
 	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
+		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
@@ -511,7 +511,7 @@ func (vseg vmaIterator) mappableRangeOf(ar usermem.AddrRange) memmap.MappableRan
 		if vseg.ValuePtr().mappable == nil {
 			panic("MappableRange is meaningless for anonymous vma")
 		}
-		if !ar.WellFormed() || ar.Length() <= 0 {
+		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 		if !vseg.Range().IsSupersetOf(ar) {
@@ -536,7 +536,7 @@ func (vseg vmaIterator) addrRangeOf(mr memmap.MappableRange) usermem.AddrRange {
 		if vseg.ValuePtr().mappable == nil {
 			panic("MappableRange is meaningless for anonymous vma")
 		}
-		if !mr.WellFormed() || mr.Length() <= 0 {
+		if !mr.WellFormed() || mr.Length() == 0 {
 			panic(fmt.Sprintf("invalid mr: %v", mr))
 		}
 		if !vseg.mappableRange().IsSupersetOf(mr) {
