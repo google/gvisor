@@ -21,6 +21,7 @@ import (
 	"hash/fnv"
 	"sort"
 	"sync/atomic"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -33,6 +34,15 @@ import (
 )
 
 const (
+	// As per RFC 8200 section 4.5:
+	//   If insufficient fragments are received to complete reassembly of a packet
+	//   within 60 seconds of the reception of the first-arriving fragment of that
+	//   packet, reassembly of that packet must be abandoned.
+	//
+	// Linux also uses 60 seconds for reassembly timeout:
+	// https://github.com/torvalds/linux/blob/47ec5303d73ea344e84f46660fff693c57641386/include/net/ipv6.h#L456
+	reassembleTimeout = 60 * time.Second
+
 	// ProtocolNumber is the ipv6 protocol number.
 	ProtocolNumber = header.IPv6ProtocolNumber
 
@@ -1459,7 +1469,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 	return func(s *stack.Stack) stack.NetworkProtocol {
 		p := &protocol{
 			stack:         s,
-			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout, s.Clock()),
+			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, reassembleTimeout, s.Clock()),
 			ids:           ids,
 			hashIV:        hashIV,
 

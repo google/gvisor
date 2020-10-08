@@ -18,6 +18,7 @@ package ipv4
 import (
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -30,6 +31,15 @@ import (
 )
 
 const (
+	// As per RFC 791 section 3.2:
+	//   The current recommendation for the initial timer setting is 15 seconds.
+	//   This may be changed as experience with this protocol accumulates.
+	//
+	// Considering that it is an old recommendation, we use the same reassembly
+	// timeout that linux defines, which is 30 seconds:
+	// https://github.com/torvalds/linux/blob/47ec5303d73ea344e84f46660fff693c57641386/include/net/ip.h#L138
+	reassembleTimeout = 30 * time.Second
+
 	// ProtocolNumber is the ipv4 protocol number.
 	ProtocolNumber = header.IPv4ProtocolNumber
 
@@ -785,7 +795,7 @@ func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 		ids:           ids,
 		hashIV:        hashIV,
 		defaultTTL:    DefaultTTL,
-		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout, s.Clock()),
+		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, reassembleTimeout, s.Clock()),
 	}
 }
 
