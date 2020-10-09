@@ -1289,7 +1289,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 			//
 			// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
 			// LinkEndpoint.LinkAddress) before reaching this point.
-			linkAddr := ndp.ep.nic.LinkAddress()
+			linkAddr := ndp.ep.linkEP.LinkAddress()
 			if !header.IsValidUnicastEthernetAddress(linkAddr) {
 				return false
 			}

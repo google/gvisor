@@ -270,7 +270,7 @@ func buildDummyStack(t *testing.T) *stack.Stack {
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {
-	testObject
+	tester testObject
 
 	mu struct {
 		sync.RWMutex
@@ -300,6 +300,10 @@ func (t *testInterface) setEnabled(v bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.mu.disabled = !v
+}
+
+func (t *testInterface) LinkEndpoint() stack.LinkEndpoint {
+	return &t.tester
 }
 
 func TestSourceAddressValidation(t *testing.T) {
@@ -513,7 +517,7 @@ func TestIPv4Send(t *testing.T) {
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
 	nic := testInterface{
-		testObject: testObject{
+		tester: testObject{
 			t:  t,
 			v4: true,
 		},
@@ -534,10 +538,10 @@ func TestIPv4Send(t *testing.T) {
 	})
 
 	// Issue the write.
-	nic.testObject.protocol = 123
-	nic.testObject.srcAddr = localIPv4Addr
-	nic.testObject.dstAddr = remoteIPv4Addr
-	nic.testObject.contents = payload
+	nic.tester.protocol = 123
+	nic.tester.srcAddr = localIPv4Addr
+	nic.tester.dstAddr = remoteIPv4Addr
+	nic.tester.contents = payload
 
 	r, err := buildIPv4Route(localIPv4Addr, remoteIPv4Addr)
 	if err != nil {
@@ -556,12 +560,12 @@ func TestIPv4Receive(t *testing.T) {
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
 	nic := testInterface{
-		testObject: testObject{
+		tester: testObject{
 			t:  t,
 			v4: true,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+	ep := proto.NewEndpoint(&nic, nil, nil, &nic.tester)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -586,10 +590,10 @@ func TestIPv4Receive(t *testing.T) {
 	}
 
 	// Give packet to ipv4 endpoint, dispatcher will validate that it's ok.
-	nic.testObject.protocol = 10
-	nic.testObject.srcAddr = remoteIPv4Addr
-	nic.testObject.dstAddr = localIPv4Addr
-	nic.testObject.contents = view[header.IPv4MinimumSize:totalLen]
+	nic.tester.protocol = 10
+	nic.tester.srcAddr = remoteIPv4Addr
+	nic.tester.dstAddr = localIPv4Addr
+	nic.tester.contents = view[header.IPv4MinimumSize:totalLen]
 
 	r, err := buildIPv4Route(localIPv4Addr, remoteIPv4Addr)
 	if err != nil {
@@ -602,8 +606,8 @@ func TestIPv4Receive(t *testing.T) {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
 	ep.HandlePacket(&r, pkt)
-	if nic.testObject.dataCalls != 1 {
-		t.Fatalf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
+	if nic.tester.dataCalls != 1 {
+		t.Fatalf("Bad number of data calls: got %x, want 1", nic.tester.dataCalls)
 	}
 }
 
@@ -636,11 +640,11 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			s := buildDummyStack(t)
 			proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
 			nic := testInterface{
-				testObject: testObject{
+				tester: testObject{
 					t: t,
 				},
 			}
-			ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+			ep := proto.NewEndpoint(&nic, nil, nil, &nic.tester)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -687,16 +691,16 @@ func TestIPv4ReceiveControl(t *testing.T) {
 
 			// Give packet to IPv4 endpoint, dispatcher will validate that
 			// it's ok.
-			nic.testObject.protocol = 10
-			nic.testObject.srcAddr = remoteIPv4Addr
-			nic.testObject.dstAddr = localIPv4Addr
-			nic.testObject.contents = view[dataOffset:]
-			nic.testObject.typ = c.expectedTyp
-			nic.testObject.extra = c.expectedExtra
+			nic.tester.protocol = 10
+			nic.tester.srcAddr = remoteIPv4Addr
+			nic.tester.dstAddr = localIPv4Addr
+			nic.tester.contents = view[dataOffset:]
+			nic.tester.typ = c.expectedTyp
+			nic.tester.extra = c.expectedExtra
 
 			ep.HandlePacket(&r, truncatedPacket(view, c.trunc, header.IPv4MinimumSize))
-			if want := c.expectedCount; nic.testObject.controlCalls != want {
-				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.testObject.controlCalls, want)
+			if want := c.expectedCount; nic.tester.controlCalls != want {
+				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.tester.controlCalls, want)
 			}
 		})
 	}
@@ -706,12 +710,12 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
 	nic := testInterface{
-		testObject: testObject{
+		tester: testObject{
 			t:  t,
 			v4: true,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+	ep := proto.NewEndpoint(&nic, nil, nil, &nic.tester)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -754,10 +758,10 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	}
 
 	// Give packet to ipv4 endpoint, dispatcher will validate that it's ok.
-	nic.testObject.protocol = 10
-	nic.testObject.srcAddr = remoteIPv4Addr
-	nic.testObject.dstAddr = localIPv4Addr
-	nic.testObject.contents = append(frag1[header.IPv4MinimumSize:totalLen], frag2[header.IPv4MinimumSize:totalLen]...)
+	nic.tester.protocol = 10
+	nic.tester.srcAddr = remoteIPv4Addr
+	nic.tester.dstAddr = localIPv4Addr
+	nic.tester.contents = append(frag1[header.IPv4MinimumSize:totalLen], frag2[header.IPv4MinimumSize:totalLen]...)
 
 	r, err := buildIPv4Route(localIPv4Addr, remoteIPv4Addr)
 	if err != nil {
@@ -772,8 +776,8 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
 	ep.HandlePacket(&r, pkt)
-	if nic.testObject.dataCalls != 0 {
-		t.Fatalf("Bad number of data calls: got %x, want 0", nic.testObject.dataCalls)
+	if nic.tester.dataCalls != 0 {
+		t.Fatalf("Bad number of data calls: got %x, want 0", nic.tester.dataCalls)
 	}
 
 	// Send second segment.
@@ -784,8 +788,8 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
 	ep.HandlePacket(&r, pkt)
-	if nic.testObject.dataCalls != 1 {
-		t.Fatalf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
+	if nic.tester.dataCalls != 1 {
+		t.Fatalf("Bad number of data calls: got %x, want 1", nic.tester.dataCalls)
 	}
 }
 
@@ -793,7 +797,7 @@ func TestIPv6Send(t *testing.T) {
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
 	nic := testInterface{
-		testObject: testObject{
+		tester: testObject{
 			t: t,
 		},
 	}
@@ -817,10 +821,10 @@ func TestIPv6Send(t *testing.T) {
 	})
 
 	// Issue the write.
-	nic.testObject.protocol = 123
-	nic.testObject.srcAddr = localIPv6Addr
-	nic.testObject.dstAddr = remoteIPv6Addr
-	nic.testObject.contents = payload
+	nic.tester.protocol = 123
+	nic.tester.srcAddr = localIPv6Addr
+	nic.tester.dstAddr = remoteIPv6Addr
+	nic.tester.contents = payload
 
 	r, err := buildIPv6Route(localIPv6Addr, remoteIPv6Addr)
 	if err != nil {
@@ -839,11 +843,11 @@ func TestIPv6Receive(t *testing.T) {
 	s := buildDummyStack(t)
 	proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
 	nic := testInterface{
-		testObject: testObject{
+		tester: testObject{
 			t: t,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+	ep := proto.NewEndpoint(&nic, nil, nil, &nic.tester)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -867,10 +871,10 @@ func TestIPv6Receive(t *testing.T) {
 	}
 
 	// Give packet to ipv6 endpoint, dispatcher will validate that it's ok.
-	nic.testObject.protocol = 10
-	nic.testObject.srcAddr = remoteIPv6Addr
-	nic.testObject.dstAddr = localIPv6Addr
-	nic.testObject.contents = view[header.IPv6MinimumSize:totalLen]
+	nic.tester.protocol = 10
+	nic.tester.srcAddr = remoteIPv6Addr
+	nic.tester.dstAddr = localIPv6Addr
+	nic.tester.contents = view[header.IPv6MinimumSize:totalLen]
 
 	r, err := buildIPv6Route(localIPv6Addr, remoteIPv6Addr)
 	if err != nil {
@@ -884,8 +888,8 @@ func TestIPv6Receive(t *testing.T) {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
 	ep.HandlePacket(&r, pkt)
-	if nic.testObject.dataCalls != 1 {
-		t.Fatalf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
+	if nic.tester.dataCalls != 1 {
+		t.Fatalf("Bad number of data calls: got %x, want 1", nic.tester.dataCalls)
 	}
 }
 
@@ -927,11 +931,11 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			s := buildDummyStack(t)
 			proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
 			nic := testInterface{
-				testObject: testObject{
+				tester: testObject{
 					t: t,
 				},
 			}
-			ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+			ep := proto.NewEndpoint(&nic, nil, nil, &nic.tester)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -990,19 +994,19 @@ func TestIPv6ReceiveControl(t *testing.T) {
 
 			// Give packet to IPv6 endpoint, dispatcher will validate that
 			// it's ok.
-			nic.testObject.protocol = 10
-			nic.testObject.srcAddr = remoteIPv6Addr
-			nic.testObject.dstAddr = localIPv6Addr
-			nic.testObject.contents = view[dataOffset:]
-			nic.testObject.typ = c.expectedTyp
-			nic.testObject.extra = c.expectedExtra
+			nic.tester.protocol = 10
+			nic.tester.srcAddr = remoteIPv6Addr
+			nic.tester.dstAddr = localIPv6Addr
+			nic.tester.contents = view[dataOffset:]
+			nic.tester.typ = c.expectedTyp
+			nic.tester.extra = c.expectedExtra
 
 			// Set ICMPv6 checksum.
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIPv6Addr, buffer.VectorisedView{}))
 
 			ep.HandlePacket(&r, truncatedPacket(view, c.trunc, header.IPv6MinimumSize))
-			if want := c.expectedCount; nic.testObject.controlCalls != want {
-				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.testObject.controlCalls, want)
+			if want := c.expectedCount; nic.tester.controlCalls != want {
+				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.tester.controlCalls, want)
 			}
 		})
 	}

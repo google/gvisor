@@ -67,53 +67,6 @@ func TestIsValidUnicastEthernetAddress(t *testing.T) {
 	}
 }
 
-func TestIsMulticastEthernetAddress(t *testing.T) {
-	tests := []struct {
-		name     string
-		addr     tcpip.LinkAddress
-		expected bool
-	}{
-		{
-			"Nil",
-			tcpip.LinkAddress([]byte(nil)),
-			false,
-		},
-		{
-			"Empty",
-			tcpip.LinkAddress(""),
-			false,
-		},
-		{
-			"InvalidLength",
-			tcpip.LinkAddress("\x01\x02\x03"),
-			false,
-		},
-		{
-			"Unspecified",
-			unspecifiedEthernetAddress,
-			false,
-		},
-		{
-			"Multicast",
-			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
-			true,
-		},
-		{
-			"Unicast",
-			tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06"),
-			false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := IsMulticastEthernetAddress(test.addr); got != test.expected {
-				t.Fatalf("got IsMulticastEthernetAddress = %t, want = %t", got, test.expected)
-			}
-		})
-	}
-}
-
 func TestEthernetAddressFromMulticastIPv4Address(t *testing.T) {
 	tests := []struct {
 		name             string

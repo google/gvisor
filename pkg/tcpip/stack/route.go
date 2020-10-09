@@ -72,20 +72,21 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		loop |= PacketLoop
 	}
 
+	linkEP := nic.LinkEndpoint()
 	r := Route{
 		NetProto:         netProto,
 		LocalAddress:     localAddr,
-		LocalLinkAddress: nic.LinkEndpoint.LinkAddress(),
+		LocalLinkAddress: linkEP.LinkAddress(),
 		RemoteAddress:    remoteAddr,
 		addressEndpoint:  addressEndpoint,
 		nic:              nic,
 		Loop:             loop,
 	}
 
-	if r.nic.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
-		if linkRes, ok := r.nic.stack.linkAddrResolvers[r.NetProto]; ok {
+	if nic := r.nic; linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
+		if linkRes, ok := nic.stack.linkAddrResolvers[r.NetProto]; ok {
 			r.linkRes = linkRes
-			r.linkCache = r.nic.stack
+			r.linkCache = nic.stack
 		}
 	}
 
@@ -115,7 +116,7 @@ func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, tot
 
 // Capabilities returns the link-layer capabilities of the route.
 func (r *Route) Capabilities() LinkEndpointCapabilities {
-	return r.nic.LinkEndpoint.Capabilities()
+	return r.nic.LinkEndpoint().Capabilities()
 }
 
 // GSOMaxSize returns the maximum GSO packet size.
@@ -124,6 +125,12 @@ func (r *Route) GSOMaxSize() uint32 {
 		return gso.GSOMaxSize()
 	}
 	return 0
+}
+
+// ResolveWith immediately resolves a route with the specified remote link
+// address.
+func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
+	r.RemoteLinkAddress = addr
 }
 
 // Resolve attempts to resolve the link address if necessary. Returns ErrWouldBlock in
@@ -201,7 +208,16 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuf
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	return r.nic.getNetworkEndpoint(r.NetProto).WritePacket(r, gso, params, pkt)
+	// WritePacket takes ownership of pkt, calculate numBytes first.
+	numBytes := pkt.Size()
+
+	if err := r.nic.getNetworkEndpoint(r.NetProto).WritePacket(r, gso, params, pkt); err != nil {
+		return err
+	}
+
+	r.nic.stats.Tx.Packets.Increment()
+	r.nic.stats.Tx.Bytes.IncrementBy(uint64(numBytes))
+	return nil
 }
 
 // WritePackets writes a list of n packets through the given route and returns
@@ -211,7 +227,15 @@ func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHead
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	return r.nic.getNetworkEndpoint(r.NetProto).WritePackets(r, gso, pkts, params)
+	n, err := r.nic.getNetworkEndpoint(r.NetProto).WritePackets(r, gso, pkts, params)
+	r.nic.stats.Tx.Packets.IncrementBy(uint64(n))
+	writtenBytes := 0
+	for i, pb := 0, pkts.Front(); i < n && pb != nil; i, pb = i+1, pb.Next() {
+		writtenBytes += pb.Size()
+	}
+
+	r.nic.stats.Tx.Bytes.IncrementBy(uint64(writtenBytes))
+	return n, err
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
@@ -221,7 +245,15 @@ func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	return r.nic.getNetworkEndpoint(r.NetProto).WriteHeaderIncludedPacket(r, pkt)
+	// WriteHeaderIncludedPacket takes ownership of pkt, calculate numBytes first.
+	numBytes := pkt.Data.Size()
+
+	if err := r.nic.getNetworkEndpoint(r.NetProto).WriteHeaderIncludedPacket(r, pkt); err != nil {
+		return err
+	}
+	r.nic.stats.Tx.Packets.Increment()
+	r.nic.stats.Tx.Bytes.IncrementBy(uint64(numBytes))
+	return nil
 }
 
 // DefaultTTL returns the default TTL of the underlying network endpoint.

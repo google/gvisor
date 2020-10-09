@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"net"
 	"sort"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -75,9 +77,10 @@ type fakeNetworkEndpoint struct {
 		enabled bool
 	}
 
-	nic        stack.NetworkInterface
+	nicID      tcpip.NICID
 	proto      *fakeNetworkProtocol
 	dispatcher stack.TransportDispatcher
+	ep         stack.LinkEndpoint
 }
 
 func (f *fakeNetworkEndpoint) Enable() *tcpip.Error {
@@ -100,7 +103,7 @@ func (f *fakeNetworkEndpoint) Disable() {
 }
 
 func (f *fakeNetworkEndpoint) MTU() uint32 {
-	return f.nic.MTU() - uint32(f.MaxHeaderLength())
+	return f.ep.MTU() - uint32(f.MaxHeaderLength())
 }
 
 func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
@@ -132,7 +135,7 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuff
 }
 
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
-	return f.nic.MaxHeaderLength() + fakeNetHeaderLen
+	return f.ep.MaxHeaderLength() + fakeNetHeaderLen
 }
 
 func (f *fakeNetworkEndpoint) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, dstAddr tcpip.Address) uint16 {
@@ -161,7 +164,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 		return nil
 	}
 
-	return f.nic.WritePacket(r, gso, fakeNetNumber, pkt)
+	return f.ep.WritePacket(r, gso, fakeNetNumber, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
@@ -213,9 +216,10 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 
 func (f *fakeNetworkProtocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &fakeNetworkEndpoint{
-		nic:        nic,
+		nicID:      nic.ID(),
 		proto:      f,
 		dispatcher: dispatcher,
+		ep:         nic.LinkEndpoint(),
 	}
 	e.AddressableEndpointState.Init(e)
 	return e
@@ -2102,7 +2106,7 @@ func TestNICStats(t *testing.T) {
 		t.Errorf("got Tx.Packets.Value() = %d, ep1.Drain() = %d", got, want)
 	}
 
-	if got, want := s.NICInfo()[1].Stats.Tx.Bytes.Value(), uint64(len(payload)+fakeNetHeaderLen); got != want {
+	if got, want := s.NICInfo()[1].Stats.Tx.Bytes.Value(), uint64(len(payload)); got != want {
 		t.Errorf("got Tx.Bytes.Value() = %d, want = %d", got, want)
 	}
 }
@@ -3495,6 +3499,52 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				t.Errorf("route mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestResolveWith(t *testing.T) {
+	const (
+		unspecifiedNICID = 0
+		nicID            = 1
+	)
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
+	})
+	ep := channel.New(0, defaultMTU, "")
+	ep.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+	if err := s.CreateNIC(nicID, ep); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+	addr := tcpip.ProtocolAddress{
+		Protocol: header.IPv4ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("192.168.1.58").To4()),
+			PrefixLen: 24,
+		},
+	}
+	if err := s.AddProtocolAddress(nicID, addr); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID, addr, err)
+	}
+
+	s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}})
+
+	remoteAddr := tcpip.Address(net.ParseIP("192.168.1.59").To4())
+	r, err := s.FindRoute(unspecifiedNICID, "" /* localAddr */, remoteAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(%d, '', %s, %d): %s", unspecifiedNICID, remoteAddr, header.IPv4ProtocolNumber, err)
+	}
+	defer r.Release()
+
+	// Should initially require resolution.
+	if !r.IsResolutionRequired() {
+		t.Fatal("got r.IsResolutionRequired() = false, want = true")
+	}
+
+	// Manually resolving the route should no longer require resolution.
+	r.ResolveWith("\x01")
+	if r.IsResolutionRequired() {
+		t.Fatal("got r.IsResolutionRequired() = true, want = false")
 	}
 }
 

@@ -440,6 +440,8 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			return
 		}
 
+		remoteLinkAddr := r.RemoteLinkAddress
+
 		// As per RFC 4291 section 2.7, multicast addresses must not be used as
 		// source addresses in IPv6 packets.
 		localAddr := r.LocalAddress
@@ -453,6 +455,9 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			return
 		}
 		defer r.Release()
+
+		// Use the link address from the source of the original packet.
+		r.ResolveWith(remoteLinkAddr)
 
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize,
@@ -737,7 +742,14 @@ func (*icmpReasonPortUnreachable) isICMPReason() {}
 
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
-func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+func returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+	stats := r.Stats().ICMP
+	sent := stats.V6PacketsSent
+	if !r.Stack().AllowICMPMessage() {
+		sent.RateLimited.Increment()
+		return nil
+	}
+
 	// Only send ICMP error if the address is not a multicast v6
 	// address and the source is not the unspecified address.
 	//
@@ -768,26 +780,6 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 		return nil
 	}
 
-	// Even if we were able to receive a packet from some remote, we may not have
-	// a route to it - the remote may be blocked via routing rules. We must always
-	// consult our routing table and find a route to the remote before sending any
-	// packet.
-	route, err := p.stack.FindRoute(r.NICID(), r.LocalAddress, r.RemoteAddress, ProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		return err
-	}
-	defer route.Release()
-	// From this point on, the incoming route should no longer be used; route
-	// must be used to send the ICMP error.
-	r = nil
-
-	stats := p.stack.Stats().ICMP
-	sent := stats.V6PacketsSent
-	if !p.stack.AllowICMPMessage() {
-		sent.RateLimited.Increment()
-		return nil
-	}
-
 	network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
 
 	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {
@@ -814,11 +806,11 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 	//    packet that caused the error) as possible without making
 	//    the error message packet exceed the minimum IPv6 MTU
 	//    [IPv6].
-	mtu := int(route.MTU())
+	mtu := int(r.MTU())
 	if mtu > header.IPv6MinimumMTU {
 		mtu = header.IPv6MinimumMTU
 	}
-	headerLen := int(route.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize
+	headerLen := int(r.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize
 	available := int(mtu) - headerLen
 	if available < header.IPv6MinimumSize {
 		return nil
@@ -851,16 +843,9 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 	default:
 		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
 	}
-	icmpHdr.SetChecksum(header.ICMPv6Checksum(icmpHdr, route.LocalAddress, route.RemoteAddress, newPkt.Data))
-	if err := route.WritePacket(
-		nil, /* gso */
-		stack.NetworkHeaderParams{
-			Protocol: header.ICMPv6ProtocolNumber,
-			TTL:      route.DefaultTTL(),
-			TOS:      stack.DefaultTOS,
-		},
-		newPkt,
-	); err != nil {
+	icmpHdr.SetChecksum(header.ICMPv6Checksum(icmpHdr, r.LocalAddress, r.RemoteAddress, newPkt.Data))
+	err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, newPkt)
+	if err != nil {
 		sent.Dropped.Increment()
 		return err
 	}
