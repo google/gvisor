@@ -88,7 +88,8 @@ func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
 			// this test. Once the socket option is supported, the following call
 			// can be changed to simply assert success.
 			ret, errno := dut.SetSockOptIntWithErrno(context.Background(), t, remoteFD, unix.IPPROTO_IP, linux.IP_MTU_DISCOVER, linux.IP_PMTUDISC_DONT)
-			if ret == -1 && errno != unix.ENOTSUP {
+			// Fuchsia will return ENOPROTOPT errno.
+			if ret == -1 && errno != unix.ENOPROTOOPT {
 				t.Fatalf("failed to set IP_MTU_DISCOVER socket option to IP_PMTUDISC_DONT: %s", errno)
 			}
 
