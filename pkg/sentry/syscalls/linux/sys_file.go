@@ -84,6 +84,7 @@ func fileOpOn(t *kernel.Task, dirFD int32, path string, resolve bool, fn func(ro
 		}
 		rel = f.Dirent
 		if !fs.IsDir(rel.Inode.StableAttr) {
+			f.DecRef(t)
 			return syserror.ENOTDIR
 		}
 	}
