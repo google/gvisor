@@ -275,36 +275,19 @@ nogo_aspect = go_rule(
 def _nogo_test_impl(ctx):
     """Check nogo findings."""
 
-    # Build a runner that checks for the existence of the facts file. Note that
-    # the actual build will fail in the case of a broken analysis. We things
-    # this way so that any test applied is effectively pushed down to all
-    # upstream dependencies through the aspect.
-    inputs = []
-    findings = []
-    runner = ctx.actions.declare_file("%s-executer" % ctx.label.name)
-    runner_content = ["#!/bin/bash"]
-    for dep in ctx.attr.deps:
-        # Extract the findings.
-        info = dep[NogoInfo]
-        inputs.append(info.findings)
-        findings.append(info.findings)
-
-        # Include all source files, transitively. This will make this target
-        # "directly affected" for the purpose of build analysis.
-        inputs += info.srcs
-
-        # If there are findings, dump them and fail.
-        runner_content.append("if [[ -s \"%s\" ]]; then cat \"%s\" && exit 1; fi" % (
-            info.findings.short_path,
-            info.findings.short_path,
-        ))
-
-        # Otherwise, draw a sweet unicode checkmark with the package name (in green).
-        runner_content.append("echo -e \"\\033[0;32m\\xE2\\x9C\\x94\\033[0;31m\\033[0m %s\"" % info.importpath)
-    runner_content.append("exit 0\n")
-    ctx.actions.write(runner, "\n".join(runner_content), is_executable = True)
+    # Build a runner that checks the facts files.
+    findings = [dep[NogoInfo].findings for dep in ctx.attr.deps]
+    runner = ctx.actions.declare_file(ctx.label.name)
+    ctx.actions.run(
+        inputs = findings + ctx.files.srcs,
+        outputs = [runner],
+        tools = depset(ctx.files._gentest),
+        executable = ctx.files._gentest[0],
+        mnemonic = "Gentest",
+        progress_message = "Generating %s" % ctx.label,
+        arguments = [runner.path] + [f.path for f in findings],
+    )
     return [DefaultInfo(
-        runfiles = ctx.runfiles(files = inputs),
         executable = runner,
     )]
 
@@ -313,14 +296,19 @@ _nogo_test = rule(
     attrs = {
         # deps should have only a single element.
         "deps": attr.label_list(aspects = [nogo_aspect]),
+        # srcs exist here only to ensure that this target is
+        # directly affected by changes to the source files.
+        "srcs": attr.label_list(allow_files = True),
+        "_gentest": attr.label(default = "//tools/nogo:gentest"),
     },
     test = True,
 )
 
-def nogo_test(name, library, **kwargs):
+def nogo_test(name, srcs, library, **kwargs):
     tags = kwargs.pop("tags", []) + ["nogo"]
     _nogo_test(
         name = name,
+        srcs = srcs,
         deps = [library],
         tags = tags,
         **kwargs
