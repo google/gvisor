@@ -33,8 +33,7 @@ var _ NDPEndpoint = (*testIPv6Endpoint)(nil)
 type testIPv6Endpoint struct {
 	AddressableEndpointState
 
-	nicID    tcpip.NICID
-	linkEP   LinkEndpoint
+	nic      NetworkInterface
 	protocol *testIPv6Protocol
 
 	invalidatedRtr tcpip.Address
@@ -57,12 +56,12 @@ func (*testIPv6Endpoint) DefaultTTL() uint8 {
 
 // MTU implements NetworkEndpoint.MTU.
 func (e *testIPv6Endpoint) MTU() uint32 {
-	return e.linkEP.MTU() - header.IPv6MinimumSize
+	return e.nic.MTU() - header.IPv6MinimumSize
 }
 
 // MaxHeaderLength implements NetworkEndpoint.MaxHeaderLength.
 func (e *testIPv6Endpoint) MaxHeaderLength() uint16 {
-	return e.linkEP.MaxHeaderLength() + header.IPv6MinimumSize
+	return e.nic.MaxHeaderLength() + header.IPv6MinimumSize
 }
 
 // WritePacket implements NetworkEndpoint.WritePacket.
@@ -134,8 +133,7 @@ func (*testIPv6Protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) 
 // NewEndpoint implements NetworkProtocol.NewEndpoint.
 func (p *testIPv6Protocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, _ TransportDispatcher) NetworkEndpoint {
 	e := &testIPv6Endpoint{
-		nicID:    nic.ID(),
-		linkEP:   nic.LinkEndpoint(),
+		nic:      nic,
 		protocol: p,
 	}
 	e.AddressableEndpointState.Init(e)

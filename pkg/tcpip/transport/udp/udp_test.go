@@ -1432,7 +1432,9 @@ func TestNoChecksum(t *testing.T) {
 
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
-type testInterface struct{}
+type testInterface struct {
+	stack.NetworkLinkEndpoint
+}
 
 func (*testInterface) ID() tcpip.NICID {
 	return 0
@@ -1448,10 +1450,6 @@ func (*testInterface) Name() string {
 
 func (*testInterface) Enabled() bool {
 	return true
-}
-
-func (*testInterface) LinkEndpoint() stack.LinkEndpoint {
-	return nil
 }
 
 func TestTTL(t *testing.T) {
