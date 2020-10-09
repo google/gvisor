@@ -1,0 +1,8 @@
+CONTAINERD_TEST: 'true'
+CONTAINERD_LOG_LEVEL: 'debug'
+CONTAINERD_DEFAULT_RUNTIME: 'runsc'
+CONTAINERD_EXTRA_RUNTIME_HANDLER: 'runsc'
+CONTAINERD_EXTRA_RUNTIME_TYPE: 'io.containerd.runsc.v1'
+CONTAINERD_EXTRA_RUNTIME_OPTIONS: |
+  TypeUrl = "io.containerd.runsc.v1.options"
+  ConfigPath = "/run/containerd/runsc/config.toml"
