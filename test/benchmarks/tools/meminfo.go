@@ -45,7 +45,7 @@ func (*Meminfo) Report(b *testing.B, before, after string) {
 		b.Fatalf("could not parse before value %s: %v", before, err)
 	}
 	val := 1024 * ((beforeVal - afterVal) / float64(b.N))
-	b.ReportMetric(val, "average_container_size_bytes")
+	ReportCustomMetric(b, val, "average_container_size" /*metric name*/, "bytes" /*units*/)
 }
 
 var memInfoRE = regexp.MustCompile(`MemAvailable:\s*(\d+)\skB\n`)

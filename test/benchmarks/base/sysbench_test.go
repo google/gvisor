@@ -71,8 +71,15 @@ func BenchmarkSysbench(b *testing.B) {
 	defer machine.CleanUp()
 
 	for _, tc := range testCases {
-		b.Run(tc.name, func(b *testing.B) {
-
+		param := tools.Parameter{
+			Name:  "testname",
+			Value: tc.name,
+		}
+		name, err := tools.ParametersToName(param)
+		if err != nil {
+			b.Fatalf("Failed to parse params: %v", err)
+		}
+		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
 			sysbench := machine.GetContainer(ctx, b)
 			defer sysbench.CleanUp(ctx)

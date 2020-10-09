@@ -80,7 +80,7 @@ func (s *SysbenchCPU) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("parsing CPU events from %s failed: %v", output, err)
 	}
-	b.ReportMetric(result, "cpu_events_per_second")
+	ReportCustomMetric(b, result, "cpu_events" /*metric name*/, "events_per_second" /*unit*/)
 }
 
 var cpuEventsPerSecondRE = regexp.MustCompile(`events per second:\s*(\d*.?\d*)\n`)
@@ -144,7 +144,7 @@ func (s *SysbenchMemory) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("parsing result %s failed with err: %v", output, err)
 	}
-	b.ReportMetric(result, "operations_per_second")
+	ReportCustomMetric(b, result, "memory_operations" /*metric name*/, "ops_per_second" /*unit*/)
 }
 
 var memoryOperationsRE = regexp.MustCompile(`Total\soperations:\s+\d*\s*\((\d*\.\d*)\sper\ssecond\)`)
@@ -198,19 +198,19 @@ func (s *SysbenchMutex) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("parsing result %s failed with err: %v", output, err)
 	}
-	b.ReportMetric(result, "average_execution_time_secs")
+	ReportCustomMetric(b, result, "average_execution_time" /*metric name*/, "s" /*unit*/)
 
 	result, err = s.parseDeviation(output)
 	if err != nil {
 		b.Fatalf("parsing result %s failed with err: %v", output, err)
 	}
-	b.ReportMetric(result, "stdev_execution_time_secs")
+	ReportCustomMetric(b, result, "stddev_execution_time" /*metric name*/, "s" /*unit*/)
 
 	result, err = s.parseLatency(output)
 	if err != nil {
 		b.Fatalf("parsing result %s failed with err: %v", output, err)
 	}
-	b.ReportMetric(result/1000, "average_latency_secs")
+	ReportCustomMetric(b, result/1000, "average_latency" /*metric name*/, "s" /*unit*/)
 }
 
 var executionTimeRE = regexp.MustCompile(`execution time \(avg/stddev\):\s*(\d*.?\d*)/(\d*.?\d*)`)

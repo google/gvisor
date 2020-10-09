@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
+	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
 // Note: CleanCache versions of this test require running with root permissions.
@@ -46,17 +47,36 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 	// Dimensions here are clean/dirty cache (do or don't drop caches)
 	// and if the mount on which we are compiling is a tmpfs/bind mount.
 	benchmarks := []struct {
-		name       string
 		clearCache bool // clearCache drops caches before running.
 		tmpfs      bool // tmpfs will run compilation on a tmpfs.
 	}{
-		{name: "CleanCache", clearCache: true, tmpfs: false},
-		{name: "DirtyCache", clearCache: false, tmpfs: false},
-		{name: "CleanCacheTmpfs", clearCache: true, tmpfs: true},
-		{name: "DirtyCacheTmpfs", clearCache: false, tmpfs: true},
+		{clearCache: true, tmpfs: false},
+		{clearCache: false, tmpfs: false},
+		{clearCache: true, tmpfs: true},
+		{clearCache: false, tmpfs: true},
 	}
 	for _, bm := range benchmarks {
-		b.Run(bm.name, func(b *testing.B) {
+		pageCache := tools.Parameter{
+			Name:  "page_cache",
+			Value: "clean",
+		}
+		if bm.clearCache {
+			pageCache.Value = "dirty"
+		}
+
+		filesystem := tools.Parameter{
+			Name:  "filesystem",
+			Value: "bind",
+		}
+		if bm.tmpfs {
+			filesystem.Value = "tmpfs"
+		}
+		name, err := tools.ParametersToName(pageCache, filesystem)
+		if err != nil {
+			b.Fatalf("Failed to parse parameters: %v", err)
+		}
+
+		b.Run(name, func(b *testing.B) {
 			// Grab a container.
 			ctx := context.Background()
 			container := machine.GetContainer(ctx, b)

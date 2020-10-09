@@ -30,11 +30,20 @@ import (
 // Benchmark is the top level structure of recorded benchmark data. BigQuery
 // will infer the schema from this.
 type Benchmark struct {
-	Name      string    `bq:"name"`
-	Timestamp time.Time `bq:"timestamp"`
-	Official  bool      `bq:"official"`
-	Metric    []*Metric `bq:"metric"`
-	Metadata  *Metadata `bq:"metadata"`
+	Name      string       `bq:"name"`
+	Condition []*Condition `bq:"condition"`
+	Timestamp time.Time    `bq:"timestamp"`
+	Official  bool         `bq:"official"`
+	Metric    []*Metric    `bq:"metric"`
+	Metadata  *Metadata    `bq:"metadata"`
+}
+
+// Condition represents qualifiers for the benchmark. For example:
+// Get_Pid/1/real_time would have Benchmark Name "Get_Pid" with "1"
+// and "real_time" parameters as conditions.
+type Condition struct {
+	Name  string `bq:"name"`
+	Value string `bq:"value"`
 }
 
 // Metric holds the actual metric data and unit information for this benchmark.
@@ -79,6 +88,14 @@ func InitBigQuery(ctx context.Context, projectID, datasetID, tableID string) err
 	return nil
 }
 
+// AddCondition adds a condition to an existing Benchmark.
+func (bm *Benchmark) AddCondition(name, value string) {
+	bm.Condition = append(bm.Condition, &Condition{
+		Name:  name,
+		Value: value,
+	})
+}
+
 // AddMetric adds a metric to an existing Benchmark.
 func (bm *Benchmark) AddMetric(metricName, unit string, sample float64) {
 	m := &Metric{
@@ -90,7 +107,7 @@ func (bm *Benchmark) AddMetric(metricName, unit string, sample float64) {
 }
 
 // NewBenchmark initializes a new benchmark.
-func NewBenchmark(name string, official bool) *Benchmark {
+func NewBenchmark(name string, iters int, official bool) *Benchmark {
 	return &Benchmark{
 		Name:      name,
 		Timestamp: time.Now().UTC(),
@@ -103,7 +120,7 @@ func NewBenchmark(name string, official bool) *Benchmark {
 func SendBenchmarks(ctx context.Context, benchmarks []*Benchmark, projectID, datasetID, tableID string) error {
 	client, err := bq.NewClient(ctx, projectID)
 	if err != nil {
-		return fmt.Errorf("Failed to initialize client on project: %s: %v", projectID, err)
+		return fmt.Errorf("failed to initialize client on project: %s: %v", projectID, err)
 	}
 	defer client.Close()
 

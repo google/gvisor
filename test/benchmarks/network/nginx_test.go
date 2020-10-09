@@ -14,7 +14,7 @@
 package network
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -29,30 +29,6 @@ var nginxDocs = map[string]string{
 	"100Kb":    "latin100k.txt",
 	"1Mb":      "latin1024k.txt",
 	"10Mb":     "latin10240k.txt",
-}
-
-// BenchmarkNginxConcurrency iterates the concurrency argument and tests
-// how well the runtime under test handles requests in parallel.
-func BenchmarkNginxConcurrency(b *testing.B) {
-	concurrency := []int{1, 25, 100, 1000}
-	for _, c := range concurrency {
-		for _, tmpfs := range []bool{true, false} {
-			fs := "Gofer"
-			if tmpfs {
-				fs = "Tmpfs"
-			}
-			name := fmt.Sprintf("%d_%s", c, fs)
-			b.Run(name, func(b *testing.B) {
-				hey := &tools.Hey{
-					Requests:    c * b.N,
-					Concurrency: c,
-					Doc:         nginxDocs["10kb"], // see Dockerfile '//images/benchmarks/nginx' and httpd_test.
-				}
-				runNginx(b, hey, false /* reverse */, tmpfs /* tmpfs */)
-			})
-		}
-
-	}
 }
 
 // BenchmarkNginxDocSize iterates over different sized payloads, testing how
@@ -71,15 +47,32 @@ func BenchmarkReverseNginxDocSize(b *testing.B) {
 // benchmarkNginxDocSize iterates through all doc sizes, running subbenchmarks
 // for each size.
 func benchmarkNginxDocSize(b *testing.B, reverse, tmpfs bool) {
-	for name, filename := range nginxDocs {
+	for size, filename := range nginxDocs {
 		concurrency := []int{1, 25, 50, 100, 1000}
 		for _, c := range concurrency {
-			fs := "Gofer"
-			if tmpfs {
-				fs = "Tmpfs"
+			fsize := tools.Parameter{
+				Name:  "filesize",
+				Value: size,
 			}
-			benchName := fmt.Sprintf("%s_%d_%s", name, c, fs)
-			b.Run(benchName, func(b *testing.B) {
+
+			threads := tools.Parameter{
+				Name:  "concurrency",
+				Value: strconv.Itoa(c),
+			}
+
+			fs := tools.Parameter{
+				Name:  "filesystem",
+				Value: "bind",
+			}
+			if tmpfs {
+				fs.Value = "tmpfs"
+			}
+			name, err := tools.ParametersToName(fsize, threads, fs)
+			if err != nil {
+				b.Fatalf("Failed to parse parameters: %v", err)
+			}
+
+			b.Run(name, func(b *testing.B) {
 				hey := &tools.Hey{
 					Requests:    c * b.N,
 					Concurrency: c,

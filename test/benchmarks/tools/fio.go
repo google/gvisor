@@ -56,13 +56,13 @@ func (f *Fio) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("failed to parse bandwidth from %s with: %v", output, err)
 	}
-	b.ReportMetric(bw, "bandwidth_b/s") // in b/s.
+	ReportCustomMetric(b, bw, "bandwidth" /*metric name*/, "bytes_per_second" /*unit*/)
 
 	iops, err := f.parseIOps(output, isRead)
 	if err != nil {
 		b.Fatalf("failed to parse iops from %s with: %v", output, err)
 	}
-	b.ReportMetric(iops, "iops")
+	ReportCustomMetric(b, iops, "io_ops" /*metric name*/, "ops_per_second" /*unit*/)
 }
 
 // parseBandwidth reports the bandwidth in b/s.
