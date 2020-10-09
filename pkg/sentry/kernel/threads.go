@@ -265,6 +265,13 @@ func (ns *PIDNamespace) Tasks() []*Task {
 	return tasks
 }
 
+// NumTasks returns the number of tasks in ns.
+func (ns *PIDNamespace) NumTasks() int {
+	ns.owner.mu.RLock()
+	defer ns.owner.mu.RUnlock()
+	return len(ns.tids)
+}
+
 // ThreadGroups returns a snapshot of the thread groups in ns.
 func (ns *PIDNamespace) ThreadGroups() []*ThreadGroup {
 	return ns.ThreadGroupsAppend(nil)
