@@ -38,7 +38,6 @@ func Emit(w io.Writer) {
 	e := &kernelEntry{}
 	fmt.Fprintf(w, "\n// CPU entry offsets.\n")
 	fmt.Fprintf(w, "#define ENTRY_SCRATCH0       0x%02x\n", reflect.ValueOf(&e.scratch0).Pointer()-reflect.ValueOf(e).Pointer())
-	fmt.Fprintf(w, "#define ENTRY_SCRATCH1       0x%02x\n", reflect.ValueOf(&e.scratch1).Pointer()-reflect.ValueOf(e).Pointer())
 	fmt.Fprintf(w, "#define ENTRY_STACK_TOP      0x%02x\n", reflect.ValueOf(&e.stackTop).Pointer()-reflect.ValueOf(e).Pointer())
 	fmt.Fprintf(w, "#define ENTRY_CPU_SELF       0x%02x\n", reflect.ValueOf(&e.cpuSelf).Pointer()-reflect.ValueOf(e).Pointer())
 	fmt.Fprintf(w, "#define ENTRY_KERNEL_CR3     0x%02x\n", reflect.ValueOf(&e.kernelCR3).Pointer()-reflect.ValueOf(e).Pointer())

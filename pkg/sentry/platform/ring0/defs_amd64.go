@@ -92,7 +92,6 @@ type kernelEntry struct {
 
 	// scratch space for temporary usage.
 	scratch0 uint64
-	scratch1 uint64
 
 	// stackTop is the top of the stack.
 	stackTop uint64
