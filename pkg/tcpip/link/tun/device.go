@@ -76,13 +76,29 @@ func (d *Device) Release(ctx context.Context) {
 	}
 }
 
+// NICID returns the NIC ID of the device.
+//
+// Must only be called after the device has been attached to an endpoint.
+func (d *Device) NICID() tcpip.NICID {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if d.endpoint == nil {
+		panic("called NICID on a device that has not been attached")
+	}
+
+	return d.endpoint.nicID
+}
+
 // SetIff services TUNSETIFF ioctl(2) request.
-func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) error {
+//
+// Returns true if a new NIC was created; false if an existing one was attached.
+func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) (bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.endpoint != nil {
-		return syserror.EINVAL
+		return false, syserror.EINVAL
 	}
 
 	// Input validations.
@@ -90,7 +106,7 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) error {
 	isTap := flags&linux.IFF_TAP != 0
 	supportedFlags := uint16(linux.IFF_TUN | linux.IFF_TAP | linux.IFF_NO_PI)
 	if isTap && isTun || !isTap && !isTun || flags&^supportedFlags != 0 {
-		return syserror.EINVAL
+		return false, syserror.EINVAL
 	}
 
 	prefix := "tun"
@@ -103,32 +119,32 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) error {
 		linkCaps |= stack.CapabilityResolutionRequired
 	}
 
-	endpoint, err := attachOrCreateNIC(s, name, prefix, linkCaps)
+	endpoint, created, err := attachOrCreateNIC(s, name, prefix, linkCaps)
 	if err != nil {
-		return syserror.EINVAL
+		return false, syserror.EINVAL
 	}
 
 	d.endpoint = endpoint
 	d.notifyHandle = d.endpoint.AddNotify(d)
 	d.flags = flags
-	return nil
+	return created, nil
 }
 
-func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkEndpointCapabilities) (*tunEndpoint, error) {
+func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkEndpointCapabilities) (*tunEndpoint, bool, error) {
 	for {
 		// 1. Try to attach to an existing NIC.
 		if name != "" {
-			if nic, found := s.GetNICByName(name); found {
-				endpoint, ok := nic.LinkEndpoint().(*tunEndpoint)
+			if linkEP := s.GetLinkEndpointByName(name); linkEP != nil {
+				endpoint, ok := linkEP.(*tunEndpoint)
 				if !ok {
 					// Not a NIC created by tun device.
-					return nil, syserror.EOPNOTSUPP
+					return nil, false, syserror.EOPNOTSUPP
 				}
 				if !endpoint.TryIncRef() {
 					// Race detected: NIC got deleted in between.
 					continue
 				}
-				return endpoint, nil
+				return endpoint, false, nil
 			}
 		}
 
@@ -151,12 +167,12 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 		})
 		switch err {
 		case nil:
-			return endpoint, nil
+			return endpoint, true, nil
 		case tcpip.ErrDuplicateNICID:
 			// Race detected: A NIC has been created in between.
 			continue
 		default:
-			return nil, syserror.EINVAL
+			return nil, false, syserror.EINVAL
 		}
 	}
 }
