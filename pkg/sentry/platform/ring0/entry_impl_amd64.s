@@ -10,10 +10,9 @@
 
 // CPU entry offsets.
 #define ENTRY_SCRATCH0       0x100
-#define ENTRY_SCRATCH1       0x108
-#define ENTRY_STACK_TOP      0x110
-#define ENTRY_CPU_SELF       0x118
-#define ENTRY_KERNEL_CR3     0x120
+#define ENTRY_STACK_TOP      0x108
+#define ENTRY_CPU_SELF       0x110
+#define ENTRY_KERNEL_CR3     0x118
 
 // Bits.
 #define _RFLAGS_IF           0x200
