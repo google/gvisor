@@ -58,61 +58,61 @@ func (l *Locks) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.locks)
 }
 
-func (l *LockRange) StateTypeName() string {
+func (r *LockRange) StateTypeName() string {
 	return "pkg/sentry/fs/lock.LockRange"
 }
 
-func (l *LockRange) StateFields() []string {
+func (r *LockRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (l *LockRange) beforeSave() {}
+func (r *LockRange) beforeSave() {}
 
-func (l *LockRange) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.Start)
-	stateSinkObject.Save(1, &l.End)
+func (r *LockRange) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Start)
+	stateSinkObject.Save(1, &r.End)
 }
 
-func (l *LockRange) afterLoad() {}
+func (r *LockRange) afterLoad() {}
 
-func (l *LockRange) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.Start)
-	stateSourceObject.Load(1, &l.End)
+func (r *LockRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Start)
+	stateSourceObject.Load(1, &r.End)
 }
 
-func (l *LockSet) StateTypeName() string {
+func (s *LockSet) StateTypeName() string {
 	return "pkg/sentry/fs/lock.LockSet"
 }
 
-func (l *LockSet) StateFields() []string {
+func (s *LockSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (l *LockSet) beforeSave() {}
+func (s *LockSet) beforeSave() {}
 
-func (l *LockSet) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	var rootValue *LockSegmentDataSlices = l.saveRoot()
+func (s *LockSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue *LockSegmentDataSlices = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (l *LockSet) afterLoad() {}
+func (s *LockSet) afterLoad() {}
 
-func (l *LockSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*LockSegmentDataSlices), func(y interface{}) { l.loadRoot(y.(*LockSegmentDataSlices)) })
+func (s *LockSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*LockSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*LockSegmentDataSlices)) })
 }
 
-func (l *Locknode) StateTypeName() string {
+func (n *Locknode) StateTypeName() string {
 	return "pkg/sentry/fs/lock.Locknode"
 }
 
-func (l *Locknode) StateFields() []string {
+func (n *Locknode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -125,31 +125,31 @@ func (l *Locknode) StateFields() []string {
 	}
 }
 
-func (l *Locknode) beforeSave() {}
+func (n *Locknode) beforeSave() {}
 
-func (l *Locknode) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.nrSegments)
-	stateSinkObject.Save(1, &l.parent)
-	stateSinkObject.Save(2, &l.parentIndex)
-	stateSinkObject.Save(3, &l.hasChildren)
-	stateSinkObject.Save(4, &l.maxGap)
-	stateSinkObject.Save(5, &l.keys)
-	stateSinkObject.Save(6, &l.values)
-	stateSinkObject.Save(7, &l.children)
+func (n *Locknode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
 }
 
-func (l *Locknode) afterLoad() {}
+func (n *Locknode) afterLoad() {}
 
-func (l *Locknode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.nrSegments)
-	stateSourceObject.Load(1, &l.parent)
-	stateSourceObject.Load(2, &l.parentIndex)
-	stateSourceObject.Load(3, &l.hasChildren)
-	stateSourceObject.Load(4, &l.maxGap)
-	stateSourceObject.Load(5, &l.keys)
-	stateSourceObject.Load(6, &l.values)
-	stateSourceObject.Load(7, &l.children)
+func (n *Locknode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
 }
 
 func (l *LockSegmentDataSlices) StateTypeName() string {

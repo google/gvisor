@@ -94,61 +94,61 @@ func (i *IDMapEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.Length)
 }
 
-func (i *idMapRange) StateTypeName() string {
+func (r *idMapRange) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.idMapRange"
 }
 
-func (i *idMapRange) StateFields() []string {
+func (r *idMapRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (i *idMapRange) beforeSave() {}
+func (r *idMapRange) beforeSave() {}
 
-func (i *idMapRange) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.Start)
-	stateSinkObject.Save(1, &i.End)
+func (r *idMapRange) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Start)
+	stateSinkObject.Save(1, &r.End)
 }
 
-func (i *idMapRange) afterLoad() {}
+func (r *idMapRange) afterLoad() {}
 
-func (i *idMapRange) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.Start)
-	stateSourceObject.Load(1, &i.End)
+func (r *idMapRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Start)
+	stateSourceObject.Load(1, &r.End)
 }
 
-func (i *idMapSet) StateTypeName() string {
+func (s *idMapSet) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.idMapSet"
 }
 
-func (i *idMapSet) StateFields() []string {
+func (s *idMapSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (i *idMapSet) beforeSave() {}
+func (s *idMapSet) beforeSave() {}
 
-func (i *idMapSet) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	var rootValue *idMapSegmentDataSlices = i.saveRoot()
+func (s *idMapSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue *idMapSegmentDataSlices = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (i *idMapSet) afterLoad() {}
+func (s *idMapSet) afterLoad() {}
 
-func (i *idMapSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*idMapSegmentDataSlices), func(y interface{}) { i.loadRoot(y.(*idMapSegmentDataSlices)) })
+func (s *idMapSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*idMapSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*idMapSegmentDataSlices)) })
 }
 
-func (i *idMapnode) StateTypeName() string {
+func (n *idMapnode) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.idMapnode"
 }
 
-func (i *idMapnode) StateFields() []string {
+func (n *idMapnode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -161,31 +161,31 @@ func (i *idMapnode) StateFields() []string {
 	}
 }
 
-func (i *idMapnode) beforeSave() {}
+func (n *idMapnode) beforeSave() {}
 
-func (i *idMapnode) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.nrSegments)
-	stateSinkObject.Save(1, &i.parent)
-	stateSinkObject.Save(2, &i.parentIndex)
-	stateSinkObject.Save(3, &i.hasChildren)
-	stateSinkObject.Save(4, &i.maxGap)
-	stateSinkObject.Save(5, &i.keys)
-	stateSinkObject.Save(6, &i.values)
-	stateSinkObject.Save(7, &i.children)
+func (n *idMapnode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
 }
 
-func (i *idMapnode) afterLoad() {}
+func (n *idMapnode) afterLoad() {}
 
-func (i *idMapnode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.nrSegments)
-	stateSourceObject.Load(1, &i.parent)
-	stateSourceObject.Load(2, &i.parentIndex)
-	stateSourceObject.Load(3, &i.hasChildren)
-	stateSourceObject.Load(4, &i.maxGap)
-	stateSourceObject.Load(5, &i.keys)
-	stateSourceObject.Load(6, &i.values)
-	stateSourceObject.Load(7, &i.children)
+func (n *idMapnode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
 }
 
 func (i *idMapSegmentDataSlices) StateTypeName() string {
@@ -217,11 +217,11 @@ func (i *idMapSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.Values)
 }
 
-func (u *UserNamespace) StateTypeName() string {
+func (ns *UserNamespace) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.UserNamespace"
 }
 
-func (u *UserNamespace) StateFields() []string {
+func (ns *UserNamespace) StateFields() []string {
 	return []string{
 		"parent",
 		"owner",
@@ -232,27 +232,27 @@ func (u *UserNamespace) StateFields() []string {
 	}
 }
 
-func (u *UserNamespace) beforeSave() {}
+func (ns *UserNamespace) beforeSave() {}
 
-func (u *UserNamespace) StateSave(stateSinkObject state.Sink) {
-	u.beforeSave()
-	stateSinkObject.Save(0, &u.parent)
-	stateSinkObject.Save(1, &u.owner)
-	stateSinkObject.Save(2, &u.uidMapFromParent)
-	stateSinkObject.Save(3, &u.uidMapToParent)
-	stateSinkObject.Save(4, &u.gidMapFromParent)
-	stateSinkObject.Save(5, &u.gidMapToParent)
+func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
+	ns.beforeSave()
+	stateSinkObject.Save(0, &ns.parent)
+	stateSinkObject.Save(1, &ns.owner)
+	stateSinkObject.Save(2, &ns.uidMapFromParent)
+	stateSinkObject.Save(3, &ns.uidMapToParent)
+	stateSinkObject.Save(4, &ns.gidMapFromParent)
+	stateSinkObject.Save(5, &ns.gidMapToParent)
 }
 
-func (u *UserNamespace) afterLoad() {}
+func (ns *UserNamespace) afterLoad() {}
 
-func (u *UserNamespace) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.parent)
-	stateSourceObject.Load(1, &u.owner)
-	stateSourceObject.Load(2, &u.uidMapFromParent)
-	stateSourceObject.Load(3, &u.uidMapToParent)
-	stateSourceObject.Load(4, &u.gidMapFromParent)
-	stateSourceObject.Load(5, &u.gidMapToParent)
+func (ns *UserNamespace) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ns.parent)
+	stateSourceObject.Load(1, &ns.owner)
+	stateSourceObject.Load(2, &ns.uidMapFromParent)
+	stateSourceObject.Load(3, &ns.uidMapToParent)
+	stateSourceObject.Load(4, &ns.gidMapFromParent)
+	stateSourceObject.Load(5, &ns.gidMapToParent)
 }
 
 func init() {

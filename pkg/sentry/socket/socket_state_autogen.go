@@ -6,30 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *SendReceiveTimeout) StateTypeName() string {
+func (to *SendReceiveTimeout) StateTypeName() string {
 	return "pkg/sentry/socket.SendReceiveTimeout"
 }
 
-func (s *SendReceiveTimeout) StateFields() []string {
+func (to *SendReceiveTimeout) StateFields() []string {
 	return []string{
 		"send",
 		"recv",
 	}
 }
 
-func (s *SendReceiveTimeout) beforeSave() {}
+func (to *SendReceiveTimeout) beforeSave() {}
 
-func (s *SendReceiveTimeout) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.send)
-	stateSinkObject.Save(1, &s.recv)
+func (to *SendReceiveTimeout) StateSave(stateSinkObject state.Sink) {
+	to.beforeSave()
+	stateSinkObject.Save(0, &to.send)
+	stateSinkObject.Save(1, &to.recv)
 }
 
-func (s *SendReceiveTimeout) afterLoad() {}
+func (to *SendReceiveTimeout) afterLoad() {}
 
-func (s *SendReceiveTimeout) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.send)
-	stateSourceObject.Load(1, &s.recv)
+func (to *SendReceiveTimeout) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &to.send)
+	stateSourceObject.Load(1, &to.recv)
 }
 
 func init() {

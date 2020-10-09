@@ -155,27 +155,27 @@ func (n *nullFileOperations) afterLoad() {}
 func (n *nullFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
-func (z *zeroDevice) StateTypeName() string {
+func (zd *zeroDevice) StateTypeName() string {
 	return "pkg/sentry/fs/dev.zeroDevice"
 }
 
-func (z *zeroDevice) StateFields() []string {
+func (zd *zeroDevice) StateFields() []string {
 	return []string{
 		"nullDevice",
 	}
 }
 
-func (z *zeroDevice) beforeSave() {}
+func (zd *zeroDevice) beforeSave() {}
 
-func (z *zeroDevice) StateSave(stateSinkObject state.Sink) {
-	z.beforeSave()
-	stateSinkObject.Save(0, &z.nullDevice)
+func (zd *zeroDevice) StateSave(stateSinkObject state.Sink) {
+	zd.beforeSave()
+	stateSinkObject.Save(0, &zd.nullDevice)
 }
 
-func (z *zeroDevice) afterLoad() {}
+func (zd *zeroDevice) afterLoad() {}
 
-func (z *zeroDevice) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &z.nullDevice)
+func (zd *zeroDevice) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &zd.nullDevice)
 }
 
 func (z *zeroFileOperations) StateTypeName() string {

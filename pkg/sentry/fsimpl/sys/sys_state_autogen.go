@@ -6,34 +6,34 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (d *dirRefs) StateTypeName() string {
+func (r *dirRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.dirRefs"
 }
 
-func (d *dirRefs) StateFields() []string {
+func (r *dirRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (d *dirRefs) beforeSave() {}
+func (r *dirRefs) beforeSave() {}
 
-func (d *dirRefs) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.refCount)
+func (r *dirRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (d *dirRefs) afterLoad() {}
+func (r *dirRefs) afterLoad() {}
 
-func (d *dirRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.refCount)
+func (r *dirRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
-func (k *kcovInode) StateTypeName() string {
+func (i *kcovInode) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.kcovInode"
 }
 
-func (k *kcovInode) StateFields() []string {
+func (i *kcovInode) StateFields() []string {
 	return []string{
 		"InodeAttrs",
 		"InodeNoopRefCount",
@@ -43,32 +43,32 @@ func (k *kcovInode) StateFields() []string {
 	}
 }
 
-func (k *kcovInode) beforeSave() {}
+func (i *kcovInode) beforeSave() {}
 
-func (k *kcovInode) StateSave(stateSinkObject state.Sink) {
-	k.beforeSave()
-	stateSinkObject.Save(0, &k.InodeAttrs)
-	stateSinkObject.Save(1, &k.InodeNoopRefCount)
-	stateSinkObject.Save(2, &k.InodeNotDirectory)
-	stateSinkObject.Save(3, &k.InodeNotSymlink)
-	stateSinkObject.Save(4, &k.implStatFS)
+func (i *kcovInode) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.InodeAttrs)
+	stateSinkObject.Save(1, &i.InodeNoopRefCount)
+	stateSinkObject.Save(2, &i.InodeNotDirectory)
+	stateSinkObject.Save(3, &i.InodeNotSymlink)
+	stateSinkObject.Save(4, &i.implStatFS)
 }
 
-func (k *kcovInode) afterLoad() {}
+func (i *kcovInode) afterLoad() {}
 
-func (k *kcovInode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &k.InodeAttrs)
-	stateSourceObject.Load(1, &k.InodeNoopRefCount)
-	stateSourceObject.Load(2, &k.InodeNotDirectory)
-	stateSourceObject.Load(3, &k.InodeNotSymlink)
-	stateSourceObject.Load(4, &k.implStatFS)
+func (i *kcovInode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.InodeAttrs)
+	stateSourceObject.Load(1, &i.InodeNoopRefCount)
+	stateSourceObject.Load(2, &i.InodeNotDirectory)
+	stateSourceObject.Load(3, &i.InodeNotSymlink)
+	stateSourceObject.Load(4, &i.implStatFS)
 }
 
-func (k *kcovFD) StateTypeName() string {
+func (fd *kcovFD) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.kcovFD"
 }
 
-func (k *kcovFD) StateFields() []string {
+func (fd *kcovFD) StateFields() []string {
 	return []string{
 		"FileDescriptionDefaultImpl",
 		"NoLockFD",
@@ -78,70 +78,70 @@ func (k *kcovFD) StateFields() []string {
 	}
 }
 
-func (k *kcovFD) beforeSave() {}
+func (fd *kcovFD) beforeSave() {}
 
-func (k *kcovFD) StateSave(stateSinkObject state.Sink) {
-	k.beforeSave()
-	stateSinkObject.Save(0, &k.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(1, &k.NoLockFD)
-	stateSinkObject.Save(2, &k.vfsfd)
-	stateSinkObject.Save(3, &k.inode)
-	stateSinkObject.Save(4, &k.kcov)
+func (fd *kcovFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(1, &fd.NoLockFD)
+	stateSinkObject.Save(2, &fd.vfsfd)
+	stateSinkObject.Save(3, &fd.inode)
+	stateSinkObject.Save(4, &fd.kcov)
 }
 
-func (k *kcovFD) afterLoad() {}
+func (fd *kcovFD) afterLoad() {}
 
-func (k *kcovFD) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &k.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(1, &k.NoLockFD)
-	stateSourceObject.Load(2, &k.vfsfd)
-	stateSourceObject.Load(3, &k.inode)
-	stateSourceObject.Load(4, &k.kcov)
+func (fd *kcovFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(1, &fd.NoLockFD)
+	stateSourceObject.Load(2, &fd.vfsfd)
+	stateSourceObject.Load(3, &fd.inode)
+	stateSourceObject.Load(4, &fd.kcov)
 }
 
-func (f *FilesystemType) StateTypeName() string {
+func (fsType *FilesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.FilesystemType"
 }
 
-func (f *FilesystemType) StateFields() []string {
+func (fsType *FilesystemType) StateFields() []string {
 	return []string{}
 }
 
-func (f *FilesystemType) beforeSave() {}
+func (fsType *FilesystemType) beforeSave() {}
 
-func (f *FilesystemType) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
+func (fsType *FilesystemType) StateSave(stateSinkObject state.Sink) {
+	fsType.beforeSave()
 }
 
-func (f *FilesystemType) afterLoad() {}
+func (fsType *FilesystemType) afterLoad() {}
 
-func (f *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fsType *FilesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
-func (f *filesystem) StateTypeName() string {
+func (fs *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.filesystem"
 }
 
-func (f *filesystem) StateFields() []string {
+func (fs *filesystem) StateFields() []string {
 	return []string{
 		"Filesystem",
 		"devMinor",
 	}
 }
 
-func (f *filesystem) beforeSave() {}
+func (fs *filesystem) beforeSave() {}
 
-func (f *filesystem) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.Filesystem)
-	stateSinkObject.Save(1, &f.devMinor)
+func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
+	fs.beforeSave()
+	stateSinkObject.Save(0, &fs.Filesystem)
+	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (f *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad() {}
 
-func (f *filesystem) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.Filesystem)
-	stateSourceObject.Load(1, &f.devMinor)
+func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fs.Filesystem)
+	stateSourceObject.Load(1, &fs.devMinor)
 }
 
 func (d *dir) StateTypeName() string {

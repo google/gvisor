@@ -38,11 +38,11 @@ func (t *tuple) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &t.direction)
 }
 
-func (t *tupleID) StateTypeName() string {
+func (ti *tupleID) StateTypeName() string {
 	return "pkg/tcpip/stack.tupleID"
 }
 
-func (t *tupleID) StateFields() []string {
+func (ti *tupleID) StateFields() []string {
 	return []string{
 		"srcAddr",
 		"srcPort",
@@ -53,34 +53,34 @@ func (t *tupleID) StateFields() []string {
 	}
 }
 
-func (t *tupleID) beforeSave() {}
+func (ti *tupleID) beforeSave() {}
 
-func (t *tupleID) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.srcAddr)
-	stateSinkObject.Save(1, &t.srcPort)
-	stateSinkObject.Save(2, &t.dstAddr)
-	stateSinkObject.Save(3, &t.dstPort)
-	stateSinkObject.Save(4, &t.transProto)
-	stateSinkObject.Save(5, &t.netProto)
+func (ti *tupleID) StateSave(stateSinkObject state.Sink) {
+	ti.beforeSave()
+	stateSinkObject.Save(0, &ti.srcAddr)
+	stateSinkObject.Save(1, &ti.srcPort)
+	stateSinkObject.Save(2, &ti.dstAddr)
+	stateSinkObject.Save(3, &ti.dstPort)
+	stateSinkObject.Save(4, &ti.transProto)
+	stateSinkObject.Save(5, &ti.netProto)
 }
 
-func (t *tupleID) afterLoad() {}
+func (ti *tupleID) afterLoad() {}
 
-func (t *tupleID) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.srcAddr)
-	stateSourceObject.Load(1, &t.srcPort)
-	stateSourceObject.Load(2, &t.dstAddr)
-	stateSourceObject.Load(3, &t.dstPort)
-	stateSourceObject.Load(4, &t.transProto)
-	stateSourceObject.Load(5, &t.netProto)
+func (ti *tupleID) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ti.srcAddr)
+	stateSourceObject.Load(1, &ti.srcPort)
+	stateSourceObject.Load(2, &ti.dstAddr)
+	stateSourceObject.Load(3, &ti.dstPort)
+	stateSourceObject.Load(4, &ti.transProto)
+	stateSourceObject.Load(5, &ti.netProto)
 }
 
-func (c *conn) StateTypeName() string {
+func (cn *conn) StateTypeName() string {
 	return "pkg/tcpip/stack.conn"
 }
 
-func (c *conn) StateFields() []string {
+func (cn *conn) StateFields() []string {
 	return []string{
 		"original",
 		"reply",
@@ -91,52 +91,52 @@ func (c *conn) StateFields() []string {
 	}
 }
 
-func (c *conn) beforeSave() {}
+func (cn *conn) beforeSave() {}
 
-func (c *conn) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	var lastUsedValue unixTime = c.saveLastUsed()
+func (cn *conn) StateSave(stateSinkObject state.Sink) {
+	cn.beforeSave()
+	var lastUsedValue unixTime = cn.saveLastUsed()
 	stateSinkObject.SaveValue(5, lastUsedValue)
-	stateSinkObject.Save(0, &c.original)
-	stateSinkObject.Save(1, &c.reply)
-	stateSinkObject.Save(2, &c.manip)
-	stateSinkObject.Save(3, &c.tcbHook)
-	stateSinkObject.Save(4, &c.tcb)
+	stateSinkObject.Save(0, &cn.original)
+	stateSinkObject.Save(1, &cn.reply)
+	stateSinkObject.Save(2, &cn.manip)
+	stateSinkObject.Save(3, &cn.tcbHook)
+	stateSinkObject.Save(4, &cn.tcb)
 }
 
-func (c *conn) afterLoad() {}
+func (cn *conn) afterLoad() {}
 
-func (c *conn) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.original)
-	stateSourceObject.Load(1, &c.reply)
-	stateSourceObject.Load(2, &c.manip)
-	stateSourceObject.Load(3, &c.tcbHook)
-	stateSourceObject.Load(4, &c.tcb)
-	stateSourceObject.LoadValue(5, new(unixTime), func(y interface{}) { c.loadLastUsed(y.(unixTime)) })
+func (cn *conn) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &cn.original)
+	stateSourceObject.Load(1, &cn.reply)
+	stateSourceObject.Load(2, &cn.manip)
+	stateSourceObject.Load(3, &cn.tcbHook)
+	stateSourceObject.Load(4, &cn.tcb)
+	stateSourceObject.LoadValue(5, new(unixTime), func(y interface{}) { cn.loadLastUsed(y.(unixTime)) })
 }
 
-func (c *ConnTrack) StateTypeName() string {
+func (ct *ConnTrack) StateTypeName() string {
 	return "pkg/tcpip/stack.ConnTrack"
 }
 
-func (c *ConnTrack) StateFields() []string {
+func (ct *ConnTrack) StateFields() []string {
 	return []string{
 		"seed",
 		"buckets",
 	}
 }
 
-func (c *ConnTrack) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	stateSinkObject.Save(0, &c.seed)
-	stateSinkObject.Save(1, &c.buckets)
+func (ct *ConnTrack) StateSave(stateSinkObject state.Sink) {
+	ct.beforeSave()
+	stateSinkObject.Save(0, &ct.seed)
+	stateSinkObject.Save(1, &ct.buckets)
 }
 
-func (c *ConnTrack) afterLoad() {}
+func (ct *ConnTrack) afterLoad() {}
 
-func (c *ConnTrack) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.seed)
-	stateSourceObject.Load(1, &c.buckets)
+func (ct *ConnTrack) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ct.seed)
+	stateSourceObject.Load(1, &ct.buckets)
 }
 
 func (b *bucket) StateTypeName() string {
@@ -188,11 +188,11 @@ func (u *unixTime) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &u.nano)
 }
 
-func (i *IPTables) StateTypeName() string {
+func (it *IPTables) StateTypeName() string {
 	return "pkg/tcpip/stack.IPTables"
 }
 
-func (i *IPTables) StateFields() []string {
+func (it *IPTables) StateFields() []string {
 	return []string{
 		"mu",
 		"v4Tables",
@@ -204,33 +204,33 @@ func (i *IPTables) StateFields() []string {
 	}
 }
 
-func (i *IPTables) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.mu)
-	stateSinkObject.Save(1, &i.v4Tables)
-	stateSinkObject.Save(2, &i.v6Tables)
-	stateSinkObject.Save(3, &i.modified)
-	stateSinkObject.Save(4, &i.priorities)
-	stateSinkObject.Save(5, &i.connections)
-	stateSinkObject.Save(6, &i.reaperDone)
+func (it *IPTables) StateSave(stateSinkObject state.Sink) {
+	it.beforeSave()
+	stateSinkObject.Save(0, &it.mu)
+	stateSinkObject.Save(1, &it.v4Tables)
+	stateSinkObject.Save(2, &it.v6Tables)
+	stateSinkObject.Save(3, &it.modified)
+	stateSinkObject.Save(4, &it.priorities)
+	stateSinkObject.Save(5, &it.connections)
+	stateSinkObject.Save(6, &it.reaperDone)
 }
 
-func (i *IPTables) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.mu)
-	stateSourceObject.Load(1, &i.v4Tables)
-	stateSourceObject.Load(2, &i.v6Tables)
-	stateSourceObject.Load(3, &i.modified)
-	stateSourceObject.Load(4, &i.priorities)
-	stateSourceObject.Load(5, &i.connections)
-	stateSourceObject.Load(6, &i.reaperDone)
-	stateSourceObject.AfterLoad(i.afterLoad)
+func (it *IPTables) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &it.mu)
+	stateSourceObject.Load(1, &it.v4Tables)
+	stateSourceObject.Load(2, &it.v6Tables)
+	stateSourceObject.Load(3, &it.modified)
+	stateSourceObject.Load(4, &it.priorities)
+	stateSourceObject.Load(5, &it.connections)
+	stateSourceObject.Load(6, &it.reaperDone)
+	stateSourceObject.AfterLoad(it.afterLoad)
 }
 
-func (t *Table) StateTypeName() string {
+func (table *Table) StateTypeName() string {
 	return "pkg/tcpip/stack.Table"
 }
 
-func (t *Table) StateFields() []string {
+func (table *Table) StateFields() []string {
 	return []string{
 		"Rules",
 		"BuiltinChains",
@@ -238,21 +238,21 @@ func (t *Table) StateFields() []string {
 	}
 }
 
-func (t *Table) beforeSave() {}
+func (table *Table) beforeSave() {}
 
-func (t *Table) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.Rules)
-	stateSinkObject.Save(1, &t.BuiltinChains)
-	stateSinkObject.Save(2, &t.Underflows)
+func (table *Table) StateSave(stateSinkObject state.Sink) {
+	table.beforeSave()
+	stateSinkObject.Save(0, &table.Rules)
+	stateSinkObject.Save(1, &table.BuiltinChains)
+	stateSinkObject.Save(2, &table.Underflows)
 }
 
-func (t *Table) afterLoad() {}
+func (table *Table) afterLoad() {}
 
-func (t *Table) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.Rules)
-	stateSourceObject.Load(1, &t.BuiltinChains)
-	stateSourceObject.Load(2, &t.Underflows)
+func (table *Table) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &table.Rules)
+	stateSourceObject.Load(1, &table.BuiltinChains)
+	stateSourceObject.Load(2, &table.Underflows)
 }
 
 func (r *Rule) StateTypeName() string {
@@ -284,11 +284,11 @@ func (r *Rule) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &r.Target)
 }
 
-func (i *IPHeaderFilter) StateTypeName() string {
+func (fl *IPHeaderFilter) StateTypeName() string {
 	return "pkg/tcpip/stack.IPHeaderFilter"
 }
 
-func (i *IPHeaderFilter) StateFields() []string {
+func (fl *IPHeaderFilter) StateFields() []string {
 	return []string{
 		"Protocol",
 		"CheckProtocol",
@@ -304,37 +304,37 @@ func (i *IPHeaderFilter) StateFields() []string {
 	}
 }
 
-func (i *IPHeaderFilter) beforeSave() {}
+func (fl *IPHeaderFilter) beforeSave() {}
 
-func (i *IPHeaderFilter) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.Protocol)
-	stateSinkObject.Save(1, &i.CheckProtocol)
-	stateSinkObject.Save(2, &i.Dst)
-	stateSinkObject.Save(3, &i.DstMask)
-	stateSinkObject.Save(4, &i.DstInvert)
-	stateSinkObject.Save(5, &i.Src)
-	stateSinkObject.Save(6, &i.SrcMask)
-	stateSinkObject.Save(7, &i.SrcInvert)
-	stateSinkObject.Save(8, &i.OutputInterface)
-	stateSinkObject.Save(9, &i.OutputInterfaceMask)
-	stateSinkObject.Save(10, &i.OutputInterfaceInvert)
+func (fl *IPHeaderFilter) StateSave(stateSinkObject state.Sink) {
+	fl.beforeSave()
+	stateSinkObject.Save(0, &fl.Protocol)
+	stateSinkObject.Save(1, &fl.CheckProtocol)
+	stateSinkObject.Save(2, &fl.Dst)
+	stateSinkObject.Save(3, &fl.DstMask)
+	stateSinkObject.Save(4, &fl.DstInvert)
+	stateSinkObject.Save(5, &fl.Src)
+	stateSinkObject.Save(6, &fl.SrcMask)
+	stateSinkObject.Save(7, &fl.SrcInvert)
+	stateSinkObject.Save(8, &fl.OutputInterface)
+	stateSinkObject.Save(9, &fl.OutputInterfaceMask)
+	stateSinkObject.Save(10, &fl.OutputInterfaceInvert)
 }
 
-func (i *IPHeaderFilter) afterLoad() {}
+func (fl *IPHeaderFilter) afterLoad() {}
 
-func (i *IPHeaderFilter) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.Protocol)
-	stateSourceObject.Load(1, &i.CheckProtocol)
-	stateSourceObject.Load(2, &i.Dst)
-	stateSourceObject.Load(3, &i.DstMask)
-	stateSourceObject.Load(4, &i.DstInvert)
-	stateSourceObject.Load(5, &i.Src)
-	stateSourceObject.Load(6, &i.SrcMask)
-	stateSourceObject.Load(7, &i.SrcInvert)
-	stateSourceObject.Load(8, &i.OutputInterface)
-	stateSourceObject.Load(9, &i.OutputInterfaceMask)
-	stateSourceObject.Load(10, &i.OutputInterfaceInvert)
+func (fl *IPHeaderFilter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fl.Protocol)
+	stateSourceObject.Load(1, &fl.CheckProtocol)
+	stateSourceObject.Load(2, &fl.Dst)
+	stateSourceObject.Load(3, &fl.DstMask)
+	stateSourceObject.Load(4, &fl.DstInvert)
+	stateSourceObject.Load(5, &fl.Src)
+	stateSourceObject.Load(6, &fl.SrcMask)
+	stateSourceObject.Load(7, &fl.SrcInvert)
+	stateSourceObject.Load(8, &fl.OutputInterface)
+	stateSourceObject.Load(9, &fl.OutputInterfaceMask)
+	stateSourceObject.Load(10, &fl.OutputInterfaceInvert)
 }
 
 func (l *linkAddrEntryList) StateTypeName() string {
@@ -363,134 +363,134 @@ func (l *linkAddrEntryList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &l.tail)
 }
 
-func (l *linkAddrEntryEntry) StateTypeName() string {
+func (e *linkAddrEntryEntry) StateTypeName() string {
 	return "pkg/tcpip/stack.linkAddrEntryEntry"
 }
 
-func (l *linkAddrEntryEntry) StateFields() []string {
+func (e *linkAddrEntryEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (l *linkAddrEntryEntry) beforeSave() {}
+func (e *linkAddrEntryEntry) beforeSave() {}
 
-func (l *linkAddrEntryEntry) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.next)
-	stateSinkObject.Save(1, &l.prev)
+func (e *linkAddrEntryEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (l *linkAddrEntryEntry) afterLoad() {}
+func (e *linkAddrEntryEntry) afterLoad() {}
 
-func (l *linkAddrEntryEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.next)
-	stateSourceObject.Load(1, &l.prev)
+func (e *linkAddrEntryEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
-func (n *neighborEntryList) StateTypeName() string {
+func (l *neighborEntryList) StateTypeName() string {
 	return "pkg/tcpip/stack.neighborEntryList"
 }
 
-func (n *neighborEntryList) StateFields() []string {
+func (l *neighborEntryList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (n *neighborEntryList) beforeSave() {}
+func (l *neighborEntryList) beforeSave() {}
 
-func (n *neighborEntryList) StateSave(stateSinkObject state.Sink) {
-	n.beforeSave()
-	stateSinkObject.Save(0, &n.head)
-	stateSinkObject.Save(1, &n.tail)
+func (l *neighborEntryList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (n *neighborEntryList) afterLoad() {}
+func (l *neighborEntryList) afterLoad() {}
 
-func (n *neighborEntryList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.head)
-	stateSourceObject.Load(1, &n.tail)
+func (l *neighborEntryList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (n *neighborEntryEntry) StateTypeName() string {
+func (e *neighborEntryEntry) StateTypeName() string {
 	return "pkg/tcpip/stack.neighborEntryEntry"
 }
 
-func (n *neighborEntryEntry) StateFields() []string {
+func (e *neighborEntryEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (n *neighborEntryEntry) beforeSave() {}
+func (e *neighborEntryEntry) beforeSave() {}
 
-func (n *neighborEntryEntry) StateSave(stateSinkObject state.Sink) {
-	n.beforeSave()
-	stateSinkObject.Save(0, &n.next)
-	stateSinkObject.Save(1, &n.prev)
+func (e *neighborEntryEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (n *neighborEntryEntry) afterLoad() {}
+func (e *neighborEntryEntry) afterLoad() {}
 
-func (n *neighborEntryEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.next)
-	stateSourceObject.Load(1, &n.prev)
+func (e *neighborEntryEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
-func (p *PacketBufferList) StateTypeName() string {
+func (l *PacketBufferList) StateTypeName() string {
 	return "pkg/tcpip/stack.PacketBufferList"
 }
 
-func (p *PacketBufferList) StateFields() []string {
+func (l *PacketBufferList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (p *PacketBufferList) beforeSave() {}
+func (l *PacketBufferList) beforeSave() {}
 
-func (p *PacketBufferList) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.head)
-	stateSinkObject.Save(1, &p.tail)
+func (l *PacketBufferList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (p *PacketBufferList) afterLoad() {}
+func (l *PacketBufferList) afterLoad() {}
 
-func (p *PacketBufferList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.head)
-	stateSourceObject.Load(1, &p.tail)
+func (l *PacketBufferList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (p *PacketBufferEntry) StateTypeName() string {
+func (e *PacketBufferEntry) StateTypeName() string {
 	return "pkg/tcpip/stack.PacketBufferEntry"
 }
 
-func (p *PacketBufferEntry) StateFields() []string {
+func (e *PacketBufferEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (p *PacketBufferEntry) beforeSave() {}
+func (e *PacketBufferEntry) beforeSave() {}
 
-func (p *PacketBufferEntry) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.next)
-	stateSinkObject.Save(1, &p.prev)
+func (e *PacketBufferEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (p *PacketBufferEntry) afterLoad() {}
+func (e *PacketBufferEntry) afterLoad() {}
 
-func (p *PacketBufferEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.next)
-	stateSourceObject.Load(1, &p.prev)
+func (e *PacketBufferEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func (t *TransportEndpointID) StateTypeName() string {
@@ -609,11 +609,11 @@ func (t *TransportEndpointInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &t.RegisterNICID)
 }
 
-func (m *multiPortEndpoint) StateTypeName() string {
+func (ep *multiPortEndpoint) StateTypeName() string {
 	return "pkg/tcpip/stack.multiPortEndpoint"
 }
 
-func (m *multiPortEndpoint) StateFields() []string {
+func (ep *multiPortEndpoint) StateFields() []string {
 	return []string{
 		"demux",
 		"netProto",
@@ -623,77 +623,77 @@ func (m *multiPortEndpoint) StateFields() []string {
 	}
 }
 
-func (m *multiPortEndpoint) beforeSave() {}
+func (ep *multiPortEndpoint) beforeSave() {}
 
-func (m *multiPortEndpoint) StateSave(stateSinkObject state.Sink) {
-	m.beforeSave()
-	stateSinkObject.Save(0, &m.demux)
-	stateSinkObject.Save(1, &m.netProto)
-	stateSinkObject.Save(2, &m.transProto)
-	stateSinkObject.Save(3, &m.endpoints)
-	stateSinkObject.Save(4, &m.flags)
+func (ep *multiPortEndpoint) StateSave(stateSinkObject state.Sink) {
+	ep.beforeSave()
+	stateSinkObject.Save(0, &ep.demux)
+	stateSinkObject.Save(1, &ep.netProto)
+	stateSinkObject.Save(2, &ep.transProto)
+	stateSinkObject.Save(3, &ep.endpoints)
+	stateSinkObject.Save(4, &ep.flags)
 }
 
-func (m *multiPortEndpoint) afterLoad() {}
+func (ep *multiPortEndpoint) afterLoad() {}
 
-func (m *multiPortEndpoint) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.demux)
-	stateSourceObject.Load(1, &m.netProto)
-	stateSourceObject.Load(2, &m.transProto)
-	stateSourceObject.Load(3, &m.endpoints)
-	stateSourceObject.Load(4, &m.flags)
+func (ep *multiPortEndpoint) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ep.demux)
+	stateSourceObject.Load(1, &ep.netProto)
+	stateSourceObject.Load(2, &ep.transProto)
+	stateSourceObject.Load(3, &ep.endpoints)
+	stateSourceObject.Load(4, &ep.flags)
 }
 
-func (t *tupleList) StateTypeName() string {
+func (l *tupleList) StateTypeName() string {
 	return "pkg/tcpip/stack.tupleList"
 }
 
-func (t *tupleList) StateFields() []string {
+func (l *tupleList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (t *tupleList) beforeSave() {}
+func (l *tupleList) beforeSave() {}
 
-func (t *tupleList) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.head)
-	stateSinkObject.Save(1, &t.tail)
+func (l *tupleList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (t *tupleList) afterLoad() {}
+func (l *tupleList) afterLoad() {}
 
-func (t *tupleList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.head)
-	stateSourceObject.Load(1, &t.tail)
+func (l *tupleList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (t *tupleEntry) StateTypeName() string {
+func (e *tupleEntry) StateTypeName() string {
 	return "pkg/tcpip/stack.tupleEntry"
 }
 
-func (t *tupleEntry) StateFields() []string {
+func (e *tupleEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (t *tupleEntry) beforeSave() {}
+func (e *tupleEntry) beforeSave() {}
 
-func (t *tupleEntry) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.next)
-	stateSinkObject.Save(1, &t.prev)
+func (e *tupleEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (t *tupleEntry) afterLoad() {}
+func (e *tupleEntry) afterLoad() {}
 
-func (t *tupleEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.next)
-	stateSourceObject.Load(1, &t.prev)
+func (e *tupleEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

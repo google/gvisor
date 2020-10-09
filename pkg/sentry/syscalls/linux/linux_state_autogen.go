@@ -70,11 +70,11 @@ func (p *pollRestartBlock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &p.timeout)
 }
 
-func (c *clockNanosleepRestartBlock) StateTypeName() string {
+func (n *clockNanosleepRestartBlock) StateTypeName() string {
 	return "pkg/sentry/syscalls/linux.clockNanosleepRestartBlock"
 }
 
-func (c *clockNanosleepRestartBlock) StateFields() []string {
+func (n *clockNanosleepRestartBlock) StateFields() []string {
 	return []string{
 		"c",
 		"duration",
@@ -82,21 +82,21 @@ func (c *clockNanosleepRestartBlock) StateFields() []string {
 	}
 }
 
-func (c *clockNanosleepRestartBlock) beforeSave() {}
+func (n *clockNanosleepRestartBlock) beforeSave() {}
 
-func (c *clockNanosleepRestartBlock) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	stateSinkObject.Save(0, &c.c)
-	stateSinkObject.Save(1, &c.duration)
-	stateSinkObject.Save(2, &c.rem)
+func (n *clockNanosleepRestartBlock) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.c)
+	stateSinkObject.Save(1, &n.duration)
+	stateSinkObject.Save(2, &n.rem)
 }
 
-func (c *clockNanosleepRestartBlock) afterLoad() {}
+func (n *clockNanosleepRestartBlock) afterLoad() {}
 
-func (c *clockNanosleepRestartBlock) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.c)
-	stateSourceObject.Load(1, &c.duration)
-	stateSourceObject.Load(2, &c.rem)
+func (n *clockNanosleepRestartBlock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.c)
+	stateSourceObject.Load(1, &n.duration)
+	stateSourceObject.Load(2, &n.rem)
 }
 
 func init() {

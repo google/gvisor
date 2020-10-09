@@ -143,56 +143,56 @@ func (w *waiter) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &w.ch)
 }
 
-func (w *waiterList) StateTypeName() string {
+func (l *waiterList) StateTypeName() string {
 	return "pkg/sentry/kernel/semaphore.waiterList"
 }
 
-func (w *waiterList) StateFields() []string {
+func (l *waiterList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (w *waiterList) beforeSave() {}
+func (l *waiterList) beforeSave() {}
 
-func (w *waiterList) StateSave(stateSinkObject state.Sink) {
-	w.beforeSave()
-	stateSinkObject.Save(0, &w.head)
-	stateSinkObject.Save(1, &w.tail)
+func (l *waiterList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (w *waiterList) afterLoad() {}
+func (l *waiterList) afterLoad() {}
 
-func (w *waiterList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.head)
-	stateSourceObject.Load(1, &w.tail)
+func (l *waiterList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (w *waiterEntry) StateTypeName() string {
+func (e *waiterEntry) StateTypeName() string {
 	return "pkg/sentry/kernel/semaphore.waiterEntry"
 }
 
-func (w *waiterEntry) StateFields() []string {
+func (e *waiterEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (w *waiterEntry) beforeSave() {}
+func (e *waiterEntry) beforeSave() {}
 
-func (w *waiterEntry) StateSave(stateSinkObject state.Sink) {
-	w.beforeSave()
-	stateSinkObject.Save(0, &w.next)
-	stateSinkObject.Save(1, &w.prev)
+func (e *waiterEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (w *waiterEntry) afterLoad() {}
+func (e *waiterEntry) afterLoad() {}
 
-func (w *waiterEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.next)
-	stateSourceObject.Load(1, &w.prev)
+func (e *waiterEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

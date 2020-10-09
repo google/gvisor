@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (c *CPUStats) StateTypeName() string {
+func (s *CPUStats) StateTypeName() string {
 	return "pkg/sentry/usage.CPUStats"
 }
 
-func (c *CPUStats) StateFields() []string {
+func (s *CPUStats) StateFields() []string {
 	return []string{
 		"UserTime",
 		"SysTime",
@@ -18,21 +18,21 @@ func (c *CPUStats) StateFields() []string {
 	}
 }
 
-func (c *CPUStats) beforeSave() {}
+func (s *CPUStats) beforeSave() {}
 
-func (c *CPUStats) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	stateSinkObject.Save(0, &c.UserTime)
-	stateSinkObject.Save(1, &c.SysTime)
-	stateSinkObject.Save(2, &c.VoluntarySwitches)
+func (s *CPUStats) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.UserTime)
+	stateSinkObject.Save(1, &s.SysTime)
+	stateSinkObject.Save(2, &s.VoluntarySwitches)
 }
 
-func (c *CPUStats) afterLoad() {}
+func (s *CPUStats) afterLoad() {}
 
-func (c *CPUStats) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.UserTime)
-	stateSourceObject.Load(1, &c.SysTime)
-	stateSourceObject.Load(2, &c.VoluntarySwitches)
+func (s *CPUStats) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.UserTime)
+	stateSourceObject.Load(1, &s.SysTime)
+	stateSourceObject.Load(2, &s.VoluntarySwitches)
 }
 
 func (i *IO) StateTypeName() string {

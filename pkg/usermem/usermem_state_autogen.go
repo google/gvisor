@@ -35,38 +35,38 @@ func (a *AccessType) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &a.Execute)
 }
 
-func (a *Addr) StateTypeName() string {
+func (v *Addr) StateTypeName() string {
 	return "pkg/usermem.Addr"
 }
 
-func (a *Addr) StateFields() []string {
+func (v *Addr) StateFields() []string {
 	return nil
 }
 
-func (a *AddrRange) StateTypeName() string {
+func (r *AddrRange) StateTypeName() string {
 	return "pkg/usermem.AddrRange"
 }
 
-func (a *AddrRange) StateFields() []string {
+func (r *AddrRange) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (a *AddrRange) beforeSave() {}
+func (r *AddrRange) beforeSave() {}
 
-func (a *AddrRange) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	stateSinkObject.Save(0, &a.Start)
-	stateSinkObject.Save(1, &a.End)
+func (r *AddrRange) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Start)
+	stateSinkObject.Save(1, &r.End)
 }
 
-func (a *AddrRange) afterLoad() {}
+func (r *AddrRange) afterLoad() {}
 
-func (a *AddrRange) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.Start)
-	stateSourceObject.Load(1, &a.End)
+func (r *AddrRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Start)
+	stateSourceObject.Load(1, &r.End)
 }
 
 func init() {

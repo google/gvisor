@@ -38,56 +38,56 @@ func (b *buffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &b.bufferEntry)
 }
 
-func (b *bufferList) StateTypeName() string {
+func (l *bufferList) StateTypeName() string {
 	return "pkg/buffer.bufferList"
 }
 
-func (b *bufferList) StateFields() []string {
+func (l *bufferList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (b *bufferList) beforeSave() {}
+func (l *bufferList) beforeSave() {}
 
-func (b *bufferList) StateSave(stateSinkObject state.Sink) {
-	b.beforeSave()
-	stateSinkObject.Save(0, &b.head)
-	stateSinkObject.Save(1, &b.tail)
+func (l *bufferList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (b *bufferList) afterLoad() {}
+func (l *bufferList) afterLoad() {}
 
-func (b *bufferList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &b.head)
-	stateSourceObject.Load(1, &b.tail)
+func (l *bufferList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (b *bufferEntry) StateTypeName() string {
+func (e *bufferEntry) StateTypeName() string {
 	return "pkg/buffer.bufferEntry"
 }
 
-func (b *bufferEntry) StateFields() []string {
+func (e *bufferEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (b *bufferEntry) beforeSave() {}
+func (e *bufferEntry) beforeSave() {}
 
-func (b *bufferEntry) StateSave(stateSinkObject state.Sink) {
-	b.beforeSave()
-	stateSinkObject.Save(0, &b.next)
-	stateSinkObject.Save(1, &b.prev)
+func (e *bufferEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (b *bufferEntry) afterLoad() {}
+func (e *bufferEntry) afterLoad() {}
 
-func (b *bufferEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &b.next)
-	stateSourceObject.Load(1, &b.prev)
+func (e *bufferEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func (p *pool) StateTypeName() string {

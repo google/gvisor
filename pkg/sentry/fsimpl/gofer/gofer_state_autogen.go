@@ -6,63 +6,63 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (d *dentryList) StateTypeName() string {
+func (l *dentryList) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.dentryList"
 }
 
-func (d *dentryList) StateFields() []string {
+func (l *dentryList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (d *dentryList) beforeSave() {}
+func (l *dentryList) beforeSave() {}
 
-func (d *dentryList) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.head)
-	stateSinkObject.Save(1, &d.tail)
+func (l *dentryList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (d *dentryList) afterLoad() {}
+func (l *dentryList) afterLoad() {}
 
-func (d *dentryList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.head)
-	stateSourceObject.Load(1, &d.tail)
+func (l *dentryList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (d *dentryEntry) StateTypeName() string {
+func (e *dentryEntry) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.dentryEntry"
 }
 
-func (d *dentryEntry) StateFields() []string {
+func (e *dentryEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (d *dentryEntry) beforeSave() {}
+func (e *dentryEntry) beforeSave() {}
 
-func (d *dentryEntry) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.next)
-	stateSinkObject.Save(1, &d.prev)
+func (e *dentryEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (d *dentryEntry) afterLoad() {}
+func (e *dentryEntry) afterLoad() {}
 
-func (d *dentryEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.next)
-	stateSourceObject.Load(1, &d.prev)
+func (e *dentryEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
-func (d *directoryFD) StateTypeName() string {
+func (fd *directoryFD) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.directoryFD"
 }
 
-func (d *directoryFD) StateFields() []string {
+func (fd *directoryFD) StateFields() []string {
 	return []string{
 		"fileDescription",
 		"DirectoryFileDescriptionDefaultImpl",
@@ -71,49 +71,49 @@ func (d *directoryFD) StateFields() []string {
 	}
 }
 
-func (d *directoryFD) beforeSave() {}
+func (fd *directoryFD) beforeSave() {}
 
-func (d *directoryFD) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.fileDescription)
-	stateSinkObject.Save(1, &d.DirectoryFileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &d.off)
-	stateSinkObject.Save(3, &d.dirents)
+func (fd *directoryFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.fileDescription)
+	stateSinkObject.Save(1, &fd.DirectoryFileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.off)
+	stateSinkObject.Save(3, &fd.dirents)
 }
 
-func (d *directoryFD) afterLoad() {}
+func (fd *directoryFD) afterLoad() {}
 
-func (d *directoryFD) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.fileDescription)
-	stateSourceObject.Load(1, &d.DirectoryFileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &d.off)
-	stateSourceObject.Load(3, &d.dirents)
+func (fd *directoryFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.fileDescription)
+	stateSourceObject.Load(1, &fd.DirectoryFileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.off)
+	stateSourceObject.Load(3, &fd.dirents)
 }
 
-func (f *FilesystemType) StateTypeName() string {
+func (fstype *FilesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.FilesystemType"
 }
 
-func (f *FilesystemType) StateFields() []string {
+func (fstype *FilesystemType) StateFields() []string {
 	return []string{}
 }
 
-func (f *FilesystemType) beforeSave() {}
+func (fstype *FilesystemType) beforeSave() {}
 
-func (f *FilesystemType) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
+func (fstype *FilesystemType) StateSave(stateSinkObject state.Sink) {
+	fstype.beforeSave()
 }
 
-func (f *FilesystemType) afterLoad() {}
+func (fstype *FilesystemType) afterLoad() {}
 
-func (f *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fstype *FilesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
-func (f *filesystem) StateTypeName() string {
+func (fs *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.filesystem"
 }
 
-func (f *filesystem) StateFields() []string {
+func (fs *filesystem) StateFields() []string {
 	return []string{
 		"vfsfs",
 		"mfp",
@@ -129,37 +129,37 @@ func (f *filesystem) StateFields() []string {
 	}
 }
 
-func (f *filesystem) beforeSave() {}
+func (fs *filesystem) beforeSave() {}
 
-func (f *filesystem) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.vfsfs)
-	stateSinkObject.Save(1, &f.mfp)
-	stateSinkObject.Save(2, &f.opts)
-	stateSinkObject.Save(3, &f.iopts)
-	stateSinkObject.Save(4, &f.clock)
-	stateSinkObject.Save(5, &f.devMinor)
-	stateSinkObject.Save(6, &f.cachedDentries)
-	stateSinkObject.Save(7, &f.cachedDentriesLen)
-	stateSinkObject.Save(8, &f.syncableDentries)
-	stateSinkObject.Save(9, &f.specialFileFDs)
-	stateSinkObject.Save(10, &f.syntheticSeq)
+func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
+	fs.beforeSave()
+	stateSinkObject.Save(0, &fs.vfsfs)
+	stateSinkObject.Save(1, &fs.mfp)
+	stateSinkObject.Save(2, &fs.opts)
+	stateSinkObject.Save(3, &fs.iopts)
+	stateSinkObject.Save(4, &fs.clock)
+	stateSinkObject.Save(5, &fs.devMinor)
+	stateSinkObject.Save(6, &fs.cachedDentries)
+	stateSinkObject.Save(7, &fs.cachedDentriesLen)
+	stateSinkObject.Save(8, &fs.syncableDentries)
+	stateSinkObject.Save(9, &fs.specialFileFDs)
+	stateSinkObject.Save(10, &fs.syntheticSeq)
 }
 
-func (f *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad() {}
 
-func (f *filesystem) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.vfsfs)
-	stateSourceObject.Load(1, &f.mfp)
-	stateSourceObject.Load(2, &f.opts)
-	stateSourceObject.Load(3, &f.iopts)
-	stateSourceObject.Load(4, &f.clock)
-	stateSourceObject.Load(5, &f.devMinor)
-	stateSourceObject.Load(6, &f.cachedDentries)
-	stateSourceObject.Load(7, &f.cachedDentriesLen)
-	stateSourceObject.Load(8, &f.syncableDentries)
-	stateSourceObject.Load(9, &f.specialFileFDs)
-	stateSourceObject.Load(10, &f.syntheticSeq)
+func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fs.vfsfs)
+	stateSourceObject.Load(1, &fs.mfp)
+	stateSourceObject.Load(2, &fs.opts)
+	stateSourceObject.Load(3, &fs.iopts)
+	stateSourceObject.Load(4, &fs.clock)
+	stateSourceObject.Load(5, &fs.devMinor)
+	stateSourceObject.Load(6, &fs.cachedDentries)
+	stateSourceObject.Load(7, &fs.cachedDentriesLen)
+	stateSourceObject.Load(8, &fs.syncableDentries)
+	stateSourceObject.Load(9, &fs.specialFileFDs)
+	stateSourceObject.Load(10, &fs.syntheticSeq)
 }
 
 func (i *inodeNumber) StateTypeName() string {
@@ -385,11 +385,11 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(34, &d.watches)
 }
 
-func (f *fileDescription) StateTypeName() string {
+func (fd *fileDescription) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.fileDescription"
 }
 
-func (f *fileDescription) StateFields() []string {
+func (fd *fileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -397,47 +397,47 @@ func (f *fileDescription) StateFields() []string {
 	}
 }
 
-func (f *fileDescription) beforeSave() {}
+func (fd *fileDescription) beforeSave() {}
 
-func (f *fileDescription) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.vfsfd)
-	stateSinkObject.Save(1, &f.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &f.LockFD)
+func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.LockFD)
 }
 
-func (f *fileDescription) afterLoad() {}
+func (fd *fileDescription) afterLoad() {}
 
-func (f *fileDescription) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.vfsfd)
-	stateSourceObject.Load(1, &f.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &f.LockFD)
+func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.LockFD)
 }
 
-func (r *regularFileFD) StateTypeName() string {
+func (fd *regularFileFD) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.regularFileFD"
 }
 
-func (r *regularFileFD) StateFields() []string {
+func (fd *regularFileFD) StateFields() []string {
 	return []string{
 		"fileDescription",
 		"off",
 	}
 }
 
-func (r *regularFileFD) beforeSave() {}
+func (fd *regularFileFD) beforeSave() {}
 
-func (r *regularFileFD) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.fileDescription)
-	stateSinkObject.Save(1, &r.off)
+func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.fileDescription)
+	stateSinkObject.Save(1, &fd.off)
 }
 
-func (r *regularFileFD) afterLoad() {}
+func (fd *regularFileFD) afterLoad() {}
 
-func (r *regularFileFD) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.fileDescription)
-	stateSourceObject.Load(1, &r.off)
+func (fd *regularFileFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.fileDescription)
+	stateSourceObject.Load(1, &fd.off)
 }
 
 func (d *dentryPlatformFile) StateTypeName() string {
@@ -495,11 +495,11 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &e.path)
 }
 
-func (s *specialFileFD) StateTypeName() string {
+func (fd *specialFileFD) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.specialFileFD"
 }
 
-func (s *specialFileFD) StateFields() []string {
+func (fd *specialFileFD) StateFields() []string {
 	return []string{
 		"fileDescription",
 		"isRegularFile",
@@ -510,27 +510,27 @@ func (s *specialFileFD) StateFields() []string {
 	}
 }
 
-func (s *specialFileFD) beforeSave() {}
+func (fd *specialFileFD) beforeSave() {}
 
-func (s *specialFileFD) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.fileDescription)
-	stateSinkObject.Save(1, &s.isRegularFile)
-	stateSinkObject.Save(2, &s.seekable)
-	stateSinkObject.Save(3, &s.haveQueue)
-	stateSinkObject.Save(4, &s.queue)
-	stateSinkObject.Save(5, &s.off)
+func (fd *specialFileFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.fileDescription)
+	stateSinkObject.Save(1, &fd.isRegularFile)
+	stateSinkObject.Save(2, &fd.seekable)
+	stateSinkObject.Save(3, &fd.haveQueue)
+	stateSinkObject.Save(4, &fd.queue)
+	stateSinkObject.Save(5, &fd.off)
 }
 
-func (s *specialFileFD) afterLoad() {}
+func (fd *specialFileFD) afterLoad() {}
 
-func (s *specialFileFD) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.fileDescription)
-	stateSourceObject.Load(1, &s.isRegularFile)
-	stateSourceObject.Load(2, &s.seekable)
-	stateSourceObject.Load(3, &s.haveQueue)
-	stateSourceObject.Load(4, &s.queue)
-	stateSourceObject.Load(5, &s.off)
+func (fd *specialFileFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.fileDescription)
+	stateSourceObject.Load(1, &fd.isRegularFile)
+	stateSourceObject.Load(2, &fd.seekable)
+	stateSourceObject.Load(3, &fd.haveQueue)
+	stateSourceObject.Load(4, &fd.queue)
+	stateSourceObject.Load(5, &fd.off)
 }
 
 func init() {

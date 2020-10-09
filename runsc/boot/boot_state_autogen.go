@@ -6,30 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *sandboxNetstackCreator) StateTypeName() string {
+func (f *sandboxNetstackCreator) StateTypeName() string {
 	return "runsc/boot.sandboxNetstackCreator"
 }
 
-func (s *sandboxNetstackCreator) StateFields() []string {
+func (f *sandboxNetstackCreator) StateFields() []string {
 	return []string{
 		"clock",
 		"uniqueID",
 	}
 }
 
-func (s *sandboxNetstackCreator) beforeSave() {}
+func (f *sandboxNetstackCreator) beforeSave() {}
 
-func (s *sandboxNetstackCreator) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.clock)
-	stateSinkObject.Save(1, &s.uniqueID)
+func (f *sandboxNetstackCreator) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.clock)
+	stateSinkObject.Save(1, &f.uniqueID)
 }
 
-func (s *sandboxNetstackCreator) afterLoad() {}
+func (f *sandboxNetstackCreator) afterLoad() {}
 
-func (s *sandboxNetstackCreator) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.clock)
-	stateSourceObject.Load(1, &s.uniqueID)
+func (f *sandboxNetstackCreator) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.clock)
+	stateSourceObject.Load(1, &f.uniqueID)
 }
 
 func init() {

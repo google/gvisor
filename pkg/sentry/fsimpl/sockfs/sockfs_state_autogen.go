@@ -6,49 +6,49 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (f *filesystemType) StateTypeName() string {
+func (fsType *filesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sockfs.filesystemType"
 }
 
-func (f *filesystemType) StateFields() []string {
+func (fsType *filesystemType) StateFields() []string {
 	return []string{}
 }
 
-func (f *filesystemType) beforeSave() {}
+func (fsType *filesystemType) beforeSave() {}
 
-func (f *filesystemType) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
+func (fsType *filesystemType) StateSave(stateSinkObject state.Sink) {
+	fsType.beforeSave()
 }
 
-func (f *filesystemType) afterLoad() {}
+func (fsType *filesystemType) afterLoad() {}
 
-func (f *filesystemType) StateLoad(stateSourceObject state.Source) {
+func (fsType *filesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
-func (f *filesystem) StateTypeName() string {
+func (fs *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sockfs.filesystem"
 }
 
-func (f *filesystem) StateFields() []string {
+func (fs *filesystem) StateFields() []string {
 	return []string{
 		"Filesystem",
 		"devMinor",
 	}
 }
 
-func (f *filesystem) beforeSave() {}
+func (fs *filesystem) beforeSave() {}
 
-func (f *filesystem) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.Filesystem)
-	stateSinkObject.Save(1, &f.devMinor)
+func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
+	fs.beforeSave()
+	stateSinkObject.Save(0, &fs.Filesystem)
+	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (f *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad() {}
 
-func (f *filesystem) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.Filesystem)
-	stateSourceObject.Load(1, &f.devMinor)
+func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fs.Filesystem)
+	stateSourceObject.Load(1, &fs.devMinor)
 }
 
 func (i *inode) StateTypeName() string {

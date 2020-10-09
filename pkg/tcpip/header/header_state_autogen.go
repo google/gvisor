@@ -6,30 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *SACKBlock) StateTypeName() string {
+func (r *SACKBlock) StateTypeName() string {
 	return "pkg/tcpip/header.SACKBlock"
 }
 
-func (s *SACKBlock) StateFields() []string {
+func (r *SACKBlock) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
 	}
 }
 
-func (s *SACKBlock) beforeSave() {}
+func (r *SACKBlock) beforeSave() {}
 
-func (s *SACKBlock) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.Start)
-	stateSinkObject.Save(1, &s.End)
+func (r *SACKBlock) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Start)
+	stateSinkObject.Save(1, &r.End)
 }
 
-func (s *SACKBlock) afterLoad() {}
+func (r *SACKBlock) afterLoad() {}
 
-func (s *SACKBlock) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Start)
-	stateSourceObject.Load(1, &s.End)
+func (r *SACKBlock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Start)
+	stateSourceObject.Load(1, &r.End)
 }
 
 func (t *TCPOptions) StateTypeName() string {

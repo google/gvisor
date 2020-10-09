@@ -6,27 +6,27 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *SimpleExtendedAttributes) StateTypeName() string {
+func (x *SimpleExtendedAttributes) StateTypeName() string {
 	return "pkg/sentry/vfs/memxattr.SimpleExtendedAttributes"
 }
 
-func (s *SimpleExtendedAttributes) StateFields() []string {
+func (x *SimpleExtendedAttributes) StateFields() []string {
 	return []string{
 		"xattrs",
 	}
 }
 
-func (s *SimpleExtendedAttributes) beforeSave() {}
+func (x *SimpleExtendedAttributes) beforeSave() {}
 
-func (s *SimpleExtendedAttributes) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.xattrs)
+func (x *SimpleExtendedAttributes) StateSave(stateSinkObject state.Sink) {
+	x.beforeSave()
+	stateSinkObject.Save(0, &x.xattrs)
 }
 
-func (s *SimpleExtendedAttributes) afterLoad() {}
+func (x *SimpleExtendedAttributes) afterLoad() {}
 
-func (s *SimpleExtendedAttributes) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.xattrs)
+func (x *SimpleExtendedAttributes) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &x.xattrs)
 }
 
 func init() {

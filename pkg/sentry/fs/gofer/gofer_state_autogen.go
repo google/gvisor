@@ -6,30 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (f *fifo) StateTypeName() string {
+func (i *fifo) StateTypeName() string {
 	return "pkg/sentry/fs/gofer.fifo"
 }
 
-func (f *fifo) StateFields() []string {
+func (i *fifo) StateFields() []string {
 	return []string{
 		"InodeOperations",
 		"fileIops",
 	}
 }
 
-func (f *fifo) beforeSave() {}
+func (i *fifo) beforeSave() {}
 
-func (f *fifo) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.InodeOperations)
-	stateSinkObject.Save(1, &f.fileIops)
+func (i *fifo) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.InodeOperations)
+	stateSinkObject.Save(1, &i.fileIops)
 }
 
-func (f *fifo) afterLoad() {}
+func (i *fifo) afterLoad() {}
 
-func (f *fifo) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.InodeOperations)
-	stateSourceObject.Load(1, &f.fileIops)
+func (i *fifo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.InodeOperations)
+	stateSourceObject.Load(1, &i.fileIops)
 }
 
 func (f *fileOperations) StateTypeName() string {
@@ -138,11 +138,11 @@ func (i *inodeFileState) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(i.afterLoad)
 }
 
-func (o *overrideInfo) StateTypeName() string {
+func (l *overrideInfo) StateTypeName() string {
 	return "pkg/sentry/fs/gofer.overrideInfo"
 }
 
-func (o *overrideInfo) StateFields() []string {
+func (l *overrideInfo) StateFields() []string {
 	return []string{
 		"dirent",
 		"endpoint",
@@ -150,44 +150,44 @@ func (o *overrideInfo) StateFields() []string {
 	}
 }
 
-func (o *overrideInfo) beforeSave() {}
+func (l *overrideInfo) beforeSave() {}
 
-func (o *overrideInfo) StateSave(stateSinkObject state.Sink) {
-	o.beforeSave()
-	stateSinkObject.Save(0, &o.dirent)
-	stateSinkObject.Save(1, &o.endpoint)
-	stateSinkObject.Save(2, &o.inode)
+func (l *overrideInfo) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.dirent)
+	stateSinkObject.Save(1, &l.endpoint)
+	stateSinkObject.Save(2, &l.inode)
 }
 
-func (o *overrideInfo) afterLoad() {}
+func (l *overrideInfo) afterLoad() {}
 
-func (o *overrideInfo) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.dirent)
-	stateSourceObject.Load(1, &o.endpoint)
-	stateSourceObject.Load(2, &o.inode)
+func (l *overrideInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.dirent)
+	stateSourceObject.Load(1, &l.endpoint)
+	stateSourceObject.Load(2, &l.inode)
 }
 
-func (o *overrideMaps) StateTypeName() string {
+func (e *overrideMaps) StateTypeName() string {
 	return "pkg/sentry/fs/gofer.overrideMaps"
 }
 
-func (o *overrideMaps) StateFields() []string {
+func (e *overrideMaps) StateFields() []string {
 	return []string{
 		"pathMap",
 	}
 }
 
-func (o *overrideMaps) beforeSave() {}
+func (e *overrideMaps) beforeSave() {}
 
-func (o *overrideMaps) StateSave(stateSinkObject state.Sink) {
-	o.beforeSave()
-	stateSinkObject.Save(0, &o.pathMap)
+func (e *overrideMaps) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.pathMap)
 }
 
-func (o *overrideMaps) afterLoad() {}
+func (e *overrideMaps) afterLoad() {}
 
-func (o *overrideMaps) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.pathMap)
+func (e *overrideMaps) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.pathMap)
 }
 
 func (s *session) StateTypeName() string {

@@ -112,27 +112,27 @@ func (s *Shm) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(16, &s.pendingDestruction)
 }
 
-func (s *ShmRefs) StateTypeName() string {
+func (r *ShmRefs) StateTypeName() string {
 	return "pkg/sentry/kernel/shm.ShmRefs"
 }
 
-func (s *ShmRefs) StateFields() []string {
+func (r *ShmRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (s *ShmRefs) beforeSave() {}
+func (r *ShmRefs) beforeSave() {}
 
-func (s *ShmRefs) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.refCount)
+func (r *ShmRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (s *ShmRefs) afterLoad() {}
+func (r *ShmRefs) afterLoad() {}
 
-func (s *ShmRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.refCount)
+func (r *ShmRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func init() {

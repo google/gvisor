@@ -29,30 +29,30 @@ func (d *DirtyInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Keep)
 }
 
-func (s *StaticDirFileOperations) StateTypeName() string {
+func (sdfo *StaticDirFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.StaticDirFileOperations"
 }
 
-func (s *StaticDirFileOperations) StateFields() []string {
+func (sdfo *StaticDirFileOperations) StateFields() []string {
 	return []string{
 		"dentryMap",
 		"dirCursor",
 	}
 }
 
-func (s *StaticDirFileOperations) beforeSave() {}
+func (sdfo *StaticDirFileOperations) beforeSave() {}
 
-func (s *StaticDirFileOperations) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.dentryMap)
-	stateSinkObject.Save(1, &s.dirCursor)
+func (sdfo *StaticDirFileOperations) StateSave(stateSinkObject state.Sink) {
+	sdfo.beforeSave()
+	stateSinkObject.Save(0, &sdfo.dentryMap)
+	stateSinkObject.Save(1, &sdfo.dirCursor)
 }
 
-func (s *StaticDirFileOperations) afterLoad() {}
+func (sdfo *StaticDirFileOperations) afterLoad() {}
 
-func (s *StaticDirFileOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.dentryMap)
-	stateSourceObject.Load(1, &s.dirCursor)
+func (sdfo *StaticDirFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &sdfo.dentryMap)
+	stateSourceObject.Load(1, &sdfo.dirCursor)
 }
 
 func (n *NoReadWriteFile) StateTypeName() string {
@@ -74,49 +74,49 @@ func (n *NoReadWriteFile) afterLoad() {}
 func (n *NoReadWriteFile) StateLoad(stateSourceObject state.Source) {
 }
 
-func (f *FileStaticContentReader) StateTypeName() string {
+func (scr *FileStaticContentReader) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.FileStaticContentReader"
 }
 
-func (f *FileStaticContentReader) StateFields() []string {
+func (scr *FileStaticContentReader) StateFields() []string {
 	return []string{
 		"content",
 	}
 }
 
-func (f *FileStaticContentReader) beforeSave() {}
+func (scr *FileStaticContentReader) beforeSave() {}
 
-func (f *FileStaticContentReader) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.content)
+func (scr *FileStaticContentReader) StateSave(stateSinkObject state.Sink) {
+	scr.beforeSave()
+	stateSinkObject.Save(0, &scr.content)
 }
 
-func (f *FileStaticContentReader) afterLoad() {}
+func (scr *FileStaticContentReader) afterLoad() {}
 
-func (f *FileStaticContentReader) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.content)
+func (scr *FileStaticContentReader) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &scr.content)
 }
 
-func (h *HostFileMapper) StateTypeName() string {
+func (f *HostFileMapper) StateTypeName() string {
 	return "pkg/sentry/fs/fsutil.HostFileMapper"
 }
 
-func (h *HostFileMapper) StateFields() []string {
+func (f *HostFileMapper) StateFields() []string {
 	return []string{
 		"refs",
 	}
 }
 
-func (h *HostFileMapper) beforeSave() {}
+func (f *HostFileMapper) beforeSave() {}
 
-func (h *HostFileMapper) StateSave(stateSinkObject state.Sink) {
-	h.beforeSave()
-	stateSinkObject.Save(0, &h.refs)
+func (f *HostFileMapper) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.refs)
 }
 
-func (h *HostFileMapper) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &h.refs)
-	stateSourceObject.AfterLoad(h.afterLoad)
+func (f *HostFileMapper) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.refs)
+	stateSourceObject.AfterLoad(f.afterLoad)
 }
 
 func (h *HostMappable) StateTypeName() string {

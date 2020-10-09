@@ -121,56 +121,56 @@ func (e *EventPoll) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
-func (p *pollEntryList) StateTypeName() string {
+func (l *pollEntryList) StateTypeName() string {
 	return "pkg/sentry/kernel/epoll.pollEntryList"
 }
 
-func (p *pollEntryList) StateFields() []string {
+func (l *pollEntryList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (p *pollEntryList) beforeSave() {}
+func (l *pollEntryList) beforeSave() {}
 
-func (p *pollEntryList) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.head)
-	stateSinkObject.Save(1, &p.tail)
+func (l *pollEntryList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (p *pollEntryList) afterLoad() {}
+func (l *pollEntryList) afterLoad() {}
 
-func (p *pollEntryList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.head)
-	stateSourceObject.Load(1, &p.tail)
+func (l *pollEntryList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (p *pollEntryEntry) StateTypeName() string {
+func (e *pollEntryEntry) StateTypeName() string {
 	return "pkg/sentry/kernel/epoll.pollEntryEntry"
 }
 
-func (p *pollEntryEntry) StateFields() []string {
+func (e *pollEntryEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (p *pollEntryEntry) beforeSave() {}
+func (e *pollEntryEntry) beforeSave() {}
 
-func (p *pollEntryEntry) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.next)
-	stateSinkObject.Save(1, &p.prev)
+func (e *pollEntryEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (p *pollEntryEntry) afterLoad() {}
+func (e *pollEntryEntry) afterLoad() {}
 
-func (p *pollEntryEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.next)
-	stateSourceObject.Load(1, &p.prev)
+func (e *pollEntryEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

@@ -193,56 +193,56 @@ func (m *multicastMembership) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &m.multicastAddr)
 }
 
-func (u *udpPacketList) StateTypeName() string {
+func (l *udpPacketList) StateTypeName() string {
 	return "pkg/tcpip/transport/udp.udpPacketList"
 }
 
-func (u *udpPacketList) StateFields() []string {
+func (l *udpPacketList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (u *udpPacketList) beforeSave() {}
+func (l *udpPacketList) beforeSave() {}
 
-func (u *udpPacketList) StateSave(stateSinkObject state.Sink) {
-	u.beforeSave()
-	stateSinkObject.Save(0, &u.head)
-	stateSinkObject.Save(1, &u.tail)
+func (l *udpPacketList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (u *udpPacketList) afterLoad() {}
+func (l *udpPacketList) afterLoad() {}
 
-func (u *udpPacketList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.head)
-	stateSourceObject.Load(1, &u.tail)
+func (l *udpPacketList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (u *udpPacketEntry) StateTypeName() string {
+func (e *udpPacketEntry) StateTypeName() string {
 	return "pkg/tcpip/transport/udp.udpPacketEntry"
 }
 
-func (u *udpPacketEntry) StateFields() []string {
+func (e *udpPacketEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (u *udpPacketEntry) beforeSave() {}
+func (e *udpPacketEntry) beforeSave() {}
 
-func (u *udpPacketEntry) StateSave(stateSinkObject state.Sink) {
-	u.beforeSave()
-	stateSinkObject.Save(0, &u.next)
-	stateSinkObject.Save(1, &u.prev)
+func (e *udpPacketEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (u *udpPacketEntry) afterLoad() {}
+func (e *udpPacketEntry) afterLoad() {}
 
-func (u *udpPacketEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.next)
-	stateSourceObject.Load(1, &u.prev)
+func (e *udpPacketEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

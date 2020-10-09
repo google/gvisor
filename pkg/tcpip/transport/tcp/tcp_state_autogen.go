@@ -402,11 +402,11 @@ func (k *keepalive) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &k.unacked)
 }
 
-func (r *rackControl) StateTypeName() string {
+func (rc *rackControl) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.rackControl"
 }
 
-func (r *rackControl) StateFields() []string {
+func (rc *rackControl) StateFields() []string {
 	return []string{
 		"xmitTime",
 		"endSequence",
@@ -416,26 +416,26 @@ func (r *rackControl) StateFields() []string {
 	}
 }
 
-func (r *rackControl) beforeSave() {}
+func (rc *rackControl) beforeSave() {}
 
-func (r *rackControl) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	var xmitTimeValue unixTime = r.saveXmitTime()
+func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
+	rc.beforeSave()
+	var xmitTimeValue unixTime = rc.saveXmitTime()
 	stateSinkObject.SaveValue(0, xmitTimeValue)
-	stateSinkObject.Save(1, &r.endSequence)
-	stateSinkObject.Save(2, &r.fack)
-	stateSinkObject.Save(3, &r.minRTT)
-	stateSinkObject.Save(4, &r.rtt)
+	stateSinkObject.Save(1, &rc.endSequence)
+	stateSinkObject.Save(2, &rc.fack)
+	stateSinkObject.Save(3, &rc.minRTT)
+	stateSinkObject.Save(4, &rc.rtt)
 }
 
-func (r *rackControl) afterLoad() {}
+func (rc *rackControl) afterLoad() {}
 
-func (r *rackControl) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(1, &r.endSequence)
-	stateSourceObject.Load(2, &r.fack)
-	stateSourceObject.Load(3, &r.minRTT)
-	stateSourceObject.Load(4, &r.rtt)
-	stateSourceObject.LoadValue(0, new(unixTime), func(y interface{}) { r.loadXmitTime(y.(unixTime)) })
+func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &rc.endSequence)
+	stateSourceObject.Load(2, &rc.fack)
+	stateSourceObject.Load(3, &rc.minRTT)
+	stateSourceObject.Load(4, &rc.rtt)
+	stateSourceObject.LoadValue(0, new(unixTime), func(y interface{}) { rc.loadXmitTime(y.(unixTime)) })
 }
 
 func (r *receiver) StateTypeName() string {
@@ -616,11 +616,11 @@ func (s *segment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(17, new(unixTime), func(y interface{}) { s.loadXmitTime(y.(unixTime)) })
 }
 
-func (s *segmentQueue) StateTypeName() string {
+func (q *segmentQueue) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.segmentQueue"
 }
 
-func (s *segmentQueue) StateFields() []string {
+func (q *segmentQueue) StateFields() []string {
 	return []string{
 		"list",
 		"ep",
@@ -628,21 +628,21 @@ func (s *segmentQueue) StateFields() []string {
 	}
 }
 
-func (s *segmentQueue) beforeSave() {}
+func (q *segmentQueue) beforeSave() {}
 
-func (s *segmentQueue) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.list)
-	stateSinkObject.Save(1, &s.ep)
-	stateSinkObject.Save(2, &s.frozen)
+func (q *segmentQueue) StateSave(stateSinkObject state.Sink) {
+	q.beforeSave()
+	stateSinkObject.Save(0, &q.list)
+	stateSinkObject.Save(1, &q.ep)
+	stateSinkObject.Save(2, &q.frozen)
 }
 
-func (s *segmentQueue) afterLoad() {}
+func (q *segmentQueue) afterLoad() {}
 
-func (s *segmentQueue) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadWait(0, &s.list)
-	stateSourceObject.Load(1, &s.ep)
-	stateSourceObject.Load(2, &s.frozen)
+func (q *segmentQueue) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadWait(0, &q.list)
+	stateSourceObject.Load(1, &q.ep)
+	stateSourceObject.Load(2, &q.frozen)
 }
 
 func (s *sender) StateTypeName() string {
@@ -847,30 +847,30 @@ func (u *unixTime) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &u.nano)
 }
 
-func (e *endpointList) StateTypeName() string {
+func (l *endpointList) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.endpointList"
 }
 
-func (e *endpointList) StateFields() []string {
+func (l *endpointList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (e *endpointList) beforeSave() {}
+func (l *endpointList) beforeSave() {}
 
-func (e *endpointList) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	stateSinkObject.Save(0, &e.head)
-	stateSinkObject.Save(1, &e.tail)
+func (l *endpointList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (e *endpointList) afterLoad() {}
+func (l *endpointList) afterLoad() {}
 
-func (e *endpointList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.head)
-	stateSourceObject.Load(1, &e.tail)
+func (l *endpointList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
 func (e *endpointEntry) StateTypeName() string {
@@ -899,56 +899,56 @@ func (e *endpointEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &e.prev)
 }
 
-func (s *segmentList) StateTypeName() string {
+func (l *segmentList) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.segmentList"
 }
 
-func (s *segmentList) StateFields() []string {
+func (l *segmentList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (s *segmentList) beforeSave() {}
+func (l *segmentList) beforeSave() {}
 
-func (s *segmentList) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.head)
-	stateSinkObject.Save(1, &s.tail)
+func (l *segmentList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (s *segmentList) afterLoad() {}
+func (l *segmentList) afterLoad() {}
 
-func (s *segmentList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.head)
-	stateSourceObject.Load(1, &s.tail)
+func (l *segmentList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (s *segmentEntry) StateTypeName() string {
+func (e *segmentEntry) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.segmentEntry"
 }
 
-func (s *segmentEntry) StateFields() []string {
+func (e *segmentEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (s *segmentEntry) beforeSave() {}
+func (e *segmentEntry) beforeSave() {}
 
-func (s *segmentEntry) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.next)
-	stateSinkObject.Save(1, &s.prev)
+func (e *segmentEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (s *segmentEntry) afterLoad() {}
+func (e *segmentEntry) afterLoad() {}
 
-func (s *segmentEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.next)
-	stateSourceObject.Load(1, &s.prev)
+func (e *segmentEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (e *EventFileDescription) StateTypeName() string {
+func (efd *EventFileDescription) StateTypeName() string {
 	return "pkg/sentry/fsimpl/eventfd.EventFileDescription"
 }
 
-func (e *EventFileDescription) StateFields() []string {
+func (efd *EventFileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -22,32 +22,32 @@ func (e *EventFileDescription) StateFields() []string {
 	}
 }
 
-func (e *EventFileDescription) beforeSave() {}
+func (efd *EventFileDescription) beforeSave() {}
 
-func (e *EventFileDescription) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	if !state.IsZeroValue(&e.queue) {
-		state.Failf("queue is %#v, expected zero", &e.queue)
+func (efd *EventFileDescription) StateSave(stateSinkObject state.Sink) {
+	efd.beforeSave()
+	if !state.IsZeroValue(&efd.queue) {
+		state.Failf("queue is %#v, expected zero", &efd.queue)
 	}
-	stateSinkObject.Save(0, &e.vfsfd)
-	stateSinkObject.Save(1, &e.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &e.DentryMetadataFileDescriptionImpl)
-	stateSinkObject.Save(3, &e.NoLockFD)
-	stateSinkObject.Save(4, &e.val)
-	stateSinkObject.Save(5, &e.semMode)
-	stateSinkObject.Save(6, &e.hostfd)
+	stateSinkObject.Save(0, &efd.vfsfd)
+	stateSinkObject.Save(1, &efd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &efd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &efd.NoLockFD)
+	stateSinkObject.Save(4, &efd.val)
+	stateSinkObject.Save(5, &efd.semMode)
+	stateSinkObject.Save(6, &efd.hostfd)
 }
 
-func (e *EventFileDescription) afterLoad() {}
+func (efd *EventFileDescription) afterLoad() {}
 
-func (e *EventFileDescription) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.vfsfd)
-	stateSourceObject.Load(1, &e.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &e.DentryMetadataFileDescriptionImpl)
-	stateSourceObject.Load(3, &e.NoLockFD)
-	stateSourceObject.Load(4, &e.val)
-	stateSourceObject.Load(5, &e.semMode)
-	stateSourceObject.Load(6, &e.hostfd)
+func (efd *EventFileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &efd.vfsfd)
+	stateSourceObject.Load(1, &efd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &efd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &efd.NoLockFD)
+	stateSourceObject.Load(4, &efd.val)
+	stateSourceObject.Load(5, &efd.semMode)
+	stateSourceObject.Load(6, &efd.hostfd)
 }
 
 func init() {

@@ -70,11 +70,11 @@ func (b *BPFInstruction) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &b.K)
 }
 
-func (k *KernelTermios) StateTypeName() string {
+func (t *KernelTermios) StateTypeName() string {
 	return "pkg/abi/linux.KernelTermios"
 }
 
-func (k *KernelTermios) StateFields() []string {
+func (t *KernelTermios) StateFields() []string {
 	return []string{
 		"InputFlags",
 		"OutputFlags",
@@ -87,31 +87,31 @@ func (k *KernelTermios) StateFields() []string {
 	}
 }
 
-func (k *KernelTermios) beforeSave() {}
+func (t *KernelTermios) beforeSave() {}
 
-func (k *KernelTermios) StateSave(stateSinkObject state.Sink) {
-	k.beforeSave()
-	stateSinkObject.Save(0, &k.InputFlags)
-	stateSinkObject.Save(1, &k.OutputFlags)
-	stateSinkObject.Save(2, &k.ControlFlags)
-	stateSinkObject.Save(3, &k.LocalFlags)
-	stateSinkObject.Save(4, &k.LineDiscipline)
-	stateSinkObject.Save(5, &k.ControlCharacters)
-	stateSinkObject.Save(6, &k.InputSpeed)
-	stateSinkObject.Save(7, &k.OutputSpeed)
+func (t *KernelTermios) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.InputFlags)
+	stateSinkObject.Save(1, &t.OutputFlags)
+	stateSinkObject.Save(2, &t.ControlFlags)
+	stateSinkObject.Save(3, &t.LocalFlags)
+	stateSinkObject.Save(4, &t.LineDiscipline)
+	stateSinkObject.Save(5, &t.ControlCharacters)
+	stateSinkObject.Save(6, &t.InputSpeed)
+	stateSinkObject.Save(7, &t.OutputSpeed)
 }
 
-func (k *KernelTermios) afterLoad() {}
+func (t *KernelTermios) afterLoad() {}
 
-func (k *KernelTermios) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &k.InputFlags)
-	stateSourceObject.Load(1, &k.OutputFlags)
-	stateSourceObject.Load(2, &k.ControlFlags)
-	stateSourceObject.Load(3, &k.LocalFlags)
-	stateSourceObject.Load(4, &k.LineDiscipline)
-	stateSourceObject.Load(5, &k.ControlCharacters)
-	stateSourceObject.Load(6, &k.InputSpeed)
-	stateSourceObject.Load(7, &k.OutputSpeed)
+func (t *KernelTermios) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.InputFlags)
+	stateSourceObject.Load(1, &t.OutputFlags)
+	stateSourceObject.Load(2, &t.ControlFlags)
+	stateSourceObject.Load(3, &t.LocalFlags)
+	stateSourceObject.Load(4, &t.LineDiscipline)
+	stateSourceObject.Load(5, &t.ControlCharacters)
+	stateSourceObject.Load(6, &t.InputSpeed)
+	stateSourceObject.Load(7, &t.OutputSpeed)
 }
 
 func (w *WindowSize) StateTypeName() string {
