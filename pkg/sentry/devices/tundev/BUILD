@@ -17,6 +17,7 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/tcpip/link/tun",
+        "//pkg/tcpip/network/arp",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

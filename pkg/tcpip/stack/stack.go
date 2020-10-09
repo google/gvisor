@@ -436,9 +436,9 @@ type Stack struct {
 	// uniqueIDGenerator is a generator of unique identifiers.
 	uniqueIDGenerator UniqueID
 
-	// forwarder holds the packets that wait for their link-address resolutions
-	// to complete, and forwards them when each resolution is done.
-	forwarder *forwardQueue
+	// linkResQueue holds packets that are waiting for link resolution to
+	// complete.
+	linkResQueue packetsPendingLinkResolution
 
 	// randomGenerator is an injectable pseudo random generator that can be
 	// used when a random number is required.
@@ -550,8 +550,8 @@ type TransportEndpointInfo struct {
 // incompatible with the receiver.
 //
 // Preconditon: the parent endpoint mu must be held while calling this method.
-func (e *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6only bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	netProto := e.NetProto
+func (t *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6only bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	netProto := t.NetProto
 	switch len(addr.Addr) {
 	case header.IPv4AddressSize:
 		netProto = header.IPv4ProtocolNumber
@@ -565,7 +565,7 @@ func (e *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6onl
 		}
 	}
 
-	switch len(e.ID.LocalAddress) {
+	switch len(t.ID.LocalAddress) {
 	case header.IPv4AddressSize:
 		if len(addr.Addr) == header.IPv6AddressSize {
 			return tcpip.FullAddress{}, 0, tcpip.ErrInvalidEndpointState
@@ -577,8 +577,8 @@ func (e *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6onl
 	}
 
 	switch {
-	case netProto == e.NetProto:
-	case netProto == header.IPv4ProtocolNumber && e.NetProto == header.IPv6ProtocolNumber:
+	case netProto == t.NetProto:
+	case netProto == header.IPv4ProtocolNumber && t.NetProto == header.IPv6ProtocolNumber:
 		if v6only {
 			return tcpip.FullAddress{}, 0, tcpip.ErrNoRoute
 		}
@@ -640,7 +640,6 @@ func New(opts Options) *Stack {
 		useNeighborCache:   opts.UseNeighborCache,
 		uniqueIDGenerator:  opts.UniqueID,
 		nudDisp:            opts.NUDDisp,
-		forwarder:          newForwardQueue(),
 		randomGenerator:    mathrand.New(randSrc),
 		sendBufferSize: SendBufferSizeOption{
 			Min:     MinBufferSize,
@@ -653,6 +652,7 @@ func New(opts Options) *Stack {
 			Max:     DefaultMaxBufferSize,
 		},
 	}
+	s.linkResQueue.init()
 
 	// Add specified network protocols.
 	for _, netProtoFactory := range opts.NetworkProtocols {
@@ -928,16 +928,16 @@ func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
 	return s.CreateNICWithOptions(id, ep, NICOptions{})
 }
 
-// GetNICByName gets the NIC specified by name.
-func (s *Stack) GetNICByName(name string) (*NIC, bool) {
+// GetLinkEndpointByName gets the link endpoint specified by name.
+func (s *Stack) GetLinkEndpointByName(name string) LinkEndpoint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, nic := range s.nics {
 		if nic.Name() == name {
-			return nic, true
+			return nic.LinkEndpoint
 		}
 	}
-	return nil, false
+	return nil
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start
@@ -1062,13 +1062,13 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		}
 		nics[id] = NICInfo{
 			Name:              nic.name,
-			LinkAddress:       nic.linkEP.LinkAddress(),
+			LinkAddress:       nic.LinkEndpoint.LinkAddress(),
 			ProtocolAddresses: nic.primaryAddresses(),
 			Flags:             flags,
-			MTU:               nic.linkEP.MTU(),
+			MTU:               nic.LinkEndpoint.MTU(),
 			Stats:             nic.stats,
 			Context:           nic.context,
-			ARPHardwareType:   nic.linkEP.ARPHardwareType(),
+			ARPHardwareType:   nic.LinkEndpoint.ARPHardwareType(),
 		}
 	}
 	return nics
@@ -1323,7 +1323,7 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 
 	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 	linkRes := s.linkAddrResolvers[protocol]
-	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.linkEP, waker)
+	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.LinkEndpoint, waker)
 }
 
 // Neighbors returns all IP to MAC address associations.
@@ -1539,7 +1539,7 @@ func (s *Stack) Wait() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, n := range s.nics {
-		n.linkEP.Wait()
+		n.LinkEndpoint.Wait()
 	}
 }
 
@@ -1627,7 +1627,7 @@ func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto t
 
 	// Add our own fake ethernet header.
 	ethFields := header.EthernetFields{
-		SrcAddr: nic.linkEP.LinkAddress(),
+		SrcAddr: nic.LinkEndpoint.LinkAddress(),
 		DstAddr: dst,
 		Type:    netProto,
 	}
@@ -1636,7 +1636,7 @@ func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto t
 	vv := buffer.View(fakeHeader).ToVectorisedView()
 	vv.Append(payload)
 
-	if err := nic.linkEP.WriteRawPacket(vv); err != nil {
+	if err := nic.LinkEndpoint.WriteRawPacket(vv); err != nil {
 		return err
 	}
 
@@ -1653,7 +1653,7 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, payload buffer.VectorisedView)
 		return tcpip.ErrUnknownDevice
 	}
 
-	if err := nic.linkEP.WriteRawPacket(payload); err != nil {
+	if err := nic.LinkEndpoint.WriteRawPacket(payload); err != nil {
 		return err
 	}
 
