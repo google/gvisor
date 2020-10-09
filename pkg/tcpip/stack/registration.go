@@ -475,8 +475,6 @@ type NDPEndpoint interface {
 
 // NetworkInterface is a network interface.
 type NetworkInterface interface {
-	NetworkLinkEndpoint
-
 	// ID returns the interface's ID.
 	ID() tcpip.NICID
 
@@ -490,6 +488,9 @@ type NetworkInterface interface {
 
 	// Enabled returns true if the interface is enabled.
 	Enabled() bool
+
+	// LinkEndpoint returns the link endpoint backing the interface.
+	LinkEndpoint() LinkEndpoint
 }
 
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
@@ -662,14 +663,21 @@ const (
 	CapabilitySoftwareGSO
 )
 
-// NetworkLinkEndpoint is a data-link layer that supports sending network
-// layer packets.
-type NetworkLinkEndpoint interface {
+// LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
+// ethernet, loopback, raw) and used by network layer protocols to send packets
+// out through the implementer's data link endpoint. When a link header exists,
+// it sets each PacketBuffer's LinkHeader field before passing it up the
+// stack.
+type LinkEndpoint interface {
 	// MTU is the maximum transmission unit for this endpoint. This is
 	// usually dictated by the backing physical network; when such a
 	// physical network doesn't exist, the limit is generally 64k, which
 	// includes the maximum size of an IP packet.
 	MTU() uint32
+
+	// Capabilities returns the set of capabilities supported by the
+	// endpoint.
+	Capabilities() LinkEndpointCapabilities
 
 	// MaxHeaderLength returns the maximum size the data link (and
 	// lower level layers combined) headers can have. Higher levels use this
@@ -678,7 +686,7 @@ type NetworkLinkEndpoint interface {
 	MaxHeaderLength() uint16
 
 	// LinkAddress returns the link address (typically a MAC) of the
-	// endpoint.
+	// link endpoint.
 	LinkAddress() tcpip.LinkAddress
 
 	// WritePacket writes a packet with the given protocol through the
@@ -698,19 +706,6 @@ type NetworkLinkEndpoint interface {
 	// offload is enabled. If it will be used for something else, it may
 	// require to change syscall filters.
 	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
-}
-
-// LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
-// ethernet, loopback, raw) and used by network layer protocols to send packets
-// out through the implementer's data link endpoint. When a link header exists,
-// it sets each PacketBuffer's LinkHeader field before passing it up the
-// stack.
-type LinkEndpoint interface {
-	NetworkLinkEndpoint
-
-	// Capabilities returns the set of capabilities supported by the
-	// endpoint.
-	Capabilities() LinkEndpointCapabilities
 
 	// WriteRawPacket writes a packet directly to the link. The packet
 	// should already have an ethernet header. It takes ownership of vv.
