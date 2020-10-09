@@ -13,6 +13,12 @@ nogo_stdlib(
     visibility = ["//visibility:public"],
 )
 
+sh_binary(
+    name = "gentest",
+    srcs = ["gentest.sh"],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "nogo",
     srcs = [

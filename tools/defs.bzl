@@ -72,6 +72,7 @@ def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **
         )
         nogo_test(
             name = name + "_nogo",
+            srcs = kwargs.get("srcs", []),
             library = ":" + name + "_nogo_library",
         )
 
@@ -203,6 +204,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
     if nogo:
         nogo_test(
             name = name + "_nogo",
+            srcs = all_srcs,
             library = ":" + name,
         )
 
@@ -239,6 +241,7 @@ def go_test(name, nogo = True, **kwargs):
     if nogo:
         nogo_test(
             name = name + "_nogo",
+            srcs = kwargs.get("srcs", []),
             library = ":" + name,
         )
 
