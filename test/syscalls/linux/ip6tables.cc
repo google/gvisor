@@ -89,11 +89,11 @@ TEST(IP6TablesBasic, GetRevision) {
   ASSERT_THAT(sock = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW),
               SyscallSucceeds());
 
-  struct xt_get_revision rev = {
-      .name = "REDIRECT",
-      .revision = 0,
-  };
+  struct xt_get_revision rev = {};
   socklen_t rev_len = sizeof(rev);
+
+  snprintf(rev.name, sizeof(rev.name), "REDIRECT");
+  rev.revision = 0;
 
   // Revision 0 exists.
   EXPECT_THAT(
