@@ -66,6 +66,7 @@ var _ stack.NetworkEndpoint = (*endpoint)(nil)
 
 type endpoint struct {
 	nic        stack.NetworkInterface
+	linkEP     stack.LinkEndpoint
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
 
@@ -86,6 +87,7 @@ type endpoint struct {
 func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &endpoint{
 		nic:        nic,
+		linkEP:     nic.LinkEndpoint(),
 		dispatcher: dispatcher,
 		protocol:   p,
 	}
@@ -176,18 +178,18 @@ func (e *endpoint) DefaultTTL() uint8 {
 // MTU implements stack.NetworkEndpoint.MTU. It returns the link-layer MTU minus
 // the network layer max header length.
 func (e *endpoint) MTU() uint32 {
-	return calculateMTU(e.nic.MTU())
+	return calculateMTU(e.linkEP.MTU())
 }
 
 // MaxHeaderLength returns the maximum length needed by ipv4 headers (and
 // underlying protocols).
 func (e *endpoint) MaxHeaderLength() uint16 {
-	return e.nic.MaxHeaderLength() + header.IPv4MaximumHeaderSize
+	return e.linkEP.MaxHeaderLength() + header.IPv4MaximumHeaderSize
 }
 
 // GSOMaxSize returns the maximum GSO packet size.
 func (e *endpoint) GSOMaxSize() uint32 {
-	if gso, ok := e.nic.(stack.GSOEndpoint); ok {
+	if gso, ok := e.linkEP.(stack.GSOEndpoint); ok {
 		return gso.GSOMaxSize()
 	}
 	return 0
@@ -208,7 +210,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu uint
 
 	for {
 		fragPkt, more := buildNextFragment(&pf, networkHeader)
-		if err := e.nic.WritePacket(r, gso, ProtocolNumber, fragPkt); err != nil {
+		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, fragPkt); err != nil {
 			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pf.RemainingFragmentCount() + 1))
 			return err
 		}
@@ -281,10 +283,10 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	if r.Loop&stack.PacketOut == 0 {
 		return nil
 	}
-	if pkt.Size() > int(e.nic.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
-		return e.writePacketFragments(r, gso, e.nic.MTU(), pkt)
+	if pkt.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
+		return e.writePacketFragments(r, gso, e.linkEP.MTU(), pkt)
 	}
-	if err := e.nic.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
+	if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
@@ -314,7 +316,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	if len(dropped) == 0 && len(natPkts) == 0 {
 		// Fast path: If no packets are to be dropped then we can just invoke the
 		// faster WritePackets API directly.
-		n, err := e.nic.WritePackets(r, gso, pkts, ProtocolNumber)
+		n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
 		r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
 		if err != nil {
 			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n))
@@ -341,7 +343,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 				continue
 			}
 		}
-		if err := e.nic.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
+		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
 			r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
 			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n - len(dropped)))
 			// Dropped packets aren't errors, so include them in
@@ -402,7 +404,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 		return nil
 	}
 
-	if err := e.nic.WritePacket(r, nil /* gso */, ProtocolNumber, pkt); err != nil {
+	if err := e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
@@ -510,13 +512,13 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		//     3 (Port Unreachable), when the designated transport protocol
 		//     (e.g., UDP) is unable to demultiplex the datagram but has no
 		//     protocol mechanism to inform the sender.
-		_ = e.protocol.returnError(r, &icmpReasonPortUnreachable{}, pkt)
+		_ = returnError(r, &icmpReasonPortUnreachable{}, pkt)
 	case stack.TransportPacketProtocolUnreachable:
 		// As per RFC: 1122 Section 3.2.2.1
 		//   A host SHOULD generate Destination Unreachable messages with code:
 		//     2 (Protocol Unreachable), when the designated transport protocol
 		//     is not supported
-		_ = e.protocol.returnError(r, &icmpReasonProtoUnreachable{}, pkt)
+		_ = returnError(r, &icmpReasonProtoUnreachable{}, pkt)
 	default:
 		panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
 	}

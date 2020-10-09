@@ -29,60 +29,60 @@ const (
 )
 
 type pendingPacket struct {
+	nic   *NIC
 	route *Route
 	proto tcpip.NetworkProtocolNumber
 	pkt   *PacketBuffer
 }
 
-// packetsPendingLinkResolution is a queue of packets pending link resolution.
-//
-// Once link resolution completes successfully, the packets will be written.
-type packetsPendingLinkResolution struct {
+type forwardQueue struct {
 	sync.Mutex
 
 	// The packets to send once the resolver completes.
-	packets map[<-chan struct{}][]pendingPacket
+	packets map[<-chan struct{}][]*pendingPacket
 
 	// FIFO of channels used to cancel the oldest goroutine waiting for
 	// link-address resolution.
 	cancelChans []chan struct{}
 }
 
-func (f *packetsPendingLinkResolution) init() {
-	f.Lock()
-	defer f.Unlock()
-	f.packets = make(map[<-chan struct{}][]pendingPacket)
+func newForwardQueue() *forwardQueue {
+	return &forwardQueue{packets: make(map[<-chan struct{}][]*pendingPacket)}
 }
 
-func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, proto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-	f.Lock()
-	defer f.Unlock()
+func (f *forwardQueue) enqueue(ch <-chan struct{}, n *NIC, r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+	shouldWait := false
 
+	f.Lock()
 	packets, ok := f.packets[ch]
-	if len(packets) == maxPendingPacketsPerResolution {
+	if !ok {
+		shouldWait = true
+	}
+	for len(packets) == maxPendingPacketsPerResolution {
 		p := packets[0]
-		packets[0] = pendingPacket{}
 		packets = packets[1:]
-		p.route.Stats().IP.OutgoingPacketErrors.Increment()
+		p.nic.stack.stats.IP.OutgoingPacketErrors.Increment()
 		p.route.Release()
 	}
-
 	if l := len(packets); l >= maxPendingPacketsPerResolution {
 		panic(fmt.Sprintf("max pending packets for resolution reached; got %d packets, max = %d", l, maxPendingPacketsPerResolution))
 	}
-
-	f.packets[ch] = append(packets, pendingPacket{
+	f.packets[ch] = append(packets, &pendingPacket{
+		nic:   n,
 		route: r,
-		proto: proto,
+		proto: protocol,
 		pkt:   pkt,
 	})
+	f.Unlock()
 
-	if ok {
+	if !shouldWait {
 		return
 	}
 
 	// Wait for the link-address resolution to complete.
-	cancel := f.newCancelChannelLocked()
+	// Start a goroutine with a forwarding-cancel channel so that we can
+	// limit the maximum number of goroutines running concurrently.
+	cancel := f.newCancelChannel()
 	go func() {
 		cancelled := false
 		select {
@@ -92,21 +92,17 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 		}
 
 		f.Lock()
-		packets, ok := f.packets[ch]
+		packets := f.packets[ch]
 		delete(f.packets, ch)
 		f.Unlock()
 
-		if !ok {
-			panic(fmt.Sprintf("link-resolution goroutine woke up but no entry exists in the queue of packets"))
-		}
-
 		for _, p := range packets {
 			if cancelled {
-				p.route.Stats().IP.OutgoingPacketErrors.Increment()
+				p.nic.stack.stats.IP.OutgoingPacketErrors.Increment()
 			} else if _, err := p.route.Resolve(nil); err != nil {
-				p.route.Stats().IP.OutgoingPacketErrors.Increment()
+				p.nic.stack.stats.IP.OutgoingPacketErrors.Increment()
 			} else {
-				p.route.nic.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
+				p.nic.forwardPacket(p.route, p.proto, p.pkt)
 			}
 			p.route.Release()
 		}
@@ -116,10 +112,12 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 // newCancelChannel creates a channel that can cancel a pending forwarding
 // activity. The oldest channel is closed if the number of open channels would
 // exceed maxPendingResolutions.
-func (f *packetsPendingLinkResolution) newCancelChannelLocked() chan struct{} {
+func (f *forwardQueue) newCancelChannel() chan struct{} {
+	f.Lock()
+	defer f.Unlock()
+
 	if len(f.cancelChans) == maxPendingResolutions {
 		ch := f.cancelChans[0]
-		f.cancelChans[0] = nil
 		f.cancelChans = f.cancelChans[1:]
 		close(ch)
 	}
