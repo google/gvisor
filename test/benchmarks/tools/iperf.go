@@ -42,7 +42,7 @@ func (i *Iperf) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("failed to parse bandwitdth from %s: %v", output, err)
 	}
-	b.ReportMetric(bW*1024, "bandwidth_b/s") // Convert from Kb/s to b/s.
+	ReportCustomMetric(b, bW*1024, "bandwidth" /*metric name*/, "bytes_per_second" /*unit*/)
 }
 
 // bandwidth parses the Bandwidth number from an iperf report. A sample is below.

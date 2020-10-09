@@ -4,12 +4,14 @@ package(licenses = ["notice"])
 
 go_library(
     name = "tools",
+    testonly = 1,
     srcs = [
         "ab.go",
         "fio.go",
         "hey.go",
         "iperf.go",
         "meminfo.go",
+        "parser_util.go",
         "redis.go",
         "sysbench.go",
         "tools.go",

@@ -46,18 +46,21 @@ func (a *ApacheBench) Report(b *testing.B, output string) {
 		b.Logf("failed to parse transferrate: %v", err)
 	}
 	b.ReportMetric(transferRate*1024, "transfer_rate_b/s") // Convert from Kb/s to b/s.
+	ReportCustomMetric(b, transferRate*1024, "transfer_rate" /*metric name*/, "bytes_per_second" /*unit*/)
 
 	latency, err := a.parseLatency(output)
 	if err != nil {
 		b.Logf("failed to parse latency: %v", err)
 	}
 	b.ReportMetric(latency/1000, "mean_latency_secs") // Convert from ms to s.
+	ReportCustomMetric(b, latency/1000, "mean_latency" /*metric name*/, "s" /*unit*/)
 
 	reqPerSecond, err := a.parseRequestsPerSecond(output)
 	if err != nil {
 		b.Logf("failed to parse requests per second: %v", err)
 	}
 	b.ReportMetric(reqPerSecond, "requests_per_second")
+	ReportCustomMetric(b, reqPerSecond, "requests_per_second" /*metric name*/, "QPS" /*unit*/)
 }
 
 var transferRateRE = regexp.MustCompile(`Transfer rate:\s+(\d+\.?\d+?)\s+\[Kbytes/sec\]\s+received`)

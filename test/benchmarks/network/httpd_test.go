@@ -14,7 +14,7 @@
 package network
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -31,33 +31,15 @@ var httpdDocs = map[string]string{
 	"10Mb":     "latin10240k.txt",
 }
 
-// BenchmarkHttpdConcurrency iterates the concurrency argument and tests
-// how well the runtime under test handles requests in parallel.
-func BenchmarkHttpdConcurrency(b *testing.B) {
-	// The test iterates over client concurrency, so set other parameters.
-	concurrency := []int{1, 25, 50, 100, 1000}
-
-	for _, c := range concurrency {
-		b.Run(fmt.Sprintf("%d", c), func(b *testing.B) {
-			hey := &tools.Hey{
-				Requests:    c * b.N,
-				Concurrency: c,
-				Doc:         httpdDocs["10Kb"],
-			}
-			runHttpd(b, hey, false /* reverse */)
-		})
-	}
-}
-
-// BenchmarkHttpdDocSize iterates over different sized payloads, testing how
-// well the runtime handles sending different payload sizes.
-func BenchmarkHttpdDocSize(b *testing.B) {
+// BenchmarkHttpd iterates over different sized payloads and concurrency, testing
+// how well the runtime handles sending different payload sizes.
+func BenchmarkHttpd(b *testing.B) {
 	benchmarkHttpdDocSize(b, false /* reverse */)
 }
 
-// BenchmarkReverseHttpdDocSize iterates over different sized payloads, testing
+// BenchmarkReverseHttpd iterates over different sized payloads, testing
 // how well the runtime handles receiving different payload sizes.
-func BenchmarkReverseHttpdDocSize(b *testing.B) {
+func BenchmarkReverseHttpd(b *testing.B) {
 	benchmarkHttpdDocSize(b, true /* reverse */)
 }
 
@@ -65,10 +47,22 @@ func BenchmarkReverseHttpdDocSize(b *testing.B) {
 // for each size.
 func benchmarkHttpdDocSize(b *testing.B, reverse bool) {
 	b.Helper()
-	for name, filename := range httpdDocs {
+	for size, filename := range httpdDocs {
 		concurrency := []int{1, 25, 50, 100, 1000}
 		for _, c := range concurrency {
-			b.Run(fmt.Sprintf("%s_%d", name, c), func(b *testing.B) {
+			fsize := tools.Parameter{
+				Name:  "filesize",
+				Value: size,
+			}
+			concurrency := tools.Parameter{
+				Name:  "concurrency",
+				Value: strconv.Itoa(c),
+			}
+			name, err := tools.ParametersToName(fsize, concurrency)
+			if err != nil {
+				b.Fatalf("Failed to parse parameters: %v", err)
+			}
+			b.Run(name, func(b *testing.B) {
 				hey := &tools.Hey{
 					Requests:    c * b.N,
 					Concurrency: c,

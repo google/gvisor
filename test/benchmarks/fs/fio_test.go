@@ -67,8 +67,19 @@ func BenchmarkFio(b *testing.B) {
 
 	for _, fsType := range []mount.Type{mount.TypeBind, mount.TypeTmpfs} {
 		for _, tc := range testCases {
-			testName := strings.Title(tc.Test) + strings.Title(string(fsType))
-			b.Run(testName, func(b *testing.B) {
+			operation := tools.Parameter{
+				Name:  "operation",
+				Value: tc.Test,
+			}
+			filesystem := tools.Parameter{
+				Name:  "filesystem",
+				Value: string(fsType),
+			}
+			name, err := tools.ParametersToName(operation, filesystem)
+			if err != nil {
+				b.Fatalf("Failed to parser paramters: %v", err)
+			}
+			b.Run(name, func(b *testing.B) {
 				ctx := context.Background()
 				container := machine.GetContainer(ctx, b)
 				defer container.CleanUp(ctx)

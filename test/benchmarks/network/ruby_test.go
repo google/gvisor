@@ -16,6 +16,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -31,7 +32,15 @@ import (
 func BenchmarkRuby(b *testing.B) {
 	concurrency := []int{1, 5, 10, 25}
 	for _, c := range concurrency {
-		b.Run(fmt.Sprintf("Concurrency%d", c), func(b *testing.B) {
+		param := tools.Parameter{
+			Name:  "concurrency",
+			Value: strconv.Itoa(c),
+		}
+		name, err := tools.ParametersToName(param)
+		if err != nil {
+			b.Fatalf("Failed to parse parameters: %v", err)
+		}
+		b.Run(name, func(b *testing.B) {
 			hey := &tools.Hey{
 				Requests:    b.N * c, // b.N requests per thread.
 				Concurrency: c,

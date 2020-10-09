@@ -49,7 +49,7 @@ func (r *Redis) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("parsing result %s failed with err: %v", output, err)
 	}
-	b.ReportMetric(result, r.Operation) // operations per second
+	ReportCustomMetric(b, result, r.Operation /*metric_name*/, "QPS" /*unit*/)
 }
 
 // parseOperation grabs the metric operations per second from redis-benchmark output.

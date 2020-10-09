@@ -43,13 +43,13 @@ func (h *Hey) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("failed to parse requests per second: %v", err)
 	}
-	b.ReportMetric(requests, "requests_per_second")
+	ReportCustomMetric(b, requests, "requests_per_second" /*metric name*/, "QPS" /*unit*/)
 
 	ave, err := h.parseAverageLatency(output)
 	if err != nil {
 		b.Fatalf("failed to parse average latency: %v", err)
 	}
-	b.ReportMetric(ave, "average_latency_secs")
+	ReportCustomMetric(b, ave, "average_latency" /*metric name*/, "s" /*unit*/)
 }
 
 var heyReqPerSecondRE = regexp.MustCompile(`Requests/sec:\s*(\d+\.?\d+?)\s+`)
