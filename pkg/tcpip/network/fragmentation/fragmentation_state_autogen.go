@@ -6,56 +6,56 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (r *reassemblerList) StateTypeName() string {
+func (l *reassemblerList) StateTypeName() string {
 	return "pkg/tcpip/network/fragmentation.reassemblerList"
 }
 
-func (r *reassemblerList) StateFields() []string {
+func (l *reassemblerList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (r *reassemblerList) beforeSave() {}
+func (l *reassemblerList) beforeSave() {}
 
-func (r *reassemblerList) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.head)
-	stateSinkObject.Save(1, &r.tail)
+func (l *reassemblerList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (r *reassemblerList) afterLoad() {}
+func (l *reassemblerList) afterLoad() {}
 
-func (r *reassemblerList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.head)
-	stateSourceObject.Load(1, &r.tail)
+func (l *reassemblerList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (r *reassemblerEntry) StateTypeName() string {
+func (e *reassemblerEntry) StateTypeName() string {
 	return "pkg/tcpip/network/fragmentation.reassemblerEntry"
 }
 
-func (r *reassemblerEntry) StateFields() []string {
+func (e *reassemblerEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (r *reassemblerEntry) beforeSave() {}
+func (e *reassemblerEntry) beforeSave() {}
 
-func (r *reassemblerEntry) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.next)
-	stateSinkObject.Save(1, &r.prev)
+func (e *reassemblerEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (r *reassemblerEntry) afterLoad() {}
+func (e *reassemblerEntry) afterLoad() {}
 
-func (r *reassemblerEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.next)
-	stateSourceObject.Load(1, &r.prev)
+func (e *reassemblerEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *SignalFileDescription) StateTypeName() string {
+func (sfd *SignalFileDescription) StateTypeName() string {
 	return "pkg/sentry/fsimpl/signalfd.SignalFileDescription"
 }
 
-func (s *SignalFileDescription) StateFields() []string {
+func (sfd *SignalFileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -21,27 +21,27 @@ func (s *SignalFileDescription) StateFields() []string {
 	}
 }
 
-func (s *SignalFileDescription) beforeSave() {}
+func (sfd *SignalFileDescription) beforeSave() {}
 
-func (s *SignalFileDescription) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.vfsfd)
-	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
-	stateSinkObject.Save(3, &s.NoLockFD)
-	stateSinkObject.Save(4, &s.target)
-	stateSinkObject.Save(5, &s.mask)
+func (sfd *SignalFileDescription) StateSave(stateSinkObject state.Sink) {
+	sfd.beforeSave()
+	stateSinkObject.Save(0, &sfd.vfsfd)
+	stateSinkObject.Save(1, &sfd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &sfd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &sfd.NoLockFD)
+	stateSinkObject.Save(4, &sfd.target)
+	stateSinkObject.Save(5, &sfd.mask)
 }
 
-func (s *SignalFileDescription) afterLoad() {}
+func (sfd *SignalFileDescription) afterLoad() {}
 
-func (s *SignalFileDescription) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.vfsfd)
-	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
-	stateSourceObject.Load(3, &s.NoLockFD)
-	stateSourceObject.Load(4, &s.target)
-	stateSourceObject.Load(5, &s.mask)
+func (sfd *SignalFileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &sfd.vfsfd)
+	stateSourceObject.Load(1, &sfd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &sfd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &sfd.NoLockFD)
+	stateSourceObject.Load(4, &sfd.target)
+	stateSourceObject.Load(5, &sfd.mask)
 }
 
 func init() {

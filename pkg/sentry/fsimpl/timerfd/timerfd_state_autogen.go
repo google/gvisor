@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (t *TimerFileDescription) StateTypeName() string {
+func (tfd *TimerFileDescription) StateTypeName() string {
 	return "pkg/sentry/fsimpl/timerfd.TimerFileDescription"
 }
 
-func (t *TimerFileDescription) StateFields() []string {
+func (tfd *TimerFileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -22,29 +22,29 @@ func (t *TimerFileDescription) StateFields() []string {
 	}
 }
 
-func (t *TimerFileDescription) beforeSave() {}
+func (tfd *TimerFileDescription) beforeSave() {}
 
-func (t *TimerFileDescription) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.vfsfd)
-	stateSinkObject.Save(1, &t.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &t.DentryMetadataFileDescriptionImpl)
-	stateSinkObject.Save(3, &t.NoLockFD)
-	stateSinkObject.Save(4, &t.events)
-	stateSinkObject.Save(5, &t.timer)
-	stateSinkObject.Save(6, &t.val)
+func (tfd *TimerFileDescription) StateSave(stateSinkObject state.Sink) {
+	tfd.beforeSave()
+	stateSinkObject.Save(0, &tfd.vfsfd)
+	stateSinkObject.Save(1, &tfd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &tfd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &tfd.NoLockFD)
+	stateSinkObject.Save(4, &tfd.events)
+	stateSinkObject.Save(5, &tfd.timer)
+	stateSinkObject.Save(6, &tfd.val)
 }
 
-func (t *TimerFileDescription) afterLoad() {}
+func (tfd *TimerFileDescription) afterLoad() {}
 
-func (t *TimerFileDescription) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.vfsfd)
-	stateSourceObject.Load(1, &t.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &t.DentryMetadataFileDescriptionImpl)
-	stateSourceObject.Load(3, &t.NoLockFD)
-	stateSourceObject.Load(4, &t.events)
-	stateSourceObject.Load(5, &t.timer)
-	stateSourceObject.Load(6, &t.val)
+func (tfd *TimerFileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tfd.vfsfd)
+	stateSourceObject.Load(1, &tfd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &tfd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &tfd.NoLockFD)
+	stateSourceObject.Load(4, &tfd.events)
+	stateSourceObject.Load(5, &tfd.timer)
+	stateSourceObject.Load(6, &tfd.val)
 }
 
 func init() {

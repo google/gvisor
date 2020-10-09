@@ -29,11 +29,11 @@ func (f *fsFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.file)
 }
 
-func (f *fsLookup) StateTypeName() string {
+func (l *fsLookup) StateTypeName() string {
 	return "pkg/sentry/fsbridge.fsLookup"
 }
 
-func (f *fsLookup) StateFields() []string {
+func (l *fsLookup) StateFields() []string {
 	return []string{
 		"mntns",
 		"root",
@@ -41,51 +41,51 @@ func (f *fsLookup) StateFields() []string {
 	}
 }
 
-func (f *fsLookup) beforeSave() {}
+func (l *fsLookup) beforeSave() {}
 
-func (f *fsLookup) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.mntns)
-	stateSinkObject.Save(1, &f.root)
-	stateSinkObject.Save(2, &f.workingDir)
+func (l *fsLookup) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.mntns)
+	stateSinkObject.Save(1, &l.root)
+	stateSinkObject.Save(2, &l.workingDir)
 }
 
-func (f *fsLookup) afterLoad() {}
+func (l *fsLookup) afterLoad() {}
 
-func (f *fsLookup) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.mntns)
-	stateSourceObject.Load(1, &f.root)
-	stateSourceObject.Load(2, &f.workingDir)
+func (l *fsLookup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.mntns)
+	stateSourceObject.Load(1, &l.root)
+	stateSourceObject.Load(2, &l.workingDir)
 }
 
-func (v *VFSFile) StateTypeName() string {
+func (f *VFSFile) StateTypeName() string {
 	return "pkg/sentry/fsbridge.VFSFile"
 }
 
-func (v *VFSFile) StateFields() []string {
+func (f *VFSFile) StateFields() []string {
 	return []string{
 		"file",
 	}
 }
 
-func (v *VFSFile) beforeSave() {}
+func (f *VFSFile) beforeSave() {}
 
-func (v *VFSFile) StateSave(stateSinkObject state.Sink) {
-	v.beforeSave()
-	stateSinkObject.Save(0, &v.file)
+func (f *VFSFile) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.file)
 }
 
-func (v *VFSFile) afterLoad() {}
+func (f *VFSFile) afterLoad() {}
 
-func (v *VFSFile) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.file)
+func (f *VFSFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.file)
 }
 
-func (v *vfsLookup) StateTypeName() string {
+func (l *vfsLookup) StateTypeName() string {
 	return "pkg/sentry/fsbridge.vfsLookup"
 }
 
-func (v *vfsLookup) StateFields() []string {
+func (l *vfsLookup) StateFields() []string {
 	return []string{
 		"mntns",
 		"root",
@@ -93,21 +93,21 @@ func (v *vfsLookup) StateFields() []string {
 	}
 }
 
-func (v *vfsLookup) beforeSave() {}
+func (l *vfsLookup) beforeSave() {}
 
-func (v *vfsLookup) StateSave(stateSinkObject state.Sink) {
-	v.beforeSave()
-	stateSinkObject.Save(0, &v.mntns)
-	stateSinkObject.Save(1, &v.root)
-	stateSinkObject.Save(2, &v.workingDir)
+func (l *vfsLookup) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.mntns)
+	stateSinkObject.Save(1, &l.root)
+	stateSinkObject.Save(2, &l.workingDir)
 }
 
-func (v *vfsLookup) afterLoad() {}
+func (l *vfsLookup) afterLoad() {}
 
-func (v *vfsLookup) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.mntns)
-	stateSourceObject.Load(1, &v.root)
-	stateSourceObject.Load(2, &v.workingDir)
+func (l *vfsLookup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.mntns)
+	stateSourceObject.Load(1, &l.root)
+	stateSourceObject.Load(2, &l.workingDir)
 }
 
 func init() {

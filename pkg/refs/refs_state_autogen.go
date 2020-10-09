@@ -33,11 +33,11 @@ func (w *WeakRef) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(savedReference), func(y interface{}) { w.loadObj(y.(savedReference)) })
 }
 
-func (a *AtomicRefCount) StateTypeName() string {
+func (r *AtomicRefCount) StateTypeName() string {
 	return "pkg/refs.AtomicRefCount"
 }
 
-func (a *AtomicRefCount) StateFields() []string {
+func (r *AtomicRefCount) StateFields() []string {
 	return []string{
 		"refCount",
 		"name",
@@ -45,21 +45,21 @@ func (a *AtomicRefCount) StateFields() []string {
 	}
 }
 
-func (a *AtomicRefCount) beforeSave() {}
+func (r *AtomicRefCount) beforeSave() {}
 
-func (a *AtomicRefCount) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	stateSinkObject.Save(0, &a.refCount)
-	stateSinkObject.Save(1, &a.name)
-	stateSinkObject.Save(2, &a.stack)
+func (r *AtomicRefCount) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+	stateSinkObject.Save(1, &r.name)
+	stateSinkObject.Save(2, &r.stack)
 }
 
-func (a *AtomicRefCount) afterLoad() {}
+func (r *AtomicRefCount) afterLoad() {}
 
-func (a *AtomicRefCount) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.refCount)
-	stateSourceObject.Load(1, &a.name)
-	stateSourceObject.Load(2, &a.stack)
+func (r *AtomicRefCount) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.Load(1, &r.name)
+	stateSourceObject.Load(2, &r.stack)
 }
 
 func (s *savedReference) StateTypeName() string {
@@ -85,56 +85,56 @@ func (s *savedReference) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.obj)
 }
 
-func (w *weakRefList) StateTypeName() string {
+func (l *weakRefList) StateTypeName() string {
 	return "pkg/refs.weakRefList"
 }
 
-func (w *weakRefList) StateFields() []string {
+func (l *weakRefList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (w *weakRefList) beforeSave() {}
+func (l *weakRefList) beforeSave() {}
 
-func (w *weakRefList) StateSave(stateSinkObject state.Sink) {
-	w.beforeSave()
-	stateSinkObject.Save(0, &w.head)
-	stateSinkObject.Save(1, &w.tail)
+func (l *weakRefList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (w *weakRefList) afterLoad() {}
+func (l *weakRefList) afterLoad() {}
 
-func (w *weakRefList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.head)
-	stateSourceObject.Load(1, &w.tail)
+func (l *weakRefList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (w *weakRefEntry) StateTypeName() string {
+func (e *weakRefEntry) StateTypeName() string {
 	return "pkg/refs.weakRefEntry"
 }
 
-func (w *weakRefEntry) StateFields() []string {
+func (e *weakRefEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (w *weakRefEntry) beforeSave() {}
+func (e *weakRefEntry) beforeSave() {}
 
-func (w *weakRefEntry) StateSave(stateSinkObject state.Sink) {
-	w.beforeSave()
-	stateSinkObject.Save(0, &w.next)
-	stateSinkObject.Save(1, &w.prev)
+func (e *weakRefEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (w *weakRefEntry) afterLoad() {}
+func (e *weakRefEntry) afterLoad() {}
 
-func (w *weakRefEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.next)
-	stateSourceObject.Load(1, &w.prev)
+func (e *weakRefEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

@@ -86,11 +86,11 @@ func (a *AIOContext) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(a.afterLoad)
 }
 
-func (a *aioMappable) StateTypeName() string {
+func (m *aioMappable) StateTypeName() string {
 	return "pkg/sentry/mm.aioMappable"
 }
 
-func (a *aioMappable) StateFields() []string {
+func (m *aioMappable) StateFields() []string {
 	return []string{
 		"aioMappableRefs",
 		"mfp",
@@ -98,75 +98,75 @@ func (a *aioMappable) StateFields() []string {
 	}
 }
 
-func (a *aioMappable) beforeSave() {}
+func (m *aioMappable) beforeSave() {}
 
-func (a *aioMappable) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	stateSinkObject.Save(0, &a.aioMappableRefs)
-	stateSinkObject.Save(1, &a.mfp)
-	stateSinkObject.Save(2, &a.fr)
+func (m *aioMappable) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.aioMappableRefs)
+	stateSinkObject.Save(1, &m.mfp)
+	stateSinkObject.Save(2, &m.fr)
 }
 
-func (a *aioMappable) afterLoad() {}
+func (m *aioMappable) afterLoad() {}
 
-func (a *aioMappable) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.aioMappableRefs)
-	stateSourceObject.Load(1, &a.mfp)
-	stateSourceObject.Load(2, &a.fr)
+func (m *aioMappable) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.aioMappableRefs)
+	stateSourceObject.Load(1, &m.mfp)
+	stateSourceObject.Load(2, &m.fr)
 }
 
-func (a *aioMappableRefs) StateTypeName() string {
+func (r *aioMappableRefs) StateTypeName() string {
 	return "pkg/sentry/mm.aioMappableRefs"
 }
 
-func (a *aioMappableRefs) StateFields() []string {
+func (r *aioMappableRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (a *aioMappableRefs) beforeSave() {}
+func (r *aioMappableRefs) beforeSave() {}
 
-func (a *aioMappableRefs) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	stateSinkObject.Save(0, &a.refCount)
+func (r *aioMappableRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (a *aioMappableRefs) afterLoad() {}
+func (r *aioMappableRefs) afterLoad() {}
 
-func (a *aioMappableRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.refCount)
+func (r *aioMappableRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
-func (f *fileRefcountSet) StateTypeName() string {
+func (s *fileRefcountSet) StateTypeName() string {
 	return "pkg/sentry/mm.fileRefcountSet"
 }
 
-func (f *fileRefcountSet) StateFields() []string {
+func (s *fileRefcountSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (f *fileRefcountSet) beforeSave() {}
+func (s *fileRefcountSet) beforeSave() {}
 
-func (f *fileRefcountSet) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	var rootValue *fileRefcountSegmentDataSlices = f.saveRoot()
+func (s *fileRefcountSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue *fileRefcountSegmentDataSlices = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (f *fileRefcountSet) afterLoad() {}
+func (s *fileRefcountSet) afterLoad() {}
 
-func (f *fileRefcountSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*fileRefcountSegmentDataSlices), func(y interface{}) { f.loadRoot(y.(*fileRefcountSegmentDataSlices)) })
+func (s *fileRefcountSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*fileRefcountSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*fileRefcountSegmentDataSlices)) })
 }
 
-func (f *fileRefcountnode) StateTypeName() string {
+func (n *fileRefcountnode) StateTypeName() string {
 	return "pkg/sentry/mm.fileRefcountnode"
 }
 
-func (f *fileRefcountnode) StateFields() []string {
+func (n *fileRefcountnode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -179,31 +179,31 @@ func (f *fileRefcountnode) StateFields() []string {
 	}
 }
 
-func (f *fileRefcountnode) beforeSave() {}
+func (n *fileRefcountnode) beforeSave() {}
 
-func (f *fileRefcountnode) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.nrSegments)
-	stateSinkObject.Save(1, &f.parent)
-	stateSinkObject.Save(2, &f.parentIndex)
-	stateSinkObject.Save(3, &f.hasChildren)
-	stateSinkObject.Save(4, &f.maxGap)
-	stateSinkObject.Save(5, &f.keys)
-	stateSinkObject.Save(6, &f.values)
-	stateSinkObject.Save(7, &f.children)
+func (n *fileRefcountnode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
 }
 
-func (f *fileRefcountnode) afterLoad() {}
+func (n *fileRefcountnode) afterLoad() {}
 
-func (f *fileRefcountnode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.nrSegments)
-	stateSourceObject.Load(1, &f.parent)
-	stateSourceObject.Load(2, &f.parentIndex)
-	stateSourceObject.Load(3, &f.hasChildren)
-	stateSourceObject.Load(4, &f.maxGap)
-	stateSourceObject.Load(5, &f.keys)
-	stateSourceObject.Load(6, &f.values)
-	stateSourceObject.Load(7, &f.children)
+func (n *fileRefcountnode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
 }
 
 func (f *fileRefcountSegmentDataSlices) StateTypeName() string {
@@ -235,63 +235,63 @@ func (f *fileRefcountSegmentDataSlices) StateLoad(stateSourceObject state.Source
 	stateSourceObject.Load(2, &f.Values)
 }
 
-func (i *ioList) StateTypeName() string {
+func (l *ioList) StateTypeName() string {
 	return "pkg/sentry/mm.ioList"
 }
 
-func (i *ioList) StateFields() []string {
+func (l *ioList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (i *ioList) beforeSave() {}
+func (l *ioList) beforeSave() {}
 
-func (i *ioList) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.head)
-	stateSinkObject.Save(1, &i.tail)
+func (l *ioList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (i *ioList) afterLoad() {}
+func (l *ioList) afterLoad() {}
 
-func (i *ioList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.head)
-	stateSourceObject.Load(1, &i.tail)
+func (l *ioList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (i *ioEntry) StateTypeName() string {
+func (e *ioEntry) StateTypeName() string {
 	return "pkg/sentry/mm.ioEntry"
 }
 
-func (i *ioEntry) StateFields() []string {
+func (e *ioEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (i *ioEntry) beforeSave() {}
+func (e *ioEntry) beforeSave() {}
 
-func (i *ioEntry) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.next)
-	stateSinkObject.Save(1, &i.prev)
+func (e *ioEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (i *ioEntry) afterLoad() {}
+func (e *ioEntry) afterLoad() {}
 
-func (i *ioEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.next)
-	stateSourceObject.Load(1, &i.prev)
+func (e *ioEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
-func (m *MemoryManager) StateTypeName() string {
+func (mm *MemoryManager) StateTypeName() string {
 	return "pkg/sentry/mm.MemoryManager"
 }
 
-func (m *MemoryManager) StateFields() []string {
+func (mm *MemoryManager) StateFields() []string {
 	return []string{
 		"p",
 		"mfp",
@@ -320,73 +320,73 @@ func (m *MemoryManager) StateFields() []string {
 	}
 }
 
-func (m *MemoryManager) StateSave(stateSinkObject state.Sink) {
-	m.beforeSave()
-	if !state.IsZeroValue(&m.active) {
-		state.Failf("active is %#v, expected zero", &m.active)
+func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
+	mm.beforeSave()
+	if !state.IsZeroValue(&mm.active) {
+		state.Failf("active is %#v, expected zero", &mm.active)
 	}
-	if !state.IsZeroValue(&m.captureInvalidations) {
-		state.Failf("captureInvalidations is %#v, expected zero", &m.captureInvalidations)
+	if !state.IsZeroValue(&mm.captureInvalidations) {
+		state.Failf("captureInvalidations is %#v, expected zero", &mm.captureInvalidations)
 	}
-	stateSinkObject.Save(0, &m.p)
-	stateSinkObject.Save(1, &m.mfp)
-	stateSinkObject.Save(2, &m.layout)
-	stateSinkObject.Save(3, &m.privateRefs)
-	stateSinkObject.Save(4, &m.users)
-	stateSinkObject.Save(5, &m.vmas)
-	stateSinkObject.Save(6, &m.brk)
-	stateSinkObject.Save(7, &m.usageAS)
-	stateSinkObject.Save(8, &m.lockedAS)
-	stateSinkObject.Save(9, &m.dataAS)
-	stateSinkObject.Save(10, &m.defMLockMode)
-	stateSinkObject.Save(11, &m.pmas)
-	stateSinkObject.Save(12, &m.curRSS)
-	stateSinkObject.Save(13, &m.maxRSS)
-	stateSinkObject.Save(14, &m.argv)
-	stateSinkObject.Save(15, &m.envv)
-	stateSinkObject.Save(16, &m.auxv)
-	stateSinkObject.Save(17, &m.executable)
-	stateSinkObject.Save(18, &m.dumpability)
-	stateSinkObject.Save(19, &m.aioManager)
-	stateSinkObject.Save(20, &m.sleepForActivation)
-	stateSinkObject.Save(21, &m.vdsoSigReturnAddr)
-	stateSinkObject.Save(22, &m.membarrierPrivateEnabled)
-	stateSinkObject.Save(23, &m.membarrierRSeqEnabled)
+	stateSinkObject.Save(0, &mm.p)
+	stateSinkObject.Save(1, &mm.mfp)
+	stateSinkObject.Save(2, &mm.layout)
+	stateSinkObject.Save(3, &mm.privateRefs)
+	stateSinkObject.Save(4, &mm.users)
+	stateSinkObject.Save(5, &mm.vmas)
+	stateSinkObject.Save(6, &mm.brk)
+	stateSinkObject.Save(7, &mm.usageAS)
+	stateSinkObject.Save(8, &mm.lockedAS)
+	stateSinkObject.Save(9, &mm.dataAS)
+	stateSinkObject.Save(10, &mm.defMLockMode)
+	stateSinkObject.Save(11, &mm.pmas)
+	stateSinkObject.Save(12, &mm.curRSS)
+	stateSinkObject.Save(13, &mm.maxRSS)
+	stateSinkObject.Save(14, &mm.argv)
+	stateSinkObject.Save(15, &mm.envv)
+	stateSinkObject.Save(16, &mm.auxv)
+	stateSinkObject.Save(17, &mm.executable)
+	stateSinkObject.Save(18, &mm.dumpability)
+	stateSinkObject.Save(19, &mm.aioManager)
+	stateSinkObject.Save(20, &mm.sleepForActivation)
+	stateSinkObject.Save(21, &mm.vdsoSigReturnAddr)
+	stateSinkObject.Save(22, &mm.membarrierPrivateEnabled)
+	stateSinkObject.Save(23, &mm.membarrierRSeqEnabled)
 }
 
-func (m *MemoryManager) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.p)
-	stateSourceObject.Load(1, &m.mfp)
-	stateSourceObject.Load(2, &m.layout)
-	stateSourceObject.Load(3, &m.privateRefs)
-	stateSourceObject.Load(4, &m.users)
-	stateSourceObject.Load(5, &m.vmas)
-	stateSourceObject.Load(6, &m.brk)
-	stateSourceObject.Load(7, &m.usageAS)
-	stateSourceObject.Load(8, &m.lockedAS)
-	stateSourceObject.Load(9, &m.dataAS)
-	stateSourceObject.Load(10, &m.defMLockMode)
-	stateSourceObject.Load(11, &m.pmas)
-	stateSourceObject.Load(12, &m.curRSS)
-	stateSourceObject.Load(13, &m.maxRSS)
-	stateSourceObject.Load(14, &m.argv)
-	stateSourceObject.Load(15, &m.envv)
-	stateSourceObject.Load(16, &m.auxv)
-	stateSourceObject.Load(17, &m.executable)
-	stateSourceObject.Load(18, &m.dumpability)
-	stateSourceObject.Load(19, &m.aioManager)
-	stateSourceObject.Load(20, &m.sleepForActivation)
-	stateSourceObject.Load(21, &m.vdsoSigReturnAddr)
-	stateSourceObject.Load(22, &m.membarrierPrivateEnabled)
-	stateSourceObject.Load(23, &m.membarrierRSeqEnabled)
-	stateSourceObject.AfterLoad(m.afterLoad)
+func (mm *MemoryManager) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mm.p)
+	stateSourceObject.Load(1, &mm.mfp)
+	stateSourceObject.Load(2, &mm.layout)
+	stateSourceObject.Load(3, &mm.privateRefs)
+	stateSourceObject.Load(4, &mm.users)
+	stateSourceObject.Load(5, &mm.vmas)
+	stateSourceObject.Load(6, &mm.brk)
+	stateSourceObject.Load(7, &mm.usageAS)
+	stateSourceObject.Load(8, &mm.lockedAS)
+	stateSourceObject.Load(9, &mm.dataAS)
+	stateSourceObject.Load(10, &mm.defMLockMode)
+	stateSourceObject.Load(11, &mm.pmas)
+	stateSourceObject.Load(12, &mm.curRSS)
+	stateSourceObject.Load(13, &mm.maxRSS)
+	stateSourceObject.Load(14, &mm.argv)
+	stateSourceObject.Load(15, &mm.envv)
+	stateSourceObject.Load(16, &mm.auxv)
+	stateSourceObject.Load(17, &mm.executable)
+	stateSourceObject.Load(18, &mm.dumpability)
+	stateSourceObject.Load(19, &mm.aioManager)
+	stateSourceObject.Load(20, &mm.sleepForActivation)
+	stateSourceObject.Load(21, &mm.vdsoSigReturnAddr)
+	stateSourceObject.Load(22, &mm.membarrierPrivateEnabled)
+	stateSourceObject.Load(23, &mm.membarrierRSeqEnabled)
+	stateSourceObject.AfterLoad(mm.afterLoad)
 }
 
-func (v *vma) StateTypeName() string {
+func (vma *vma) StateTypeName() string {
 	return "pkg/sentry/mm.vma"
 }
 
-func (v *vma) StateFields() []string {
+func (vma *vma) StateFields() []string {
 	return []string{
 		"mappable",
 		"off",
@@ -400,34 +400,34 @@ func (v *vma) StateFields() []string {
 	}
 }
 
-func (v *vma) beforeSave() {}
+func (vma *vma) beforeSave() {}
 
-func (v *vma) StateSave(stateSinkObject state.Sink) {
-	v.beforeSave()
-	var realPermsValue int = v.saveRealPerms()
+func (vma *vma) StateSave(stateSinkObject state.Sink) {
+	vma.beforeSave()
+	var realPermsValue int = vma.saveRealPerms()
 	stateSinkObject.SaveValue(2, realPermsValue)
-	stateSinkObject.Save(0, &v.mappable)
-	stateSinkObject.Save(1, &v.off)
-	stateSinkObject.Save(3, &v.dontfork)
-	stateSinkObject.Save(4, &v.mlockMode)
-	stateSinkObject.Save(5, &v.numaPolicy)
-	stateSinkObject.Save(6, &v.numaNodemask)
-	stateSinkObject.Save(7, &v.id)
-	stateSinkObject.Save(8, &v.hint)
+	stateSinkObject.Save(0, &vma.mappable)
+	stateSinkObject.Save(1, &vma.off)
+	stateSinkObject.Save(3, &vma.dontfork)
+	stateSinkObject.Save(4, &vma.mlockMode)
+	stateSinkObject.Save(5, &vma.numaPolicy)
+	stateSinkObject.Save(6, &vma.numaNodemask)
+	stateSinkObject.Save(7, &vma.id)
+	stateSinkObject.Save(8, &vma.hint)
 }
 
-func (v *vma) afterLoad() {}
+func (vma *vma) afterLoad() {}
 
-func (v *vma) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.mappable)
-	stateSourceObject.Load(1, &v.off)
-	stateSourceObject.Load(3, &v.dontfork)
-	stateSourceObject.Load(4, &v.mlockMode)
-	stateSourceObject.Load(5, &v.numaPolicy)
-	stateSourceObject.Load(6, &v.numaNodemask)
-	stateSourceObject.Load(7, &v.id)
-	stateSourceObject.Load(8, &v.hint)
-	stateSourceObject.LoadValue(2, new(int), func(y interface{}) { v.loadRealPerms(y.(int)) })
+func (vma *vma) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &vma.mappable)
+	stateSourceObject.Load(1, &vma.off)
+	stateSourceObject.Load(3, &vma.dontfork)
+	stateSourceObject.Load(4, &vma.mlockMode)
+	stateSourceObject.Load(5, &vma.numaPolicy)
+	stateSourceObject.Load(6, &vma.numaNodemask)
+	stateSourceObject.Load(7, &vma.id)
+	stateSourceObject.Load(8, &vma.hint)
+	stateSourceObject.LoadValue(2, new(int), func(y interface{}) { vma.loadRealPerms(y.(int)) })
 }
 
 func (p *pma) StateTypeName() string {
@@ -491,35 +491,35 @@ func (p *privateRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.refs)
 }
 
-func (p *pmaSet) StateTypeName() string {
+func (s *pmaSet) StateTypeName() string {
 	return "pkg/sentry/mm.pmaSet"
 }
 
-func (p *pmaSet) StateFields() []string {
+func (s *pmaSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (p *pmaSet) beforeSave() {}
+func (s *pmaSet) beforeSave() {}
 
-func (p *pmaSet) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	var rootValue *pmaSegmentDataSlices = p.saveRoot()
+func (s *pmaSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue *pmaSegmentDataSlices = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (p *pmaSet) afterLoad() {}
+func (s *pmaSet) afterLoad() {}
 
-func (p *pmaSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*pmaSegmentDataSlices), func(y interface{}) { p.loadRoot(y.(*pmaSegmentDataSlices)) })
+func (s *pmaSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*pmaSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*pmaSegmentDataSlices)) })
 }
 
-func (p *pmanode) StateTypeName() string {
+func (n *pmanode) StateTypeName() string {
 	return "pkg/sentry/mm.pmanode"
 }
 
-func (p *pmanode) StateFields() []string {
+func (n *pmanode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -532,31 +532,31 @@ func (p *pmanode) StateFields() []string {
 	}
 }
 
-func (p *pmanode) beforeSave() {}
+func (n *pmanode) beforeSave() {}
 
-func (p *pmanode) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.nrSegments)
-	stateSinkObject.Save(1, &p.parent)
-	stateSinkObject.Save(2, &p.parentIndex)
-	stateSinkObject.Save(3, &p.hasChildren)
-	stateSinkObject.Save(4, &p.maxGap)
-	stateSinkObject.Save(5, &p.keys)
-	stateSinkObject.Save(6, &p.values)
-	stateSinkObject.Save(7, &p.children)
+func (n *pmanode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
 }
 
-func (p *pmanode) afterLoad() {}
+func (n *pmanode) afterLoad() {}
 
-func (p *pmanode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.nrSegments)
-	stateSourceObject.Load(1, &p.parent)
-	stateSourceObject.Load(2, &p.parentIndex)
-	stateSourceObject.Load(3, &p.hasChildren)
-	stateSourceObject.Load(4, &p.maxGap)
-	stateSourceObject.Load(5, &p.keys)
-	stateSourceObject.Load(6, &p.values)
-	stateSourceObject.Load(7, &p.children)
+func (n *pmanode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
 }
 
 func (p *pmaSegmentDataSlices) StateTypeName() string {
@@ -588,11 +588,11 @@ func (p *pmaSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &p.Values)
 }
 
-func (s *SpecialMappable) StateTypeName() string {
+func (m *SpecialMappable) StateTypeName() string {
 	return "pkg/sentry/mm.SpecialMappable"
 }
 
-func (s *SpecialMappable) StateFields() []string {
+func (m *SpecialMappable) StateFields() []string {
 	return []string{
 		"SpecialMappableRefs",
 		"mfp",
@@ -601,77 +601,77 @@ func (s *SpecialMappable) StateFields() []string {
 	}
 }
 
-func (s *SpecialMappable) beforeSave() {}
+func (m *SpecialMappable) beforeSave() {}
 
-func (s *SpecialMappable) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.SpecialMappableRefs)
-	stateSinkObject.Save(1, &s.mfp)
-	stateSinkObject.Save(2, &s.fr)
-	stateSinkObject.Save(3, &s.name)
+func (m *SpecialMappable) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.SpecialMappableRefs)
+	stateSinkObject.Save(1, &m.mfp)
+	stateSinkObject.Save(2, &m.fr)
+	stateSinkObject.Save(3, &m.name)
 }
 
-func (s *SpecialMappable) afterLoad() {}
+func (m *SpecialMappable) afterLoad() {}
 
-func (s *SpecialMappable) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.SpecialMappableRefs)
-	stateSourceObject.Load(1, &s.mfp)
-	stateSourceObject.Load(2, &s.fr)
-	stateSourceObject.Load(3, &s.name)
+func (m *SpecialMappable) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.SpecialMappableRefs)
+	stateSourceObject.Load(1, &m.mfp)
+	stateSourceObject.Load(2, &m.fr)
+	stateSourceObject.Load(3, &m.name)
 }
 
-func (s *SpecialMappableRefs) StateTypeName() string {
+func (r *SpecialMappableRefs) StateTypeName() string {
 	return "pkg/sentry/mm.SpecialMappableRefs"
 }
 
-func (s *SpecialMappableRefs) StateFields() []string {
+func (r *SpecialMappableRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (s *SpecialMappableRefs) beforeSave() {}
+func (r *SpecialMappableRefs) beforeSave() {}
 
-func (s *SpecialMappableRefs) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.refCount)
+func (r *SpecialMappableRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (s *SpecialMappableRefs) afterLoad() {}
+func (r *SpecialMappableRefs) afterLoad() {}
 
-func (s *SpecialMappableRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.refCount)
+func (r *SpecialMappableRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
-func (v *vmaSet) StateTypeName() string {
+func (s *vmaSet) StateTypeName() string {
 	return "pkg/sentry/mm.vmaSet"
 }
 
-func (v *vmaSet) StateFields() []string {
+func (s *vmaSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (v *vmaSet) beforeSave() {}
+func (s *vmaSet) beforeSave() {}
 
-func (v *vmaSet) StateSave(stateSinkObject state.Sink) {
-	v.beforeSave()
-	var rootValue *vmaSegmentDataSlices = v.saveRoot()
+func (s *vmaSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue *vmaSegmentDataSlices = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (v *vmaSet) afterLoad() {}
+func (s *vmaSet) afterLoad() {}
 
-func (v *vmaSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*vmaSegmentDataSlices), func(y interface{}) { v.loadRoot(y.(*vmaSegmentDataSlices)) })
+func (s *vmaSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*vmaSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*vmaSegmentDataSlices)) })
 }
 
-func (v *vmanode) StateTypeName() string {
+func (n *vmanode) StateTypeName() string {
 	return "pkg/sentry/mm.vmanode"
 }
 
-func (v *vmanode) StateFields() []string {
+func (n *vmanode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -684,31 +684,31 @@ func (v *vmanode) StateFields() []string {
 	}
 }
 
-func (v *vmanode) beforeSave() {}
+func (n *vmanode) beforeSave() {}
 
-func (v *vmanode) StateSave(stateSinkObject state.Sink) {
-	v.beforeSave()
-	stateSinkObject.Save(0, &v.nrSegments)
-	stateSinkObject.Save(1, &v.parent)
-	stateSinkObject.Save(2, &v.parentIndex)
-	stateSinkObject.Save(3, &v.hasChildren)
-	stateSinkObject.Save(4, &v.maxGap)
-	stateSinkObject.Save(5, &v.keys)
-	stateSinkObject.Save(6, &v.values)
-	stateSinkObject.Save(7, &v.children)
+func (n *vmanode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
 }
 
-func (v *vmanode) afterLoad() {}
+func (n *vmanode) afterLoad() {}
 
-func (v *vmanode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.nrSegments)
-	stateSourceObject.Load(1, &v.parent)
-	stateSourceObject.Load(2, &v.parentIndex)
-	stateSourceObject.Load(3, &v.hasChildren)
-	stateSourceObject.Load(4, &v.maxGap)
-	stateSourceObject.Load(5, &v.keys)
-	stateSourceObject.Load(6, &v.values)
-	stateSourceObject.Load(7, &v.children)
+func (n *vmanode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
 }
 
 func (v *vmaSegmentDataSlices) StateTypeName() string {

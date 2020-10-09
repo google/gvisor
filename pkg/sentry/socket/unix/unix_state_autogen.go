@@ -6,50 +6,50 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *socketOperationsRefs) StateTypeName() string {
+func (r *socketOperationsRefs) StateTypeName() string {
 	return "pkg/sentry/socket/unix.socketOperationsRefs"
 }
 
-func (s *socketOperationsRefs) StateFields() []string {
+func (r *socketOperationsRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (s *socketOperationsRefs) beforeSave() {}
+func (r *socketOperationsRefs) beforeSave() {}
 
-func (s *socketOperationsRefs) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.refCount)
+func (r *socketOperationsRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (s *socketOperationsRefs) afterLoad() {}
+func (r *socketOperationsRefs) afterLoad() {}
 
-func (s *socketOperationsRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.refCount)
+func (r *socketOperationsRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
-func (s *socketVFS2Refs) StateTypeName() string {
+func (r *socketVFS2Refs) StateTypeName() string {
 	return "pkg/sentry/socket/unix.socketVFS2Refs"
 }
 
-func (s *socketVFS2Refs) StateFields() []string {
+func (r *socketVFS2Refs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (s *socketVFS2Refs) beforeSave() {}
+func (r *socketVFS2Refs) beforeSave() {}
 
-func (s *socketVFS2Refs) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.refCount)
+func (r *socketVFS2Refs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (s *socketVFS2Refs) afterLoad() {}
+func (r *socketVFS2Refs) afterLoad() {}
 
-func (s *socketVFS2Refs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.refCount)
+func (r *socketVFS2Refs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (s *SocketOperations) StateTypeName() string {

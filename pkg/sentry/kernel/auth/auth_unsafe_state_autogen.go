@@ -6,28 +6,28 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (a *AtomicPtrCredentials) StateTypeName() string {
+func (p *AtomicPtrCredentials) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.AtomicPtrCredentials"
 }
 
-func (a *AtomicPtrCredentials) StateFields() []string {
+func (p *AtomicPtrCredentials) StateFields() []string {
 	return []string{
 		"ptr",
 	}
 }
 
-func (a *AtomicPtrCredentials) beforeSave() {}
+func (p *AtomicPtrCredentials) beforeSave() {}
 
-func (a *AtomicPtrCredentials) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	var ptrValue *Credentials = a.savePtr()
+func (p *AtomicPtrCredentials) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	var ptrValue *Credentials = p.savePtr()
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 
-func (a *AtomicPtrCredentials) afterLoad() {}
+func (p *AtomicPtrCredentials) afterLoad() {}
 
-func (a *AtomicPtrCredentials) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*Credentials), func(y interface{}) { a.loadPtr(y.(*Credentials)) })
+func (p *AtomicPtrCredentials) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*Credentials), func(y interface{}) { p.loadPtr(y.(*Credentials)) })
 }
 
 func init() {

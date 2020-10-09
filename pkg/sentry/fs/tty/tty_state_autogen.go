@@ -44,30 +44,30 @@ func (d *dirInodeOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &d.next)
 }
 
-func (d *dirFileOperations) StateTypeName() string {
+func (df *dirFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/tty.dirFileOperations"
 }
 
-func (d *dirFileOperations) StateFields() []string {
+func (df *dirFileOperations) StateFields() []string {
 	return []string{
 		"di",
 		"dirCursor",
 	}
 }
 
-func (d *dirFileOperations) beforeSave() {}
+func (df *dirFileOperations) beforeSave() {}
 
-func (d *dirFileOperations) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.di)
-	stateSinkObject.Save(1, &d.dirCursor)
+func (df *dirFileOperations) StateSave(stateSinkObject state.Sink) {
+	df.beforeSave()
+	stateSinkObject.Save(0, &df.di)
+	stateSinkObject.Save(1, &df.dirCursor)
 }
 
-func (d *dirFileOperations) afterLoad() {}
+func (df *dirFileOperations) afterLoad() {}
 
-func (d *dirFileOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.di)
-	stateSourceObject.Load(1, &d.dirCursor)
+func (df *dirFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &df.di)
+	stateSourceObject.Load(1, &df.dirCursor)
 }
 
 func (f *filesystem) StateTypeName() string {
@@ -187,56 +187,56 @@ func (i *inputQueueTransformer) afterLoad() {}
 func (i *inputQueueTransformer) StateLoad(stateSourceObject state.Source) {
 }
 
-func (m *masterInodeOperations) StateTypeName() string {
+func (mi *masterInodeOperations) StateTypeName() string {
 	return "pkg/sentry/fs/tty.masterInodeOperations"
 }
 
-func (m *masterInodeOperations) StateFields() []string {
+func (mi *masterInodeOperations) StateFields() []string {
 	return []string{
 		"SimpleFileInode",
 		"d",
 	}
 }
 
-func (m *masterInodeOperations) beforeSave() {}
+func (mi *masterInodeOperations) beforeSave() {}
 
-func (m *masterInodeOperations) StateSave(stateSinkObject state.Sink) {
-	m.beforeSave()
-	stateSinkObject.Save(0, &m.SimpleFileInode)
-	stateSinkObject.Save(1, &m.d)
+func (mi *masterInodeOperations) StateSave(stateSinkObject state.Sink) {
+	mi.beforeSave()
+	stateSinkObject.Save(0, &mi.SimpleFileInode)
+	stateSinkObject.Save(1, &mi.d)
 }
 
-func (m *masterInodeOperations) afterLoad() {}
+func (mi *masterInodeOperations) afterLoad() {}
 
-func (m *masterInodeOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.SimpleFileInode)
-	stateSourceObject.Load(1, &m.d)
+func (mi *masterInodeOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mi.SimpleFileInode)
+	stateSourceObject.Load(1, &mi.d)
 }
 
-func (m *masterFileOperations) StateTypeName() string {
+func (mf *masterFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/tty.masterFileOperations"
 }
 
-func (m *masterFileOperations) StateFields() []string {
+func (mf *masterFileOperations) StateFields() []string {
 	return []string{
 		"d",
 		"t",
 	}
 }
 
-func (m *masterFileOperations) beforeSave() {}
+func (mf *masterFileOperations) beforeSave() {}
 
-func (m *masterFileOperations) StateSave(stateSinkObject state.Sink) {
-	m.beforeSave()
-	stateSinkObject.Save(0, &m.d)
-	stateSinkObject.Save(1, &m.t)
+func (mf *masterFileOperations) StateSave(stateSinkObject state.Sink) {
+	mf.beforeSave()
+	stateSinkObject.Save(0, &mf.d)
+	stateSinkObject.Save(1, &mf.t)
 }
 
-func (m *masterFileOperations) afterLoad() {}
+func (mf *masterFileOperations) afterLoad() {}
 
-func (m *masterFileOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.d)
-	stateSourceObject.Load(1, &m.t)
+func (mf *masterFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mf.d)
+	stateSourceObject.Load(1, &mf.t)
 }
 
 func (q *queue) StateTypeName() string {
@@ -274,11 +274,11 @@ func (q *queue) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &q.transformer)
 }
 
-func (r *replicaInodeOperations) StateTypeName() string {
+func (si *replicaInodeOperations) StateTypeName() string {
 	return "pkg/sentry/fs/tty.replicaInodeOperations"
 }
 
-func (r *replicaInodeOperations) StateFields() []string {
+func (si *replicaInodeOperations) StateFields() []string {
 	return []string{
 		"SimpleFileInode",
 		"d",
@@ -286,51 +286,51 @@ func (r *replicaInodeOperations) StateFields() []string {
 	}
 }
 
-func (r *replicaInodeOperations) beforeSave() {}
+func (si *replicaInodeOperations) beforeSave() {}
 
-func (r *replicaInodeOperations) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.SimpleFileInode)
-	stateSinkObject.Save(1, &r.d)
-	stateSinkObject.Save(2, &r.t)
+func (si *replicaInodeOperations) StateSave(stateSinkObject state.Sink) {
+	si.beforeSave()
+	stateSinkObject.Save(0, &si.SimpleFileInode)
+	stateSinkObject.Save(1, &si.d)
+	stateSinkObject.Save(2, &si.t)
 }
 
-func (r *replicaInodeOperations) afterLoad() {}
+func (si *replicaInodeOperations) afterLoad() {}
 
-func (r *replicaInodeOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.SimpleFileInode)
-	stateSourceObject.Load(1, &r.d)
-	stateSourceObject.Load(2, &r.t)
+func (si *replicaInodeOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &si.SimpleFileInode)
+	stateSourceObject.Load(1, &si.d)
+	stateSourceObject.Load(2, &si.t)
 }
 
-func (r *replicaFileOperations) StateTypeName() string {
+func (sf *replicaFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/tty.replicaFileOperations"
 }
 
-func (r *replicaFileOperations) StateFields() []string {
+func (sf *replicaFileOperations) StateFields() []string {
 	return []string{
 		"si",
 	}
 }
 
-func (r *replicaFileOperations) beforeSave() {}
+func (sf *replicaFileOperations) beforeSave() {}
 
-func (r *replicaFileOperations) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.si)
+func (sf *replicaFileOperations) StateSave(stateSinkObject state.Sink) {
+	sf.beforeSave()
+	stateSinkObject.Save(0, &sf.si)
 }
 
-func (r *replicaFileOperations) afterLoad() {}
+func (sf *replicaFileOperations) afterLoad() {}
 
-func (r *replicaFileOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.si)
+func (sf *replicaFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &sf.si)
 }
 
-func (t *Terminal) StateTypeName() string {
+func (tm *Terminal) StateTypeName() string {
 	return "pkg/sentry/fs/tty.Terminal"
 }
 
-func (t *Terminal) StateFields() []string {
+func (tm *Terminal) StateFields() []string {
 	return []string{
 		"AtomicRefCount",
 		"n",
@@ -341,27 +341,27 @@ func (t *Terminal) StateFields() []string {
 	}
 }
 
-func (t *Terminal) beforeSave() {}
+func (tm *Terminal) beforeSave() {}
 
-func (t *Terminal) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.AtomicRefCount)
-	stateSinkObject.Save(1, &t.n)
-	stateSinkObject.Save(2, &t.d)
-	stateSinkObject.Save(3, &t.ld)
-	stateSinkObject.Save(4, &t.masterKTTY)
-	stateSinkObject.Save(5, &t.replicaKTTY)
+func (tm *Terminal) StateSave(stateSinkObject state.Sink) {
+	tm.beforeSave()
+	stateSinkObject.Save(0, &tm.AtomicRefCount)
+	stateSinkObject.Save(1, &tm.n)
+	stateSinkObject.Save(2, &tm.d)
+	stateSinkObject.Save(3, &tm.ld)
+	stateSinkObject.Save(4, &tm.masterKTTY)
+	stateSinkObject.Save(5, &tm.replicaKTTY)
 }
 
-func (t *Terminal) afterLoad() {}
+func (tm *Terminal) afterLoad() {}
 
-func (t *Terminal) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.AtomicRefCount)
-	stateSourceObject.Load(1, &t.n)
-	stateSourceObject.Load(2, &t.d)
-	stateSourceObject.Load(3, &t.ld)
-	stateSourceObject.Load(4, &t.masterKTTY)
-	stateSourceObject.Load(5, &t.replicaKTTY)
+func (tm *Terminal) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tm.AtomicRefCount)
+	stateSourceObject.Load(1, &tm.n)
+	stateSourceObject.Load(2, &tm.d)
+	stateSourceObject.Load(3, &tm.ld)
+	stateSourceObject.Load(4, &tm.masterKTTY)
+	stateSourceObject.Load(5, &tm.replicaKTTY)
 }
 
 func init() {

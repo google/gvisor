@@ -96,27 +96,27 @@ func (r *Reader) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.ReaderWriter)
 }
 
-func (r *ReaderWriter) StateTypeName() string {
+func (rw *ReaderWriter) StateTypeName() string {
 	return "pkg/sentry/kernel/pipe.ReaderWriter"
 }
 
-func (r *ReaderWriter) StateFields() []string {
+func (rw *ReaderWriter) StateFields() []string {
 	return []string{
 		"Pipe",
 	}
 }
 
-func (r *ReaderWriter) beforeSave() {}
+func (rw *ReaderWriter) beforeSave() {}
 
-func (r *ReaderWriter) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.Pipe)
+func (rw *ReaderWriter) StateSave(stateSinkObject state.Sink) {
+	rw.beforeSave()
+	stateSinkObject.Save(0, &rw.Pipe)
 }
 
-func (r *ReaderWriter) afterLoad() {}
+func (rw *ReaderWriter) afterLoad() {}
 
-func (r *ReaderWriter) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Pipe)
+func (rw *ReaderWriter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &rw.Pipe)
 }
 
 func (w *Writer) StateTypeName() string {

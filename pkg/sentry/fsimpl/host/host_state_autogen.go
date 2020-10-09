@@ -6,27 +6,27 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (c *ConnectedEndpointRefs) StateTypeName() string {
+func (r *ConnectedEndpointRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.ConnectedEndpointRefs"
 }
 
-func (c *ConnectedEndpointRefs) StateFields() []string {
+func (r *ConnectedEndpointRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (c *ConnectedEndpointRefs) beforeSave() {}
+func (r *ConnectedEndpointRefs) beforeSave() {}
 
-func (c *ConnectedEndpointRefs) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	stateSinkObject.Save(0, &c.refCount)
+func (r *ConnectedEndpointRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (c *ConnectedEndpointRefs) afterLoad() {}
+func (r *ConnectedEndpointRefs) afterLoad() {}
 
-func (c *ConnectedEndpointRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.refCount)
+func (r *ConnectedEndpointRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (f *filesystemType) StateTypeName() string {
@@ -48,30 +48,30 @@ func (f *filesystemType) afterLoad() {}
 func (f *filesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
-func (f *filesystem) StateTypeName() string {
+func (fs *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.filesystem"
 }
 
-func (f *filesystem) StateFields() []string {
+func (fs *filesystem) StateFields() []string {
 	return []string{
 		"Filesystem",
 		"devMinor",
 	}
 }
 
-func (f *filesystem) beforeSave() {}
+func (fs *filesystem) beforeSave() {}
 
-func (f *filesystem) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.Filesystem)
-	stateSinkObject.Save(1, &f.devMinor)
+func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
+	fs.beforeSave()
+	stateSinkObject.Save(0, &fs.Filesystem)
+	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (f *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad() {}
 
-func (f *filesystem) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.Filesystem)
-	stateSourceObject.Load(1, &f.devMinor)
+func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fs.Filesystem)
+	stateSourceObject.Load(1, &fs.devMinor)
 }
 
 func (i *inode) StateTypeName() string {
@@ -171,27 +171,27 @@ func (f *fileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &f.offset)
 }
 
-func (i *inodeRefs) StateTypeName() string {
+func (r *inodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.inodeRefs"
 }
 
-func (i *inodeRefs) StateFields() []string {
+func (r *inodeRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (i *inodeRefs) beforeSave() {}
+func (r *inodeRefs) beforeSave() {}
 
-func (i *inodeRefs) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.refCount)
+func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (i *inodeRefs) afterLoad() {}
+func (r *inodeRefs) afterLoad() {}
 
-func (i *inodeRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.refCount)
+func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (i *inodePlatformFile) StateTypeName() string {

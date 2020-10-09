@@ -70,27 +70,27 @@ func (s *SeqFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &s.lastRead)
 }
 
-func (s *seqFileOperations) StateTypeName() string {
+func (sfo *seqFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/proc/seqfile.seqFileOperations"
 }
 
-func (s *seqFileOperations) StateFields() []string {
+func (sfo *seqFileOperations) StateFields() []string {
 	return []string{
 		"seqFile",
 	}
 }
 
-func (s *seqFileOperations) beforeSave() {}
+func (sfo *seqFileOperations) beforeSave() {}
 
-func (s *seqFileOperations) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.seqFile)
+func (sfo *seqFileOperations) StateSave(stateSinkObject state.Sink) {
+	sfo.beforeSave()
+	stateSinkObject.Save(0, &sfo.seqFile)
 }
 
-func (s *seqFileOperations) afterLoad() {}
+func (sfo *seqFileOperations) afterLoad() {}
 
-func (s *seqFileOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.seqFile)
+func (sfo *seqFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &sfo.seqFile)
 }
 
 func init() {

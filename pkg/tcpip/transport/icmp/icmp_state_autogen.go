@@ -7,11 +7,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
-func (i *icmpPacket) StateTypeName() string {
+func (p *icmpPacket) StateTypeName() string {
 	return "pkg/tcpip/transport/icmp.icmpPacket"
 }
 
-func (i *icmpPacket) StateFields() []string {
+func (p *icmpPacket) StateFields() []string {
 	return []string{
 		"icmpPacketEntry",
 		"senderAddress",
@@ -20,24 +20,24 @@ func (i *icmpPacket) StateFields() []string {
 	}
 }
 
-func (i *icmpPacket) beforeSave() {}
+func (p *icmpPacket) beforeSave() {}
 
-func (i *icmpPacket) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	var dataValue buffer.VectorisedView = i.saveData()
+func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	var dataValue buffer.VectorisedView = p.saveData()
 	stateSinkObject.SaveValue(2, dataValue)
-	stateSinkObject.Save(0, &i.icmpPacketEntry)
-	stateSinkObject.Save(1, &i.senderAddress)
-	stateSinkObject.Save(3, &i.timestamp)
+	stateSinkObject.Save(0, &p.icmpPacketEntry)
+	stateSinkObject.Save(1, &p.senderAddress)
+	stateSinkObject.Save(3, &p.timestamp)
 }
 
-func (i *icmpPacket) afterLoad() {}
+func (p *icmpPacket) afterLoad() {}
 
-func (i *icmpPacket) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.icmpPacketEntry)
-	stateSourceObject.Load(1, &i.senderAddress)
-	stateSourceObject.Load(3, &i.timestamp)
-	stateSourceObject.LoadValue(2, new(buffer.VectorisedView), func(y interface{}) { i.loadData(y.(buffer.VectorisedView)) })
+func (p *icmpPacket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.icmpPacketEntry)
+	stateSourceObject.Load(1, &p.senderAddress)
+	stateSourceObject.Load(3, &p.timestamp)
+	stateSourceObject.LoadValue(2, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
 }
 
 func (e *endpoint) StateTypeName() string {
@@ -100,56 +100,56 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
-func (i *icmpPacketList) StateTypeName() string {
+func (l *icmpPacketList) StateTypeName() string {
 	return "pkg/tcpip/transport/icmp.icmpPacketList"
 }
 
-func (i *icmpPacketList) StateFields() []string {
+func (l *icmpPacketList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (i *icmpPacketList) beforeSave() {}
+func (l *icmpPacketList) beforeSave() {}
 
-func (i *icmpPacketList) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.head)
-	stateSinkObject.Save(1, &i.tail)
+func (l *icmpPacketList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (i *icmpPacketList) afterLoad() {}
+func (l *icmpPacketList) afterLoad() {}
 
-func (i *icmpPacketList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.head)
-	stateSourceObject.Load(1, &i.tail)
+func (l *icmpPacketList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (i *icmpPacketEntry) StateTypeName() string {
+func (e *icmpPacketEntry) StateTypeName() string {
 	return "pkg/tcpip/transport/icmp.icmpPacketEntry"
 }
 
-func (i *icmpPacketEntry) StateFields() []string {
+func (e *icmpPacketEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (i *icmpPacketEntry) beforeSave() {}
+func (e *icmpPacketEntry) beforeSave() {}
 
-func (i *icmpPacketEntry) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.next)
-	stateSinkObject.Save(1, &i.prev)
+func (e *icmpPacketEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (i *icmpPacketEntry) afterLoad() {}
+func (e *icmpPacketEntry) afterLoad() {}
 
-func (i *icmpPacketEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.next)
-	stateSourceObject.Load(1, &i.prev)
+func (e *icmpPacketEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

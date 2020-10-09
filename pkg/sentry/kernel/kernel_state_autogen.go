@@ -152,27 +152,27 @@ func (f *FDTable) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(4, new(map[int32]descriptor), func(y interface{}) { f.loadDescriptorTable(y.(map[int32]descriptor)) })
 }
 
-func (f *FDTableRefs) StateTypeName() string {
+func (r *FDTableRefs) StateTypeName() string {
 	return "pkg/sentry/kernel.FDTableRefs"
 }
 
-func (f *FDTableRefs) StateFields() []string {
+func (r *FDTableRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (f *FDTableRefs) beforeSave() {}
+func (r *FDTableRefs) beforeSave() {}
 
-func (f *FDTableRefs) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.refCount)
+func (r *FDTableRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (f *FDTableRefs) afterLoad() {}
+func (r *FDTableRefs) afterLoad() {}
 
-func (f *FDTableRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.refCount)
+func (r *FDTableRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (f *FSContext) StateTypeName() string {
@@ -213,27 +213,27 @@ func (f *FSContext) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &f.umask)
 }
 
-func (f *FSContextRefs) StateTypeName() string {
+func (r *FSContextRefs) StateTypeName() string {
 	return "pkg/sentry/kernel.FSContextRefs"
 }
 
-func (f *FSContextRefs) StateFields() []string {
+func (r *FSContextRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (f *FSContextRefs) beforeSave() {}
+func (r *FSContextRefs) beforeSave() {}
 
-func (f *FSContextRefs) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.refCount)
+func (r *FSContextRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (f *FSContextRefs) afterLoad() {}
+func (r *FSContextRefs) afterLoad() {}
 
-func (f *FSContextRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.refCount)
+func (r *FSContextRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (i *IPCNamespace) StateTypeName() string {
@@ -535,56 +535,56 @@ func (p *pendingSignal) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &p.timer)
 }
 
-func (p *pendingSignalList) StateTypeName() string {
+func (l *pendingSignalList) StateTypeName() string {
 	return "pkg/sentry/kernel.pendingSignalList"
 }
 
-func (p *pendingSignalList) StateFields() []string {
+func (l *pendingSignalList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (p *pendingSignalList) beforeSave() {}
+func (l *pendingSignalList) beforeSave() {}
 
-func (p *pendingSignalList) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.head)
-	stateSinkObject.Save(1, &p.tail)
+func (l *pendingSignalList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (p *pendingSignalList) afterLoad() {}
+func (l *pendingSignalList) afterLoad() {}
 
-func (p *pendingSignalList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.head)
-	stateSourceObject.Load(1, &p.tail)
+func (l *pendingSignalList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (p *pendingSignalEntry) StateTypeName() string {
+func (e *pendingSignalEntry) StateTypeName() string {
 	return "pkg/sentry/kernel.pendingSignalEntry"
 }
 
-func (p *pendingSignalEntry) StateFields() []string {
+func (e *pendingSignalEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (p *pendingSignalEntry) beforeSave() {}
+func (e *pendingSignalEntry) beforeSave() {}
 
-func (p *pendingSignalEntry) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.next)
-	stateSinkObject.Save(1, &p.prev)
+func (e *pendingSignalEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (p *pendingSignalEntry) afterLoad() {}
+func (e *pendingSignalEntry) afterLoad() {}
 
-func (p *pendingSignalEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.next)
-	stateSourceObject.Load(1, &p.prev)
+func (e *pendingSignalEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func (s *savedPendingSignal) StateTypeName() string {
@@ -613,11 +613,11 @@ func (s *savedPendingSignal) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.timer)
 }
 
-func (i *IntervalTimer) StateTypeName() string {
+func (it *IntervalTimer) StateTypeName() string {
 	return "pkg/sentry/kernel.IntervalTimer"
 }
 
-func (i *IntervalTimer) StateFields() []string {
+func (it *IntervalTimer) StateFields() []string {
 	return []string{
 		"timer",
 		"target",
@@ -632,110 +632,110 @@ func (i *IntervalTimer) StateFields() []string {
 	}
 }
 
-func (i *IntervalTimer) beforeSave() {}
+func (it *IntervalTimer) beforeSave() {}
 
-func (i *IntervalTimer) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.timer)
-	stateSinkObject.Save(1, &i.target)
-	stateSinkObject.Save(2, &i.signo)
-	stateSinkObject.Save(3, &i.id)
-	stateSinkObject.Save(4, &i.sigval)
-	stateSinkObject.Save(5, &i.group)
-	stateSinkObject.Save(6, &i.sigpending)
-	stateSinkObject.Save(7, &i.sigorphan)
-	stateSinkObject.Save(8, &i.overrunCur)
-	stateSinkObject.Save(9, &i.overrunLast)
+func (it *IntervalTimer) StateSave(stateSinkObject state.Sink) {
+	it.beforeSave()
+	stateSinkObject.Save(0, &it.timer)
+	stateSinkObject.Save(1, &it.target)
+	stateSinkObject.Save(2, &it.signo)
+	stateSinkObject.Save(3, &it.id)
+	stateSinkObject.Save(4, &it.sigval)
+	stateSinkObject.Save(5, &it.group)
+	stateSinkObject.Save(6, &it.sigpending)
+	stateSinkObject.Save(7, &it.sigorphan)
+	stateSinkObject.Save(8, &it.overrunCur)
+	stateSinkObject.Save(9, &it.overrunLast)
 }
 
-func (i *IntervalTimer) afterLoad() {}
+func (it *IntervalTimer) afterLoad() {}
 
-func (i *IntervalTimer) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.timer)
-	stateSourceObject.Load(1, &i.target)
-	stateSourceObject.Load(2, &i.signo)
-	stateSourceObject.Load(3, &i.id)
-	stateSourceObject.Load(4, &i.sigval)
-	stateSourceObject.Load(5, &i.group)
-	stateSourceObject.Load(6, &i.sigpending)
-	stateSourceObject.Load(7, &i.sigorphan)
-	stateSourceObject.Load(8, &i.overrunCur)
-	stateSourceObject.Load(9, &i.overrunLast)
+func (it *IntervalTimer) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &it.timer)
+	stateSourceObject.Load(1, &it.target)
+	stateSourceObject.Load(2, &it.signo)
+	stateSourceObject.Load(3, &it.id)
+	stateSourceObject.Load(4, &it.sigval)
+	stateSourceObject.Load(5, &it.group)
+	stateSourceObject.Load(6, &it.sigpending)
+	stateSourceObject.Load(7, &it.sigorphan)
+	stateSourceObject.Load(8, &it.overrunCur)
+	stateSourceObject.Load(9, &it.overrunLast)
 }
 
-func (p *processGroupList) StateTypeName() string {
+func (l *processGroupList) StateTypeName() string {
 	return "pkg/sentry/kernel.processGroupList"
 }
 
-func (p *processGroupList) StateFields() []string {
+func (l *processGroupList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (p *processGroupList) beforeSave() {}
+func (l *processGroupList) beforeSave() {}
 
-func (p *processGroupList) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.head)
-	stateSinkObject.Save(1, &p.tail)
+func (l *processGroupList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (p *processGroupList) afterLoad() {}
+func (l *processGroupList) afterLoad() {}
 
-func (p *processGroupList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.head)
-	stateSourceObject.Load(1, &p.tail)
+func (l *processGroupList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (p *processGroupEntry) StateTypeName() string {
+func (e *processGroupEntry) StateTypeName() string {
 	return "pkg/sentry/kernel.processGroupEntry"
 }
 
-func (p *processGroupEntry) StateFields() []string {
+func (e *processGroupEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (p *processGroupEntry) beforeSave() {}
+func (e *processGroupEntry) beforeSave() {}
 
-func (p *processGroupEntry) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.next)
-	stateSinkObject.Save(1, &p.prev)
+func (e *processGroupEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (p *processGroupEntry) afterLoad() {}
+func (e *processGroupEntry) afterLoad() {}
 
-func (p *processGroupEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.next)
-	stateSourceObject.Load(1, &p.prev)
+func (e *processGroupEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
-func (p *ProcessGroupRefs) StateTypeName() string {
+func (r *ProcessGroupRefs) StateTypeName() string {
 	return "pkg/sentry/kernel.ProcessGroupRefs"
 }
 
-func (p *ProcessGroupRefs) StateFields() []string {
+func (r *ProcessGroupRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (p *ProcessGroupRefs) beforeSave() {}
+func (r *ProcessGroupRefs) beforeSave() {}
 
-func (p *ProcessGroupRefs) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.refCount)
+func (r *ProcessGroupRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (p *ProcessGroupRefs) afterLoad() {}
+func (r *ProcessGroupRefs) afterLoad() {}
 
-func (p *ProcessGroupRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.refCount)
+func (r *ProcessGroupRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (p *ptraceOptions) StateTypeName() string {
@@ -785,30 +785,30 @@ func (p *ptraceOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(8, &p.TraceVforkDone)
 }
 
-func (p *ptraceStop) StateTypeName() string {
+func (s *ptraceStop) StateTypeName() string {
 	return "pkg/sentry/kernel.ptraceStop"
 }
 
-func (p *ptraceStop) StateFields() []string {
+func (s *ptraceStop) StateFields() []string {
 	return []string{
 		"frozen",
 		"listen",
 	}
 }
 
-func (p *ptraceStop) beforeSave() {}
+func (s *ptraceStop) beforeSave() {}
 
-func (p *ptraceStop) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.frozen)
-	stateSinkObject.Save(1, &p.listen)
+func (s *ptraceStop) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.frozen)
+	stateSinkObject.Save(1, &s.listen)
 }
 
-func (p *ptraceStop) afterLoad() {}
+func (s *ptraceStop) afterLoad() {}
 
-func (p *ptraceStop) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.frozen)
-	stateSourceObject.Load(1, &p.listen)
+func (s *ptraceStop) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.frozen)
+	stateSourceObject.Load(1, &s.listen)
 }
 
 func (o *OldRSeqCriticalRegion) StateTypeName() string {
@@ -837,79 +837,79 @@ func (o *OldRSeqCriticalRegion) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &o.Restart)
 }
 
-func (s *sessionList) StateTypeName() string {
+func (l *sessionList) StateTypeName() string {
 	return "pkg/sentry/kernel.sessionList"
 }
 
-func (s *sessionList) StateFields() []string {
+func (l *sessionList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (s *sessionList) beforeSave() {}
+func (l *sessionList) beforeSave() {}
 
-func (s *sessionList) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.head)
-	stateSinkObject.Save(1, &s.tail)
+func (l *sessionList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (s *sessionList) afterLoad() {}
+func (l *sessionList) afterLoad() {}
 
-func (s *sessionList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.head)
-	stateSourceObject.Load(1, &s.tail)
+func (l *sessionList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (s *sessionEntry) StateTypeName() string {
+func (e *sessionEntry) StateTypeName() string {
 	return "pkg/sentry/kernel.sessionEntry"
 }
 
-func (s *sessionEntry) StateFields() []string {
+func (e *sessionEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (s *sessionEntry) beforeSave() {}
+func (e *sessionEntry) beforeSave() {}
 
-func (s *sessionEntry) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.next)
-	stateSinkObject.Save(1, &s.prev)
+func (e *sessionEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (s *sessionEntry) afterLoad() {}
+func (e *sessionEntry) afterLoad() {}
 
-func (s *sessionEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.next)
-	stateSourceObject.Load(1, &s.prev)
+func (e *sessionEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
-func (s *SessionRefs) StateTypeName() string {
+func (r *SessionRefs) StateTypeName() string {
 	return "pkg/sentry/kernel.SessionRefs"
 }
 
-func (s *SessionRefs) StateFields() []string {
+func (r *SessionRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (s *SessionRefs) beforeSave() {}
+func (r *SessionRefs) beforeSave() {}
 
-func (s *SessionRefs) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.refCount)
+func (r *SessionRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (s *SessionRefs) afterLoad() {}
+func (r *SessionRefs) afterLoad() {}
 
-func (s *SessionRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.refCount)
+func (r *SessionRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (s *Session) StateTypeName() string {
@@ -950,11 +950,11 @@ func (s *Session) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &s.sessionEntry)
 }
 
-func (p *ProcessGroup) StateTypeName() string {
+func (pg *ProcessGroup) StateTypeName() string {
 	return "pkg/sentry/kernel.ProcessGroup"
 }
 
-func (p *ProcessGroup) StateFields() []string {
+func (pg *ProcessGroup) StateFields() []string {
 	return []string{
 		"refs",
 		"originator",
@@ -965,102 +965,102 @@ func (p *ProcessGroup) StateFields() []string {
 	}
 }
 
-func (p *ProcessGroup) beforeSave() {}
+func (pg *ProcessGroup) beforeSave() {}
 
-func (p *ProcessGroup) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.refs)
-	stateSinkObject.Save(1, &p.originator)
-	stateSinkObject.Save(2, &p.id)
-	stateSinkObject.Save(3, &p.session)
-	stateSinkObject.Save(4, &p.ancestors)
-	stateSinkObject.Save(5, &p.processGroupEntry)
+func (pg *ProcessGroup) StateSave(stateSinkObject state.Sink) {
+	pg.beforeSave()
+	stateSinkObject.Save(0, &pg.refs)
+	stateSinkObject.Save(1, &pg.originator)
+	stateSinkObject.Save(2, &pg.id)
+	stateSinkObject.Save(3, &pg.session)
+	stateSinkObject.Save(4, &pg.ancestors)
+	stateSinkObject.Save(5, &pg.processGroupEntry)
 }
 
-func (p *ProcessGroup) afterLoad() {}
+func (pg *ProcessGroup) afterLoad() {}
 
-func (p *ProcessGroup) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.refs)
-	stateSourceObject.Load(1, &p.originator)
-	stateSourceObject.Load(2, &p.id)
-	stateSourceObject.Load(3, &p.session)
-	stateSourceObject.Load(4, &p.ancestors)
-	stateSourceObject.Load(5, &p.processGroupEntry)
+func (pg *ProcessGroup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &pg.refs)
+	stateSourceObject.Load(1, &pg.originator)
+	stateSourceObject.Load(2, &pg.id)
+	stateSourceObject.Load(3, &pg.session)
+	stateSourceObject.Load(4, &pg.ancestors)
+	stateSourceObject.Load(5, &pg.processGroupEntry)
 }
 
-func (s *SignalHandlers) StateTypeName() string {
+func (sh *SignalHandlers) StateTypeName() string {
 	return "pkg/sentry/kernel.SignalHandlers"
 }
 
-func (s *SignalHandlers) StateFields() []string {
+func (sh *SignalHandlers) StateFields() []string {
 	return []string{
 		"actions",
 	}
 }
 
-func (s *SignalHandlers) beforeSave() {}
+func (sh *SignalHandlers) beforeSave() {}
 
-func (s *SignalHandlers) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.actions)
+func (sh *SignalHandlers) StateSave(stateSinkObject state.Sink) {
+	sh.beforeSave()
+	stateSinkObject.Save(0, &sh.actions)
 }
 
-func (s *SignalHandlers) afterLoad() {}
+func (sh *SignalHandlers) afterLoad() {}
 
-func (s *SignalHandlers) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.actions)
+func (sh *SignalHandlers) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &sh.actions)
 }
 
-func (s *socketList) StateTypeName() string {
+func (l *socketList) StateTypeName() string {
 	return "pkg/sentry/kernel.socketList"
 }
 
-func (s *socketList) StateFields() []string {
+func (l *socketList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (s *socketList) beforeSave() {}
+func (l *socketList) beforeSave() {}
 
-func (s *socketList) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.head)
-	stateSinkObject.Save(1, &s.tail)
+func (l *socketList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (s *socketList) afterLoad() {}
+func (l *socketList) afterLoad() {}
 
-func (s *socketList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.head)
-	stateSourceObject.Load(1, &s.tail)
+func (l *socketList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (s *socketEntry) StateTypeName() string {
+func (e *socketEntry) StateTypeName() string {
 	return "pkg/sentry/kernel.socketEntry"
 }
 
-func (s *socketEntry) StateFields() []string {
+func (e *socketEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (s *socketEntry) beforeSave() {}
+func (e *socketEntry) beforeSave() {}
 
-func (s *socketEntry) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.next)
-	stateSinkObject.Save(1, &s.prev)
+func (e *socketEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (s *socketEntry) afterLoad() {}
+func (e *socketEntry) afterLoad() {}
 
-func (s *socketEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.next)
-	stateSourceObject.Load(1, &s.prev)
+func (e *socketEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func (s *syscallTableInfo) StateTypeName() string {
@@ -1390,11 +1390,11 @@ func (v *vforkStop) afterLoad() {}
 func (v *vforkStop) StateLoad(stateSourceObject state.Source) {
 }
 
-func (t *TaskContext) StateTypeName() string {
+func (tc *TaskContext) StateTypeName() string {
 	return "pkg/sentry/kernel.TaskContext"
 }
 
-func (t *TaskContext) StateFields() []string {
+func (tc *TaskContext) StateFields() []string {
 	return []string{
 		"Name",
 		"Arch",
@@ -1404,26 +1404,26 @@ func (t *TaskContext) StateFields() []string {
 	}
 }
 
-func (t *TaskContext) beforeSave() {}
+func (tc *TaskContext) beforeSave() {}
 
-func (t *TaskContext) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	var stValue syscallTableInfo = t.saveSt()
+func (tc *TaskContext) StateSave(stateSinkObject state.Sink) {
+	tc.beforeSave()
+	var stValue syscallTableInfo = tc.saveSt()
 	stateSinkObject.SaveValue(4, stValue)
-	stateSinkObject.Save(0, &t.Name)
-	stateSinkObject.Save(1, &t.Arch)
-	stateSinkObject.Save(2, &t.MemoryManager)
-	stateSinkObject.Save(3, &t.fu)
+	stateSinkObject.Save(0, &tc.Name)
+	stateSinkObject.Save(1, &tc.Arch)
+	stateSinkObject.Save(2, &tc.MemoryManager)
+	stateSinkObject.Save(3, &tc.fu)
 }
 
-func (t *TaskContext) afterLoad() {}
+func (tc *TaskContext) afterLoad() {}
 
-func (t *TaskContext) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.Name)
-	stateSourceObject.Load(1, &t.Arch)
-	stateSourceObject.Load(2, &t.MemoryManager)
-	stateSourceObject.Load(3, &t.fu)
-	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y interface{}) { t.loadSt(y.(syscallTableInfo)) })
+func (tc *TaskContext) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tc.Name)
+	stateSourceObject.Load(1, &tc.Arch)
+	stateSourceObject.Load(2, &tc.MemoryManager)
+	stateSourceObject.Load(3, &tc.fu)
+	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y interface{}) { tc.loadSt(y.(syscallTableInfo)) })
 }
 
 func (e *execStop) StateTypeName() string {
@@ -1468,30 +1468,30 @@ func (r *runSyscallAfterExecStop) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.tc)
 }
 
-func (e *ExitStatus) StateTypeName() string {
+func (es *ExitStatus) StateTypeName() string {
 	return "pkg/sentry/kernel.ExitStatus"
 }
 
-func (e *ExitStatus) StateFields() []string {
+func (es *ExitStatus) StateFields() []string {
 	return []string{
 		"Code",
 		"Signo",
 	}
 }
 
-func (e *ExitStatus) beforeSave() {}
+func (es *ExitStatus) beforeSave() {}
 
-func (e *ExitStatus) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	stateSinkObject.Save(0, &e.Code)
-	stateSinkObject.Save(1, &e.Signo)
+func (es *ExitStatus) StateSave(stateSinkObject state.Sink) {
+	es.beforeSave()
+	stateSinkObject.Save(0, &es.Code)
+	stateSinkObject.Save(1, &es.Signo)
 }
 
-func (e *ExitStatus) afterLoad() {}
+func (es *ExitStatus) afterLoad() {}
 
-func (e *ExitStatus) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.Code)
-	stateSourceObject.Load(1, &e.Signo)
+func (es *ExitStatus) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &es.Code)
+	stateSourceObject.Load(1, &es.Signo)
 }
 
 func (r *runExit) StateTypeName() string {
@@ -1551,82 +1551,82 @@ func (r *runExitNotify) afterLoad() {}
 func (r *runExitNotify) StateLoad(stateSourceObject state.Source) {
 }
 
-func (t *taskList) StateTypeName() string {
+func (l *taskList) StateTypeName() string {
 	return "pkg/sentry/kernel.taskList"
 }
 
-func (t *taskList) StateFields() []string {
+func (l *taskList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (t *taskList) beforeSave() {}
+func (l *taskList) beforeSave() {}
 
-func (t *taskList) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.head)
-	stateSinkObject.Save(1, &t.tail)
+func (l *taskList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (t *taskList) afterLoad() {}
+func (l *taskList) afterLoad() {}
 
-func (t *taskList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.head)
-	stateSourceObject.Load(1, &t.tail)
+func (l *taskList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (t *taskEntry) StateTypeName() string {
+func (e *taskEntry) StateTypeName() string {
 	return "pkg/sentry/kernel.taskEntry"
 }
 
-func (t *taskEntry) StateFields() []string {
+func (e *taskEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (t *taskEntry) beforeSave() {}
+func (e *taskEntry) beforeSave() {}
 
-func (t *taskEntry) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.next)
-	stateSinkObject.Save(1, &t.prev)
+func (e *taskEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (t *taskEntry) afterLoad() {}
+func (e *taskEntry) afterLoad() {}
 
-func (t *taskEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.next)
-	stateSourceObject.Load(1, &t.prev)
+func (e *taskEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
-func (r *runApp) StateTypeName() string {
+func (app *runApp) StateTypeName() string {
 	return "pkg/sentry/kernel.runApp"
 }
 
-func (r *runApp) StateFields() []string {
+func (app *runApp) StateFields() []string {
 	return []string{}
 }
 
-func (r *runApp) beforeSave() {}
+func (app *runApp) beforeSave() {}
 
-func (r *runApp) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
+func (app *runApp) StateSave(stateSinkObject state.Sink) {
+	app.beforeSave()
 }
 
-func (r *runApp) afterLoad() {}
+func (app *runApp) afterLoad() {}
 
-func (r *runApp) StateLoad(stateSourceObject state.Source) {
+func (app *runApp) StateLoad(stateSourceObject state.Source) {
 }
 
-func (t *TaskGoroutineSchedInfo) StateTypeName() string {
+func (ts *TaskGoroutineSchedInfo) StateTypeName() string {
 	return "pkg/sentry/kernel.TaskGoroutineSchedInfo"
 }
 
-func (t *TaskGoroutineSchedInfo) StateFields() []string {
+func (ts *TaskGoroutineSchedInfo) StateFields() []string {
 	return []string{
 		"Timestamp",
 		"State",
@@ -1635,75 +1635,75 @@ func (t *TaskGoroutineSchedInfo) StateFields() []string {
 	}
 }
 
-func (t *TaskGoroutineSchedInfo) beforeSave() {}
+func (ts *TaskGoroutineSchedInfo) beforeSave() {}
 
-func (t *TaskGoroutineSchedInfo) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.Timestamp)
-	stateSinkObject.Save(1, &t.State)
-	stateSinkObject.Save(2, &t.UserTicks)
-	stateSinkObject.Save(3, &t.SysTicks)
+func (ts *TaskGoroutineSchedInfo) StateSave(stateSinkObject state.Sink) {
+	ts.beforeSave()
+	stateSinkObject.Save(0, &ts.Timestamp)
+	stateSinkObject.Save(1, &ts.State)
+	stateSinkObject.Save(2, &ts.UserTicks)
+	stateSinkObject.Save(3, &ts.SysTicks)
 }
 
-func (t *TaskGoroutineSchedInfo) afterLoad() {}
+func (ts *TaskGoroutineSchedInfo) afterLoad() {}
 
-func (t *TaskGoroutineSchedInfo) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.Timestamp)
-	stateSourceObject.Load(1, &t.State)
-	stateSourceObject.Load(2, &t.UserTicks)
-	stateSourceObject.Load(3, &t.SysTicks)
+func (ts *TaskGoroutineSchedInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ts.Timestamp)
+	stateSourceObject.Load(1, &ts.State)
+	stateSourceObject.Load(2, &ts.UserTicks)
+	stateSourceObject.Load(3, &ts.SysTicks)
 }
 
-func (t *taskClock) StateTypeName() string {
+func (tc *taskClock) StateTypeName() string {
 	return "pkg/sentry/kernel.taskClock"
 }
 
-func (t *taskClock) StateFields() []string {
+func (tc *taskClock) StateFields() []string {
 	return []string{
 		"t",
 		"includeSys",
 	}
 }
 
-func (t *taskClock) beforeSave() {}
+func (tc *taskClock) beforeSave() {}
 
-func (t *taskClock) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.t)
-	stateSinkObject.Save(1, &t.includeSys)
+func (tc *taskClock) StateSave(stateSinkObject state.Sink) {
+	tc.beforeSave()
+	stateSinkObject.Save(0, &tc.t)
+	stateSinkObject.Save(1, &tc.includeSys)
 }
 
-func (t *taskClock) afterLoad() {}
+func (tc *taskClock) afterLoad() {}
 
-func (t *taskClock) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.t)
-	stateSourceObject.Load(1, &t.includeSys)
+func (tc *taskClock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tc.t)
+	stateSourceObject.Load(1, &tc.includeSys)
 }
 
-func (t *tgClock) StateTypeName() string {
+func (tgc *tgClock) StateTypeName() string {
 	return "pkg/sentry/kernel.tgClock"
 }
 
-func (t *tgClock) StateFields() []string {
+func (tgc *tgClock) StateFields() []string {
 	return []string{
 		"tg",
 		"includeSys",
 	}
 }
 
-func (t *tgClock) beforeSave() {}
+func (tgc *tgClock) beforeSave() {}
 
-func (t *tgClock) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.tg)
-	stateSinkObject.Save(1, &t.includeSys)
+func (tgc *tgClock) StateSave(stateSinkObject state.Sink) {
+	tgc.beforeSave()
+	stateSinkObject.Save(0, &tgc.tg)
+	stateSinkObject.Save(1, &tgc.includeSys)
 }
 
-func (t *tgClock) afterLoad() {}
+func (tgc *tgClock) afterLoad() {}
 
-func (t *tgClock) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.tg)
-	stateSourceObject.Load(1, &t.includeSys)
+func (tgc *tgClock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tgc.tg)
+	stateSourceObject.Load(1, &tgc.includeSys)
 }
 
 func (g *groupStop) StateTypeName() string {
@@ -1839,11 +1839,11 @@ func (r *runSyscallExit) afterLoad() {}
 func (r *runSyscallExit) StateLoad(stateSourceObject state.Source) {
 }
 
-func (t *ThreadGroup) StateTypeName() string {
+func (tg *ThreadGroup) StateTypeName() string {
 	return "pkg/sentry/kernel.ThreadGroup"
 }
 
-func (t *ThreadGroup) StateFields() []string {
+func (tg *ThreadGroup) StateFields() []string {
 	return []string{
 		"threadGroupNode",
 		"signalHandlers",
@@ -1881,138 +1881,138 @@ func (t *ThreadGroup) StateFields() []string {
 	}
 }
 
-func (t *ThreadGroup) beforeSave() {}
+func (tg *ThreadGroup) beforeSave() {}
 
-func (t *ThreadGroup) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	var oldRSeqCriticalValue *OldRSeqCriticalRegion = t.saveOldRSeqCritical()
+func (tg *ThreadGroup) StateSave(stateSinkObject state.Sink) {
+	tg.beforeSave()
+	var oldRSeqCriticalValue *OldRSeqCriticalRegion = tg.saveOldRSeqCritical()
 	stateSinkObject.SaveValue(29, oldRSeqCriticalValue)
-	stateSinkObject.Save(0, &t.threadGroupNode)
-	stateSinkObject.Save(1, &t.signalHandlers)
-	stateSinkObject.Save(2, &t.pendingSignals)
-	stateSinkObject.Save(3, &t.groupStopDequeued)
-	stateSinkObject.Save(4, &t.groupStopSignal)
-	stateSinkObject.Save(5, &t.groupStopPendingCount)
-	stateSinkObject.Save(6, &t.groupStopComplete)
-	stateSinkObject.Save(7, &t.groupStopWaitable)
-	stateSinkObject.Save(8, &t.groupContNotify)
-	stateSinkObject.Save(9, &t.groupContInterrupted)
-	stateSinkObject.Save(10, &t.groupContWaitable)
-	stateSinkObject.Save(11, &t.exiting)
-	stateSinkObject.Save(12, &t.exitStatus)
-	stateSinkObject.Save(13, &t.terminationSignal)
-	stateSinkObject.Save(14, &t.itimerRealTimer)
-	stateSinkObject.Save(15, &t.itimerVirtSetting)
-	stateSinkObject.Save(16, &t.itimerProfSetting)
-	stateSinkObject.Save(17, &t.rlimitCPUSoftSetting)
-	stateSinkObject.Save(18, &t.cpuTimersEnabled)
-	stateSinkObject.Save(19, &t.timers)
-	stateSinkObject.Save(20, &t.nextTimerID)
-	stateSinkObject.Save(21, &t.exitedCPUStats)
-	stateSinkObject.Save(22, &t.childCPUStats)
-	stateSinkObject.Save(23, &t.ioUsage)
-	stateSinkObject.Save(24, &t.maxRSS)
-	stateSinkObject.Save(25, &t.childMaxRSS)
-	stateSinkObject.Save(26, &t.limits)
-	stateSinkObject.Save(27, &t.processGroup)
-	stateSinkObject.Save(28, &t.execed)
-	stateSinkObject.Save(30, &t.mounts)
-	stateSinkObject.Save(31, &t.tty)
-	stateSinkObject.Save(32, &t.oomScoreAdj)
+	stateSinkObject.Save(0, &tg.threadGroupNode)
+	stateSinkObject.Save(1, &tg.signalHandlers)
+	stateSinkObject.Save(2, &tg.pendingSignals)
+	stateSinkObject.Save(3, &tg.groupStopDequeued)
+	stateSinkObject.Save(4, &tg.groupStopSignal)
+	stateSinkObject.Save(5, &tg.groupStopPendingCount)
+	stateSinkObject.Save(6, &tg.groupStopComplete)
+	stateSinkObject.Save(7, &tg.groupStopWaitable)
+	stateSinkObject.Save(8, &tg.groupContNotify)
+	stateSinkObject.Save(9, &tg.groupContInterrupted)
+	stateSinkObject.Save(10, &tg.groupContWaitable)
+	stateSinkObject.Save(11, &tg.exiting)
+	stateSinkObject.Save(12, &tg.exitStatus)
+	stateSinkObject.Save(13, &tg.terminationSignal)
+	stateSinkObject.Save(14, &tg.itimerRealTimer)
+	stateSinkObject.Save(15, &tg.itimerVirtSetting)
+	stateSinkObject.Save(16, &tg.itimerProfSetting)
+	stateSinkObject.Save(17, &tg.rlimitCPUSoftSetting)
+	stateSinkObject.Save(18, &tg.cpuTimersEnabled)
+	stateSinkObject.Save(19, &tg.timers)
+	stateSinkObject.Save(20, &tg.nextTimerID)
+	stateSinkObject.Save(21, &tg.exitedCPUStats)
+	stateSinkObject.Save(22, &tg.childCPUStats)
+	stateSinkObject.Save(23, &tg.ioUsage)
+	stateSinkObject.Save(24, &tg.maxRSS)
+	stateSinkObject.Save(25, &tg.childMaxRSS)
+	stateSinkObject.Save(26, &tg.limits)
+	stateSinkObject.Save(27, &tg.processGroup)
+	stateSinkObject.Save(28, &tg.execed)
+	stateSinkObject.Save(30, &tg.mounts)
+	stateSinkObject.Save(31, &tg.tty)
+	stateSinkObject.Save(32, &tg.oomScoreAdj)
 }
 
-func (t *ThreadGroup) afterLoad() {}
+func (tg *ThreadGroup) afterLoad() {}
 
-func (t *ThreadGroup) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.threadGroupNode)
-	stateSourceObject.Load(1, &t.signalHandlers)
-	stateSourceObject.Load(2, &t.pendingSignals)
-	stateSourceObject.Load(3, &t.groupStopDequeued)
-	stateSourceObject.Load(4, &t.groupStopSignal)
-	stateSourceObject.Load(5, &t.groupStopPendingCount)
-	stateSourceObject.Load(6, &t.groupStopComplete)
-	stateSourceObject.Load(7, &t.groupStopWaitable)
-	stateSourceObject.Load(8, &t.groupContNotify)
-	stateSourceObject.Load(9, &t.groupContInterrupted)
-	stateSourceObject.Load(10, &t.groupContWaitable)
-	stateSourceObject.Load(11, &t.exiting)
-	stateSourceObject.Load(12, &t.exitStatus)
-	stateSourceObject.Load(13, &t.terminationSignal)
-	stateSourceObject.Load(14, &t.itimerRealTimer)
-	stateSourceObject.Load(15, &t.itimerVirtSetting)
-	stateSourceObject.Load(16, &t.itimerProfSetting)
-	stateSourceObject.Load(17, &t.rlimitCPUSoftSetting)
-	stateSourceObject.Load(18, &t.cpuTimersEnabled)
-	stateSourceObject.Load(19, &t.timers)
-	stateSourceObject.Load(20, &t.nextTimerID)
-	stateSourceObject.Load(21, &t.exitedCPUStats)
-	stateSourceObject.Load(22, &t.childCPUStats)
-	stateSourceObject.Load(23, &t.ioUsage)
-	stateSourceObject.Load(24, &t.maxRSS)
-	stateSourceObject.Load(25, &t.childMaxRSS)
-	stateSourceObject.Load(26, &t.limits)
-	stateSourceObject.Load(27, &t.processGroup)
-	stateSourceObject.Load(28, &t.execed)
-	stateSourceObject.Load(30, &t.mounts)
-	stateSourceObject.Load(31, &t.tty)
-	stateSourceObject.Load(32, &t.oomScoreAdj)
-	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y interface{}) { t.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
+func (tg *ThreadGroup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tg.threadGroupNode)
+	stateSourceObject.Load(1, &tg.signalHandlers)
+	stateSourceObject.Load(2, &tg.pendingSignals)
+	stateSourceObject.Load(3, &tg.groupStopDequeued)
+	stateSourceObject.Load(4, &tg.groupStopSignal)
+	stateSourceObject.Load(5, &tg.groupStopPendingCount)
+	stateSourceObject.Load(6, &tg.groupStopComplete)
+	stateSourceObject.Load(7, &tg.groupStopWaitable)
+	stateSourceObject.Load(8, &tg.groupContNotify)
+	stateSourceObject.Load(9, &tg.groupContInterrupted)
+	stateSourceObject.Load(10, &tg.groupContWaitable)
+	stateSourceObject.Load(11, &tg.exiting)
+	stateSourceObject.Load(12, &tg.exitStatus)
+	stateSourceObject.Load(13, &tg.terminationSignal)
+	stateSourceObject.Load(14, &tg.itimerRealTimer)
+	stateSourceObject.Load(15, &tg.itimerVirtSetting)
+	stateSourceObject.Load(16, &tg.itimerProfSetting)
+	stateSourceObject.Load(17, &tg.rlimitCPUSoftSetting)
+	stateSourceObject.Load(18, &tg.cpuTimersEnabled)
+	stateSourceObject.Load(19, &tg.timers)
+	stateSourceObject.Load(20, &tg.nextTimerID)
+	stateSourceObject.Load(21, &tg.exitedCPUStats)
+	stateSourceObject.Load(22, &tg.childCPUStats)
+	stateSourceObject.Load(23, &tg.ioUsage)
+	stateSourceObject.Load(24, &tg.maxRSS)
+	stateSourceObject.Load(25, &tg.childMaxRSS)
+	stateSourceObject.Load(26, &tg.limits)
+	stateSourceObject.Load(27, &tg.processGroup)
+	stateSourceObject.Load(28, &tg.execed)
+	stateSourceObject.Load(30, &tg.mounts)
+	stateSourceObject.Load(31, &tg.tty)
+	stateSourceObject.Load(32, &tg.oomScoreAdj)
+	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y interface{}) { tg.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
 }
 
-func (i *itimerRealListener) StateTypeName() string {
+func (l *itimerRealListener) StateTypeName() string {
 	return "pkg/sentry/kernel.itimerRealListener"
 }
 
-func (i *itimerRealListener) StateFields() []string {
+func (l *itimerRealListener) StateFields() []string {
 	return []string{
 		"tg",
 	}
 }
 
-func (i *itimerRealListener) beforeSave() {}
+func (l *itimerRealListener) beforeSave() {}
 
-func (i *itimerRealListener) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.tg)
+func (l *itimerRealListener) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.tg)
 }
 
-func (i *itimerRealListener) afterLoad() {}
+func (l *itimerRealListener) afterLoad() {}
 
-func (i *itimerRealListener) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.tg)
+func (l *itimerRealListener) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.tg)
 }
 
-func (t *TaskSet) StateTypeName() string {
+func (ts *TaskSet) StateTypeName() string {
 	return "pkg/sentry/kernel.TaskSet"
 }
 
-func (t *TaskSet) StateFields() []string {
+func (ts *TaskSet) StateFields() []string {
 	return []string{
 		"Root",
 		"sessions",
 	}
 }
 
-func (t *TaskSet) beforeSave() {}
+func (ts *TaskSet) beforeSave() {}
 
-func (t *TaskSet) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.Root)
-	stateSinkObject.Save(1, &t.sessions)
+func (ts *TaskSet) StateSave(stateSinkObject state.Sink) {
+	ts.beforeSave()
+	stateSinkObject.Save(0, &ts.Root)
+	stateSinkObject.Save(1, &ts.sessions)
 }
 
-func (t *TaskSet) afterLoad() {}
+func (ts *TaskSet) afterLoad() {}
 
-func (t *TaskSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.Root)
-	stateSourceObject.Load(1, &t.sessions)
+func (ts *TaskSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ts.Root)
+	stateSourceObject.Load(1, &ts.sessions)
 }
 
-func (p *PIDNamespace) StateTypeName() string {
+func (ns *PIDNamespace) StateTypeName() string {
 	return "pkg/sentry/kernel.PIDNamespace"
 }
 
-func (p *PIDNamespace) StateFields() []string {
+func (ns *PIDNamespace) StateFields() []string {
 	return []string{
 		"owner",
 		"parent",
@@ -2029,39 +2029,39 @@ func (p *PIDNamespace) StateFields() []string {
 	}
 }
 
-func (p *PIDNamespace) beforeSave() {}
+func (ns *PIDNamespace) beforeSave() {}
 
-func (p *PIDNamespace) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.owner)
-	stateSinkObject.Save(1, &p.parent)
-	stateSinkObject.Save(2, &p.userns)
-	stateSinkObject.Save(3, &p.last)
-	stateSinkObject.Save(4, &p.tasks)
-	stateSinkObject.Save(5, &p.tids)
-	stateSinkObject.Save(6, &p.tgids)
-	stateSinkObject.Save(7, &p.sessions)
-	stateSinkObject.Save(8, &p.sids)
-	stateSinkObject.Save(9, &p.processGroups)
-	stateSinkObject.Save(10, &p.pgids)
-	stateSinkObject.Save(11, &p.exiting)
+func (ns *PIDNamespace) StateSave(stateSinkObject state.Sink) {
+	ns.beforeSave()
+	stateSinkObject.Save(0, &ns.owner)
+	stateSinkObject.Save(1, &ns.parent)
+	stateSinkObject.Save(2, &ns.userns)
+	stateSinkObject.Save(3, &ns.last)
+	stateSinkObject.Save(4, &ns.tasks)
+	stateSinkObject.Save(5, &ns.tids)
+	stateSinkObject.Save(6, &ns.tgids)
+	stateSinkObject.Save(7, &ns.sessions)
+	stateSinkObject.Save(8, &ns.sids)
+	stateSinkObject.Save(9, &ns.processGroups)
+	stateSinkObject.Save(10, &ns.pgids)
+	stateSinkObject.Save(11, &ns.exiting)
 }
 
-func (p *PIDNamespace) afterLoad() {}
+func (ns *PIDNamespace) afterLoad() {}
 
-func (p *PIDNamespace) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.owner)
-	stateSourceObject.Load(1, &p.parent)
-	stateSourceObject.Load(2, &p.userns)
-	stateSourceObject.Load(3, &p.last)
-	stateSourceObject.Load(4, &p.tasks)
-	stateSourceObject.Load(5, &p.tids)
-	stateSourceObject.Load(6, &p.tgids)
-	stateSourceObject.Load(7, &p.sessions)
-	stateSourceObject.Load(8, &p.sids)
-	stateSourceObject.Load(9, &p.processGroups)
-	stateSourceObject.Load(10, &p.pgids)
-	stateSourceObject.Load(11, &p.exiting)
+func (ns *PIDNamespace) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ns.owner)
+	stateSourceObject.Load(1, &ns.parent)
+	stateSourceObject.Load(2, &ns.userns)
+	stateSourceObject.Load(3, &ns.last)
+	stateSourceObject.Load(4, &ns.tasks)
+	stateSourceObject.Load(5, &ns.tids)
+	stateSourceObject.Load(6, &ns.tgids)
+	stateSourceObject.Load(7, &ns.sessions)
+	stateSourceObject.Load(8, &ns.sids)
+	stateSourceObject.Load(9, &ns.processGroups)
+	stateSourceObject.Load(10, &ns.pgids)
+	stateSourceObject.Load(11, &ns.exiting)
 }
 
 func (t *threadGroupNode) StateTypeName() string {
@@ -2169,30 +2169,30 @@ func (t *Timekeeper) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(t.afterLoad)
 }
 
-func (t *timekeeperClock) StateTypeName() string {
+func (tc *timekeeperClock) StateTypeName() string {
 	return "pkg/sentry/kernel.timekeeperClock"
 }
 
-func (t *timekeeperClock) StateFields() []string {
+func (tc *timekeeperClock) StateFields() []string {
 	return []string{
 		"tk",
 		"c",
 	}
 }
 
-func (t *timekeeperClock) beforeSave() {}
+func (tc *timekeeperClock) beforeSave() {}
 
-func (t *timekeeperClock) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.tk)
-	stateSinkObject.Save(1, &t.c)
+func (tc *timekeeperClock) StateSave(stateSinkObject state.Sink) {
+	tc.beforeSave()
+	stateSinkObject.Save(0, &tc.tk)
+	stateSinkObject.Save(1, &tc.c)
 }
 
-func (t *timekeeperClock) afterLoad() {}
+func (tc *timekeeperClock) afterLoad() {}
 
-func (t *timekeeperClock) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.tk)
-	stateSourceObject.Load(1, &t.c)
+func (tc *timekeeperClock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tc.tk)
+	stateSourceObject.Load(1, &tc.c)
 }
 
 func (t *TTY) StateTypeName() string {

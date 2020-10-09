@@ -6,28 +6,28 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (a *AtomicPtrBucket) StateTypeName() string {
+func (p *AtomicPtrBucket) StateTypeName() string {
 	return "pkg/sentry/kernel/futex.AtomicPtrBucket"
 }
 
-func (a *AtomicPtrBucket) StateFields() []string {
+func (p *AtomicPtrBucket) StateFields() []string {
 	return []string{
 		"ptr",
 	}
 }
 
-func (a *AtomicPtrBucket) beforeSave() {}
+func (p *AtomicPtrBucket) beforeSave() {}
 
-func (a *AtomicPtrBucket) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	var ptrValue *bucket = a.savePtr()
+func (p *AtomicPtrBucket) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	var ptrValue *bucket = p.savePtr()
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 
-func (a *AtomicPtrBucket) afterLoad() {}
+func (p *AtomicPtrBucket) afterLoad() {}
 
-func (a *AtomicPtrBucket) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*bucket), func(y interface{}) { a.loadPtr(y.(*bucket)) })
+func (p *AtomicPtrBucket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*bucket), func(y interface{}) { p.loadPtr(y.(*bucket)) })
 }
 
 func init() {

@@ -7,11 +7,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
-func (r *rawPacket) StateTypeName() string {
+func (p *rawPacket) StateTypeName() string {
 	return "pkg/tcpip/transport/raw.rawPacket"
 }
 
-func (r *rawPacket) StateFields() []string {
+func (p *rawPacket) StateFields() []string {
 	return []string{
 		"rawPacketEntry",
 		"data",
@@ -20,31 +20,31 @@ func (r *rawPacket) StateFields() []string {
 	}
 }
 
-func (r *rawPacket) beforeSave() {}
+func (p *rawPacket) beforeSave() {}
 
-func (r *rawPacket) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	var dataValue buffer.VectorisedView = r.saveData()
+func (p *rawPacket) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	var dataValue buffer.VectorisedView = p.saveData()
 	stateSinkObject.SaveValue(1, dataValue)
-	stateSinkObject.Save(0, &r.rawPacketEntry)
-	stateSinkObject.Save(2, &r.timestampNS)
-	stateSinkObject.Save(3, &r.senderAddr)
+	stateSinkObject.Save(0, &p.rawPacketEntry)
+	stateSinkObject.Save(2, &p.timestampNS)
+	stateSinkObject.Save(3, &p.senderAddr)
 }
 
-func (r *rawPacket) afterLoad() {}
+func (p *rawPacket) afterLoad() {}
 
-func (r *rawPacket) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.rawPacketEntry)
-	stateSourceObject.Load(2, &r.timestampNS)
-	stateSourceObject.Load(3, &r.senderAddr)
-	stateSourceObject.LoadValue(1, new(buffer.VectorisedView), func(y interface{}) { r.loadData(y.(buffer.VectorisedView)) })
+func (p *rawPacket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.rawPacketEntry)
+	stateSourceObject.Load(2, &p.timestampNS)
+	stateSourceObject.Load(3, &p.senderAddr)
+	stateSourceObject.LoadValue(1, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
 }
 
-func (e *endpoint) StateTypeName() string {
+func (ep *endpoint) StateTypeName() string {
 	return "pkg/tcpip/transport/raw.endpoint"
 }
 
-func (e *endpoint) StateFields() []string {
+func (ep *endpoint) StateFields() []string {
 	return []string{
 		"TransportEndpointInfo",
 		"waiterQueue",
@@ -64,95 +64,95 @@ func (e *endpoint) StateFields() []string {
 	}
 }
 
-func (e *endpoint) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
+func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
+	ep.beforeSave()
+	var rcvBufSizeMaxValue int = ep.saveRcvBufSizeMax()
 	stateSinkObject.SaveValue(6, rcvBufSizeMaxValue)
-	stateSinkObject.Save(0, &e.TransportEndpointInfo)
-	stateSinkObject.Save(1, &e.waiterQueue)
-	stateSinkObject.Save(2, &e.associated)
-	stateSinkObject.Save(3, &e.hdrIncluded)
-	stateSinkObject.Save(4, &e.rcvList)
-	stateSinkObject.Save(5, &e.rcvBufSize)
-	stateSinkObject.Save(7, &e.rcvClosed)
-	stateSinkObject.Save(8, &e.sndBufSize)
-	stateSinkObject.Save(9, &e.sndBufSizeMax)
-	stateSinkObject.Save(10, &e.closed)
-	stateSinkObject.Save(11, &e.connected)
-	stateSinkObject.Save(12, &e.bound)
-	stateSinkObject.Save(13, &e.linger)
-	stateSinkObject.Save(14, &e.owner)
+	stateSinkObject.Save(0, &ep.TransportEndpointInfo)
+	stateSinkObject.Save(1, &ep.waiterQueue)
+	stateSinkObject.Save(2, &ep.associated)
+	stateSinkObject.Save(3, &ep.hdrIncluded)
+	stateSinkObject.Save(4, &ep.rcvList)
+	stateSinkObject.Save(5, &ep.rcvBufSize)
+	stateSinkObject.Save(7, &ep.rcvClosed)
+	stateSinkObject.Save(8, &ep.sndBufSize)
+	stateSinkObject.Save(9, &ep.sndBufSizeMax)
+	stateSinkObject.Save(10, &ep.closed)
+	stateSinkObject.Save(11, &ep.connected)
+	stateSinkObject.Save(12, &ep.bound)
+	stateSinkObject.Save(13, &ep.linger)
+	stateSinkObject.Save(14, &ep.owner)
 }
 
-func (e *endpoint) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.TransportEndpointInfo)
-	stateSourceObject.Load(1, &e.waiterQueue)
-	stateSourceObject.Load(2, &e.associated)
-	stateSourceObject.Load(3, &e.hdrIncluded)
-	stateSourceObject.Load(4, &e.rcvList)
-	stateSourceObject.Load(5, &e.rcvBufSize)
-	stateSourceObject.Load(7, &e.rcvClosed)
-	stateSourceObject.Load(8, &e.sndBufSize)
-	stateSourceObject.Load(9, &e.sndBufSizeMax)
-	stateSourceObject.Load(10, &e.closed)
-	stateSourceObject.Load(11, &e.connected)
-	stateSourceObject.Load(12, &e.bound)
-	stateSourceObject.Load(13, &e.linger)
-	stateSourceObject.Load(14, &e.owner)
-	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
-	stateSourceObject.AfterLoad(e.afterLoad)
+func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ep.TransportEndpointInfo)
+	stateSourceObject.Load(1, &ep.waiterQueue)
+	stateSourceObject.Load(2, &ep.associated)
+	stateSourceObject.Load(3, &ep.hdrIncluded)
+	stateSourceObject.Load(4, &ep.rcvList)
+	stateSourceObject.Load(5, &ep.rcvBufSize)
+	stateSourceObject.Load(7, &ep.rcvClosed)
+	stateSourceObject.Load(8, &ep.sndBufSize)
+	stateSourceObject.Load(9, &ep.sndBufSizeMax)
+	stateSourceObject.Load(10, &ep.closed)
+	stateSourceObject.Load(11, &ep.connected)
+	stateSourceObject.Load(12, &ep.bound)
+	stateSourceObject.Load(13, &ep.linger)
+	stateSourceObject.Load(14, &ep.owner)
+	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { ep.loadRcvBufSizeMax(y.(int)) })
+	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 
-func (r *rawPacketList) StateTypeName() string {
+func (l *rawPacketList) StateTypeName() string {
 	return "pkg/tcpip/transport/raw.rawPacketList"
 }
 
-func (r *rawPacketList) StateFields() []string {
+func (l *rawPacketList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (r *rawPacketList) beforeSave() {}
+func (l *rawPacketList) beforeSave() {}
 
-func (r *rawPacketList) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.head)
-	stateSinkObject.Save(1, &r.tail)
+func (l *rawPacketList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (r *rawPacketList) afterLoad() {}
+func (l *rawPacketList) afterLoad() {}
 
-func (r *rawPacketList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.head)
-	stateSourceObject.Load(1, &r.tail)
+func (l *rawPacketList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
 }
 
-func (r *rawPacketEntry) StateTypeName() string {
+func (e *rawPacketEntry) StateTypeName() string {
 	return "pkg/tcpip/transport/raw.rawPacketEntry"
 }
 
-func (r *rawPacketEntry) StateFields() []string {
+func (e *rawPacketEntry) StateFields() []string {
 	return []string{
 		"next",
 		"prev",
 	}
 }
 
-func (r *rawPacketEntry) beforeSave() {}
+func (e *rawPacketEntry) beforeSave() {}
 
-func (r *rawPacketEntry) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.next)
-	stateSinkObject.Save(1, &r.prev)
+func (e *rawPacketEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
 }
 
-func (r *rawPacketEntry) afterLoad() {}
+func (e *rawPacketEntry) afterLoad() {}
 
-func (r *rawPacketEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.next)
-	stateSourceObject.Load(1, &r.prev)
+func (e *rawPacketEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func init() {

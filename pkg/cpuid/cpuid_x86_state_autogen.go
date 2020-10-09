@@ -55,11 +55,11 @@ func (c *Cache) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(8, &c.DirectMapped)
 }
 
-func (f *FeatureSet) StateTypeName() string {
+func (fs *FeatureSet) StateTypeName() string {
 	return "pkg/cpuid.FeatureSet"
 }
 
-func (f *FeatureSet) StateFields() []string {
+func (fs *FeatureSet) StateFields() []string {
 	return []string{
 		"Set",
 		"VendorID",
@@ -74,35 +74,35 @@ func (f *FeatureSet) StateFields() []string {
 	}
 }
 
-func (f *FeatureSet) beforeSave() {}
+func (fs *FeatureSet) beforeSave() {}
 
-func (f *FeatureSet) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.Set)
-	stateSinkObject.Save(1, &f.VendorID)
-	stateSinkObject.Save(2, &f.ExtendedFamily)
-	stateSinkObject.Save(3, &f.ExtendedModel)
-	stateSinkObject.Save(4, &f.ProcessorType)
-	stateSinkObject.Save(5, &f.Family)
-	stateSinkObject.Save(6, &f.Model)
-	stateSinkObject.Save(7, &f.SteppingID)
-	stateSinkObject.Save(8, &f.Caches)
-	stateSinkObject.Save(9, &f.CacheLine)
+func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
+	fs.beforeSave()
+	stateSinkObject.Save(0, &fs.Set)
+	stateSinkObject.Save(1, &fs.VendorID)
+	stateSinkObject.Save(2, &fs.ExtendedFamily)
+	stateSinkObject.Save(3, &fs.ExtendedModel)
+	stateSinkObject.Save(4, &fs.ProcessorType)
+	stateSinkObject.Save(5, &fs.Family)
+	stateSinkObject.Save(6, &fs.Model)
+	stateSinkObject.Save(7, &fs.SteppingID)
+	stateSinkObject.Save(8, &fs.Caches)
+	stateSinkObject.Save(9, &fs.CacheLine)
 }
 
-func (f *FeatureSet) afterLoad() {}
+func (fs *FeatureSet) afterLoad() {}
 
-func (f *FeatureSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.Set)
-	stateSourceObject.Load(1, &f.VendorID)
-	stateSourceObject.Load(2, &f.ExtendedFamily)
-	stateSourceObject.Load(3, &f.ExtendedModel)
-	stateSourceObject.Load(4, &f.ProcessorType)
-	stateSourceObject.Load(5, &f.Family)
-	stateSourceObject.Load(6, &f.Model)
-	stateSourceObject.Load(7, &f.SteppingID)
-	stateSourceObject.Load(8, &f.Caches)
-	stateSourceObject.Load(9, &f.CacheLine)
+func (fs *FeatureSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fs.Set)
+	stateSourceObject.Load(1, &fs.VendorID)
+	stateSourceObject.Load(2, &fs.ExtendedFamily)
+	stateSourceObject.Load(3, &fs.ExtendedModel)
+	stateSourceObject.Load(4, &fs.ProcessorType)
+	stateSourceObject.Load(5, &fs.Family)
+	stateSourceObject.Load(6, &fs.Model)
+	stateSourceObject.Load(7, &fs.SteppingID)
+	stateSourceObject.Load(8, &fs.Caches)
+	stateSourceObject.Load(9, &fs.CacheLine)
 }
 
 func init() {

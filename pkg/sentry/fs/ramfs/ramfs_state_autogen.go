@@ -38,30 +38,30 @@ func (d *Dir) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &d.dentryMap)
 }
 
-func (d *dirFileOperations) StateTypeName() string {
+func (dfo *dirFileOperations) StateTypeName() string {
 	return "pkg/sentry/fs/ramfs.dirFileOperations"
 }
 
-func (d *dirFileOperations) StateFields() []string {
+func (dfo *dirFileOperations) StateFields() []string {
 	return []string{
 		"dirCursor",
 		"dir",
 	}
 }
 
-func (d *dirFileOperations) beforeSave() {}
+func (dfo *dirFileOperations) beforeSave() {}
 
-func (d *dirFileOperations) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.dirCursor)
-	stateSinkObject.Save(1, &d.dir)
+func (dfo *dirFileOperations) StateSave(stateSinkObject state.Sink) {
+	dfo.beforeSave()
+	stateSinkObject.Save(0, &dfo.dirCursor)
+	stateSinkObject.Save(1, &dfo.dir)
 }
 
-func (d *dirFileOperations) afterLoad() {}
+func (dfo *dirFileOperations) afterLoad() {}
 
-func (d *dirFileOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.dirCursor)
-	stateSourceObject.Load(1, &d.dir)
+func (dfo *dirFileOperations) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &dfo.dirCursor)
+	stateSourceObject.Load(1, &dfo.dir)
 }
 
 func (s *Socket) StateTypeName() string {
