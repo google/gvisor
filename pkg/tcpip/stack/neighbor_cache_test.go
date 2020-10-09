@@ -1500,24 +1500,26 @@ func TestNeighborCacheReplace(t *testing.T) {
 	}
 
 	// Verify the entry exists
-	e, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
-	if err != nil {
-		t.Errorf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
-	}
-	if doneCh != nil {
-		t.Errorf("unexpected done channel from neigh.entry(%s, %s, _, nil): %v", entry.Addr, entry.LocalAddr, doneCh)
-	}
-	if t.Failed() {
-		t.FailNow()
-	}
-	want := NeighborEntry{
-		Addr:      entry.Addr,
-		LocalAddr: entry.LocalAddr,
-		LinkAddr:  entry.LinkAddr,
-		State:     Reachable,
-	}
-	if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
-		t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", entry.Addr, entry.LinkAddr, diff)
+	{
+		e, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+		if err != nil {
+			t.Errorf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
+		}
+		if doneCh != nil {
+			t.Errorf("unexpected done channel from neigh.entry(%s, %s, _, nil): %v", entry.Addr, entry.LocalAddr, doneCh)
+		}
+		if t.Failed() {
+			t.FailNow()
+		}
+		want := NeighborEntry{
+			Addr:      entry.Addr,
+			LocalAddr: entry.LocalAddr,
+			LinkAddr:  entry.LinkAddr,
+			State:     Reachable,
+		}
+		if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
+			t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", entry.Addr, entry.LinkAddr, diff)
+		}
 	}
 
 	// Notify of a link address change
@@ -1536,28 +1538,34 @@ func TestNeighborCacheReplace(t *testing.T) {
 		IsRouter:  false,
 	})
 
-	// Requesting the entry again should start address resolution
+	// Requesting the entry again should start neighbor reachability confirmation.
+	//
+	// Verify the entry's new link address and the new state.
 	{
-		_, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
-		if err != tcpip.ErrWouldBlock {
-			t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+		e, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+		if err != nil {
+			t.Fatalf("neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
+		}
+		want := NeighborEntry{
+			Addr:      entry.Addr,
+			LocalAddr: entry.LocalAddr,
+			LinkAddr:  updatedLinkAddr,
+			State:     Delay,
+		}
+		if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
+			t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", entry.Addr, entry.LocalAddr, diff)
 		}
 		clock.Advance(config.DelayFirstProbeTime + typicalLatency)
-		select {
-		case <-doneCh:
-		default:
-			t.Fatalf("expected notification from done channel returned by neigh.entry(%s, %s, _, nil)", entry.Addr, entry.LocalAddr)
-		}
 	}
 
-	// Verify the entry's new link address
+	// Verify that the neighbor is now reachable.
 	{
 		e, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
 		clock.Advance(typicalLatency)
 		if err != nil {
 			t.Errorf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
 		}
-		want = NeighborEntry{
+		want := NeighborEntry{
 			Addr:      entry.Addr,
 			LocalAddr: entry.LocalAddr,
 			LinkAddr:  updatedLinkAddr,

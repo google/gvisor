@@ -131,10 +131,17 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 	defer entry.mu.Unlock()
 
 	switch s := entry.neigh.State; s {
-	case Reachable, Static:
+	case Stale:
+		entry.handlePacketQueuedLocked()
+		fallthrough
+	case Reachable, Static, Delay, Probe:
+		// As per RFC 4861 section 7.3.3:
+		//  "Neighbor Unreachability Detection operates in parallel with the sending
+		//   of packets to a neighbor. While reasserting a neighbor's reachability,
+		//   a node continues sending packets to that neighbor using the cached
+		//   link-layer address."
 		return entry.neigh, nil, nil
-
-	case Unknown, Incomplete, Stale, Delay, Probe:
+	case Unknown, Incomplete:
 		entry.addWakerLocked(w)
 
 		if entry.done == nil {
@@ -147,10 +154,8 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 
 		entry.handlePacketQueuedLocked()
 		return entry.neigh, entry.done, tcpip.ErrWouldBlock
-
 	case Failed:
 		return entry.neigh, nil, tcpip.ErrNoLinkAddress
-
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", s))
 	}
