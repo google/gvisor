@@ -142,6 +142,14 @@ func (FilesystemType) Name() string {
 	return Name
 }
 
+// isEnabled checks whether the target is enabled with verity features. It
+// should always be true if runtime enable is not allowed. In runtime enable
+// mode, it returns true if the target has been enabled with
+// ioctl(FS_IOC_ENABLE_VERITY).
+func isEnabled(d *dentry) bool {
+	return !d.fs.allowRuntimeEnable || len(d.rootHash) != 0
+}
+
 // alertIntegrityViolation alerts a violation of integrity, which usually means
 // unexpected modification to the file system is detected. In
 // noCrashOnVerificationFailure mode, it returns an error, otherwise it panic.
@@ -245,12 +253,17 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
-	// TODO(b/162788573): Verify Metadata.
 	d.mode = uint32(stat.Mode)
 	d.uid = stat.UID
 	d.gid = stat.GID
-
 	d.rootHash = make([]byte, len(iopts.RootHash))
+
+	if !fs.allowRuntimeEnable {
+		if err := fs.verifyStat(ctx, d, stat); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	copy(d.rootHash, iopts.RootHash)
 	d.vfsd.Init(d)
 
@@ -488,6 +501,11 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 	if err != nil {
 		return linux.Statx{}, err
 	}
+	if isEnabled(fd.d) {
+		if err := fd.d.fs.verifyStat(ctx, fd.d, stat); err != nil {
+			return linux.Statx{}, err
+		}
+	}
 	return stat, nil
 }
 
@@ -516,8 +534,10 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 		FD:  fd.merkleWriter,
 		Ctx: ctx,
 	}
-	var rootHash []byte
-	var dataSize uint64
+	params := &merkletree.GenerateParams{
+		TreeReader: &merkleReader,
+		TreeWriter: &merkleWriter,
+	}
 
 	switch atomic.LoadUint32(&fd.d.mode) & linux.S_IFMT {
 	case linux.S_IFREG:
@@ -528,12 +548,14 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 		if err != nil {
 			return nil, 0, err
 		}
-		dataSize = stat.Size
 
-		rootHash, err = merkletree.Generate(&fdReader, int64(dataSize), &merkleReader, &merkleWriter, false /* dataAndTreeInSameFile */)
-		if err != nil {
-			return nil, 0, err
-		}
+		params.File = &fdReader
+		params.Size = int64(stat.Size)
+		params.Name = fd.d.name
+		params.Mode = uint32(stat.Mode)
+		params.UID = stat.UID
+		params.GID = stat.GID
+		params.DataAndTreeInSameFile = false
 	case linux.S_IFDIR:
 		// For a directory, generate a Merkle tree based on the root
 		// hashes of its children that has already been written to the
@@ -542,18 +564,27 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 		if err != nil {
 			return nil, 0, err
 		}
-		dataSize = merkleStat.Size
 
-		rootHash, err = merkletree.Generate(&merkleReader, int64(dataSize), &merkleReader, &merkleWriter, true /* dataAndTreeInSameFile */)
+		params.Size = int64(merkleStat.Size)
+
+		stat, err := fd.lowerFD.Stat(ctx, vfs.StatOptions{})
 		if err != nil {
 			return nil, 0, err
 		}
+
+		params.File = &merkleReader
+		params.Name = fd.d.name
+		params.Mode = uint32(stat.Mode)
+		params.UID = stat.UID
+		params.GID = stat.GID
+		params.DataAndTreeInSameFile = true
 	default:
 		// TODO(b/167728857): Investigate whether and how we should
 		// enable other types of file.
 		return nil, 0, syserror.EINVAL
 	}
-	return rootHash, dataSize, nil
+	rootHash, err := merkletree.Generate(params)
+	return rootHash, uint64(params.Size), err
 }
 
 // enableVerity enables verity features on fd by generating a Merkle tree file
@@ -688,7 +719,7 @@ func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	// No need to verify if the file is not enabled yet in
 	// allowRuntimeEnable mode.
-	if fd.d.fs.allowRuntimeEnable && len(fd.d.rootHash) == 0 {
+	if !isEnabled(fd.d) {
 		return fd.lowerFD.PRead(ctx, dst, offset, opts)
 	}
 
@@ -725,9 +756,22 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		Ctx: ctx,
 	}
 
-	n, err := merkletree.Verify(dst.Writer(ctx), &dataReader, &merkleReader, int64(size), offset, dst.NumBytes(), fd.d.rootHash, false /* dataAndTreeInSameFile */)
+	n, err := merkletree.Verify(&merkletree.VerifyParams{
+		Out:                   dst.Writer(ctx),
+		File:                  &dataReader,
+		Tree:                  &merkleReader,
+		Size:                  int64(size),
+		Name:                  fd.d.name,
+		Mode:                  fd.d.mode,
+		UID:                   fd.d.uid,
+		GID:                   fd.d.gid,
+		ReadOffset:            offset,
+		ReadSize:              dst.NumBytes(),
+		ExpectedRoot:          fd.d.rootHash,
+		DataAndTreeInSameFile: false,
+	})
 	if err != nil {
-		return 0, alertIntegrityViolation(syserror.EINVAL, fmt.Sprintf("Verification failed: %v", err))
+		return 0, alertIntegrityViolation(syserror.EIO, fmt.Sprintf("Verification failed: %v", err))
 	}
 	return n, err
 }

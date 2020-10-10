@@ -20,6 +20,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -251,11 +252,35 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 		Ctx: ctx,
 	}
 
+	parentStat, err := vfsObj.StatAt(ctx, fs.creds, &vfs.PathOperation{
+		Root:  parent.lowerVD,
+		Start: parent.lowerVD,
+	}, &vfs.StatOptions{})
+	if err == syserror.ENOENT {
+		return nil, alertIntegrityViolation(err, fmt.Sprintf("Failed to get parent stat for %s: %v", childPath, err))
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	// Since we are verifying against a directory Merkle tree, buf should
 	// contain the root hash of the children in the parent Merkle tree when
 	// Verify returns with success.
 	var buf bytes.Buffer
-	if _, err := merkletree.Verify(&buf, &fdReader, &fdReader, int64(parentSize), int64(offset), int64(merkletree.DigestSize()), parent.rootHash, true /* dataAndTreeInSameFile */); err != nil && err != io.EOF {
+	if _, err := merkletree.Verify(&merkletree.VerifyParams{
+		Out:                   &buf,
+		File:                  &fdReader,
+		Tree:                  &fdReader,
+		Size:                  int64(parentSize),
+		Name:                  parent.name,
+		Mode:                  uint32(parentStat.Mode),
+		UID:                   parentStat.UID,
+		GID:                   parentStat.GID,
+		ReadOffset:            int64(offset),
+		ReadSize:              int64(merkletree.DigestSize()),
+		ExpectedRoot:          parent.rootHash,
+		DataAndTreeInSameFile: true,
+	}); err != nil && err != io.EOF {
 		return nil, alertIntegrityViolation(syserror.EIO, fmt.Sprintf("Verification for %s failed: %v", childPath, err))
 	}
 
@@ -266,6 +291,84 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	return child, nil
 }
 
+// verifyStat verifies the stat against the verified root hash. The mode/uid/gid
+// of the file is cached after verified.
+func (fs *filesystem) verifyStat(ctx context.Context, d *dentry, stat linux.Statx) error {
+	vfsObj := fs.vfsfs.VirtualFilesystem()
+
+	// Get the path to the child dentry. This is only used to provide path
+	// information in failure case.
+	childPath, err := vfsObj.PathnameWithDeleted(ctx, d.fs.rootDentry.lowerVD, d.lowerVD)
+	if err != nil {
+		return err
+	}
+
+	verityMu.RLock()
+	defer verityMu.RUnlock()
+
+	fd, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
+		Root:  d.lowerMerkleVD,
+		Start: d.lowerMerkleVD,
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
+	if err == syserror.ENOENT {
+		return alertIntegrityViolation(err, fmt.Sprintf("Failed to open merkle file for %s: %v", childPath, err))
+	}
+	if err != nil {
+		return err
+	}
+
+	merkleSize, err := fd.GetXattr(ctx, &vfs.GetXattrOptions{
+		Name: merkleSizeXattr,
+		Size: sizeOfStringInt32,
+	})
+
+	if err == syserror.ENODATA {
+		return alertIntegrityViolation(err, fmt.Sprintf("Failed to get xattr %s for merkle file of %s: %v", merkleSizeXattr, childPath, err))
+	}
+	if err != nil {
+		return err
+	}
+
+	size, err := strconv.Atoi(merkleSize)
+	if err != nil {
+		return alertIntegrityViolation(syserror.EINVAL, fmt.Sprintf("Failed to convert xattr %s for %s to int: %v", merkleSizeXattr, childPath, err))
+	}
+
+	fdReader := vfs.FileReadWriteSeeker{
+		FD:  fd,
+		Ctx: ctx,
+	}
+
+	var buf bytes.Buffer
+	params := &merkletree.VerifyParams{
+		Out:        &buf,
+		Tree:       &fdReader,
+		Size:       int64(size),
+		Name:       d.name,
+		Mode:       uint32(stat.Mode),
+		UID:        stat.UID,
+		GID:        stat.GID,
+		ReadOffset: 0,
+		// Set read size to 0 so only the metadata is verified.
+		ReadSize:              0,
+		ExpectedRoot:          d.rootHash,
+		DataAndTreeInSameFile: false,
+	}
+	if atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR {
+		params.DataAndTreeInSameFile = true
+	}
+
+	if _, err := merkletree.Verify(params); err != nil && err != io.EOF {
+		return alertIntegrityViolation(err, fmt.Sprintf("Verification stat for %s failed: %v", childPath, err))
+	}
+	d.mode = uint32(stat.Mode)
+	d.uid = stat.UID
+	d.gid = stat.GID
+	return nil
+}
+
 // Preconditions: fs.renameMu must be locked. d.dirMu must be locked.
 func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 	if child, ok := parent.children[name]; ok {
@@ -274,9 +377,27 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 		// runtime enable is allowed and the parent directory is
 		// enabled, we should verify the child root hash here because
 		// it may be cached before enabled.
-		if fs.allowRuntimeEnable && len(parent.rootHash) != 0 {
-			if _, err := fs.verifyChild(ctx, parent, child); err != nil {
-				return nil, err
+		if fs.allowRuntimeEnable {
+			if isEnabled(parent) {
+				if _, err := fs.verifyChild(ctx, parent, child); err != nil {
+					return nil, err
+				}
+			}
+			if isEnabled(child) {
+				vfsObj := fs.vfsfs.VirtualFilesystem()
+				mask := uint32(linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID)
+				stat, err := vfsObj.StatAt(ctx, fs.creds, &vfs.PathOperation{
+					Root:  child.lowerVD,
+					Start: child.lowerVD,
+				}, &vfs.StatOptions{
+					Mask: mask,
+				})
+				if err != nil {
+					return nil, err
+				}
+				if err := fs.verifyStat(ctx, child, stat); err != nil {
+					return nil, err
+				}
 			}
 		}
 		return child, nil
@@ -426,7 +547,6 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	child.parent = parent
 	child.name = name
 
-	// TODO(b/162788573): Verify child metadata.
 	child.mode = uint32(stat.Mode)
 	child.uid = stat.UID
 	child.gid = stat.GID
@@ -434,8 +554,14 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	// Verify child root hash. This should always be performed unless in
 	// allowRuntimeEnable mode and the parent directory hasn't been enabled
 	// yet.
-	if !(fs.allowRuntimeEnable && len(parent.rootHash) == 0) {
+	if isEnabled(parent) {
 		if _, err := fs.verifyChild(ctx, parent, child); err != nil {
+			child.destroyLocked(ctx)
+			return nil, err
+		}
+	}
+	if isEnabled(child) {
+		if err := fs.verifyStat(ctx, child, stat); err != nil {
 			child.destroyLocked(ctx)
 			return nil, err
 		}
@@ -771,6 +897,8 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
+// TODO(b/170157489): Investigate whether stats other than Mode/UID/GID should
+// be verified.
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
@@ -787,6 +915,11 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	}, &opts)
 	if err != nil {
 		return linux.Statx{}, err
+	}
+	if isEnabled(d) {
+		if err := fs.verifyStat(ctx, d, stat); err != nil {
+			return linux.Statx{}, err
+		}
 	}
 	return stat, nil
 }

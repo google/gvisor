@@ -84,6 +84,13 @@ func TestLayout(t *testing.T) {
 	}
 }
 
+const (
+	defaultName = "merkle_test"
+	defaultMode = 0644
+	defaultUID  = 0
+	defaultGID  = 0
+)
+
 // bytesReadWriter is used to read from/write to/seek in a byte array. Unlike
 // bytes.Buffer, it keeps the whole buffer during read so that it can be reused.
 type bytesReadWriter struct {
@@ -138,19 +145,19 @@ func TestGenerate(t *testing.T) {
 	}{
 		{
 			data:         bytes.Repeat([]byte{0}, usermem.PageSize),
-			expectedRoot: []byte{173, 127, 172, 178, 88, 111, 198, 233, 102, 192, 4, 215, 209, 209, 107, 2, 79, 88, 5, 255, 124, 180, 124, 122, 133, 218, 189, 139, 72, 137, 44, 167},
+			expectedRoot: []byte{64, 253, 58, 72, 192, 131, 82, 184, 193, 33, 108, 142, 43, 46, 179, 134, 244, 21, 29, 190, 14, 39, 66, 129, 6, 46, 200, 211, 30, 247, 191, 252},
 		},
 		{
 			data:         bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
-			expectedRoot: []byte{62, 93, 40, 92, 161, 241, 30, 223, 202, 99, 39, 2, 132, 113, 240, 139, 117, 99, 79, 243, 54, 18, 100, 184, 141, 121, 238, 46, 149, 202, 203, 132},
+			expectedRoot: []byte{182, 223, 218, 62, 65, 185, 160, 219, 93, 119, 186, 88, 205, 32, 122, 231, 173, 72, 78, 76, 65, 57, 177, 146, 159, 39, 44, 123, 230, 156, 97, 26},
 		},
 		{
 			data:         []byte{'a'},
-			expectedRoot: []byte{52, 75, 204, 142, 172, 129, 37, 14, 145, 137, 103, 203, 11, 162, 209, 205, 30, 169, 213, 72, 20, 28, 243, 24, 242, 2, 92, 43, 169, 59, 110, 210},
+			expectedRoot: []byte{28, 201, 8, 36, 150, 178, 111, 5, 193, 212, 129, 205, 206, 124, 211, 90, 224, 142, 81, 183, 72, 165, 243, 240, 242, 241, 76, 127, 101, 61, 63, 11},
 		},
 		{
 			data:         bytes.Repeat([]byte{'a'}, usermem.PageSize),
-			expectedRoot: []byte{201, 62, 238, 45, 13, 176, 47, 16, 172, 199, 70, 13, 149, 118, 225, 34, 220, 248, 205, 83, 196, 191, 141, 252, 174, 27, 62, 116, 235, 207, 255, 90},
+			expectedRoot: []byte{106, 58, 160, 152, 41, 68, 38, 108, 245, 74, 177, 84, 64, 193, 19, 176, 249, 86, 27, 193, 85, 164, 99, 240, 79, 104, 148, 222, 76, 46, 191, 79},
 		},
 	}
 
@@ -158,16 +165,25 @@ func TestGenerate(t *testing.T) {
 		t.Run(fmt.Sprintf("%d:%v", len(tc.data), tc.data[0]), func(t *testing.T) {
 			for _, dataAndTreeInSameFile := range []bool{false, true} {
 				var tree bytesReadWriter
-				var root []byte
-				var err error
+				params := GenerateParams{
+					Size:                  int64(len(tc.data)),
+					Name:                  defaultName,
+					Mode:                  defaultMode,
+					UID:                   defaultUID,
+					GID:                   defaultGID,
+					TreeReader:            &tree,
+					TreeWriter:            &tree,
+					DataAndTreeInSameFile: dataAndTreeInSameFile,
+				}
 				if dataAndTreeInSameFile {
 					tree.Write(tc.data)
-					root, err = Generate(&tree, int64(len(tc.data)), &tree, &tree, dataAndTreeInSameFile)
+					params.File = &tree
 				} else {
-					root, err = Generate(&bytesReadWriter{
+					params.File = &bytesReadWriter{
 						bytes: tc.data,
-					}, int64(len(tc.data)), &tree, &tree, dataAndTreeInSameFile)
+					}
 				}
+				root, err := Generate(&params)
 				if err != nil {
 					t.Fatalf("Got err: %v, want nil", err)
 				}
@@ -194,6 +210,10 @@ func TestVerify(t *testing.T) {
 		// modified byte falls in verification range, Verify should
 		// fail, otherwise Verify should still succeed.
 		modifyByte    int64
+		modifyName    bool
+		modifyMode    bool
+		modifyUID     bool
+		modifyGID     bool
 		shouldSucceed bool
 	}{
 		// Verify range start outside the data range should fail.
@@ -222,12 +242,48 @@ func TestVerify(t *testing.T) {
 			modifyByte:    0,
 			shouldSucceed: false,
 		},
-		// Invalid verify range (0 size) should fail.
+		// 0 verify size should only verify metadata.
 		{
 			dataSize:      usermem.PageSize,
 			verifyStart:   0,
 			verifySize:    0,
 			modifyByte:    0,
+			shouldSucceed: true,
+		},
+		// Modified name should fail verification.
+		{
+			dataSize:      usermem.PageSize,
+			verifyStart:   0,
+			verifySize:    0,
+			modifyByte:    0,
+			modifyName:    true,
+			shouldSucceed: false,
+		},
+		// Modified mode should fail verification.
+		{
+			dataSize:      usermem.PageSize,
+			verifyStart:   0,
+			verifySize:    0,
+			modifyByte:    0,
+			modifyMode:    true,
+			shouldSucceed: false,
+		},
+		// Modified UID should fail verification.
+		{
+			dataSize:      usermem.PageSize,
+			verifyStart:   0,
+			verifySize:    0,
+			modifyByte:    0,
+			modifyUID:     true,
+			shouldSucceed: false,
+		},
+		// Modified GID should fail verification.
+		{
+			dataSize:      usermem.PageSize,
+			verifyStart:   0,
+			verifySize:    0,
+			modifyByte:    0,
+			modifyGID:     true,
 			shouldSucceed: false,
 		},
 		// The test cases below use a block-aligned verify range.
@@ -316,16 +372,25 @@ func TestVerify(t *testing.T) {
 
 			for _, dataAndTreeInSameFile := range []bool{false, true} {
 				var tree bytesReadWriter
-				var root []byte
-				var err error
+				genParams := GenerateParams{
+					Size:                  int64(len(data)),
+					Name:                  defaultName,
+					Mode:                  defaultMode,
+					UID:                   defaultUID,
+					GID:                   defaultGID,
+					TreeReader:            &tree,
+					TreeWriter:            &tree,
+					DataAndTreeInSameFile: dataAndTreeInSameFile,
+				}
 				if dataAndTreeInSameFile {
 					tree.Write(data)
-					root, err = Generate(&tree, int64(len(data)), &tree, &tree, dataAndTreeInSameFile)
+					genParams.File = &tree
 				} else {
-					root, err = Generate(&bytesReadWriter{
+					genParams.File = &bytesReadWriter{
 						bytes: data,
-					}, int64(tc.dataSize), &tree, &tree, false /* dataAndTreeInSameFile */)
+					}
 				}
+				root, err := Generate(&genParams)
 				if err != nil {
 					t.Fatalf("Generate failed: %v", err)
 				}
@@ -333,8 +398,34 @@ func TestVerify(t *testing.T) {
 				// Flip a bit in data and checks Verify results.
 				var buf bytes.Buffer
 				data[tc.modifyByte] ^= 1
+				verifyParams := VerifyParams{
+					Out:                   &buf,
+					File:                  bytes.NewReader(data),
+					Tree:                  &tree,
+					Size:                  tc.dataSize,
+					Name:                  defaultName,
+					Mode:                  defaultMode,
+					UID:                   defaultUID,
+					GID:                   defaultGID,
+					ReadOffset:            tc.verifyStart,
+					ReadSize:              tc.verifySize,
+					ExpectedRoot:          root,
+					DataAndTreeInSameFile: dataAndTreeInSameFile,
+				}
+				if tc.modifyName {
+					verifyParams.Name = defaultName + "abc"
+				}
+				if tc.modifyMode {
+					verifyParams.Mode = defaultMode + 1
+				}
+				if tc.modifyUID {
+					verifyParams.UID = defaultUID + 1
+				}
+				if tc.modifyGID {
+					verifyParams.GID = defaultGID + 1
+				}
 				if tc.shouldSucceed {
-					n, err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile)
+					n, err := Verify(&verifyParams)
 					if err != nil && err != io.EOF {
 						t.Errorf("Verification failed when expected to succeed: %v", err)
 					}
@@ -348,7 +439,7 @@ func TestVerify(t *testing.T) {
 						t.Errorf("Incorrect output buf from Verify")
 					}
 				} else {
-					if _, err := Verify(&buf, bytes.NewReader(data), &tree, tc.dataSize, tc.verifyStart, tc.verifySize, root, dataAndTreeInSameFile); err == nil {
+					if _, err := Verify(&verifyParams); err == nil {
 						t.Errorf("Verification succeeded when expected to fail")
 					}
 				}
@@ -368,16 +459,26 @@ func TestVerifyRandom(t *testing.T) {
 
 	for _, dataAndTreeInSameFile := range []bool{false, true} {
 		var tree bytesReadWriter
-		var root []byte
-		var err error
+		genParams := GenerateParams{
+			Size:                  int64(len(data)),
+			Name:                  defaultName,
+			Mode:                  defaultMode,
+			UID:                   defaultUID,
+			GID:                   defaultGID,
+			TreeReader:            &tree,
+			TreeWriter:            &tree,
+			DataAndTreeInSameFile: dataAndTreeInSameFile,
+		}
+
 		if dataAndTreeInSameFile {
 			tree.Write(data)
-			root, err = Generate(&tree, int64(len(data)), &tree, &tree, dataAndTreeInSameFile)
+			genParams.File = &tree
 		} else {
-			root, err = Generate(&bytesReadWriter{
+			genParams.File = &bytesReadWriter{
 				bytes: data,
-			}, int64(dataSize), &tree, &tree, dataAndTreeInSameFile)
+			}
 		}
+		root, err := Generate(&genParams)
 		if err != nil {
 			t.Fatalf("Generate failed: %v", err)
 		}
@@ -387,9 +488,24 @@ func TestVerifyRandom(t *testing.T) {
 		size := rand.Int63n(dataSize) + 1
 
 		var buf bytes.Buffer
+		verifyParams := VerifyParams{
+			Out:                   &buf,
+			File:                  bytes.NewReader(data),
+			Tree:                  &tree,
+			Size:                  dataSize,
+			Name:                  defaultName,
+			Mode:                  defaultMode,
+			UID:                   defaultUID,
+			GID:                   defaultGID,
+			ReadOffset:            start,
+			ReadSize:              size,
+			ExpectedRoot:          root,
+			DataAndTreeInSameFile: dataAndTreeInSameFile,
+		}
+
 		// Checks that the random portion of data from the original data is
 		// verified successfully.
-		n, err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile)
+		n, err := Verify(&verifyParams)
 		if err != nil && err != io.EOF {
 			t.Errorf("Verification failed for correct data: %v", err)
 		}
@@ -406,13 +522,22 @@ func TestVerifyRandom(t *testing.T) {
 			t.Errorf("Incorrect output buf from Verify")
 		}
 
+		// Verify that modified metadata should fail verification.
 		buf.Reset()
+		verifyParams.Name = defaultName + "abc"
+		if _, err := Verify(&verifyParams); err == nil {
+			t.Error("Verify succeeded for modified metadata, expect failure")
+		}
+
 		// Flip a random bit in randPortion, and check that verification fails.
+		buf.Reset()
 		randBytePos := rand.Int63n(size)
 		data[start+randBytePos] ^= 1
+		verifyParams.File = bytes.NewReader(data)
+		verifyParams.Name = defaultName
 
-		if _, err := Verify(&buf, bytes.NewReader(data), &tree, dataSize, start, size, root, dataAndTreeInSameFile); err == nil {
-			t.Errorf("Verification succeeded for modified data")
+		if _, err := Verify(&verifyParams); err == nil {
+			t.Error("Verification succeeded for modified data, expect failure")
 		}
 	}
 }
