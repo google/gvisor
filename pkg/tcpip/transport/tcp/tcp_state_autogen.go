@@ -408,11 +408,13 @@ func (rc *rackControl) StateTypeName() string {
 
 func (rc *rackControl) StateFields() []string {
 	return []string{
-		"xmitTime",
 		"endSequence",
+		"dsack",
 		"fack",
 		"minRTT",
 		"rtt",
+		"reorderSeen",
+		"xmitTime",
 	}
 }
 
@@ -421,21 +423,25 @@ func (rc *rackControl) beforeSave() {}
 func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
 	rc.beforeSave()
 	var xmitTimeValue unixTime = rc.saveXmitTime()
-	stateSinkObject.SaveValue(0, xmitTimeValue)
-	stateSinkObject.Save(1, &rc.endSequence)
+	stateSinkObject.SaveValue(6, xmitTimeValue)
+	stateSinkObject.Save(0, &rc.endSequence)
+	stateSinkObject.Save(1, &rc.dsack)
 	stateSinkObject.Save(2, &rc.fack)
 	stateSinkObject.Save(3, &rc.minRTT)
 	stateSinkObject.Save(4, &rc.rtt)
+	stateSinkObject.Save(5, &rc.reorderSeen)
 }
 
 func (rc *rackControl) afterLoad() {}
 
 func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(1, &rc.endSequence)
+	stateSourceObject.Load(0, &rc.endSequence)
+	stateSourceObject.Load(1, &rc.dsack)
 	stateSourceObject.Load(2, &rc.fack)
 	stateSourceObject.Load(3, &rc.minRTT)
 	stateSourceObject.Load(4, &rc.rtt)
-	stateSourceObject.LoadValue(0, new(unixTime), func(y interface{}) { rc.loadXmitTime(y.(unixTime)) })
+	stateSourceObject.Load(5, &rc.reorderSeen)
+	stateSourceObject.LoadValue(6, new(unixTime), func(y interface{}) { rc.loadXmitTime(y.(unixTime)) })
 }
 
 func (r *receiver) StateTypeName() string {
@@ -560,6 +566,7 @@ func (s *segment) StateFields() []string {
 		"rcvdTime",
 		"xmitTime",
 		"xmitCount",
+		"acked",
 	}
 }
 
@@ -590,6 +597,7 @@ func (s *segment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &s.parsedOptions)
 	stateSinkObject.Save(15, &s.hasNewSACKInfo)
 	stateSinkObject.Save(18, &s.xmitCount)
+	stateSinkObject.Save(19, &s.acked)
 }
 
 func (s *segment) afterLoad() {}
@@ -610,6 +618,7 @@ func (s *segment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &s.parsedOptions)
 	stateSourceObject.Load(15, &s.hasNewSACKInfo)
 	stateSourceObject.Load(18, &s.xmitCount)
+	stateSourceObject.Load(19, &s.acked)
 	stateSourceObject.LoadValue(4, new(buffer.VectorisedView), func(y interface{}) { s.loadData(y.(buffer.VectorisedView)) })
 	stateSourceObject.LoadValue(14, new([]byte), func(y interface{}) { s.loadOptions(y.([]byte)) })
 	stateSourceObject.LoadValue(16, new(unixTime), func(y interface{}) { s.loadRcvdTime(y.(unixTime)) })
