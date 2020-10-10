@@ -29,11 +29,11 @@ import (
 //
 // +stateify savable
 type rackControl struct {
-	// xmitTime is the latest transmission timestamp of rackControl.seg.
-	xmitTime time.Time `state:".(unixTime)"`
-
 	// endSequence is the ending TCP sequence number of rackControl.seg.
 	endSequence seqnum.Value
+
+	// dsack indicates if the connection has seen a DSACK.
+	dsack bool
 
 	// fack is the highest selectively or cumulatively acknowledged
 	// sequence.
@@ -47,11 +47,18 @@ type rackControl struct {
 	// acknowledged) that was not marked invalid as a possible spurious
 	// retransmission.
 	rtt time.Duration
+
+	// reorderSeen indicates if reordering has been detected on this
+	// connection.
+	reorderSeen bool
+
+	// xmitTime is the latest transmission timestamp of rackControl.seg.
+	xmitTime time.Time `state:".(unixTime)"`
 }
 
-// Update will update the RACK related fields when an ACK has been received.
+// update will update the RACK related fields when an ACK has been received.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-func (rc *rackControl) Update(seg *segment, ackSeg *segment, offset uint32) {
+func (rc *rackControl) update(seg *segment, ackSeg *segment, offset uint32) {
 	rtt := time.Now().Sub(seg.xmitTime)
 
 	// If the ACK is for a retransmitted packet, do not update if it is a
@@ -90,5 +97,28 @@ func (rc *rackControl) Update(seg *segment, ackSeg *segment, offset uint32) {
 	if rc.xmitTime.Before(seg.xmitTime) || (seg.xmitTime.Equal(rc.xmitTime) && rc.endSequence.LessThan(endSeq)) {
 		rc.xmitTime = seg.xmitTime
 		rc.endSequence = endSeq
+	}
+}
+
+// detectReorder detects if packet reordering has been observed.
+// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
+// * Step 3: Detect data segment reordering.
+//   To detect reordering, the sender looks for original data segments being
+//   delivered out of order. To detect such cases, the sender tracks the
+//   highest sequence selectively or cumulatively acknowledged in the RACK.fack
+//   variable. The name "fack" stands for the most "Forward ACK" (this term is
+//   adopted from [FACK]). If a never retransmitted segment that's below
+//   RACK.fack is (selectively or cumulatively) acknowledged, it has been
+//   delivered out of order. The sender sets RACK.reord to TRUE if such segment
+//   is identified.
+func (rc *rackControl) detectReorder(seg *segment) {
+	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
+	if rc.fack.LessThan(endSeq) {
+		rc.fack = endSeq
+		return
+	}
+
+	if endSeq.LessThan(rc.fack) && seg.xmitCount == 1 {
+		rc.reorderSeen = true
 	}
 }
