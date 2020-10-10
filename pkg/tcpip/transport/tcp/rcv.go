@@ -43,6 +43,9 @@ type receiver struct {
 	// rcvWnd is the non-scaled receive window last advertised to the peer.
 	rcvWnd seqnum.Size
 
+	// rcvWUP is the rcvNxt value at the last window update sent.
+	rcvWUP seqnum.Value
+
 	rcvWndScale uint8
 
 	closed bool
@@ -64,6 +67,7 @@ func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 		rcvNxt:          irs + 1,
 		rcvAcc:          irs.Add(rcvWnd + 1),
 		rcvWnd:          rcvWnd,
+		rcvWUP:          irs + 1,
 		rcvWndScale:     rcvWndScale,
 		lastRcvdAckTime: time.Now(),
 	}
@@ -84,34 +88,54 @@ func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 	return header.Acceptable(segSeq, segLen, r.rcvNxt, r.rcvNxt.Add(advertisedWindowSize))
 }
 
+// currentWindow returns the available space in the window that was advertised
+// last to our peer.
+func (r *receiver) currentWindow() (curWnd seqnum.Size) {
+	endOfWnd := r.rcvWUP.Add(r.rcvWnd)
+	if endOfWnd.LessThan(r.rcvNxt) {
+		// return 0 if r.rcvNxt is past the end of the previously advertised window.
+		// This can happen because we accept a large segment completely even if
+		// accepting it causes it to partially exceed the advertised window.
+		return 0
+	}
+	return r.rcvNxt.Size(endOfWnd)
+}
+
 // getSendParams returns the parameters needed by the sender when building
 // segments to send.
 func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
-	avail := wndFromSpace(r.ep.receiveBufferAvailable())
-	if avail == 0 {
-		// We have no space available to accept any data, move to zero window
-		// state.
-		r.rcvWnd = 0
-		return r.rcvNxt, 0
-	}
-
-	acc := r.rcvNxt.Add(seqnum.Size(avail))
-	newWnd := r.rcvNxt.Size(acc)
-	curWnd := r.rcvNxt.Size(r.rcvAcc)
-
+	newWnd := r.ep.selectWindow()
+	curWnd := r.currentWindow()
 	// Update rcvAcc only if new window is > previously advertised window. We
 	// should never shrink the acceptable sequence space once it has been
 	// advertised the peer. If we shrink the acceptable sequence space then we
 	// would end up dropping bytes that might already be in flight.
-	if newWnd > curWnd {
-		r.rcvAcc = r.rcvNxt.Add(newWnd)
+	// ====================================================  sequence space.
+	// ^             ^               ^                   ^
+	// rcvWUP       rcvNxt         rcvAcc          new rcvAcc
+	//               <=====curWnd ===>
+	//               <========= newWnd > curWnd ========= >
+	if r.rcvNxt.Add(seqnum.Size(curWnd)).LessThan(r.rcvNxt.Add(seqnum.Size(newWnd))) {
+		// If the new window moves the right edge, then update rcvAcc.
+		r.rcvAcc = r.rcvNxt.Add(seqnum.Size(newWnd))
 	} else {
+		if newWnd == 0 {
+			// newWnd is zero but we can't advertise a zero as it would cause window
+			// to shrink so just increment a metric to record this event.
+			r.ep.stats.ReceiveErrors.WantZeroRcvWindow.Increment()
+		}
 		newWnd = curWnd
 	}
 	// Stash away the non-scaled receive window as we use it for measuring
 	// receiver's estimated RTT.
 	r.rcvWnd = newWnd
-	return r.rcvNxt, r.rcvWnd >> r.rcvWndScale
+	r.rcvWUP = r.rcvNxt
+	scaledWnd := r.rcvWnd >> r.rcvWndScale
+	if scaledWnd == 0 {
+		// Increment a metric if we are advertising an actual zero window.
+		r.ep.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
+	}
+	return r.rcvNxt, scaledWnd
 }
 
 // nonZeroWindow is called when the receive window grows from zero to nonzero;

@@ -1219,12 +1219,6 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err *tcpip.Error) {
 			return true, nil
 		}
 
-		// Increase counter if after processing the segment we would potentially
-		// advertise a zero window.
-		if crossed, above := e.windowCrossedACKThresholdLocked(-s.segMemSize()); crossed && !above {
-			e.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
-		}
-
 		// Now check if the received segment has caused us to transition
 		// to a CLOSED state, if yes then terminate processing and do
 		// not invoke the sender.

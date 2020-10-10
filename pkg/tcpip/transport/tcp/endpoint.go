@@ -248,6 +248,11 @@ type ReceiveErrors struct {
 	// ZeroRcvWindowState is the number of times we advertised
 	// a zero receive window when rcvList is full.
 	ZeroRcvWindowState tcpip.StatCounter
+
+	// WantZeroWindow is the number of times we wanted to advertise a
+	// zero receive window but couldn't because it would have caused
+	// the receive window's right edge to shrink.
+	WantZeroRcvWindow tcpip.StatCounter
 }
 
 // SendErrors collect segment send errors within the transport layer.
@@ -1162,7 +1167,7 @@ func (e *endpoint) cleanupLocked() {
 // wndFromSpace returns the window that we can advertise based on the available
 // receive buffer space.
 func wndFromSpace(space int) int {
-	return space / (1 << rcvAdvWndScale)
+	return space >> rcvAdvWndScale
 }
 
 // initialReceiveWindow returns the initial receive window to advertise in the
@@ -1518,6 +1523,38 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 	return num, tcpip.ControlMessages{}, nil
 }
 
+// selectWindowLocked returns the new window without checking for shrinking or scaling
+// applied.
+// Precondition: e.mu and e.rcvListMu must be held.
+func (e *endpoint) selectWindowLocked() (wnd seqnum.Size) {
+	wndFromAvailable := wndFromSpace(e.receiveBufferAvailableLocked())
+	maxWindow := wndFromSpace(e.rcvBufSize)
+	wndFromUsedBytes := maxWindow - e.rcvBufUsed
+
+	// We take the lesser of the wndFromAvailable and wndFromUsedBytes because in
+	// cases where we receive a lot of small segments the segment overhead is a
+	// lot higher and we can run out socket buffer space before we can fill the
+	// previous window we advertised. In cases where we receive MSS sized or close
+	// MSS sized segments we will probably run out of window space before we
+	// exhaust receive buffer.
+	newWnd := wndFromAvailable
+	if newWnd > wndFromUsedBytes {
+		newWnd = wndFromUsedBytes
+	}
+	if newWnd < 0 {
+		newWnd = 0
+	}
+	return seqnum.Size(newWnd)
+}
+
+// selectWindow invokes selectWindowLocked after acquiring e.rcvListMu.
+func (e *endpoint) selectWindow() (wnd seqnum.Size) {
+	e.rcvListMu.Lock()
+	wnd = e.selectWindowLocked()
+	e.rcvListMu.Unlock()
+	return wnd
+}
+
 // windowCrossedACKThresholdLocked checks if the receive window to be announced
 // would be under aMSS or under the window derived from half receive buffer,
 // whichever smaller. This is useful as a receive side silly window syndrome
@@ -1534,7 +1571,7 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 //
 // Precondition: e.mu and e.rcvListMu must be held.
 func (e *endpoint) windowCrossedACKThresholdLocked(deltaBefore int) (crossed bool, above bool) {
-	newAvail := wndFromSpace(e.receiveBufferAvailableLocked())
+	newAvail := int(e.selectWindowLocked())
 	oldAvail := newAvail - deltaBefore
 	if oldAvail < 0 {
 		oldAvail = 0
