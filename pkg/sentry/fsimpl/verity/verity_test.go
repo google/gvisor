@@ -41,11 +41,11 @@ const maxDataSize = 100000
 // newVerityRoot creates a new verity mount, and returns the root. The
 // underlying file system is tmpfs. If the error is not nil, then cleanup
 // should be called when the root is no longer needed.
-func newVerityRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentry, func(), error) {
+func newVerityRoot(ctx context.Context, t *testing.T) (*vfs.VirtualFilesystem, vfs.VirtualDentry, error) {
 	rand.Seed(time.Now().UnixNano())
 	vfsObj := &vfs.VirtualFilesystem{}
 	if err := vfsObj.Init(ctx); err != nil {
-		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %v", err)
+		return nil, vfs.VirtualDentry{}, fmt.Errorf("VFS init: %v", err)
 	}
 
 	vfsObj.MustRegisterFilesystemType("verity", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -67,13 +67,15 @@ func newVerityRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDent
 		},
 	})
 	if err != nil {
-		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("NewMountNamespace: %v", err)
+		return nil, vfs.VirtualDentry{}, fmt.Errorf("NewMountNamespace: %v", err)
 	}
 	root := mntns.Root()
-	return vfsObj, root, func() {
+	t.Helper()
+	t.Cleanup(func() {
 		root.DecRef(ctx)
 		mntns.DecRef(ctx)
-	}, nil
+	})
+	return vfsObj, root, nil
 }
 
 // newFileFD creates a new file in the verity mount, and returns the FD. The FD
@@ -143,11 +145,10 @@ func corruptRandomBit(ctx context.Context, fd *vfs.FileDescription, size int) er
 // file and the root Merkle tree file exist.
 func TestOpen(t *testing.T) {
 	ctx := contexttest.Context(t)
-	vfsObj, root, cleanup, err := newVerityRoot(ctx)
+	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
-	defer cleanup()
 
 	filename := "verity-test-file"
 	if _, _, err := newFileFD(ctx, vfsObj, root, filename, 0644); err != nil {
@@ -178,15 +179,14 @@ func TestOpen(t *testing.T) {
 	}
 }
 
-// TestUntouchedFileSucceeds ensures that read from an untouched verity file
+// TestUnmodifiedFileSucceeds ensures that read from an untouched verity file
 // succeeds after enabling verity for it.
-func TestReadUntouchedFileSucceeds(t *testing.T) {
+func TestReadUnmodifiedFileSucceeds(t *testing.T) {
 	ctx := contexttest.Context(t)
-	vfsObj, root, cleanup, err := newVerityRoot(ctx)
+	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
-	defer cleanup()
 
 	filename := "verity-test-file"
 	fd, size, err := newFileFD(ctx, vfsObj, root, filename, 0644)
@@ -212,15 +212,14 @@ func TestReadUntouchedFileSucceeds(t *testing.T) {
 	}
 }
 
-// TestReopenUntouchedFileSucceeds ensures that reopen an untouched verity file
+// TestReopenUnmodifiedFileSucceeds ensures that reopen an untouched verity file
 // succeeds after enabling verity for it.
-func TestReopenUntouchedFileSucceeds(t *testing.T) {
+func TestReopenUnmodifiedFileSucceeds(t *testing.T) {
 	ctx := contexttest.Context(t)
-	vfsObj, root, cleanup, err := newVerityRoot(ctx)
+	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
-	defer cleanup()
 
 	filename := "verity-test-file"
 	fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
@@ -251,11 +250,10 @@ func TestReopenUntouchedFileSucceeds(t *testing.T) {
 // TestModifiedFileFails ensures that read from a modified verity file fails.
 func TestModifiedFileFails(t *testing.T) {
 	ctx := contexttest.Context(t)
-	vfsObj, root, cleanup, err := newVerityRoot(ctx)
+	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
-	defer cleanup()
 
 	filename := "verity-test-file"
 	fd, size, err := newFileFD(ctx, vfsObj, root, filename, 0644)
@@ -298,11 +296,10 @@ func TestModifiedFileFails(t *testing.T) {
 // corresponding Merkle tree file is modified.
 func TestModifiedMerkleFails(t *testing.T) {
 	ctx := contexttest.Context(t)
-	vfsObj, root, cleanup, err := newVerityRoot(ctx)
+	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
-	defer cleanup()
 
 	filename := "verity-test-file"
 	fd, size, err := newFileFD(ctx, vfsObj, root, filename, 0644)
@@ -353,11 +350,10 @@ func TestModifiedMerkleFails(t *testing.T) {
 // the parent Merkle tree file is modified.
 func TestModifiedParentMerkleFails(t *testing.T) {
 	ctx := contexttest.Context(t)
-	vfsObj, root, cleanup, err := newVerityRoot(ctx)
+	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
-	defer cleanup()
 
 	filename := "verity-test-file"
 	fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
@@ -425,5 +421,70 @@ func TestModifiedParentMerkleFails(t *testing.T) {
 		Mode:  linux.ModeRegular,
 	}); err == nil {
 		t.Errorf("OpenAt file with modified parent Merkle succeeded")
+	}
+}
+
+// TestUnmodifiedStatSucceeds ensures that stat of an untouched verity file
+// succeeds after enabling verity for it.
+func TestUnmodifiedStatSucceeds(t *testing.T) {
+	ctx := contexttest.Context(t)
+	vfsObj, root, err := newVerityRoot(ctx, t)
+	if err != nil {
+		t.Fatalf("newVerityRoot: %v", err)
+	}
+
+	filename := "verity-test-file"
+	fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+	if err != nil {
+		t.Fatalf("newFileFD: %v", err)
+	}
+
+	// Enable verity on the file and confirms stat succeeds.
+	var args arch.SyscallArguments
+	args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+	if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+		t.Fatalf("fd.Ioctl: %v", err)
+	}
+
+	if _, err := fd.Stat(ctx, vfs.StatOptions{}); err != nil {
+		t.Errorf("fd.Stat: %v", err)
+	}
+}
+
+// TestModifiedStatFails checks that getting stat for a file with modified stat
+// should fail.
+func TestModifiedStatFails(t *testing.T) {
+	ctx := contexttest.Context(t)
+	vfsObj, root, err := newVerityRoot(ctx, t)
+	if err != nil {
+		t.Fatalf("newVerityRoot: %v", err)
+	}
+
+	filename := "verity-test-file"
+	fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+	if err != nil {
+		t.Fatalf("newFileFD: %v", err)
+	}
+
+	// Enable verity on the file.
+	var args arch.SyscallArguments
+	args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+	if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+		t.Fatalf("fd.Ioctl: %v", err)
+	}
+
+	lowerFD := fd.Impl().(*fileDescription).lowerFD
+	// Change the stat of the underlying file, and check that stat fails.
+	if err := lowerFD.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: uint32(linux.STATX_MODE),
+			Mode: 0777,
+		},
+	}); err != nil {
+		t.Fatalf("lowerFD.SetStat: %v", err)
+	}
+
+	if _, err := fd.Stat(ctx, vfs.StatOptions{}); err == nil {
+		t.Errorf("fd.Stat succeeded when it should fail")
 	}
 }
