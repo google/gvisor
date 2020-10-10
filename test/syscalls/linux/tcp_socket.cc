@@ -903,6 +903,58 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
   EXPECT_EQ(err, ECONNREFUSED);
 }
 
+TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv_NoRandomSave) {
+  // Initialize address to the loopback one.
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  const FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  ASSERT_THAT(
+      (bind)(s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+      SyscallSucceeds());
+  // Get the bound port.
+  ASSERT_THAT(
+      getsockname(s.get(), reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
+      SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(
+                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+              SyscallSucceeds());
+
+  constexpr int kBufSz = 1 << 20;  // 1 MiB
+  std::vector<char> writebuf(kBufSz);
+
+  // Start reading the response in a loop.
+  int read_bytes = 0;
+  ScopedThread t([&s, &read_bytes]() {
+    // Too many syscalls.
+    const DisableSave ds;
+
+    char readbuf[2500] = {};
+    int n = -1;
+    while (n != 0) {
+      ASSERT_THAT(n = RetryEINTR(read)(s.get(), &readbuf, sizeof(readbuf)),
+                  SyscallSucceeds());
+      read_bytes += n;
+    }
+  });
+
+  // Try to send the whole thing.
+  int n;
+  ASSERT_THAT(n = SendFd(s.get(), writebuf.data(), kBufSz, 0),
+              SyscallSucceeds());
+
+  // We should have written the whole thing.
+  EXPECT_EQ(n, kBufSz);
+  EXPECT_THAT(shutdown(s.get(), SHUT_WR), SyscallSucceedsWithValue(0));
+  t.Join();
+
+  // We should have read the whole thing.
+  EXPECT_EQ(read_bytes, kBufSz);
+}
+
 TEST_P(SimpleTcpSocketTest, NonBlockingConnect) {
   const FileDescriptor listener =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
