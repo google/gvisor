@@ -17,6 +17,7 @@ package tcp
 import (
 	"fmt"
 	"math"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -262,6 +263,9 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			last:      iss,
 			highRxt:   iss,
 			rescueRxt: iss,
+		},
+		rc: rackControl{
+			fack: iss,
 		},
 		gso: ep.gso != nil,
 	}
@@ -1274,6 +1278,39 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 	return true
 }
 
+// Iterate the writeList and update RACK for each segment which is newly acked
+// either cumulatively or selectively. Loop through the segments which are
+// sacked, and update the RACK related variables and check for reordering.
+//
+// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
+// steps 2 and 3.
+func (s *sender) walkSACK(rcvdSeg *segment) {
+	// Sort the SACK blocks. The first block is the most recent unacked
+	// block. The following blocks can be in arbitrary order.
+	sackBlocks := make([]header.SACKBlock, len(rcvdSeg.parsedOptions.SACKBlocks))
+	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks)
+	sort.Slice(sackBlocks, func(i, j int) bool {
+		return sackBlocks[j].Start.LessThan(sackBlocks[i].Start)
+	})
+
+	seg := s.writeList.Front()
+	for _, sb := range sackBlocks {
+		// This check excludes DSACK blocks.
+		if sb.Start.LessThanEq(rcvdSeg.ackNumber) || sb.Start.LessThanEq(s.sndUna) || s.sndNxt.LessThan(sb.End) {
+			continue
+		}
+
+		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
+			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
+				s.rc.update(seg, rcvdSeg, s.ep.tsOffset)
+				s.rc.detectReorder(seg)
+				seg.acked = true
+			}
+			seg = seg.Next()
+		}
+	}
+}
+
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
@@ -1308,6 +1345,21 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				rcvdSeg.hasNewSACKInfo = true
 			}
 		}
+
+		// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08
+		// section-7.2
+		// * Step 2: Update RACK stats.
+		//   If the ACK is not ignored as invalid, update the RACK.rtt
+		//   to be the RTT sample calculated using this ACK, and
+		//   continue.  If this ACK or SACK was for the most recently
+		//   sent packet, then record the RACK.xmit_ts timestamp and
+		//   RACK.end_seq sequence implied by this ACK.
+		// * Step 3: Detect packet reordering.
+		//   If the ACK selectively or cumulatively acknowledges an
+		//   unacknowledged and also never retransmitted sequence below
+		//   RACK.fack, then the corresponding packet has been
+		//   reordered and RACK.reord is set to TRUE.
+		s.walkSACK(rcvdSeg)
 		s.SetPipe()
 	}
 
@@ -1385,13 +1437,14 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			}
 
 			// Update the RACK fields if SACK is enabled.
-			if s.ep.sackPermitted {
-				s.rc.Update(seg, rcvdSeg, s.ep.tsOffset)
+			if s.ep.sackPermitted && !seg.acked {
+				s.rc.update(seg, rcvdSeg, s.ep.tsOffset)
+				s.rc.detectReorder(seg)
 			}
 
 			s.writeList.Remove(seg)
 
-			// if SACK is enabled then Only reduce outstanding if
+			// If SACK is enabled then Only reduce outstanding if
 			// the segment was not previously SACKED as these have
 			// already been accounted for in SetPipe().
 			if !s.ep.sackPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
