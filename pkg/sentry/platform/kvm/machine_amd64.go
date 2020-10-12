@@ -87,19 +87,6 @@ const (
 	poolPCIDs = 8
 )
 
-// dropPageTables drops cached page table entries.
-func (m *machine) dropPageTables(pt *pagetables.PageTables) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Clear from all PCIDs.
-	for _, c := range m.vCPUsByID {
-		if c != nil && c.PCIDs != nil {
-			c.PCIDs.Drop(pt)
-		}
-	}
-}
-
 // initArchState initializes architecture-specific state.
 func (c *vCPU) initArchState() error {
 	var (

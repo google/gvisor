@@ -113,19 +113,6 @@ func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 	return phyRegions
 }
 
-// dropPageTables drops cached page table entries.
-func (m *machine) dropPageTables(pt *pagetables.PageTables) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Clear from all PCIDs.
-	for _, c := range m.vCPUsByID {
-		if c.PCIDs != nil {
-			c.PCIDs.Drop(pt)
-		}
-	}
-}
-
 // nonCanonical generates a canonical address return.
 //
 //go:nosplit
