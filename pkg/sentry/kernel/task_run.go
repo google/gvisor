@@ -65,6 +65,8 @@ func (t *Task) run(threadID uintptr) {
 	defer t.blockingTimer.Destroy()
 	t.blockingTimerChan = blockingTimerChan
 
+	t.p.PrepTaskGoroutine()
+
 	// Activate our address space.
 	t.Activate()
 	// The corresponding t.Deactivate occurs in the exit path

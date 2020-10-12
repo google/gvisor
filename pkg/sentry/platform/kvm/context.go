@@ -99,5 +99,8 @@ func (c *context) Release() {}
 // FullStateChanged implements platform.Context.FullStateChanged.
 func (c *context) FullStateChanged() {}
 
+// PrepTaskGoroutine implements platform.Context.PrepTaskGoroutine.
+func (c *context) PrepTaskGoroutine() {}
+
 // PullFullState implements platform.Context.PullFullState.
 func (c *context) PullFullState(as platform.AddressSpace, ac arch.Context) {}

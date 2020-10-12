@@ -48,9 +48,7 @@ const (
 // created here. Therefore we use the intermediary (master), which is created
 // on initialization of the platform.
 var globalPool struct {
-	mu        sync.Mutex
-	master    *subprocess
-	available []*subprocess
+	master *subprocess
 }
 
 // thread is a traced thread; it is a thread identifier.
@@ -89,26 +87,18 @@ func (tp *threadPool) lookupOrCreate(currentTID int32, newThread func() *thread)
 	tp.mu.Lock()
 	t, ok := tp.threads[currentTID]
 	if !ok {
-		// Before creating a new thread, see if we can find a thread
-		// whose system tid has disappeared.
-		//
-		// TODO(b/77216482): Other parts of this package depend on
-		// threads never exiting.
-		for origTID, t := range tp.threads {
-			// Signal zero is an easy existence check.
-			if err := syscall.Tgkill(syscall.Getpid(), int(origTID), 0); err != nil {
-				// This thread has been abandoned; reuse it.
-				delete(tp.threads, origTID)
-				tp.threads[currentTID] = t
-				tp.mu.Unlock()
-				return t
-			}
-		}
 
 		// Create a new thread.
 		t = newThread()
 		tp.threads[currentTID] = t
 	}
+	tp.mu.Unlock()
+	return t
+}
+
+func (tp *threadPool) lookup(currentTID int32) *thread {
+	tp.mu.Lock()
+	t, _ := tp.threads[currentTID]
 	tp.mu.Unlock()
 	return t
 }
@@ -123,9 +113,7 @@ type subprocess struct {
 	// sysemuThreads are reserved for emulation.
 	sysemuThreads threadPool
 
-	// syscallThreads are reserved for syscalls (except clone, which is
-	// handled in the dedicated goroutine corresponding to requests above).
-	syscallThreads threadPool
+	syscallRPC chan syscallRPC
 
 	// mu protects the following fields.
 	mu sync.Mutex
@@ -141,16 +129,6 @@ type subprocess struct {
 // The create function will be called in the latter case, which is guaranteed
 // to happen with the runtime thread locked.
 func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
-	// See Release.
-	globalPool.mu.Lock()
-	if len(globalPool.available) > 0 {
-		sp := globalPool.available[len(globalPool.available)-1]
-		globalPool.available = globalPool.available[:len(globalPool.available)-1]
-		globalPool.mu.Unlock()
-		return sp, nil
-	}
-	globalPool.mu.Unlock()
-
 	// The following goroutine is responsible for creating the first traced
 	// thread, and responding to requests to make additional threads in the
 	// traced process. The process will be killed and reaped when the
@@ -158,8 +136,9 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 	errChan := make(chan error)
 	requests := make(chan chan *thread)
 	go func() { // S/R-SAFE: Platform-related.
+		// This goroutine will exit without unlocking the thread and it
+		// will be terminated.
 		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
 
 		// Initialize the first thread.
 		firstThread, err := create()
@@ -197,9 +176,6 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 			// Return the thread.
 			r <- t
 		}
-
-		// Requests should never be closed.
-		panic("unreachable")
 	}()
 
 	// Wait until error or readiness.
@@ -207,17 +183,17 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 		return nil, err
 	}
 
+	syscallRPC := make(chan syscallRPC)
 	// Ready.
 	sp := &subprocess{
 		requests: requests,
 		sysemuThreads: threadPool{
 			threads: make(map[int32]*thread),
 		},
-		syscallThreads: threadPool{
-			threads: make(map[int32]*thread),
-		},
-		contexts: make(map[*context]struct{}),
+		syscallRPC: syscallRPC,
+		contexts:   make(map[*context]struct{}),
 	}
+	go sp.syscallLoop(syscallRPC)
 
 	sp.unmap()
 	return sp, nil
@@ -234,20 +210,11 @@ func (s *subprocess) unmap() {
 }
 
 // Release kills the subprocess.
-//
-// Just kidding! We can't safely co-ordinate the detaching of all the
-// tracees (since the tracers are random runtime threads, and the process
-// won't exit until tracers have been notifier).
-//
-// Therefore we simply unmap everything in the subprocess and return it to the
-// globalPool. This has the added benefit of reducing creation time for new
-// subprocesses.
 func (s *subprocess) Release() {
 	go func() { // S/R-SAFE: Platform.
 		s.unmap()
-		globalPool.mu.Lock()
-		globalPool.available = append(globalPool.available, s)
-		globalPool.mu.Unlock()
+		close(s.syscallRPC)
+		close(s.requests)
 	}()
 }
 
@@ -270,7 +237,7 @@ func (s *subprocess) newThread() *thread {
 // attach attaches to the thread.
 func (t *thread) attach() {
 	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_ATTACH, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
-		panic(fmt.Sprintf("unable to attach: %v", errno))
+		panic(fmt.Sprintf("unable to attach %d:%d: %v", t.tgid, t.tid, errno))
 	}
 
 	// PTRACE_ATTACH sends SIGSTOP, and wakes the tracee if it was already
@@ -406,13 +373,12 @@ func (t *thread) init() {
 	// Set the TRACESYSGOOD option to differentiate real SIGTRAP.
 	// set PTRACE_O_EXITKILL to ensure that the unexpected exit of the
 	// sentry will immediately kill the associated stubs.
-	const PTRACE_O_EXITKILL = 0x100000
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_PTRACE,
 		syscall.PTRACE_SETOPTIONS,
 		uintptr(t.tid),
 		0,
-		syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXIT|PTRACE_O_EXITKILL,
+		syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXIT,
 		0, 0)
 	if errno != 0 {
 		panic(fmt.Sprintf("ptrace set options failed: %v", errno))
@@ -490,10 +456,6 @@ func (t *thread) NotifyInterrupt() {
 //
 // This function returns true on a system call, false on a signal.
 func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
-	// Lock the thread for ptrace operations.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
 	// Extract floating point state.
 	fpState := ac.FloatingPointData()
 	fpLen, _ := ac.FeatureSet().ExtendedStateSize()
@@ -600,15 +562,66 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	}
 }
 
-// syscall executes the given system call without handling interruptions.
+type syscallRPC struct {
+	setPPID bool
+	sysno   uintptr
+	args    []arch.SyscallArgument
+	done    chan syscallRPCRet
+}
+
+type syscallRPCRet struct {
+	ret uintptr
+	err error
+}
+
+func (s *subprocess) syscallLoop(c chan syscallRPC) {
+	// This goroutine will exit without unlocking the thread and it
+	// will be terminated.
+	runtime.LockOSThread()
+
+	t := s.newThread()
+
+	for req := range c {
+		regs := &t.initRegs
+		if req.setPPID {
+			initChildProcessPPID(regs, t.tgid)
+		}
+		ret, err := t.syscallIgnoreInterrupt(regs, req.sysno, req.args...)
+		req.done <- syscallRPCRet{ret: ret, err: err}
+	}
+
+	// It will kill all threads of the process.
+	syscall.Tgkill(int(t.tgid), int(t.tid), syscall.Signal(syscall.SIGKILL))
+}
+
 func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintptr, error) {
-	// Grab a thread.
+	return s.__syscall(false, sysno, args...)
+}
+
+func (s *subprocess) syscallWithPPID(sysno uintptr, args ...arch.SyscallArgument) (uintptr, error) {
+	return s.__syscall(true, sysno, args...)
+}
+
+func (s *subprocess) __syscall(setPPID bool, sysno uintptr, args ...arch.SyscallArgument) (uintptr, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	currentTID := int32(procid.Current())
-	t := s.syscallThreads.lookupOrCreate(currentTID, s.newThread)
 
-	return t.syscallIgnoreInterrupt(&t.initRegs, sysno, args...)
+	currentTID := int32(procid.Current())
+	if t := s.sysemuThreads.lookup(currentTID); t != nil {
+		regs := &t.initRegs
+		if setPPID {
+			initChildProcessPPID(regs, t.tgid)
+		}
+		return t.syscallIgnoreInterrupt(regs, sysno, args...)
+	}
+
+	req := syscallRPC{sysno: sysno, args: args, setPPID: setPPID}
+	req.done = make(chan syscallRPCRet, 1)
+	s.syscallRPC <- req
+
+	rep := <-req.done
+
+	return rep.ret, rep.err
 }
 
 // MapFile implements platform.AddressSpace.MapFile.

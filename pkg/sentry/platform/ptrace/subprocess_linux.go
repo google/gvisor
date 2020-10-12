@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -63,7 +62,7 @@ func createStub() (*thread, error) {
 	//
 	// In addition, we set the PTRACE_O_TRACEEXIT option to log more
 	// information about a stub process when it receives a fatal signal.
-	return attachedThread(uintptr(syscall.SIGKILL)|syscall.CLONE_FILES, defaultAction)
+	return attachedThread(syscall.CLONE_FILES, defaultAction)
 }
 
 // attachedThread returns a new attached thread.
@@ -81,6 +80,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				syscall.SYS_CLONE: []seccomp.Rule{
 					// Allow creation of new subprocesses (used by the master).
 					{seccomp.EqualTo(syscall.CLONE_FILES | syscall.SIGKILL)},
+					{seccomp.EqualTo(syscall.CLONE_FILES)},
 					// Allow creation of new threads within a single address space (used by addresss spaces).
 					{seccomp.EqualTo(
 						syscall.CLONE_FILES |
@@ -197,15 +197,6 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 //
 // Precondition: the runtime OS thread must be locked.
 func (s *subprocess) createStub() (*thread, error) {
-	// There's no need to lock the runtime thread here, as this can only be
-	// called from a context that is already locked.
-	currentTID := int32(procid.Current())
-	t := s.syscallThreads.lookupOrCreate(currentTID, s.newThread)
-
-	// Pass the expected PPID to the child via R15.
-	regs := t.initRegs
-	initChildProcessPPID(&regs, t.tgid)
-
 	// Call fork in a subprocess.
 	//
 	// The new child must set up PDEATHSIG to ensure it dies if this
@@ -216,10 +207,9 @@ func (s *subprocess) createStub() (*thread, error) {
 	// setup and then SIGSTOP itself for our attach below.
 	//
 	// See above re: SIGKILL.
-	pid, err := t.syscallIgnoreInterrupt(
-		&regs,
+	pid, err := s.syscallWithPPID(
 		syscall.SYS_CLONE,
-		arch.SyscallArgument{Value: uintptr(syscall.SIGKILL | syscall.CLONE_FILES)},
+		arch.SyscallArgument{Value: uintptr(syscall.CLONE_FILES)},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
@@ -235,8 +225,7 @@ func (s *subprocess) createStub() (*thread, error) {
 	// We unfortunately don't have a handy part of memory to write the wait
 	// status. If the wait succeeds, we'll assume that it was the SIGSTOP.
 	// If the child actually exited, the attach below will fail.
-	_, err = t.syscallIgnoreInterrupt(
-		&t.initRegs,
+	_, err = s.syscall(
 		syscall.SYS_WAIT4,
 		arch.SyscallArgument{Value: uintptr(pid)},
 		arch.SyscallArgument{Value: 0},

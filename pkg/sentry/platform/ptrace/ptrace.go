@@ -46,6 +46,8 @@ package ptrace
 
 import (
 	"os"
+	"runtime"
+	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
@@ -188,6 +190,13 @@ func (c *context) FullStateChanged() {}
 // PullFullState implements platform.Context.PullFullState.
 func (c *context) PullFullState(as platform.AddressSpace, ac arch.Context) {}
 
+// PrepTaskGoroutine implements platform.Context.PrepTaskGoroutine.
+func (*context) PrepTaskGoroutine() {
+	// This goroutine will exit without unlocking the thread and it
+	// will be terminated.
+	runtime.LockOSThread()
+}
+
 // PTrace represents a collection of ptrace subprocesses.
 type PTrace struct {
 	platform.MMapMinAddr
@@ -208,6 +217,21 @@ func New() (*PTrace, error) {
 			// Should never happen.
 			panic("unable to initialize ptrace master: " + err.Error())
 		}
+		go func() {
+			runtime.LockOSThread()
+			t := master.newThread()
+			for {
+				t.syscallIgnoreInterrupt(
+					&t.initRegs,
+					syscall.SYS_WAIT4,
+					arch.SyscallArgument{Value: uintptr(0xffffffffffffffff)},
+					arch.SyscallArgument{Value: 0},
+					arch.SyscallArgument{Value: syscall.WALL},
+					arch.SyscallArgument{Value: 0},
+					arch.SyscallArgument{Value: 0},
+					arch.SyscallArgument{Value: 0})
+			}
+		}()
 
 		// Set the master on the globalPool.
 		globalPool.master = master

@@ -243,6 +243,10 @@ type Context interface {
 
 	// Release() releases any resources associated with this context.
 	Release()
+
+	// PrepTaskGoroutine executes platform specific actions before starting
+	// a thread main loop.
+	PrepTaskGoroutine()
 }
 
 var (
