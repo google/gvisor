@@ -35,8 +35,8 @@ type taskInode struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
-	kernfs.InodeNoDynamicLookup
 	kernfs.InodeNotSymlink
+	kernfs.InodeTemporary
 	kernfs.OrderedChildren
 	taskInodeRefs
 
@@ -47,41 +47,44 @@ type taskInode struct {
 
 var _ kernfs.Inode = (*taskInode)(nil)
 
-func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool, cgroupControllers map[string]string) *kernfs.Dentry {
-	// TODO(gvisor.dev/issue/164): Fail with ESRCH if task exited.
-	contents := map[string]*kernfs.Dentry{
-		"auxv":      fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &auxvData{task: task}),
-		"cmdline":   fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
+func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool, cgroupControllers map[string]string) (kernfs.Inode, error) {
+	if task.ExitState() == kernel.TaskExitDead {
+		return nil, syserror.ESRCH
+	}
+
+	contents := map[string]kernfs.Inode{
+		"auxv":      fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &auxvData{task: task}),
+		"cmdline":   fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
 		"comm":      fs.newComm(task, fs.NextIno(), 0444),
 		"cwd":       fs.newCwdSymlink(task, fs.NextIno()),
-		"environ":   fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: environDataArg}),
+		"environ":   fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: environDataArg}),
 		"exe":       fs.newExeSymlink(task, fs.NextIno()),
 		"fd":        fs.newFDDirInode(task),
 		"fdinfo":    fs.newFDInfoDirInode(task),
-		"gid_map":   fs.newTaskOwnedFile(task, fs.NextIno(), 0644, &idMapData{task: task, gids: true}),
-		"io":        fs.newTaskOwnedFile(task, fs.NextIno(), 0400, newIO(task, isThreadGroup)),
-		"maps":      fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &mapsData{task: task}),
-		"mountinfo": fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &mountInfoData{task: task}),
-		"mounts":    fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &mountsData{task: task}),
+		"gid_map":   fs.newTaskOwnedInode(task, fs.NextIno(), 0644, &idMapData{task: task, gids: true}),
+		"io":        fs.newTaskOwnedInode(task, fs.NextIno(), 0400, newIO(task, isThreadGroup)),
+		"maps":      fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &mapsData{task: task}),
+		"mountinfo": fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &mountInfoData{task: task}),
+		"mounts":    fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &mountsData{task: task}),
 		"net":       fs.newTaskNetDir(task),
-		"ns": fs.newTaskOwnedDir(task, fs.NextIno(), 0511, map[string]*kernfs.Dentry{
+		"ns": fs.newTaskOwnedDir(task, fs.NextIno(), 0511, map[string]kernfs.Inode{
 			"net":  fs.newNamespaceSymlink(task, fs.NextIno(), "net"),
 			"pid":  fs.newNamespaceSymlink(task, fs.NextIno(), "pid"),
 			"user": fs.newNamespaceSymlink(task, fs.NextIno(), "user"),
 		}),
-		"oom_score":     fs.newTaskOwnedFile(task, fs.NextIno(), 0444, newStaticFile("0\n")),
-		"oom_score_adj": fs.newTaskOwnedFile(task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
-		"smaps":         fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &smapsData{task: task}),
-		"stat":          fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
-		"statm":         fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &statmData{task: task}),
-		"status":        fs.newTaskOwnedFile(task, fs.NextIno(), 0444, &statusData{task: task, pidns: pidns}),
-		"uid_map":       fs.newTaskOwnedFile(task, fs.NextIno(), 0644, &idMapData{task: task, gids: false}),
+		"oom_score":     fs.newTaskOwnedInode(task, fs.NextIno(), 0444, newStaticFile("0\n")),
+		"oom_score_adj": fs.newTaskOwnedInode(task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
+		"smaps":         fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &smapsData{task: task}),
+		"stat":          fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
+		"statm":         fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &statmData{task: task}),
+		"status":        fs.newTaskOwnedInode(task, fs.NextIno(), 0444, &statusData{task: task, pidns: pidns}),
+		"uid_map":       fs.newTaskOwnedInode(task, fs.NextIno(), 0644, &idMapData{task: task, gids: false}),
 	}
 	if isThreadGroup {
 		contents["task"] = fs.newSubtasks(task, pidns, cgroupControllers)
 	}
 	if len(cgroupControllers) > 0 {
-		contents["cgroup"] = fs.newTaskOwnedFile(task, fs.NextIno(), 0444, newCgroupData(cgroupControllers))
+		contents["cgroup"] = fs.newTaskOwnedInode(task, fs.NextIno(), 0444, newCgroupData(cgroupControllers))
 	}
 
 	taskInode := &taskInode{task: task}
@@ -90,17 +93,15 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 	taskInode.EnableLeakCheck()
 
 	inode := &taskOwnedInode{Inode: taskInode, owner: task}
-	dentry := &kernfs.Dentry{}
-	dentry.Init(inode)
 
 	taskInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	links := taskInode.OrderedChildren.Populate(dentry, contents)
+	links := taskInode.OrderedChildren.Populate(contents)
 	taskInode.IncLinks(links)
 
-	return dentry
+	return inode, nil
 }
 
-// Valid implements kernfs.inodeDynamicLookup. This inode remains valid as long
+// Valid implements kernfs.Inode.Valid. This inode remains valid as long
 // as the task is still running. When it's dead, another tasks with the same
 // PID could replace it.
 func (i *taskInode) Valid(ctx context.Context) bool {
@@ -124,8 +125,8 @@ func (*taskInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, v
 }
 
 // DecRef implements kernfs.Inode.DecRef.
-func (i *taskInode) DecRef(context.Context) {
-	i.taskInodeRefs.DecRef(i.Destroy)
+func (i *taskInode) DecRef(ctx context.Context) {
+	i.taskInodeRefs.DecRef(func() { i.Destroy(ctx) })
 }
 
 // taskOwnedInode implements kernfs.Inode and overrides inode owner with task
@@ -141,34 +142,23 @@ type taskOwnedInode struct {
 
 var _ kernfs.Inode = (*taskOwnedInode)(nil)
 
-func (fs *filesystem) newTaskOwnedFile(task *kernel.Task, ino uint64, perm linux.FileMode, inode dynamicInode) *kernfs.Dentry {
+func (fs *filesystem) newTaskOwnedInode(task *kernel.Task, ino uint64, perm linux.FileMode, inode dynamicInode) kernfs.Inode {
 	// Note: credentials are overridden by taskOwnedInode.
 	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, inode, perm)
 
-	taskInode := &taskOwnedInode{Inode: inode, owner: task}
-	d := &kernfs.Dentry{}
-	d.Init(taskInode)
-	return d
+	return &taskOwnedInode{Inode: inode, owner: task}
 }
 
-func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.FileMode, children map[string]*kernfs.Dentry) *kernfs.Dentry {
-	dir := &kernfs.StaticDirectory{}
-
+func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.FileMode, children map[string]kernfs.Inode) kernfs.Inode {
 	// Note: credentials are overridden by taskOwnedInode.
-	dir.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm, kernfs.GenericDirectoryFDOptions{
-		SeekEnd: kernfs.SeekEndZero,
-	})
-	dir.EnableLeakCheck()
+	fdOpts := kernfs.GenericDirectoryFDOptions{SeekEnd: kernfs.SeekEndZero}
+	dir := kernfs.NewStaticDir(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm, children, fdOpts)
 
-	inode := &taskOwnedInode{Inode: dir, owner: task}
-	d := &kernfs.Dentry{}
-	d.Init(inode)
+	return &taskOwnedInode{Inode: dir, owner: task}
+}
 
-	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	links := dir.OrderedChildren.Populate(d, children)
-	dir.IncLinks(links)
-
-	return d
+func (i *taskOwnedInode) Valid(ctx context.Context) bool {
+	return i.owner.ExitState() != kernel.TaskExitDead && i.Inode.Valid(ctx)
 }
 
 // Stat implements kernfs.Inode.Stat.

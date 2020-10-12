@@ -118,7 +118,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	if err != nil {
 		return nil, err
 	}
-	d.Init(i)
+	d.Init(&fs.Filesystem, i)
 
 	// i.open will take a reference on d.
 	defer d.DecRef(ctx)
@@ -195,6 +195,7 @@ type inode struct {
 	kernfs.InodeNoStatFS
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
 
 	locks vfs.FileLocks
 

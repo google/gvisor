@@ -172,10 +172,11 @@ func (i *subtasksInode) StateTypeName() string {
 func (i *subtasksInode) StateFields() []string {
 	return []string{
 		"implStatFS",
-		"AlwaysValid",
+		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
 		"InodeNotSymlink",
+		"InodeTemporary",
 		"OrderedChildren",
 		"subtasksInodeRefs",
 		"locks",
@@ -191,34 +192,36 @@ func (i *subtasksInode) beforeSave() {}
 func (i *subtasksInode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.implStatFS)
-	stateSinkObject.Save(1, &i.AlwaysValid)
+	stateSinkObject.Save(1, &i.InodeAlwaysValid)
 	stateSinkObject.Save(2, &i.InodeAttrs)
 	stateSinkObject.Save(3, &i.InodeDirectoryNoNewChildren)
 	stateSinkObject.Save(4, &i.InodeNotSymlink)
-	stateSinkObject.Save(5, &i.OrderedChildren)
-	stateSinkObject.Save(6, &i.subtasksInodeRefs)
-	stateSinkObject.Save(7, &i.locks)
-	stateSinkObject.Save(8, &i.fs)
-	stateSinkObject.Save(9, &i.task)
-	stateSinkObject.Save(10, &i.pidns)
-	stateSinkObject.Save(11, &i.cgroupControllers)
+	stateSinkObject.Save(5, &i.InodeTemporary)
+	stateSinkObject.Save(6, &i.OrderedChildren)
+	stateSinkObject.Save(7, &i.subtasksInodeRefs)
+	stateSinkObject.Save(8, &i.locks)
+	stateSinkObject.Save(9, &i.fs)
+	stateSinkObject.Save(10, &i.task)
+	stateSinkObject.Save(11, &i.pidns)
+	stateSinkObject.Save(12, &i.cgroupControllers)
 }
 
 func (i *subtasksInode) afterLoad() {}
 
 func (i *subtasksInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.implStatFS)
-	stateSourceObject.Load(1, &i.AlwaysValid)
+	stateSourceObject.Load(1, &i.InodeAlwaysValid)
 	stateSourceObject.Load(2, &i.InodeAttrs)
 	stateSourceObject.Load(3, &i.InodeDirectoryNoNewChildren)
 	stateSourceObject.Load(4, &i.InodeNotSymlink)
-	stateSourceObject.Load(5, &i.OrderedChildren)
-	stateSourceObject.Load(6, &i.subtasksInodeRefs)
-	stateSourceObject.Load(7, &i.locks)
-	stateSourceObject.Load(8, &i.fs)
-	stateSourceObject.Load(9, &i.task)
-	stateSourceObject.Load(10, &i.pidns)
-	stateSourceObject.Load(11, &i.cgroupControllers)
+	stateSourceObject.Load(5, &i.InodeTemporary)
+	stateSourceObject.Load(6, &i.OrderedChildren)
+	stateSourceObject.Load(7, &i.subtasksInodeRefs)
+	stateSourceObject.Load(8, &i.locks)
+	stateSourceObject.Load(9, &i.fs)
+	stateSourceObject.Load(10, &i.task)
+	stateSourceObject.Load(11, &i.pidns)
+	stateSourceObject.Load(12, &i.cgroupControllers)
 }
 
 func (fd *subtasksFD) StateTypeName() string {
@@ -279,8 +282,8 @@ func (i *taskInode) StateFields() []string {
 		"implStatFS",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
-		"InodeNoDynamicLookup",
 		"InodeNotSymlink",
+		"InodeTemporary",
 		"OrderedChildren",
 		"taskInodeRefs",
 		"locks",
@@ -295,8 +298,8 @@ func (i *taskInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &i.implStatFS)
 	stateSinkObject.Save(1, &i.InodeAttrs)
 	stateSinkObject.Save(2, &i.InodeDirectoryNoNewChildren)
-	stateSinkObject.Save(3, &i.InodeNoDynamicLookup)
-	stateSinkObject.Save(4, &i.InodeNotSymlink)
+	stateSinkObject.Save(3, &i.InodeNotSymlink)
+	stateSinkObject.Save(4, &i.InodeTemporary)
 	stateSinkObject.Save(5, &i.OrderedChildren)
 	stateSinkObject.Save(6, &i.taskInodeRefs)
 	stateSinkObject.Save(7, &i.locks)
@@ -309,8 +312,8 @@ func (i *taskInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.implStatFS)
 	stateSourceObject.Load(1, &i.InodeAttrs)
 	stateSourceObject.Load(2, &i.InodeDirectoryNoNewChildren)
-	stateSourceObject.Load(3, &i.InodeNoDynamicLookup)
-	stateSourceObject.Load(4, &i.InodeNotSymlink)
+	stateSourceObject.Load(3, &i.InodeNotSymlink)
+	stateSourceObject.Load(4, &i.InodeTemporary)
 	stateSourceObject.Load(5, &i.OrderedChildren)
 	stateSourceObject.Load(6, &i.taskInodeRefs)
 	stateSourceObject.Load(7, &i.locks)
@@ -384,10 +387,11 @@ func (i *fdDirInode) StateFields() []string {
 		"fdDir",
 		"fdDirInodeRefs",
 		"implStatFS",
-		"AlwaysValid",
+		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
 		"InodeNotSymlink",
+		"InodeTemporary",
 		"OrderedChildren",
 	}
 }
@@ -399,11 +403,12 @@ func (i *fdDirInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &i.fdDir)
 	stateSinkObject.Save(1, &i.fdDirInodeRefs)
 	stateSinkObject.Save(2, &i.implStatFS)
-	stateSinkObject.Save(3, &i.AlwaysValid)
+	stateSinkObject.Save(3, &i.InodeAlwaysValid)
 	stateSinkObject.Save(4, &i.InodeAttrs)
 	stateSinkObject.Save(5, &i.InodeDirectoryNoNewChildren)
 	stateSinkObject.Save(6, &i.InodeNotSymlink)
-	stateSinkObject.Save(7, &i.OrderedChildren)
+	stateSinkObject.Save(7, &i.InodeTemporary)
+	stateSinkObject.Save(8, &i.OrderedChildren)
 }
 
 func (i *fdDirInode) afterLoad() {}
@@ -412,11 +417,12 @@ func (i *fdDirInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.fdDir)
 	stateSourceObject.Load(1, &i.fdDirInodeRefs)
 	stateSourceObject.Load(2, &i.implStatFS)
-	stateSourceObject.Load(3, &i.AlwaysValid)
+	stateSourceObject.Load(3, &i.InodeAlwaysValid)
 	stateSourceObject.Load(4, &i.InodeAttrs)
 	stateSourceObject.Load(5, &i.InodeDirectoryNoNewChildren)
 	stateSourceObject.Load(6, &i.InodeNotSymlink)
-	stateSourceObject.Load(7, &i.OrderedChildren)
+	stateSourceObject.Load(7, &i.InodeTemporary)
+	stateSourceObject.Load(8, &i.OrderedChildren)
 }
 
 func (s *fdSymlink) StateTypeName() string {
@@ -466,10 +472,11 @@ func (i *fdInfoDirInode) StateFields() []string {
 		"fdDir",
 		"fdInfoDirInodeRefs",
 		"implStatFS",
-		"AlwaysValid",
+		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
 		"InodeNotSymlink",
+		"InodeTemporary",
 		"OrderedChildren",
 	}
 }
@@ -481,11 +488,12 @@ func (i *fdInfoDirInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &i.fdDir)
 	stateSinkObject.Save(1, &i.fdInfoDirInodeRefs)
 	stateSinkObject.Save(2, &i.implStatFS)
-	stateSinkObject.Save(3, &i.AlwaysValid)
+	stateSinkObject.Save(3, &i.InodeAlwaysValid)
 	stateSinkObject.Save(4, &i.InodeAttrs)
 	stateSinkObject.Save(5, &i.InodeDirectoryNoNewChildren)
 	stateSinkObject.Save(6, &i.InodeNotSymlink)
-	stateSinkObject.Save(7, &i.OrderedChildren)
+	stateSinkObject.Save(7, &i.InodeTemporary)
+	stateSinkObject.Save(8, &i.OrderedChildren)
 }
 
 func (i *fdInfoDirInode) afterLoad() {}
@@ -494,11 +502,12 @@ func (i *fdInfoDirInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.fdDir)
 	stateSourceObject.Load(1, &i.fdInfoDirInodeRefs)
 	stateSourceObject.Load(2, &i.implStatFS)
-	stateSourceObject.Load(3, &i.AlwaysValid)
+	stateSourceObject.Load(3, &i.InodeAlwaysValid)
 	stateSourceObject.Load(4, &i.InodeAttrs)
 	stateSourceObject.Load(5, &i.InodeDirectoryNoNewChildren)
 	stateSourceObject.Load(6, &i.InodeNotSymlink)
-	stateSourceObject.Load(7, &i.OrderedChildren)
+	stateSourceObject.Load(7, &i.InodeTemporary)
+	stateSourceObject.Load(8, &i.OrderedChildren)
 }
 
 func (d *fdInfoData) StateTypeName() string {
@@ -1365,17 +1374,16 @@ func (i *tasksInode) StateTypeName() string {
 func (i *tasksInode) StateFields() []string {
 	return []string{
 		"implStatFS",
-		"AlwaysValid",
+		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
 		"InodeNotSymlink",
+		"InodeTemporary",
 		"OrderedChildren",
 		"tasksInodeRefs",
 		"locks",
 		"fs",
 		"pidns",
-		"selfSymlink",
-		"threadSelfSymlink",
 		"cgroupControllers",
 	}
 }
@@ -1385,36 +1393,34 @@ func (i *tasksInode) beforeSave() {}
 func (i *tasksInode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.implStatFS)
-	stateSinkObject.Save(1, &i.AlwaysValid)
+	stateSinkObject.Save(1, &i.InodeAlwaysValid)
 	stateSinkObject.Save(2, &i.InodeAttrs)
 	stateSinkObject.Save(3, &i.InodeDirectoryNoNewChildren)
 	stateSinkObject.Save(4, &i.InodeNotSymlink)
-	stateSinkObject.Save(5, &i.OrderedChildren)
-	stateSinkObject.Save(6, &i.tasksInodeRefs)
-	stateSinkObject.Save(7, &i.locks)
-	stateSinkObject.Save(8, &i.fs)
-	stateSinkObject.Save(9, &i.pidns)
-	stateSinkObject.Save(10, &i.selfSymlink)
-	stateSinkObject.Save(11, &i.threadSelfSymlink)
-	stateSinkObject.Save(12, &i.cgroupControllers)
+	stateSinkObject.Save(5, &i.InodeTemporary)
+	stateSinkObject.Save(6, &i.OrderedChildren)
+	stateSinkObject.Save(7, &i.tasksInodeRefs)
+	stateSinkObject.Save(8, &i.locks)
+	stateSinkObject.Save(9, &i.fs)
+	stateSinkObject.Save(10, &i.pidns)
+	stateSinkObject.Save(11, &i.cgroupControllers)
 }
 
 func (i *tasksInode) afterLoad() {}
 
 func (i *tasksInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.implStatFS)
-	stateSourceObject.Load(1, &i.AlwaysValid)
+	stateSourceObject.Load(1, &i.InodeAlwaysValid)
 	stateSourceObject.Load(2, &i.InodeAttrs)
 	stateSourceObject.Load(3, &i.InodeDirectoryNoNewChildren)
 	stateSourceObject.Load(4, &i.InodeNotSymlink)
-	stateSourceObject.Load(5, &i.OrderedChildren)
-	stateSourceObject.Load(6, &i.tasksInodeRefs)
-	stateSourceObject.Load(7, &i.locks)
-	stateSourceObject.Load(8, &i.fs)
-	stateSourceObject.Load(9, &i.pidns)
-	stateSourceObject.Load(10, &i.selfSymlink)
-	stateSourceObject.Load(11, &i.threadSelfSymlink)
-	stateSourceObject.Load(12, &i.cgroupControllers)
+	stateSourceObject.Load(5, &i.InodeTemporary)
+	stateSourceObject.Load(6, &i.OrderedChildren)
+	stateSourceObject.Load(7, &i.tasksInodeRefs)
+	stateSourceObject.Load(8, &i.locks)
+	stateSourceObject.Load(9, &i.fs)
+	stateSourceObject.Load(10, &i.pidns)
+	stateSourceObject.Load(11, &i.cgroupControllers)
 }
 
 func (s *staticFileSetStat) StateTypeName() string {

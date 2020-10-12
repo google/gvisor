@@ -83,6 +83,7 @@ func (i *inode) StateFields() []string {
 		"InodeNoStatFS",
 		"InodeNotDirectory",
 		"InodeNotSymlink",
+		"InodeTemporary",
 		"locks",
 		"inodeRefs",
 		"hostFD",
@@ -104,17 +105,18 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &i.InodeNoStatFS)
 	stateSinkObject.Save(1, &i.InodeNotDirectory)
 	stateSinkObject.Save(2, &i.InodeNotSymlink)
-	stateSinkObject.Save(3, &i.locks)
-	stateSinkObject.Save(4, &i.inodeRefs)
-	stateSinkObject.Save(5, &i.hostFD)
-	stateSinkObject.Save(6, &i.ino)
-	stateSinkObject.Save(7, &i.isTTY)
-	stateSinkObject.Save(8, &i.seekable)
-	stateSinkObject.Save(9, &i.wouldBlock)
-	stateSinkObject.Save(10, &i.queue)
-	stateSinkObject.Save(11, &i.canMap)
-	stateSinkObject.Save(12, &i.mappings)
-	stateSinkObject.Save(13, &i.pf)
+	stateSinkObject.Save(3, &i.InodeTemporary)
+	stateSinkObject.Save(4, &i.locks)
+	stateSinkObject.Save(5, &i.inodeRefs)
+	stateSinkObject.Save(6, &i.hostFD)
+	stateSinkObject.Save(7, &i.ino)
+	stateSinkObject.Save(8, &i.isTTY)
+	stateSinkObject.Save(9, &i.seekable)
+	stateSinkObject.Save(10, &i.wouldBlock)
+	stateSinkObject.Save(11, &i.queue)
+	stateSinkObject.Save(12, &i.canMap)
+	stateSinkObject.Save(13, &i.mappings)
+	stateSinkObject.Save(14, &i.pf)
 }
 
 func (i *inode) afterLoad() {}
@@ -123,17 +125,18 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeNoStatFS)
 	stateSourceObject.Load(1, &i.InodeNotDirectory)
 	stateSourceObject.Load(2, &i.InodeNotSymlink)
-	stateSourceObject.Load(3, &i.locks)
-	stateSourceObject.Load(4, &i.inodeRefs)
-	stateSourceObject.Load(5, &i.hostFD)
-	stateSourceObject.Load(6, &i.ino)
-	stateSourceObject.Load(7, &i.isTTY)
-	stateSourceObject.Load(8, &i.seekable)
-	stateSourceObject.Load(9, &i.wouldBlock)
-	stateSourceObject.Load(10, &i.queue)
-	stateSourceObject.Load(11, &i.canMap)
-	stateSourceObject.Load(12, &i.mappings)
-	stateSourceObject.Load(13, &i.pf)
+	stateSourceObject.Load(3, &i.InodeTemporary)
+	stateSourceObject.Load(4, &i.locks)
+	stateSourceObject.Load(5, &i.inodeRefs)
+	stateSourceObject.Load(6, &i.hostFD)
+	stateSourceObject.Load(7, &i.ino)
+	stateSourceObject.Load(8, &i.isTTY)
+	stateSourceObject.Load(9, &i.seekable)
+	stateSourceObject.Load(10, &i.wouldBlock)
+	stateSourceObject.Load(11, &i.queue)
+	stateSourceObject.Load(12, &i.canMap)
+	stateSourceObject.Load(13, &i.mappings)
+	stateSourceObject.Load(14, &i.pf)
 }
 
 func (f *fileDescription) StateTypeName() string {

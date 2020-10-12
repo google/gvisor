@@ -40,93 +40,93 @@ const (
 )
 
 // newSysDir returns the dentry corresponding to /proc/sys directory.
-func (fs *filesystem) newSysDir(root *auth.Credentials, k *kernel.Kernel) *kernfs.Dentry {
-	return newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
-		"kernel": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
-			"hostname": fs.newDentry(root, fs.NextIno(), 0444, &hostnameData{}),
-			"shmall":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMALL)),
-			"shmmax":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMMAX)),
-			"shmmni":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMMNI)),
+func (fs *filesystem) newSysDir(root *auth.Credentials, k *kernel.Kernel) kernfs.Inode {
+	return fs.newStaticDir(root, map[string]kernfs.Inode{
+		"kernel": fs.newStaticDir(root, map[string]kernfs.Inode{
+			"hostname": fs.newInode(root, 0444, &hostnameData{}),
+			"shmall":   fs.newInode(root, 0444, shmData(linux.SHMALL)),
+			"shmmax":   fs.newInode(root, 0444, shmData(linux.SHMMAX)),
+			"shmmni":   fs.newInode(root, 0444, shmData(linux.SHMMNI)),
 		}),
-		"vm": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
-			"mmap_min_addr":     fs.newDentry(root, fs.NextIno(), 0444, &mmapMinAddrData{k: k}),
-			"overcommit_memory": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0\n")),
+		"vm": fs.newStaticDir(root, map[string]kernfs.Inode{
+			"mmap_min_addr":     fs.newInode(root, 0444, &mmapMinAddrData{k: k}),
+			"overcommit_memory": fs.newInode(root, 0444, newStaticFile("0\n")),
 		}),
 		"net": fs.newSysNetDir(root, k),
 	})
 }
 
 // newSysNetDir returns the dentry corresponding to /proc/sys/net directory.
-func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) *kernfs.Dentry {
-	var contents map[string]*kernfs.Dentry
+func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) kernfs.Inode {
+	var contents map[string]kernfs.Inode
 
 	// TODO(gvisor.dev/issue/1833): Support for using the network stack in the
 	// network namespace of the calling process.
 	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
-		contents = map[string]*kernfs.Dentry{
-			"ipv4": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
-				"tcp_recovery": fs.newDentry(root, fs.NextIno(), 0644, &tcpRecoveryData{stack: stack}),
-				"tcp_rmem":     fs.newDentry(root, fs.NextIno(), 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
-				"tcp_sack":     fs.newDentry(root, fs.NextIno(), 0644, &tcpSackData{stack: stack}),
-				"tcp_wmem":     fs.newDentry(root, fs.NextIno(), 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
-				"ip_forward":   fs.newDentry(root, fs.NextIno(), 0444, &ipForwarding{stack: stack}),
+		contents = map[string]kernfs.Inode{
+			"ipv4": fs.newStaticDir(root, map[string]kernfs.Inode{
+				"tcp_recovery": fs.newInode(root, 0644, &tcpRecoveryData{stack: stack}),
+				"tcp_rmem":     fs.newInode(root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
+				"tcp_sack":     fs.newInode(root, 0644, &tcpSackData{stack: stack}),
+				"tcp_wmem":     fs.newInode(root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
+				"ip_forward":   fs.newInode(root, 0444, &ipForwarding{stack: stack}),
 
 				// The following files are simple stubs until they are implemented in
 				// netstack, most of these files are configuration related. We use the
 				// value closest to the actual netstack behavior or any empty file, all
 				// of these files will have mode 0444 (read-only for all users).
-				"ip_local_port_range":     fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("16000   65535")),
-				"ip_local_reserved_ports": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("")),
-				"ipfrag_time":             fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("30")),
-				"ip_nonlocal_bind":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"ip_no_pmtu_disc":         fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
+				"ip_local_port_range":     fs.newInode(root, 0444, newStaticFile("16000   65535")),
+				"ip_local_reserved_ports": fs.newInode(root, 0444, newStaticFile("")),
+				"ipfrag_time":             fs.newInode(root, 0444, newStaticFile("30")),
+				"ip_nonlocal_bind":        fs.newInode(root, 0444, newStaticFile("0")),
+				"ip_no_pmtu_disc":         fs.newInode(root, 0444, newStaticFile("1")),
 
 				// tcp_allowed_congestion_control tell the user what they are able to
 				// do as an unprivledged process so we leave it empty.
-				"tcp_allowed_congestion_control":   fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("")),
-				"tcp_available_congestion_control": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("reno")),
-				"tcp_congestion_control":           fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("reno")),
+				"tcp_allowed_congestion_control":   fs.newInode(root, 0444, newStaticFile("")),
+				"tcp_available_congestion_control": fs.newInode(root, 0444, newStaticFile("reno")),
+				"tcp_congestion_control":           fs.newInode(root, 0444, newStaticFile("reno")),
 
 				// Many of the following stub files are features netstack doesn't
 				// support. The unsupported features return "0" to indicate they are
 				// disabled.
-				"tcp_base_mss":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1280")),
-				"tcp_dsack":                 fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_early_retrans":         fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_fack":                  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_fastopen":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_fastopen_key":          fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("")),
-				"tcp_invalid_ratelimit":     fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_keepalive_intvl":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_keepalive_probes":      fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_keepalive_time":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("7200")),
-				"tcp_mtu_probing":           fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_no_metrics_save":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
-				"tcp_probe_interval":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_probe_threshold":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"tcp_retries1":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("3")),
-				"tcp_retries2":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("15")),
-				"tcp_rfc1337":               fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
-				"tcp_slow_start_after_idle": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
-				"tcp_synack_retries":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("5")),
-				"tcp_syn_retries":           fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("3")),
-				"tcp_timestamps":            fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
+				"tcp_base_mss":              fs.newInode(root, 0444, newStaticFile("1280")),
+				"tcp_dsack":                 fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_early_retrans":         fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_fack":                  fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_fastopen":              fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_fastopen_key":          fs.newInode(root, 0444, newStaticFile("")),
+				"tcp_invalid_ratelimit":     fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_keepalive_intvl":       fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_keepalive_probes":      fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_keepalive_time":        fs.newInode(root, 0444, newStaticFile("7200")),
+				"tcp_mtu_probing":           fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_no_metrics_save":       fs.newInode(root, 0444, newStaticFile("1")),
+				"tcp_probe_interval":        fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_probe_threshold":       fs.newInode(root, 0444, newStaticFile("0")),
+				"tcp_retries1":              fs.newInode(root, 0444, newStaticFile("3")),
+				"tcp_retries2":              fs.newInode(root, 0444, newStaticFile("15")),
+				"tcp_rfc1337":               fs.newInode(root, 0444, newStaticFile("1")),
+				"tcp_slow_start_after_idle": fs.newInode(root, 0444, newStaticFile("1")),
+				"tcp_synack_retries":        fs.newInode(root, 0444, newStaticFile("5")),
+				"tcp_syn_retries":           fs.newInode(root, 0444, newStaticFile("3")),
+				"tcp_timestamps":            fs.newInode(root, 0444, newStaticFile("1")),
 			}),
-			"core": newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
-				"default_qdisc": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("pfifo_fast")),
-				"message_burst": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("10")),
-				"message_cost":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("5")),
-				"optmem_max":    fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
-				"rmem_default":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
-				"rmem_max":      fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
-				"somaxconn":     fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("128")),
-				"wmem_default":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
-				"wmem_max":      fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
+			"core": fs.newStaticDir(root, map[string]kernfs.Inode{
+				"default_qdisc": fs.newInode(root, 0444, newStaticFile("pfifo_fast")),
+				"message_burst": fs.newInode(root, 0444, newStaticFile("10")),
+				"message_cost":  fs.newInode(root, 0444, newStaticFile("5")),
+				"optmem_max":    fs.newInode(root, 0444, newStaticFile("0")),
+				"rmem_default":  fs.newInode(root, 0444, newStaticFile("212992")),
+				"rmem_max":      fs.newInode(root, 0444, newStaticFile("212992")),
+				"somaxconn":     fs.newInode(root, 0444, newStaticFile("128")),
+				"wmem_default":  fs.newInode(root, 0444, newStaticFile("212992")),
+				"wmem_max":      fs.newInode(root, 0444, newStaticFile("212992")),
 			}),
 		}
 	}
 
-	return newStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, contents)
+	return fs.newStaticDir(root, contents)
 }
 
 // mmapMinAddrData implements vfs.DynamicBytesSource for

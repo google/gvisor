@@ -271,12 +271,11 @@ func (i *inode) StateTypeName() string {
 func (i *inode) StateFields() []string {
 	return []string{
 		"inodeRefs",
+		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
-		"InodeNoDynamicLookup",
 		"InodeNotSymlink",
 		"OrderedChildren",
-		"dentry",
 		"fs",
 		"metadataMu",
 		"nodeID",
@@ -294,42 +293,40 @@ func (i *inode) beforeSave() {}
 func (i *inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.inodeRefs)
-	stateSinkObject.Save(1, &i.InodeAttrs)
-	stateSinkObject.Save(2, &i.InodeDirectoryNoNewChildren)
-	stateSinkObject.Save(3, &i.InodeNoDynamicLookup)
+	stateSinkObject.Save(1, &i.InodeAlwaysValid)
+	stateSinkObject.Save(2, &i.InodeAttrs)
+	stateSinkObject.Save(3, &i.InodeDirectoryNoNewChildren)
 	stateSinkObject.Save(4, &i.InodeNotSymlink)
 	stateSinkObject.Save(5, &i.OrderedChildren)
-	stateSinkObject.Save(6, &i.dentry)
-	stateSinkObject.Save(7, &i.fs)
-	stateSinkObject.Save(8, &i.metadataMu)
-	stateSinkObject.Save(9, &i.nodeID)
-	stateSinkObject.Save(10, &i.locks)
-	stateSinkObject.Save(11, &i.size)
-	stateSinkObject.Save(12, &i.attributeVersion)
-	stateSinkObject.Save(13, &i.attributeTime)
-	stateSinkObject.Save(14, &i.version)
-	stateSinkObject.Save(15, &i.link)
+	stateSinkObject.Save(6, &i.fs)
+	stateSinkObject.Save(7, &i.metadataMu)
+	stateSinkObject.Save(8, &i.nodeID)
+	stateSinkObject.Save(9, &i.locks)
+	stateSinkObject.Save(10, &i.size)
+	stateSinkObject.Save(11, &i.attributeVersion)
+	stateSinkObject.Save(12, &i.attributeTime)
+	stateSinkObject.Save(13, &i.version)
+	stateSinkObject.Save(14, &i.link)
 }
 
 func (i *inode) afterLoad() {}
 
 func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.inodeRefs)
-	stateSourceObject.Load(1, &i.InodeAttrs)
-	stateSourceObject.Load(2, &i.InodeDirectoryNoNewChildren)
-	stateSourceObject.Load(3, &i.InodeNoDynamicLookup)
+	stateSourceObject.Load(1, &i.InodeAlwaysValid)
+	stateSourceObject.Load(2, &i.InodeAttrs)
+	stateSourceObject.Load(3, &i.InodeDirectoryNoNewChildren)
 	stateSourceObject.Load(4, &i.InodeNotSymlink)
 	stateSourceObject.Load(5, &i.OrderedChildren)
-	stateSourceObject.Load(6, &i.dentry)
-	stateSourceObject.Load(7, &i.fs)
-	stateSourceObject.Load(8, &i.metadataMu)
-	stateSourceObject.Load(9, &i.nodeID)
-	stateSourceObject.Load(10, &i.locks)
-	stateSourceObject.Load(11, &i.size)
-	stateSourceObject.Load(12, &i.attributeVersion)
-	stateSourceObject.Load(13, &i.attributeTime)
-	stateSourceObject.Load(14, &i.version)
-	stateSourceObject.Load(15, &i.link)
+	stateSourceObject.Load(6, &i.fs)
+	stateSourceObject.Load(7, &i.metadataMu)
+	stateSourceObject.Load(8, &i.nodeID)
+	stateSourceObject.Load(9, &i.locks)
+	stateSourceObject.Load(10, &i.size)
+	stateSourceObject.Load(11, &i.attributeVersion)
+	stateSourceObject.Load(12, &i.attributeTime)
+	stateSourceObject.Load(13, &i.version)
+	stateSourceObject.Load(14, &i.link)
 }
 
 func (r *inodeRefs) StateTypeName() string {

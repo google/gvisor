@@ -89,7 +89,7 @@ afterSymlink:
 		}
 		if targetVD.Ok() {
 			err := rp.HandleJump(targetVD)
-			targetVD.DecRef(ctx)
+			fs.deferDecRefVD(ctx, targetVD)
 			if err != nil {
 				return nil, err
 			}
@@ -120,22 +120,33 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 		// Cached dentry exists, revalidate.
 		if !child.inode.Valid(ctx) {
 			delete(parent.children, name)
-			vfsObj.InvalidateDentry(ctx, &child.vfsd)
-			fs.deferDecRef(child) // Reference from Lookup.
+			if child.inode.Keep() {
+				// Drop the ref owned by kernfs.
+				fs.deferDecRef(child)
+			}
+			vfsObj.InvalidateDentry(ctx, child.VFSDentry())
 			child = nil
 		}
 	}
 	if child == nil {
 		// Dentry isn't cached; it either doesn't exist or failed revalidation.
 		// Attempt to resolve it via Lookup.
-		c, err := parent.inode.Lookup(ctx, name)
+		childInode, err := parent.inode.Lookup(ctx, name)
 		if err != nil {
 			return nil, err
 		}
-		// Reference on c (provided by Lookup) will be dropped when the dentry
-		// fails validation.
-		parent.InsertChildLocked(name, c)
-		child = c
+		var newChild Dentry
+		newChild.Init(fs, childInode) // childInode's ref is transferred to newChild.
+		parent.insertChildLocked(name, &newChild)
+		child = &newChild
+
+		// Drop the ref on newChild. This will cause the dentry to get pruned
+		// from the dentry tree by the end of current filesystem operation
+		// (before returning to the VFS layer) if another ref is not picked on
+		// this dentry.
+		if !childInode.Keep() {
+			fs.deferDecRef(&newChild)
+		}
 	}
 	return child, nil
 }
@@ -191,7 +202,7 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 }
 
 // checkCreateLocked checks that a file named rp.Component() may be created in
-// directory parentVFSD, then returns rp.Component().
+// directory parent, then returns rp.Component().
 //
 // Preconditions:
 // * Filesystem.mu must be locked for at least reading.
@@ -298,9 +309,9 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return syserror.EEXIST
 	}
 	fs.mu.Lock()
+	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
 	parent, err := fs.walkParentDirLocked(ctx, rp)
-	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
 	}
@@ -324,11 +335,13 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return syserror.EPERM
 	}
 
-	child, err := parent.inode.NewLink(ctx, pc, d.inode)
+	childI, err := parent.inode.NewLink(ctx, pc, d.inode)
 	if err != nil {
 		return err
 	}
-	parent.InsertChildLocked(pc, child)
+	var child Dentry
+	child.Init(fs, childI)
+	parent.insertChildLocked(pc, &child)
 	return nil
 }
 
@@ -338,9 +351,9 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return syserror.EEXIST
 	}
 	fs.mu.Lock()
+	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
 	parent, err := fs.walkParentDirLocked(ctx, rp)
-	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
 	}
@@ -355,14 +368,16 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	child, err := parent.inode.NewDir(ctx, pc, opts)
+	childI, err := parent.inode.NewDir(ctx, pc, opts)
 	if err != nil {
 		if !opts.ForSyntheticMountpoint || err == syserror.EEXIST {
 			return err
 		}
-		child = newSyntheticDirectory(rp.Credentials(), opts.Mode)
+		childI = newSyntheticDirectory(rp.Credentials(), opts.Mode)
 	}
-	parent.InsertChildLocked(pc, child)
+	var child Dentry
+	child.Init(fs, childI)
+	parent.insertChildLocked(pc, &child)
 	return nil
 }
 
@@ -372,9 +387,9 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return syserror.EEXIST
 	}
 	fs.mu.Lock()
+	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
 	parent, err := fs.walkParentDirLocked(ctx, rp)
-	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
 	}
@@ -389,11 +404,13 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	newD, err := parent.inode.NewNode(ctx, pc, opts)
+	newI, err := parent.inode.NewNode(ctx, pc, opts)
 	if err != nil {
 		return err
 	}
-	parent.InsertChildLocked(pc, newD)
+	var newD Dentry
+	newD.Init(fs, newI)
+	parent.insertChildLocked(pc, &newD)
 	return nil
 }
 
@@ -409,22 +426,23 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// Do not create new file.
 	if opts.Flags&linux.O_CREAT == 0 {
 		fs.mu.RLock()
+		defer fs.processDeferredDecRefs(ctx)
 		d, err := fs.walkExistingLocked(ctx, rp)
 		if err != nil {
 			fs.mu.RUnlock()
-			fs.processDeferredDecRefs(ctx)
 			return nil, err
 		}
 		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			fs.mu.RUnlock()
-			fs.processDeferredDecRefs(ctx)
 			return nil, err
 		}
-		d.inode.IncRef()
-		defer d.inode.DecRef(ctx)
+		// Open may block so we need to unlock fs.mu. IncRef d to prevent
+		// its destruction while fs.mu is unlocked.
+		d.IncRef()
 		fs.mu.RUnlock()
-		fs.processDeferredDecRefs(ctx)
-		return d.inode.Open(ctx, rp, d, opts)
+		fd, err := d.inode.Open(ctx, rp, d, opts)
+		d.DecRef(ctx)
+		return fd, err
 	}
 
 	// May create new file.
@@ -438,6 +456,10 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			unlocked = true
 		}
 	}
+	// Process all to-be-decref'd dentries at the end at once.
+	// Since we defer unlock() AFTER this, fs.mu is guaranteed to be unlocked
+	// when this is executed.
+	defer fs.processDeferredDecRefs(ctx)
 	defer unlock()
 	if rp.Done() {
 		if rp.MustBeDir() {
@@ -449,14 +471,16 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		d.inode.IncRef()
-		defer d.inode.DecRef(ctx)
+		// Open may block so we need to unlock fs.mu. IncRef d to prevent
+		// its destruction while fs.mu is unlocked.
+		d.IncRef()
 		unlock()
-		return d.inode.Open(ctx, rp, d, opts)
+		fd, err := d.inode.Open(ctx, rp, d, opts)
+		d.DecRef(ctx)
+		return fd, err
 	}
 afterTrailingSymlink:
 	parent, err := fs.walkParentDirLocked(ctx, rp)
-	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -487,18 +511,23 @@ afterTrailingSymlink:
 		}
 		defer rp.Mount().EndWrite()
 		// Create and open the child.
-		child, err := parent.inode.NewFile(ctx, pc, opts)
+		childI, err := parent.inode.NewFile(ctx, pc, opts)
 		if err != nil {
 			return nil, err
 		}
+		var child Dentry
+		child.Init(fs, childI)
 		// FIXME(gvisor.dev/issue/1193): Race between checking existence with
-		// fs.stepExistingLocked and parent.InsertChild. If possible, we should hold
+		// fs.stepExistingLocked and parent.insertChild. If possible, we should hold
 		// dirMu from one to the other.
-		parent.InsertChild(pc, child)
-		child.inode.IncRef()
-		defer child.inode.DecRef(ctx)
+		parent.insertChild(pc, &child)
+		// Open may block so we need to unlock fs.mu. IncRef child to prevent
+		// its destruction while fs.mu is unlocked.
+		child.IncRef()
 		unlock()
-		return child.inode.Open(ctx, rp, child, opts)
+		fd, err := child.inode.Open(ctx, rp, &child, opts)
+		child.DecRef(ctx)
+		return fd, err
 	}
 	if err != nil {
 		return nil, err
@@ -514,7 +543,7 @@ afterTrailingSymlink:
 		}
 		if targetVD.Ok() {
 			err := rp.HandleJump(targetVD)
-			targetVD.DecRef(ctx)
+			fs.deferDecRefVD(ctx, targetVD)
 			if err != nil {
 				return nil, err
 			}
@@ -530,18 +559,21 @@ afterTrailingSymlink:
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
-	child.inode.IncRef()
-	defer child.inode.DecRef(ctx)
+	// Open may block so we need to unlock fs.mu. IncRef child to prevent
+	// its destruction while fs.mu is unlocked.
+	child.IncRef()
 	unlock()
-	return child.inode.Open(ctx, rp, child, opts)
+	fd, err := child.inode.Open(ctx, rp, child, opts)
+	child.DecRef(ctx)
+	return fd, err
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
 func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	d, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -560,7 +592,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	noReplace := opts.Flags&linux.RENAME_NOREPLACE != 0
 
 	fs.mu.Lock()
-	defer fs.processDeferredDecRefsLocked(ctx)
+	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
 
 	// Resolve the destination directory first to verify that it's on this
@@ -632,24 +664,27 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err := virtfs.PrepareRenameDentry(mntns, srcVFSD, dstVFSD); err != nil {
 		return err
 	}
-	replaced, err := srcDir.inode.Rename(ctx, src.name, pc, src, dstDir)
+	err = srcDir.inode.Rename(ctx, src.name, pc, src.inode, dstDir.inode)
 	if err != nil {
 		virtfs.AbortRenameDentry(srcVFSD, dstVFSD)
 		return err
 	}
 	delete(srcDir.children, src.name)
 	if srcDir != dstDir {
-		fs.deferDecRef(srcDir)
-		dstDir.IncRef()
+		fs.deferDecRef(srcDir) // child (src) drops ref on old parent.
+		dstDir.IncRef()        // child (src) takes a ref on the new parent.
 	}
 	src.parent = dstDir
 	src.name = pc
 	if dstDir.children == nil {
 		dstDir.children = make(map[string]*Dentry)
 	}
+	replaced := dstDir.children[pc]
 	dstDir.children[pc] = src
 	var replaceVFSD *vfs.Dentry
 	if replaced != nil {
+		// deferDecRef so that fs.mu and dstDir.mu are unlocked by then.
+		fs.deferDecRef(replaced)
 		replaceVFSD = replaced.VFSDentry()
 	}
 	virtfs.CommitRenameReplaceDentry(ctx, srcVFSD, replaceVFSD)
@@ -659,10 +694,10 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 // RmdirAt implements vfs.FilesystemImpl.RmdirAt.
 func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	fs.mu.Lock()
+	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
 
 	d, err := fs.walkExistingLocked(ctx, rp)
-	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
 	}
@@ -691,10 +726,13 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 
-	if err := parentDentry.inode.RmDir(ctx, d.name, d); err != nil {
+	if err := parentDentry.inode.RmDir(ctx, d.name, d.inode); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
+	delete(parentDentry.children, d.name)
+	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
+	fs.deferDecRef(d)
 	virtfs.CommitDeleteDentry(ctx, vfsd)
 	return nil
 }
@@ -702,9 +740,9 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
 func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	d, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return err
 	}
@@ -717,9 +755,9 @@ func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	d, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return linux.Statx{}, err
 	}
@@ -729,9 +767,9 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
 func (fs *Filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	d, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return linux.Statfs{}, err
 	}
@@ -744,9 +782,9 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		return syserror.EEXIST
 	}
 	fs.mu.Lock()
+	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
 	parent, err := fs.walkParentDirLocked(ctx, rp)
-	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
 	}
@@ -761,21 +799,23 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	child, err := parent.inode.NewSymlink(ctx, pc, target)
+	childI, err := parent.inode.NewSymlink(ctx, pc, target)
 	if err != nil {
 		return err
 	}
-	parent.InsertChildLocked(pc, child)
+	var child Dentry
+	child.Init(fs, childI)
+	parent.insertChildLocked(pc, &child)
 	return nil
 }
 
 // UnlinkAt implements vfs.FilesystemImpl.UnlinkAt.
 func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	fs.mu.Lock()
+	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
 
 	d, err := fs.walkExistingLocked(ctx, rp)
-	fs.processDeferredDecRefsLocked(ctx)
 	if err != nil {
 		return err
 	}
@@ -799,10 +839,13 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
-	if err := parentDentry.inode.Unlink(ctx, d.name, d); err != nil {
+	if err := parentDentry.inode.Unlink(ctx, d.name, d.inode); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
+	delete(parentDentry.children, d.name)
+	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
+	fs.deferDecRef(d)
 	virtfs.CommitDeleteDentry(ctx, vfsd)
 	return nil
 }
@@ -810,9 +853,9 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 // BoundEndpointAt implements vfs.FilesystemImpl.BoundEndpointAt.
 func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	d, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -825,9 +868,9 @@ func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
 func (fs *Filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	_, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -838,9 +881,9 @@ func (fs *Filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
 func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	_, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -851,9 +894,9 @@ func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
 func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	_, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return err
 	}
@@ -864,9 +907,9 @@ func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
 func (fs *Filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	fs.mu.RLock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.RUnlock()
 	_, err := fs.walkExistingLocked(ctx, rp)
-	fs.mu.RUnlock()
-	fs.processDeferredDecRefs(ctx)
 	if err != nil {
 		return err
 	}
@@ -879,4 +922,17 @@ func (fs *Filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*Dentry), b)
+}
+
+func (fs *Filesystem) deferDecRefVD(ctx context.Context, vd vfs.VirtualDentry) {
+	if d, ok := vd.Dentry().Impl().(*Dentry); ok && d.fs == fs {
+		// The following is equivalent to vd.DecRef(ctx). This is needed
+		// because if d belongs to this filesystem, we can not DecRef it right
+		// away as we may be holding fs.mu. d.DecRef may acquire fs.mu. So we
+		// defer the DecRef to when locks are dropped.
+		vd.Mount().DecRef(ctx)
+		fs.deferDecRef(d)
+	} else {
+		vd.DecRef(ctx)
+	}
 }

@@ -41,9 +41,6 @@ type replicaInode struct {
 
 	locks vfs.FileLocks
 
-	// Keep a reference to this inode's dentry.
-	dentry kernfs.Dentry
-
 	// root is the devpts root inode.
 	root *rootInode
 

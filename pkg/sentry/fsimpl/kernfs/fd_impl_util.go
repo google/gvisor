@@ -201,12 +201,12 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	// these.
 	childIdx := fd.off - 2
 	for it := fd.children.nthLocked(childIdx); it != nil; it = it.Next() {
-		stat, err := it.Dentry.inode.Stat(ctx, fd.filesystem(), opts)
+		stat, err := it.inode.Stat(ctx, fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
 		dirent := vfs.Dirent{
-			Name:    it.Name,
+			Name:    it.name,
 			Type:    linux.FileMode(stat.Mode).DirentType(),
 			Ino:     stat.Ino,
 			NextOff: fd.off + 1,
