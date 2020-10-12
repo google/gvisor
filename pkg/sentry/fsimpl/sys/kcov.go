@@ -27,12 +27,10 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func (fs *filesystem) newKcovFile(ctx context.Context, creds *auth.Credentials) *kernfs.Dentry {
+func (fs *filesystem) newKcovFile(ctx context.Context, creds *auth.Credentials) kernfs.Inode {
 	k := &kcovInode{}
 	k.InodeAttrs.Init(creds, 0, 0, fs.NextIno(), linux.S_IFREG|0600)
-	d := &kernfs.Dentry{}
-	d.Init(k)
-	return d
+	return k
 }
 
 // kcovInode implements kernfs.Inode.

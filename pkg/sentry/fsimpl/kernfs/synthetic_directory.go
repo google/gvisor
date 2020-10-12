@@ -29,24 +29,22 @@ import (
 //
 // +stateify savable
 type syntheticDirectory struct {
+	InodeAlwaysValid
 	InodeAttrs
 	InodeNoStatFS
-	InodeNoopRefCount
-	InodeNoDynamicLookup
 	InodeNotSymlink
 	OrderedChildren
+	syntheticDirectoryRefs
 
 	locks vfs.FileLocks
 }
 
 var _ Inode = (*syntheticDirectory)(nil)
 
-func newSyntheticDirectory(creds *auth.Credentials, perm linux.FileMode) *Dentry {
+func newSyntheticDirectory(creds *auth.Credentials, perm linux.FileMode) Inode {
 	inode := &syntheticDirectory{}
 	inode.Init(creds, 0 /* devMajor */, 0 /* devMinor */, 0 /* ino */, perm)
-	d := &Dentry{}
-	d.Init(inode)
-	return d
+	return inode
 }
 
 func (dir *syntheticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
@@ -69,34 +67,46 @@ func (dir *syntheticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, 
 }
 
 // NewFile implements Inode.NewFile.
-func (dir *syntheticDirectory) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*Dentry, error) {
+func (dir *syntheticDirectory) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
 // NewDir implements Inode.NewDir.
-func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*Dentry, error) {
+func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (Inode, error) {
 	if !opts.ForSyntheticMountpoint {
 		return nil, syserror.EPERM
 	}
-	subdird := newSyntheticDirectory(auth.CredentialsFromContext(ctx), opts.Mode&linux.PermissionsMask)
-	if err := dir.OrderedChildren.Insert(name, subdird); err != nil {
-		subdird.DecRef(ctx)
+	subdirI := newSyntheticDirectory(auth.CredentialsFromContext(ctx), opts.Mode&linux.PermissionsMask)
+	if err := dir.OrderedChildren.Insert(name, subdirI); err != nil {
+		subdirI.DecRef(ctx)
 		return nil, err
 	}
-	return subdird, nil
+	return subdirI, nil
 }
 
 // NewLink implements Inode.NewLink.
-func (dir *syntheticDirectory) NewLink(ctx context.Context, name string, target Inode) (*Dentry, error) {
+func (dir *syntheticDirectory) NewLink(ctx context.Context, name string, target Inode) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
 // NewSymlink implements Inode.NewSymlink.
-func (dir *syntheticDirectory) NewSymlink(ctx context.Context, name, target string) (*Dentry, error) {
+func (dir *syntheticDirectory) NewSymlink(ctx context.Context, name, target string) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
 // NewNode implements Inode.NewNode.
-func (dir *syntheticDirectory) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*Dentry, error) {
+func (dir *syntheticDirectory) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (Inode, error) {
 	return nil, syserror.EPERM
+}
+
+// DecRef implements Inode.DecRef.
+func (dir *syntheticDirectory) DecRef(ctx context.Context) {
+	dir.syntheticDirectoryRefs.DecRef(func() { dir.Destroy(ctx) })
+}
+
+// Keep implements Inode.Keep. This is redundant because inodes will never be
+// created via Lookup and inodes are always valid. Makes sense to return true
+// because these inodes are not temporary and should only be removed on RmDir.
+func (dir *syntheticDirectory) Keep() bool {
+	return true
 }

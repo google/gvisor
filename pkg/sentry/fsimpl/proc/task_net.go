@@ -37,12 +37,12 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func (fs *filesystem) newTaskNetDir(task *kernel.Task) *kernfs.Dentry {
+func (fs *filesystem) newTaskNetDir(task *kernel.Task) kernfs.Inode {
 	k := task.Kernel()
 	pidns := task.PIDNamespace()
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 
-	var contents map[string]*kernfs.Dentry
+	var contents map[string]kernfs.Inode
 	if stack := task.NetworkNamespace().Stack(); stack != nil {
 		const (
 			arp       = "IP address       HW type     Flags       HW address            Mask     Device\n"
@@ -56,34 +56,34 @@ func (fs *filesystem) newTaskNetDir(task *kernel.Task) *kernfs.Dentry {
 
 		// TODO(gvisor.dev/issue/1833): Make sure file contents reflect the task
 		// network namespace.
-		contents = map[string]*kernfs.Dentry{
-			"dev":  fs.newDentry(root, fs.NextIno(), 0444, &netDevData{stack: stack}),
-			"snmp": fs.newDentry(root, fs.NextIno(), 0444, &netSnmpData{stack: stack}),
+		contents = map[string]kernfs.Inode{
+			"dev":  fs.newInode(root, 0444, &netDevData{stack: stack}),
+			"snmp": fs.newInode(root, 0444, &netSnmpData{stack: stack}),
 
 			// The following files are simple stubs until they are implemented in
 			// netstack, if the file contains a header the stub is just the header
 			// otherwise it is an empty file.
-			"arp":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(arp)),
-			"netlink":   fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(netlink)),
-			"netstat":   fs.newDentry(root, fs.NextIno(), 0444, &netStatData{}),
-			"packet":    fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(packet)),
-			"protocols": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(protocols)),
+			"arp":       fs.newInode(root, 0444, newStaticFile(arp)),
+			"netlink":   fs.newInode(root, 0444, newStaticFile(netlink)),
+			"netstat":   fs.newInode(root, 0444, &netStatData{}),
+			"packet":    fs.newInode(root, 0444, newStaticFile(packet)),
+			"protocols": fs.newInode(root, 0444, newStaticFile(protocols)),
 
 			// Linux sets psched values to: nsec per usec, psched tick in ns, 1000000,
 			// high res timer ticks per sec (ClockGetres returns 1ns resolution).
-			"psched": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(psched)),
-			"ptype":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(ptype)),
-			"route":  fs.newDentry(root, fs.NextIno(), 0444, &netRouteData{stack: stack}),
-			"tcp":    fs.newDentry(root, fs.NextIno(), 0444, &netTCPData{kernel: k}),
-			"udp":    fs.newDentry(root, fs.NextIno(), 0444, &netUDPData{kernel: k}),
-			"unix":   fs.newDentry(root, fs.NextIno(), 0444, &netUnixData{kernel: k}),
+			"psched": fs.newInode(root, 0444, newStaticFile(psched)),
+			"ptype":  fs.newInode(root, 0444, newStaticFile(ptype)),
+			"route":  fs.newInode(root, 0444, &netRouteData{stack: stack}),
+			"tcp":    fs.newInode(root, 0444, &netTCPData{kernel: k}),
+			"udp":    fs.newInode(root, 0444, &netUDPData{kernel: k}),
+			"unix":   fs.newInode(root, 0444, &netUnixData{kernel: k}),
 		}
 
 		if stack.SupportsIPv6() {
-			contents["if_inet6"] = fs.newDentry(root, fs.NextIno(), 0444, &ifinet6{stack: stack})
-			contents["ipv6_route"] = fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(""))
-			contents["tcp6"] = fs.newDentry(root, fs.NextIno(), 0444, &netTCP6Data{kernel: k})
-			contents["udp6"] = fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(upd6))
+			contents["if_inet6"] = fs.newInode(root, 0444, &ifinet6{stack: stack})
+			contents["ipv6_route"] = fs.newInode(root, 0444, newStaticFile(""))
+			contents["tcp6"] = fs.newInode(root, 0444, &netTCP6Data{kernel: k})
+			contents["udp6"] = fs.newInode(root, 0444, newStaticFile(upd6))
 		}
 	}
 

@@ -34,6 +34,7 @@ import (
 //
 // +stateify savable
 type InodeNoopRefCount struct {
+	InodeTemporary
 }
 
 // IncRef implements Inode.IncRef.
@@ -57,27 +58,27 @@ func (InodeNoopRefCount) TryIncRef() bool {
 type InodeDirectoryNoNewChildren struct{}
 
 // NewFile implements Inode.NewFile.
-func (InodeDirectoryNoNewChildren) NewFile(context.Context, string, vfs.OpenOptions) (*Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewFile(context.Context, string, vfs.OpenOptions) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
 // NewDir implements Inode.NewDir.
-func (InodeDirectoryNoNewChildren) NewDir(context.Context, string, vfs.MkdirOptions) (*Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewDir(context.Context, string, vfs.MkdirOptions) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
 // NewLink implements Inode.NewLink.
-func (InodeDirectoryNoNewChildren) NewLink(context.Context, string, Inode) (*Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewLink(context.Context, string, Inode) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
 // NewSymlink implements Inode.NewSymlink.
-func (InodeDirectoryNoNewChildren) NewSymlink(context.Context, string, string) (*Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewSymlink(context.Context, string, string) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
 // NewNode implements Inode.NewNode.
-func (InodeDirectoryNoNewChildren) NewNode(context.Context, string, vfs.MknodOptions) (*Dentry, error) {
+func (InodeDirectoryNoNewChildren) NewNode(context.Context, string, vfs.MknodOptions) (Inode, error) {
 	return nil, syserror.EPERM
 }
 
@@ -88,6 +89,7 @@ func (InodeDirectoryNoNewChildren) NewNode(context.Context, string, vfs.MknodOpt
 //
 // +stateify savable
 type InodeNotDirectory struct {
+	InodeAlwaysValid
 }
 
 // HasChildren implements Inode.HasChildren.
@@ -96,82 +98,53 @@ func (InodeNotDirectory) HasChildren() bool {
 }
 
 // NewFile implements Inode.NewFile.
-func (InodeNotDirectory) NewFile(context.Context, string, vfs.OpenOptions) (*Dentry, error) {
+func (InodeNotDirectory) NewFile(context.Context, string, vfs.OpenOptions) (Inode, error) {
 	panic("NewFile called on non-directory inode")
 }
 
 // NewDir implements Inode.NewDir.
-func (InodeNotDirectory) NewDir(context.Context, string, vfs.MkdirOptions) (*Dentry, error) {
+func (InodeNotDirectory) NewDir(context.Context, string, vfs.MkdirOptions) (Inode, error) {
 	panic("NewDir called on non-directory inode")
 }
 
 // NewLink implements Inode.NewLinkink.
-func (InodeNotDirectory) NewLink(context.Context, string, Inode) (*Dentry, error) {
+func (InodeNotDirectory) NewLink(context.Context, string, Inode) (Inode, error) {
 	panic("NewLink called on non-directory inode")
 }
 
 // NewSymlink implements Inode.NewSymlink.
-func (InodeNotDirectory) NewSymlink(context.Context, string, string) (*Dentry, error) {
+func (InodeNotDirectory) NewSymlink(context.Context, string, string) (Inode, error) {
 	panic("NewSymlink called on non-directory inode")
 }
 
 // NewNode implements Inode.NewNode.
-func (InodeNotDirectory) NewNode(context.Context, string, vfs.MknodOptions) (*Dentry, error) {
+func (InodeNotDirectory) NewNode(context.Context, string, vfs.MknodOptions) (Inode, error) {
 	panic("NewNode called on non-directory inode")
 }
 
 // Unlink implements Inode.Unlink.
-func (InodeNotDirectory) Unlink(context.Context, string, *Dentry) error {
+func (InodeNotDirectory) Unlink(context.Context, string, Inode) error {
 	panic("Unlink called on non-directory inode")
 }
 
 // RmDir implements Inode.RmDir.
-func (InodeNotDirectory) RmDir(context.Context, string, *Dentry) error {
+func (InodeNotDirectory) RmDir(context.Context, string, Inode) error {
 	panic("RmDir called on non-directory inode")
 }
 
 // Rename implements Inode.Rename.
-func (InodeNotDirectory) Rename(context.Context, string, string, *Dentry, *Dentry) (*Dentry, error) {
+func (InodeNotDirectory) Rename(context.Context, string, string, Inode, Inode) error {
 	panic("Rename called on non-directory inode")
 }
 
 // Lookup implements Inode.Lookup.
-func (InodeNotDirectory) Lookup(ctx context.Context, name string) (*Dentry, error) {
+func (InodeNotDirectory) Lookup(ctx context.Context, name string) (Inode, error) {
 	panic("Lookup called on non-directory inode")
 }
 
 // IterDirents implements Inode.IterDirents.
 func (InodeNotDirectory) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
 	panic("IterDirents called on non-directory inode")
-}
-
-// Valid implements Inode.Valid.
-func (InodeNotDirectory) Valid(context.Context) bool {
-	return true
-}
-
-// InodeNoDynamicLookup partially implements the Inode interface, specifically
-// the inodeDynamicLookup sub interface. Directory inodes that do not support
-// dymanic entries (i.e. entries that are not "hashed" into the
-// vfs.Dentry.children) can embed this to provide no-op implementations for
-// functions related to dynamic entries.
-//
-// +stateify savable
-type InodeNoDynamicLookup struct{}
-
-// Lookup implements Inode.Lookup.
-func (InodeNoDynamicLookup) Lookup(ctx context.Context, name string) (*Dentry, error) {
-	return nil, syserror.ENOENT
-}
-
-// IterDirents implements Inode.IterDirents.
-func (InodeNoDynamicLookup) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
-	return offset, nil
-}
-
-// Valid implements Inode.Valid.
-func (InodeNoDynamicLookup) Valid(ctx context.Context) bool {
-	return true
 }
 
 // InodeNotSymlink partially implements the Inode interface, specifically the
@@ -273,7 +246,7 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 
 // SetInodeStat sets the corresponding attributes from opts to InodeAttrs.
 // This function can be used by other kernfs-based filesystem implementation to
-// sets the unexported attributes into kernfs.InodeAttrs.
+// sets the unexported attributes into InodeAttrs.
 func (a *InodeAttrs) SetInodeStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask == 0 {
 		return nil
@@ -344,8 +317,9 @@ func (a *InodeAttrs) DecLinks() {
 
 // +stateify savable
 type slot struct {
-	Name   string
-	Dentry *Dentry
+	name   string
+	inode  Inode
+	static bool
 	slotEntry
 }
 
@@ -361,10 +335,18 @@ type OrderedChildrenOptions struct {
 }
 
 // OrderedChildren partially implements the Inode interface. OrderedChildren can
-// be embedded in directory inodes to keep track of the children in the
+// be embedded in directory inodes to keep track of children in the
 // directory, and can then be used to implement a generic directory FD -- see
-// GenericDirectoryFD. OrderedChildren is not compatible with dynamic
-// directories.
+// GenericDirectoryFD.
+//
+// OrderedChildren can represent a node in an Inode tree. The children inodes
+// might be directories themselves using OrderedChildren; hence extending the
+// tree. The parent inode (OrderedChildren user) holds a ref on all its static
+// children. This lets the static inodes outlive their associated dentry.
+// While the dentry might have to be regenerated via a Lookup() call, we can
+// keep reusing the same static inode. These static children inodes are finally
+// DecRef'd when this directory inode is being destroyed. This makes
+// OrderedChildren suitable for static directory entries as well.
 //
 // Must be initialize with Init before first use.
 //
@@ -388,31 +370,61 @@ func (o *OrderedChildren) Init(opts OrderedChildrenOptions) {
 // Destroy clears the children stored in o. It should be called by structs
 // embedding OrderedChildren upon destruction, i.e. when their reference count
 // reaches zero.
-func (o *OrderedChildren) Destroy() {
+func (o *OrderedChildren) Destroy(ctx context.Context) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	// Drop the ref that o owns on the static inodes it holds.
+	for _, s := range o.set {
+		if s.static {
+			s.inode.DecRef(ctx)
+		}
+	}
 	o.order.Reset()
 	o.set = nil
 }
 
-// Populate inserts children into this OrderedChildren, and d's dentry
-// cache. Populate returns the number of directories inserted, which the caller
+// Populate inserts static children into this OrderedChildren.
+// Populate returns the number of directories inserted, which the caller
 // may use to update the link count for the parent directory.
 //
-// Precondition: d must represent a directory inode. children must not contain
-// any conflicting entries already in o.
-func (o *OrderedChildren) Populate(d *Dentry, children map[string]*Dentry) uint32 {
+// Precondition:
+//   * d must represent a directory inode.
+//   * children must not contain any conflicting entries already in o.
+//   * Caller must hold a reference on all inodes passed.
+//
+// Postcondition: Caller's references on inodes are transferred to o.
+func (o *OrderedChildren) Populate(children map[string]Inode) uint32 {
 	var links uint32
 	for name, child := range children {
-		if child.isDir() {
+		if child.Mode().IsDir() {
 			links++
 		}
-		if err := o.Insert(name, child); err != nil {
-			panic(fmt.Sprintf("Collision when attempting to insert child %q (%+v) into %+v", name, child, d))
+		if err := o.insert(name, child, true); err != nil {
+			panic(fmt.Sprintf("Collision when attempting to insert child %q (%+v)", name, child))
 		}
-		d.InsertChild(name, child)
 	}
 	return links
+}
+
+// Lookup implements Inode.Lookup.
+func (o *OrderedChildren) Lookup(ctx context.Context, name string) (Inode, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	s, ok := o.set[name]
+	if !ok {
+		return nil, syserror.ENOENT
+	}
+
+	s.inode.IncRef() // This ref is passed to the dentry upon creation via Init.
+	return s.inode, nil
+}
+
+// IterDirents implements Inode.IterDirents.
+func (o *OrderedChildren) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
+	// All entries from OrderedChildren have already been handled in
+	// GenericDirectoryFD.IterDirents.
+	return offset, nil
 }
 
 // HasChildren implements Inode.HasChildren.
@@ -422,17 +434,27 @@ func (o *OrderedChildren) HasChildren() bool {
 	return len(o.set) > 0
 }
 
-// Insert inserts child into o. This ignores the writability of o, as this is
-// not part of the vfs.FilesystemImpl interface, and is a lower-level operation.
-func (o *OrderedChildren) Insert(name string, child *Dentry) error {
+// Insert inserts a dynamic child into o. This ignores the writability of o, as
+// this is not part of the vfs.FilesystemImpl interface, and is a lower-level operation.
+func (o *OrderedChildren) Insert(name string, child Inode) error {
+	return o.insert(name, child, false)
+}
+
+// insert inserts child into o.
+//
+// Precondition: Caller must be holding a ref on child if static is true.
+//
+// Postcondition: Caller's ref on child is transferred to o if static is true.
+func (o *OrderedChildren) insert(name string, child Inode, static bool) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if _, ok := o.set[name]; ok {
 		return syserror.EEXIST
 	}
 	s := &slot{
-		Name:   name,
-		Dentry: child,
+		name:   name,
+		inode:  child,
+		static: static,
 	}
 	o.order.PushBack(s)
 	o.set[name] = s
@@ -442,44 +464,49 @@ func (o *OrderedChildren) Insert(name string, child *Dentry) error {
 // Precondition: caller must hold o.mu for writing.
 func (o *OrderedChildren) removeLocked(name string) {
 	if s, ok := o.set[name]; ok {
+		if s.static {
+			panic(fmt.Sprintf("removeLocked called on a static inode: %v", s.inode))
+		}
 		delete(o.set, name)
 		o.order.Remove(s)
 	}
 }
 
 // Precondition: caller must hold o.mu for writing.
-func (o *OrderedChildren) replaceChildLocked(name string, new *Dentry) *Dentry {
+func (o *OrderedChildren) replaceChildLocked(ctx context.Context, name string, newI Inode) {
 	if s, ok := o.set[name]; ok {
+		if s.static {
+			panic(fmt.Sprintf("replacing a static inode: %v", s.inode))
+		}
+
 		// Existing slot with given name, simply replace the dentry.
-		var old *Dentry
-		old, s.Dentry = s.Dentry, new
-		return old
+		s.inode = newI
 	}
 
 	// No existing slot with given name, create and hash new slot.
 	s := &slot{
-		Name:   name,
-		Dentry: new,
+		name:   name,
+		inode:  newI,
+		static: false,
 	}
 	o.order.PushBack(s)
 	o.set[name] = s
-	return nil
 }
 
 // Precondition: caller must hold o.mu for reading or writing.
-func (o *OrderedChildren) checkExistingLocked(name string, child *Dentry) error {
+func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 	s, ok := o.set[name]
 	if !ok {
 		return syserror.ENOENT
 	}
-	if s.Dentry != child {
-		panic(fmt.Sprintf("Dentry hashed into inode doesn't match what vfs thinks! OrderedChild: %+v, vfs: %+v", s.Dentry, child))
+	if s.inode != child {
+		panic(fmt.Sprintf("Inode doesn't match what kernfs thinks! OrderedChild: %+v, kernfs: %+v", s.inode, child))
 	}
 	return nil
 }
 
 // Unlink implements Inode.Unlink.
-func (o *OrderedChildren) Unlink(ctx context.Context, name string, child *Dentry) error {
+func (o *OrderedChildren) Unlink(ctx context.Context, name string, child Inode) error {
 	if !o.writable {
 		return syserror.EPERM
 	}
@@ -494,8 +521,8 @@ func (o *OrderedChildren) Unlink(ctx context.Context, name string, child *Dentry
 	return nil
 }
 
-// Rmdir implements Inode.Rmdir.
-func (o *OrderedChildren) RmDir(ctx context.Context, name string, child *Dentry) error {
+// RmDir implements Inode.RmDir.
+func (o *OrderedChildren) RmDir(ctx context.Context, name string, child Inode) error {
 	// We're not responsible for checking that child is a directory, that it's
 	// empty, or updating any link counts; so this is the same as unlink.
 	return o.Unlink(ctx, name, child)
@@ -517,13 +544,13 @@ func (renameAcrossDifferentImplementationsError) Error() string {
 // that will support Rename.
 //
 // Postcondition: reference on any replaced dentry transferred to caller.
-func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, child, dstDir *Dentry) (*Dentry, error) {
-	dst, ok := dstDir.inode.(interface{}).(*OrderedChildren)
+func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, child, dstDir Inode) error {
+	dst, ok := dstDir.(interface{}).(*OrderedChildren)
 	if !ok {
-		return nil, renameAcrossDifferentImplementationsError{}
+		return renameAcrossDifferentImplementationsError{}
 	}
 	if !o.writable || !dst.writable {
-		return nil, syserror.EPERM
+		return syserror.EPERM
 	}
 	// Note: There's a potential deadlock below if concurrent calls to Rename
 	// refer to the same src and dst directories in reverse. We avoid any
@@ -536,12 +563,12 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 		defer dst.mu.Unlock()
 	}
 	if err := o.checkExistingLocked(oldname, child); err != nil {
-		return nil, err
+		return err
 	}
 
 	// TODO(gvisor.dev/issue/3027): Check sticky bit before removing.
-	replaced := dst.replaceChildLocked(newname, child)
-	return replaced, nil
+	dst.replaceChildLocked(ctx, newname, child)
+	return nil
 }
 
 // nthLocked returns an iterator to the nth child tracked by this object. The
@@ -576,11 +603,12 @@ func (InodeSymlink) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, 
 //
 // +stateify savable
 type StaticDirectory struct {
+	InodeAlwaysValid
 	InodeAttrs
 	InodeDirectoryNoNewChildren
-	InodeNoDynamicLookup
 	InodeNoStatFS
 	InodeNotSymlink
+	InodeTemporary
 	OrderedChildren
 	StaticDirectoryRefs
 
@@ -591,19 +619,16 @@ type StaticDirectory struct {
 var _ Inode = (*StaticDirectory)(nil)
 
 // NewStaticDir creates a new static directory and returns its dentry.
-func NewStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]*Dentry, fdOpts GenericDirectoryFDOptions) *Dentry {
+func NewStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]Inode, fdOpts GenericDirectoryFDOptions) Inode {
 	inode := &StaticDirectory{}
 	inode.Init(creds, devMajor, devMinor, ino, perm, fdOpts)
 	inode.EnableLeakCheck()
 
-	dentry := &Dentry{}
-	dentry.Init(inode)
-
 	inode.OrderedChildren.Init(OrderedChildrenOptions{})
-	links := inode.OrderedChildren.Populate(dentry, children)
+	links := inode.OrderedChildren.Populate(children)
 	inode.IncLinks(links)
 
-	return dentry
+	return inode
 }
 
 // Init initializes StaticDirectory.
@@ -615,7 +640,7 @@ func (s *StaticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint3
 	s.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeDirectory|perm)
 }
 
-// Open implements kernfs.Inode.Open.
+// Open implements Inode.Open.
 func (s *StaticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd, err := NewGenericDirectoryFD(rp.Mount(), d, &s.OrderedChildren, &s.locks, &opts, s.fdOpts)
 	if err != nil {
@@ -624,24 +649,34 @@ func (s *StaticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, d *De
 	return fd.VFSFileDescription(), nil
 }
 
-// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
 func (*StaticDirectory) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 
-// DecRef implements kernfs.Inode.DecRef.
-func (s *StaticDirectory) DecRef(context.Context) {
-	s.StaticDirectoryRefs.DecRef(s.Destroy)
+// DecRef implements Inode.DecRef.
+func (s *StaticDirectory) DecRef(ctx context.Context) {
+	s.StaticDirectoryRefs.DecRef(func() { s.Destroy(ctx) })
 }
 
-// AlwaysValid partially implements kernfs.inodeDynamicLookup.
+// InodeAlwaysValid partially implements Inode.
 //
 // +stateify savable
-type AlwaysValid struct{}
+type InodeAlwaysValid struct{}
 
-// Valid implements kernfs.inodeDynamicLookup.Valid.
-func (*AlwaysValid) Valid(context.Context) bool {
+// Valid implements Inode.Valid.
+func (*InodeAlwaysValid) Valid(context.Context) bool {
 	return true
+}
+
+// InodeTemporary partially implements Inode.
+//
+// +stateify savable
+type InodeTemporary struct{}
+
+// Keep implements Inode.Keep.
+func (*InodeTemporary) Keep() bool {
+	return false
 }
 
 // InodeNoStatFS partially implements the Inode interface, where the client

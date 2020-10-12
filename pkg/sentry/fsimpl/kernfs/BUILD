@@ -70,6 +70,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "synthetic_directory_refs",
+    out = "synthetic_directory_refs.go",
+    package = "kernfs",
+    prefix = "syntheticDirectory",
+    template = "//pkg/refs_vfs2:refs_template",
+    types = {
+        "T": "syntheticDirectory",
+    },
+)
+
 go_library(
     name = "kernfs",
     srcs = [
@@ -84,6 +95,7 @@ go_library(
         "static_directory_refs.go",
         "symlink.go",
         "synthetic_directory.go",
+        "synthetic_directory_refs.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
