@@ -122,6 +122,13 @@ type VirtualFilesystem struct {
 	filesystems   map[*Filesystem]struct{}
 }
 
+// Release drops references on filesystem objects held by vfs.
+//
+// Precondition: This must be called after VFS.Init() has succeeded.
+func (vfs *VirtualFilesystem) Release(ctx context.Context) {
+	vfs.anonMount.DecRef(ctx)
+}
+
 // Init initializes a new VirtualFilesystem with no mounts or FilesystemTypes.
 func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	if vfs.mountpoints != nil {
