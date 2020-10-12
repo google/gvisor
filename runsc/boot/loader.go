@@ -472,9 +472,13 @@ func (l *Loader) Destroy() {
 	}
 	l.watchdog.Stop()
 
+	// Release all kernel resources. This is only safe after we can no longer
+	// save/restore.
+	l.k.Release()
+
 	// In the success case, stdioFDs and goferFDs will only contain
 	// released/closed FDs that ownership has been passed over to host FDs and
-	// gofer sessions. Close them here in case on failure.
+	// gofer sessions. Close them here in case of failure.
 	for _, fd := range l.root.stdioFDs {
 		_ = fd.Close()
 	}
