@@ -114,6 +114,6 @@ func NewDentry(creds *auth.Credentials, mnt *vfs.Mount) *vfs.Dentry {
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.Filesystem.NextIno(), filemode)
 
 	d := &kernfs.Dentry{}
-	d.Init(i)
+	d.Init(&fs.Filesystem, i)
 	return d.VFSDentry()
 }

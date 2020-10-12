@@ -43,13 +43,10 @@ type selfSymlink struct {
 
 var _ kernfs.Inode = (*selfSymlink)(nil)
 
-func (fs *filesystem) newSelfSymlink(creds *auth.Credentials, ino uint64, pidns *kernel.PIDNamespace) *kernfs.Dentry {
-	inode := &selfSymlink{pidns: pidns}
-	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
-
-	d := &kernfs.Dentry{}
-	d.Init(inode)
-	return d
+func (i *tasksInode) newSelfSymlink(creds *auth.Credentials) kernfs.Inode {
+	inode := &selfSymlink{pidns: i.pidns}
+	inode.Init(creds, linux.UNNAMED_MAJOR, i.fs.devMinor, i.fs.NextIno(), linux.ModeSymlink|0777)
+	return inode
 }
 
 func (s *selfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
@@ -87,13 +84,10 @@ type threadSelfSymlink struct {
 
 var _ kernfs.Inode = (*threadSelfSymlink)(nil)
 
-func (fs *filesystem) newThreadSelfSymlink(creds *auth.Credentials, ino uint64, pidns *kernel.PIDNamespace) *kernfs.Dentry {
-	inode := &threadSelfSymlink{pidns: pidns}
-	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
-
-	d := &kernfs.Dentry{}
-	d.Init(inode)
-	return d
+func (i *tasksInode) newThreadSelfSymlink(creds *auth.Credentials) kernfs.Inode {
+	inode := &threadSelfSymlink{pidns: i.pidns}
+	inode.Init(creds, linux.UNNAMED_MAJOR, i.fs.devMinor, i.fs.NextIno(), linux.ModeSymlink|0777)
+	return inode
 }
 
 func (s *threadSelfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
