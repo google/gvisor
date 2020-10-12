@@ -165,7 +165,7 @@ func NewConnectedPipeFDs(ctx context.Context, mnt *vfs.Mount, flags uint32) (*vf
 	fs := mnt.Filesystem().Impl().(*filesystem)
 	inode := newInode(ctx, fs)
 	var d kernfs.Dentry
-	d.Init(inode)
+	d.Init(&fs.Filesystem, inode)
 	defer d.DecRef(ctx)
 	return inode.pipe.ReaderWriterPair(mnt, d.VFSDentry(), flags)
 }

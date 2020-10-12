@@ -182,18 +182,22 @@ func (i *InodeNoopRefCount) StateTypeName() string {
 }
 
 func (i *InodeNoopRefCount) StateFields() []string {
-	return []string{}
+	return []string{
+		"InodeTemporary",
+	}
 }
 
 func (i *InodeNoopRefCount) beforeSave() {}
 
 func (i *InodeNoopRefCount) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
+	stateSinkObject.Save(0, &i.InodeTemporary)
 }
 
 func (i *InodeNoopRefCount) afterLoad() {}
 
 func (i *InodeNoopRefCount) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.InodeTemporary)
 }
 
 func (i *InodeDirectoryNoNewChildren) StateTypeName() string {
@@ -220,37 +224,22 @@ func (i *InodeNotDirectory) StateTypeName() string {
 }
 
 func (i *InodeNotDirectory) StateFields() []string {
-	return []string{}
+	return []string{
+		"InodeAlwaysValid",
+	}
 }
 
 func (i *InodeNotDirectory) beforeSave() {}
 
 func (i *InodeNotDirectory) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
+	stateSinkObject.Save(0, &i.InodeAlwaysValid)
 }
 
 func (i *InodeNotDirectory) afterLoad() {}
 
 func (i *InodeNotDirectory) StateLoad(stateSourceObject state.Source) {
-}
-
-func (i *InodeNoDynamicLookup) StateTypeName() string {
-	return "pkg/sentry/fsimpl/kernfs.InodeNoDynamicLookup"
-}
-
-func (i *InodeNoDynamicLookup) StateFields() []string {
-	return []string{}
-}
-
-func (i *InodeNoDynamicLookup) beforeSave() {}
-
-func (i *InodeNoDynamicLookup) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-}
-
-func (i *InodeNoDynamicLookup) afterLoad() {}
-
-func (i *InodeNoDynamicLookup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.InodeAlwaysValid)
 }
 
 func (i *InodeNotSymlink) StateTypeName() string {
@@ -319,8 +308,9 @@ func (s *slot) StateTypeName() string {
 
 func (s *slot) StateFields() []string {
 	return []string{
-		"Name",
-		"Dentry",
+		"name",
+		"inode",
+		"static",
 		"slotEntry",
 	}
 }
@@ -329,17 +319,19 @@ func (s *slot) beforeSave() {}
 
 func (s *slot) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.Name)
-	stateSinkObject.Save(1, &s.Dentry)
-	stateSinkObject.Save(2, &s.slotEntry)
+	stateSinkObject.Save(0, &s.name)
+	stateSinkObject.Save(1, &s.inode)
+	stateSinkObject.Save(2, &s.static)
+	stateSinkObject.Save(3, &s.slotEntry)
 }
 
 func (s *slot) afterLoad() {}
 
 func (s *slot) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Name)
-	stateSourceObject.Load(1, &s.Dentry)
-	stateSourceObject.Load(2, &s.slotEntry)
+	stateSourceObject.Load(0, &s.name)
+	stateSourceObject.Load(1, &s.inode)
+	stateSourceObject.Load(2, &s.static)
+	stateSourceObject.Load(3, &s.slotEntry)
 }
 
 func (o *OrderedChildrenOptions) StateTypeName() string {
@@ -442,11 +434,12 @@ func (s *StaticDirectory) StateTypeName() string {
 
 func (s *StaticDirectory) StateFields() []string {
 	return []string{
+		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
-		"InodeNoDynamicLookup",
 		"InodeNoStatFS",
 		"InodeNotSymlink",
+		"InodeTemporary",
 		"OrderedChildren",
 		"StaticDirectoryRefs",
 		"locks",
@@ -458,48 +451,69 @@ func (s *StaticDirectory) beforeSave() {}
 
 func (s *StaticDirectory) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.InodeAttrs)
-	stateSinkObject.Save(1, &s.InodeDirectoryNoNewChildren)
-	stateSinkObject.Save(2, &s.InodeNoDynamicLookup)
+	stateSinkObject.Save(0, &s.InodeAlwaysValid)
+	stateSinkObject.Save(1, &s.InodeAttrs)
+	stateSinkObject.Save(2, &s.InodeDirectoryNoNewChildren)
 	stateSinkObject.Save(3, &s.InodeNoStatFS)
 	stateSinkObject.Save(4, &s.InodeNotSymlink)
-	stateSinkObject.Save(5, &s.OrderedChildren)
-	stateSinkObject.Save(6, &s.StaticDirectoryRefs)
-	stateSinkObject.Save(7, &s.locks)
-	stateSinkObject.Save(8, &s.fdOpts)
+	stateSinkObject.Save(5, &s.InodeTemporary)
+	stateSinkObject.Save(6, &s.OrderedChildren)
+	stateSinkObject.Save(7, &s.StaticDirectoryRefs)
+	stateSinkObject.Save(8, &s.locks)
+	stateSinkObject.Save(9, &s.fdOpts)
 }
 
 func (s *StaticDirectory) afterLoad() {}
 
 func (s *StaticDirectory) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.InodeAttrs)
-	stateSourceObject.Load(1, &s.InodeDirectoryNoNewChildren)
-	stateSourceObject.Load(2, &s.InodeNoDynamicLookup)
+	stateSourceObject.Load(0, &s.InodeAlwaysValid)
+	stateSourceObject.Load(1, &s.InodeAttrs)
+	stateSourceObject.Load(2, &s.InodeDirectoryNoNewChildren)
 	stateSourceObject.Load(3, &s.InodeNoStatFS)
 	stateSourceObject.Load(4, &s.InodeNotSymlink)
-	stateSourceObject.Load(5, &s.OrderedChildren)
-	stateSourceObject.Load(6, &s.StaticDirectoryRefs)
-	stateSourceObject.Load(7, &s.locks)
-	stateSourceObject.Load(8, &s.fdOpts)
+	stateSourceObject.Load(5, &s.InodeTemporary)
+	stateSourceObject.Load(6, &s.OrderedChildren)
+	stateSourceObject.Load(7, &s.StaticDirectoryRefs)
+	stateSourceObject.Load(8, &s.locks)
+	stateSourceObject.Load(9, &s.fdOpts)
 }
 
-func (a *AlwaysValid) StateTypeName() string {
-	return "pkg/sentry/fsimpl/kernfs.AlwaysValid"
+func (i *InodeAlwaysValid) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.InodeAlwaysValid"
 }
 
-func (a *AlwaysValid) StateFields() []string {
+func (i *InodeAlwaysValid) StateFields() []string {
 	return []string{}
 }
 
-func (a *AlwaysValid) beforeSave() {}
+func (i *InodeAlwaysValid) beforeSave() {}
 
-func (a *AlwaysValid) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
+func (i *InodeAlwaysValid) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
 }
 
-func (a *AlwaysValid) afterLoad() {}
+func (i *InodeAlwaysValid) afterLoad() {}
 
-func (a *AlwaysValid) StateLoad(stateSourceObject state.Source) {
+func (i *InodeAlwaysValid) StateLoad(stateSourceObject state.Source) {
+}
+
+func (i *InodeTemporary) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.InodeTemporary"
+}
+
+func (i *InodeTemporary) StateFields() []string {
+	return []string{}
+}
+
+func (i *InodeTemporary) beforeSave() {}
+
+func (i *InodeTemporary) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+}
+
+func (i *InodeTemporary) afterLoad() {}
+
+func (i *InodeTemporary) StateLoad(stateSourceObject state.Source) {
 }
 
 func (i *InodeNoStatFS) StateTypeName() string {
@@ -556,8 +570,9 @@ func (d *Dentry) StateTypeName() string {
 
 func (d *Dentry) StateFields() []string {
 	return []string{
-		"DentryRefs",
 		"vfsd",
+		"DentryRefs",
+		"fs",
 		"flags",
 		"parent",
 		"name",
@@ -570,25 +585,27 @@ func (d *Dentry) beforeSave() {}
 
 func (d *Dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.DentryRefs)
-	stateSinkObject.Save(1, &d.vfsd)
-	stateSinkObject.Save(2, &d.flags)
-	stateSinkObject.Save(3, &d.parent)
-	stateSinkObject.Save(4, &d.name)
-	stateSinkObject.Save(5, &d.children)
-	stateSinkObject.Save(6, &d.inode)
+	stateSinkObject.Save(0, &d.vfsd)
+	stateSinkObject.Save(1, &d.DentryRefs)
+	stateSinkObject.Save(2, &d.fs)
+	stateSinkObject.Save(3, &d.flags)
+	stateSinkObject.Save(4, &d.parent)
+	stateSinkObject.Save(5, &d.name)
+	stateSinkObject.Save(6, &d.children)
+	stateSinkObject.Save(7, &d.inode)
 }
 
 func (d *Dentry) afterLoad() {}
 
 func (d *Dentry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.DentryRefs)
-	stateSourceObject.Load(1, &d.vfsd)
-	stateSourceObject.Load(2, &d.flags)
-	stateSourceObject.Load(3, &d.parent)
-	stateSourceObject.Load(4, &d.name)
-	stateSourceObject.Load(5, &d.children)
-	stateSourceObject.Load(6, &d.inode)
+	stateSourceObject.Load(0, &d.vfsd)
+	stateSourceObject.Load(1, &d.DentryRefs)
+	stateSourceObject.Load(2, &d.fs)
+	stateSourceObject.Load(3, &d.flags)
+	stateSourceObject.Load(4, &d.parent)
+	stateSourceObject.Load(5, &d.name)
+	stateSourceObject.Load(6, &d.children)
+	stateSourceObject.Load(7, &d.inode)
 }
 
 func (l *slotList) StateTypeName() string {
@@ -707,12 +724,12 @@ func (dir *syntheticDirectory) StateTypeName() string {
 
 func (dir *syntheticDirectory) StateFields() []string {
 	return []string{
+		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeNoStatFS",
-		"InodeNoopRefCount",
-		"InodeNoDynamicLookup",
 		"InodeNotSymlink",
 		"OrderedChildren",
+		"syntheticDirectoryRefs",
 		"locks",
 	}
 }
@@ -721,25 +738,48 @@ func (dir *syntheticDirectory) beforeSave() {}
 
 func (dir *syntheticDirectory) StateSave(stateSinkObject state.Sink) {
 	dir.beforeSave()
-	stateSinkObject.Save(0, &dir.InodeAttrs)
-	stateSinkObject.Save(1, &dir.InodeNoStatFS)
-	stateSinkObject.Save(2, &dir.InodeNoopRefCount)
-	stateSinkObject.Save(3, &dir.InodeNoDynamicLookup)
-	stateSinkObject.Save(4, &dir.InodeNotSymlink)
-	stateSinkObject.Save(5, &dir.OrderedChildren)
+	stateSinkObject.Save(0, &dir.InodeAlwaysValid)
+	stateSinkObject.Save(1, &dir.InodeAttrs)
+	stateSinkObject.Save(2, &dir.InodeNoStatFS)
+	stateSinkObject.Save(3, &dir.InodeNotSymlink)
+	stateSinkObject.Save(4, &dir.OrderedChildren)
+	stateSinkObject.Save(5, &dir.syntheticDirectoryRefs)
 	stateSinkObject.Save(6, &dir.locks)
 }
 
 func (dir *syntheticDirectory) afterLoad() {}
 
 func (dir *syntheticDirectory) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &dir.InodeAttrs)
-	stateSourceObject.Load(1, &dir.InodeNoStatFS)
-	stateSourceObject.Load(2, &dir.InodeNoopRefCount)
-	stateSourceObject.Load(3, &dir.InodeNoDynamicLookup)
-	stateSourceObject.Load(4, &dir.InodeNotSymlink)
-	stateSourceObject.Load(5, &dir.OrderedChildren)
+	stateSourceObject.Load(0, &dir.InodeAlwaysValid)
+	stateSourceObject.Load(1, &dir.InodeAttrs)
+	stateSourceObject.Load(2, &dir.InodeNoStatFS)
+	stateSourceObject.Load(3, &dir.InodeNotSymlink)
+	stateSourceObject.Load(4, &dir.OrderedChildren)
+	stateSourceObject.Load(5, &dir.syntheticDirectoryRefs)
 	stateSourceObject.Load(6, &dir.locks)
+}
+
+func (r *syntheticDirectoryRefs) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.syntheticDirectoryRefs"
+}
+
+func (r *syntheticDirectoryRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (r *syntheticDirectoryRefs) beforeSave() {}
+
+func (r *syntheticDirectoryRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+}
+
+func (r *syntheticDirectoryRefs) afterLoad() {}
+
+func (r *syntheticDirectoryRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func init() {
@@ -752,7 +792,6 @@ func init() {
 	state.Register((*InodeNoopRefCount)(nil))
 	state.Register((*InodeDirectoryNoNewChildren)(nil))
 	state.Register((*InodeNotDirectory)(nil))
-	state.Register((*InodeNoDynamicLookup)(nil))
 	state.Register((*InodeNotSymlink)(nil))
 	state.Register((*InodeAttrs)(nil))
 	state.Register((*slot)(nil))
@@ -761,7 +800,8 @@ func init() {
 	state.Register((*renameAcrossDifferentImplementationsError)(nil))
 	state.Register((*InodeSymlink)(nil))
 	state.Register((*StaticDirectory)(nil))
-	state.Register((*AlwaysValid)(nil))
+	state.Register((*InodeAlwaysValid)(nil))
+	state.Register((*InodeTemporary)(nil))
 	state.Register((*InodeNoStatFS)(nil))
 	state.Register((*Filesystem)(nil))
 	state.Register((*Dentry)(nil))
@@ -770,4 +810,5 @@ func init() {
 	state.Register((*StaticDirectoryRefs)(nil))
 	state.Register((*StaticSymlink)(nil))
 	state.Register((*syntheticDirectory)(nil))
+	state.Register((*syntheticDirectoryRefs)(nil))
 }

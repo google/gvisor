@@ -151,13 +151,13 @@ func (d *dir) StateTypeName() string {
 func (d *dir) StateFields() []string {
 	return []string{
 		"dirRefs",
+		"InodeAlwaysValid",
 		"InodeAttrs",
-		"InodeNoDynamicLookup",
 		"InodeNotSymlink",
 		"InodeDirectoryNoNewChildren",
+		"InodeTemporary",
 		"OrderedChildren",
 		"locks",
-		"dentry",
 	}
 }
 
@@ -166,26 +166,26 @@ func (d *dir) beforeSave() {}
 func (d *dir) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.dirRefs)
-	stateSinkObject.Save(1, &d.InodeAttrs)
-	stateSinkObject.Save(2, &d.InodeNoDynamicLookup)
+	stateSinkObject.Save(1, &d.InodeAlwaysValid)
+	stateSinkObject.Save(2, &d.InodeAttrs)
 	stateSinkObject.Save(3, &d.InodeNotSymlink)
 	stateSinkObject.Save(4, &d.InodeDirectoryNoNewChildren)
-	stateSinkObject.Save(5, &d.OrderedChildren)
-	stateSinkObject.Save(6, &d.locks)
-	stateSinkObject.Save(7, &d.dentry)
+	stateSinkObject.Save(5, &d.InodeTemporary)
+	stateSinkObject.Save(6, &d.OrderedChildren)
+	stateSinkObject.Save(7, &d.locks)
 }
 
 func (d *dir) afterLoad() {}
 
 func (d *dir) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.dirRefs)
-	stateSourceObject.Load(1, &d.InodeAttrs)
-	stateSourceObject.Load(2, &d.InodeNoDynamicLookup)
+	stateSourceObject.Load(1, &d.InodeAlwaysValid)
+	stateSourceObject.Load(2, &d.InodeAttrs)
 	stateSourceObject.Load(3, &d.InodeNotSymlink)
 	stateSourceObject.Load(4, &d.InodeDirectoryNoNewChildren)
-	stateSourceObject.Load(5, &d.OrderedChildren)
-	stateSourceObject.Load(6, &d.locks)
-	stateSourceObject.Load(7, &d.dentry)
+	stateSourceObject.Load(5, &d.InodeTemporary)
+	stateSourceObject.Load(6, &d.OrderedChildren)
+	stateSourceObject.Load(7, &d.locks)
 }
 
 func (c *cpuFile) StateTypeName() string {

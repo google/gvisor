@@ -42,9 +42,6 @@ type masterInode struct {
 
 	locks vfs.FileLocks
 
-	// Keep a reference to this inode's dentry.
-	dentry kernfs.Dentry
-
 	// root is the devpts root inode.
 	root *rootInode
 }
@@ -103,7 +100,7 @@ var _ vfs.FileDescriptionImpl = (*masterFileDescription)(nil)
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (mfd *masterFileDescription) Release(ctx context.Context) {
-	mfd.inode.root.masterClose(mfd.t)
+	mfd.inode.root.masterClose(ctx, mfd.t)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
