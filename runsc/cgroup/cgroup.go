@@ -203,6 +203,19 @@ func LoadPaths(pid string) (map[string]string, error) {
 }
 
 func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
+	// For nested containers, in /proc/self/cgroup we see paths from host,
+	// which don't exist in container, so recover the container paths here by
+	// double-checking with /proc/pid/mountinfo
+	mountinfo, err := os.Open("/proc/self/mountinfo")
+	if err != nil {
+		return nil, err
+	}
+	defer mountinfo.Close()
+
+	return loadPathsHelperWithMountinfo(cgroup, mountinfo)
+}
+
+func loadPathsHelperWithMountinfo(cgroup, mountinfo io.Reader) (map[string]string, error) {
 	paths := make(map[string]string)
 
 	scanner := bufio.NewScanner(cgroup)
@@ -225,6 +238,31 @@ func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+
+	mfScanner := bufio.NewScanner(mountinfo)
+	for mfScanner.Scan() {
+		txt := mfScanner.Text()
+		fields := strings.Fields(txt)
+		if len(fields) < 9 || fields[len(fields)-3] != "cgroup" {
+			continue
+		}
+		for _, opt := range strings.Split(fields[len(fields)-1], ",") {
+			// Remove prefix for cgroups with no controller, eg. systemd.
+			opt = strings.TrimPrefix(opt, "name=")
+			if cgroupPath, ok := paths[opt]; ok {
+				root := fields[3]
+				relCgroupPath, err := filepath.Rel(root, cgroupPath)
+				if err != nil {
+					return nil, err
+				}
+				paths[opt] = relCgroupPath
+			}
+		}
+	}
+	if err := mfScanner.Err(); err != nil {
+		return nil, err
+	}
+
 	return paths, nil
 }
 

@@ -25,6 +25,83 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
+var debianMountinfo = `
+24 31 0:22 / /sys rw,nosuid,nodev,noexec,relatime shared:7 - sysfs sysfs rw
+25 31 0:23 / /proc rw,nosuid,nodev,noexec,relatime shared:15 - proc proc rw
+26 31 0:5 / /dev rw,nosuid,noexec,relatime shared:2 - devtmpfs udev rw,size=16294760k,nr_inodes=4073690,mode=755
+27 26 0:24 / /dev/pts rw,nosuid,noexec,relatime shared:3 - devpts devpts rw,gid=5,mode=620,ptmxmode=000
+28 31 0:25 / /run rw,nosuid,nodev,noexec,relatime shared:5 - tmpfs tmpfs rw,size=3268816k,mode=755
+31 1 253:1 / / rw,noatime shared:1 - ext4 /dev/mapper/data-root rw,errors=remount-ro
+32 24 0:7 / /sys/kernel/security rw,nosuid,nodev,noexec,relatime shared:8 - securityfs securityfs rw
+33 26 0:28 / /dev/shm rw,nosuid,nodev shared:4 - tmpfs tmpfs rw
+34 28 0:29 / /run/lock rw,nosuid,nodev,noexec,relatime shared:6 - tmpfs tmpfs rw,size=5120k
+35 24 0:30 / /sys/fs/cgroup ro,nosuid,nodev,noexec shared:9 - tmpfs tmpfs ro,size=4096k,nr_inodes=1024,mode=755
+36 35 0:31 / /sys/fs/cgroup/unified rw,nosuid,nodev,noexec,relatime shared:10 - cgroup2 cgroup2 rw,nsdelegate
+37 35 0:32 / /sys/fs/cgroup/systemd rw,nosuid,nodev,noexec,relatime shared:11 - cgroup cgroup rw,xattr,name=systemd
+38 24 0:33 / /sys/fs/pstore rw,nosuid,nodev,noexec,relatime shared:12 - pstore pstore rw
+39 24 0:34 / /sys/firmware/efi/efivars rw,nosuid,nodev,noexec,relatime shared:13 - efivarfs efivarfs rw
+40 24 0:35 / /sys/fs/bpf rw,nosuid,nodev,noexec,relatime shared:14 - bpf none rw,mode=700
+41 35 0:36 / /sys/fs/cgroup/cpu,cpuacct rw,nosuid,nodev,noexec,relatime shared:16 - cgroup cgroup rw,cpu,cpuacct
+42 35 0:37 / /sys/fs/cgroup/freezer rw,nosuid,nodev,noexec,relatime shared:17 - cgroup cgroup rw,freezer
+43 35 0:38 / /sys/fs/cgroup/hugetlb rw,nosuid,nodev,noexec,relatime shared:18 - cgroup cgroup rw,hugetlb
+44 35 0:39 / /sys/fs/cgroup/cpuset rw,nosuid,nodev,noexec,relatime shared:19 - cgroup cgroup rw,cpuset
+45 35 0:40 / /sys/fs/cgroup/net_cls,net_prio rw,nosuid,nodev,noexec,relatime shared:20 - cgroup cgroup rw,net_cls,net_prio
+46 35 0:41 / /sys/fs/cgroup/pids rw,nosuid,nodev,noexec,relatime shared:21 - cgroup cgroup rw,pids
+47 35 0:42 / /sys/fs/cgroup/perf_event rw,nosuid,nodev,noexec,relatime shared:22 - cgroup cgroup rw,perf_event
+48 35 0:43 / /sys/fs/cgroup/memory rw,nosuid,nodev,noexec,relatime shared:23 - cgroup cgroup rw,memory
+49 35 0:44 / /sys/fs/cgroup/blkio rw,nosuid,nodev,noexec,relatime shared:24 - cgroup cgroup rw,blkio
+50 35 0:45 / /sys/fs/cgroup/devices rw,nosuid,nodev,noexec,relatime shared:25 - cgroup cgroup rw,devices
+51 35 0:46 / /sys/fs/cgroup/rdma rw,nosuid,nodev,noexec,relatime shared:26 - cgroup cgroup rw,rdma
+52 25 0:47 / /proc/sys/fs/binfmt_misc rw,relatime shared:27 - autofs systemd-1 rw,fd=28,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=23671
+53 26 0:20 / /dev/mqueue rw,nosuid,nodev,noexec,relatime shared:28 - mqueue mqueue rw
+54 26 0:48 / /dev/hugepages rw,relatime shared:29 - hugetlbfs hugetlbfs rw,pagesize=2M
+55 24 0:6 / /sys/kernel/debug rw,nosuid,nodev,noexec,relatime shared:30 - debugfs debugfs rw
+56 24 0:11 / /sys/kernel/tracing rw,nosuid,nodev,noexec,relatime shared:31 - tracefs tracefs rw
+57 24 0:49 / /sys/fs/fuse/connections rw,nosuid,nodev,noexec,relatime shared:32 - fusectl fusectl rw
+58 24 0:21 / /sys/kernel/config rw,nosuid,nodev,noexec,relatime shared:33 - configfs configfs rw
+`
+
+var dindMountinfo = `
+1300 1252 0:55 / / rw,relatime master:665 - overlay overlay rw,lowerdir=/var/lib/docker/overlay2/l/4FX5VCS5UM46IN3FMFIQ5Z3UPH:/var/lib/docker/overlay2/l/3LYKDG2G7WMWFN7KKKZJNQB7AO:/var/lib/docker/overlay2/l/X4N4WIO64ERVFM35SGMCXMW5HX:/var/lib/docker/overlay2/l/WLV7ZCKK2OJHEADMAKFKCITYVA:/var/lib/docker/overlay2/l/RB6D5GFMA2JVMWGG5N7ZWEXQII:/var/lib/docker/overlay2/l/U3TWA3AQ6HAGG67SIDEBFJ2JJF:/var/lib/docker/overlay2/l/WC6XFGD7YWGQLOSNQWLPVCCQX2:/var/lib/docker/overlay2/l/DW235S3RJLDSGSNXHL2U3WVCCL:/var/lib/docker/overlay2/l/D4YM6NOOKDBR7QRG6L6LWHQUZK:/var/lib/docker/overlay2/l/YRLU243KN3AMWHZVPNUMGYD75M:/var/lib/docker/overlay2/l/IISAPU47O4JN6JC5I4A43SFWM7:/var/lib/docker/overlay2/l/UVIPA27BMQWS6NRHHU3QEI5YZT,upperdir=/var/lib/docker/overlay2/749721f78c6ec4d47aacbf01f29a4bd495b1b7a2e9b861fb10f14126d359fd04/diff,workdir=/var/lib/docker/overlay2/749721f78c6ec4d47aacbf01f29a4bd495b1b7a2e9b861fb10f14126d359fd04/work
+1301 1300 0:59 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+1302 1300 0:61 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+1303 1302 0:62 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+1304 1300 0:63 / /sys ro,nosuid,nodev,noexec,relatime - sysfs sysfs ro
+1305 1304 0:64 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw,mode=755
+1306 1305 0:32 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/systemd ro,nosuid,nodev,noexec,relatime master:11 - cgroup cgroup rw,xattr,name=systemd
+1307 1305 0:36 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/cpu,cpuacct ro,nosuid,nodev,noexec,relatime master:16 - cgroup cgroup rw,cpu,cpuacct
+1308 1305 0:37 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/freezer ro,nosuid,nodev,noexec,relatime master:17 - cgroup cgroup rw,freezer
+1309 1305 0:38 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/hugetlb ro,nosuid,nodev,noexec,relatime master:18 - cgroup cgroup rw,hugetlb
+1310 1305 0:39 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/cpuset ro,nosuid,nodev,noexec,relatime master:19 - cgroup cgroup rw,cpuset
+1311 1305 0:40 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/net_cls,net_prio ro,nosuid,nodev,noexec,relatime master:20 - cgroup cgroup rw,net_cls,net_prio
+1312 1305 0:41 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/pids ro,nosuid,nodev,noexec,relatime master:21 - cgroup cgroup rw,pids
+1313 1305 0:42 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/perf_event ro,nosuid,nodev,noexec,relatime master:22 - cgroup cgroup rw,perf_event
+1314 1305 0:43 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/memory ro,nosuid,nodev,noexec,relatime master:23 - cgroup cgroup rw,memory
+1316 1305 0:44 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/blkio ro,nosuid,nodev,noexec,relatime master:24 - cgroup cgroup rw,blkio
+1317 1305 0:45 /docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51 /sys/fs/cgroup/devices ro,nosuid,nodev,noexec,relatime master:25 - cgroup cgroup rw,devices
+1318 1305 0:46 / /sys/fs/cgroup/rdma ro,nosuid,nodev,noexec,relatime master:26 - cgroup cgroup rw,rdma
+1319 1302 0:58 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw
+1320 1302 0:65 / /dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs shm rw,size=65536k
+1321 1300 253:1 /var/lib/docker/containers/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51/resolv.conf /etc/resolv.conf rw,noatime - ext4 /dev/mapper/data-root rw,errors=remount-ro
+1322 1300 253:1 /var/lib/docker/containers/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51/hostname /etc/hostname rw,noatime - ext4 /dev/mapper/data-root rw,errors=remount-ro
+1323 1300 253:1 /var/lib/docker/containers/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51/hosts /etc/hosts rw,noatime - ext4 /dev/mapper/data-root rw,errors=remount-ro
+1324 1300 253:1 /var/lib/docker/volumes/76f4f27c7bdba8207958a4aed6692c400f98819aa32af1faf38ebb21fcb4bea3/_data /var/lib/docker rw,noatime master:1 - ext4 /dev/mapper/data-root rw,errors=remount-ro
+1253 1302 0:62 /0 /dev/console rw,nosuid,noexec,relatime - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+1254 1301 0:59 /bus /proc/bus ro,relatime - proc proc rw
+1255 1301 0:59 /fs /proc/fs ro,relatime - proc proc rw
+1256 1301 0:59 /irq /proc/irq ro,relatime - proc proc rw
+1257 1301 0:59 /sys /proc/sys ro,relatime - proc proc rw
+1258 1301 0:59 /sysrq-trigger /proc/sysrq-trigger ro,relatime - proc proc rw
+1259 1301 0:66 / /proc/asound ro,relatime - tmpfs tmpfs ro
+1260 1301 0:67 / /proc/acpi ro,relatime - tmpfs tmpfs ro
+1261 1301 0:61 /null /proc/kcore rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+1262 1301 0:61 /null /proc/keys rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+1263 1301 0:61 /null /proc/timer_list rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+1264 1301 0:61 /null /proc/sched_debug rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+1265 1301 0:68 / /proc/scsi ro,relatime - tmpfs tmpfs ro
+1266 1304 0:69 / /sys/firmware ro,relatime - tmpfs tmpfs ro
+`
+
 func TestUninstallEnoent(t *testing.T) {
 	c := Cgroup{
 		// set a non-existent name
@@ -653,60 +730,88 @@ func TestPids(t *testing.T) {
 
 func TestLoadPaths(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		cgroups string
-		want    map[string]string
-		err     string
+		name      string
+		cgroups   string
+		mountinfo string
+		want      map[string]string
+		err       string
 	}{
 		{
-			name:    "abs-path",
-			cgroups: "0:ctr:/path",
-			want:    map[string]string{"ctr": "/path"},
+			name:      "abs-path",
+			cgroups:   "0:ctr:/path",
+			mountinfo: debianMountinfo,
+			want:      map[string]string{"ctr": "/path"},
 		},
 		{
-			name:    "rel-path",
-			cgroups: "0:ctr:rel-path",
-			want:    map[string]string{"ctr": "rel-path"},
+			name:      "rel-path",
+			cgroups:   "0:ctr:rel-path",
+			mountinfo: debianMountinfo,
+			want:      map[string]string{"ctr": "rel-path"},
 		},
 		{
-			name:    "non-controller",
-			cgroups: "0:name=systemd:/path",
-			want:    map[string]string{"systemd": "/path"},
+			name:      "non-controller",
+			cgroups:   "0:name=systemd:/path",
+			mountinfo: debianMountinfo,
+			want:      map[string]string{"systemd": "path"},
 		},
 		{
-			name: "empty",
+			name:      "empty",
+			mountinfo: debianMountinfo,
 		},
 		{
 			name: "multiple",
 			cgroups: "0:ctr0:/path0\n" +
 				"1:ctr1:/path1\n" +
 				"2::/empty\n",
+			mountinfo: debianMountinfo,
 			want: map[string]string{
 				"ctr0": "/path0",
 				"ctr1": "/path1",
 			},
 		},
 		{
-			name:    "missing-field",
-			cgroups: "0:nopath\n",
-			err:     "invalid cgroups file",
+			name:      "missing-field",
+			cgroups:   "0:nopath\n",
+			mountinfo: debianMountinfo,
+			err:       "invalid cgroups file",
 		},
 		{
-			name:    "too-many-fields",
-			cgroups: "0:ctr:/path:extra\n",
-			err:     "invalid cgroups file",
+			name:      "too-many-fields",
+			cgroups:   "0:ctr:/path:extra\n",
+			mountinfo: debianMountinfo,
+			err:       "invalid cgroups file",
 		},
 		{
 			name: "multiple-malformed",
 			cgroups: "0:ctr0:/path0\n" +
 				"1:ctr1:/path1\n" +
 				"2:\n",
-			err: "invalid cgroups file",
+			mountinfo: debianMountinfo,
+			err:       "invalid cgroups file",
+		},
+		{
+			name: "nested-cgroup",
+			cgroups: `9:memory:/docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51
+2:cpu,cpuacct:/docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51
+1:name=systemd:/docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51
+0::/system.slice/containerd.service`,
+			mountinfo: dindMountinfo,
+			// we want relative path to /sys/fs/cgroup inside the nested container.
+			// Subcroup inside the container will be created at /sys/fs/cgroup/cpu
+			// This will be /sys/fs/cgroup/cpu/docker/136811d8fa1136e2746d10f6443c4c787c3cfbab5273270cc3aeeb3a94b3cc51/CGROUP_NAME
+			// outside the container
+			want: map[string]string{
+				"memory":  ".",
+				"cpu":     ".",
+				"cpuacct": ".",
+				"systemd": ".",
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := strings.NewReader(tc.cgroups)
-			got, err := loadPathsHelper(r)
+			mountinfo := strings.NewReader(tc.mountinfo)
+			got, err := loadPathsHelperWithMountinfo(r, mountinfo)
 			if len(tc.err) == 0 {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
