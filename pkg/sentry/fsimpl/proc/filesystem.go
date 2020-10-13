@@ -34,12 +34,13 @@ const Name = "proc"
 // +stateify savable
 type FilesystemType struct{}
 
-var _ vfs.FilesystemType = (*FilesystemType)(nil)
-
 // Name implements vfs.FilesystemType.Name.
 func (FilesystemType) Name() string {
 	return Name
 }
+
+// Release implements vfs.FilesystemType.Release.
+func (FilesystemType) Release(ctx context.Context) {}
 
 // +stateify savable
 type filesystem struct {

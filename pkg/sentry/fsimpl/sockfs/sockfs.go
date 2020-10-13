@@ -46,6 +46,9 @@ func (filesystemType) Name() string {
 	return "sockfs"
 }
 
+// Release implements vfs.FilesystemType.Release.
+func (filesystemType) Release(ctx context.Context) {}
+
 // +stateify savable
 type filesystem struct {
 	kernfs.Filesystem

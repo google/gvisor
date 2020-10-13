@@ -38,9 +38,6 @@ const Name = "ext"
 // +stateify savable
 type FilesystemType struct{}
 
-// Compiles only if FilesystemType implements vfs.FilesystemType.
-var _ vfs.FilesystemType = (*FilesystemType)(nil)
-
 // getDeviceFd returns an io.ReaderAt to the underlying device.
 // Currently there are two ways of mounting an ext(2/3/4) fs:
 //   1. Specify a mount with our internal special MountType in the OCI spec.
@@ -100,6 +97,9 @@ func isCompatible(sb disklayout.SuperBlock) bool {
 func (FilesystemType) Name() string {
 	return Name
 }
+
+// Release implements vfs.FilesystemType.Release.
+func (FilesystemType) Release(ctx context.Context) {}
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {

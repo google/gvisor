@@ -204,6 +204,8 @@ func (fsType) Name() string {
 	return "kernfs"
 }
 
+func (fsType) Release(ctx context.Context) {}
+
 func (fst fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opt vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fs := &filesystem{}
 	fs.VFSFilesystem().Init(vfsObj, &fst, fs)

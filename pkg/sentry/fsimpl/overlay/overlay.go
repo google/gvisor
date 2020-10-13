@@ -60,6 +60,9 @@ func (FilesystemType) Name() string {
 	return Name
 }
 
+// Release implements FilesystemType.Release.
+func (FilesystemType) Release(ctx context.Context) {}
+
 // FilesystemOptions may be passed as vfs.GetFilesystemOptions.InternalData to
 // FilesystemType.GetFilesystem.
 //
