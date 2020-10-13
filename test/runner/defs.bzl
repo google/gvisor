@@ -102,6 +102,10 @@ def _syscall_test(
     # Disable off-host networking.
     tags.append("requires-net:loopback")
 
+    # gotsan makes sense only if tests are running in gVisor.
+    if platform == "native":
+        tags.append("nogotsan")
+
     runner_args = [
         # Arguments are passed directly to runner binary.
         "--platform=" + platform,
