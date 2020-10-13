@@ -361,7 +361,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 
 	case header.ICMPv6NeighborAdvert:
 		received.NeighborAdvert.Increment()
-		if !isNDPValid() || pkt.Data.Size() < header.ICMPv6NeighborAdvertSize {
+		if !isNDPValid() || pkt.Data.Size() < header.ICMPv6NeighborAdvertMinimumSize {
 			received.Invalid.Increment()
 			return
 		}

@@ -57,8 +57,8 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 	t.Helper()
 
 	// Receive ICMP packet.
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
-	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborAdvertMinimumSize)
+	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertMinimumSize))
 	pkt.SetType(header.ICMPv6NeighborAdvert)
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, src, dst, buffer.VectorisedView{}))
 	payloadLength := hdr.UsedLength()
