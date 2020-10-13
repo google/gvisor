@@ -613,7 +613,7 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 	}
 
 	mf := f.kernel.MemoryFile()
-	cerr := f.data.Fill(ctx, required, optional, mf, f.memUsage, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	cerr := f.data.Fill(ctx, required, optional, uint64(f.attr.Size), mf, f.memUsage, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
