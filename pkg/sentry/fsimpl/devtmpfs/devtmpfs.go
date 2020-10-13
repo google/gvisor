@@ -95,10 +95,13 @@ func NewAccessor(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth
 	if err != nil {
 		return nil, err
 	}
+	// Pass a reference on root to the Accessor.
+	root := mntns.Root()
+	root.IncRef()
 	return &Accessor{
 		vfsObj: vfsObj,
 		mntns:  mntns,
-		root:   mntns.Root(),
+		root:   root,
 		creds:  creds,
 	}, nil
 }

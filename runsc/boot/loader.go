@@ -903,7 +903,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	// Get the container MountNamespace from the Task. Try to acquire ref may fail
 	// in case it raced with task exit.
 	if kernel.VFS2Enabled {
-		// task.MountNamespace() does not take a ref, so we must do so ourselves.
+		// task.MountNamespaceVFS2() does not take a ref, so we must do so ourselves.
 		args.MountNamespaceVFS2 = tg.Leader().MountNamespaceVFS2()
 		if !args.MountNamespaceVFS2.TryIncRef() {
 			return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
@@ -925,7 +925,6 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		root := args.MountNamespaceVFS2.Root()
 		ctx := vfs.WithRoot(l.k.SupervisorContext(), root)
 		defer args.MountNamespaceVFS2.DecRef(ctx)
-		defer root.DecRef(ctx)
 		envv, err := user.MaybeAddExecUserHomeVFS2(ctx, args.MountNamespaceVFS2, args.KUID, args.Envv)
 		if err != nil {
 			return 0, err

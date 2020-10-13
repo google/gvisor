@@ -727,14 +727,12 @@ func (mnt *Mount) Root() *Dentry {
 	return mnt.root
 }
 
-// Root returns mntns' root. A reference is taken on the returned
-// VirtualDentry.
+// Root returns mntns' root. It does not take a reference on the returned Dentry.
 func (mntns *MountNamespace) Root() VirtualDentry {
 	vd := VirtualDentry{
 		mount:  mntns.root,
 		dentry: mntns.root.root,
 	}
-	vd.IncRef()
 	return vd
 }
 

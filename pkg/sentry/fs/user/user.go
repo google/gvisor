@@ -105,6 +105,7 @@ func getExecUserHomeVFS2(ctx context.Context, mns *vfs.MountNamespace, uid auth.
 	const defaultHome = "/"
 
 	root := mns.Root()
+	root.IncRef()
 	defer root.DecRef(ctx)
 
 	creds := auth.CredentialsFromContext(ctx)
