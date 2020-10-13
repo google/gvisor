@@ -64,6 +64,7 @@ go_test(
     name = "kvm_test",
     srcs = [
         "kvm_amd64_test.go",
+        "kvm_arm64_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
     ],
