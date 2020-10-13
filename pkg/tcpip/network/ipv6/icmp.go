@@ -333,18 +333,18 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		optsSerializer := header.NDPOptionsSerializer{
 			header.NDPTargetLinkLayerAddressOption(r.LocalLinkAddress),
 		}
+		neighborAdvertSize := header.ICMPv6NeighborAdvertMinimumSize + optsSerializer.Length()
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6NeighborAdvertMinimumSize + int(optsSerializer.Length()),
+			ReserveHeaderBytes: int(r.MaxHeaderLength()) + neighborAdvertSize,
 		})
-		packet := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6NeighborAdvertSize))
 		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+		packet := header.ICMPv6(pkt.TransportHeader().Push(neighborAdvertSize))
 		packet.SetType(header.ICMPv6NeighborAdvert)
 		na := header.NDPNeighborAdvert(packet.NDPPayload())
 		na.SetSolicitedFlag(solicited)
 		na.SetOverrideFlag(true)
 		na.SetTargetAddress(targetAddr)
-		opts := na.Options()
-		opts.Serialize(optsSerializer)
+		na.Options().Serialize(optsSerializer)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 		// RFC 4861 Neighbor Discovery for IP version 6 (IPv6)
@@ -620,18 +620,6 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 	}
 }
 
-const (
-	ndpSolicitedFlag = 1 << 6
-	ndpOverrideFlag  = 1 << 5
-
-	ndpOptSrcLinkAddr = 1
-	ndpOptDstLinkAddr = 2
-
-	icmpV6FlagOffset   = 4
-	icmpV6OptOffset    = 24
-	icmpV6LengthOffset = 25
-)
-
 var _ stack.LinkAddressResolver = (*protocol)(nil)
 
 // LinkAddressProtocol implements stack.LinkAddressResolver.
@@ -658,17 +646,20 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAdd
 		r.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(r.RemoteAddress)
 	}
 
+	optsSerializer := header.NDPOptionsSerializer{
+		header.NDPSourceLinkLayerAddressOption(linkEP.LinkAddress()),
+	}
+	neighborSolicitSize := header.ICMPv6NeighborSolicitMinimumSize + optsSerializer.Length()
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize,
+		ReserveHeaderBytes: int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + neighborSolicitSize,
 	})
-	icmpHdr := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6NeighborAdvertSize))
 	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
-	icmpHdr.SetType(header.ICMPv6NeighborSolicit)
-	copy(icmpHdr[icmpV6OptOffset-len(addr):], addr)
-	icmpHdr[icmpV6OptOffset] = ndpOptSrcLinkAddr
-	icmpHdr[icmpV6LengthOffset] = 1
-	copy(icmpHdr[icmpV6LengthOffset+1:], linkEP.LinkAddress())
-	icmpHdr.SetChecksum(header.ICMPv6Checksum(icmpHdr, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+	packet := header.ICMPv6(pkt.TransportHeader().Push(neighborSolicitSize))
+	packet.SetType(header.ICMPv6NeighborSolicit)
+	ns := header.NDPNeighborSolicit(packet.NDPPayload())
+	ns.SetTargetAddress(addr)
+	ns.Options().Serialize(optsSerializer)
+	packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 	length := uint16(pkt.Size())
 	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
