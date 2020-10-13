@@ -121,6 +121,7 @@ func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name s
 
 func resolveVFS2(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, paths []string, name string) (string, error) {
 	root := mns.Root()
+	root.IncRef()
 	defer root.DecRef(ctx)
 	for _, p := range paths {
 		if !path.IsAbs(p) {

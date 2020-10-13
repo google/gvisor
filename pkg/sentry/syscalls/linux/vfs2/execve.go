@@ -110,8 +110,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr user
 	}
 
 	// Load the new TaskContext.
-	mntns := t.MountNamespaceVFS2() // FIXME(jamieliu): useless refcount change
-	defer mntns.DecRef(t)
+	mntns := t.MountNamespaceVFS2()
 	wd := t.FSContext().WorkingDirectoryVFS2()
 	defer wd.DecRef(t)
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)

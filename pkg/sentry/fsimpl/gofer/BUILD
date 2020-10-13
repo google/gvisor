@@ -52,6 +52,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/lock",

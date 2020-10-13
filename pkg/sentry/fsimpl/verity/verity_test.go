@@ -70,6 +70,7 @@ func newVerityRoot(ctx context.Context, t *testing.T) (*vfs.VirtualFilesystem, v
 		return nil, vfs.VirtualDentry{}, fmt.Errorf("NewMountNamespace: %v", err)
 	}
 	root := mntns.Root()
+	root.IncRef()
 	t.Helper()
 	t.Cleanup(func() {
 		root.DecRef(ctx)

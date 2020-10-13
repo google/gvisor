@@ -165,6 +165,7 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 
 	// Create the pipe.
 	root := mntns.Root()
+	root.IncRef()
 	pop := vfs.PathOperation{
 		Root:  root,
 		Start: root,

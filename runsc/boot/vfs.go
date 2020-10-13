@@ -170,6 +170,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 	rootProcArgs.MountNamespaceVFS2 = mns
 
 	root := mns.Root()
+	root.IncRef()
 	defer root.DecRef(rootCtx)
 	if root.Mount().ReadOnly() {
 		// Switch to ReadWrite while we setup submounts.
@@ -377,6 +378,7 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.C
 	}
 
 	root := mns.Root()
+	root.IncRef()
 	defer root.DecRef(ctx)
 	target := &vfs.PathOperation{
 		Root:  root,
@@ -474,6 +476,7 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 	}
 
 	root := mns.Root()
+	root.IncRef()
 	defer root.DecRef(ctx)
 	pop := vfs.PathOperation{
 		Root:  root,
@@ -597,6 +600,7 @@ func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *co
 	defer newMnt.DecRef(ctx)
 
 	root := mns.Root()
+	root.IncRef()
 	defer root.DecRef(ctx)
 	target := &vfs.PathOperation{
 		Root:  root,
@@ -617,6 +621,7 @@ func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *co
 
 func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, dest string) error {
 	root := mns.Root()
+	root.IncRef()
 	defer root.DecRef(ctx)
 	target := &vfs.PathOperation{
 		Root:  root,

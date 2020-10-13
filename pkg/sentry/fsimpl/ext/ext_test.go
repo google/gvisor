@@ -82,6 +82,7 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 	}
 
 	root := mntns.Root()
+	root.IncRef()
 
 	tearDown := func() {
 		root.DecRef(ctx)

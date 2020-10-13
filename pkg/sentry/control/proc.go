@@ -183,9 +183,9 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		if initArgs.MountNamespaceVFS2 == nil {
 			// Set initArgs so that 'ctx' returns the namespace.
 			//
-			// MountNamespaceVFS2 adds a reference to the namespace, which is
-			// transferred to the new process.
+			// Add a reference to the namespace, which is transferred to the new process.
 			initArgs.MountNamespaceVFS2 = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
+			initArgs.MountNamespaceVFS2.IncRef()
 		}
 	} else {
 		if initArgs.MountNamespace == nil {
