@@ -74,6 +74,8 @@ type filesystem struct {
 	mu sync.RWMutex `state:"nosave"`
 
 	nextInoMinusOne uint64 // accessed using atomic memory operations
+
+	root *dentry
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -197,6 +199,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
+	fs.root = root
 	return &fs.vfsfs, &root.vfsd, nil
 }
 
@@ -208,6 +211,37 @@ func NewFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *au
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.mu.Lock()
+	if fs.root.inode.isDir() {
+		fs.root.releaseChildrenLocked(ctx)
+	}
+	fs.mu.Unlock()
+}
+
+// releaseChildrenLocked is called on the mount point by filesystem.Release() to
+// destroy all objects in the mount. It performs a depth-first walk of the
+// filesystem and "unlinks" everything by decrementing link counts
+// appropriately. There should be no open file descriptors when this is called,
+// so each inode should only have one outstanding reference that is removed once
+// its link count hits zero.
+//
+// Note that we do not update filesystem state precisely while tearing down (for
+// instance, the child maps are ignored)--we only care to remove all remaining
+// references so that every filesystem object gets destroyed. Also note that we
+// do not need to trigger DecRef on the mount point itself or any child mount;
+// these are taken care of by the destructor of the enclosing MountNamespace.
+//
+// Precondition: filesystem.mu is held.
+func (d *dentry) releaseChildrenLocked(ctx context.Context) {
+	dir := d.inode.impl.(*directory)
+	for _, child := range dir.childMap {
+		if child.inode.isDir() {
+			child.releaseChildrenLocked(ctx)
+			child.inode.decLinksLocked(ctx) // link for child/.
+			dir.inode.decLinksLocked(ctx)   // link for child/..
+		}
+		child.inode.decLinksLocked(ctx) // link for child
+	}
 }
 
 // immutable
