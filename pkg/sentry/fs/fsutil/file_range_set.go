@@ -84,7 +84,8 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) memmap.FileRan
 // returns a successful partial read, Fill will call it repeatedly until all
 // bytes have been read.) EOF is handled consistently with the requirements of
 // mmap(2): bytes after EOF on the same page are zeroed; pages after EOF are
-// invalid.
+// invalid. fileSize is an upper bound on the file's size; bytes after fileSize
+// will be zeroed without calling readAt.
 //
 // Fill may read offsets outside of required, but will never read offsets
 // outside of optional. It returns a non-nil error if any error occurs, even
@@ -94,7 +95,7 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) memmap.FileRan
 // * required.Length() > 0.
 // * optional.IsSupersetOf(required).
 // * required and optional must be page-aligned.
-func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, mf *pgalloc.MemoryFile, kind usage.MemoryKind, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) error {
+func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, fileSize uint64, mf *pgalloc.MemoryFile, kind usage.MemoryKind, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) error {
 	gap := frs.LowerBoundGap(required.Start)
 	for gap.Ok() && gap.Start() < required.End {
 		if gap.Range().Length() == 0 {
@@ -107,7 +108,21 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 		fr, err := mf.AllocateAndFill(gr.Length(), kind, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
 			var done uint64
 			for !dsts.IsEmpty() {
-				n, err := readAt(ctx, dsts, gr.Start+done)
+				n, err := func() (uint64, error) {
+					off := gr.Start + done
+					if off >= fileSize {
+						return 0, io.EOF
+					}
+					if off+dsts.NumBytes() > fileSize {
+						rd := fileSize - off
+						n, err := readAt(ctx, dsts.TakeFirst64(rd), off)
+						if n == rd && err == nil {
+							return n, io.EOF
+						}
+						return n, err
+					}
+					return readAt(ctx, dsts, off)
+				}()
 				done += n
 				dsts = dsts.DropFirst64(n)
 				if err != nil {
