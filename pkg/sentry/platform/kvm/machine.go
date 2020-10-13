@@ -103,8 +103,11 @@ type vCPU struct {
 	// tid is the last set tid.
 	tid uint64
 
-	// switches is a count of world switches (informational only).
-	switches uint32
+	// userExits is the count of user exits.
+	userExits uint64
+
+	// guestExits is the count of guest to host world switches.
+	guestExits uint64
 
 	// faults is a count of world faults (informational only).
 	faults uint32
@@ -127,6 +130,7 @@ type vCPU struct {
 	// vCPUArchState is the architecture-specific state.
 	vCPUArchState
 
+	// dieState holds state related to vCPU death.
 	dieState dieState
 }
 
@@ -540,6 +544,8 @@ var pid = syscall.Getpid()
 //
 // This effectively unwinds the state machine.
 func (c *vCPU) bounce(forceGuestExit bool) {
+	origGuestExits := atomic.LoadUint64(&c.guestExits)
+	origUserExits := atomic.LoadUint64(&c.userExits)
 	for {
 		switch state := atomic.LoadUint32(&c.state); state {
 		case vCPUReady, vCPUWaiter:
@@ -594,6 +600,14 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 		default:
 			// Should not happen: the above is exhaustive.
 			panic("invalid state")
+		}
+
+		// Check if we've missed the state transition, but
+		// we can safely return at this point in time.
+		newGuestExits := atomic.LoadUint64(&c.guestExits)
+		newUserExits := atomic.LoadUint64(&c.userExits)
+		if newUserExits != origUserExits && (!forceGuestExit || newGuestExits != origGuestExits) {
+			return
 		}
 	}
 }
