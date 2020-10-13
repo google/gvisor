@@ -116,10 +116,11 @@
 #define SCTLR_M         1 << 0
 #define SCTLR_C         1 << 2
 #define SCTLR_I         1 << 12
+#define SCTLR_DZE       1 << 14
 #define SCTLR_UCT       1 << 15
 #define SCTLR_UCI       1 << 26
 
-#define SCTLR_EL1_DEFAULT       (SCTLR_M | SCTLR_C | SCTLR_I | SCTLR_UCT | SCTLR_UCI)
+#define SCTLR_EL1_DEFAULT       (SCTLR_M | SCTLR_C | SCTLR_I | SCTLR_UCT | SCTLR_UCI | SCTLR_DZE)
 
 // cntkctl_el1: counter-timer kernel control register el1.
 #define CNTKCTL_EL0PCTEN 	1 << 0
