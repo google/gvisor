@@ -68,11 +68,6 @@ const sizeOfStringInt32 = 10
 // flag.
 var noCrashOnVerificationFailure bool
 
-// verityMu synchronizes enabling verity files, protects files or directories
-// from being enabled by different threads simultaneously. It also ensures that
-// verity does not access files that are being enabled.
-var verityMu sync.RWMutex
-
 // FilesystemType implements vfs.FilesystemType.
 //
 // +stateify savable
@@ -106,6 +101,17 @@ type filesystem struct {
 	// to ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
 	renameMu sync.RWMutex `state:"nosave"`
+
+	// verityMu synchronizes enabling verity files, protects files or
+	// directories from being enabled by different threads simultaneously.
+	// It also ensures that verity does not access files that are being
+	// enabled.
+	//
+	// Also, the directory Merkle trees depends on the generated trees of
+	// its children. So they shouldn't be enabled the same time. This lock
+	// is for the whole file system to ensure that no more than one file is
+	// enabled the same time.
+	verityMu sync.RWMutex
 }
 
 // InternalFilesystemOptions may be passed as
@@ -594,10 +600,8 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (ui
 		return 0, syserror.EPERM
 	}
 
-	// Lock to prevent other threads performing enable or access the file
-	// while it's being enabled.
-	verityMu.Lock()
-	defer verityMu.Unlock()
+	fd.d.fs.verityMu.Lock()
+	defer fd.d.fs.verityMu.Unlock()
 
 	// In allowRuntimeEnable mode, the underlying fd and read/write fd for
 	// the Merkle tree file should have all been initialized. For any file
@@ -723,6 +727,8 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		return fd.lowerFD.PRead(ctx, dst, offset, opts)
 	}
 
+	fd.d.fs.verityMu.RLock()
+	defer fd.d.fs.verityMu.RUnlock()
 	// dataSize is the size of the whole file.
 	dataSize, err := fd.merkleReader.GetXattr(ctx, &vfs.GetXattrOptions{
 		Name: merkleSizeXattr,
