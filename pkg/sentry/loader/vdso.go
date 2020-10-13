@@ -380,3 +380,9 @@ func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) 
 
 	return vdsoAddr, nil
 }
+
+// Release drops references on mappings held by v.
+func (v *VDSO) Release(ctx context.Context) {
+	v.ParamPage.DecRef(ctx)
+	v.vdso.DecRef(ctx)
+}
