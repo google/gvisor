@@ -151,6 +151,9 @@ func (filesystemType) Name() string {
 	return "none"
 }
 
+// Release implements vfs.FilesystemType.Release.
+func (filesystemType) Release(ctx context.Context) {}
+
 // NewFilesystem sets up and returns a new hostfs filesystem.
 //
 // Note that there should only ever be one instance of host.filesystem,

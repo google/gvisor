@@ -11,18 +11,28 @@ func (fstype *FilesystemType) StateTypeName() string {
 }
 
 func (fstype *FilesystemType) StateFields() []string {
-	return []string{}
+	return []string{
+		"initErr",
+		"fs",
+		"root",
+	}
 }
 
 func (fstype *FilesystemType) beforeSave() {}
 
 func (fstype *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fstype.beforeSave()
+	stateSinkObject.Save(0, &fstype.initErr)
+	stateSinkObject.Save(1, &fstype.fs)
+	stateSinkObject.Save(2, &fstype.root)
 }
 
 func (fstype *FilesystemType) afterLoad() {}
 
 func (fstype *FilesystemType) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fstype.initErr)
+	stateSourceObject.Load(1, &fstype.fs)
+	stateSourceObject.Load(2, &fstype.root)
 }
 
 func (fs *filesystem) StateTypeName() string {

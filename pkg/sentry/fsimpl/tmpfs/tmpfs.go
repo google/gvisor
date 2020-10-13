@@ -81,6 +81,9 @@ func (FilesystemType) Name() string {
 	return Name
 }
 
+// Release implements vfs.FilesystemType.Release.
+func (FilesystemType) Release(ctx context.Context) {}
+
 // FilesystemOpts is used to pass configuration data to tmpfs.
 //
 // +stateify savable
