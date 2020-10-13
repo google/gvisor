@@ -395,7 +395,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 					End:   gapEnd,
 				}
 				optMR := gap.Range()
-				err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), mf, usage.PageCache, h.readToBlocksAt)
+				err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size, mf, usage.PageCache, h.readToBlocksAt)
 				mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.d.cache.Find(rw.off)
 				if !seg.Ok() {
@@ -403,10 +403,10 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 					rw.d.handleMu.RUnlock()
 					return done, err
 				}
-				// err might have occurred in part of gap.Range() outside
-				// gapMR. Forget about it for now; if the error matters and
-				// persists, we'll run into it again in a later iteration of
-				// this loop.
+				// err might have occurred in part of gap.Range() outside gapMR
+				// (in particular, gap.End() might be beyond EOF). Forget about
+				// it for now; if the error matters and persists, we'll run
+				// into it again in a later iteration of this loop.
 			} else {
 				// Read directly from the file.
 				gapDsts := dsts.TakeFirst64(gapMR.Length())
@@ -780,7 +780,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 
 	mf := d.fs.mfp.MemoryFile()
 	h := d.readHandleLocked()
-	cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), mf, usage.PageCache, h.readToBlocksAt)
+	cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size, mf, usage.PageCache, h.readToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64

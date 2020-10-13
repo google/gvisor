@@ -293,7 +293,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		optional.End = pgend
 	}
 
-	cerr := rf.data.Fill(ctx, required, optional, rf.memFile, rf.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	cerr := rf.data.Fill(ctx, required, optional, rf.size, rf.memFile, rf.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
