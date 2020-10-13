@@ -62,6 +62,9 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 //
 //go:nosplit
 func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
+	// Increment our counter.
+	atomic.AddUint64(&c.guestExits, 1)
+
 	// Copy out registers.
 	bluepillArchExit(c, bluepillArchContext(context))
 
@@ -88,9 +91,6 @@ func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 func bluepillHandler(context unsafe.Pointer) {
 	// Sanitize the registers; interrupts must always be disabled.
 	c := bluepillArchEnter(bluepillArchContext(context))
-
-	// Increment the number of switches.
-	atomic.AddUint32(&c.switches, 1)
 
 	// Mark this as guest mode.
 	switch atomic.SwapUint32(&c.state, vCPUGuest|vCPUUser) {
