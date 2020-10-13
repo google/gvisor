@@ -1744,12 +1744,14 @@ func (k *Kernel) SocketMount() *vfs.Mount {
 // Precondition: This should only be called after the kernel is fully
 // initialized, e.g. after k.Start() has been called.
 func (k *Kernel) Release() {
+	ctx := k.SupervisorContext()
 	if VFS2Enabled {
-		ctx := k.SupervisorContext()
 		k.hostMount.DecRef(ctx)
 		k.pipeMount.DecRef(ctx)
 		k.shmMount.DecRef(ctx)
 		k.socketMount.DecRef(ctx)
 		k.vfs.Release(ctx)
 	}
+	k.timekeeper.Destroy()
+	k.vdso.Release(ctx)
 }
