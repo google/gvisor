@@ -138,10 +138,19 @@ func (d *VerityDescriptor) String() string {
 	return fmt.Sprintf("Name: %s, Mode: %d, UID: %d, GID: %d, RootHash: %v", d.Name, d.Mode, d.UID, d.GID, d.RootHash)
 }
 
+// verify generates a hash from d, and compares it with expected.
+func (d *VerityDescriptor) verify(expected []byte) error {
+	h := sha256.Sum256([]byte(d.String()))
+	if !bytes.Equal(h[:], expected) {
+		return fmt.Errorf("unexpected root hash")
+	}
+	return nil
+}
+
 // GenerateParams contains the parameters used to generate a Merkle tree.
 type GenerateParams struct {
 	// File is a reader of the file to be hashed.
-	File io.ReadSeeker
+	File io.ReaderAt
 	// Size is the size of the file.
 	Size int64
 	// Name is the name of the target file.
@@ -153,25 +162,19 @@ type GenerateParams struct {
 	// GID is the group ID of the target file.
 	GID uint32
 	// TreeReader is a reader for the Merkle tree.
-	TreeReader io.ReadSeeker
+	TreeReader io.ReaderAt
 	// TreeWriter is a writer for the Merkle tree.
-	TreeWriter io.WriteSeeker
+	TreeWriter io.Writer
 	// DataAndTreeInSameFile is true if data and Merkle tree are in the same
 	// file, or false if Merkle tree is a separate file from data.
 	DataAndTreeInSameFile bool
 }
 
-// Generate constructs a Merkle tree for the contents of data. The output is
-// written to treeWriter. The treeReader should be able to read the tree after
-// it has been written. That is, treeWriter and treeReader should point to the
-// same underlying data but have separate cursors.
+// Generate constructs a Merkle tree for the contents of params.File. The
+// output is written to params.TreeWriter.
 //
-// Generate returns a hash of descriptor. The descriptor contains the file
+// Generate returns a hash of a VerityDescriptor, which contains the file
 // metadata and the hash from file content.
-//
-// Generate will modify the cursor for data, but always restores it to its
-// original position upon exit. The cursor for tree is modified and not
-// restored.
 func Generate(params *GenerateParams) ([]byte, error) {
 	layout := InitLayout(params.Size, params.DataAndTreeInSameFile)
 
@@ -182,29 +185,9 @@ func Generate(params *GenerateParams) ([]byte, error) {
 	bytesInLastBlock := params.Size % layout.blockSize
 	if params.DataAndTreeInSameFile && bytesInLastBlock != 0 {
 		zeroBuf := make([]byte, layout.blockSize-bytesInLastBlock)
-		if _, err := params.TreeWriter.Seek(0, io.SeekEnd); err != nil && err != io.EOF {
-			return nil, err
-		}
 		if _, err := params.TreeWriter.Write(zeroBuf); err != nil {
 			return nil, err
 		}
-	}
-
-	// Store the current offset, so we can set it back once verification
-	// finishes.
-	origOffset, err := params.File.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return nil, err
-	}
-	defer params.File.Seek(origOffset, io.SeekStart)
-
-	// Read from the beginning of both data and treeReader.
-	if _, err := params.File.Seek(0, io.SeekStart); err != nil && err != io.EOF {
-		return nil, err
-	}
-
-	if _, err := params.TreeReader.Seek(0, io.SeekStart); err != nil && err != io.EOF {
-		return nil, err
 	}
 
 	var root []byte
@@ -218,11 +201,11 @@ func Generate(params *GenerateParams) ([]byte, error) {
 			if level == 0 {
 				// Read data block from the target file since level 0 includes hashes
 				// of blocks in the input data.
-				n, err = params.File.Read(buf)
+				n, err = params.File.ReadAt(buf, i*layout.blockSize)
 			} else {
 				// Read data block from the tree file since levels higher than 0 are
 				// hashing the lower level hashes.
-				n, err = params.TreeReader.Read(buf)
+				n, err = params.TreeReader.ReadAt(buf, layout.blockOffset(level-1, i))
 			}
 
 			// err is populated as long as the bytes read is smaller than the buffer
@@ -273,9 +256,9 @@ type VerifyParams struct {
 	// Out will be filled with verified data.
 	Out io.Writer
 	// File is a handler on the file to be verified.
-	File io.ReadSeeker
+	File io.ReaderAt
 	// tree is a handler on the Merkle tree used to verify file.
-	Tree io.ReadSeeker
+	Tree io.ReaderAt
 	// Size is the size of the file.
 	Size int64
 	// Name is the name of the target file.
@@ -290,35 +273,22 @@ type VerifyParams struct {
 	ReadOffset int64
 	// ReadSize is the size of the data range to be verified.
 	ReadSize int64
-	// ExpectedRoot is a trusted hash for the file. It is compared with the
+	// Expected is a trusted hash for the file. It is compared with the
 	// calculated root hash to verify the content.
-	ExpectedRoot []byte
+	Expected []byte
 	// DataAndTreeInSameFile is true if data and Merkle tree are in the same
 	// file, or false if Merkle tree is a separate file from data.
 	DataAndTreeInSameFile bool
 }
 
-// verifyDescriptor generates a hash from descriptor, and compares it with
-// expectedRoot.
-func verifyDescriptor(descriptor VerityDescriptor, expectedRoot []byte) error {
-	h := sha256.Sum256([]byte(descriptor.String()))
-	if !bytes.Equal(h[:], expectedRoot) {
-		return fmt.Errorf("unexpected root hash")
-	}
-	return nil
-}
-
 // verifyMetadata verifies the metadata by hashing a descriptor that contains
-// the metadata and compare the generated hash with expectedRoot.
+// the metadata and compare the generated hash with expected.
 //
 // For verifyMetadata, params.data is not needed. It only accesses params.tree
 // for the raw root hash.
-func verifyMetadata(params *VerifyParams, layout Layout) error {
-	if _, err := params.Tree.Seek(layout.blockOffset(layout.rootLevel(), 0 /* index */), io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek to root hash: %w", err)
-	}
+func verifyMetadata(params *VerifyParams, layout *Layout) error {
 	root := make([]byte, layout.digestSize)
-	if _, err := params.Tree.Read(root); err != nil {
+	if _, err := params.Tree.ReadAt(root, layout.blockOffset(layout.rootLevel(), 0 /* index */)); err != nil {
 		return fmt.Errorf("failed to read root hash: %w", err)
 	}
 	descriptor := VerityDescriptor{
@@ -328,28 +298,24 @@ func verifyMetadata(params *VerifyParams, layout Layout) error {
 		GID:      params.GID,
 		RootHash: root,
 	}
-	return verifyDescriptor(descriptor, params.ExpectedRoot)
+	return descriptor.verify(params.Expected)
 }
 
 // Verify verifies the content read from data with offset. The content is
 // verified against tree. If content spans across multiple blocks, each block is
 // verified. Verification fails if the hash of the data does not match the tree
-// at any level, or if the final root hash does not match expectedRoot.
+// at any level, or if the final root hash does not match expected.
 // Once the data is verified, it will be written using params.Out.
 //
 // Verify checks for both target file content and metadata. If readSize is 0,
 // only metadata is checked.
-//
-// Verify will modify the cursor for data, but always restores it to its
-// original position upon exit. The cursor for tree is modified and not
-// restored.
 func Verify(params *VerifyParams) (int64, error) {
 	if params.ReadSize < 0 {
 		return 0, fmt.Errorf("unexpected read size: %d", params.ReadSize)
 	}
 	layout := InitLayout(int64(params.Size), params.DataAndTreeInSameFile)
 	if params.ReadSize == 0 {
-		return 0, verifyMetadata(params, layout)
+		return 0, verifyMetadata(params, &layout)
 	}
 
 	// Calculate the index of blocks that includes the target range in input
@@ -357,26 +323,13 @@ func Verify(params *VerifyParams) (int64, error) {
 	firstDataBlock := params.ReadOffset / layout.blockSize
 	lastDataBlock := (params.ReadOffset + params.ReadSize - 1) / layout.blockSize
 
-	// Store the current offset, so we can set it back once verification
-	// finishes.
-	origOffset, err := params.File.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return 0, fmt.Errorf("find current data offset failed: %w", err)
-	}
-	defer params.File.Seek(origOffset, io.SeekStart)
-
-	// Move to the first block that contains target data.
-	if _, err := params.File.Seek(firstDataBlock*layout.blockSize, io.SeekStart); err != nil {
-		return 0, fmt.Errorf("seek to datablock start failed: %w", err)
-	}
-
 	buf := make([]byte, layout.blockSize)
 	var readErr error
 	total := int64(0)
 	for i := firstDataBlock; i <= lastDataBlock; i++ {
 		// Read a block that includes all or part of target range in
 		// input data.
-		bytesRead, err := params.File.Read(buf)
+		bytesRead, err := params.File.ReadAt(buf, i*layout.blockSize)
 		readErr = err
 		// If at the end of input data and all previous blocks are
 		// verified, return the verified input data and EOF.
@@ -401,7 +354,7 @@ func Verify(params *VerifyParams) (int64, error) {
 			UID:  params.UID,
 			GID:  params.GID,
 		}
-		if err := verifyBlock(params.Tree, descriptor, layout, buf, i, params.ExpectedRoot); err != nil {
+		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.Expected); err != nil {
 			return 0, err
 		}
 
@@ -441,11 +394,8 @@ func Verify(params *VerifyParams) (int64, error) {
 // original data. The block is verified through each level of the tree. It
 // fails if the calculated hash from block is different from any level of
 // hashes stored in tree. And the final root hash is compared with
-// expectedRoot.
-//
-// verifyBlock modifies the cursor for tree. Users needs to maintain the cursor
-// if intended.
-func verifyBlock(tree io.ReadSeeker, descriptor VerityDescriptor, layout Layout, dataBlock []byte, blockIndex int64, expectedRoot []byte) error {
+// expected.
+func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout, dataBlock []byte, blockIndex int64, expected []byte) error {
 	if len(dataBlock) != int(layout.blockSize) {
 		return fmt.Errorf("incorrect block size")
 	}
@@ -462,22 +412,16 @@ func verifyBlock(tree io.ReadSeeker, descriptor VerityDescriptor, layout Layout,
 			// Read a block in previous level that contains the
 			// hash we just generated, and generate a next level
 			// hash from it.
-			if _, err := tree.Seek(layout.blockOffset(level-1, blockIndex), io.SeekStart); err != nil {
-				return err
-			}
-			if _, err := tree.Read(treeBlock); err != nil {
+			if _, err := tree.ReadAt(treeBlock, layout.blockOffset(level-1, blockIndex)); err != nil {
 				return err
 			}
 			digestArray := sha256.Sum256(treeBlock)
 			digest = digestArray[:]
 		}
 
-		// Move to stored hash for the current block, read the digest
-		// and store in expectedDigest.
-		if _, err := tree.Seek(layout.digestOffset(level, blockIndex), io.SeekStart); err != nil {
-			return err
-		}
-		if _, err := tree.Read(expectedDigest); err != nil {
+		// Read the digest for the current block and store in
+		// expectedDigest.
+		if _, err := tree.ReadAt(expectedDigest, layout.digestOffset(level, blockIndex)); err != nil {
 			return err
 		}
 
@@ -488,7 +432,7 @@ func verifyBlock(tree io.ReadSeeker, descriptor VerityDescriptor, layout Layout,
 	}
 
 	// Verification for the tree succeeded. Now hash the descriptor with
-	// the root hash and compare it with expectedRoot.
+	// the root hash and compare it with expected.
 	descriptor.RootHash = digest
-	return verifyDescriptor(descriptor, expectedRoot)
+	return descriptor.verify(expected)
 }

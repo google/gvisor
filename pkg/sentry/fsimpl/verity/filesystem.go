@@ -156,11 +156,10 @@ afterSymlink:
 	return child, nil
 }
 
-// verifyChild verifies the root hash of child against the already verified
-// root hash of the parent to ensure the child is expected.  verifyChild
-// triggers a sentry panic if unexpected modifications to the file system are
-// detected. In noCrashOnVerificationFailure mode it returns a syserror
-// instead.
+// verifyChild verifies the hash of child against the already verified hash of
+// the parent to ensure the child is expected.  verifyChild triggers a sentry
+// panic if unexpected modifications to the file system are detected. In
+// noCrashOnVerificationFailure mode it returns a syserror instead.
 // Preconditions: fs.renameMu must be locked. d.dirMu must be locked.
 // TODO(b/166474175): Investigate all possible errors returned in this
 // function, and make sure we differentiate all errors that indicate unexpected
@@ -179,8 +178,8 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	defer verityMu.RUnlock()
 	// Read the offset of the child from the extended attributes of the
 	// corresponding Merkle tree file.
-	// This is the offset of the root hash for child in its parent's Merkle
-	// tree file.
+	// This is the offset of the hash for child in its parent's Merkle tree
+	// file.
 	off, err := vfsObj.GetXattrAt(ctx, fs.creds, &vfs.PathOperation{
 		Root:  child.lowerMerkleVD,
 		Start: child.lowerMerkleVD,
@@ -205,7 +204,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 		return nil, alertIntegrityViolation(err, fmt.Sprintf("Failed to convert xattr %s for %s to int: %v", merkleOffsetInParentXattr, childPath, err))
 	}
 
-	// Open parent Merkle tree file to read and verify child's root hash.
+	// Open parent Merkle tree file to read and verify child's hash.
 	parentMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
 		Root:  parent.lowerMerkleVD,
 		Start: parent.lowerMerkleVD,
@@ -224,7 +223,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 
 	// dataSize is the size of raw data for the Merkle tree. For a file,
 	// dataSize is the size of the whole file. For a directory, dataSize is
-	// the size of all its children's root hashes.
+	// the size of all its children's hashes.
 	dataSize, err := parentMerkleFD.GetXattr(ctx, &vfs.GetXattrOptions{
 		Name: merkleSizeXattr,
 		Size: sizeOfStringInt32,
@@ -264,7 +263,7 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	}
 
 	// Since we are verifying against a directory Merkle tree, buf should
-	// contain the root hash of the children in the parent Merkle tree when
+	// contain the hash of the children in the parent Merkle tree when
 	// Verify returns with success.
 	var buf bytes.Buffer
 	if _, err := merkletree.Verify(&merkletree.VerifyParams{
@@ -278,21 +277,21 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 		GID:                   parentStat.GID,
 		ReadOffset:            int64(offset),
 		ReadSize:              int64(merkletree.DigestSize()),
-		ExpectedRoot:          parent.rootHash,
+		Expected:              parent.hash,
 		DataAndTreeInSameFile: true,
 	}); err != nil && err != io.EOF {
 		return nil, alertIntegrityViolation(syserror.EIO, fmt.Sprintf("Verification for %s failed: %v", childPath, err))
 	}
 
-	// Cache child root hash when it's verified the first time.
-	if len(child.rootHash) == 0 {
-		child.rootHash = buf.Bytes()
+	// Cache child hash when it's verified the first time.
+	if len(child.hash) == 0 {
+		child.hash = buf.Bytes()
 	}
 	return child, nil
 }
 
-// verifyStat verifies the stat against the verified root hash. The mode/uid/gid
-// of the file is cached after verified.
+// verifyStat verifies the stat against the verified hash. The mode/uid/gid of
+// the file is cached after verified.
 func (fs *filesystem) verifyStat(ctx context.Context, d *dentry, stat linux.Statx) error {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 
@@ -353,7 +352,7 @@ func (fs *filesystem) verifyStat(ctx context.Context, d *dentry, stat linux.Stat
 		ReadOffset: 0,
 		// Set read size to 0 so only the metadata is verified.
 		ReadSize:              0,
-		ExpectedRoot:          d.rootHash,
+		Expected:              d.hash,
 		DataAndTreeInSameFile: false,
 	}
 	if atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR {
@@ -375,8 +374,8 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 		// If enabling verification on files/directories is not allowed
 		// during runtime, all cached children are already verified. If
 		// runtime enable is allowed and the parent directory is
-		// enabled, we should verify the child root hash here because
-		// it may be cached before enabled.
+		// enabled, we should verify the child hash here because it may
+		// be cached before enabled.
 		if fs.allowRuntimeEnable {
 			if isEnabled(parent) {
 				if _, err := fs.verifyChild(ctx, parent, child); err != nil {
@@ -481,9 +480,9 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 		// file open and ready to use.
 		// This may cause empty and unused Merkle tree files in
 		// allowRuntimeEnable mode, if they are never enabled. This
-		// does not affect verification, as we rely on cached root hash
-		// to decide whether to perform verification, not the existence
-		// of the Merkle tree file. Also, those Merkle tree files are
+		// does not affect verification, as we rely on cached hash to
+		// decide whether to perform verification, not the existence of
+		// the Merkle tree file. Also, those Merkle tree files are
 		// always hidden and cannot be accessed by verity fs users.
 		if fs.allowRuntimeEnable {
 			childMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
@@ -551,7 +550,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	child.uid = stat.UID
 	child.gid = stat.GID
 
-	// Verify child root hash. This should always be performed unless in
+	// Verify child hash. This should always be performed unless in
 	// allowRuntimeEnable mode and the parent directory hasn't been enabled
 	// yet.
 	if isEnabled(parent) {
