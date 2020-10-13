@@ -174,8 +174,8 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 		return nil, err
 	}
 
-	verityMu.RLock()
-	defer verityMu.RUnlock()
+	fs.verityMu.RLock()
+	defer fs.verityMu.RUnlock()
 	// Read the offset of the child from the extended attributes of the
 	// corresponding Merkle tree file.
 	// This is the offset of the hash for child in its parent's Merkle tree
@@ -302,8 +302,8 @@ func (fs *filesystem) verifyStat(ctx context.Context, d *dentry, stat linux.Stat
 		return err
 	}
 
-	verityMu.RLock()
-	defer verityMu.RUnlock()
+	fs.verityMu.RLock()
+	defer fs.verityMu.RUnlock()
 
 	fd, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
 		Root:  d.lowerMerkleVD,
