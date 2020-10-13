@@ -49,12 +49,12 @@ const Name = "verity"
 const merklePrefix = ".merkle.verity."
 
 // merkleoffsetInParentXattr is the extended attribute name specifying the
-// offset of child root hash in its parent's Merkle tree.
+// offset of child hash in its parent's Merkle tree.
 const merkleOffsetInParentXattr = "user.merkle.offset"
 
 // merkleSizeXattr is the extended attribute name specifying the size of data
 // hashed by the corresponding Merkle tree. For a file, it's the size of the
-// whole file. For a directory, it's the size of all its children's root hashes.
+// whole file. For a directory, it's the size of all its children's hashes.
 const merkleSizeXattr = "user.merkle.size"
 
 // sizeOfStringInt32 is the size for a 32 bit integer stored as string in
@@ -147,7 +147,7 @@ func (FilesystemType) Name() string {
 // mode, it returns true if the target has been enabled with
 // ioctl(FS_IOC_ENABLE_VERITY).
 func isEnabled(d *dentry) bool {
-	return !d.fs.allowRuntimeEnable || len(d.rootHash) != 0
+	return !d.fs.allowRuntimeEnable || len(d.hash) != 0
 }
 
 // alertIntegrityViolation alerts a violation of integrity, which usually means
@@ -256,7 +256,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	d.mode = uint32(stat.Mode)
 	d.uid = stat.UID
 	d.gid = stat.GID
-	d.rootHash = make([]byte, len(iopts.RootHash))
+	d.hash = make([]byte, len(iopts.RootHash))
 
 	if !fs.allowRuntimeEnable {
 		if err := fs.verifyStat(ctx, d, stat); err != nil {
@@ -264,7 +264,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
-	copy(d.rootHash, iopts.RootHash)
+	copy(d.hash, iopts.RootHash)
 	d.vfsd.Init(d)
 
 	fs.rootDentry = d
@@ -316,8 +316,8 @@ type dentry struct {
 	// in the underlying file system.
 	lowerMerkleVD vfs.VirtualDentry
 
-	// rootHash is the rootHash for the current file or directory.
-	rootHash []byte
+	// hash is the calculated hash for the current file or directory.
+	hash []byte
 }
 
 // newDentry creates a new dentry representing the given verity file. The
@@ -516,11 +516,11 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 }
 
 // generateMerkle generates a Merkle tree file for fd. If fd points to a file
-// /foo/bar, a Merkle tree file /foo/.merkle.verity.bar is generated. The root
-// hash of the generated Merkle tree and the data size is returned.
-// If fd points to a regular file, the data is the content of the file. If fd
-// points to a directory, the data is all root hahes of its children, written
-// to the Merkle tree file.
+// /foo/bar, a Merkle tree file /foo/.merkle.verity.bar is generated. The hash
+// of the generated Merkle tree and the data size is returned.  If fd points to
+// a regular file, the data is the content of the file. If fd points to a
+// directory, the data is all hahes of its children, written to the Merkle tree
+// file.
 func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, error) {
 	fdReader := vfs.FileReadWriteSeeker{
 		FD:  fd.lowerFD,
@@ -557,9 +557,9 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 		params.GID = stat.GID
 		params.DataAndTreeInSameFile = false
 	case linux.S_IFDIR:
-		// For a directory, generate a Merkle tree based on the root
-		// hashes of its children that has already been written to the
-		// Merkle tree file.
+		// For a directory, generate a Merkle tree based on the hashes
+		// of its children that has already been written to the Merkle
+		// tree file.
 		merkleStat, err := fd.merkleReader.Stat(ctx, vfs.StatOptions{})
 		if err != nil {
 			return nil, 0, err
@@ -583,12 +583,12 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 		// enable other types of file.
 		return nil, 0, syserror.EINVAL
 	}
-	rootHash, err := merkletree.Generate(params)
-	return rootHash, uint64(params.Size), err
+	hash, err := merkletree.Generate(params)
+	return hash, uint64(params.Size), err
 }
 
 // enableVerity enables verity features on fd by generating a Merkle tree file
-// and stores its root hash in its parent directory's Merkle tree.
+// and stores its hash in its parent directory's Merkle tree.
 func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (uintptr, error) {
 	if !fd.d.fs.allowRuntimeEnable {
 		return 0, syserror.EPERM
@@ -607,7 +607,7 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (ui
 		return 0, alertIntegrityViolation(syserror.EIO, "Unexpected verity fd: missing expected underlying fds")
 	}
 
-	rootHash, dataSize, err := fd.generateMerkle(ctx)
+	hash, dataSize, err := fd.generateMerkle(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -618,15 +618,15 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (ui
 			return 0, err
 		}
 
-		// Write the root hash of fd to the parent directory's Merkle
-		// tree file, as it should be part of the parent Merkle tree
-		// data.  parentMerkleWriter is open with O_APPEND, so it
-		// should write directly to the end of the file.
-		if _, err = fd.parentMerkleWriter.Write(ctx, usermem.BytesIOSequence(rootHash), vfs.WriteOptions{}); err != nil {
+		// Write the hash of fd to the parent directory's Merkle tree
+		// file, as it should be part of the parent Merkle tree data.
+		// parentMerkleWriter is open with O_APPEND, so it should write
+		// directly to the end of the file.
+		if _, err = fd.parentMerkleWriter.Write(ctx, usermem.BytesIOSequence(hash), vfs.WriteOptions{}); err != nil {
 			return 0, err
 		}
 
-		// Record the offset of the root hash of fd in parent directory's
+		// Record the offset of the hash of fd in parent directory's
 		// Merkle tree file.
 		if err := fd.merkleWriter.SetXattr(ctx, &vfs.SetXattrOptions{
 			Name:  merkleOffsetInParentXattr,
@@ -643,37 +643,37 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (ui
 	}); err != nil {
 		return 0, err
 	}
-	fd.d.rootHash = append(fd.d.rootHash, rootHash...)
+	fd.d.hash = append(fd.d.hash, hash...)
 	return 0, nil
 }
 
-// measureVerity returns the root hash of fd, saved in args[2].
+// measureVerity returns the hash of fd, saved in verityDigest.
 func (fd *fileDescription) measureVerity(ctx context.Context, uio usermem.IO, verityDigest usermem.Addr) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	var metadata linux.DigestMetadata
 
-	// If allowRuntimeEnable is true, an empty fd.d.rootHash indicates that
+	// If allowRuntimeEnable is true, an empty fd.d.hash indicates that
 	// verity is not enabled for the file. If allowRuntimeEnable is false,
 	// this is an integrity violation because all files should have verity
-	// enabled, in which case fd.d.rootHash should be set.
-	if len(fd.d.rootHash) == 0 {
+	// enabled, in which case fd.d.hash should be set.
+	if len(fd.d.hash) == 0 {
 		if fd.d.fs.allowRuntimeEnable {
 			return 0, syserror.ENODATA
 		}
-		return 0, alertIntegrityViolation(syserror.ENODATA, "Ioctl measureVerity: no root hash found")
+		return 0, alertIntegrityViolation(syserror.ENODATA, "Ioctl measureVerity: no hash found")
 	}
 
 	// The first part of VerityDigest is the metadata.
 	if _, err := metadata.CopyIn(t, verityDigest); err != nil {
 		return 0, err
 	}
-	if metadata.DigestSize < uint16(len(fd.d.rootHash)) {
+	if metadata.DigestSize < uint16(len(fd.d.hash)) {
 		return 0, syserror.EOVERFLOW
 	}
 
 	// Populate the output digest size, since DigestSize is both input and
 	// output.
-	metadata.DigestSize = uint16(len(fd.d.rootHash))
+	metadata.DigestSize = uint16(len(fd.d.hash))
 
 	// First copy the metadata.
 	if _, err := metadata.CopyOut(t, verityDigest); err != nil {
@@ -681,16 +681,16 @@ func (fd *fileDescription) measureVerity(ctx context.Context, uio usermem.IO, ve
 	}
 
 	// Now copy the root hash bytes to the memory after metadata.
-	_, err := t.CopyOutBytes(usermem.Addr(uintptr(verityDigest)+linux.SizeOfDigestMetadata), fd.d.rootHash)
+	_, err := t.CopyOutBytes(usermem.Addr(uintptr(verityDigest)+linux.SizeOfDigestMetadata), fd.d.hash)
 	return 0, err
 }
 
 func (fd *fileDescription) verityFlags(ctx context.Context, uio usermem.IO, flags usermem.Addr) (uintptr, error) {
 	f := int32(0)
 
-	// All enabled files should store a root hash. This flag is not settable
-	// via FS_IOC_SETFLAGS.
-	if len(fd.d.rootHash) != 0 {
+	// All enabled files should store a hash. This flag is not settable via
+	// FS_IOC_SETFLAGS.
+	if len(fd.d.hash) != 0 {
 		f |= linux.FS_VERITY_FL
 	}
 
@@ -767,7 +767,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		GID:                   fd.d.gid,
 		ReadOffset:            offset,
 		ReadSize:              dst.NumBytes(),
-		ExpectedRoot:          fd.d.rootHash,
+		Expected:              fd.d.hash,
 		DataAndTreeInSameFile: false,
 	})
 	if err != nil {
