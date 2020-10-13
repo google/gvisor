@@ -15,6 +15,8 @@
 package kvm
 
 import (
+	"sync/atomic"
+
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -74,6 +76,9 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 
 	// Clear the address space.
 	cpu.active.set(nil)
+
+	// Increment the number of user exits.
+	atomic.AddUint64(&cpu.userExits, 1)
 
 	// Release resources.
 	c.machine.Put(cpu)

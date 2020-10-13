@@ -412,9 +412,9 @@ func TestWrongVCPU(t *testing.T) {
 			// Basic test, one then the other.
 			bluepill(c1)
 			bluepill(c2)
-			if c2.switches == 0 {
+			if c2.guestExits == 0 {
 				// Don't allow the test to proceed if this fails.
-				t.Fatalf("wrong vCPU#2 switches: vCPU1=%+v,vCPU2=%+v", c1, c2)
+				t.Fatalf("wrong vCPU#2 exits: vCPU1=%+v,vCPU2=%+v", c1, c2)
 			}
 
 			// Alternate vCPUs; we expect to need to trigger the
@@ -423,11 +423,11 @@ func TestWrongVCPU(t *testing.T) {
 				bluepill(c1)
 				bluepill(c2)
 			}
-			if count := c1.switches; count < 90 {
-				t.Errorf("wrong vCPU#1 switches: vCPU1=%+v,vCPU2=%+v", c1, c2)
+			if count := c1.guestExits; count < 90 {
+				t.Errorf("wrong vCPU#1 exits: vCPU1=%+v,vCPU2=%+v", c1, c2)
 			}
-			if count := c2.switches; count < 90 {
-				t.Errorf("wrong vCPU#2 switches: vCPU1=%+v,vCPU2=%+v", c1, c2)
+			if count := c2.guestExits; count < 90 {
+				t.Errorf("wrong vCPU#2 exits: vCPU1=%+v,vCPU2=%+v", c1, c2)
 			}
 			return false
 		})
