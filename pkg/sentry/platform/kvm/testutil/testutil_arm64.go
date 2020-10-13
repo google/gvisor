@@ -23,6 +23,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
+// TLSWorks is a tls test.
+//
+// It returns true or false.
+func TLSWorks() bool
+
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *arch.Registers, fn func()) {
 	regs.Pc = uint64(reflect.ValueOf(fn).Pointer())
