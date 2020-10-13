@@ -35,6 +35,7 @@ go_library(
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fs",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",

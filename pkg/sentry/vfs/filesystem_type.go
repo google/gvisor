@@ -33,6 +33,9 @@ type FilesystemType interface {
 
 	// Name returns the name of this FilesystemType.
 	Name() string
+
+	// Release releases all resources held by this FilesystemType.
+	Release(ctx context.Context)
 }
 
 // GetFilesystemOptions contains options to FilesystemType.GetFilesystem.
