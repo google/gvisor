@@ -193,6 +193,7 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 
 			// Create nested directories with given depth.
 			root := mntns.Root()
+			root.IncRef()
 			defer root.DecRef(ctx)
 			vd := root
 			vd.IncRef()
@@ -387,6 +388,7 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 
 			// Create the mount point.
 			root := mntns.Root()
+			root.IncRef()
 			defer root.DecRef(ctx)
 			pop := vfs.PathOperation{
 				Root:  root,

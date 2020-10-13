@@ -46,6 +46,7 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("failed to create tmpfs root mount: %v", err)
 	}
 	root := mntns.Root()
+	root.IncRef()
 	return vfsObj, root, func() {
 		root.DecRef(ctx)
 		mntns.DecRef(ctx)

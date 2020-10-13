@@ -109,9 +109,12 @@ func setup(t *testing.T) *testutil.System {
 	if err != nil {
 		t.Fatalf("NewMountNamespace(): %v", err)
 	}
+	root := mntns.Root()
+	root.IncRef()
+	defer root.DecRef(ctx)
 	pop := &vfs.PathOperation{
-		Root:  mntns.Root(),
-		Start: mntns.Root(),
+		Root:  root,
+		Start: root,
 		Path:  fspath.Parse("/proc"),
 	}
 	if err := k.VFS().MkdirAt(ctx, creds, pop, &vfs.MkdirOptions{Mode: 0777}); err != nil {
@@ -119,8 +122,8 @@ func setup(t *testing.T) *testutil.System {
 	}
 
 	pop = &vfs.PathOperation{
-		Root:  mntns.Root(),
-		Start: mntns.Root(),
+		Root:  root,
+		Start: root,
 		Path:  fspath.Parse("/proc"),
 	}
 	mntOpts := &vfs.MountOptions{

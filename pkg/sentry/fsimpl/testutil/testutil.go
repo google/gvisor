@@ -46,16 +46,18 @@ type System struct {
 
 // NewSystem constructs a System.
 //
-// Precondition: Caller must hold a reference on MntNs, whose ownership
+// Precondition: Caller must hold a reference on mns, whose ownership
 // is transferred to the new System.
 func NewSystem(ctx context.Context, t *testing.T, v *vfs.VirtualFilesystem, mns *vfs.MountNamespace) *System {
+	root := mns.Root()
+	root.IncRef()
 	s := &System{
 		t:     t,
 		Ctx:   ctx,
 		Creds: auth.CredentialsFromContext(ctx),
 		VFS:   v,
 		MntNs: mns,
-		Root:  mns.Root(),
+		Root:  root,
 	}
 	return s
 }
@@ -254,10 +256,10 @@ func (d *DirentCollector) Contains(name string, typ uint8) error {
 	defer d.mu.Unlock()
 	dirent, ok := d.dirents[name]
 	if !ok {
-		return fmt.Errorf("No dirent named %q found", name)
+		return fmt.Errorf("no dirent named %q found", name)
 	}
 	if dirent.Type != typ {
-		return fmt.Errorf("Dirent named %q found, but was expecting type %s, got: %+v", name, linux.DirentType.Parse(uint64(typ)), dirent)
+		return fmt.Errorf("dirent named %q found, but was expecting type %s, got: %+v", name, linux.DirentType.Parse(uint64(typ)), dirent)
 	}
 	return nil
 }

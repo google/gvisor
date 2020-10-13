@@ -491,6 +491,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			}
 
 			root := mns.Root()
+			root.IncRef()
 			defer root.DecRef(ctx)
 			for _, p := range tc.expectedPaths {
 				target := &vfs.PathOperation{
