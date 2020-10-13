@@ -297,9 +297,7 @@
 	LOAD_KERNEL_ADDRESS(CPU_SELF(from), RSV_REG); \
 	MOVD $CPU_STACK_TOP(RSV_REG), RSV_REG; \
 	MOVD RSV_REG, RSP; \
-	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
-	ISB $15; \
-	DSB $15;
+	WORD $0xd538d092;   //MRS   TPIDR_EL1, R18
 
 // SWITCH_TO_APP_PAGETABLE sets a new pagetable for a container application.
 #define SWITCH_TO_APP_PAGETABLE(from) \
@@ -382,8 +380,6 @@ TEXT ·Halt(SB),NOSPLIT,$0
 	BNE mmio_exit
 	MOVD $0, CPU_REGISTERS+PTRACE_R9(RSV_REG)
 
-	// Flush dcache.
-	WORD $0xd5087e52   // DC CISW
 mmio_exit:
 	// Disable fpsimd.
 	WORD $0xd5381041 // MRS CPACR_EL1, R1
@@ -400,9 +396,6 @@ mmio_exit:
 	// which hypercall.
 	MRS VBAR_EL1, R9
 	MOVD R0, 0x0(R9)
-
-	// Flush dcahce.
-	WORD $0xd5087e52  // DC CISW
 
 	RET
 
@@ -522,8 +515,6 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 
 // Start is the CPU entrypoint.
 TEXT ·Start(SB),NOSPLIT,$0
-	// Flush dcache.
-	WORD $0xd5087e52 // DC CISW
 	// Init.
 	MOVD $SCTLR_EL1_DEFAULT, R1
 	MSR R1, SCTLR_EL1
