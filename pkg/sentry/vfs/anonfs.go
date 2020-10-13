@@ -61,10 +61,13 @@ func (anonFilesystemType) GetFilesystem(context.Context, *VirtualFilesystem, *au
 	panic("cannot instaniate an anon filesystem")
 }
 
-// Name implemenents FilesystemType.Name.
+// Name implements FilesystemType.Name.
 func (anonFilesystemType) Name() string {
 	return "none"
 }
+
+// Release implemenents FilesystemType.Release.
+func (anonFilesystemType) Release(ctx context.Context) {}
 
 // anonFilesystem is the implementation of FilesystemImpl that backs
 // VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().

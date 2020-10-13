@@ -71,6 +71,15 @@ func (fst *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virtua
 	return fst.fs, fst.root, nil
 }
 
+// Release implements vfs.FilesystemType.Release.
+func (fst *FilesystemType) Release(ctx context.Context) {
+	if fst.fs != nil {
+		// Release the original reference obtained when creating the filesystem.
+		fst.root.DecRef(ctx)
+		fst.fs.DecRef(ctx)
+	}
+}
+
 // Accessor allows devices to create device special files in devtmpfs.
 type Accessor struct {
 	vfsObj *vfs.VirtualFilesystem
