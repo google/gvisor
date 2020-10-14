@@ -81,7 +81,8 @@ func UTSNamespaceFromContext(ctx context.Context) *UTSNamespace {
 }
 
 // IPCNamespaceFromContext returns the IPC namespace in which ctx is executing,
-// or nil if there is no such IPC namespace.
+// or nil if there is no such IPC namespace. It takes a reference on the
+// namespace.
 func IPCNamespaceFromContext(ctx context.Context) *IPCNamespace {
 	if v := ctx.Value(CtxIPCNamespace); v != nil {
 		return v.(*IPCNamespace)

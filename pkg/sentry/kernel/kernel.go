@@ -828,7 +828,9 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 	case CtxUTSNamespace:
 		return ctx.args.UTSNamespace
 	case CtxIPCNamespace:
-		return ctx.args.IPCNamespace
+		ipcns := ctx.args.IPCNamespace
+		ipcns.IncRef()
+		return ipcns
 	case auth.CtxCredentials:
 		return ctx.args.Credentials
 	case fs.CtxRoot:
@@ -1374,8 +1376,9 @@ func (k *Kernel) RootUTSNamespace() *UTSNamespace {
 	return k.rootUTSNamespace
 }
 
-// RootIPCNamespace returns the root IPCNamespace.
+// RootIPCNamespace takes a reference and returns the root IPCNamespace.
 func (k *Kernel) RootIPCNamespace() *IPCNamespace {
+	k.rootIPCNamespace.IncRef()
 	return k.rootIPCNamespace
 }
 
@@ -1636,7 +1639,9 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 	case CtxUTSNamespace:
 		return ctx.k.rootUTSNamespace
 	case CtxIPCNamespace:
-		return ctx.k.rootIPCNamespace
+		ipcns := ctx.k.rootIPCNamespace
+		ipcns.IncRef()
+		return ipcns
 	case auth.CtxCredentials:
 		// The supervisor context is global root.
 		return auth.NewRootCredentials(ctx.k.rootUserNamespace)

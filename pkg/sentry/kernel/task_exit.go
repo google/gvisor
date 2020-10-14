@@ -280,6 +280,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 		t.mountNamespaceVFS2.DecRef(t)
 		t.mountNamespaceVFS2 = nil
 	}
+	t.ipcns.DecRef(t)
 	t.mu.Unlock()
 
 	// If this is the last task to exit from the thread group, release the
