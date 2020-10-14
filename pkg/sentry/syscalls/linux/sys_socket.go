@@ -1052,7 +1052,9 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 	// Call the syscall implementation.
 	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, controlMessages)
 	err = handleIOError(t, n != 0, e.ToError(), syserror.ERESTARTSYS, "sendmsg", file)
-	if err != nil {
+	// Control messages should be released on error as well as for zero-length
+	// messages, which are discarded by the receiver.
+	if n == 0 || err != nil {
 		controlMessages.Release(t)
 	}
 	return uintptr(n), err
