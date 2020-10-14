@@ -57,13 +57,13 @@ def _syscall_test(
         platform,
         use_tmpfs,
         tags,
+        debug,
         network = "none",
         file_access = "exclusive",
         overlay = False,
         add_uds_tree = False,
         vfs2 = False,
-        fuse = False,
-        debug = True):
+        fuse = False):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
 
@@ -179,6 +179,7 @@ def syscall_test(
         use_tmpfs = use_tmpfs,
         add_uds_tree = add_uds_tree,
         tags = platforms[default_platform] + vfs2_tags,
+        debug = debug,
         vfs2 = True,
         fuse = fuse,
     )
@@ -194,6 +195,7 @@ def syscall_test(
         use_tmpfs = False,
         add_uds_tree = add_uds_tree,
         tags = list(tags),
+        debug = debug,
     )
 
     for (platform, platform_tags) in platforms.items():
@@ -205,6 +207,7 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
             tags = platform_tags + tags,
+            debug = debug,
         )
 
     if add_overlay:
@@ -216,6 +219,7 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
+            debug = debug,
             overlay = True,
         )
 
@@ -232,6 +236,7 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + overlay_vfs2_tags,
+            debug = debug,
             overlay = True,
             vfs2 = True,
         )
@@ -246,6 +251,7 @@ def syscall_test(
             network = "host",
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
+            debug = debug,
         )
 
     if not use_tmpfs:
@@ -258,6 +264,7 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
+            debug = debug,
             file_access = "shared",
         )
         _syscall_test(
@@ -268,6 +275,7 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + vfs2_tags,
+            debug = debug,
             file_access = "shared",
             vfs2 = True,
         )
