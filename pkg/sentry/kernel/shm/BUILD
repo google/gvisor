@@ -27,6 +27,7 @@ go_library(
         "//pkg/context",
         "//pkg/log",
         "//pkg/refs",
+        "//pkg/refs_vfs2",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
