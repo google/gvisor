@@ -67,10 +67,21 @@ PosixError NetlinkRequestResponse(
 
   RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(sendmsg)(fd.get(), &msg, 0));
 
+  return NetlinkResponse(fd, fn, expect_nlmsgerr);
+}
+
+PosixError NetlinkResponse(
+    const FileDescriptor& fd,
+    const std::function<void(const struct nlmsghdr* hdr)>& fn,
+    bool expect_nlmsgerr) {
   constexpr size_t kBufferSize = 4096;
   std::vector<char> buf(kBufferSize);
+  struct iovec iov = {};
   iov.iov_base = buf.data();
   iov.iov_len = buf.size();
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
 
   // If NLM_F_MULTI is set, response is a series of messages that ends with a
   // NLMSG_DONE message.

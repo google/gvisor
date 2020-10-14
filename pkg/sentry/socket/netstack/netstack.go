@@ -587,6 +587,9 @@ func (i *ioSequencePayload) Payload(size int) ([]byte, *tcpip.Error) {
 	}
 	v := buffer.NewView(size)
 	if _, err := i.src.CopyIn(i.ctx, v); err != nil {
+		if err == io.EOF {
+			return v, nil
+		}
 		return nil, tcpip.ErrBadAddress
 	}
 	return v, nil

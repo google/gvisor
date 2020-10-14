@@ -45,10 +45,12 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		n, err = fs.Splice(t, outFile, inFile, opts)
 		opts.Length -= n
 		total += n
-		if err != syserror.ErrWouldBlock {
+		if err != syserror.ErrWouldBlock || nonBlocking {
 			break
-		} else if err == syserror.ErrWouldBlock && nonBlocking {
-			break
+		}
+		if n != 0 {
+			// Try to do as much as possible witout blocking.
+			nonBlocking = true
 		}
 
 		// Note that the blocking behavior here is a bit different than the
@@ -56,6 +58,9 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		// to write simultaneously, we actually explicitly block on both of
 		// these cases in turn before returning to the splice operation.
 		if inFile.Readiness(EventMaskRead) == 0 {
+			if nonBlocking {
+				break
+			}
 			if inCh == nil {
 				inCh = make(chan struct{}, 1)
 				inW, _ := waiter.NewChannelEntry(inCh)
@@ -68,6 +73,9 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 			}
 		}
 		if outFile.Readiness(EventMaskWrite) == 0 {
+			if nonBlocking {
+				break
+			}
 			if outCh == nil {
 				outCh = make(chan struct{}, 1)
 				outW, _ := waiter.NewChannelEntry(outCh)
