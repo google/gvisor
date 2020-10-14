@@ -321,9 +321,32 @@ func (r *Registry) remove(s *Shm) {
 	r.totalPages -= s.effectiveSize / usermem.PageSize
 }
 
+// Release drops the self-reference of each active shm segment in the registry.
+// It is called when the kernel.IPCNamespace containing r is being destroyed.
+func (r *Registry) Release(ctx context.Context) {
+	// Because Shm.DecRef() may acquire the same locks, collect the segments to
+	// release first. Note that this should not race with any updates to r, since
+	// the IPC namespace containing it has no more references.
+	toRelease := make([]*Shm, 0)
+	r.mu.Lock()
+	for _, s := range r.keysToShms {
+		s.mu.Lock()
+		if !s.pendingDestruction {
+			toRelease = append(toRelease, s)
+		}
+		s.mu.Unlock()
+	}
+	r.mu.Unlock()
+
+	for _, s := range toRelease {
+		r.dissociateKey(s)
+		s.DecRef(ctx)
+	}
+}
+
 // Shm represents a single shared memory segment.
 //
-// Shm segment are backed directly by an allocation from platform memory.
+// Shm segments are backed directly by an allocation from platform memory.
 // Segments are always mapped as a whole, greatly simplifying how mappings are
 // tracked. However note that mremap and munmap calls may cause the vma for a
 // segment to become fragmented; which requires special care when unmapping a
@@ -652,17 +675,20 @@ func (s *Shm) MarkDestroyed(ctx context.Context) {
 	s.registry.dissociateKey(s)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.pendingDestruction {
-		s.pendingDestruction = true
-		// Drop the self-reference so destruction occurs when all
-		// external references are gone.
-		//
-		// N.B. This cannot be the final DecRef, as the caller also
-		// holds a reference.
-		s.DecRef(ctx)
+	if s.pendingDestruction {
+		s.mu.Unlock()
 		return
 	}
+	s.pendingDestruction = true
+	s.mu.Unlock()
+
+	// Drop the self-reference so destruction occurs when all
+	// external references are gone.
+	//
+	// N.B. This cannot be the final DecRef, as the caller also
+	// holds a reference.
+	s.DecRef(ctx)
+	return
 }
 
 // checkOwnership verifies whether a segment may be accessed by ctx as an

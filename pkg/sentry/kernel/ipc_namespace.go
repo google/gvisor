@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/semaphore"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
@@ -24,6 +25,8 @@ import (
 //
 // +stateify savable
 type IPCNamespace struct {
+	IPCNamespaceRefs
+
 	// User namespace which owns this IPC namespace. Immutable.
 	userNS *auth.UserNamespace
 
@@ -33,11 +36,13 @@ type IPCNamespace struct {
 
 // NewIPCNamespace creates a new IPC namespace.
 func NewIPCNamespace(userNS *auth.UserNamespace) *IPCNamespace {
-	return &IPCNamespace{
+	ns := &IPCNamespace{
 		userNS:     userNS,
 		semaphores: semaphore.NewRegistry(userNS),
 		shms:       shm.NewRegistry(userNS),
 	}
+	ns.EnableLeakCheck()
+	return ns
 }
 
 // SemaphoreRegistry returns the semaphore set registry for this namespace.
@@ -48,6 +53,13 @@ func (i *IPCNamespace) SemaphoreRegistry() *semaphore.Registry {
 // ShmRegistry returns the shm segment registry for this namespace.
 func (i *IPCNamespace) ShmRegistry() *shm.Registry {
 	return i.shms
+}
+
+// DecRef implements refs_vfs2.RefCounter.DecRef.
+func (i *IPCNamespace) DecRef(ctx context.Context) {
+	i.IPCNamespaceRefs.DecRef(func() {
+		i.shms.Release(ctx)
+	})
 }
 
 // IPCNamespace returns the task's IPC namespace.

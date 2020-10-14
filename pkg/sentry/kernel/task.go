@@ -656,7 +656,9 @@ func (t *Task) Value(key interface{}) interface{} {
 	case CtxUTSNamespace:
 		return t.utsns
 	case CtxIPCNamespace:
-		return t.ipcns
+		ipcns := t.IPCNamespace()
+		ipcns.IncRef()
+		return ipcns
 	case CtxTask:
 		return t
 	case auth.CtxCredentials:
