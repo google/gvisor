@@ -1610,7 +1610,8 @@ func (k *Kernel) ListSockets() []*SocketRecord {
 		}
 	} else {
 		for s := k.sockets.Front(); s != nil; s = s.Next() {
-			socks = append(socks, &s.SocketRecord)
+			r := s.SocketRecord // avoid sharing
+			socks = append(socks, &r)
 		}
 	}
 	k.extMu.Unlock()
