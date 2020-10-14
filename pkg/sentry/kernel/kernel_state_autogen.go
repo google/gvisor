@@ -242,6 +242,7 @@ func (i *IPCNamespace) StateTypeName() string {
 
 func (i *IPCNamespace) StateFields() []string {
 	return []string{
+		"IPCNamespaceRefs",
 		"userNS",
 		"semaphores",
 		"shms",
@@ -252,17 +253,42 @@ func (i *IPCNamespace) beforeSave() {}
 
 func (i *IPCNamespace) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.userNS)
-	stateSinkObject.Save(1, &i.semaphores)
-	stateSinkObject.Save(2, &i.shms)
+	stateSinkObject.Save(0, &i.IPCNamespaceRefs)
+	stateSinkObject.Save(1, &i.userNS)
+	stateSinkObject.Save(2, &i.semaphores)
+	stateSinkObject.Save(3, &i.shms)
 }
 
 func (i *IPCNamespace) afterLoad() {}
 
 func (i *IPCNamespace) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.userNS)
-	stateSourceObject.Load(1, &i.semaphores)
-	stateSourceObject.Load(2, &i.shms)
+	stateSourceObject.Load(0, &i.IPCNamespaceRefs)
+	stateSourceObject.Load(1, &i.userNS)
+	stateSourceObject.Load(2, &i.semaphores)
+	stateSourceObject.Load(3, &i.shms)
+}
+
+func (r *IPCNamespaceRefs) StateTypeName() string {
+	return "pkg/sentry/kernel.IPCNamespaceRefs"
+}
+
+func (r *IPCNamespaceRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (r *IPCNamespaceRefs) beforeSave() {}
+
+func (r *IPCNamespaceRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+}
+
+func (r *IPCNamespaceRefs) afterLoad() {}
+
+func (r *IPCNamespaceRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
 }
 
 func (k *Kernel) StateTypeName() string {
@@ -2292,6 +2318,7 @@ func init() {
 	state.Register((*FSContext)(nil))
 	state.Register((*FSContextRefs)(nil))
 	state.Register((*IPCNamespace)(nil))
+	state.Register((*IPCNamespaceRefs)(nil))
 	state.Register((*Kernel)(nil))
 	state.Register((*SocketRecord)(nil))
 	state.Register((*SocketRecordVFS1)(nil))
