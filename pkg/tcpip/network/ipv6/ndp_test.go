@@ -15,6 +15,7 @@
 package ipv6
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -398,16 +399,17 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		nsOpts        header.NDPOptionsSerializer
-		nsSrcLinkAddr tcpip.LinkAddress
-		nsSrc         tcpip.Address
-		nsDst         tcpip.Address
-		nsInvalid     bool
-		naDstLinkAddr tcpip.LinkAddress
-		naSolicited   bool
-		naSrc         tcpip.Address
-		naDst         tcpip.Address
+		name                   string
+		nsOpts                 header.NDPOptionsSerializer
+		nsSrcLinkAddr          tcpip.LinkAddress
+		nsSrc                  tcpip.Address
+		nsDst                  tcpip.Address
+		nsInvalid              bool
+		naDstLinkAddr          tcpip.LinkAddress
+		naSolicited            bool
+		naSrc                  tcpip.Address
+		naDst                  tcpip.Address
+		performsLinkResolution bool
 	}{
 		{
 			name:          "Unspecified source to solicited-node multicast destination",
@@ -416,7 +418,7 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 			nsSrc:         header.IPv6Any,
 			nsDst:         nicAddrSNMC,
 			nsInvalid:     false,
-			naDstLinkAddr: remoteLinkAddr0,
+			naDstLinkAddr: header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllNodesMulticastAddress),
 			naSolicited:   false,
 			naSrc:         nicAddr,
 			naDst:         header.IPv6AllNodesMulticastAddress,
@@ -449,7 +451,6 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 			nsDst:         nicAddr,
 			nsInvalid:     true,
 		},
-
 		{
 			name: "Specified source with 1 source ll to multicast destination",
 			nsOpts: header.NDPOptionsSerializer{
@@ -509,6 +510,10 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 			naSolicited:   true,
 			naSrc:         nicAddr,
 			naDst:         remoteAddr,
+			// Since we send a unicast solicitations to a node without an entry for
+			// the remote, the node needs to perform neighbor discovery to get the
+			// remote's link address to send the advertisement response.
+			performsLinkResolution: true,
 		},
 		{
 			name: "Specified source with 1 source ll to unicast destination",
@@ -615,11 +620,78 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 						t.Fatalf("got invalid = %d, want = 0", got)
 					}
 
-					p, got := e.Read()
+					if test.performsLinkResolution {
+						p, got := e.ReadContext(context.Background())
+						if !got {
+							t.Fatal("expected an NDP NS response")
+						}
+
+						if p.Route.LocalAddress != nicAddr {
+							t.Errorf("got p.Route.LocalAddress = %s, want = %s", p.Route.LocalAddress, nicAddr)
+						}
+						if p.Route.LocalLinkAddress != nicLinkAddr {
+							t.Errorf("p.Route.LocalLinkAddress = %s, want = %s", p.Route.LocalLinkAddress, nicLinkAddr)
+						}
+						respNSDst := header.SolicitedNodeAddr(test.nsSrc)
+						if p.Route.RemoteAddress != respNSDst {
+							t.Errorf("got p.Route.RemoteAddress = %s, want = %s", p.Route.RemoteAddress, respNSDst)
+						}
+						if want := header.EthernetAddressFromMulticastIPv6Address(respNSDst); p.Route.RemoteLinkAddress != want {
+							t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, want)
+						}
+
+						checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+							checker.SrcAddr(nicAddr),
+							checker.DstAddr(respNSDst),
+							checker.TTL(header.NDPHopLimit),
+							checker.NDPNS(
+								checker.NDPNSTargetAddress(test.nsSrc),
+								checker.NDPNSOptions([]header.NDPOption{
+									header.NDPSourceLinkLayerAddressOption(nicLinkAddr),
+								}),
+							))
+
+						ser := header.NDPOptionsSerializer{
+							header.NDPTargetLinkLayerAddressOption(linkAddr1),
+						}
+						ndpNASize := header.ICMPv6NeighborAdvertMinimumSize + ser.Length()
+						hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+						pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
+						pkt.SetType(header.ICMPv6NeighborAdvert)
+						na := header.NDPNeighborAdvert(pkt.NDPPayload())
+						na.SetSolicitedFlag(true)
+						na.SetOverrideFlag(true)
+						na.SetTargetAddress(test.nsSrc)
+						na.Options().Serialize(ser)
+						pkt.SetChecksum(header.ICMPv6Checksum(pkt, test.nsSrc, nicAddr, buffer.VectorisedView{}))
+						payloadLength := hdr.UsedLength()
+						ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+						ip.Encode(&header.IPv6Fields{
+							PayloadLength: uint16(payloadLength),
+							NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+							HopLimit:      header.NDPHopLimit,
+							SrcAddr:       test.nsSrc,
+							DstAddr:       nicAddr,
+						})
+						e.InjectLinkAddr(ProtocolNumber, "", stack.NewPacketBuffer(stack.PacketBufferOptions{
+							Data: hdr.View().ToVectorisedView(),
+						}))
+					}
+
+					p, got := e.ReadContext(context.Background())
 					if !got {
 						t.Fatal("expected an NDP NA response")
 					}
 
+					if p.Route.LocalAddress != test.naSrc {
+						t.Errorf("got p.Route.LocalAddress = %s, want = %s", p.Route.LocalAddress, test.naSrc)
+					}
+					if p.Route.LocalLinkAddress != nicLinkAddr {
+						t.Errorf("p.Route.LocalLinkAddress = %s, want = %s", p.Route.LocalLinkAddress, nicLinkAddr)
+					}
+					if p.Route.RemoteAddress != test.naDst {
+						t.Errorf("got p.Route.RemoteAddress = %s, want = %s", p.Route.RemoteAddress, test.naDst)
+					}
 					if p.Route.RemoteLinkAddress != test.naDstLinkAddr {
 						t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, test.naDstLinkAddr)
 					}
