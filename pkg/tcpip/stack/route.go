@@ -126,6 +126,12 @@ func (r *Route) GSOMaxSize() uint32 {
 	return 0
 }
 
+// ResolveWith immediately resolves a route with the specified remote link
+// address.
+func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
+	r.RemoteLinkAddress = addr
+}
+
 // Resolve attempts to resolve the link address if necessary. Returns ErrWouldBlock in
 // case address resolution requires blocking, e.g. wait for ARP reply. Waker is
 // notified when address resolution is complete (success or not).
