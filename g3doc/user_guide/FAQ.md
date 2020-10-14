@@ -111,7 +111,7 @@ Please recreate your cluster and set the `--cni-socket` option on kubeadm
 commands. For example:
 
 ```bash
-kubeadm init --cni-socket=/var/run/containerd/containerd.sock` ...
+kubeadm init --cni-socket=/var/run/containerd/containerd.sock ...
 ```
 
 To fix an existing cluster edit the `/var/lib/kubelet/kubeadm-flags.env` file
