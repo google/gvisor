@@ -399,22 +399,29 @@ func handlePacketOutput(pkt *PacketBuffer, conn *conn, gso *GSO, r *Route, dir d
 		netHeader.SetSourceAddress(conn.original.dstAddr)
 	}
 
-	// Calculate the TCP checksum and set it.
-	tcpHeader.SetChecksum(0)
-	length := uint16(pkt.Size()) - uint16(len(pkt.NetworkHeader().View()))
-	xsum := r.PseudoHeaderChecksum(header.TCPProtocolNumber, length)
-	if gso != nil && gso.NeedsCsum {
-		tcpHeader.SetChecksum(xsum)
-	} else if r.Capabilities()&CapabilityTXChecksumOffload == 0 {
-		xsum = header.ChecksumVVWithOffset(pkt.Data, xsum, int(tcpHeader.DataOffset()), pkt.Data.Size())
-		tcpHeader.SetChecksum(^tcpHeader.CalculateChecksum(xsum))
-	}
-
 	if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
 		netHeader := header.IPv4(pkt.NetworkHeader().View())
 		netHeader.SetChecksum(0)
 		netHeader.SetChecksum(^netHeader.CalculateChecksum())
 	}
+
+	// Calculate the TCP checksum and set it.
+	tcpHeader.SetChecksum(0)
+	length := uint16(len(tcpHeader) + pkt.Data.Size())
+	xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
+	if r.Stack().CheckLocalAddress(0, r.NetProto, netHeader.DestinationAddress()) == 0 {
+		if gso != nil && gso.NeedsCsum {
+			tcpHeader.SetChecksum(xsum)
+			return
+		}
+
+		if r.Capabilities()&CapabilityTXChecksumOffload != 0 {
+			return
+		}
+	}
+
+	xsum = header.ChecksumVV(pkt.Data, xsum)
+	tcpHeader.SetChecksum(^tcpHeader.CalculateChecksum(xsum))
 }
 
 // handlePacket will manipulate the port and address of the packet if the

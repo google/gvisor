@@ -73,9 +73,31 @@ func (*fwdTestNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
 
-func (f *fwdTestNetworkEndpoint) HandlePacket(r *Route, pkt *PacketBuffer) {
-	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
+func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
+	netHdr := pkt.NetworkHeader().View()
+	_, dst := f.proto.ParseAddresses(netHdr)
+
+	addressEndpoint := f.AcquireAssignedAddress(dst, f.nic.Promiscuous(), CanBePrimaryEndpoint)
+	if addressEndpoint != nil {
+		addressEndpoint.DecRef()
+		// Dispatch the packet to the transport protocol.
+		f.dispatcher.DeliverTransportPacket(tcpip.TransportProtocolNumber(netHdr[protocolNumberOffset]), pkt)
+		return
+	}
+
+	r, err := f.proto.stack.FindRoute(0, "", dst, fwdTestNetNumber, false /* multicastLoop */)
+	if err != nil {
+		return
+	}
+	defer r.Release()
+
+	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+	pkt = NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: int(r.MaxHeaderLength()),
+		Data:               vv.ToView().ToVectorisedView(),
+	})
+	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
+	_ = r.WriteHeaderIncludedPacket(pkt)
 }
 
 func (f *fwdTestNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -106,8 +128,13 @@ func (f *fwdTestNetworkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBuf
 	panic("not implemented")
 }
 
-func (*fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) *tcpip.Error {
-	return tcpip.ErrNotSupported
+func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) *tcpip.Error {
+	// The network header should not already be populated.
+	if _, ok := pkt.NetworkHeader().Consume(fwdTestNetHeaderLen); !ok {
+		return tcpip.ErrInvalidOptionValue
+	}
+
+	return f.nic.WritePacket(r, nil /* gso */, fwdTestNetNumber, pkt)
 }
 
 func (f *fwdTestNetworkEndpoint) Close() {
@@ -117,6 +144,8 @@ func (f *fwdTestNetworkEndpoint) Close() {
 // fwdTestNetworkProtocol is a network-layer protocol that implements Address
 // resolution.
 type fwdTestNetworkProtocol struct {
+	stack *Stack
+
 	addrCache              *linkAddrCache
 	neigh                  *neighborCache
 	addrResolveDelay       time.Duration
@@ -334,7 +363,10 @@ func (e *fwdTestLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protoco
 func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborCache bool) (ep1, ep2 *fwdTestLinkEndpoint) {
 	// Create a stack with the network protocol and two NICs.
 	s := New(Options{
-		NetworkProtocols: []NetworkProtocolFactory{func(*Stack) NetworkProtocol { return proto }},
+		NetworkProtocols: []NetworkProtocolFactory{func(s *Stack) NetworkProtocol {
+			proto.stack = s
+			return proto
+		}},
 		UseNeighborCache: useNeighborCache,
 	})
 

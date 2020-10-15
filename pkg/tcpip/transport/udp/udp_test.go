@@ -1452,6 +1452,10 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
+func (*testInterface) Promiscuous() bool {
+	return false
+}
+
 func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }

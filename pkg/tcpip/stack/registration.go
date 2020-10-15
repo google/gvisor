@@ -63,17 +63,24 @@ const (
 	ControlUnknown
 )
 
+// NetworkPacketInfo holds information about a network layer packet.
+type NetworkPacketInfo struct {
+	// LocalAddressBroadcast is true if the packet's local address is a broadcast
+	// address.
+	LocalAddressBroadcast bool
+}
+
 // TransportEndpoint is the interface that needs to be implemented by transport
 // protocol (e.g., tcp, udp) endpoints that can handle packets.
 type TransportEndpoint interface {
 	// UniqueID returns an unique ID for this transport endpoint.
 	UniqueID() uint64
 
-	// HandlePacket is called by the stack when new packets arrive to
-	// this transport endpoint. It sets pkt.TransportHeader.
+	// HandlePacket is called by the stack when new packets arrive to this
+	// transport endpoint. It sets the packet buffer's transport header.
 	//
-	// HandlePacket takes ownership of pkt.
-	HandlePacket(r *Route, id TransportEndpointID, pkt *PacketBuffer)
+	// HandlePacket takes ownership of the packet.
+	HandlePacket(TransportEndpointID, *PacketBuffer)
 
 	// HandleControlPacket is called by the stack when new control (e.g.
 	// ICMP) packets arrive to this transport endpoint.
@@ -105,8 +112,8 @@ type RawTransportEndpoint interface {
 	// this transport endpoint. The packet contains all data from the link
 	// layer up.
 	//
-	// HandlePacket takes ownership of pkt.
-	HandlePacket(r *Route, pkt *PacketBuffer)
+	// HandlePacket takes ownership of the packet.
+	HandlePacket(*PacketBuffer)
 }
 
 // PacketEndpoint is the interface that needs to be implemented by packet
@@ -172,9 +179,9 @@ type TransportProtocol interface {
 	// protocol that don't match any existing endpoint. For example,
 	// it is targeted at a port that has no listeners.
 	//
-	// HandleUnknownDestinationPacket takes ownership of pkt if it handles
+	// HandleUnknownDestinationPacket takes ownership of the packet if it handles
 	// the issue.
-	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, pkt *PacketBuffer) UnknownDestinationPacketDisposition
+	HandleUnknownDestinationPacket(TransportEndpointID, *PacketBuffer) UnknownDestinationPacketDisposition
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -227,8 +234,8 @@ type TransportDispatcher interface {
 	//
 	// pkt.NetworkHeader must be set before calling DeliverTransportPacket.
 	//
-	// DeliverTransportPacket takes ownership of pkt.
-	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) TransportPacketDisposition
+	// DeliverTransportPacket takes ownership of the packet.
+	DeliverTransportPacket(tcpip.TransportProtocolNumber, *PacketBuffer) TransportPacketDisposition
 
 	// DeliverTransportControlPacket delivers control packets to the
 	// appropriate transport protocol endpoint.
@@ -491,6 +498,9 @@ type NetworkInterface interface {
 	// Enabled returns true if the interface is enabled.
 	Enabled() bool
 
+	// Promiscuous returns true if the interface is in promiscuous mode.
+	Promiscuous() bool
+
 	// WritePacketToRemote writes the packet to the given remote link address.
 	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
 }
@@ -547,7 +557,7 @@ type NetworkEndpoint interface {
 	// this network endpoint. It sets pkt.NetworkHeader.
 	//
 	// HandlePacket takes ownership of pkt.
-	HandlePacket(r *Route, pkt *PacketBuffer)
+	HandlePacket(pkt *PacketBuffer)
 
 	// Close is called when the endpoint is reomved from a stack.
 	Close()

@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
-	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -213,20 +212,29 @@ func (*fakeTransportEndpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Erro
 	return tcpip.FullAddress{}, nil
 }
 
-func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, _ *stack.PacketBuffer) {
+func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Increment the number of received packets.
 	f.proto.packetCount++
-	if f.acceptQueue != nil {
-		f.acceptQueue = append(f.acceptQueue, fakeTransportEndpoint{
-			TransportEndpointInfo: stack.TransportEndpointInfo{
-				ID:       f.ID,
-				NetProto: f.NetProto,
-			},
-			proto:    f.proto,
-			peerAddr: r.RemoteAddress,
-			route:    r.Clone(),
-		})
+	if f.acceptQueue == nil {
+		return
 	}
+
+	netHdr := pkt.NetworkHeader().View()
+	route, err := f.proto.stack.FindRoute(pkt.NICID, tcpip.Address(netHdr[dstAddrOffset]), tcpip.Address(netHdr[srcAddrOffset]), pkt.NetworkProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		return
+	}
+	route.ResolveWith(pkt.SourceLinkAddress())
+
+	f.acceptQueue = append(f.acceptQueue, fakeTransportEndpoint{
+		TransportEndpointInfo: stack.TransportEndpointInfo{
+			ID:       f.ID,
+			NetProto: f.NetProto,
+		},
+		proto:    f.proto,
+		peerAddr: route.RemoteAddress,
+		route:    route,
+	})
 }
 
 func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, stack.ControlType, uint32, *stack.PacketBuffer) {
@@ -288,7 +296,7 @@ func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err *tcp
 	return 0, 0, nil
 }
 
-func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
+func (*fakeTransportProtocol) HandleUnknownDestinationPacket(stack.TransportEndpointID, *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
 	return stack.UnknownDestinationPacketHandled
 }
 
@@ -542,89 +550,5 @@ func TestTransportOptions(t *testing.T) {
 	}
 	if !v {
 		t.Fatalf("got tcpip.TCPModerateReceiveBufferOption = false, want = true")
-	}
-}
-
-func TestTransportForwarding(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{fakeNetFactory},
-		TransportProtocols: []stack.TransportProtocolFactory{fakeTransFactory},
-	})
-	s.SetForwarding(fakeNetNumber, true)
-
-	// TODO(b/123449044): Change this to a channel NIC.
-	ep1 := loopback.New()
-	if err := s.CreateNIC(1, ep1); err != nil {
-		t.Fatalf("CreateNIC #1 failed: %v", err)
-	}
-	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
-		t.Fatalf("AddAddress #1 failed: %v", err)
-	}
-
-	ep2 := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(2, ep2); err != nil {
-		t.Fatalf("CreateNIC #2 failed: %v", err)
-	}
-	if err := s.AddAddress(2, fakeNetNumber, "\x02"); err != nil {
-		t.Fatalf("AddAddress #2 failed: %v", err)
-	}
-
-	// Route all packets to address 3 to NIC 2 and all packets to address
-	// 1 to NIC 1.
-	{
-		subnet0, err := tcpip.NewSubnet("\x03", "\xff")
-		if err != nil {
-			t.Fatal(err)
-		}
-		subnet1, err := tcpip.NewSubnet("\x01", "\xff")
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.SetRouteTable([]tcpip.Route{
-			{Destination: subnet0, Gateway: "\x00", NIC: 2},
-			{Destination: subnet1, Gateway: "\x00", NIC: 1},
-		})
-	}
-
-	wq := waiter.Queue{}
-	ep, err := s.NewEndpoint(fakeTransNumber, fakeNetNumber, &wq)
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
-
-	if err := ep.Bind(tcpip.FullAddress{Addr: "\x01", NIC: 1}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
-
-	// Send a packet to address 1 from address 3.
-	req := buffer.NewView(30)
-	req[0] = 1
-	req[1] = 3
-	req[2] = byte(fakeTransNumber)
-	ep2.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: req.ToVectorisedView(),
-	}))
-
-	aep, _, err := ep.Accept(nil)
-	if err != nil || aep == nil {
-		t.Fatalf("Accept failed: %v, %v", aep, err)
-	}
-
-	resp := buffer.NewView(30)
-	if _, _, err := aep.Write(tcpip.SlicePayload(resp), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
-	}
-
-	p, ok := ep2.Read()
-	if !ok {
-		t.Fatal("Response packet not forwarded")
-	}
-
-	nh := stack.PayloadSince(p.Pkt.NetworkHeader())
-	if dst := nh[0]; dst != 3 {
-		t.Errorf("Response packet has incorrect destination addresss: got = %d, want = 3", dst)
-	}
-	if src := nh[1]; src != 1 {
-		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
 }

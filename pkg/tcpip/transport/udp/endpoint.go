@@ -1376,10 +1376,11 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // On IPv4, UDP checksum is optional, and a zero value means the transmitter
 // omitted the checksum generation (RFC768).
 // On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
-func verifyChecksum(r *stack.Route, hdr header.UDP, pkt *stack.PacketBuffer) bool {
-	if r.Capabilities()&stack.CapabilityRXChecksumOffload == 0 &&
-		(hdr.Checksum() != 0 || r.NetProto == header.IPv6ProtocolNumber) {
-		xsum := r.PseudoHeaderChecksum(ProtocolNumber, hdr.Length())
+func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
+	if pkt.InterfaceCapabilities&stack.CapabilityRXChecksumOffload == 0 &&
+		(hdr.Checksum() != 0 || pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber) {
+		netHdr := pkt.Network()
+		xsum := header.PseudoHeaderChecksum(ProtocolNumber, netHdr.DestinationAddress(), netHdr.SourceAddress(), hdr.Length())
 		for _, v := range pkt.Data.Views() {
 			xsum = header.Checksum(v, xsum)
 		}
@@ -1390,7 +1391,7 @@ func verifyChecksum(r *stack.Route, hdr header.UDP, pkt *stack.PacketBuffer) boo
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().View())
 	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
@@ -1400,7 +1401,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		return
 	}
 
-	if !verifyChecksum(r, hdr, pkt) {
+	if !verifyChecksum(hdr, pkt) {
 		// Checksum Error.
 		e.stack.Stats().UDP.ChecksumErrors.Increment()
 		e.stats.ReceiveErrors.ChecksumErrors.Increment()
@@ -1431,7 +1432,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	// Push new packet into receive list and increment the buffer size.
 	packet := &udpPacket{
 		senderAddress: tcpip.FullAddress{
-			NIC:  r.NICID(),
+			NIC:  pkt.NICID,
 			Addr: id.RemoteAddress,
 			Port: header.UDP(hdr).SourcePort(),
 		},
@@ -1441,7 +1442,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	e.rcvBufSize += pkt.Data.Size()
 
 	// Save any useful information from the network header to the packet.
-	switch r.NetProto {
+	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
 		packet.tos, _ = header.IPv4(pkt.NetworkHeader().View()).TOS()
 	case header.IPv6ProtocolNumber:
@@ -1451,9 +1452,10 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	// TODO(gvisor.dev/issue/3556): r.LocalAddress may be a multicast or broadcast
 	// address. packetInfo.LocalAddr should hold a unicast address that can be
 	// used to respond to the incoming packet.
-	packet.packetInfo.LocalAddr = r.LocalAddress
-	packet.packetInfo.DestinationAddr = r.LocalAddress
-	packet.packetInfo.NIC = r.NICID()
+	localAddr := pkt.Network().DestinationAddress()
+	packet.packetInfo.LocalAddr = localAddr
+	packet.packetInfo.DestinationAddr = localAddr
+	packet.packetInfo.NIC = pkt.NICID
 	packet.timestamp = e.stack.Clock().NowNanoseconds()
 
 	e.rcvMu.Unlock()
@@ -1464,6 +1466,21 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	}
 }
 
+func (e *endpoint) ResolutionFailureHandler(err *tcpip.Error) {
+	switch err {
+	case tcpip.ErrNoLinkAddress:
+		e.updateLastError(tcpip.ErrNetworkUnreachable)
+	default:
+		panic(fmt.Sprintf("got unexpected error: %s", err))
+	}
+}
+
+func (e *endpoint) updateLastError(err *tcpip.Error) {
+	e.lastErrorMu.Lock()
+	defer e.lastErrorMu.Unlock()
+	e.lastError = err
+}
+
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	if typ == stack.ControlPortUnreachable {
@@ -1471,10 +1488,7 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 		defer e.mu.RUnlock()
 
 		if e.state == StateConnected {
-			e.lastErrorMu.Lock()
-			defer e.lastErrorMu.Unlock()
-
-			e.lastError = tcpip.ErrConnectionRefused
+			e.updateLastError(tcpip.ErrConnectionRefused)
 		}
 	}
 }
