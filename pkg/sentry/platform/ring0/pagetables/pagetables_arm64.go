@@ -36,7 +36,7 @@ const (
 	pudSize = 1 << pudShift
 	pgdSize = 1 << pgdShift
 
-	ttbrASIDOffset = 55
+	ttbrASIDOffset = 48
 	ttbrASIDMask   = 0xff
 
 	entriesPerPage = 512
