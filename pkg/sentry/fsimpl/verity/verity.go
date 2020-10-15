@@ -148,14 +148,6 @@ func (FilesystemType) Name() string {
 	return Name
 }
 
-// isEnabled checks whether the target is enabled with verity features. It
-// should always be true if runtime enable is not allowed. In runtime enable
-// mode, it returns true if the target has been enabled with
-// ioctl(FS_IOC_ENABLE_VERITY).
-func isEnabled(d *dentry) bool {
-	return !d.fs.allowRuntimeEnable || len(d.hash) != 0
-}
-
 // Release implements vfs.FilesystemType.Release.
 func (FilesystemType) Release(ctx context.Context) {}
 
@@ -448,6 +440,14 @@ func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) 
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
 }
 
+// verityEnabled checks whether the file is enabled with verity features. It
+// should always be true if runtime enable is not allowed. In runtime enable
+// mode, it returns true if the target has been enabled with
+// ioctl(FS_IOC_ENABLE_VERITY).
+func (d *dentry) verityEnabled() bool {
+	return !d.fs.allowRuntimeEnable || len(d.hash) != 0
+}
+
 func (d *dentry) readlink(ctx context.Context) (string, error) {
 	return d.fs.vfsfs.VirtualFilesystem().ReadlinkAt(ctx, d.fs.creds, &vfs.PathOperation{
 		Root:  d.lowerVD,
@@ -510,7 +510,7 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	if isEnabled(fd.d) {
+	if fd.d.verityEnabled() {
 		if err := fd.d.fs.verifyStat(ctx, fd.d, stat); err != nil {
 			return linux.Statx{}, err
 		}
@@ -726,7 +726,7 @@ func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	// No need to verify if the file is not enabled yet in
 	// allowRuntimeEnable mode.
-	if !isEnabled(fd.d) {
+	if !fd.d.verityEnabled() {
 		return fd.lowerFD.PRead(ctx, dst, offset, opts)
 	}
 

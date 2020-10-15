@@ -377,12 +377,12 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 		// enabled, we should verify the child hash here because it may
 		// be cached before enabled.
 		if fs.allowRuntimeEnable {
-			if isEnabled(parent) {
+			if parent.verityEnabled() {
 				if _, err := fs.verifyChild(ctx, parent, child); err != nil {
 					return nil, err
 				}
 			}
-			if isEnabled(child) {
+			if child.verityEnabled() {
 				vfsObj := fs.vfsfs.VirtualFilesystem()
 				mask := uint32(linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID)
 				stat, err := vfsObj.StatAt(ctx, fs.creds, &vfs.PathOperation{
@@ -553,13 +553,13 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	// Verify child hash. This should always be performed unless in
 	// allowRuntimeEnable mode and the parent directory hasn't been enabled
 	// yet.
-	if isEnabled(parent) {
+	if parent.verityEnabled() {
 		if _, err := fs.verifyChild(ctx, parent, child); err != nil {
 			child.destroyLocked(ctx)
 			return nil, err
 		}
 	}
-	if isEnabled(child) {
+	if child.verityEnabled() {
 		if err := fs.verifyStat(ctx, child, stat); err != nil {
 			child.destroyLocked(ctx)
 			return nil, err
@@ -915,7 +915,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	if isEnabled(d) {
+	if d.verityEnabled() {
 		if err := fs.verifyStat(ctx, d, stat); err != nil {
 			return linux.Statx{}, err
 		}
