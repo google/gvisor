@@ -101,14 +101,19 @@ func (*stubLinkAddressCache) CheckLocalAddress(tcpip.NICID, tcpip.NetworkProtoco
 func (*stubLinkAddressCache) AddLinkAddress(tcpip.NICID, tcpip.Address, tcpip.LinkAddress) {
 }
 
-type stubNUDHandler struct{}
+type stubNUDHandler struct {
+	probeCount        int
+	confirmationCount int
+}
 
 var _ stack.NUDHandler = (*stubNUDHandler)(nil)
 
-func (*stubNUDHandler) HandleProbe(remoteAddr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes stack.LinkAddressResolver) {
+func (s *stubNUDHandler) HandleProbe(remoteAddr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes stack.LinkAddressResolver) {
+	s.probeCount++
 }
 
-func (*stubNUDHandler) HandleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags stack.ReachabilityConfirmationFlags) {
+func (s *stubNUDHandler) HandleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags stack.ReachabilityConfirmationFlags) {
+	s.confirmationCount++
 }
 
 func (*stubNUDHandler) HandleUpperLevelConfirmation(addr tcpip.Address) {
@@ -118,6 +123,12 @@ var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {
 	stack.NetworkLinkEndpoint
+
+	linkAddr tcpip.LinkAddress
+}
+
+func (i *testInterface) LinkAddress() tcpip.LinkAddress {
+	return i.linkAddr
 }
 
 func (*testInterface) ID() tcpip.NICID {
@@ -1489,6 +1500,243 @@ func TestPacketQueing(t *testing.T) {
 			// again.
 			test.rxPkt(e)
 			test.checkResp(t, e)
+		})
+	}
+}
+
+func TestCallsToNeighborCache(t *testing.T) {
+	tests := []struct {
+		name                  string
+		createPacket          func() header.ICMPv6
+		multicast             bool
+		source                tcpip.Address
+		destination           tcpip.Address
+		wantProbeCount        int
+		wantConfirmationCount int
+	}{
+		{
+			name: "Unicast Neighbor Solicitation without source link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
+				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp.SetType(header.ICMPv6NeighborSolicit)
+				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns.SetTargetAddress(lladdr0)
+				return icmp
+			},
+			source:      lladdr1,
+			destination: lladdr0,
+			// "The source link-layer address option SHOULD be included in unicast
+			//  solicitations." - RFC 4861 section 4.3
+			//
+			// A Neighbor Advertisement needs to be sent in response, but the
+			// Neighbor Cache shouldn't be updated since we have no useful
+			// information about the sender.
+			wantProbeCount: 0,
+		},
+		{
+			name: "Unicast Neighbor Solicitation with source link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
+				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp.SetType(header.ICMPv6NeighborSolicit)
+				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns.SetTargetAddress(lladdr0)
+				ns.Options().Serialize(header.NDPOptionsSerializer{
+					header.NDPSourceLinkLayerAddressOption(linkAddr1),
+				})
+				return icmp
+			},
+			source:         lladdr1,
+			destination:    lladdr0,
+			wantProbeCount: 1,
+		},
+		{
+			name: "Multicast Neighbor Solicitation without source link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
+				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp.SetType(header.ICMPv6NeighborSolicit)
+				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns.SetTargetAddress(lladdr0)
+				return icmp
+			},
+			source:      lladdr1,
+			destination: header.SolicitedNodeAddr(lladdr0),
+			// "The source link-layer address option MUST be included in multicast
+			//  solicitations." - RFC 4861 section 4.3
+			wantProbeCount: 0,
+		},
+		{
+			name: "Multicast Neighbor Solicitation with source link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
+				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp.SetType(header.ICMPv6NeighborSolicit)
+				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns.SetTargetAddress(lladdr0)
+				ns.Options().Serialize(header.NDPOptionsSerializer{
+					header.NDPSourceLinkLayerAddressOption(linkAddr1),
+				})
+				return icmp
+			},
+			source:         lladdr1,
+			destination:    header.SolicitedNodeAddr(lladdr0),
+			wantProbeCount: 1,
+		},
+		{
+			name: "Unicast Neighbor Advertisement without target link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				naSize := header.ICMPv6NeighborAdvertMinimumSize
+				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp.SetType(header.ICMPv6NeighborAdvert)
+				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na.SetSolicitedFlag(true)
+				na.SetOverrideFlag(false)
+				na.SetTargetAddress(lladdr1)
+				return icmp
+			},
+			source:      lladdr1,
+			destination: lladdr0,
+			// "When responding to unicast solicitations, the target link-layer
+			//  address option can be omitted since the sender of the solicitation has
+			//  the correct link-layer address; otherwise, it would not be able to
+			//  send the unicast solicitation in the first place."
+			//   - RFC 4861 section 4.4
+			wantConfirmationCount: 1,
+		},
+		{
+			name: "Unicast Neighbor Advertisement with target link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
+				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp.SetType(header.ICMPv6NeighborAdvert)
+				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na.SetSolicitedFlag(true)
+				na.SetOverrideFlag(false)
+				na.SetTargetAddress(lladdr1)
+				na.Options().Serialize(header.NDPOptionsSerializer{
+					header.NDPTargetLinkLayerAddressOption(linkAddr1),
+				})
+				return icmp
+			},
+			source:                lladdr1,
+			destination:           lladdr0,
+			wantConfirmationCount: 1,
+		},
+		{
+			name: "Multicast Neighbor Advertisement without target link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
+				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp.SetType(header.ICMPv6NeighborAdvert)
+				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na.SetSolicitedFlag(false)
+				na.SetOverrideFlag(false)
+				na.SetTargetAddress(lladdr1)
+				return icmp
+			},
+			source:      lladdr1,
+			destination: header.IPv6AllNodesMulticastAddress,
+			// "Target link-layer address MUST be included for multicast solicitations
+			//  in order to avoid infinite Neighbor Solicitation "recursion" when the
+			//  peer node does not have a cache entry to return a Neighbor
+			//  Advertisements message." - RFC 4861 section 4.4
+			wantConfirmationCount: 0,
+		},
+		{
+			name: "Multicast Neighbor Advertisement with target link-layer address option",
+			createPacket: func() header.ICMPv6 {
+				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
+				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp.SetType(header.ICMPv6NeighborAdvert)
+				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na.SetSolicitedFlag(false)
+				na.SetOverrideFlag(false)
+				na.SetTargetAddress(lladdr1)
+				na.Options().Serialize(header.NDPOptionsSerializer{
+					header.NDPTargetLinkLayerAddressOption(linkAddr1),
+				})
+				return icmp
+			},
+			source:                lladdr1,
+			destination:           header.IPv6AllNodesMulticastAddress,
+			wantConfirmationCount: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+				UseNeighborCache:   true,
+			})
+			{
+				if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
+					t.Fatalf("CreateNIC(_, _) = %s", err)
+				}
+				if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
+					t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
+				}
+			}
+			{
+				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.SetRouteTable(
+					[]tcpip.Route{{
+						Destination: subnet,
+						NIC:         nicID,
+					}},
+				)
+			}
+
+			netProto := s.NetworkProtocolInstance(ProtocolNumber)
+			if netProto == nil {
+				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
+			}
+			nudHandler := &stubNUDHandler{}
+			ep := netProto.NewEndpoint(&testInterface{linkAddr: linkAddr0}, &stubLinkAddressCache{}, nudHandler, &stubDispatcher{})
+			defer ep.Close()
+
+			if err := ep.Enable(); err != nil {
+				t.Fatalf("ep.Enable(): %s", err)
+			}
+
+			r, err := s.FindRoute(nicID, lladdr0, test.source, ProtocolNumber, false /* multicastLoop */)
+			if err != nil {
+				t.Fatalf("FindRoute(%d, %s, %s, _, false) = (_, %s), want = (_, nil)", nicID, lladdr0, lladdr1, err)
+			}
+			defer r.Release()
+
+			// TODO(gvisor.dev/issue/4517): Remove the need for this manual patch.
+			r.LocalAddress = test.destination
+
+			icmp := test.createPacket()
+			icmp.SetChecksum(header.ICMPv6Checksum(icmp, r.RemoteAddress, r.LocalAddress, buffer.VectorisedView{}))
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				ReserveHeaderBytes: header.IPv6MinimumSize,
+				Data:               buffer.View(icmp).ToVectorisedView(),
+			})
+			ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength: uint16(len(icmp)),
+				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+				HopLimit:      header.NDPHopLimit,
+				SrcAddr:       r.RemoteAddress,
+				DstAddr:       r.LocalAddress,
+			})
+			ep.HandlePacket(&r, pkt)
+
+			// Confirm the endpoint calls the correct NUDHandler method.
+			if nudHandler.probeCount != test.wantProbeCount {
+				t.Errorf("got nudHandler.probeCount = %d, want = %d", nudHandler.probeCount, test.wantProbeCount)
+			}
+			if nudHandler.confirmationCount != test.wantConfirmationCount {
+				t.Errorf("got nudHandler.confirmationCount = %d, want = %d", nudHandler.confirmationCount, test.wantConfirmationCount)
+			}
 		})
 	}
 }
