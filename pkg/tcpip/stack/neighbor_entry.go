@@ -406,9 +406,9 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		// INCOMPLETE state." - RFC 4861 section 7.2.5
 
 	case Reachable, Stale, Delay, Probe:
-		sameLinkAddr := e.neigh.LinkAddr == linkAddr
+		isLinkAddrDifferent := len(linkAddr) != 0 && e.neigh.LinkAddr != linkAddr
 
-		if !sameLinkAddr {
+		if isLinkAddrDifferent {
 			if !flags.Override {
 				if e.neigh.State == Reachable {
 					e.dispatchChangeEventLocked(Stale)
@@ -431,7 +431,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			}
 		}
 
-		if flags.Solicited && (flags.Override || sameLinkAddr) {
+		if flags.Solicited && (flags.Override || !isLinkAddrDifferent) {
 			if e.neigh.State != Reachable {
 				e.dispatchChangeEventLocked(Reachable)
 			}

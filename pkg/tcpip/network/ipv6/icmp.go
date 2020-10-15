@@ -439,18 +439,18 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 
 		// If the NA message has the target link layer option, update the link
 		// address cache with the link address for the target of the message.
-		if len(targetLinkAddr) != 0 {
-			if e.nud == nil {
+		if e.nud == nil {
+			if len(targetLinkAddr) != 0 {
 				e.linkAddrCache.AddLinkAddress(e.nic.ID(), targetAddr, targetLinkAddr)
-				return
 			}
-
-			e.nud.HandleConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
-				Solicited: na.SolicitedFlag(),
-				Override:  na.OverrideFlag(),
-				IsRouter:  na.RouterFlag(),
-			})
+			return
 		}
+
+		e.nud.HandleConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
+			Solicited: na.SolicitedFlag(),
+			Override:  na.OverrideFlag(),
+			IsRouter:  na.RouterFlag(),
+		})
 
 	case header.ICMPv6EchoRequest:
 		received.EchoRequest.Increment()
