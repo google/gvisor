@@ -311,11 +311,25 @@ func (h PacketHeader) Consume(size int) (v buffer.View, consumed bool) {
 }
 
 // PayloadSince returns packet payload starting from and including a particular
-// header. This method isn't optimized and should be used in test only.
+// header.
+//
+// The returned View is owned by the caller - its backing buffer is separate
+// from the packet header's underlying packet buffer.
 func PayloadSince(h PacketHeader) buffer.View {
-	var v buffer.View
+	size := h.pk.Data.Size()
+	for _, hinfo := range h.pk.headers[h.typ:] {
+		size += len(hinfo.buf)
+	}
+
+	v := make(buffer.View, 0, size)
+
 	for _, hinfo := range h.pk.headers[h.typ:] {
 		v = append(v, hinfo.buf...)
 	}
-	return append(v, h.pk.Data.ToView()...)
+
+	for _, view := range h.pk.Data.Views() {
+		v = append(v, view...)
+	}
+
+	return v
 }
