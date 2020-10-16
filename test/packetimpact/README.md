@@ -694,6 +694,13 @@ func TestMyTcpTest(t *testing.T) {
 }
 ```
 
+### Adding a new packetimpact test
+
+*   Create a go test in the [tests directory](tests/)
+*   Add a `packetimpact_testbench` rule in [BUILD](tests/BUILD)
+*   Add the test into the `ALL_TESTS` list in [defs.bzl](runner/defs.bzl),
+    otherwise you will see an error message complaining about a missing test.
+
 ## Other notes
 
 *   The time between receiving a SYN-ACK and replying with an ACK in `Handshake`
