@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -686,7 +685,9 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		// packet to forward.
 		fwdPkt := NewPacketBuffer(PacketBufferOptions{
 			ReserveHeaderBytes: int(n.LinkEndpoint.MaxHeaderLength()),
-			Data:               buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+			// We need to do a deep copy of the IP packet because WritePacket (and
+			// friends) take ownership of the packet buffer, but we do not own it.
+			Data: PayloadSince(pkt.NetworkHeader()).ToVectorisedView(),
 		})
 
 		// TODO(b/143425874) Decrease the TTL field in forwarded packets.
