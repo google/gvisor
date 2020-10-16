@@ -1,7 +1,14 @@
-load("//tools:defs.bzl", "bzl_library", "go_library")
-load("//tools/nogo:defs.bzl", "nogo_objdump_tool", "nogo_stdlib")
+load("//tools:defs.bzl", "bzl_library", "go_library", "select_goarch", "select_goos")
+load("//tools/nogo:defs.bzl", "nogo_objdump_tool", "nogo_stdlib", "nogo_target")
 
 package(licenses = ["notice"])
+
+nogo_target(
+    name = "target",
+    goarch = select_goarch(),
+    goos = select_goos(),
+    visibility = ["//visibility:public"],
+)
 
 nogo_objdump_tool(
     name = "objdump_tool",
