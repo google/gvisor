@@ -16,6 +16,7 @@
 package netlink
 
 import (
+	"io"
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -748,6 +749,12 @@ func (s *socketOpsCommon) sendMsg(ctx context.Context, src usermem.IOSequence, t
 
 	buf := make([]byte, src.NumBytes())
 	n, err := src.CopyIn(ctx, buf)
+	// io.EOF can be only returned if src is a file, this means that
+	// sendMsg is called from splice and the error has to be ignored in
+	// this case.
+	if err == io.EOF {
+		err = nil
+	}
 	if err != nil {
 		// Don't partially consume messages.
 		return 0, syserr.FromError(err)

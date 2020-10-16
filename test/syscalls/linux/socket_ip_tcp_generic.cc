@@ -14,6 +14,7 @@
 
 #include "test/syscalls/linux/socket_ip_tcp_generic.h"
 
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -978,6 +979,56 @@ TEST_P(TCPSocketPairTest, SetTCPUserTimeoutAboveZero) {
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kAbove);
 }
+
+#ifdef __linux__
+TEST_P(TCPSocketPairTest, SpliceFromPipe) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  // Fill with some random data.
+  std::vector<char> buf(kPageSize / 2);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(buf.size()));
+
+  EXPECT_THAT(
+      splice(rfd.get(), nullptr, sockets->first_fd(), nullptr, kPageSize, 0),
+      SyscallSucceedsWithValue(buf.size()));
+
+  std::vector<char> rbuf(buf.size());
+  ASSERT_THAT(read(sockets->second_fd(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(buf.size()));
+  EXPECT_EQ(memcmp(rbuf.data(), buf.data(), buf.size()), 0);
+}
+
+TEST_P(TCPSocketPairTest, SpliceToPipe) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  // Fill with some random data.
+  std::vector<char> buf(kPageSize / 2);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(sockets->first_fd(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(buf.size()));
+  shutdown(sockets->first_fd(), SHUT_WR);
+  EXPECT_THAT(
+      splice(sockets->second_fd(), nullptr, wfd.get(), nullptr, kPageSize, 0),
+      SyscallSucceedsWithValue(buf.size()));
+
+  std::vector<char> rbuf(buf.size());
+  ASSERT_THAT(read(rfd.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(buf.size()));
+  EXPECT_EQ(memcmp(rbuf.data(), buf.data(), buf.size()), 0);
+}
+#endif  // __linux__
 
 TEST_P(TCPSocketPairTest, SetTCPWindowClampBelowMinRcvBufConnectedSocket) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());

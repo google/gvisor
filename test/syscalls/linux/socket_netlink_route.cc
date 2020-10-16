@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <linux/if.h>
 #include <linux/netlink.h>
@@ -333,6 +334,49 @@ TEST(NetlinkRouteTest, MsgHdrMsgTrunc) {
   ASSERT_THAT(RetryEINTR(recvmsg)(fd.get(), &msg, 0),
               SyscallSucceedsWithValue(kBufferSize));
   EXPECT_EQ((msg.msg_flags & MSG_TRUNC), MSG_TRUNC);
+}
+
+TEST(NetlinkRouteTest, SpliceFromPipe) {
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = loopback_link.index;
+
+  ASSERT_THAT(write(wfd.get(), &req, sizeof(req)),
+              SyscallSucceedsWithValue(sizeof(req)));
+
+  EXPECT_THAT(splice(rfd.get(), nullptr, fd.get(), nullptr, sizeof(req) + 1, 0),
+              SyscallSucceedsWithValue(sizeof(req)));
+  close(wfd.release());
+  EXPECT_THAT(splice(rfd.get(), nullptr, fd.get(), nullptr, sizeof(req) + 1, 0),
+              SyscallSucceedsWithValue(0));
+
+  bool found = false;
+  ASSERT_NO_ERRNO(NetlinkResponse(
+      fd,
+      [&](const struct nlmsghdr* hdr) {
+        CheckLinkMsg(hdr, loopback_link);
+        found = true;
+      },
+      false));
+  EXPECT_TRUE(found) << "Netlink response does not contain any links.";
 }
 
 TEST(NetlinkRouteTest, MsgTruncMsgHdrMsgTrunc) {
