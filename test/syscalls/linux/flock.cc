@@ -216,14 +216,29 @@ TEST_F(FlockTest, TestSharedLockFailExclusiveHolderBlocking_NoRandomSave) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
 
-  // Register a signal handler for SIGALRM and set an alarm that will go off
-  // while blocking in the subsequent flock() call. This will interrupt flock()
-  // and cause it to return EINTR.
+  // Make sure that a blocking flock() call will return EINTR when interrupted
+  // by a signal. Create a timer that will go off while blocking on flock(), and
+  // register the corresponding signal handler.
+  auto timer = ASSERT_NO_ERRNO_AND_VALUE(
+      TimerCreate(CLOCK_MONOTONIC, sigevent_t{
+                                       .sigev_signo = SIGALRM,
+                                       .sigev_notify = SIGEV_SIGNAL,
+                                   }));
+
   struct sigaction act = {};
   act.sa_handler = trivial_handler;
   ASSERT_THAT(sigaction(SIGALRM, &act, NULL), SyscallSucceeds());
-  ASSERT_THAT(ualarm(10000, 0), SyscallSucceeds());
+
+  // Now that the signal handler is registered, set the timer. Set an interval
+  // so that it's ok if the timer goes off before we call flock.
+  ASSERT_NO_ERRNO(
+      timer.Set(0, itimerspec{
+                       .it_interval = absl::ToTimespec(absl::Milliseconds(10)),
+                       .it_value = absl::ToTimespec(absl::Milliseconds(10)),
+                   }));
+
   ASSERT_THAT(flock(fd.get(), LOCK_SH), SyscallFailsWithErrno(EINTR));
+  timer.reset();
 
   // Unlock
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
@@ -258,14 +273,29 @@ TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolderBlocking_NoRandomSave) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
 
-  // Register a signal handler for SIGALRM and set an alarm that will go off
-  // while blocking in the subsequent flock() call. This will interrupt flock()
-  // and cause it to return EINTR.
+  // Make sure that a blocking flock() call will return EINTR when interrupted
+  // by a signal. Create a timer that will go off while blocking on flock(), and
+  // register the corresponding signal handler.
+  auto timer = ASSERT_NO_ERRNO_AND_VALUE(
+      TimerCreate(CLOCK_MONOTONIC, sigevent_t{
+                                       .sigev_signo = SIGALRM,
+                                       .sigev_notify = SIGEV_SIGNAL,
+                                   }));
+
   struct sigaction act = {};
   act.sa_handler = trivial_handler;
   ASSERT_THAT(sigaction(SIGALRM, &act, NULL), SyscallSucceeds());
-  ASSERT_THAT(ualarm(10000, 0), SyscallSucceeds());
+
+  // Now that the signal handler is registered, set the timer. Set an interval
+  // so that it's ok if the timer goes off before we call flock.
+  ASSERT_NO_ERRNO(
+      timer.Set(0, itimerspec{
+                       .it_interval = absl::ToTimespec(absl::Milliseconds(10)),
+                       .it_value = absl::ToTimespec(absl::Milliseconds(10)),
+                   }));
+
   ASSERT_THAT(flock(fd.get(), LOCK_EX), SyscallFailsWithErrno(EINTR));
+  timer.reset();
 
   // Unlock
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));

@@ -3624,6 +3624,7 @@ cc_binary(
         "//test/util:signal_util",
         "//test/util:test_util",
         "//test/util:thread_util",
+        "//test/util:timer_util",
     ],
 )
 

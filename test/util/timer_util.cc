@@ -23,5 +23,23 @@ absl::Time Now(clockid_t id) {
   return absl::TimeFromTimespec(now);
 }
 
+#ifdef __linux__
+
+PosixErrorOr<IntervalTimer> TimerCreate(clockid_t clockid,
+                                        const struct sigevent& sev) {
+  int timerid;
+  int ret = syscall(SYS_timer_create, clockid, &sev, &timerid);
+  if (ret < 0) {
+    return PosixError(errno, "timer_create");
+  }
+  if (ret > 0) {
+    return PosixError(EINVAL, "timer_create should never return positive");
+  }
+  MaybeSave();
+  return IntervalTimer(timerid);
+}
+
+#endif  // __linux__
+
 }  // namespace testing
 }  // namespace gvisor
