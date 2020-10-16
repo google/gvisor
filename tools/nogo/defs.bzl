@@ -2,9 +2,33 @@
 
 load("//tools/bazeldefs:defs.bzl", "go_context", "go_importpath", "go_rule", "go_test_library")
 
-def _nogo_objdump_tool_impl(ctx):
-    go_ctx = go_context(ctx)
+NogoTargetInfo = provider(
+    "information about the Go target",
+    fields = {
+        "goarch": "the build architecture (GOARCH)",
+        "goos": "the build OS target (GOOS)",
+    },
+)
 
+def _nogo_target_impl(ctx):
+    return [NogoTargetInfo(
+        goarch = ctx.attr.goarch,
+        goos = ctx.attr.goos,
+    )]
+
+nogo_target = go_rule(
+    rule,
+    implementation = _nogo_target_impl,
+    attrs = {
+        # goarch is the build architecture. This will normally be provided by a
+        # select statement, but this information is propagated to other rules.
+        "goarch": attr.string(mandatory = True),
+        # goos is similarly the build operating system target.
+        "goos": attr.string(mandatory = True),
+    },
+)
+
+def _nogo_objdump_tool_impl(ctx):
     # Construct the magic dump command.
     #
     # Note that in some cases, the input is being fed into the tool via stdin.
@@ -12,6 +36,8 @@ def _nogo_objdump_tool_impl(ctx):
     # we need the tool to handle this case by creating a temporary file.
     #
     # [1] https://github.com/golang/go/issues/41051
+    nogo_target_info = ctx.attr._nogo_target[NogoTargetInfo]
+    go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
     env_prefix = " ".join(["%s=%s" % (key, value) for (key, value) in go_ctx.env.items()])
     dumper = ctx.actions.declare_file(ctx.label.name)
     ctx.actions.write(dumper, "\n".join([
@@ -42,6 +68,12 @@ def _nogo_objdump_tool_impl(ctx):
 nogo_objdump_tool = go_rule(
     rule,
     implementation = _nogo_objdump_tool_impl,
+    attrs = {
+        "_nogo_target": attr.label(
+            default = "//tools/nogo:target",
+            cfg = "target",
+        ),
+    },
 )
 
 # NogoStdlibInfo is the set of standard library facts.
@@ -54,9 +86,9 @@ NogoStdlibInfo = provider(
 )
 
 def _nogo_stdlib_impl(ctx):
-    go_ctx = go_context(ctx)
-
     # Build the standard library facts.
+    nogo_target_info = ctx.attr._nogo_target[NogoTargetInfo]
+    go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
     facts = ctx.actions.declare_file(ctx.label.name + ".facts")
     findings = ctx.actions.declare_file(ctx.label.name + ".findings")
     config = struct(
@@ -70,12 +102,12 @@ def _nogo_stdlib_impl(ctx):
     ctx.actions.run(
         inputs = [config_file] + go_ctx.stdlib_srcs,
         outputs = [facts, findings],
-        tools = depset(go_ctx.runfiles.to_list() + ctx.files._objdump_tool),
-        executable = ctx.files._nogo[0],
+        tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo_objdump_tool),
+        executable = ctx.files._nogo_check[0],
         mnemonic = "GoStandardLibraryAnalysis",
         progress_message = "Analyzing Go Standard Library",
         arguments = go_ctx.nogo_args + [
-            "-objdump_tool=%s" % ctx.files._objdump_tool[0].path,
+            "-objdump_tool=%s" % ctx.files._nogo_objdump_tool[0].path,
             "-stdlib=%s" % config_file.path,
             "-findings=%s" % findings.path,
             "-facts=%s" % facts.path,
@@ -92,11 +124,17 @@ nogo_stdlib = go_rule(
     rule,
     implementation = _nogo_stdlib_impl,
     attrs = {
-        "_nogo": attr.label(
+        "_nogo_check": attr.label(
             default = "//tools/nogo/check:check",
+            cfg = "host",
         ),
-        "_objdump_tool": attr.label(
+        "_nogo_objdump_tool": attr.label(
             default = "//tools/nogo:objdump_tool",
+            cfg = "host",
+        ),
+        "_nogo_target": attr.label(
+            default = "//tools/nogo:target",
+            cfg = "target",
         ),
     },
 )
@@ -119,8 +157,6 @@ NogoInfo = provider(
 )
 
 def _nogo_aspect_impl(target, ctx):
-    go_ctx = go_context(ctx)
-
     # If this is a nogo rule itself (and not the shadow of a go_library or
     # go_binary rule created by such a rule), then we simply return nothing.
     # All work is done in the shadow properties for go rules. For a proto
@@ -200,10 +236,13 @@ def _nogo_aspect_impl(target, ctx):
         inputs += info.binaries
 
     # Add the standard library facts.
-    stdlib_facts = ctx.attr._nogo_stdlib[NogoStdlibInfo].facts
+    stdlib_info = ctx.attr._nogo_stdlib[NogoStdlibInfo]
+    stdlib_facts = stdlib_info.facts
     inputs.append(stdlib_facts)
 
     # The nogo tool operates on a configuration serialized in JSON format.
+    nogo_target_info = ctx.attr._nogo_target[NogoTargetInfo]
+    go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
     facts = ctx.actions.declare_file(target.label.name + ".facts")
     findings = ctx.actions.declare_file(target.label.name + ".findings")
     escapes = ctx.actions.declare_file(target.label.name + ".escapes")
@@ -224,13 +263,13 @@ def _nogo_aspect_impl(target, ctx):
     ctx.actions.run(
         inputs = inputs,
         outputs = [facts, findings, escapes],
-        tools = depset(go_ctx.runfiles.to_list() + ctx.files._objdump_tool),
-        executable = ctx.files._nogo[0],
+        tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo_objdump_tool),
+        executable = ctx.files._nogo_check[0],
         mnemonic = "GoStaticAnalysis",
         progress_message = "Analyzing %s" % target.label,
         arguments = go_ctx.nogo_args + [
             "-binary=%s" % target_objfile.path,
-            "-objdump_tool=%s" % ctx.files._objdump_tool[0].path,
+            "-objdump_tool=%s" % ctx.files._nogo_objdump_tool[0].path,
             "-package=%s" % config_file.path,
             "-findings=%s" % findings.path,
             "-facts=%s" % facts.path,
@@ -266,9 +305,22 @@ nogo_aspect = go_rule(
         "embed",
     ],
     attrs = {
-        "_nogo": attr.label(default = "//tools/nogo/check:check"),
-        "_nogo_stdlib": attr.label(default = "//tools/nogo:stdlib"),
-        "_objdump_tool": attr.label(default = "//tools/nogo:objdump_tool"),
+        "_nogo_check": attr.label(
+            default = "//tools/nogo/check:check",
+            cfg = "host",
+        ),
+        "_nogo_stdlib": attr.label(
+            default = "//tools/nogo:stdlib",
+            cfg = "host",
+        ),
+        "_nogo_objdump_tool": attr.label(
+            default = "//tools/nogo:objdump_tool",
+            cfg = "host",
+        ),
+        "_nogo_target": attr.label(
+            default = "//tools/nogo:target",
+            cfg = "target",
+        ),
     },
 )
 

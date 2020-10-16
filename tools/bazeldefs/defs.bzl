@@ -158,11 +158,31 @@ def go_test_library(target):
         return target.attr.embed[0]
     return None
 
-def go_context(ctx, std = False):
+def go_context(ctx, goos = None, goarch = None, std = False):
+    """Extracts a standard Go context struct.
+
+    Args:
+      ctx: the starlark context (required).
+      goos: the GOOS value.
+      goarch: the GOARCH value.
+      std: ignored.
+
+    Returns:
+      A context Go struct with pointers to Go toolchain components.
+    """
+
     # We don't change anything for the standard library analysis. All Go files
     # are available in all instances. Note that this includes the standard
     # library sources, which are analyzed by nogo.
     go_ctx = _go_context(ctx)
+    if goos == None:
+        goos = go_ctx.sdk.goos
+    elif goos != go_ctx.sdk.goos:
+        fail("Internal GOOS (%s) doesn't match GoSdk GOOS (%s)." % (goos, go_ctx.sdk.goos))
+    if goarch == None:
+        goarch = go_ctx.sdk.goarch
+    elif goarch != go_ctx.sdk.goarch:
+        fail("Internal GOARCH (%s) doesn't match GoSdk GOARCH (%s)." % (goarch, go_ctx.sdk.goarch))
     return struct(
         go = go_ctx.go,
         env = go_ctx.env,
@@ -185,6 +205,12 @@ def select_arch(amd64 = "amd64", arm64 = "arm64", default = None, **kwargs):
 
 def select_system(linux = ["__linux__"], **kwargs):
     return linux  # Only Linux supported.
+
+def select_goarch():
+    return select_arch(arm64 = "arm64", amd64 = "amd64")
+
+def select_goos():
+    return select_system(linux = "linux")
 
 def default_installer():
     return None
