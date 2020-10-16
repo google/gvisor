@@ -587,6 +587,11 @@ func (i *ioSequencePayload) Payload(size int) ([]byte, *tcpip.Error) {
 	}
 	v := buffer.NewView(size)
 	if _, err := i.src.CopyIn(i.ctx, v); err != nil {
+		// EOF can be returned only if src is a file and this means it
+		// is in a splice syscall and the error has to be ignored.
+		if err == io.EOF {
+			return v, nil
+		}
 		return nil, tcpip.ErrBadAddress
 	}
 	return v, nil
