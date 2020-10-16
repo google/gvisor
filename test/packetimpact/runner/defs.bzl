@@ -110,29 +110,15 @@ def packetimpact_netstack_test(
         **kwargs
     )
 
-def packetimpact_go_test(name, size = "small", pure = True, expect_native_failure = False, expect_netstack_failure = False, **kwargs):
+def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False):
     """Add packetimpact tests written in go.
 
     Args:
         name: name of the test
-        size: size of the test
-        pure: make a static go binary
         expect_native_failure: the test must fail natively
         expect_netstack_failure: the test must fail for Netstack
-        **kwargs: all the other args, forwarded to go_test
     """
     testbench_binary = name + "_test"
-    go_test(
-        name = testbench_binary,
-        size = size,
-        pure = pure,
-        nogo = False,  # FIXME(gvisor.dev/issue/3374): Not working with all build systems.
-        tags = [
-            "local",
-            "manual",
-        ],
-        **kwargs
-    )
     packetimpact_native_test(
         name = name,
         expect_failure = expect_native_failure,
@@ -143,3 +129,156 @@ def packetimpact_go_test(name, size = "small", pure = True, expect_native_failur
         expect_failure = expect_netstack_failure,
         testbench_binary = testbench_binary,
     )
+
+def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
+    """Build packetimpact testbench written in go.
+
+    Args:
+        name: name of the test
+        size: size of the test
+        pure: make a static go binary
+        **kwargs: all the other args, forwarded to go_test
+    """
+    go_test(
+        name = name + "_test",
+        size = size,
+        pure = pure,
+        nogo = False,  # FIXME(gvisor.dev/issue/3374): Not working with all build systems.
+        tags = [
+            "local",
+            "manual",
+        ],
+        **kwargs
+    )
+
+PacketimpactTestInfo = provider(
+    doc = "Provide information for packetimpact tests",
+    fields = ["name", "expect_netstack_failure"],
+)
+
+ALL_TESTS = [
+    PacketimpactTestInfo(
+        name = "fin_wait2_timeout",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv4_id_uniqueness",
+    ),
+    PacketimpactTestInfo(
+        name = "udp_discard_mcast_source_addr",
+    ),
+    PacketimpactTestInfo(
+        name = "udp_recv_mcast_bcast",
+    ),
+    PacketimpactTestInfo(
+        name = "udp_any_addr_recv_unicast",
+    ),
+    PacketimpactTestInfo(
+        name = "udp_icmp_error_propagation",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_reordering",
+        # TODO(b/139368047): Fix netstack then remove the line below.
+        expect_netstack_failure = True,
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_window_shrink",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_zero_window_probe",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_zero_window_probe_retransmit",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_zero_window_probe_usertimeout",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_retransmits",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_outside_the_window",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_noaccept_close_rst",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_send_window_sizes_piggyback",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_unacc_seq_ack",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_paws_mechanism",
+        # TODO(b/156682000): Fix netstack then remove the line below.
+        expect_netstack_failure = True,
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_user_timeout",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_queue_receive_in_syn_sent",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_synsent_reset",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_synrcvd_reset",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_network_unreachable",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_cork_mss",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_handshake_window_size",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_timewait_reset",
+        # TODO(b/168523247): Fix netstack then remove the line below.
+        expect_netstack_failure = True,
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_queue_send_in_syn_sent",
+    ),
+    PacketimpactTestInfo(
+        name = "icmpv6_param_problem",
+        # TODO(b/153485026): Fix netstack then remove the line below.
+        expect_netstack_failure = True,
+    ),
+    PacketimpactTestInfo(
+        name = "ipv6_unknown_options_action",
+        # TODO(b/159928940): Fix netstack then remove the line below.
+        expect_netstack_failure = True,
+    ),
+    PacketimpactTestInfo(
+        name = "ipv6_fragment_reassembly",
+    ),
+    PacketimpactTestInfo(
+        name = "udp_send_recv_dgram",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_linger",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_rcv_buf_space",
+    ),
+]
+
+def validate_all_tests():
+    """
+    Make sure that ALL_TESTS list is in sync with the rules in BUILD.
+
+    This function is order-dependent, it is intended to be used after
+    all packetimpact_testbench rules and before using ALL_TESTS list
+    at the end of BUILD.
+    """
+    all_tests_dict = {}  # there is no set, using dict to approximate.
+    for test in ALL_TESTS:
+        rule_name = test.name + "_test"
+        all_tests_dict[rule_name] = True
+        if not native.existing_rule(rule_name):
+            fail("%s does not have a packetimpact_testbench rule in BUILD" % test.name)
+    for name in native.existing_rules():
+        if name.endswith("_test") and name not in all_tests_dict:
+            fail("%s is not declared in ALL_TESTS list in defs.bzl" % name[:-5])
