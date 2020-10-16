@@ -41,6 +41,14 @@ PosixError NetlinkRequestResponse(
     const std::function<void(const struct nlmsghdr* hdr)>& fn,
     bool expect_nlmsgerr);
 
+// Call fn on all response netlink messages.
+//
+// To be used on requests with NLM_F_MULTI reponses.
+PosixError NetlinkResponse(
+    const FileDescriptor& fd,
+    const std::function<void(const struct nlmsghdr* hdr)>& fn,
+    bool expect_nlmsgerr);
+
 // Send the passed request and call fn on all response netlink messages.
 //
 // To be used on requests without NLM_F_MULTI reponses.
