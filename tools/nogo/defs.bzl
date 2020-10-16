@@ -1,6 +1,6 @@
 """Nogo rules."""
 
-load("//tools/bazeldefs:defs.bzl", "go_context", "go_importpath", "go_rule", "go_test_library")
+load("//tools/bazeldefs:go.bzl", "go_context", "go_importpath", "go_rule", "go_test_library")
 
 NogoTargetInfo = provider(
     "information about the Go target",
