@@ -26,27 +26,23 @@ import (
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 
 // New returns both ends of a new pipe.
-func New(linkAddr1, linkAddr2 tcpip.LinkAddress, capabilities stack.LinkEndpointCapabilities) (*Endpoint, *Endpoint) {
+func New(linkAddr1, linkAddr2 tcpip.LinkAddress) (*Endpoint, *Endpoint) {
 	ep1 := &Endpoint{
-		linkAddr:     linkAddr1,
-		capabilities: capabilities,
+		linkAddr: linkAddr1,
 	}
 	ep2 := &Endpoint{
-		linkAddr:     linkAddr2,
-		linked:       ep1,
-		capabilities: capabilities,
+		linkAddr: linkAddr2,
 	}
 	ep1.linked = ep2
+	ep2.linked = ep1
 	return ep1, ep2
 }
 
 // Endpoint is one end of a pipe.
 type Endpoint struct {
-	capabilities  stack.LinkEndpointCapabilities
-	linkAddr      tcpip.LinkAddress
-	dispatcher    stack.NetworkDispatcher
-	linked        *Endpoint
-	onWritePacket func(*stack.PacketBuffer)
+	dispatcher stack.NetworkDispatcher
+	linked     *Endpoint
+	linkAddr   tcpip.LinkAddress
 }
 
 // WritePacket implements stack.LinkEndpoint.
@@ -55,16 +51,11 @@ func (e *Endpoint) WritePacket(r *stack.Route, _ *stack.GSO, proto tcpip.Network
 		return nil
 	}
 
-	// The pipe endpoint will accept all multicast/broadcast link traffic and only
-	// unicast traffic destined to itself.
-	if len(e.linked.linkAddr) != 0 &&
-		r.RemoteLinkAddress != e.linked.linkAddr &&
-		r.RemoteLinkAddress != header.EthernetBroadcastAddress &&
-		!header.IsMulticastEthernetAddress(r.RemoteLinkAddress) {
-		return nil
-	}
-
-	e.linked.dispatcher.DeliverNetworkPacket(e.linkAddr, r.RemoteLinkAddress, proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	// Note that the local address from the perspective of this endpoint is the
+	// remote address from the perspective of the other end of the pipe
+	// (e.linked). Similarly, the remote address from the perspective of this
+	// endpoint is the local address on the other end.
+	e.linked.dispatcher.DeliverNetworkPacket(r.LocalLinkAddress /* remote */, r.RemoteLinkAddress /* local */, proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
 	}))
 
@@ -100,8 +91,8 @@ func (*Endpoint) MTU() uint32 {
 }
 
 // Capabilities implements stack.LinkEndpoint.
-func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return e.capabilities
+func (*Endpoint) Capabilities() stack.LinkEndpointCapabilities {
+	return 0
 }
 
 // MaxHeaderLength implements stack.LinkEndpoint.
@@ -116,7 +107,7 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 
 // ARPHardwareType implements stack.LinkEndpoint.
 func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
-	return header.ARPHardwareEther
+	return header.ARPHardwareNone
 }
 
 // AddHeader implements stack.LinkEndpoint.

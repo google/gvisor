@@ -16,6 +16,7 @@ go_test(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/link/pipe",
         "//pkg/tcpip/network/arp",
