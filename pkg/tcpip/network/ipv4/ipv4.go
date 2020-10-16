@@ -237,7 +237,10 @@ func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params s
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
 	e.addIPHeader(r, pkt, params)
+	return e.writePacket(r, gso, pkt)
+}
 
+func (e *endpoint) writePacket(r *stack.Route, gso *stack.GSO, pkt *stack.PacketBuffer) *tcpip.Error {
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
@@ -347,30 +350,27 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	return n + len(dropped), nil
 }
 
-// WriteHeaderIncludedPacket writes a packet already containing a network
-// header through the given route.
+// WriteHeaderIncludedPacket implements stack.NetworkEndpoint.
 func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) *tcpip.Error {
 	// The packet already has an IP header, but there are a few required
 	// checks.
 	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
 	if !ok {
-		return tcpip.ErrInvalidOptionValue
+		return tcpip.ErrMalformedHeader
 	}
 	ip := header.IPv4(h)
-	if !ip.IsValid(pkt.Data.Size()) {
-		return tcpip.ErrInvalidOptionValue
-	}
 
 	// Always set the total length.
-	ip.SetTotalLength(uint16(pkt.Data.Size()))
+	pktSize := pkt.Data.Size()
+	ip.SetTotalLength(uint16(pktSize))
 
 	// Set the source address when zero.
-	if ip.SourceAddress() == tcpip.Address(([]byte{0, 0, 0, 0})) {
+	if ip.SourceAddress() == header.IPv4Any {
 		ip.SetSourceAddress(r.LocalAddress)
 	}
 
-	// Set the destination. If the packet already included a destination,
-	// it will be part of the route.
+	// Set the destination. If the packet already included a destination, it will
+	// be part of the route anyways.
 	ip.SetDestinationAddress(r.RemoteAddress)
 
 	// Set the packet ID when zero.
@@ -387,19 +387,17 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
 
-	if r.Loop&stack.PacketLoop != 0 {
-		e.HandlePacket(r, pkt.Clone())
-	}
-	if r.Loop&stack.PacketOut == 0 {
-		return nil
+	// Populate the packet buffer's network header and don't allow an invalid
+	// packet to be sent.
+	//
+	// Note that parsing only makes sure that the packet is well formed as per the
+	// wire format. We also want to check if the header's fields are valid before
+	// sending the packet.
+	if !parse.IPv4(pkt) || !header.IPv4(pkt.NetworkHeader().View()).IsValid(pktSize) {
+		return tcpip.ErrMalformedHeader
 	}
 
-	if err := e.nic.WritePacket(r, nil /* gso */, ProtocolNumber, pkt); err != nil {
-		r.Stats().IP.OutgoingPacketErrors.Increment()
-		return err
-	}
-	r.Stats().IP.PacketsSent.Increment()
-	return nil
+	return e.writePacket(r, nil /* gso */, pkt)
 }
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
