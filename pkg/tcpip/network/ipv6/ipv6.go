@@ -387,7 +387,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params s
 }
 
 func (e *endpoint) packetMustBeFragmented(pkt *stack.PacketBuffer, gso *stack.GSO) bool {
-	return pkt.Size() > int(e.nic.MTU()) && (gso == nil || gso.Type == stack.GSONone)
+	return (gso == nil || gso.Type == stack.GSONone) && pkt.Size() > int(e.nic.MTU())
 }
 
 // handleFragments fragments pkt and calls the handler function on each
@@ -416,11 +416,9 @@ func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, mtu uint32, p
 		}
 		n++
 		if !more {
-			break
+			return n, pf.RemainingFragmentCount(), nil
 		}
 	}
-
-	return n, 0, nil
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
@@ -504,21 +502,20 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	for pb := pkts.Front(); pb != nil; pb = pb.Next() {
 		e.addIPHeader(r, pb, params)
 		if e.packetMustBeFragmented(pb, gso) {
-			current := pb
-			_, _, err := e.handleFragments(r, gso, e.nic.MTU(), pb, params.Protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
+			// Keep track of the packet that is about to be fragmented so it can be
+			// removed once the fragmentation is done.
+			originalPkt := pb
+			if _, _, err := e.handleFragments(r, gso, e.nic.MTU(), pb, params.Protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
 				// Modify the packet list in place with the new fragments.
-				pkts.InsertAfter(current, fragPkt)
-				current = current.Next()
+				pkts.InsertAfter(pb, fragPkt)
+				pb = fragPkt
 				return nil
-			})
-			if err != nil {
+			}); err != nil {
 				r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len()))
 				return 0, err
 			}
-			// The fragmented packet can be released. The rest of the packets can be
-			// processed.
-			pkts.Remove(pb)
-			pb = current
+			// Remove the packet that was just fragmented and process the rest.
+			pkts.Remove(originalPkt)
 		}
 	}
 
