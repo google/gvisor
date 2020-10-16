@@ -151,6 +151,9 @@ const (
 	_ESR_SEGV_PEMERR_L1 = 0xd
 	_ESR_SEGV_PEMERR_L2 = 0xe
 	_ESR_SEGV_PEMERR_L3 = 0xf
+
+	// Custom ISS field definitions for system error.
+	_ESR_ELx_SERR_NMI = 0x1
 )
 
 // Arm64: MMIO base address used to dispatch hypercalls.
