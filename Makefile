@@ -94,9 +94,9 @@ endef
 rebuild-...: ## Rebuild the given image. Also may use 'rebuild-all-images'.
 $(eval $(call images,rebuild))
 push-...: ## Push the given image. Also may use 'push-all-images'.
-$(eval $(call images,pull))
-pull-...: ## Pull the given image. Also may use 'pull-all-images'.
 $(eval $(call images,push))
+pull-...: ## Pull the given image. Also may use 'pull-all-images'.
+$(eval $(call images,pull))
 load-...: ## Load (pull or rebuild) the given image. Also may use 'load-all-images'.
 $(eval $(call images,load))
 list-images: ## List all available images.
@@ -258,7 +258,7 @@ WEBSITE_PROJECT := gvisordev
 WEBSITE_REGION  := us-central1
 
 website-build: load-jekyll ## Build the site image locally.
-	@$(call submake,run TARGETS="//website:website")
+	@$(call submake,run TARGETS="//website:website" ARGS="$(WEBSITE_IMAGE)")
 .PHONY: website-build
 
 website-server: website-build ## Run a local server for development.
@@ -266,7 +266,7 @@ website-server: website-build ## Run a local server for development.
 .PHONY: website-server
 
 website-push: website-build ## Push a new image and update the service.
-	@docker tag gvisor.dev/images/website $(WEBSITE_IMAGE) && docker push $(WEBSITE_IMAGE)
+	@docker push $(WEBSITE_IMAGE)
 .PHONY: website-push
 
 website-deploy: website-push ## Deploy a new version of the website.
