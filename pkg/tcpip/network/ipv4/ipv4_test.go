@@ -120,6 +120,7 @@ func TestIPv4Sanity(t *testing.T) {
 	tests := []struct {
 		name              string
 		headerLength      uint8 // value of 0 means "use correct size"
+		badHeaderChecksum bool
 		maxTotalLength    uint16
 		transportProtocol uint8
 		TTL               uint8
@@ -134,6 +135,14 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    defaultMTU,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
+		},
+		{
+			name:              "bad header checksum",
+			maxTotalLength:    defaultMTU,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			badHeaderChecksum: true,
+			shouldFail:        true,
 		},
 		// The TTL tests check that we are not rejecting an incoming packet
 		// with a zero or one TTL, which has been a point of confusion in the
@@ -290,6 +299,12 @@ func TestIPv4Sanity(t *testing.T) {
 			if test.headerLength != 0 {
 				ip.SetHeaderLength(test.headerLength)
 			}
+			ip.SetChecksum(0)
+			ipHeaderChecksum := ip.CalculateChecksum()
+			if test.badHeaderChecksum {
+				ipHeaderChecksum += 42
+			}
+			ip.SetChecksum(^ipHeaderChecksum)
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			})
@@ -1427,6 +1442,7 @@ func TestReceiveFragments(t *testing.T) {
 					SrcAddr:        frag.srcAddr,
 					DstAddr:        frag.dstAddr,
 				})
+				ip.SetChecksum(^ip.CalculateChecksum())
 
 				vv := hdr.View().ToVectorisedView()
 				vv.AppendView(frag.payload)
@@ -1695,6 +1711,7 @@ func TestPacketQueing(t *testing.T) {
 					SrcAddr:     host2IPv4Addr.AddressWithPrefix.Address,
 					DstAddr:     host1IPv4Addr.AddressWithPrefix.Address,
 				})
+				ip.SetChecksum(^ip.CalculateChecksum())
 				e.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
 				}))
@@ -1738,6 +1755,7 @@ func TestPacketQueing(t *testing.T) {
 					SrcAddr:     host2IPv4Addr.AddressWithPrefix.Address,
 					DstAddr:     host1IPv4Addr.AddressWithPrefix.Address,
 				})
+				ip.SetChecksum(^ip.CalculateChecksum())
 				e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
 				}))

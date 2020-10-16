@@ -440,6 +440,32 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		return
 	}
 
+	// There has been some confusion regarding verifying checksums. We need
+	// just look for negative 0 (0xffff) as the checksum, as it's not possible to
+	// get positive 0 (0) for the checksum. Some bad implementations could get it
+	// when doing entry replacement in the early days of the Internet,
+	// however the lore that one needs to check for both persists.
+	//
+	// RFC 1624 section 1 describes the source of this confusion as:
+	//     [the partial recalculation method described in RFC 1071] computes a
+	//     result for certain cases that differs from the one obtained from
+	//     scratch (one's complement of one's complement sum of the original
+	//     fields).
+	//
+	// However RFC 1624 section 5 clarifies that if using the verification method
+	// "recommended by RFC 1071, it does not matter if an intermediate system
+	// generated a -0 instead of +0".
+	//
+	// RFC1071 page 1 specifies the verification method as:
+	//	  (3)  To check a checksum, the 1's complement sum is computed over the
+	//        same set of octets, including the checksum field.  If the result
+	//        is all 1 bits (-0 in 1's complement arithmetic), the check
+	//        succeeds.
+	if h.CalculateChecksum() != 0xffff {
+		r.Stats().IP.MalformedPacketsReceived.Increment()
+		return
+	}
+
 	// As per RFC 1122 section 3.2.1.3:
 	//   When a host sends any datagram, the IP source address MUST
 	//   be one of its own IP addresses (but not a broadcast or

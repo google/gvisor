@@ -80,6 +80,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			SrcAddr:     remoteIPv4Addr,
 			DstAddr:     dst,
 		})
+		ip.SetChecksum(^ip.CalculateChecksum())
 
 		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: hdr.View().ToVectorisedView(),
@@ -250,6 +251,7 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 			SrcAddr:     remoteIPv4Addr,
 			DstAddr:     dst,
 		})
+		ip.SetChecksum(^ip.CalculateChecksum())
 
 		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: hdr.View().ToVectorisedView(),
