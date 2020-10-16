@@ -16,6 +16,9 @@
 #define GVISOR_TEST_UTIL_TIMER_UTIL_H_
 
 #include <errno.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
 #include <sys/time.h>
 
 #include <functional>
@@ -29,6 +32,9 @@
 
 namespace gvisor {
 namespace testing {
+
+// Returns the current time.
+absl::Time Now(clockid_t id);
 
 // MonotonicTimer is a simple timer that uses a monotonic clock.
 class MonotonicTimer {
@@ -65,8 +71,92 @@ inline PosixErrorOr<Cleanup> ScopedItimer(int which,
   }));
 }
 
-// Returns the current time.
-absl::Time Now(clockid_t id);
+#ifdef __linux__
+
+// RAII type for a kernel "POSIX" interval timer. (The kernel provides system
+// calls such as timer_create that behave very similarly, but not identically,
+// to those described by timer_create(2); in particular, the kernel does not
+// implement SIGEV_THREAD. glibc builds POSIX-compliant interval timers based on
+// these kernel interval timers.)
+//
+// Compare implementation to FileDescriptor.
+class IntervalTimer {
+ public:
+  IntervalTimer() = default;
+
+  explicit IntervalTimer(int id) { set_id(id); }
+
+  IntervalTimer(IntervalTimer&& orig) : id_(orig.release()) {}
+
+  IntervalTimer& operator=(IntervalTimer&& orig) {
+    if (this == &orig) return *this;
+    reset(orig.release());
+    return *this;
+  }
+
+  IntervalTimer(const IntervalTimer& other) = delete;
+  IntervalTimer& operator=(const IntervalTimer& other) = delete;
+
+  ~IntervalTimer() { reset(); }
+
+  int get() const { return id_; }
+
+  int release() {
+    int const id = id_;
+    id_ = -1;
+    return id;
+  }
+
+  void reset() { reset(-1); }
+
+  void reset(int id) {
+    if (id_ >= 0) {
+      TEST_PCHECK(syscall(SYS_timer_delete, id_) == 0);
+      MaybeSave();
+    }
+    set_id(id);
+  }
+
+  PosixErrorOr<struct itimerspec> Set(
+      int flags, const struct itimerspec& new_value) const {
+    struct itimerspec old_value = {};
+    if (syscall(SYS_timer_settime, id_, flags, &new_value, &old_value) < 0) {
+      return PosixError(errno, "timer_settime");
+    }
+    MaybeSave();
+    return old_value;
+  }
+
+  PosixErrorOr<struct itimerspec> Get() const {
+    struct itimerspec curr_value = {};
+    if (syscall(SYS_timer_gettime, id_, &curr_value) < 0) {
+      return PosixError(errno, "timer_gettime");
+    }
+    MaybeSave();
+    return curr_value;
+  }
+
+  PosixErrorOr<int> Overruns() const {
+    int rv = syscall(SYS_timer_getoverrun, id_);
+    if (rv < 0) {
+      return PosixError(errno, "timer_getoverrun");
+    }
+    MaybeSave();
+    return rv;
+  }
+
+ private:
+  void set_id(int id) { id_ = std::max(id, -1); }
+
+  // Kernel timer_t is int; glibc timer_t is void*.
+  int id_ = -1;
+};
+
+// A wrapper around timer_create(2).
+PosixErrorOr<IntervalTimer> TimerCreate(clockid_t clockid,
+                                        const struct sigevent& sev);
+
+#endif  // __linux__
 
 }  // namespace testing
 }  // namespace gvisor

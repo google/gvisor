@@ -46,4 +46,4 @@ void MaybeSave() {
 }  // namespace testing
 }  // namespace gvisor
 
-#endif
+#endif  // __linux__

@@ -33,6 +33,7 @@
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/timer_util.h"
 
 ABSL_FLAG(bool, timers_test_sleep, false,
           "If true, sleep forever instead of running tests.");
@@ -213,99 +214,6 @@ TEST(TimerTest, ProcessKilledOnCPUHardLimit) {
 
   absl::Duration cpu = ASSERT_NO_ERRNO_AND_VALUE(ProcessCPUTime(pid));
   EXPECT_GE(cpu, kHardLimit);
-}
-
-// RAII type for a kernel "POSIX" interval timer. (The kernel provides system
-// calls such as timer_create that behave very similarly, but not identically,
-// to those described by timer_create(2); in particular, the kernel does not
-// implement SIGEV_THREAD. glibc builds POSIX-compliant interval timers based on
-// these kernel interval timers.)
-//
-// Compare implementation to FileDescriptor.
-class IntervalTimer {
- public:
-  IntervalTimer() = default;
-
-  explicit IntervalTimer(int id) { set_id(id); }
-
-  IntervalTimer(IntervalTimer&& orig) : id_(orig.release()) {}
-
-  IntervalTimer& operator=(IntervalTimer&& orig) {
-    if (this == &orig) return *this;
-    reset(orig.release());
-    return *this;
-  }
-
-  IntervalTimer(const IntervalTimer& other) = delete;
-  IntervalTimer& operator=(const IntervalTimer& other) = delete;
-
-  ~IntervalTimer() { reset(); }
-
-  int get() const { return id_; }
-
-  int release() {
-    int const id = id_;
-    id_ = -1;
-    return id;
-  }
-
-  void reset() { reset(-1); }
-
-  void reset(int id) {
-    if (id_ >= 0) {
-      TEST_PCHECK(syscall(SYS_timer_delete, id_) == 0);
-      MaybeSave();
-    }
-    set_id(id);
-  }
-
-  PosixErrorOr<struct itimerspec> Set(
-      int flags, const struct itimerspec& new_value) const {
-    struct itimerspec old_value = {};
-    if (syscall(SYS_timer_settime, id_, flags, &new_value, &old_value) < 0) {
-      return PosixError(errno, "timer_settime");
-    }
-    MaybeSave();
-    return old_value;
-  }
-
-  PosixErrorOr<struct itimerspec> Get() const {
-    struct itimerspec curr_value = {};
-    if (syscall(SYS_timer_gettime, id_, &curr_value) < 0) {
-      return PosixError(errno, "timer_gettime");
-    }
-    MaybeSave();
-    return curr_value;
-  }
-
-  PosixErrorOr<int> Overruns() const {
-    int rv = syscall(SYS_timer_getoverrun, id_);
-    if (rv < 0) {
-      return PosixError(errno, "timer_getoverrun");
-    }
-    MaybeSave();
-    return rv;
-  }
-
- private:
-  void set_id(int id) { id_ = std::max(id, -1); }
-
-  // Kernel timer_t is int; glibc timer_t is void*.
-  int id_ = -1;
-};
-
-PosixErrorOr<IntervalTimer> TimerCreate(clockid_t clockid,
-                                        const struct sigevent& sev) {
-  int timerid;
-  int ret = syscall(SYS_timer_create, clockid, &sev, &timerid);
-  if (ret < 0) {
-    return PosixError(errno, "timer_create");
-  }
-  if (ret > 0) {
-    return PosixError(EINVAL, "timer_create should never return positive");
-  }
-  MaybeSave();
-  return IntervalTimer(timerid);
 }
 
 // See timerfd.cc:TimerSlack() for rationale.
