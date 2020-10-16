@@ -39,6 +39,16 @@ var (
 	}
 )
 
+// getTLS returns the value of TPIDR_EL0 register.
+//
+//go:nosplit
+func getTLS() (value uint64)
+
+// setTLS writes the TPIDR_EL0 value.
+//
+//go:nosplit
+func setTLS(value uint64)
+
 // bluepillArchEnter is called during bluepillEnter.
 //
 //go:nosplit
@@ -51,6 +61,8 @@ func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
 	regs.Pstate = context.Pstate
 	regs.Pstate &^= uint64(ring0.PsrFlagsClear)
 	regs.Pstate |= ring0.KernelFlagsSet
+	regs.TPIDR_EL0 = getTLS()
+
 	return
 }
 
@@ -65,6 +77,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	context.Pstate = regs.Pstate
 	context.Pstate &^= uint64(ring0.PsrFlagsClear)
 	context.Pstate |= ring0.UserFlagsSet
+	setTLS(regs.TPIDR_EL0)
 
 	lazyVfp := c.GetLazyVFP()
 	if lazyVfp != 0 {
