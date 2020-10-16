@@ -178,6 +178,24 @@ func PayloadLen(payloadLength int) NetworkChecker {
 	}
 }
 
+// IPPayload creates a checker that checks the payload.
+func IPPayload(payload []byte) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
+		got := h[0].Payload()
+
+		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
+		if len(got) == 0 && len(payload) == 0 {
+			return
+		}
+
+		if diff := cmp.Diff(payload, got); diff != "" {
+			t.Errorf("payload mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
 // IPv4Options returns a checker that checks the options in an IPv4 packet.
 func IPv4Options(want []byte) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {

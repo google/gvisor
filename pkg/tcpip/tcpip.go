@@ -111,6 +111,7 @@ var (
 	ErrBroadcastDisabled         = &Error{msg: "broadcast socket option disabled"}
 	ErrNotPermitted              = &Error{msg: "operation not permitted"}
 	ErrAddressFamilyNotSupported = &Error{msg: "address family not supported by protocol"}
+	ErrMalformedHeader           = &Error{msg: "header is malformed"}
 )
 
 var messageToError map[string]*Error
@@ -159,6 +160,7 @@ func StringToError(s string) *Error {
 			ErrBroadcastDisabled,
 			ErrNotPermitted,
 			ErrAddressFamilyNotSupported,
+			ErrMalformedHeader,
 		}
 
 		messageToError = make(map[string]*Error)
