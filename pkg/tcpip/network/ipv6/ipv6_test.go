@@ -49,6 +49,8 @@ const (
 	fragmentExtHdrID    = uint8(header.IPv6FragmentExtHdrIdentifier)
 	destinationExtHdrID = uint8(header.IPv6DestinationOptionsExtHdrIdentifier)
 	noNextHdrID         = uint8(header.IPv6NoNextHeaderIdentifier)
+
+	extraHeaderReserve = 50
 )
 
 // testReceiveICMP tests receiving an ICMP packet from src to dst. want is the
@@ -181,6 +183,9 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 			return fmt.Errorf("fragment #%d: fragmentIPHeader mismatch (-want +got):\n%s", i, diff)
 		}
 
+		if got := fragment.AvailableHeaderBytes(); got != extraHeaderReserve {
+			return fmt.Errorf("fragment #%d: got packet.AvailableHeaderBytes() = %d, want = %d", i, got, extraHeaderReserve)
+		}
 		if fragment.NetworkProtocolNumber != sourcePacket.NetworkProtocolNumber {
 			return fmt.Errorf("fragment #%d: got fragment.NetworkProtocolNumber = %d, want = %d", i, fragment.NetworkProtocolNumber, sourcePacket.NetworkProtocolNumber)
 		}
@@ -208,8 +213,7 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 		reassembledPayload.Append(fragment.Data)
 	}
 
-	result := reassembledPayload.ToView()
-	if diff := cmp.Diff(result, buffer.View(source[sourceIPHeadersLen:])); diff != "" {
+	if diff := cmp.Diff(buffer.View(source[sourceIPHeadersLen:]), reassembledPayload.ToView()); diff != "" {
 		return fmt.Errorf("reassembledPayload mismatch (-want +got):\n%s", diff)
 	}
 
@@ -2217,24 +2221,19 @@ type fragmentInfo struct {
 	payloadSize uint16
 }
 
-type fragmentationTestCase struct {
+var fragmentationTests = []struct {
 	description   string
 	mtu           uint32
 	gso           *stack.GSO
 	transHdrLen   int
-	extraHdrLen   int
 	payloadSize   int
 	wantFragments []fragmentInfo
-	expectedFrags int
-}
-
-var fragmentationTests = []fragmentationTestCase{
+}{
 	{
 		description: "No Fragmentation",
 		mtu:         1280,
-		gso:         &stack.GSO{},
+		gso:         nil,
 		transHdrLen: 0,
-		extraHdrLen: header.IPv6MinimumSize,
 		payloadSize: 1000,
 		wantFragments: []fragmentInfo{
 			{offset: 0, payloadSize: 1000, more: false},
@@ -2243,9 +2242,8 @@ var fragmentationTests = []fragmentationTestCase{
 	{
 		description: "Fragmented",
 		mtu:         1280,
-		gso:         &stack.GSO{},
+		gso:         nil,
 		transHdrLen: 0,
-		extraHdrLen: header.IPv6MinimumSize,
 		payloadSize: 2000,
 		wantFragments: []fragmentInfo{
 			{offset: 0, payloadSize: 1240, more: true},
@@ -2255,20 +2253,18 @@ var fragmentationTests = []fragmentationTestCase{
 	{
 		description: "No fragmentation with big header",
 		mtu:         2000,
-		gso:         &stack.GSO{},
+		gso:         nil,
 		transHdrLen: 100,
-		extraHdrLen: header.IPv6MinimumSize,
 		payloadSize: 1000,
 		wantFragments: []fragmentInfo{
 			{offset: 0, payloadSize: 1100, more: false},
 		},
 	},
 	{
-		description: "Fragmented with gso nil",
+		description: "Fragmented with gso none",
 		mtu:         1280,
-		gso:         nil,
+		gso:         &stack.GSO{Type: stack.GSONone},
 		transHdrLen: 0,
-		extraHdrLen: header.IPv6MinimumSize,
 		payloadSize: 1400,
 		wantFragments: []fragmentInfo{
 			{offset: 0, payloadSize: 1240, more: true},
@@ -2278,30 +2274,17 @@ var fragmentationTests = []fragmentationTestCase{
 	{
 		description: "Fragmented with big header",
 		mtu:         1280,
-		gso:         &stack.GSO{},
+		gso:         nil,
 		transHdrLen: 100,
-		extraHdrLen: header.IPv6MinimumSize,
 		payloadSize: 1200,
 		wantFragments: []fragmentInfo{
 			{offset: 0, payloadSize: 1240, more: true},
 			{offset: 154, payloadSize: 76, more: false},
 		},
 	},
-	{
-		description: "Fragmented with big header and prependable bytes",
-		mtu:         1280,
-		gso:         &stack.GSO{},
-		transHdrLen: 20,
-		extraHdrLen: header.IPv6MinimumSize + 66,
-		payloadSize: 1500,
-		wantFragments: []fragmentInfo{
-			{offset: 0, payloadSize: 1240, more: true},
-			{offset: 154, payloadSize: 296, more: false},
-		},
-	},
 }
 
-func TestFragmentation(t *testing.T) {
+func TestFragmentationWritePacket(t *testing.T) {
 	const (
 		ttl            = 42
 		tos            = stack.DefaultTOS
@@ -2310,7 +2293,7 @@ func TestFragmentation(t *testing.T) {
 
 	for _, ft := range fragmentationTests {
 		t.Run(ft.description, func(t *testing.T) {
-			pkt := testutil.MakeRandPkt(ft.transHdrLen, ft.extraHdrLen, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+			pkt := testutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
 			source := pkt.Clone()
 			ep := testutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
 			r := buildRoute(t, ep)
@@ -2331,10 +2314,8 @@ func TestFragmentation(t *testing.T) {
 			if got := r.Stats().IP.OutgoingPacketErrors.Value(); got != 0 {
 				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
 			}
-			if len(ep.WrittenPackets) > 0 {
-				if err := compareFragments(ep.WrittenPackets, source, ft.mtu, ft.wantFragments, tcp.ProtocolNumber); err != nil {
-					t.Error(err)
-				}
+			if err := compareFragments(ep.WrittenPackets, source, ft.mtu, ft.wantFragments, tcp.ProtocolNumber); err != nil {
+				t.Error(err)
 			}
 		})
 	}
@@ -2368,7 +2349,7 @@ func TestFragmentationWritePackets(t *testing.T) {
 			insertAfter:  1,
 		},
 	}
-	tinyPacket := testutil.MakeRandPkt(header.TCPMinimumSize, header.IPv6MinimumSize, []int{1}, header.IPv6ProtocolNumber)
+	tinyPacket := testutil.MakeRandPkt(header.TCPMinimumSize, extraHeaderReserve+header.IPv6MinimumSize, []int{1}, header.IPv6ProtocolNumber)
 
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
@@ -2378,7 +2359,7 @@ func TestFragmentationWritePackets(t *testing.T) {
 					for i := 0; i < test.insertBefore; i++ {
 						pkts.PushBack(tinyPacket.Clone())
 					}
-					pkt := testutil.MakeRandPkt(ft.transHdrLen, ft.extraHdrLen, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+					pkt := testutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
 					source := pkt
 					pkts.PushBack(pkt.Clone())
 					for i := 0; i < test.insertAfter; i++ {
@@ -2480,7 +2461,7 @@ func TestFragmentationErrors(t *testing.T) {
 
 	for _, ft := range tests {
 		t.Run(ft.description, func(t *testing.T) {
-			pkt := testutil.MakeRandPkt(ft.transHdrLen, header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+			pkt := testutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
 			ep := testutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
 			r := buildRoute(t, ep)
 			err := r.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
