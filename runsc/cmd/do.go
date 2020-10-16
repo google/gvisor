@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -35,6 +36,8 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+var errNoDefaultInterface = errors.New("no default interface found")
 
 // Do implements subcommands.Command for the "do" command. It sets up a simple
 // sandbox and executes the command inside it. See Usage() for more details.
@@ -126,26 +129,28 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
 	if conf.Network == config.NetworkNone {
-		netns := specs.LinuxNamespace{
-			Type: specs.NetworkNamespace,
-		}
-		if spec.Linux != nil {
-			panic("spec.Linux is not nil")
-		}
-		spec.Linux = &specs.Linux{Namespaces: []specs.LinuxNamespace{netns}}
+		addNamespace(spec, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 
 	} else if conf.Rootless {
 		if conf.Network == config.NetworkSandbox {
-			c.notifyUser("*** Warning: using host network due to --rootless ***")
+			c.notifyUser("*** Warning: sandbox network isn't supported with --rootless, switching to host ***")
 			conf.Network = config.NetworkHost
 		}
 
 	} else {
-		clean, err := c.setupNet(cid, spec)
-		if err != nil {
+		switch clean, err := c.setupNet(cid, spec); err {
+		case errNoDefaultInterface:
+			log.Warningf("Network interface not found, using internal network")
+			addNamespace(spec, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+			conf.Network = config.NetworkHost
+
+		case nil:
+			// Setup successfull.
+			defer clean()
+
+		default:
 			return Errorf("Error setting up network: %v", err)
 		}
-		defer clean()
 	}
 
 	out, err := json.Marshal(spec)
@@ -199,6 +204,13 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	return subcommands.ExitSuccess
 }
 
+func addNamespace(spec *specs.Spec, ns specs.LinuxNamespace) {
+	if spec.Linux == nil {
+		spec.Linux = &specs.Linux{}
+	}
+	spec.Linux.Namespaces = append(spec.Linux.Namespaces, ns)
+}
+
 func (c *Do) notifyUser(format string, v ...interface{}) {
 	if !c.quiet {
 		fmt.Printf(format+"\n", v...)
@@ -219,10 +231,14 @@ func resolvePath(path string) (string, error) {
 	return path, nil
 }
 
+// setupNet setups up the sandbox network, including the creation of a network
+// namespace, and iptable rules to redirect the traffic. Returns a cleanup
+// function to tear down the network. Returns errNoDefaultInterface when there
+// is no network interface available to setup the network.
 func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	dev, err := defaultDevice()
 	if err != nil {
-		return nil, err
+		return nil, errNoDefaultInterface
 	}
 	peerIP, err := calculatePeerIP(c.ip)
 	if err != nil {
@@ -279,14 +295,11 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 		return nil, err
 	}
 
-	if spec.Linux == nil {
-		spec.Linux = &specs.Linux{}
-	}
 	netns := specs.LinuxNamespace{
 		Type: specs.NetworkNamespace,
 		Path: filepath.Join("/var/run/netns", cid),
 	}
-	spec.Linux.Namespaces = append(spec.Linux.Namespaces, netns)
+	addNamespace(spec, netns)
 
 	return func() { c.cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath) }, nil
 }
