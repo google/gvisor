@@ -1,17 +1,15 @@
 load("//tools:defs.bzl", "bzl_library", "pkg_tar")
 load("//website:defs.bzl", "doc", "docs")
+load("//images:defs.bzl", "docker_image")
 
 package(licenses = ["notice"])
 
-# website is the full container image. Note that this actually just collects
-# other dependendcies and runs Docker locally to import and tag the image.
-sh_binary(
+docker_image(
     name = "website",
-    srcs = ["import.sh"],
     data = [":files"],
-    tags = [
-        "local",
-        "manual",
+    statements = [
+        "EXPOSE 8080/tcp",
+        'ENTRYPOINT ["/server"]',
     ],
 )
 
