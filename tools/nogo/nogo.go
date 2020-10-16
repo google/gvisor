@@ -264,10 +264,15 @@ func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]str
 	// Closure to check a single package.
 	allFindings := make([]string, 0)
 	stdlibFacts := make(map[string][]byte)
+	stdlibErrs := make(map[string]error)
 	var checkOne func(pkg string) error // Recursive.
 	checkOne = func(pkg string) error {
 		// Is this already done?
 		if _, ok := stdlibFacts[pkg]; ok {
+			return nil
+		}
+		// Did this fail previously?
+		if _, ok := stdlibErrs[pkg]; ok {
 			return nil
 		}
 
@@ -283,6 +288,7 @@ func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]str
 			// If there's no binary for this package, it is likely
 			// not built with the distribution. That's fine, we can
 			// just skip analysis.
+			stdlibErrs[pkg] = err
 			return nil
 		}
 
@@ -299,6 +305,7 @@ func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]str
 		if err != nil {
 			// If we can't analyze a package from the standard library,
 			// then we skip it. It will simply not have any findings.
+			stdlibErrs[pkg] = err
 			return nil
 		}
 		stdlibFacts[pkg] = factData
@@ -312,7 +319,9 @@ func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]str
 	// to evaluate in the order provided here. We do ensure however, that
 	// all packages are evaluated.
 	for pkg := range packages {
-		checkOne(pkg)
+		if err := checkOne(pkg); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Sanity check.
@@ -324,6 +333,11 @@ func checkStdlib(config *stdlibConfig, ac map[*analysis.Analyzer]matcher) ([]str
 	factData, err := json.Marshal(stdlibFacts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error saving stdlib facts: %w", err)
+	}
+
+	// Write out all errors.
+	for pkg, err := range stdlibErrs {
+		log.Printf("WARNING: error while processing %v: %v", pkg, err)
 	}
 
 	// Return all findings.
