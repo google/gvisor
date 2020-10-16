@@ -426,7 +426,10 @@ func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, mtu uint32, p
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
 	e.addIPHeader(r, pkt, params)
+	return e.writePacket(r, gso, pkt, params.Protocol)
+}
 
+func (e *endpoint) writePacket(r *stack.Route, gso *stack.GSO, pkt *stack.PacketBuffer, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
@@ -468,7 +471,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	}
 
 	if e.packetMustBeFragmented(pkt, gso) {
-		sent, remain, err := e.handleFragments(r, gso, e.nic.MTU(), pkt, params.Protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
+		sent, remain, err := e.handleFragments(r, gso, e.nic.MTU(), pkt, protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
 			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
 			// fragment one by one using WritePacket() (current strategy) or if we
 			// want to create a PacketBufferList from the fragments and feed it to
@@ -569,11 +572,40 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	return n + len(dropped), nil
 }
 
-// WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
-// supported by IPv6.
-func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) *tcpip.Error {
-	// TODO(b/146666412): Support IPv6 header-included packets.
-	return tcpip.ErrNotSupported
+// WriteHeaderIncludedPacker implements stack.NetworkEndpoint.
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) *tcpip.Error {
+	// The packet already has an IP header, but there are a few required checks.
+	h, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
+	if !ok {
+		return tcpip.ErrMalformedHeader
+	}
+	ip := header.IPv6(h)
+
+	// Always set the payload length.
+	pktSize := pkt.Data.Size()
+	ip.SetPayloadLength(uint16(pktSize - header.IPv6MinimumSize))
+
+	// Set the source address when zero.
+	if ip.SourceAddress() == header.IPv6Any {
+		ip.SetSourceAddress(r.LocalAddress)
+	}
+
+	// Set the destination. If the packet already included a destination, it will
+	// be part of the route anyways.
+	ip.SetDestinationAddress(r.RemoteAddress)
+
+	// Populate the packet buffer's network header and don't allow an invalid
+	// packet to be sent.
+	//
+	// Note that parsing only makes sure that the packet is well formed as per the
+	// wire format. We also want to check if the header's fields are valid before
+	// sending the packet.
+	proto, _, _, _, ok := parse.IPv6(pkt)
+	if !ok || !header.IPv6(pkt.NetworkHeader().View()).IsValid(pktSize) {
+		return tcpip.ErrMalformedHeader
+	}
+
+	return e.writePacket(r, nil /* gso */, pkt, proto)
 }
 
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
