@@ -667,6 +667,74 @@ TEST(SemaphoreTest, SemopGetzcntOnSignal_NoRandomSave) {
   EXPECT_EQ(semctl(sem.get(), 0, GETZCNT), 0);
 }
 
+TEST(SemaphoreTest, SemCtlSemStat) {
+  // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
+  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  const int kLoops = 10;
+  std::map<int, uint32_t> index_to_id;
+  std::map<int, key_t> index_to_key;
+  std::map<int, uint16_t> index_to_mode;
+  std::map<int, time_t> index_to_ctime;
+  std::map<int, uint64_t> index_to_nsems;
+  time_t start_time = time(nullptr);
+  for (int i = 0; i < kLoops; i++) {
+    AutoSem sem(semget(IPC_PRIVATE + i, 1, 0600 | IPC_CREAT));
+    ASSERT_THAT(sem.get(), SyscallSucceeds());
+    index_to_id[i] = sem.release();
+    index_to_key[i] = IPC_PRIVATE + i;
+    index_to_mode[i] = 0600;
+    index_to_ctime[i] = start_time;
+    index_to_nsems[i] = 1;
+  }
+  for (int i = 0; i < kLoops; i++) {
+    struct semid_ds ds = {};
+    ASSERT_THAT(semctl(i, 0, SEM_STAT, &ds),
+                SyscallSucceedsWithValue(index_to_id[i]));
+    EXPECT_EQ(ds.sem_perm.__key, index_to_key[i]);
+    EXPECT_EQ(ds.sem_perm.mode, index_to_mode[i]);
+    EXPECT_EQ(ds.sem_otime, 0);
+    EXPECT_GE(ds.sem_ctime, index_to_ctime[i]);
+    EXPECT_EQ(ds.sem_nsems, index_to_nsems[i]);
+  }
+  for (int i = 0; i < kLoops / 2; i++) {
+    ASSERT_THAT(semctl(index_to_id[i], 0, IPC_RMID), SyscallSucceeds());
+    // Because of IPC_RMID, index 0 to 5 will be unused.
+    struct semid_ds ds = {};
+    EXPECT_THAT(semctl(i, 0, SEM_STAT, &ds), SyscallFailsWithErrno(EINVAL));
+    index_to_id.erase(i);
+  }
+  start_time = time(nullptr);
+  for (int i = 0; i < kLoops / 2; i++) {
+    AutoSem sem(semget(IPC_PRIVATE + 10 + i, 2, 0660 | IPC_CREAT));
+    ASSERT_THAT(sem.get(), SyscallSucceeds());
+    index_to_id[i] = sem.release();
+    index_to_key[i] = IPC_PRIVATE + kLoops + i;
+    index_to_mode[i] = 0660;
+    index_to_ctime[i] = start_time;
+    index_to_nsems[i] = 2;
+  }
+
+  for (int i = 0; i < kLoops; i++) {
+    struct semid_ds ds = {};
+    ASSERT_THAT(semctl(i, 0, SEM_STAT, &ds),
+                SyscallSucceedsWithValue(index_to_id[i]));
+    EXPECT_EQ(ds.sem_perm.__key, index_to_key[i]);
+    EXPECT_EQ(ds.sem_perm.mode, index_to_mode[i]);
+    EXPECT_EQ(ds.sem_otime, 0);
+    EXPECT_GE(ds.sem_ctime, index_to_ctime[i]);
+    EXPECT_EQ(ds.sem_nsems, index_to_nsems[i]);
+  }
+
+  for (int i = 0; i < kLoops; i++) {
+    struct semid_ds ds = {};
+    ds.sem_perm.uid = getuid();
+    ds.sem_perm.gid = getgid();
+    ds.sem_perm.mode = 0200;
+    ASSERT_THAT(semctl(index_to_id[i], 0, IPC_SET, &ds), SyscallSucceeds());
+    EXPECT_THAT(semctl(i, 0, SEM_STAT, &ds), SyscallFailsWithErrno(EACCES));
+  }
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

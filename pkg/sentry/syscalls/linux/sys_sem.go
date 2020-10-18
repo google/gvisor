@@ -129,6 +129,18 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		v, err := getPID(t, id, num)
 		return uintptr(v), nil, err
 
+	case linux.SEM_STAT:
+		arg := args[3].Pointer()
+		// id is an index in SEM_STAT.
+		semid, ds, err := semStat(t, id)
+		if err != nil {
+			return 0, nil, err
+		}
+		if _, err := ds.CopyOut(t, arg); err != nil {
+			return 0, nil, err
+		}
+		return uintptr(semid), nil, err
+
 	case linux.IPC_STAT:
 		arg := args[3].Pointer()
 		ds, err := ipcStat(t, id)
@@ -144,7 +156,6 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	case linux.IPC_INFO,
 		linux.SEM_INFO,
-		linux.SEM_STAT,
 		linux.SEM_STAT_ANY,
 		linux.GETNCNT:
 
@@ -180,6 +191,17 @@ func ipcSet(t *kernel.Task, id int32, uid auth.UID, gid auth.GID, perms fs.FileP
 	}
 	owner := fs.FileOwner{UID: kuid, GID: kgid}
 	return set.Change(t, creds, owner, perms)
+}
+
+func semStat(t *kernel.Task, index int32) (int32, *linux.SemidDS, error) {
+	r := t.IPCNamespace().SemaphoreRegistry()
+	set := r.FindByIndex(index)
+	if set == nil {
+		return 0, nil, syserror.EINVAL
+	}
+	creds := auth.CredentialsFromContext(t)
+	ds, err := set.GetStat(creds)
+	return set.ID, ds, err
 }
 
 func ipcStat(t *kernel.Task, id int32) (*linux.SemidDS, error) {
