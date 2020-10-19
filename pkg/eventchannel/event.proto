@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package gvisor;
 
-// A debug event encapsulates any other event protobuf in text format. This is
+// DebugEvent encapsulates any other event protobuf in text format. This is
 // useful because clients reading events emitted this way do not need to link
 // the event protobufs to display them in a human-readable format.
 message DebugEvent {

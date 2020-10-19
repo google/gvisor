@@ -151,8 +151,8 @@ NogoInfo = provider(
         "findings": "package findings (if relevant)",
         "importpath": "package import path",
         "binaries": "package binary files",
-        "srcs": "original source files (for go_test support)",
-        "deps": "original deps (for go_test support)",
+        "srcs": "srcs (for go_test support)",
+        "deps": "deps (for go_test support)",
     },
 )
 
@@ -162,7 +162,7 @@ def _nogo_aspect_impl(target, ctx):
     # All work is done in the shadow properties for go rules. For a proto
     # library, we simply skip the analysis portion but still need to return a
     # valid NogoInfo to reference the generated binary.
-    if ctx.rule.kind in ("go_library", "go_binary", "go_test", "go_tool_library"):
+    if ctx.rule.kind in ("go_library", "go_tool_library", "go_binary", "go_test"):
         srcs = ctx.rule.files.srcs
         deps = ctx.rule.attr.deps
     elif ctx.rule.kind in ("go_proto_library", "go_wrap_cc"):

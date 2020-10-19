@@ -53,26 +53,31 @@ func NewFindingsPoster(client *github.Client, owner, repo, commit string, dryRun
 }
 
 // Walk walks the given path tree for findings files.
-func (p *FindingsPoster) Walk(path string) error {
-	return filepath.Walk(path, func(filename string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		// Skip any directories or files not ending in .findings.
-		if !strings.HasSuffix(filename, ".findings") || info.IsDir() {
+func (p *FindingsPoster) Walk(paths []string) error {
+	for _, path := range paths {
+		if err := filepath.Walk(path, func(filename string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			// Skip any directories or files not ending in .findings.
+			if !strings.HasSuffix(filename, ".findings") || info.IsDir() {
+				return nil
+			}
+			findings, err := util.ExtractFindingsFromFile(filename)
+			if err != nil {
+				return err
+			}
+			// Add all findings to the list. We use a map to ensure
+			// that each finding is unique.
+			for _, finding := range findings {
+				p.findings[finding] = struct{}{}
+			}
 			return nil
-		}
-		findings, err := util.ExtractFindingsFromFile(filename)
-		if err != nil {
+		}); err != nil {
 			return err
 		}
-		// Add all findings to the list. We use a map to ensure
-		// that each finding is unique.
-		for _, finding := range findings {
-			p.findings[finding] = struct{}{}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // Post posts all results to the GitHub API as a check run.

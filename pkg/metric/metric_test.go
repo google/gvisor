@@ -17,7 +17,7 @@ package metric
 import (
 	"testing"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )

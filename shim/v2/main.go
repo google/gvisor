@@ -1,5 +1,4 @@
-// Copyright 2018 The containerd Authors.
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Binary containerd-shim-runsc-v1 is the v2 containerd shim (implementing the formal v1 API).
 package main
 
 import (
-	"github.com/containerd/containerd/runtime/v2/shim"
-
-	"gvisor.dev/gvisor/pkg/shim/v2"
+	"gvisor.dev/gvisor/shim/v2/cli"
 )
 
 func main() {
-	shim.Run("io.containerd.runsc.v1", v2.New)
+	cli.Main()
 }

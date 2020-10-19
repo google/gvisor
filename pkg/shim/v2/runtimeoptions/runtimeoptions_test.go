@@ -15,11 +15,12 @@
 package runtimeoptions
 
 import (
+	"bytes"
 	"testing"
 
 	shim "github.com/containerd/containerd/runtime/v1/shim/v1"
 	"github.com/containerd/typeurl"
-	"github.com/golang/protobuf/proto"
+	"github.com/gogo/protobuf/proto"
 )
 
 func TestCreateTaskRequest(t *testing.T) {
@@ -32,7 +33,11 @@ func TestCreateTaskRequest(t *testing.T) {
 	if err := proto.UnmarshalText(encodedText, got); err != nil {
 		t.Fatalf("unable to unmarshal text: %v", err)
 	}
-	t.Logf("got: %s", proto.MarshalTextString(got))
+	var textBuffer bytes.Buffer
+	if err := proto.MarshalText(&textBuffer, got); err != nil {
+		t.Errorf("unable to marshal text: %v", err)
+	}
+	t.Logf("got: %s", string(textBuffer.Bytes()))
 
 	// Check the options.
 	wantOptions := &Options{}
