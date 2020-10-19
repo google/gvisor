@@ -45,6 +45,9 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if count > int64(kernel.MAX_RW_COUNT) {
 		count = int64(kernel.MAX_RW_COUNT)
 	}
+	if count < 0 {
+		return 0, nil, syserror.EINVAL
+	}
 
 	// Check for invalid flags.
 	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
@@ -191,6 +194,9 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	}
 	if count > int64(kernel.MAX_RW_COUNT) {
 		count = int64(kernel.MAX_RW_COUNT)
+	}
+	if count < 0 {
+		return 0, nil, syserror.EINVAL
 	}
 
 	// Check for invalid flags.
