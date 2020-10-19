@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -206,6 +207,10 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	} else {
 		ipcns.IncRef()
 	}
+	cu := cleanup.Make(func() {
+		ipcns.DecRef(t)
+	})
+	defer cu.Clean()
 
 	netns := t.NetworkNamespace()
 	if opts.NewNetworkNamespace {
@@ -216,13 +221,18 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	mntnsVFS2 := t.mountNamespaceVFS2
 	if mntnsVFS2 != nil {
 		mntnsVFS2.IncRef()
+		cu.Add(func() {
+			mntnsVFS2.DecRef(t)
+		})
 	}
 
 	tc, err := t.tc.Fork(t, t.k, !opts.NewAddressSpace)
 	if err != nil {
-		ipcns.DecRef(t)
 		return 0, nil, err
 	}
+	cu.Add(func() {
+		tc.release()
+	})
 	// clone() returns 0 in the child.
 	tc.Arch.SetReturn(0)
 	if opts.Stack != 0 {
@@ -230,7 +240,6 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	}
 	if opts.SetTLS {
 		if !tc.Arch.SetTLS(uintptr(opts.TLS)) {
-			ipcns.DecRef(t)
 			return 0, nil, syserror.EPERM
 		}
 	}
@@ -299,11 +308,11 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	} else {
 		cfg.InheritParent = t
 	}
-	nt, err := t.tg.pidns.owner.NewTask(cfg)
+	nt, err := t.tg.pidns.owner.NewTask(t, cfg)
+	// If NewTask succeeds, we transfer references to nt. If NewTask fails, it does
+	// the cleanup for us.
+	cu.Release()
 	if err != nil {
-		if opts.NewThreadGroup {
-			tg.release(t)
-		}
 		return 0, nil, err
 	}
 

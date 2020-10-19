@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/eventchannel"
@@ -340,7 +341,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		return fmt.Errorf("Timekeeper is nil")
 	}
 	if args.Timekeeper.clocks == nil {
-		return fmt.Errorf("Must call Timekeeper.SetClocks() before Kernel.Init()")
+		return fmt.Errorf("must call Timekeeper.SetClocks() before Kernel.Init()")
 	}
 	if args.RootUserNamespace == nil {
 		return fmt.Errorf("RootUserNamespace is nil")
@@ -365,7 +366,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		k.useHostCores = true
 		maxCPU, err := hostcpu.MaxPossibleCPU()
 		if err != nil {
-			return fmt.Errorf("Failed to get maximum CPU number: %v", err)
+			return fmt.Errorf("failed to get maximum CPU number: %v", err)
 		}
 		minAppCores := uint(maxCPU) + 1
 		if k.applicationCores < minAppCores {
@@ -966,6 +967,10 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	}
 
 	tg := k.NewThreadGroup(mntns, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
+	cu := cleanup.Make(func() {
+		tg.Release(ctx)
+	})
+	defer cu.Clean()
 
 	// Check which file to start from.
 	switch {
@@ -1025,13 +1030,14 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		MountNamespaceVFS2:      mntnsVFS2,
 		ContainerID:             args.ContainerID,
 	}
-	t, err := k.tasks.NewTask(config)
+	t, err := k.tasks.NewTask(ctx, config)
 	if err != nil {
 		return nil, 0, err
 	}
 	t.traceExecEvent(tc) // Simulate exec for tracing.
 
 	// Success.
+	cu.Release()
 	tgid := k.tasks.Root.IDOfThreadGroup(tg)
 	if k.globalInit == nil {
 		k.globalInit = tg
