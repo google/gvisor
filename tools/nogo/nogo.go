@@ -536,15 +536,15 @@ func Main() {
 		findings, factData, err = checkPackage(c, analyzerConfig, nil)
 		// Do we need to do escape analysis?
 		if *escapesOutput != "" {
-			escapes, _, err := checkPackage(c, escapesConfig, nil)
-			if err != nil {
-				log.Fatalf("error performing escape analysis: %v", err)
-			}
 			f, err := os.OpenFile(*escapesOutput, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 			if err != nil {
 				log.Fatalf("unable to open output %q: %v", *escapesOutput, err)
 			}
 			defer f.Close()
+			escapes, _, err := checkPackage(c, escapesConfig, nil)
+			if err != nil {
+				log.Fatalf("error performing escape analysis: %v", err)
+			}
 			for _, escape := range escapes {
 				fmt.Fprintf(f, "%s\n", escape)
 			}

@@ -1,25 +1,32 @@
-"""Generics support via go_generics."""
+"""Generics support via go_generics.
+
+A Go template is similar to a go library, except that it has certain types that
+can be replaced before usage. For example, one could define a templatized List
+struct, whose elements are of type T, then instantiate that template for
+T=segment, where "segment" is the concrete type.
+"""
 
 TemplateInfo = provider(
+    "Information about a go_generics template.",
     fields = {
+        "unsafe": "whether the template requires unsafe code",
         "types": "required types",
         "opt_types": "optional types",
         "consts": "required consts",
         "opt_consts": "optional consts",
         "deps": "package dependencies",
-        "file": "merged template",
+        "template": "merged template source file",
     },
 )
 
 def _go_template_impl(ctx):
     srcs = ctx.files.srcs
-    output = ctx.outputs.out
-
-    args = ["-o=%s" % output.path] + [f.path for f in srcs]
+    template = ctx.actions.declare_file(ctx.label.name + "_template.go")
+    args = ["-o=%s" % template.path] + [f.path for f in srcs]
 
     ctx.actions.run(
         inputs = srcs,
-        outputs = [output],
+        outputs = [template],
         mnemonic = "GoGenericsTemplate",
         progress_message = "Building Go template %s" % ctx.label,
         arguments = args,
@@ -32,74 +39,48 @@ def _go_template_impl(ctx):
         consts = ctx.attr.consts,
         opt_consts = ctx.attr.opt_consts,
         deps = ctx.attr.deps,
-        file = output,
+        template = template,
     )]
 
-"""
-Generates a Go template from a set of Go files.
-
-A Go template is similar to a go library, except that it has certain types that
-can be replaced before usage. For example, one could define a templatized List
-struct, whose elements are of type T, then instantiate that template for
-T=segment, where "segment" is the concrete type.
-
-Args:
-  name: the name of the template.
-  srcs: the list of source files that comprise the template.
-  types: the list of generic types in the template that are required to be specified.
-  opt_types: the list of generic types in the template that can but aren't required to be specified.
-  consts: the list of constants in the template that are required to be specified.
-  opt_consts: the list of constants in the template that can but aren't required to be specified.
-  deps: the list of dependencies.
-"""
 go_template = rule(
     implementation = _go_template_impl,
     attrs = {
-        "srcs": attr.label_list(mandatory = True, allow_files = True),
-        "deps": attr.label_list(allow_files = True, cfg = "target"),
-        "types": attr.string_list(),
-        "opt_types": attr.string_list(),
-        "consts": attr.string_list(),
-        "opt_consts": attr.string_list(),
+        "srcs": attr.label_list(doc = "the list of source files that comprise the template", mandatory = True, allow_files = True),
+        "deps": attr.label_list(doc = "the standard dependency list", allow_files = True, cfg = "target"),
+        "types": attr.string_list(doc = "the list of generic types in the template that are required to be specified"),
+        "opt_types": attr.string_list(doc = "the list of generic types in the template that can but aren't required to be specified"),
+        "consts": attr.string_list(doc = "the list of constants in the template that are required to be specified"),
+        "opt_consts": attr.string_list(doc = "the list of constants in the template that can but aren't required to be specified"),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics/go_merge")),
-    },
-    outputs = {
-        "out": "%{name}_template.go",
-    },
-)
-
-TemplateInstanceInfo = provider(
-    fields = {
-        "srcs": "source files",
     },
 )
 
 def _go_template_instance_impl(ctx):
-    template = ctx.attr.template[TemplateInfo]
+    info = ctx.attr.template[TemplateInfo]
     output = ctx.outputs.out
 
     # Check that all required types are defined.
-    for t in template.types:
+    for t in info.types:
         if t not in ctx.attr.types:
             fail("Missing value for type %s in %s" % (t, ctx.attr.template.label))
 
     # Check that all defined types are expected by the template.
     for t in ctx.attr.types:
-        if (t not in template.types) and (t not in template.opt_types):
+        if (t not in info.types) and (t not in info.opt_types):
             fail("Type %s it not a parameter to %s" % (t, ctx.attr.template.label))
 
     # Check that all required consts are defined.
-    for t in template.consts:
+    for t in info.consts:
         if t not in ctx.attr.consts:
             fail("Missing value for constant %s in %s" % (t, ctx.attr.template.label))
 
     # Check that all defined consts are expected by the template.
     for t in ctx.attr.consts:
-        if (t not in template.consts) and (t not in template.opt_consts):
+        if (t not in info.consts) and (t not in info.opt_consts):
             fail("Const %s it not a parameter to %s" % (t, ctx.attr.template.label))
 
     # Build the argument list.
-    args = ["-i=%s" % template.file.path, "-o=%s" % output.path]
+    args = ["-i=%s" % info.template.path, "-o=%s" % output.path]
     if ctx.attr.package:
         args.append("-p=%s" % ctx.attr.package)
 
@@ -117,7 +98,7 @@ def _go_template_instance_impl(ctx):
         args.append("-anon")
 
     ctx.actions.run(
-        inputs = [template.file],
+        inputs = [info.template],
         outputs = [output],
         mnemonic = "GoGenericsInstance",
         progress_message = "Building Go template instance %s" % ctx.label,
@@ -125,35 +106,22 @@ def _go_template_instance_impl(ctx):
         executable = ctx.executable._tool,
     )
 
-    return [TemplateInstanceInfo(
-        srcs = [output],
+    return [DefaultInfo(
+        files = depset([output]),
     )]
 
-"""
-Instantiates a Go template by replacing all generic types with concrete ones.
-
-Args:
-  name: the name of the template instance.
-  template: the label of the template to be instatiated.
-  prefix: a prefix to be added to globals in the template.
-  suffix: a suffix to be added to global in the template.
-  types: the map from generic type names to concrete ones.
-  consts: the map from constant names to their values.
-  imports: the map from imports used in types/consts to their import paths.
-  package: the name of the package the instantiated template will be compiled into.
-"""
 go_template_instance = rule(
     implementation = _go_template_instance_impl,
     attrs = {
-        "template": attr.label(mandatory = True),
-        "prefix": attr.string(),
-        "suffix": attr.string(),
-        "types": attr.string_dict(),
-        "consts": attr.string_dict(),
-        "imports": attr.string_dict(),
-        "anon": attr.bool(mandatory = False, default = False),
-        "package": attr.string(mandatory = False),
-        "out": attr.output(mandatory = True),
+        "template": attr.label(doc = "the label of the template to be instantiated", mandatory = True),
+        "prefix": attr.string(doc = "a prefix to be added to globals in the template"),
+        "suffix": attr.string(doc = "a suffix to be added to globals in the template"),
+        "types": attr.string_dict(doc = "the map from generic type names to concrete ones"),
+        "consts": attr.string_dict(doc = "the map from constant names to their values"),
+        "imports": attr.string_dict(doc = "the map from imports used in types/consts to their import paths"),
+        "anon": attr.bool(doc = "whether anoymous fields should be processed", mandatory = False, default = False),
+        "package": attr.string(doc = "the package for the generated source file", mandatory = False),
+        "out": attr.output(doc = "output file", mandatory = True),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics")),
     },
 )

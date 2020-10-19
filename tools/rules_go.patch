@@ -1,0 +1,14 @@
+diff --git a/go/private/rules/test.bzl b/go/private/rules/test.bzl
+index 17516ad7..76b6c68c 100644
+--- a/go/private/rules/test.bzl
++++ b/go/private/rules/test.bzl
+@@ -121,9 +121,6 @@ def _go_test_impl(ctx):
+     )
+ 
+     test_gc_linkopts = gc_linkopts(ctx)
+-    if not go.mode.debug:
+-        # Disable symbol table and DWARF generation for test binaries.
+-        test_gc_linkopts.extend(["-s", "-w"])
+ 
+     # Now compile the test binary itself
+     test_library = GoLibrary(

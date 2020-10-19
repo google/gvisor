@@ -70,10 +70,8 @@ Rules:
     *   `@org_golang_x_sys//unix:go_default_library` (Go import
         `golang.org/x/sys/unix`).
     *   Generated Go protobuf packages.
-    *   `@com_github_golang_protobuf//proto:go_default_library` (Go import
-        `github.com/golang/protobuf/proto`).
-    *   `@com_github_golang_protobuf//ptypes:go_default_library` (Go import
-        `github.com/golang/protobuf/ptypes`).
+    *   `@org_golang_google_protobuf//proto:go_default_library` (Go import
+        `google.golang.org/protobuf`).
 
 *   `runsc` may only depend on the following packages:
 

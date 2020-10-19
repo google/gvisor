@@ -50,31 +50,14 @@ build:remote --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-defa
 build:remote --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote --platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote --crosstool_top=@rbe_default//cc:toolchain
-build:remote --jobs=100
+build:remote --jobs=300
 build:remote --remote_timeout=3600
-build:remote3 --host_platform=//tools/bazeldefs:rbe_ubuntu1604_bazel3
-build:remote3 --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-default_bazel3
-build:remote3 --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604_bazel3
-build:remote3 --platforms=//tools/bazeldefs:rbe_ubuntu1604_bazel3
+
+# Identical to the above, to be removed once CI switches.
+build:remote3 --host_platform=//tools/bazeldefs:rbe_ubuntu1604
+build:remote3 --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-default
+build:remote3 --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604
+build:remote3 --platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote3 --crosstool_top=@rbe_default//cc:toolchain
-build:remote3 --jobs=100
+build:remote3 --jobs=300
 build:remote3 --remote_timeout=3600
-
-# Set flags for uploading to BES in order to view results in the Bazel Build
-# Results UI.
-build:results --bes_backend="buildeventservice.googleapis.com"
-build:results --bes_timeout=60s
-build:results --tls_enabled
-
-# Output BES results url
-build:results --bes_results_url="https://source.cloud.google.com/results/invocations/"
-
-# Set flags for uploading to BES without Remote Build Execution.
-build:results-local --bes_backend="buildeventservice.googleapis.com"
-build:results-local --bes_timeout=60s
-build:results-local --tls_enabled=true
-build:results-local --auth_enabled=true
-build:results-local --spawn_strategy=local
-build:results-local --remote_cache=remotebuildexecution.googleapis.com
-build:results-local --remote_timeout=3600
-build:results-local --bes_results_url="https://source.cloud.google.com/results/invocations/"
