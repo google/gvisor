@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -222,6 +223,18 @@ type usageInfo struct {
 	knownCommitted bool
 
 	refs uint64
+}
+
+// canCommit returns true if the tracked region can be committed.
+func (u *usageInfo) canCommit() bool {
+	// refs must be greater than 0 because we assume that reclaimable pages
+	// (that aren't already known to be committed) are not committed. This
+	// isn't necessarily true, even after the reclaimer does Decommit(),
+	// because the kernel may subsequently back the hugepage-sized region
+	// containing the decommitted page with a hugepage. However, it's
+	// consistent with our treatment of unallocated pages, which have the same
+	// property.
+	return !u.knownCommitted && u.refs != 0
 }
 
 // An EvictableMemoryUser represents a user of MemoryFile-allocated memory that
@@ -828,6 +841,11 @@ func (f *MemoryFile) UpdateUsage() error {
 		log.Debugf("UpdateUsage: skipped with usageSwapped!=0.")
 		return nil
 	}
+	// Linux updates usage values at CONFIG_HZ.
+	if scanningAfter := time.Now().Sub(f.usageLast).Milliseconds(); scanningAfter < time.Second.Milliseconds()/linux.CLOCKS_PER_SEC {
+		log.Debugf("UpdateUsage: skipped because previous scan happened %d ms back", scanningAfter)
+		return nil
+	}
 
 	f.usageLast = time.Now()
 	err = f.updateUsageLocked(currentUsage, mincore)
@@ -841,7 +859,7 @@ func (f *MemoryFile) UpdateUsage() error {
 // pages by invoking checkCommitted, which is a function that, for each page i
 // in bs, sets committed[i] to 1 if the page is committed and 0 otherwise.
 //
-// Precondition: f.mu must be held.
+// Precondition: f.mu must be held; it may be unlocked and reacquired.
 func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(bs []byte, committed []byte) error) error {
 	// Track if anything changed to elide the merge. In the common case, we
 	// expect all segments to be committed and no merge to occur.
@@ -868,7 +886,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 		} else if f.usageSwapped != 0 {
 			// We have more usage accounted for than the file itself.
 			// That's fine, we probably caught a race where pages were
-			// being committed while the above loop was running. Just
+			// being committed while the below loop was running. Just
 			// report the higher number that we found and ignore swap.
 			usage.MemoryAccounting.Dec(f.usageSwapped, usage.System)
 			f.usageSwapped = 0
@@ -880,21 +898,9 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 
 	// Iterate over all usage data. There will only be usage segments
 	// present when there is an associated reference.
-	for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		val := seg.Value()
-
-		// Already known to be committed; ignore.
-		if val.knownCommitted {
-			continue
-		}
-
-		// Assume that reclaimable pages (that aren't already known to be
-		// committed) are not committed. This isn't necessarily true, even
-		// after the reclaimer does Decommit(), because the kernel may
-		// subsequently back the hugepage-sized region containing the
-		// decommitted page with a hugepage. However, it's consistent with our
-		// treatment of unallocated pages, which have the same property.
-		if val.refs == 0 {
+	for seg := f.usage.FirstSegment(); seg.Ok(); {
+		if !seg.ValuePtr().canCommit() {
+			seg = seg.NextSegment()
 			continue
 		}
 
@@ -917,56 +923,53 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 			}
 
 			// Query for new pages in core.
-			if err := checkCommitted(s, buf); err != nil {
+			// NOTE(b/165896008): mincore (which is passed as checkCommitted)
+			// by f.UpdateUsage() might take a really long time. So unlock f.mu
+			// while checkCommitted runs.
+			f.mu.Unlock()
+			err := checkCommitted(s, buf)
+			f.mu.Lock()
+			if err != nil {
 				checkErr = err
 				return
 			}
 
 			// Scan each page and switch out segments.
-			populatedRun := false
-			populatedRunStart := 0
-			for i := 0; i <= bufLen; i++ {
-				// We run past the end of the slice here to
-				// simplify the logic and only set populated if
-				// we're still looking at elements.
-				populated := false
-				if i < bufLen {
-					populated = buf[i]&0x1 != 0
-				}
-
-				switch {
-				case populated == populatedRun:
-					// Keep the run going.
+			seg := f.usage.LowerBoundSegment(r.Start)
+			for i := 0; i < bufLen; {
+				if buf[i]&0x1 == 0 {
+					i++
 					continue
-				case populated && !populatedRun:
-					// Begin the run.
-					populatedRun = true
-					populatedRunStart = i
-					// Keep going.
-					continue
-				case !populated && populatedRun:
-					// Finish the run by changing this segment.
-					runRange := memmap.FileRange{
-						Start: r.Start + uint64(populatedRunStart*usermem.PageSize),
-						End:   r.Start + uint64(i*usermem.PageSize),
-					}
-					seg = f.usage.Isolate(seg, runRange)
-					seg.ValuePtr().knownCommitted = true
-					// Advance the segment only if we still
-					// have work to do in the context of
-					// the original segment from the for
-					// loop. Otherwise, the for loop itself
-					// will advance the segment
-					// appropriately.
-					if runRange.End != r.End {
-						seg = seg.NextSegment()
-					}
-					amount := runRange.Length()
-					usage.MemoryAccounting.Inc(amount, val.kind)
-					f.usageExpected += amount
-					changedAny = true
-					populatedRun = false
 				}
+				// Scan to the end of this committed range.
+				j := i + 1
+				for ; j < bufLen; j++ {
+					if buf[j]&0x1 == 0 {
+						break
+					}
+				}
+				committedFR := memmap.FileRange{
+					Start: r.Start + uint64(i*usermem.PageSize),
+					End:   r.Start + uint64(j*usermem.PageSize),
+				}
+				// Advance seg to committedFR.Start.
+				for seg.Ok() && seg.End() < committedFR.Start {
+					seg = seg.NextSegment()
+				}
+				// Mark pages overlapping committedFR as committed.
+				for seg.Ok() && seg.Start() < committedFR.End {
+					if seg.ValuePtr().canCommit() {
+						seg = f.usage.Isolate(seg, committedFR)
+						seg.ValuePtr().knownCommitted = true
+						amount := seg.Range().Length()
+						usage.MemoryAccounting.Inc(amount, seg.ValuePtr().kind)
+						f.usageExpected += amount
+						changedAny = true
+					}
+					seg = seg.NextSegment()
+				}
+				// Continue scanning for committed pages.
+				i = j + 1
 			}
 
 			// Advance r.Start.
@@ -978,6 +981,9 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 		if err != nil {
 			return err
 		}
+
+		// Continue with the first segment after r.End.
+		seg = f.usage.LowerBoundSegment(r.End)
 	}
 
 	return nil

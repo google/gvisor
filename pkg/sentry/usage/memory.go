@@ -278,7 +278,7 @@ func TotalMemory(memSize, used uint64) uint64 {
 	}
 	if memSize < used {
 		memSize = used
-		// Bump totalSize to the next largest power of 2, if one exists, so
+		// Bump memSize to the next largest power of 2, if one exists, so
 		// that MemFree isn't 0.
 		if msb := bits.MostSignificantOne64(memSize); msb < 63 {
 			memSize = uint64(1) << (uint(msb) + 1)
