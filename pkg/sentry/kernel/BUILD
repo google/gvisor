@@ -218,6 +218,7 @@ go_library(
         "//pkg/amutex",
         "//pkg/bits",
         "//pkg/bpf",
+        "//pkg/cleanup",
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/cpuid",

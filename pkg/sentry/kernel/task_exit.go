@@ -286,7 +286,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.
 	if lastExiter {
-		t.tg.release(t)
+		t.tg.Release(t)
 	}
 
 	// Detach tracees.

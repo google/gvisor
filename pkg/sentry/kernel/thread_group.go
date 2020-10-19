@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -307,8 +308,8 @@ func (tg *ThreadGroup) Limits() *limits.LimitSet {
 	return tg.limits
 }
 
-// release releases the thread group's resources.
-func (tg *ThreadGroup) release(t *Task) {
+// Release releases the thread group's resources.
+func (tg *ThreadGroup) Release(ctx context.Context) {
 	// Timers must be destroyed without holding the TaskSet or signal mutexes
 	// since timers send signals with Timer.mu locked.
 	tg.itimerRealTimer.Destroy()
@@ -325,7 +326,7 @@ func (tg *ThreadGroup) release(t *Task) {
 		it.DestroyTimer()
 	}
 	if tg.mounts != nil {
-		tg.mounts.DecRef(t)
+		tg.mounts.DecRef(ctx)
 	}
 }
 
