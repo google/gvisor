@@ -1,5 +1,5 @@
 // Copyright 2018 The containerd Authors.
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,5 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package runtimeoptions contains the runtimeoptions proto.
-package runtimeoptions
+// Package cli defines the command line interface for the V2 shim.
+package cli
+
+import (
+	"github.com/containerd/containerd/runtime/v2/shim"
+
+	"gvisor.dev/gvisor/pkg/shim/v2"
+)
+
+// Main is the main entrypoint.
+func Main() {
+	shim.Run("io.containerd.runsc.v1", v2.New)
+}
