@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cli
 
 import (
 	shim "github.com/containerd/containerd/runtime/v1/shim/v1"
