@@ -985,7 +985,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	// Start the gofer in the given namespace.
 	log.Debugf("Starting gofer: %s %v", binPath, args)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
-		return nil, nil, fmt.Errorf("Gofer: %v", err)
+		return nil, nil, fmt.Errorf("gofer: %v", err)
 	}
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid

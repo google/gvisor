@@ -2362,12 +2362,12 @@ func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte,
 }
 
 // executeSync synchronously executes a new process.
-func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
-	pid, err := cont.Execute(args)
+func (c *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
+	pid, err := c.Execute(args)
 	if err != nil {
 		return 0, fmt.Errorf("error executing: %v", err)
 	}
-	ws, err := cont.WaitPID(pid)
+	ws, err := c.WaitPID(pid)
 	if err != nil {
 		return 0, fmt.Errorf("error waiting: %v", err)
 	}

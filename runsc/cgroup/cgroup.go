@@ -201,13 +201,15 @@ func LoadPaths(pid string) (map[string]string, error) {
 	paths := make(map[string]string)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		// Format: ID:controller1,controller2:path
+		// Format: ID:[name=]controller1,controller2:path
 		// Example: 2:cpu,cpuacct:/user.slice
 		tokens := strings.Split(scanner.Text(), ":")
 		if len(tokens) != 3 {
 			return nil, fmt.Errorf("invalid cgroups file, line: %q", scanner.Text())
 		}
 		for _, ctrlr := range strings.Split(tokens[1], ",") {
+			// Remove prefix for cgroups with no controller, eg. systemd.
+			ctrlr = strings.TrimPrefix(ctrlr, "name=")
 			paths[ctrlr] = tokens[2]
 		}
 	}
@@ -237,7 +239,7 @@ func New(spec *specs.Spec) (*Cgroup, error) {
 		var err error
 		parents, err = LoadPaths("self")
 		if err != nil {
-			return nil, fmt.Errorf("finding current cgroups: %v", err)
+			return nil, fmt.Errorf("finding current cgroups: %w", err)
 		}
 	}
 	return &Cgroup{
@@ -276,10 +278,8 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 			}
 			return err
 		}
-		if res != nil {
-			if err := cfg.ctrlr.set(res, path); err != nil {
-				return err
-			}
+		if err := cfg.ctrlr.set(res, path); err != nil {
+			return err
 		}
 	}
 	clean.Release()
@@ -304,14 +304,15 @@ func (c *Cgroup) Uninstall() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
-		if err := backoff.Retry(func() error {
+		fn := func() error {
 			err := syscall.Rmdir(path)
 			if os.IsNotExist(err) {
 				return nil
 			}
 			return err
-		}, b); err != nil {
-			return fmt.Errorf("removing cgroup path %q: %v", path, err)
+		}
+		if err := backoff.Retry(fn, b); err != nil {
+			return fmt.Errorf("removing cgroup path %q: %w", path, err)
 		}
 	}
 	return nil
@@ -332,7 +333,6 @@ func (c *Cgroup) Join() (func(), error) {
 		if _, ok := controllers[ctrlr]; ok {
 			fullPath := filepath.Join(cgroupRoot, ctrlr, path)
 			undoPaths = append(undoPaths, fullPath)
-			break
 		}
 	}
 
@@ -422,7 +422,7 @@ func (*noop) set(*specs.LinuxResources, string) error {
 type memory struct{}
 
 func (*memory) set(spec *specs.LinuxResources, path string) error {
-	if spec.Memory == nil {
+	if spec == nil || spec.Memory == nil {
 		return nil
 	}
 	if err := setOptionalValueInt(path, "memory.limit_in_bytes", spec.Memory.Limit); err != nil {
@@ -455,7 +455,7 @@ func (*memory) set(spec *specs.LinuxResources, path string) error {
 type cpu struct{}
 
 func (*cpu) set(spec *specs.LinuxResources, path string) error {
-	if spec.CPU == nil {
+	if spec == nil || spec.CPU == nil {
 		return nil
 	}
 	if err := setOptionalValueUint(path, "cpu.shares", spec.CPU.Shares); err != nil {
@@ -478,7 +478,7 @@ type cpuSet struct{}
 func (*cpuSet) set(spec *specs.LinuxResources, path string) error {
 	// cpuset.cpus and mems are required fields, but are not set on a new cgroup.
 	// If not set in the spec, get it from one of the ancestors cgroup.
-	if spec.CPU == nil || spec.CPU.Cpus == "" {
+	if spec == nil || spec.CPU == nil || spec.CPU.Cpus == "" {
 		if _, err := fillFromAncestor(filepath.Join(path, "cpuset.cpus")); err != nil {
 			return err
 		}
@@ -488,18 +488,17 @@ func (*cpuSet) set(spec *specs.LinuxResources, path string) error {
 		}
 	}
 
-	if spec.CPU == nil || spec.CPU.Mems == "" {
+	if spec == nil || spec.CPU == nil || spec.CPU.Mems == "" {
 		_, err := fillFromAncestor(filepath.Join(path, "cpuset.mems"))
 		return err
 	}
-	mems := spec.CPU.Mems
-	return setValue(path, "cpuset.mems", mems)
+	return setValue(path, "cpuset.mems", spec.CPU.Mems)
 }
 
 type blockIO struct{}
 
 func (*blockIO) set(spec *specs.LinuxResources, path string) error {
-	if spec.BlockIO == nil {
+	if spec == nil || spec.BlockIO == nil {
 		return nil
 	}
 
@@ -549,7 +548,7 @@ func setThrottle(path, name string, devs []specs.LinuxThrottleDevice) error {
 type networkClass struct{}
 
 func (*networkClass) set(spec *specs.LinuxResources, path string) error {
-	if spec.Network == nil {
+	if spec == nil || spec.Network == nil {
 		return nil
 	}
 	return setOptionalValueUint32(path, "net_cls.classid", spec.Network.ClassID)
@@ -558,7 +557,7 @@ func (*networkClass) set(spec *specs.LinuxResources, path string) error {
 type networkPrio struct{}
 
 func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
-	if spec.Network == nil {
+	if spec == nil || spec.Network == nil {
 		return nil
 	}
 	for _, prio := range spec.Network.Priorities {
@@ -573,7 +572,7 @@ func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
 type pids struct{}
 
 func (*pids) set(spec *specs.LinuxResources, path string) error {
-	if spec.Pids == nil || spec.Pids.Limit <= 0 {
+	if spec == nil || spec.Pids == nil || spec.Pids.Limit <= 0 {
 		return nil
 	}
 	val := strconv.FormatInt(spec.Pids.Limit, 10)
@@ -583,6 +582,9 @@ func (*pids) set(spec *specs.LinuxResources, path string) error {
 type hugeTLB struct{}
 
 func (*hugeTLB) set(spec *specs.LinuxResources, path string) error {
+	if spec == nil {
+		return nil
+	}
 	for _, limit := range spec.HugepageLimits {
 		name := fmt.Sprintf("hugetlb.%s.limit_in_bytes", limit.Pagesize)
 		val := strconv.FormatUint(limit.Limit, 10)
