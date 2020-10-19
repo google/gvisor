@@ -9,6 +9,7 @@ exports_files(
     [
         "socket.cc",
         "socket_inet_loopback.cc",
+        "socket_inet_loopback_bind_release.cc",
         "socket_ip_loopback_blocking.cc",
         "socket_ip_tcp_generic_loopback.cc",
         "socket_ip_tcp_loopback.cc",
@@ -2952,6 +2953,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
+        ":socket_inet_loopback_util",
         ":socket_test_util",
         "//test/util:file_descriptor",
         "@com_google_absl//absl/memory",
@@ -2983,6 +2985,34 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
+    ],
+)
+
+cc_binary(
+    name = "socket_inet_loopback_bind_release_test",
+    testonly = 1,
+    srcs = ["socket_inet_loopback_bind_release.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_inet_loopback_util",
+        ":socket_test_util",
+        "@com_google_absl//absl/synchronization",
+        gtest,
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:thread_util",
+    ],
+)
+
+cc_library(
+    name = "socket_inet_loopback_util",
+    testonly = 1,
+    srcs = ["socket_inet_loopback_util.cc"],
+    hdrs = ["socket_inet_loopback_util.h"],
+    deps = [
+        ":socket_test_util",
+        "//test/util:posix_error",
     ],
 )
 

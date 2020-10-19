@@ -639,6 +639,12 @@ syscall_test(
 syscall_test(
     size = "large",
     shard_count = 50,
+    test = "//test/syscalls/linux:socket_inet_loopback_bind_release_test",
+)
+
+syscall_test(
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
 
