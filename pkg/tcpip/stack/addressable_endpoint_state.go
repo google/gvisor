@@ -361,6 +361,8 @@ func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) *
 		return tcpip.ErrInvalidEndpointState
 	}
 
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.removePermanentEndpointLocked(addrState)
 }
 
