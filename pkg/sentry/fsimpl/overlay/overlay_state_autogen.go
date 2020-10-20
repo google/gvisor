@@ -41,38 +41,6 @@ func (fd *directoryFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &fd.dirents)
 }
 
-func (fd *nonDirectoryFD) StateTypeName() string {
-	return "pkg/sentry/fsimpl/overlay.nonDirectoryFD"
-}
-
-func (fd *nonDirectoryFD) StateFields() []string {
-	return []string{
-		"fileDescription",
-		"copiedUp",
-		"cachedFD",
-		"cachedFlags",
-	}
-}
-
-func (fd *nonDirectoryFD) beforeSave() {}
-
-func (fd *nonDirectoryFD) StateSave(stateSinkObject state.Sink) {
-	fd.beforeSave()
-	stateSinkObject.Save(0, &fd.fileDescription)
-	stateSinkObject.Save(1, &fd.copiedUp)
-	stateSinkObject.Save(2, &fd.cachedFD)
-	stateSinkObject.Save(3, &fd.cachedFlags)
-}
-
-func (fd *nonDirectoryFD) afterLoad() {}
-
-func (fd *nonDirectoryFD) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &fd.fileDescription)
-	stateSourceObject.Load(1, &fd.copiedUp)
-	stateSourceObject.Load(2, &fd.cachedFD)
-	stateSourceObject.Load(3, &fd.cachedFlags)
-}
-
 func (fstype *FilesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/overlay.FilesystemType"
 }
@@ -277,12 +245,47 @@ func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &fd.LockFD)
 }
 
+func (fd *regularFileFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/overlay.regularFileFD"
+}
+
+func (fd *regularFileFD) StateFields() []string {
+	return []string{
+		"fileDescription",
+		"copiedUp",
+		"cachedFD",
+		"cachedFlags",
+		"lowerWaiters",
+	}
+}
+
+func (fd *regularFileFD) beforeSave() {}
+
+func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.fileDescription)
+	stateSinkObject.Save(1, &fd.copiedUp)
+	stateSinkObject.Save(2, &fd.cachedFD)
+	stateSinkObject.Save(3, &fd.cachedFlags)
+	stateSinkObject.Save(4, &fd.lowerWaiters)
+}
+
+func (fd *regularFileFD) afterLoad() {}
+
+func (fd *regularFileFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.fileDescription)
+	stateSourceObject.Load(1, &fd.copiedUp)
+	stateSourceObject.Load(2, &fd.cachedFD)
+	stateSourceObject.Load(3, &fd.cachedFlags)
+	stateSourceObject.Load(4, &fd.lowerWaiters)
+}
+
 func init() {
 	state.Register((*directoryFD)(nil))
-	state.Register((*nonDirectoryFD)(nil))
 	state.Register((*FilesystemType)(nil))
 	state.Register((*FilesystemOptions)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*dentry)(nil))
 	state.Register((*fileDescription)(nil))
+	state.Register((*regularFileFD)(nil))
 }

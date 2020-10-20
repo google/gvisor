@@ -75,8 +75,21 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		return syserror.ENOENT
 	}
 
-	// Perform copy-up.
+	// Obtain settable timestamps from the lower layer.
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	oldpop := vfs.PathOperation{
+		Root:  d.lowerVDs[0],
+		Start: d.lowerVDs[0],
+	}
+	const timestampsMask = linux.STATX_ATIME | linux.STATX_MTIME
+	oldStat, err := vfsObj.StatAt(ctx, d.fs.creds, &oldpop, &vfs.StatOptions{
+		Mask: timestampsMask,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Perform copy-up.
 	newpop := vfs.PathOperation{
 		Root:  d.parent.upperVD,
 		Start: d.parent.upperVD,
@@ -101,10 +114,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 	}
 	switch ftype {
 	case linux.S_IFREG:
-		oldFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  d.lowerVDs[0],
-			Start: d.lowerVDs[0],
-		}, &vfs.OpenOptions{
+		oldFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &oldpop, &vfs.OpenOptions{
 			Flags: linux.O_RDONLY,
 		})
 		if err != nil {
@@ -160,9 +170,11 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		}
 		if err := newFD.SetStat(ctx, vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID,
-				UID:  d.uid,
-				GID:  d.gid,
+				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				UID:   d.uid,
+				GID:   d.gid,
+				Atime: oldStat.Atime,
+				Mtime: oldStat.Mtime,
 			},
 		}); err != nil {
 			cleanupUndoCopyUp()
@@ -179,9 +191,11 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID,
-				UID:  d.uid,
-				GID:  d.gid,
+				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				UID:   d.uid,
+				GID:   d.gid,
+				Atime: oldStat.Atime,
+				Mtime: oldStat.Mtime,
 			},
 		}); err != nil {
 			cleanupUndoCopyUp()
@@ -195,10 +209,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		d.upperVD = upperVD
 
 	case linux.S_IFLNK:
-		target, err := vfsObj.ReadlinkAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  d.lowerVDs[0],
-			Start: d.lowerVDs[0],
-		})
+		target, err := vfsObj.ReadlinkAt(ctx, d.fs.creds, &oldpop)
 		if err != nil {
 			return err
 		}
@@ -207,10 +218,12 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask: linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID,
-				Mode: uint16(d.mode),
-				UID:  d.uid,
-				GID:  d.gid,
+				Mask:  linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				Mode:  uint16(d.mode),
+				UID:   d.uid,
+				GID:   d.gid,
+				Atime: oldStat.Atime,
+				Mtime: oldStat.Mtime,
 			},
 		}); err != nil {
 			cleanupUndoCopyUp()
@@ -224,25 +237,20 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		d.upperVD = upperVD
 
 	case linux.S_IFBLK, linux.S_IFCHR:
-		lowerStat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  d.lowerVDs[0],
-			Start: d.lowerVDs[0],
-		}, &vfs.StatOptions{})
-		if err != nil {
-			return err
-		}
 		if err := vfsObj.MknodAt(ctx, d.fs.creds, &newpop, &vfs.MknodOptions{
 			Mode:     linux.FileMode(d.mode),
-			DevMajor: lowerStat.RdevMajor,
-			DevMinor: lowerStat.RdevMinor,
+			DevMajor: oldStat.RdevMajor,
+			DevMinor: oldStat.RdevMinor,
 		}); err != nil {
 			return err
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID,
-				UID:  d.uid,
-				GID:  d.gid,
+				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				UID:   d.uid,
+				GID:   d.gid,
+				Atime: oldStat.Atime,
+				Mtime: oldStat.Mtime,
 			},
 		}); err != nil {
 			cleanupUndoCopyUp()
