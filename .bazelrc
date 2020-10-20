@@ -28,20 +28,12 @@ build:remote --bes_results_url="https://source.cloud.google.com/results/invocati
 build:remote --bes_timeout=600s
 build:remote --project_id=gvisor-rbe
 build:remote --remote_instance_name=projects/gvisor-rbe/instances/default_instance
-build:remote3 --remote_executor=grpcs://remotebuildexecution.googleapis.com
-build:remote3 --project_id=gvisor-rbe
-build:remote3 --bes_backend=buildeventservice.googleapis.com
-build:remote3 --bes_results_url="https://source.cloud.google.com/results/invocations"
-build:remote3 --bes_timeout=600s
-build:remote3 --remote_instance_name=projects/gvisor-rbe/instances/default_instance
 
 # Enable authentication. This will pick up application default credentials by
 # default. You can use --google_credentials=some_file.json to use a service
 # account credential instead.
 build:remote --google_default_credentials=true
 build:remote --auth_scope="https://www.googleapis.com/auth/cloud-source-tools"
-build:remote3 --google_default_credentials=true
-build:remote3 --auth_scope="https://www.googleapis.com/auth/cloud-source-tools"
 
 # Add a custom platform and toolchain that builds in a privileged docker
 # container, which is required by our syscall tests.
@@ -52,12 +44,3 @@ build:remote --platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote --crosstool_top=@rbe_default//cc:toolchain
 build:remote --jobs=300
 build:remote --remote_timeout=3600
-
-# Identical to the above, to be removed once CI switches.
-build:remote3 --host_platform=//tools/bazeldefs:rbe_ubuntu1604
-build:remote3 --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-default
-build:remote3 --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604
-build:remote3 --platforms=//tools/bazeldefs:rbe_ubuntu1604
-build:remote3 --crosstool_top=@rbe_default//cc:toolchain
-build:remote3 --jobs=300
-build:remote3 --remote_timeout=3600
