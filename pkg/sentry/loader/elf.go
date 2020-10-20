@@ -194,6 +194,10 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		log.Infof("Too many phdrs (%d): total size %d > %d", hdr.Phnum, totalPhdrSize, maxTotalPhdrSize)
 		return elfInfo{}, syserror.ENOEXEC
 	}
+	if int64(hdr.Phoff) < 0 || int64(hdr.Phoff+uint64(totalPhdrSize)) < 0 {
+		ctx.Infof("Unsupported phdr offset %d", hdr.Phoff)
+		return elfInfo{}, syserror.ENOEXEC
+	}
 
 	phdrBuf := make([]byte, totalPhdrSize)
 	_, err = f.ReadFull(ctx, usermem.BytesIOSequence(phdrBuf), int64(hdr.Phoff))
@@ -435,6 +439,10 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 			}
 			if phdr.Filesz > linux.PATH_MAX {
 				ctx.Infof("PT_INTERP path too big: %v", phdr.Filesz)
+				return loadedELF{}, syserror.ENOEXEC
+			}
+			if int64(phdr.Off) < 0 || int64(phdr.Off+phdr.Filesz) < 0 {
+				ctx.Infof("Unsupported PT_INTERP offset %d", phdr.Off)
 				return loadedELF{}, syserror.ENOEXEC
 			}
 
