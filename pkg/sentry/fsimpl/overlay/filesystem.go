@@ -765,7 +765,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		if mayWrite {
+		if start.isRegularFile() && mayWrite {
 			if err := start.copyUpLocked(ctx); err != nil {
 				return nil, err
 			}
@@ -819,7 +819,7 @@ afterTrailingSymlink:
 	if rp.MustBeDir() && !child.isDir() {
 		return nil, syserror.ENOTDIR
 	}
-	if mayWrite {
+	if child.isRegularFile() && mayWrite {
 		if err := child.copyUpLocked(ctx); err != nil {
 			return nil, err
 		}
@@ -872,8 +872,11 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 	if err != nil {
 		return nil, err
 	}
+	if ftype != linux.S_IFREG {
+		return layerFD, nil
+	}
 	layerFlags := layerFD.StatusFlags()
-	fd := &nonDirectoryFD{
+	fd := &regularFileFD{
 		copiedUp:    isUpper,
 		cachedFD:    layerFD,
 		cachedFlags: layerFlags,
@@ -969,7 +972,7 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	// Finally construct the overlay FD.
 	upperFlags := upperFD.StatusFlags()
-	fd := &nonDirectoryFD{
+	fd := &regularFileFD{
 		copiedUp:    true,
 		cachedFD:    upperFD,
 		cachedFlags: upperFlags,
@@ -1293,6 +1296,9 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if !child.isDir() {
 		return syserror.ENOTDIR
 	}
+	if err := vfs.CheckDeleteSticky(rp.Credentials(), linux.FileMode(atomic.LoadUint32(&parent.mode)), auth.KUID(atomic.LoadUint32(&child.uid))); err != nil {
+		return err
+	}
 	child.dirMu.Lock()
 	defer child.dirMu.Unlock()
 	whiteouts, err := child.collectWhiteoutsForRmdirLocked(ctx)
@@ -1528,11 +1534,37 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return err
 	}
 
+	parentMode := atomic.LoadUint32(&parent.mode)
 	child := parent.children[name]
 	var childLayer lookupLayer
+	if child == nil {
+		if parentMode&linux.S_ISVTX != 0 {
+			// If the parent's sticky bit is set, we need a child dentry to get
+			// its owner.
+			child, err = fs.getChildLocked(ctx, parent, name, &ds)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Determine if the file being unlinked actually exists. Holding
+			// parent.dirMu prevents a dentry from being instantiated for the file,
+			// which in turn prevents it from being copied-up, so this result is
+			// stable.
+			childLayer, err = fs.lookupLayerLocked(ctx, parent, name)
+			if err != nil {
+				return err
+			}
+			if !childLayer.existsInOverlay() {
+				return syserror.ENOENT
+			}
+		}
+	}
 	if child != nil {
 		if child.isDir() {
 			return syserror.EISDIR
+		}
+		if err := vfs.CheckDeleteSticky(rp.Credentials(), linux.FileMode(parentMode), auth.KUID(atomic.LoadUint32(&child.uid))); err != nil {
+			return err
 		}
 		if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
 			return err
@@ -1545,18 +1577,6 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 			childLayer = lookupLayerUpper
 		} else {
 			childLayer = lookupLayerLower
-		}
-	} else {
-		// Determine if the file being unlinked actually exists. Holding
-		// parent.dirMu prevents a dentry from being instantiated for the file,
-		// which in turn prevents it from being copied-up, so this result is
-		// stable.
-		childLayer, err = fs.lookupLayerLocked(ctx, parent, name)
-		if err != nil {
-			return err
-		}
-		if !childLayer.existsInOverlay() {
-			return syserror.ENOENT
 		}
 	}
 
