@@ -145,16 +145,6 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(file.StatusFlags()), nil, nil
 	case linux.F_SETFL:
 		return 0, nil, file.SetStatusFlags(t, t.Credentials(), args[2].Uint())
-	case linux.F_SETPIPE_SZ:
-		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
-		if !ok {
-			return 0, nil, syserror.EBADF
-		}
-		n, err := pipefile.SetPipeSize(int64(args[2].Int()))
-		if err != nil {
-			return 0, nil, err
-		}
-		return uintptr(n), nil, nil
 	case linux.F_GETOWN:
 		owner, hasOwner := getAsyncOwner(t, file)
 		if !hasOwner {
@@ -190,6 +180,16 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, err
 		}
 		return 0, nil, setAsyncOwner(t, file, owner.Type, owner.PID)
+	case linux.F_SETPIPE_SZ:
+		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
+		if !ok {
+			return 0, nil, syserror.EBADF
+		}
+		n, err := pipefile.SetPipeSize(int64(args[2].Int()))
+		if err != nil {
+			return 0, nil, err
+		}
+		return uintptr(n), nil, nil
 	case linux.F_GETPIPE_SZ:
 		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
 		if !ok {

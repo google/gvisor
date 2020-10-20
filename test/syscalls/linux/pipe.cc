@@ -569,30 +569,38 @@ TEST_P(PipeTest, Streaming) {
 
   // Size() requires 2 syscalls, call it once and remember the value.
   const int pipe_size = Size();
+  const size_t streamed_bytes = 4 * pipe_size;
 
   absl::Notification notify;
-  ScopedThread t([this, &notify, pipe_size]() {
+  ScopedThread t([&, this]() {
+    std::vector<char> buf(1024);
     // Don't start until it's full.
     notify.WaitForNotification();
-    for (int i = 0; i < pipe_size; i++) {
-      int rbuf;
-      ASSERT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
-                  SyscallSucceedsWithValue(sizeof(rbuf)));
-      EXPECT_EQ(rbuf, i);
+    ssize_t total = 0;
+    while (total < streamed_bytes) {
+      ASSERT_THAT(read(rfd_.get(), buf.data(), buf.size()),
+                  SyscallSucceedsWithValue(buf.size()));
+      total += buf.size();
     }
   });
 
   // Write 4 bytes * pipe_size. It will fill up the pipe once, notify the reader
   // to start. Then we write pipe size worth 3 more times to ensure the reader
   // can follow along.
+  //
+  // The size of each write (which is determined by buf.size()) must be smaller
+  // than the size of the pipe (which, in the "smallbuffer" configuration, is 1
+  // page) for the check for notify.Notify() below to be correct.
+  std::vector<char> buf(1024);
+  RandomizeBuffer(buf.data(), buf.size());
   ssize_t total = 0;
-  for (int i = 0; i < pipe_size; i++) {
-    ssize_t written = write(wfd_.get(), &i, sizeof(i));
-    ASSERT_THAT(written, SyscallSucceedsWithValue(sizeof(i)));
-    total += written;
+  while (total < streamed_bytes) {
+    ASSERT_THAT(write(wfd_.get(), buf.data(), buf.size()),
+                SyscallSucceedsWithValue(buf.size()));
+    total += buf.size();
 
     // Is the next write about to fill up the buffer? Wake up the reader once.
-    if (total < pipe_size && (total + written) >= pipe_size) {
+    if (total < pipe_size && (total + buf.size()) >= pipe_size) {
       notify.Notify();
     }
   }
