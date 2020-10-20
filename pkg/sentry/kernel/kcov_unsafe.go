@@ -20,9 +20,9 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 )
 
-// countBlock provides a safemem.BlockSeq for k.count.
+// countBlock provides a safemem.BlockSeq for kcov.count.
 //
 // Like k.count, the block returned is protected by k.mu.
-func (k *Kcov) countBlock() safemem.BlockSeq {
-	return safemem.BlockSeqOf(safemem.BlockFromSafePointer(unsafe.Pointer(&k.count), int(unsafe.Sizeof(k.count))))
+func (kcov *Kcov) countBlock() safemem.BlockSeq {
+	return safemem.BlockSeqOf(safemem.BlockFromSafePointer(unsafe.Pointer(&kcov.count), int(unsafe.Sizeof(kcov.count))))
 }
