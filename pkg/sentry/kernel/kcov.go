@@ -199,23 +199,25 @@ func (kcov *Kcov) DisableTrace(ctx context.Context) error {
 	}
 	kcov.mode = linux.KCOV_MODE_INIT
 	kcov.owningTask = nil
-	kcov.mappable = nil
+	if kcov.mappable != nil {
+		kcov.mappable.DecRef(ctx)
+		kcov.mappable = nil
+	}
 	return nil
 }
 
 // Clear resets the mode and clears the owning task and memory mapping for kcov.
 // It is called when the fd corresponding to kcov is closed. Note that the mode
 // needs to be set so that the next call to kcov.TaskWork() will exit early.
-func (kcov *Kcov) Clear() {
+func (kcov *Kcov) Clear(ctx context.Context) {
 	kcov.mu.Lock()
-	kcov.clearLocked()
-	kcov.mu.Unlock()
-}
-
-func (kcov *Kcov) clearLocked() {
 	kcov.mode = linux.KCOV_MODE_INIT
 	kcov.owningTask = nil
-	kcov.mappable = nil
+	if kcov.mappable != nil {
+		kcov.mappable.DecRef(ctx)
+		kcov.mappable = nil
+	}
+	kcov.mu.Unlock()
 }
 
 // OnTaskExit is called when the owning task exits. It is similar to
@@ -254,6 +256,7 @@ func (kcov *Kcov) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 		// will look different under /proc/[pid]/maps than they do on Linux.
 		kcov.mappable = mm.NewSpecialMappable(fmt.Sprintf("[kcov:%d]", t.ThreadID()), kcov.mfp, fr)
 	}
+	kcov.mappable.IncRef()
 	opts.Mappable = kcov.mappable
 	opts.MappingIdentity = kcov.mappable
 	return nil
