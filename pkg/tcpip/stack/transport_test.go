@@ -28,7 +28,7 @@ import (
 
 const (
 	fakeTransNumber    tcpip.TransportProtocolNumber = 1
-	fakeTransHeaderLen                               = 3
+	fakeTransHeaderLen int                           = 3
 )
 
 // fakeTransportEndpoint is a transport-layer protocol endpoint. It counts
