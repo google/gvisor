@@ -93,15 +93,15 @@ TEST(MknodTest, MknodOnExistingPathFails) {
 }
 
 TEST(MknodTest, UnimplementedTypesReturnError) {
-  const std::string path = NewTempAbsPath();
+  // TODO(gvisor.dev/issue/1624): These file types are supported by some
+  // filesystems in VFS2, so this test should be deleted along with VFS1.
+  SKIP_IF(!IsRunningWithVFS1());
 
-  if (IsRunningWithVFS1()) {
-    ASSERT_THAT(mknod(path.c_str(), S_IFSOCK, 0),
-                SyscallFailsWithErrno(EOPNOTSUPP));
-  }
-  // These will fail on linux as well since we don't have CAP_MKNOD.
-  ASSERT_THAT(mknod(path.c_str(), S_IFCHR, 0), SyscallFailsWithErrno(EPERM));
-  ASSERT_THAT(mknod(path.c_str(), S_IFBLK, 0), SyscallFailsWithErrno(EPERM));
+  const std::string path = NewTempAbsPath();
+  EXPECT_THAT(mknod(path.c_str(), S_IFSOCK, 0),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+  EXPECT_THAT(mknod(path.c_str(), S_IFCHR, 0), SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(mknod(path.c_str(), S_IFBLK, 0), SyscallFailsWithErrno(EPERM));
 }
 
 TEST(MknodTest, Socket) {

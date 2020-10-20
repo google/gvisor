@@ -18,7 +18,7 @@
 //
 // Lock order:
 //
-// directoryFD.mu / nonDirectoryFD.mu
+// directoryFD.mu / regularFileFD.mu
 //   filesystem.renameMu
 //     dentry.dirMu
 //       dentry.copyMu
@@ -453,7 +453,7 @@ type dentry struct {
 	// - If this dentry is copied-up, then wrappedMappable is the Mappable
 	// obtained from a call to the current top layer's
 	// FileDescription.ConfigureMMap(). Once wrappedMappable becomes non-nil
-	// (from a call to nonDirectoryFD.ensureMappable()), it cannot become nil.
+	// (from a call to regularFileFD.ensureMappable()), it cannot become nil.
 	// wrappedMappable is protected by mapsMu and dataMu.
 	//
 	// - isMappable is non-zero iff wrappedMappable is non-nil. isMappable is
