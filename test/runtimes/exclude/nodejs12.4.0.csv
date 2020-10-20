@@ -1,31 +1,22 @@
 test name,bug id,comment
 async-hooks/test-statwatcher.js,https://github.com/nodejs/node/issues/21425,Check for fix inclusion in nodejs releases after 2020-03-29
-benchmark/test-benchmark-fs.js,,
-benchmark/test-benchmark-napi.js,,
+benchmark/test-benchmark-fs.js,,Broken test
+benchmark/test-benchmark-napi.js,,Broken test
 doctool/test-make-doc.js,b/68848110,Expected to fail.
 internet/test-dgram-multicast-set-interface-lo.js,b/162798882,
-internet/test-doctool-versions.js,,
-internet/test-uv-threadpool-schedule.js,,
-parallel/test-cluster-dgram-reuse.js,b/64024294,
+internet/test-doctool-versions.js,,Broken test
+internet/test-uv-threadpool-schedule.js,,Broken test
 parallel/test-dgram-bind-fd.js,b/132447356,
 parallel/test-dgram-socket-buffer-size.js,b/68847921,
 parallel/test-dns-channel-timeout.js,b/161893056,
-parallel/test-fs-access.js,,
-parallel/test-fs-watchfile.js,,Flaky - File already exists error
-parallel/test-fs-write-stream.js,b/166819807,Flaky
-parallel/test-fs-write-stream-double-close.js,b/166819807,Flaky
-parallel/test-fs-write-stream-throw-type-error.js,b/166819807,Flaky
-parallel/test-http-writable-true-after-close.js,,Flaky - Mismatched <anonymous> function calls. Expected exactly 1 actual 2
+parallel/test-fs-access.js,,Broken test
+parallel/test-fs-watchfile.js,b/166819807,Flaky - VFS1 only
+parallel/test-fs-write-stream.js,b/166819807,Flaky - VFS1 only
+parallel/test-fs-write-stream-double-close.js,b/166819807,Flaky - VFS1 only
+parallel/test-fs-write-stream-throw-type-error.js,b/166819807,Flaky - VFS1 only
+parallel/test-http-writable-true-after-close.js,b/171301436,Flaky - Mismatched <anonymous> function calls. Expected exactly 1 actual 2
 parallel/test-os.js,b/63997097,
-parallel/test-net-server-listen-options.js,,Flaky - EADDRINUSE
-parallel/test-process-uid-gid.js,,
-parallel/test-tls-cli-min-version-1.0.js,,Flaky - EADDRINUSE
-parallel/test-tls-cli-min-version-1.1.js,,Flaky - EADDRINUSE
-parallel/test-tls-cli-min-version-1.2.js,,Flaky - EADDRINUSE
-parallel/test-tls-cli-min-version-1.3.js,,Flaky - EADDRINUSE
-parallel/test-tls-cli-max-version-1.2.js,,Flaky - EADDRINUSE
-parallel/test-tls-cli-max-version-1.3.js,,Flaky - EADDRINUSE
-parallel/test-tls-min-max-version.js,,Flaky - EADDRINUSE
+parallel/test-process-uid-gid.js,,Does not work inside Docker with gid nobody
 pseudo-tty/test-assert-colors.js,b/162801321,
 pseudo-tty/test-assert-no-color.js,b/162801321,
 pseudo-tty/test-assert-position-indicator.js,b/162801321,
@@ -48,11 +39,7 @@ pseudo-tty/test-tty-stdout-resize.js,b/162801321,
 pseudo-tty/test-tty-stream-constructors.js,b/162801321,
 pseudo-tty/test-tty-window-size.js,b/162801321,
 pseudo-tty/test-tty-wrap.js,b/162801321,
-pummel/test-heapdump-http2.js,,Flaky
-pummel/test-net-pingpong.js,,
+pummel/test-net-pingpong.js,,Broken test
 pummel/test-vm-memleak.js,b/162799436,
-pummel/test-watch-file.js,,Flaky - Timeout
-sequential/test-child-process-pass-fd.js,b/63926391,Flaky
-sequential/test-https-connect-localport.js,,Flaky - EADDRINUSE
-sequential/test-net-bytes-per-incoming-chunk-overhead.js,,flaky - timeout
-tick-processor/test-tick-processor-builtin.js,,
+pummel/test-watch-file.js,,Flaky - VFS1 only
+tick-processor/test-tick-processor-builtin.js,,Broken test
