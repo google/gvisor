@@ -37,57 +37,57 @@ func (p *rawPacket) loadData(data buffer.VectorisedView) {
 }
 
 // beforeSave is invoked by stateify.
-func (ep *endpoint) beforeSave() {
+func (e *endpoint) beforeSave() {
 	// Stop incoming packets from being handled (and mutate endpoint state).
 	// The lock will be released after saveRcvBufSizeMax(), which would have
-	// saved ep.rcvBufSizeMax and set it to 0 to continue blocking incoming
+	// saved e.rcvBufSizeMax and set it to 0 to continue blocking incoming
 	// packets.
-	ep.rcvMu.Lock()
+	e.rcvMu.Lock()
 }
 
 // saveRcvBufSizeMax is invoked by stateify.
-func (ep *endpoint) saveRcvBufSizeMax() int {
-	max := ep.rcvBufSizeMax
+func (e *endpoint) saveRcvBufSizeMax() int {
+	max := e.rcvBufSizeMax
 	// Make sure no new packets will be handled regardless of the lock.
-	ep.rcvBufSizeMax = 0
+	e.rcvBufSizeMax = 0
 	// Release the lock acquired in beforeSave() so regular endpoint closing
 	// logic can proceed after save.
-	ep.rcvMu.Unlock()
+	e.rcvMu.Unlock()
 	return max
 }
 
 // loadRcvBufSizeMax is invoked by stateify.
-func (ep *endpoint) loadRcvBufSizeMax(max int) {
-	ep.rcvBufSizeMax = max
+func (e *endpoint) loadRcvBufSizeMax(max int) {
+	e.rcvBufSizeMax = max
 }
 
 // afterLoad is invoked by stateify.
-func (ep *endpoint) afterLoad() {
-	stack.StackFromEnv.RegisterRestoredEndpoint(ep)
+func (e *endpoint) afterLoad() {
+	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
-func (ep *endpoint) Resume(s *stack.Stack) {
-	ep.stack = s
+func (e *endpoint) Resume(s *stack.Stack) {
+	e.stack = s
 
 	// If the endpoint is connected, re-connect.
-	if ep.connected {
+	if e.connected {
 		var err *tcpip.Error
-		ep.route, err = ep.stack.FindRoute(ep.RegisterNICID, ep.BindAddr, ep.route.RemoteAddress, ep.NetProto, false)
+		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.BindAddr, e.route.RemoteAddress, e.NetProto, false)
 		if err != nil {
 			panic(err)
 		}
 	}
 
 	// If the endpoint is bound, re-bind.
-	if ep.bound {
-		if ep.stack.CheckLocalAddress(ep.RegisterNICID, ep.NetProto, ep.BindAddr) == 0 {
+	if e.bound {
+		if e.stack.CheckLocalAddress(e.RegisterNICID, e.NetProto, e.BindAddr) == 0 {
 			panic(tcpip.ErrBadLocalAddress)
 		}
 	}
 
-	if ep.associated {
-		if err := ep.stack.RegisterRawTransportEndpoint(ep.RegisterNICID, ep.NetProto, ep.TransProto, ep); err != nil {
+	if e.associated {
+		if err := e.stack.RegisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e); err != nil {
 			panic(err)
 		}
 	}
