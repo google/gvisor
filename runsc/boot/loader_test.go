@@ -266,7 +266,7 @@ type CreateMountTestcase struct {
 
 func createMountTestcases() []*CreateMountTestcase {
 	testCases := []*CreateMountTestcase{
-		&CreateMountTestcase{
+		{
 			// Only proc.
 			name: "only proc mount",
 			spec: specs.Spec{
@@ -304,11 +304,10 @@ func createMountTestcases() []*CreateMountTestcase {
 					},
 				},
 			},
-			// /some/deep/path should be mounted, along with /proc,
-			// /dev, and /sys.
+			// /some/deep/path should be mounted, along with /proc, /dev, and /sys.
 			expectedPaths: []string{"/some/very/very/deep/path", "/proc", "/dev", "/sys"},
 		},
-		&CreateMountTestcase{
+		{
 			// Mounts are nested inside each other.
 			name: "nested mounts",
 			spec: specs.Spec{
@@ -352,7 +351,7 @@ func createMountTestcases() []*CreateMountTestcase {
 			expectedPaths: []string{"/foo", "/foo/bar", "/foo/bar/baz", "/foo/qux",
 				"/foo/qux-quz", "/foo/some/very/very/deep/path", "/proc", "/dev", "/sys"},
 		},
-		&CreateMountTestcase{
+		{
 			name: "mount inside /dev",
 			spec: specs.Spec{
 				Root: &specs.Root{
@@ -395,35 +394,37 @@ func createMountTestcases() []*CreateMountTestcase {
 			},
 			expectedPaths: []string{"/proc", "/dev", "/dev/fd-foo", "/dev/foo", "/dev/bar", "/sys"},
 		},
-	}
-
-	vfsCase := &CreateMountTestcase{
-		name: "mounts inside mandatory mounts",
-		spec: specs.Spec{
-			Root: &specs.Root{
-				Path:     os.TempDir(),
-				Readonly: true,
+		{
+			name: "mounts inside mandatory mounts",
+			spec: specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/proc",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/sys/bar",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/tmp/baz",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/dev/goo",
+						Type:        "tmpfs",
+					},
+				},
 			},
-			Mounts: []specs.Mount{
-				{
-					Destination: "/proc",
-					Type:        "tmpfs",
-				},
-				{
-					Destination: "/sys/bar",
-					Type:        "tmpfs",
-				},
-
-				{
-					Destination: "/tmp/baz",
-					Type:        "tmpfs",
-				},
-			},
+			expectedPaths: []string{"/proc", "/sys", "/sys/bar", "/tmp", "/tmp/baz", "/dev/goo"},
 		},
-		expectedPaths: []string{"/proc", "/sys", "/sys/bar", "/tmp", "/tmp/baz"},
 	}
 
-	return append(testCases, vfsCase)
+	return testCases
 }
 
 // Test that MountNamespace can be created with various specs.
