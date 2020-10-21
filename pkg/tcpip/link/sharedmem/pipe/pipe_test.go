@@ -470,6 +470,7 @@ func TestConcurrentReaderWriter(t *testing.T) {
 
 	const count = 1000000
 	var wg sync.WaitGroup
+	defer wg.Wait()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -489,30 +490,23 @@ func TestConcurrentReaderWriter(t *testing.T) {
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		runtime.Gosched()
-		for i := 0; i < count; i++ {
-			n := 1 + rr.Intn(80)
-			rb := rx.Pull()
-			for rb == nil {
-				rb = rx.Pull()
-			}
-
-			if n != len(rb) {
-				t.Fatalf("Bad %v-th buffer length: got %v, want %v", i, len(rb), n)
-			}
-
-			for j := range rb {
-				if v := byte(rr.Intn(256)); v != rb[j] {
-					t.Fatalf("Bad %v-th read buffer at index %v: got %v, want %v", i, j, rb[j], v)
-				}
-			}
-
-			rx.Flush()
+	for i := 0; i < count; i++ {
+		n := 1 + rr.Intn(80)
+		rb := rx.Pull()
+		for rb == nil {
+			rb = rx.Pull()
 		}
-	}()
 
-	wg.Wait()
+		if n != len(rb) {
+			t.Fatalf("Bad %v-th buffer length: got %v, want %v", i, len(rb), n)
+		}
+
+		for j := range rb {
+			if v := byte(rr.Intn(256)); v != rb[j] {
+				t.Fatalf("Bad %v-th read buffer at index %v: got %v, want %v", i, j, rb[j], v)
+			}
+		}
+
+		rx.Flush()
+	}
 }

@@ -164,7 +164,7 @@ func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
 	return found
 }
 
-// Dump prints the state of the scoreboard structure.
+// String returns human-readable state of the scoreboard structure.
 func (s *SACKScoreboard) String() string {
 	var str strings.Builder
 	str.WriteString("SACKScoreboard: {")
