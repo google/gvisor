@@ -131,10 +131,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		return subcommands.ExitUsageError
 	}
 
-	// Ensure that if there is a panic, all goroutine stacks are printed.
-	debug.SetTraceback("system")
-
 	conf := args[0].(*config.Config)
+
+	// Set traceback level
+	debug.SetTraceback(conf.Traceback)
 
 	if b.attached {
 		// Ensure this process is killed after parent process terminates when
