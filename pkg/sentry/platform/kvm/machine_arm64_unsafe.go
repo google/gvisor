@@ -235,8 +235,9 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return c.fault(int32(syscall.SIGSEGV), info)
 	case ring0.Vector(bounce): // ring0.VirtualizationException
 		return usermem.NoAccess, platform.ErrContextInterrupt
-	case ring0.El0Sync_undef,
-		ring0.El1Sync_undef:
+	case ring0.El0Sync_undef:
+		return c.fault(int32(syscall.SIGILL), info)
+	case ring0.El1Sync_undef:
 		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGILL),
 			Code:  1, // ILL_ILLOPC (illegal opcode).
