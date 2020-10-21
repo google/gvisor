@@ -314,7 +314,8 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 		if args.Spec.Linux == nil {
 			args.Spec.Linux = &specs.Linux{}
 		}
-		if args.Spec.Linux.CgroupsPath == "" {
+		// Don't force the use of cgroups in tests because they lack permission to do so.
+		if args.Spec.Linux.CgroupsPath == "" && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			args.Spec.Linux.CgroupsPath = "/" + args.ID
 		}
 
@@ -328,9 +329,6 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 			// If there is cgroup config, install it before creating sandbox process.
 			if err := cg.Install(args.Spec.Linux.Resources); err != nil {
 				switch {
-				case errors.Is(err, syscall.EROFS) && conf.TestOnlyAllowRunAsCurrentUserWithoutChroot:
-					log.Warningf("Skipping cgroup configuration in test mode: %v", err)
-					cg = nil
 				case errors.Is(err, syscall.EACCES) && conf.Rootless:
 					log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
 					cg = nil
