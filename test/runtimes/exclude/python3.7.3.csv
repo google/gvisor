@@ -18,4 +18,3 @@ test_selectors,b/76116849,OSError not raised with epoll
 test_smtplib,b/162980434,unclosed sockets
 test_signal,,Flaky - signal: alarm clock
 test_socket,b/75983380,
-test_subprocess,b/162980831,
