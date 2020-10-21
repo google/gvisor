@@ -43,7 +43,7 @@ fi
 
 closest_commit() {
   while read line; do
-    if [[ "$line" =~ "commit " ]]; then
+    if [[ "$line" =~ ^"commit " ]]; then
         current_commit="${line#commit }"
         continue
     elif [[ "$line" =~ "PiperOrigin-RevId: " ]]; then
@@ -57,7 +57,9 @@ closest_commit() {
 # Is the passed identifier a sha commit?
 if ! git show "${target_commit}" &> /dev/null; then
   # Extract the commit given a piper ID.
-  declare -r commit="$(git log | closest_commit "${target_commit}")"
+  commit="$(set +o pipefail; \
+    git log --first-parent | closest_commit "${target_commit}")"
+  declare -r commit
 else
   declare -r commit="${target_commit}"
 fi
