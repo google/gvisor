@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"syscall"
 
 	"gvisor.dev/gvisor/test/runtimes/proctor/lib"
 )
@@ -32,6 +33,29 @@ var (
 	testNames = flag.String("tests", "", "run a subset of the available tests")
 	pause     = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
 )
+
+// setNumFilesLimit changes the NOFILE soft rlimit if it is too high.
+func setNumFilesLimit() error {
+	// In docker containers, the default value of the NOFILE limit is
+	// 1048576. A few runtime tests (e.g. python:test_subprocess)
+	// enumerates all possible file descriptors and these tests can fail by
+	// timeout if the NOFILE limit is too high. On gVisor, syscalls are
+	// slower so these tests will need even more time to pass.
+	const nofile = 32768
+	rLimit := syscall.Rlimit{}
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err != nil {
+		return fmt.Errorf("failed to get RLIMIT_NOFILE: %v", err)
+	}
+	if rLimit.Cur > nofile {
+		rLimit.Cur = nofile
+		err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+		if err != nil {
+			return fmt.Errorf("failed to set RLIMIT_NOFILE: %v", err)
+		}
+	}
+	return nil
+}
 
 func main() {
 	flag.Parse()
@@ -72,6 +96,10 @@ func main() {
 	} else {
 		// Run subset of test.
 		tests = strings.Split(*testNames, ",")
+	}
+
+	if err := setNumFilesLimit(); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	// Run tests.
