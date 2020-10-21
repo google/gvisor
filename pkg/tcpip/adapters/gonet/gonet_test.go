@@ -97,6 +97,9 @@ type testConnection struct {
 func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, *tcpip.Error) {
 	wq := &waiter.Queue{}
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
+	if err != nil {
+		return nil, err
+	}
 
 	entry, ch := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&entry, waiter.EventOut)
@@ -145,7 +148,9 @@ func TestCloseReader(t *testing.T) {
 		defer close(done)
 		c, err := l.Accept()
 		if err != nil {
-			t.Fatalf("l.Accept() = %v", err)
+			t.Errorf("l.Accept() = %v", err)
+			// Cannot call Fatalf in goroutine. Just return from the goroutine.
+			return
 		}
 
 		// Give c.Read() a chance to block before closing the connection.
@@ -416,7 +421,9 @@ func TestDeadlineChange(t *testing.T) {
 		defer close(done)
 		c, err := l.Accept()
 		if err != nil {
-			t.Fatalf("l.Accept() = %v", err)
+			t.Errorf("l.Accept() = %v", err)
+			// Cannot call Fatalf in goroutine. Just return from the goroutine.
+			return
 		}
 
 		c.SetDeadline(time.Now().Add(time.Minute))
