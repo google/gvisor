@@ -147,19 +147,23 @@ func (f *FSContext) WorkingDirectory() *fs.Dirent {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.cwd.IncRef()
+	if f.cwd != nil {
+		f.cwd.IncRef()
+	}
 	return f.cwd
 }
 
 // WorkingDirectoryVFS2 returns the current working directory.
 //
-// This will return nil if called after f is destroyed, otherwise it will return
-// a Dirent with a reference taken.
+// This will return an empty vfs.VirtualDentry if called after f is
+// destroyed, otherwise it will return a Dirent with a reference taken.
 func (f *FSContext) WorkingDirectoryVFS2() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.cwdVFS2.IncRef()
+	if f.cwdVFS2.Ok() {
+		f.cwdVFS2.IncRef()
+	}
 	return f.cwdVFS2
 }
 
@@ -218,13 +222,15 @@ func (f *FSContext) RootDirectory() *fs.Dirent {
 
 // RootDirectoryVFS2 returns the current filesystem root.
 //
-// This will return nil if called after f is destroyed, otherwise it will return
-// a Dirent with a reference taken.
+// This will return an empty vfs.VirtualDentry if called after f is
+// destroyed, otherwise it will return a Dirent with a reference taken.
 func (f *FSContext) RootDirectoryVFS2() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.rootVFS2.IncRef()
+	if f.rootVFS2.Ok() {
+		f.rootVFS2.IncRef()
+	}
 	return f.rootVFS2
 }
 
