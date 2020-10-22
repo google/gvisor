@@ -900,7 +900,16 @@ func (l *localFile) Link(target p9.File, newName string) error {
 	}
 
 	targetFile := target.(*localFile)
-	if err := unix.Linkat(targetFile.file.FD(), "", l.file.FD(), newName, linux.AT_EMPTY_PATH); err != nil {
+	// If oldpath is absolute, then olddirfd is ignored. -- linkat(2)
+	// We can not use oldpath = "" and flags = AT_EMPTY_PATH because
+	// using AT_EMPTY_PATH requires CAP_DAC_READ_SEARCH capability.
+	if err := unix.Linkat(
+		targetFile.file.FD(), // olddirfd
+		targetFile.hostPath,  // oldpath
+		l.file.FD(),          // newdirfd
+		newName,              // newpath
+		0,                    // flags
+	); err != nil {
 		return extractErrno(err)
 	}
 	return nil

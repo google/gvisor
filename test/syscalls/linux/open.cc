@@ -349,6 +349,42 @@ TEST_F(OpenTest, AppendConcurrentWrite) {
   EXPECT_EQ(st.st_size, kThreadCount * kBytesPerThread);
 }
 
+TEST_F(OpenTest, AppendToHardLink) {
+  std::string hard_link = NewTempAbsPath();
+  EXPECT_THAT(link(test_file_name_.c_str(), hard_link.c_str()),
+              SyscallSucceeds());
+
+  EXPECT_THAT(truncate(test_file_name_.c_str(), 0), SyscallSucceeds());
+
+  std::vector<char> file_data(10, 'a');
+  {
+    // First write some data to the new file and close it.
+    FileDescriptor fd0 =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_WRONLY | O_APPEND));
+    EXPECT_THAT(WriteFd(fd0.get(), file_data.data(), file_data.size()),
+                SyscallSucceedsWithValue(file_data.size()));
+  }
+
+  {
+    // Now append some data onto the same file via the hard link.
+    FileDescriptor fd1 =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(hard_link, O_WRONLY | O_APPEND));
+    std::vector<char> extra(10, 'b');
+    EXPECT_THAT(WriteFd(fd1.get(), extra.data(), extra.size()),
+                SyscallSucceedsWithValue(extra.size()));
+    file_data.insert(file_data.end(), extra.begin(), extra.end());
+  }
+
+  // Read from the real file and ensure that data has been appended.
+  FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDONLY));
+  std::vector<char> got(file_data.size() + 1, 'c');
+  ASSERT_THAT(pread(fd2.get(), got.data(), got.size(), 0),
+              SyscallSucceedsWithValue(file_data.size()));
+  EXPECT_EQ(memcmp(file_data.data(), got.data(), file_data.size()), 0);
+  EXPECT_EQ(got.back(), 'c');  // Last byte should not have been modified.
+}
+
 TEST_F(OpenTest, Truncate) {
   {
     // First write some data to the new file and close it.
