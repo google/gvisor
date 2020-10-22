@@ -46,7 +46,7 @@ const (
 	// ProtocolNumber is the ipv6 protocol number.
 	ProtocolNumber = header.IPv6ProtocolNumber
 
-	// maxTotalSize is maximum size that can be encoded in the 16-bit
+	// maxPayloadSize is the maximum size that can be encoded in the 16-bit
 	// PayloadLength field of the ipv6 header.
 	maxPayloadSize = 0xffff
 
@@ -363,7 +363,11 @@ func (e *endpoint) DefaultTTL() uint8 {
 // MTU implements stack.NetworkEndpoint.MTU. It returns the link-layer MTU minus
 // the network layer max header length.
 func (e *endpoint) MTU() uint32 {
-	return calculateMTU(e.nic.MTU())
+	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), header.IPv6MinimumSize)
+	if err != nil {
+		return 0
+	}
+	return networkMTU
 }
 
 // MaxHeaderLength returns the maximum length needed by ipv6 headers (and
@@ -386,27 +390,40 @@ func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params s
 	pkt.NetworkProtocolNumber = ProtocolNumber
 }
 
-func (e *endpoint) packetMustBeFragmented(pkt *stack.PacketBuffer, gso *stack.GSO) bool {
-	return (gso == nil || gso.Type == stack.GSONone) && pkt.Size() > int(e.nic.MTU())
+func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32, gso *stack.GSO) bool {
+	payload := pkt.TransportHeader().View().Size() + pkt.Data.Size()
+	return (gso == nil || gso.Type == stack.GSONone) && uint32(payload) > networkMTU
 }
 
 // handleFragments fragments pkt and calls the handler function on each
 // fragment. It returns the number of fragments handled and the number of
 // fragments left to be processed. The IP header must already be present in the
-// original packet. The mtu is the maximum size of the packets. The transport
-// header protocol number is required to avoid parsing the IPv6 extension
-// headers.
-func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, mtu uint32, pkt *stack.PacketBuffer, transProto tcpip.TransportProtocolNumber, handler func(*stack.PacketBuffer) *tcpip.Error) (int, int, *tcpip.Error) {
-	fragMTU := int(calculateFragmentInnerMTU(mtu, pkt))
-	if fragMTU < pkt.TransportHeader().View().Size() {
+// original packet. The transport header protocol number is required to avoid
+// parsing the IPv6 extension headers.
+func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, networkMTU uint32, pkt *stack.PacketBuffer, transProto tcpip.TransportProtocolNumber, handler func(*stack.PacketBuffer) *tcpip.Error) (int, int, *tcpip.Error) {
+	networkHeader := header.IPv6(pkt.NetworkHeader().View())
+
+	// TODO(gvisor.dev/issue/3912): Once the Authentication or ESP Headers are
+	// supported for outbound packets, their length should not affect the fragment
+	// maximum payload length because they should only be transmitted once.
+	fragmentPayloadLen := (networkMTU - header.IPv6FragmentHeaderSize) &^ 7
+	if fragmentPayloadLen < header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit {
+		// We need at least 8 bytes of space left for the fragmentable part because
+		// the fragment payload must obviously be non-zero and must be a multiple
+		// of 8 as per RFC 8200 section 4.5:
+		//   Each complete fragment, except possibly the last ("rightmost") one, is
+		//   an integer multiple of 8 octets long.
+		return 0, 1, tcpip.ErrMessageTooLong
+	}
+
+	if fragmentPayloadLen < uint32(pkt.TransportHeader().View().Size()) {
 		// As per RFC 8200 Section 4.5, the Transport Header is expected to be small
 		// enough to fit in the first fragment.
 		return 0, 1, tcpip.ErrMessageTooLong
 	}
 
-	pf := fragmentation.MakePacketFragmenter(pkt, fragMTU, calculateFragmentReserve(pkt))
+	pf := fragmentation.MakePacketFragmenter(pkt, fragmentPayloadLen, calculateFragmentReserve(pkt))
 	id := atomic.AddUint32(&e.protocol.ids[hashRoute(r, e.protocol.hashIV)%buckets], 1)
-	networkHeader := header.IPv6(pkt.NetworkHeader().View())
 
 	var n int
 	for {
@@ -468,8 +485,14 @@ func (e *endpoint) writePacket(r *stack.Route, gso *stack.GSO, pkt *stack.Packet
 		return nil
 	}
 
-	if e.packetMustBeFragmented(pkt, gso) {
-		sent, remain, err := e.handleFragments(r, gso, e.nic.MTU(), pkt, protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
+	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(pkt.NetworkHeader().View().Size()))
+	if err != nil {
+		r.Stats().IP.OutgoingPacketErrors.Increment()
+		return err
+	}
+
+	if packetMustBeFragmented(pkt, networkMTU, gso) {
+		sent, remain, err := e.handleFragments(r, gso, networkMTU, pkt, protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
 			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
 			// fragment one by one using WritePacket() (current strategy) or if we
 			// want to create a PacketBufferList from the fragments and feed it to
@@ -499,13 +522,20 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		return pkts.Len(), nil
 	}
 
+	linkMTU := e.nic.MTU()
 	for pb := pkts.Front(); pb != nil; pb = pb.Next() {
 		e.addIPHeader(r, pb, params)
-		if e.packetMustBeFragmented(pb, gso) {
+
+		networkMTU, err := calculateNetworkMTU(linkMTU, uint32(pb.NetworkHeader().View().Size()))
+		if err != nil {
+			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len()))
+			return 0, err
+		}
+		if packetMustBeFragmented(pb, networkMTU, gso) {
 			// Keep track of the packet that is about to be fragmented so it can be
 			// removed once the fragmentation is done.
 			originalPkt := pb
-			if _, _, err := e.handleFragments(r, gso, e.nic.MTU(), pb, params.Protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
+			if _, _, err := e.handleFragments(r, gso, networkMTU, pb, params.Protocol, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
 				// Modify the packet list in place with the new fragments.
 				pkts.InsertAfter(pb, fragPkt)
 				pb = fragPkt
@@ -569,7 +599,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	return n + len(dropped), nil
 }
 
-// WriteHeaderIncludedPacker implements stack.NetworkEndpoint.
+// WriteHeaderIncludedPacket implements stack.NetworkEndpoint.
 func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) *tcpip.Error {
 	// The packet already has an IP header, but there are a few required checks.
 	h, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
@@ -1427,14 +1457,31 @@ func (p *protocol) SetForwarding(v bool) {
 	}
 }
 
-// calculateMTU calculates the network-layer payload MTU based on the link-layer
-// payload mtu.
-func calculateMTU(mtu uint32) uint32 {
-	mtu -= header.IPv6MinimumSize
-	if mtu <= maxPayloadSize {
-		return mtu
+// calculateNetworkMTU calculates the network-layer payload MTU based on the
+// link-layer payload MTU and the length of every IPv6 header.
+// Note that this is different than the Payload Length field of the IPv6 header,
+// which includes the length of the extension headers.
+func calculateNetworkMTU(linkMTU, networkHeadersLen uint32) (uint32, *tcpip.Error) {
+	if linkMTU < header.IPv6MinimumMTU {
+		return 0, tcpip.ErrInvalidEndpointState
 	}
-	return maxPayloadSize
+
+	// As per RFC 7112 section 5, we should discard packets if their IPv6 header
+	// is bigger than 1280 bytes (ie, the minimum link MTU) since we do not
+	// support PMTU discovery:
+	//   Hosts that do not discover the Path MTU MUST limit the IPv6 Header Chain
+	//   length to 1280 bytes.  Limiting the IPv6 Header Chain length to 1280
+	//   bytes ensures that the header chain length does not exceed the IPv6
+	//   minimum MTU.
+	if networkHeadersLen > header.IPv6MinimumMTU {
+		return 0, tcpip.ErrMalformedHeader
+	}
+
+	networkMTU := linkMTU - uint32(networkHeadersLen)
+	if networkMTU > maxPayloadSize {
+		networkMTU = maxPayloadSize
+	}
+	return networkMTU, nil
 }
 
 // Options holds options to configure a new protocol.
@@ -1507,23 +1554,6 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 // NewProtocol is equivalent to NewProtocolWithOptions with an empty Options.
 func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 	return NewProtocolWithOptions(Options{})(s)
-}
-
-// calculateFragmentInnerMTU calculates the maximum number of bytes of
-// fragmentable data a fragment can have, based on the link layer mtu and pkt's
-// network header size.
-func calculateFragmentInnerMTU(mtu uint32, pkt *stack.PacketBuffer) uint32 {
-	// TODO(gvisor.dev/issue/3912): Once the Authentication or ESP Headers are
-	// supported for outbound packets, their length should not affect the fragment
-	// MTU because they should only be transmitted once.
-	mtu -= uint32(pkt.NetworkHeader().View().Size())
-	mtu -= header.IPv6FragmentHeaderSize
-	// Round the MTU down to align to 8 bytes.
-	mtu &^= 7
-	if mtu <= maxPayloadSize {
-		return mtu
-	}
-	return maxPayloadSize
 }
 
 func calculateFragmentReserve(pkt *stack.PacketBuffer) int {

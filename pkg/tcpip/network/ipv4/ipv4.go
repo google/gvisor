@@ -176,7 +176,11 @@ func (e *endpoint) DefaultTTL() uint8 {
 // MTU implements stack.NetworkEndpoint.MTU. It returns the link-layer MTU minus
 // the network layer max header length.
 func (e *endpoint) MTU() uint32 {
-	return calculateMTU(e.nic.MTU())
+	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), header.IPv4MinimumSize)
+	if err != nil {
+		return 0
+	}
+	return networkMTU
 }
 
 // MaxHeaderLength returns the maximum length needed by ipv4 headers (and
@@ -211,18 +215,15 @@ func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params s
 	pkt.NetworkProtocolNumber = ProtocolNumber
 }
 
-func (e *endpoint) packetMustBeFragmented(pkt *stack.PacketBuffer, gso *stack.GSO) bool {
-	return (gso == nil || gso.Type == stack.GSONone) && pkt.Size() > int(e.nic.MTU())
-}
-
 // handleFragments fragments pkt and calls the handler function on each
 // fragment. It returns the number of fragments handled and the number of
 // fragments left to be processed. The IP header must already be present in the
-// original packet. The mtu is the maximum size of the packets.
-func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, mtu uint32, pkt *stack.PacketBuffer, handler func(*stack.PacketBuffer) *tcpip.Error) (int, int, *tcpip.Error) {
-	fragMTU := int(calculateFragmentInnerMTU(mtu, pkt))
+// original packet.
+func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, networkMTU uint32, pkt *stack.PacketBuffer, handler func(*stack.PacketBuffer) *tcpip.Error) (int, int, *tcpip.Error) {
+	// Round the MTU down to align to 8 bytes.
+	fragmentPayloadSize := networkMTU &^ 7
 	networkHeader := header.IPv4(pkt.NetworkHeader().View())
-	pf := fragmentation.MakePacketFragmenter(pkt, fragMTU, pkt.AvailableHeaderBytes()+len(networkHeader))
+	pf := fragmentation.MakePacketFragmenter(pkt, fragmentPayloadSize, pkt.AvailableHeaderBytes()+len(networkHeader))
 
 	var n int
 	for {
@@ -280,8 +281,14 @@ func (e *endpoint) writePacket(r *stack.Route, gso *stack.GSO, pkt *stack.Packet
 		return nil
 	}
 
-	if e.packetMustBeFragmented(pkt, gso) {
-		sent, remain, err := e.handleFragments(r, gso, e.nic.MTU(), pkt, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
+	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(pkt.NetworkHeader().View().Size()))
+	if err != nil {
+		r.Stats().IP.OutgoingPacketErrors.Increment()
+		return err
+	}
+
+	if packetMustBeFragmented(pkt, networkMTU, gso) {
+		sent, remain, err := e.handleFragments(r, gso, networkMTU, pkt, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
 			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
 			// fragment one by one using WritePacket() (current strategy) or if we
 			// want to create a PacketBufferList from the fragments and feed it to
@@ -292,6 +299,7 @@ func (e *endpoint) writePacket(r *stack.Route, gso *stack.GSO, pkt *stack.Packet
 		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(remain))
 		return err
 	}
+
 	if err := e.nic.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
@@ -311,17 +319,23 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.addIPHeader(r, pkt, params)
-		if e.packetMustBeFragmented(pkt, gso) {
+		networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(pkt.NetworkHeader().View().Size()))
+		if err != nil {
+			r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len()))
+			return 0, err
+		}
+
+		if packetMustBeFragmented(pkt, networkMTU, gso) {
 			// Keep track of the packet that is about to be fragmented so it can be
 			// removed once the fragmentation is done.
 			originalPkt := pkt
-			if _, _, err := e.handleFragments(r, gso, e.nic.MTU(), pkt, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
+			if _, _, err := e.handleFragments(r, gso, networkMTU, pkt, func(fragPkt *stack.PacketBuffer) *tcpip.Error {
 				// Modify the packet list in place with the new fragments.
 				pkts.InsertAfter(pkt, fragPkt)
 				pkt = fragPkt
 				return nil
 			}); err != nil {
-				panic(fmt.Sprintf("e.handleFragments(_, _, %d, _, _) = %s", e.nic.MTU(), err))
+				panic(fmt.Sprintf("e.handleFragments(_, _, %d, _, _) = %s", networkMTU, err))
 			}
 			// Remove the packet that was just fragmented and process the rest.
 			pkts.Remove(originalPkt)
@@ -778,26 +792,32 @@ func (p *protocol) SetForwarding(v bool) {
 	}
 }
 
-// calculateMTU calculates the network-layer payload MTU based on the link-layer
-// payload mtu.
-func calculateMTU(mtu uint32) uint32 {
-	if mtu > MaxTotalSize {
-		mtu = MaxTotalSize
+// calculateNetworkMTU calculates the network-layer payload MTU based on the
+// link-layer payload mtu.
+func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, *tcpip.Error) {
+	if linkMTU < header.IPv4MinimumMTU {
+		return 0, tcpip.ErrInvalidEndpointState
 	}
-	return mtu - header.IPv4MinimumSize
+
+	// As per RFC 791 section 3.1, an IPv4 header cannot exceed 60 bytes in
+	// length:
+	//   The maximal internet header is 60 octets, and a typical internet header
+	//   is 20 octets, allowing a margin for headers of higher level protocols.
+	if networkHeaderSize > header.IPv4MaximumHeaderSize {
+		return 0, tcpip.ErrMalformedHeader
+	}
+
+	networkMTU := linkMTU
+	if networkMTU > MaxTotalSize {
+		networkMTU = MaxTotalSize
+	}
+
+	return networkMTU - uint32(networkHeaderSize), nil
 }
 
-// calculateFragmentInnerMTU calculates the maximum number of bytes of
-// fragmentable data a fragment can have, based on the link layer mtu and pkt's
-// network header size.
-func calculateFragmentInnerMTU(mtu uint32, pkt *stack.PacketBuffer) uint32 {
-	if mtu > MaxTotalSize {
-		mtu = MaxTotalSize
-	}
-	mtu -= uint32(pkt.NetworkHeader().View().Size())
-	// Round the MTU down to align to 8 bytes.
-	mtu &^= 7
-	return mtu
+func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32, gso *stack.GSO) bool {
+	payload := pkt.TransportHeader().View().Size() + pkt.Data.Size()
+	return (gso == nil || gso.Type == stack.GSONone) && uint32(payload) > networkMTU
 }
 
 // addressToUint32 translates an IPv4 address into its little endian uint32
