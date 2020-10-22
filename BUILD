@@ -75,19 +75,12 @@ go_path(
     name = "gopath",
     mode = "link",
     deps = [
-        # Main binaries.
-        #
-        # For reasons related to reproducibility of the generated
-        # files, in order to ensure that :gopath produces only a
-        # a single "pure" version of all files, we can only depend
-        # on go_library targets here, and not go_binary. Thus the
-        # binaries have been factored into a cli package, which is
-        # a good practice in any case.
-        "//runsc/cli",
-        "//shim/v1/cli",
-        "//shim/v2/cli",
+        # Main binary.
+        "//runsc",
+        "//shim/v1:gvisor-containerd-shim",
+        "//shim/v2:containerd-shim-runsc-v1",
 
-        # Packages that are not dependencies of the above.
+        # Packages that are not dependencies of //runsc.
         "//pkg/sentry/kernel/memevent",
         "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/link/channel",

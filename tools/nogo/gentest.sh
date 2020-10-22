@@ -34,7 +34,6 @@ for filename in "$@"; do
     continue
   fi
   while read -r line; do
-    line="${line@Q}"
     violations=$((${violations}+1));
     echo "echo -e '\\033[0;31m${line}\\033[0;31m\\033[0m'" >> "${output}"
   done < "${filename}"

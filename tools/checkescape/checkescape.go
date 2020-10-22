@@ -67,7 +67,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -620,10 +619,7 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 	calls, err := loadObjdump()
 	if err != nil {
-		// Note that if this analysis fails, then we don't actually
-		// fail the analyzer itself. We simply report every possible
-		// escape. In most cases this will work just fine.
-		log.Printf("WARNING: unable to load objdump: %v", err)
+		return nil, err
 	}
 	allEscapes := make(map[string][]Escapes)
 	mergedEscapes := make(map[string]Escapes)
@@ -645,11 +641,6 @@ func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 	}
 	hasCall := func(inst poser) (string, bool) {
 		p := linePosition(inst, nil)
-		if calls == nil {
-			// See above: we don't have access to the binary
-			// itself, so need to include every possible call.
-			return "(possible)", true
-		}
 		s, ok := calls[p.Simplified()]
 		if !ok {
 			return "", false

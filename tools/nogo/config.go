@@ -473,7 +473,6 @@ func init() {
 			"pkg/shim/v2/options/options.go:24",
 			"pkg/shim/v2/options/options.go:26",
 			"pkg/shim/v2/runtimeoptions/runtimeoptions.go:16",
-			"pkg/shim/v2/runtimeoptions/runtimeoptions_cri.go", // Generated: exempt all.
 			"pkg/shim/v2/runtimeoptions/runtimeoptions_test.go:22",
 			"pkg/shim/v2/service.go:15",
 			"pkg/shim/v2/service_linux.go:18",

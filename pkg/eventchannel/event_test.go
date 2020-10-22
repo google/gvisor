@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 

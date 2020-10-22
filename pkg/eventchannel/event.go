@@ -24,8 +24,8 @@ import (
 	"fmt"
 	"syscall"
 
-	"google.golang.org/protobuf/encoding/prototext"
-	"google.golang.org/protobuf/proto"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	pb "gvisor.dev/gvisor/pkg/eventchannel/eventchannel_go_proto"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -118,6 +118,22 @@ func (me *multiEmitter) Close() error {
 	return err
 }
 
+func marshal(msg proto.Message) ([]byte, error) {
+	anypb, err := ptypes.MarshalAny(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wire format is uvarint message length followed by binary proto.
+	bufMsg, err := proto.Marshal(anypb)
+	if err != nil {
+		return nil, err
+	}
+	p := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(p, uint64(len(bufMsg)))
+	return append(p[:n], bufMsg...), nil
+}
+
 // socketEmitter emits proto messages on a socket.
 type socketEmitter struct {
 	socket *unet.Socket
@@ -139,19 +155,10 @@ func SocketEmitter(fd int) (Emitter, error) {
 
 // Emit implements Emitter.Emit.
 func (s *socketEmitter) Emit(msg proto.Message) (bool, error) {
-	any, err := newAny(msg)
+	p, err := marshal(msg)
 	if err != nil {
 		return false, err
 	}
-	bufMsg, err := proto.Marshal(any)
-	if err != nil {
-		return false, err
-	}
-
-	// Wire format is uvarint message length followed by binary proto.
-	p := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(p, uint64(len(bufMsg)))
-	p = append(p[:n], bufMsg...)
 	for done := 0; done < len(p); {
 		n, err := s.socket.Write(p[done:])
 		if err != nil {
@@ -159,7 +166,6 @@ func (s *socketEmitter) Emit(msg proto.Message) (bool, error) {
 		}
 		done += n
 	}
-
 	return false, nil
 }
 
@@ -183,13 +189,9 @@ func DebugEmitterFrom(inner Emitter) Emitter {
 }
 
 func (d *debugEmitter) Emit(msg proto.Message) (bool, error) {
-	text, err := prototext.Marshal(msg)
-	if err != nil {
-		return false, err
-	}
 	ev := &pb.DebugEvent{
-		Name: string(msg.ProtoReflect().Descriptor().FullName()),
-		Text: string(text),
+		Name: proto.MessageName(msg),
+		Text: proto.MarshalTextString(msg),
 	}
 	return d.inner.Emit(ev)
 }

@@ -20,7 +20,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -35,41 +34,19 @@ var (
 	owner     string
 	repo      string
 	tokenFile string
-	paths     stringList
+	path      string
 	commit    string
 	dryRun    bool
 )
-
-type stringList []string
-
-func (s *stringList) String() string {
-	return strings.Join(*s, ",")
-}
-
-func (s *stringList) Set(value string) error {
-	*s = append(*s, value)
-	return nil
-}
 
 // Keep the options simple for now. Supports only a single path and repo.
 func init() {
 	flag.StringVar(&owner, "owner", "", "GitHub project org/owner (required, except nogo dry-run)")
 	flag.StringVar(&repo, "repo", "", "GitHub repo (required, except nogo dry-run)")
 	flag.StringVar(&tokenFile, "oauth-token-file", "", "file containing the GitHub token (or GITHUB_TOKEN is set)")
-	flag.Var(&paths, "path", "path(s) to scan (required for revive and nogo)")
+	flag.StringVar(&path, "path", ".", "path to scan (required for revive and nogo)")
 	flag.StringVar(&commit, "commit", "", "commit to associated (required for nogo, except dry-run)")
 	flag.BoolVar(&dryRun, "dry-run", false, "just print changes to be made")
-}
-
-func filterPaths(paths []string) (existing []string) {
-	for _, path := range paths {
-		if _, err := os.Stat(path); err != nil {
-			log.Printf("WARNING: skipping %v: %v", path, err)
-			continue
-		}
-		existing = append(existing, path)
-	}
-	return
 }
 
 func main() {
@@ -106,9 +83,8 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	filteredPaths := filterPaths(paths)
-	if len(filteredPaths) == 0 {
-		fmt.Fprintln(flag.CommandLine.Output(), "no valid --path options provided.")
+	if len(path) == 0 {
+		fmt.Fprintln(flag.CommandLine.Output(), "missing --path option.")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -147,7 +123,7 @@ func main() {
 			os.Exit(1)
 		}
 		// Scan the provided path.
-		rev := reviver.New(filteredPaths, []reviver.Bugger{bugger})
+		rev := reviver.New([]string{path}, []reviver.Bugger{bugger})
 		if errs := rev.Run(); len(errs) > 0 {
 			fmt.Fprintf(os.Stderr, "Encountered %d errors:\n", len(errs))
 			for _, err := range errs {
@@ -169,7 +145,7 @@ func main() {
 		}
 		// Scan all findings.
 		poster := nogo.NewFindingsPoster(client, owner, repo, commit, dryRun)
-		if err := poster.Walk(filteredPaths); err != nil {
+		if err := poster.Walk(path); err != nil {
 			fmt.Fprintln(os.Stderr, "Error finding nogo findings:", err)
 			os.Exit(1)
 		}

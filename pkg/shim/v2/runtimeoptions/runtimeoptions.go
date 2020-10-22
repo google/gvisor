@@ -13,5 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package runtimeoptions contains the runtimeoptions proto.
 package runtimeoptions
+
+import (
+	proto "github.com/gogo/protobuf/proto"
+	pb "gvisor.dev/gvisor/pkg/shim/v2/runtimeoptions/api_go_proto"
+)
+
+type Options = pb.Options
+
+func init() {
+	// The generated proto file auto registers with "golang/protobuf/proto"
+	// package. However, typeurl uses "golang/gogo/protobuf/proto". So registers
+	// the type there too.
+	proto.RegisterType((*Options)(nil), "cri.runtimeoptions.v1.Options")
+}

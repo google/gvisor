@@ -13,7 +13,16 @@ go_binary(
         "//visibility:public",
     ],
     x_defs = {"main.version": "{STABLE_VERSION}"},
-    deps = ["//runsc/cli"],
+    deps = [
+        "//pkg/log",
+        "//pkg/refs",
+        "//pkg/sentry/platform",
+        "//runsc/cmd",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_google_subcommands//:go_default_library",
+    ],
 )
 
 # The runsc-race target is a race-compatible BUILD target. This must be built
@@ -40,7 +49,16 @@ go_binary(
         "//visibility:public",
     ],
     x_defs = {"main.version": "{STABLE_VERSION}"},
-    deps = ["//runsc/cli"],
+    deps = [
+        "//pkg/log",
+        "//pkg/refs",
+        "//pkg/sentry/platform",
+        "//runsc/cmd",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_google_subcommands//:go_default_library",
+    ],
 )
 
 sh_test(

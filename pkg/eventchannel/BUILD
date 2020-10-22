@@ -6,7 +6,6 @@ go_library(
     name = "eventchannel",
     srcs = [
         "event.go",
-        "event_any.go",
         "rate.go",
     ],
     visibility = ["//:sandbox"],
@@ -15,9 +14,8 @@ go_library(
         "//pkg/log",
         "//pkg/sync",
         "//pkg/unet",
-        "@org_golang_google_protobuf//encoding/prototext:go_default_library",
-        "@org_golang_google_protobuf//proto:go_default_library",
-        "@org_golang_google_protobuf//types/known/anypb:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@org_golang_x_time//rate:go_default_library",
     ],
 )
@@ -34,6 +32,6 @@ go_test(
     library = ":eventchannel",
     deps = [
         "//pkg/sync",
-        "@org_golang_google_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )

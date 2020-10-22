@@ -130,7 +130,8 @@ unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
 .PHONY: unit-tests
 
 tests: ## Runs all unit tests and syscall tests.
-tests: unit-tests syscall-tests
+tests: unit-tests
+	@$(call submake,test TARGETS="test/syscalls/...")
 .PHONY: tests
 
 integration-tests: ## Run all standard integration tests.
@@ -146,14 +147,15 @@ network-tests: iptables-tests packetdrill-tests packetimpact-tests
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 syscall-%-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters runsc_$*" TARGETS="test/syscalls/...")
+	@$(call submake,test OPTIONS="--test_tag_filters runsc_$* test/syscalls/...")
 
 syscall-native-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters native" TARGETS="test/syscalls/...")
+	@$(call submake,test OPTIONS="--test_tag_filters native test/syscalls/...")
 .PHONY: syscall-native-tests
 
 syscall-tests: ## Run all system call tests.
-	@$(call submake,test TARGETS="test/syscalls/...")
+syscall-tests: syscall-ptrace-tests syscall-kvm-tests syscall-native-tests
+.PHONY: syscall-tests
 
 %-runtime-tests: load-runtimes_%
 	@$(call submake,install-test-runtime)
@@ -380,7 +382,7 @@ test-runtime: ## A convenient wrapper around test that provides the runtime argu
 
 nogo: ## Surfaces all nogo findings.
 	@$(call submake,build OPTIONS="--build_tag_filters nogo" TARGETS="//...")
-	@$(call submake,run TARGETS="//tools/github" ARGS="$(foreach dir,$(BUILD_ROOTS),-path=$(CURDIR)/$(dir)) -dry-run nogo")
+	@$(call submake,run TARGETS="//tools/github" ARGS="-path=$(BUILD_ROOT) -dry-run nogo")
 .PHONY: nogo
 
 gazelle: ## Runs gazelle to update WORKSPACE.

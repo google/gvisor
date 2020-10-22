@@ -4,10 +4,15 @@ package(licenses = ["notice"])
 
 go_binary(
     name = "containerd-shim-runsc-v1",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+    ],
     static = True,
     visibility = [
         "//visibility:public",
     ],
-    deps = ["//shim/v2/cli"],
+    deps = [
+        "//pkg/shim/v2",
+        "@com_github_containerd_containerd//runtime/v2/shim:go_default_library",
+    ],
 )

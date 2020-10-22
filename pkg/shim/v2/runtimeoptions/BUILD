@@ -11,12 +11,12 @@ proto_library(
 
 go_library(
     name = "runtimeoptions",
-    srcs = [
-        "runtimeoptions.go",
-        "runtimeoptions_cri.go",
-    ],
+    srcs = ["runtimeoptions.go"],
     visibility = ["//pkg/shim/v2:__pkg__"],
-    deps = ["@com_github_gogo_protobuf//proto:go_default_library"],
+    deps = [
+        ":api_go_proto",
+        "@com_github_gogo_protobuf//proto:go_default_library",
+    ],
 )
 
 go_test(
@@ -27,6 +27,6 @@ go_test(
     deps = [
         "@com_github_containerd_containerd//runtime/v1/shim/v1:go_default_library",
         "@com_github_containerd_typeurl//:go_default_library",
-        "@com_github_gogo_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )

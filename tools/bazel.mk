@@ -14,16 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Make hacks.
-EMPTY :=
-SPACE := $(EMPTY) $(EMPTY)
-
 # See base Makefile.
 SHELL=/bin/bash -o pipefail
 BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
 			git rev-parse --abbrev-ref HEAD 2>/dev/null) | \
 			xargs -n 1 basename 2>/dev/null)
-BUILD_ROOTS := bazel-bin/ bazel-out/
+BUILD_ROOT := $(CURDIR)/bazel-bin/
 
 # Bazel container configuration (see below).
 USER ?= gvisor
@@ -156,12 +152,10 @@ build_cmd = docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefai
 
 build_paths = $(build_cmd) 2>&1 \
 		| tee /proc/self/fd/2 \
-		| grep -A1 -E '^Target' \
-		| grep -E '^  ($(subst $(SPACE),|,$(BUILD_ROOTS)))' \
+		| grep "  bazel-bin/" \
 		| sed "s/ /\n/g" \
 		| strings -n 10 \
 		| awk '{$$1=$$1};1' \
-		| xargs -n 1 -I {} readlink -f "{}" \
 		| xargs -n 1 -I {} sh -c "$(1)"
 
 build: bazel-server

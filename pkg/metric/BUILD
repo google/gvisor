@@ -27,6 +27,6 @@ go_test(
     deps = [
         ":metric_go_proto",
         "//pkg/eventchannel",
-        "@org_golang_google_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
