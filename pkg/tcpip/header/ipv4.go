@@ -148,6 +148,13 @@ const (
 	// packet that every IPv4 capable host must be able to
 	// process/reassemble.
 	IPv4MinimumProcessableDatagramSize = 576
+
+	// IPv4MinimumMTU is the minimum MTU required by IPv4, per RFC 791,
+	// section 3.2:
+	//   Every internet module must be able to forward a datagram of 68 octets
+	//   without further fragmentation.  This is because an internet header may be
+	//   up to 60 octets, and the minimum fragment is 8 octets.
+	IPv4MinimumMTU = 68
 )
 
 // Flags that may be set in an IPv4 packet.

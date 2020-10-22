@@ -182,8 +182,11 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {
 			e.handleControl(stack.ControlPortUnreachable, 0, pkt)
 
 		case header.ICMPv4FragmentationNeeded:
-			mtu := uint32(h.MTU())
-			e.handleControl(stack.ControlPacketTooBig, calculateMTU(mtu), pkt)
+			networkMTU, err := calculateNetworkMTU(uint32(h.MTU()), header.IPv4MinimumSize)
+			if err != nil {
+				networkMTU = 0
+			}
+			e.handleControl(stack.ControlPacketTooBig, networkMTU, pkt)
 		}
 
 	case header.ICMPv4SrcQuench:
