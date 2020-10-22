@@ -21,7 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
-// Sysinfo implements Linux syscall sysinfo(2).
+// Sysinfo implements the sysinfo syscall as described in man 2 sysinfo.
 func Sysinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
