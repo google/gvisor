@@ -244,25 +244,25 @@ func (f *Fragmentation) releaseReassemblersLocked() {
 
 // PacketFragmenter is the book-keeping struct for packet fragmentation.
 type PacketFragmenter struct {
-	transportHeader buffer.View
-	data            buffer.VectorisedView
-	reserve         int
-	innerMTU        int
-	fragmentCount   int
-	currentFragment int
-	fragmentOffset  int
+	transportHeader    buffer.View
+	data               buffer.VectorisedView
+	reserve            int
+	fragmentPayloadLen int
+	fragmentCount      int
+	currentFragment    int
+	fragmentOffset     int
 }
 
 // MakePacketFragmenter prepares the struct needed for packet fragmentation.
 //
 // pkt is the packet to be fragmented.
 //
-// innerMTU is the maximum number of bytes of fragmentable data a fragment can
+// fragmentPayloadLen is the maximum number of bytes of fragmentable data a fragment can
 // have.
 //
 // reserve is the number of bytes that should be reserved for the headers in
 // each generated fragment.
-func MakePacketFragmenter(pkt *stack.PacketBuffer, innerMTU int, reserve int) PacketFragmenter {
+func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, reserve int) PacketFragmenter {
 	// As per RFC 8200 Section 4.5, some IPv6 extension headers should not be
 	// repeated in each fragment. However we do not currently support any header
 	// of that kind yet, so the following computation is valid for both IPv4 and
@@ -273,13 +273,13 @@ func MakePacketFragmenter(pkt *stack.PacketBuffer, innerMTU int, reserve int) Pa
 	var fragmentableData buffer.VectorisedView
 	fragmentableData.AppendView(pkt.TransportHeader().View())
 	fragmentableData.Append(pkt.Data)
-	fragmentCount := (fragmentableData.Size() + innerMTU - 1) / innerMTU
+	fragmentCount := (uint32(fragmentableData.Size()) + fragmentPayloadLen - 1) / fragmentPayloadLen
 
 	return PacketFragmenter{
-		data:          fragmentableData,
-		reserve:       reserve,
-		innerMTU:      innerMTU,
-		fragmentCount: fragmentCount,
+		data:               fragmentableData,
+		reserve:            reserve,
+		fragmentPayloadLen: int(fragmentPayloadLen),
+		fragmentCount:      int(fragmentCount),
 	}
 }
 
@@ -302,7 +302,7 @@ func (pf *PacketFragmenter) BuildNextFragment() (*stack.PacketBuffer, int, int, 
 	})
 
 	// Copy data for the fragment.
-	copied := pf.data.ReadToVV(&fragPkt.Data, pf.innerMTU)
+	copied := pf.data.ReadToVV(&fragPkt.Data, pf.fragmentPayloadLen)
 
 	offset := pf.fragmentOffset
 	pf.fragmentOffset += copied
