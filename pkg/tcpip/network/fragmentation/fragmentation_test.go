@@ -403,14 +403,14 @@ func TestPacketFragmenter(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		innerMTU           int
+		fragmentPayloadLen uint32
 		transportHeaderLen int
 		payloadSize        int
 		wantFragments      []fragmentInfo
 	}{
 		{
 			name:               "Packet exactly fits in MTU",
-			innerMTU:           1280,
+			fragmentPayloadLen: 1280,
 			transportHeaderLen: 0,
 			payloadSize:        1280,
 			wantFragments: []fragmentInfo{
@@ -419,7 +419,7 @@ func TestPacketFragmenter(t *testing.T) {
 		},
 		{
 			name:               "Packet exactly does not fit in MTU",
-			innerMTU:           1000,
+			fragmentPayloadLen: 1000,
 			transportHeaderLen: 0,
 			payloadSize:        1001,
 			wantFragments: []fragmentInfo{
@@ -429,7 +429,7 @@ func TestPacketFragmenter(t *testing.T) {
 		},
 		{
 			name:               "Packet has a transport header",
-			innerMTU:           560,
+			fragmentPayloadLen: 560,
 			transportHeaderLen: 40,
 			payloadSize:        560,
 			wantFragments: []fragmentInfo{
@@ -439,7 +439,7 @@ func TestPacketFragmenter(t *testing.T) {
 		},
 		{
 			name:               "Packet has a huge transport header",
-			innerMTU:           500,
+			fragmentPayloadLen: 500,
 			transportHeaderLen: 1300,
 			payloadSize:        500,
 			wantFragments: []fragmentInfo{
@@ -458,7 +458,7 @@ func TestPacketFragmenter(t *testing.T) {
 			originalPayload.AppendView(pkt.TransportHeader().View())
 			originalPayload.Append(pkt.Data)
 			var reassembledPayload buffer.VectorisedView
-			pf := MakePacketFragmenter(pkt, test.innerMTU, reserve)
+			pf := MakePacketFragmenter(pkt, test.fragmentPayloadLen, reserve)
 			for i := 0; ; i++ {
 				fragPkt, offset, copied, more := pf.BuildNextFragment()
 				wantFragment := test.wantFragments[i]
@@ -474,8 +474,8 @@ func TestPacketFragmenter(t *testing.T) {
 				if more != wantFragment.more {
 					t.Errorf("(fragment #%d) got more = %t, want = %t", i, more, wantFragment.more)
 				}
-				if got := fragPkt.Size(); got > test.innerMTU {
-					t.Errorf("(fragment #%d) got fragPkt.Size() = %d, want <= %d", i, got, test.innerMTU)
+				if got := uint32(fragPkt.Size()); got > test.fragmentPayloadLen {
+					t.Errorf("(fragment #%d) got fragPkt.Size() = %d, want <= %d", i, got, test.fragmentPayloadLen)
 				}
 				if got := fragPkt.AvailableHeaderBytes(); got != reserve {
 					t.Errorf("(fragment #%d) got fragPkt.AvailableHeaderBytes() = %d, want = %d", i, got, reserve)

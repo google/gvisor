@@ -238,7 +238,7 @@ func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{test.protocolFactory},
 			})
-			e := channel.New(10, 1280, linkAddr1)
+			e := channel.New(10, header.IPv6MinimumMTU, linkAddr1)
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
 			}
@@ -271,7 +271,7 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{test.protocolFactory},
 			})
-			e := channel.New(1, 1280, linkAddr1)
+			e := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -825,7 +825,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
-			e := channel.New(1, 1280, linkAddr1)
+			e := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -1844,7 +1844,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
-			e := channel.New(0, 1280, linkAddr1)
+			e := channel.New(0, header.IPv6MinimumMTU, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2230,8 +2230,8 @@ var fragmentationTests = []struct {
 	wantFragments []fragmentInfo
 }{
 	{
-		description: "No Fragmentation",
-		mtu:         1280,
+		description: "No fragmentation",
+		mtu:         header.IPv6MinimumMTU,
 		gso:         nil,
 		transHdrLen: 0,
 		payloadSize: 1000,
@@ -2241,7 +2241,18 @@ var fragmentationTests = []struct {
 	},
 	{
 		description: "Fragmented",
-		mtu:         1280,
+		mtu:         header.IPv6MinimumMTU,
+		gso:         nil,
+		transHdrLen: 0,
+		payloadSize: 2000,
+		wantFragments: []fragmentInfo{
+			{offset: 0, payloadSize: 1240, more: true},
+			{offset: 154, payloadSize: 776, more: false},
+		},
+	},
+	{
+		description: "Fragmented with mtu not a multiple of 8",
+		mtu:         header.IPv6MinimumMTU + 1,
 		gso:         nil,
 		transHdrLen: 0,
 		payloadSize: 2000,
@@ -2262,7 +2273,7 @@ var fragmentationTests = []struct {
 	},
 	{
 		description: "Fragmented with gso none",
-		mtu:         1280,
+		mtu:         header.IPv6MinimumMTU,
 		gso:         &stack.GSO{Type: stack.GSONone},
 		transHdrLen: 0,
 		payloadSize: 1400,
@@ -2273,7 +2284,7 @@ var fragmentationTests = []struct {
 	},
 	{
 		description: "Fragmented with big header",
-		mtu:         1280,
+		mtu:         header.IPv6MinimumMTU,
 		gso:         nil,
 		transHdrLen: 100,
 		payloadSize: 1200,
@@ -2448,14 +2459,24 @@ func TestFragmentationErrors(t *testing.T) {
 			wantError:      tcpip.ErrAborted,
 		},
 		{
-			description:    "Error on packet with MTU smaller than transport header",
-			mtu:            1280,
+			description:    "Error when MTU is smaller than transport header",
+			mtu:            header.IPv6MinimumMTU,
 			transHdrLen:    1500,
 			payloadSize:    500,
 			allowPackets:   0,
 			outgoingErrors: 1,
 			mockError:      nil,
 			wantError:      tcpip.ErrMessageTooLong,
+		},
+		{
+			description:    "Error when MTU is smaller than IPv6 minimum MTU",
+			mtu:            header.IPv6MinimumMTU - 1,
+			transHdrLen:    0,
+			payloadSize:    500,
+			allowPackets:   0,
+			outgoingErrors: 1,
+			mockError:      nil,
+			wantError:      tcpip.ErrInvalidEndpointState,
 		},
 	}
 

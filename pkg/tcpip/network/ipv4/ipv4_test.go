@@ -39,7 +39,10 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const extraHeaderReserve = 50
+const (
+	extraHeaderReserve = 50
+	defaultMTU         = 65536
+)
 
 func TestExcludeBroadcast(t *testing.T) {
 	s := stack.New(stack.Options{
@@ -47,7 +50,6 @@ func TestExcludeBroadcast(t *testing.T) {
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	})
 
-	const defaultMTU = 65536
 	ep := stack.LinkEndpoint(channel.New(256, defaultMTU, ""))
 	if testing.Verbose() {
 		ep = sniffer.New(ep)
@@ -103,7 +105,6 @@ func TestExcludeBroadcast(t *testing.T) {
 // checks the response.
 func TestIPv4Sanity(t *testing.T) {
 	const (
-		defaultMTU     = header.IPv6MinimumMTU
 		ttl            = 255
 		nicID          = 1
 		randomSequence = 123
@@ -132,13 +133,13 @@ func TestIPv4Sanity(t *testing.T) {
 	}{
 		{
 			name:              "valid",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 		},
 		{
 			name:              "bad header checksum",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			badHeaderChecksum: true,
@@ -157,35 +158,35 @@ func TestIPv4Sanity(t *testing.T) {
 		//      received with TTL less than 2.
 		{
 			name:              "zero TTL",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               0,
 			shouldFail:        false,
 		},
 		{
 			name:              "one TTL",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               1,
 			shouldFail:        false,
 		},
 		{
 			name:              "End options",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           []byte{0, 0, 0, 0},
 		},
 		{
 			name:              "NOP options",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           []byte{1, 1, 1, 1},
 		},
 		{
 			name:              "NOP and End options",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           []byte{1, 1, 0, 0},
@@ -193,7 +194,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			name:              "bad header length",
 			headerLength:      header.IPv4MinimumSize - 1,
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			shouldFail:        true,
@@ -225,7 +226,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad protocol",
-			maxTotalLength:    defaultMTU,
+			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: 99,
 			TTL:               ttl,
 			shouldFail:        true,
@@ -462,7 +463,7 @@ var fragmentationTests = []struct {
 	wantFragments         []fragmentInfo
 }{
 	{
-		description:           "No Fragmentation",
+		description:           "No fragmentation",
 		mtu:                   1280,
 		gso:                   nil,
 		transportHeaderLength: 0,
@@ -480,6 +481,30 @@ var fragmentationTests = []struct {
 		wantFragments: []fragmentInfo{
 			{offset: 0, payloadSize: 1256, more: true},
 			{offset: 1256, payloadSize: 744, more: false},
+		},
+	},
+	{
+		description:           "Fragmented with the minimum mtu",
+		mtu:                   header.IPv4MinimumMTU,
+		gso:                   nil,
+		transportHeaderLength: 0,
+		payloadSize:           100,
+		wantFragments: []fragmentInfo{
+			{offset: 0, payloadSize: 48, more: true},
+			{offset: 48, payloadSize: 48, more: true},
+			{offset: 96, payloadSize: 4, more: false},
+		},
+	},
+	{
+		description:           "Fragmented with mtu not a multiple of 8",
+		mtu:                   header.IPv4MinimumMTU + 1,
+		gso:                   nil,
+		transportHeaderLength: 0,
+		payloadSize:           100,
+		wantFragments: []fragmentInfo{
+			{offset: 0, payloadSize: 48, more: true},
+			{offset: 48, payloadSize: 48, more: true},
+			{offset: 96, payloadSize: 4, more: false},
 		},
 	},
 	{
@@ -647,43 +672,50 @@ func TestFragmentationWritePackets(t *testing.T) {
 	}
 }
 
-// TestFragmentationErrors checks that errors are returned from write packet
+// TestFragmentationErrors checks that errors are returned from WritePacket
 // correctly.
 func TestFragmentationErrors(t *testing.T) {
 	const ttl = 42
 
-	expectedError := tcpip.ErrAborted
-	fragTests := []struct {
+	tests := []struct {
 		description           string
 		mtu                   uint32
 		transportHeaderLength int
 		payloadSize           int
 		allowPackets          int
-		fragmentCount         int
+		outgoingErrors        int
+		mockError             *tcpip.Error
+		wantError             *tcpip.Error
 	}{
 		{
 			description:           "No frag",
 			mtu:                   2000,
-			transportHeaderLength: 0,
 			payloadSize:           1000,
+			transportHeaderLength: 0,
 			allowPackets:          0,
-			fragmentCount:         1,
+			outgoingErrors:        1,
+			mockError:             tcpip.ErrAborted,
+			wantError:             tcpip.ErrAborted,
 		},
 		{
 			description:           "Error on first frag",
 			mtu:                   500,
-			transportHeaderLength: 0,
 			payloadSize:           1000,
+			transportHeaderLength: 0,
 			allowPackets:          0,
-			fragmentCount:         3,
+			outgoingErrors:        3,
+			mockError:             tcpip.ErrAborted,
+			wantError:             tcpip.ErrAborted,
 		},
 		{
 			description:           "Error on second frag",
 			mtu:                   500,
-			transportHeaderLength: 0,
 			payloadSize:           1000,
+			transportHeaderLength: 0,
 			allowPackets:          1,
-			fragmentCount:         3,
+			outgoingErrors:        2,
+			mockError:             tcpip.ErrAborted,
+			wantError:             tcpip.ErrAborted,
 		},
 		{
 			description:           "Error on first frag MTU smaller than header",
@@ -691,28 +723,40 @@ func TestFragmentationErrors(t *testing.T) {
 			transportHeaderLength: 1000,
 			payloadSize:           500,
 			allowPackets:          0,
-			fragmentCount:         4,
+			outgoingErrors:        4,
+			mockError:             tcpip.ErrAborted,
+			wantError:             tcpip.ErrAborted,
+		},
+		{
+			description:           "Error when MTU is smaller than IPv4 minimum MTU",
+			mtu:                   header.IPv4MinimumMTU - 1,
+			transportHeaderLength: 0,
+			payloadSize:           500,
+			allowPackets:          0,
+			outgoingErrors:        1,
+			mockError:             nil,
+			wantError:             tcpip.ErrInvalidEndpointState,
 		},
 	}
 
-	for _, ft := range fragTests {
+	for _, ft := range tests {
 		t.Run(ft.description, func(t *testing.T) {
-			ep := testutil.NewMockLinkEndpoint(ft.mtu, expectedError, ft.allowPackets)
-			r := buildRoute(t, ep)
 			pkt := testutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
+			ep := testutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
+			r := buildRoute(t, ep)
 			err := r.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
 				TOS:      stack.DefaultTOS,
 			}, pkt)
-			if err != expectedError {
-				t.Errorf("got WritePacket(_, _, _) = %s, want = %s", err, expectedError)
+			if err != ft.wantError {
+				t.Errorf("got WritePacket(_, _, _) = %s, want = %s", err, ft.wantError)
 			}
-			if got, want := len(ep.WrittenPackets), int(r.Stats().IP.PacketsSent.Value()); err != nil && got != want {
-				t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, want)
+			if got := int(r.Stats().IP.PacketsSent.Value()); got != ft.allowPackets {
+				t.Errorf("got r.Stats().IP.PacketsSent.Value() = %d, want = %d", got, ft.allowPackets)
 			}
-			if got, want := int(r.Stats().IP.OutgoingPacketErrors.Value()), ft.fragmentCount-ft.allowPackets; got != want {
-				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = %d", got, want)
+			if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != ft.outgoingErrors {
+				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = %d", got, ft.outgoingErrors)
 			}
 		})
 	}
@@ -1577,7 +1621,7 @@ func TestWriteStats(t *testing.T) {
 		t.Run(writer.name, func(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
-					ep := testutil.NewMockLinkEndpoint(header.IPv4MinimumSize+header.UDPMinimumSize, tcpip.ErrInvalidEndpointState, test.allowPackets)
+					ep := testutil.NewMockLinkEndpoint(header.IPv4MinimumMTU, tcpip.ErrInvalidEndpointState, test.allowPackets)
 					rt := buildRoute(t, ep)
 
 					var pkts stack.PacketBufferList
@@ -1783,7 +1827,7 @@ func TestPacketQueing(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e := channel.New(1, header.IPv6MinimumMTU, host1NICLinkAddr)
+			e := channel.New(1, defaultMTU, host1NICLinkAddr)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},

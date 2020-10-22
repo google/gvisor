@@ -170,8 +170,11 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			return
 		}
 		pkt.Data.TrimFront(header.ICMPv6PacketTooBigMinimumSize)
-		mtu := header.ICMPv6(hdr).MTU()
-		e.handleControl(stack.ControlPacketTooBig, calculateMTU(mtu), pkt)
+		networkMTU, err := calculateNetworkMTU(header.ICMPv6(hdr).MTU(), header.IPv6MinimumSize)
+		if err != nil {
+			networkMTU = 0
+		}
+		e.handleControl(stack.ControlPacketTooBig, networkMTU, pkt)
 
 	case header.ICMPv6DstUnreachable:
 		received.DstUnreachable.Increment()
