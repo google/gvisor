@@ -195,10 +195,10 @@ type testNeighborResolver struct {
 
 var _ LinkAddressResolver = (*testNeighborResolver)(nil)
 
-func (r *testNeighborResolver) LinkAddressRequest(addr, localAddr tcpip.Address, linkAddr tcpip.LinkAddress, linkEP LinkEndpoint) *tcpip.Error {
+func (r *testNeighborResolver) LinkAddressRequest(targetAddr, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) *tcpip.Error {
 	// Delay handling the request to emulate network latency.
 	r.clock.AfterFunc(r.delay, func() {
-		r.fakeRequest(addr)
+		r.fakeRequest(targetAddr)
 	})
 
 	// Execute post address resolution action, if available.

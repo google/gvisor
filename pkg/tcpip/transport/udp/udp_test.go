@@ -1452,6 +1452,10 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
+func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) *tcpip.Error {
+	return tcpip.ErrNotSupported
+}
+
 func TestTTL(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {

@@ -49,8 +49,8 @@ type testLinkAddressResolver struct {
 	onLinkAddressRequest func()
 }
 
-func (r *testLinkAddressResolver) LinkAddressRequest(addr, _ tcpip.Address, _ tcpip.LinkAddress, _ LinkEndpoint) *tcpip.Error {
-	time.AfterFunc(r.delay, func() { r.fakeRequest(addr) })
+func (r *testLinkAddressResolver) LinkAddressRequest(targetAddr, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) *tcpip.Error {
+	time.AfterFunc(r.delay, func() { r.fakeRequest(targetAddr) })
 	if f := r.onLinkAddressRequest; f != nil {
 		f()
 	}

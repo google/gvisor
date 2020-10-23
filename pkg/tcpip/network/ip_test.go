@@ -304,6 +304,10 @@ func (t *testInterface) setEnabled(v bool) {
 	t.mu.disabled = !v
 }
 
+func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) *tcpip.Error {
+	return tcpip.ErrNotSupported
+}
+
 func TestSourceAddressValidation(t *testing.T) {
 	rxIPv4ICMP := func(e *channel.Endpoint, src tcpip.Address) {
 		totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
