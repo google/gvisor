@@ -1244,6 +1244,18 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 		vP := primitive.Int32(boolToInt32(v))
 		return &vP, nil
 
+	case linux.SO_ACCEPTCONN:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptBool(tcpip.AcceptConnOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		vP := primitive.Int32(boolToInt32(v))
+		return &vP, nil
+
 	default:
 		socket.GetSockOptEmitUnimplementedEvent(t, name)
 	}
