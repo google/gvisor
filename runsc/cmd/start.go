@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Start implements subcommands.Command for the "start" command.
@@ -58,6 +59,12 @@ func (*Start) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	if err != nil {
 		Fatalf("loading container: %v", err)
 	}
+	// Read the spec again here to ensure flag annotations from the spec are
+	// applied to "conf".
+	if _, err := specutils.ReadSpec(c.BundleDir, conf); err != nil {
+		Fatalf("reading spec: %v", err)
+	}
+
 	if err := c.Start(conf); err != nil {
 		Fatalf("starting container: %v", err)
 	}
