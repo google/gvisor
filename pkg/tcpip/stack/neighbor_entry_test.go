@@ -2938,10 +2938,31 @@ func TestEntryProbeToFailed(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	c.MaxMulticastProbes = 3
 	c.MaxUnicastProbes = 3
+	c.DelayFirstProbeTime = c.RetransmitTimer
 	e, nudDisp, linkRes, clock := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
+	e.mu.Unlock()
+
+	{
+		wantProbes := []entryTestProbeInfo{
+			// Caused by the Unknown-to-Incomplete transition.
+			{
+				RemoteAddress: entryTestAddr1,
+				LocalAddress:  entryTestAddr2,
+			},
+		}
+		linkRes.mu.Lock()
+		diff := cmp.Diff(linkRes.probes, wantProbes)
+		linkRes.probes = nil
+		linkRes.mu.Unlock()
+		if diff != "" {
+			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		}
+	}
+
+	e.mu.Lock()
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  false,
@@ -2950,36 +2971,37 @@ func TestEntryProbeToFailed(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	waitFor := c.DelayFirstProbeTime + c.RetransmitTimer*time.Duration(c.MaxUnicastProbes)
-	clock.Advance(waitFor)
+	// Observe each probe sent while in the Probe state.
+	for i := uint32(0); i < c.MaxUnicastProbes; i++ {
+		clock.Advance(c.RetransmitTimer)
+		wantProbes := []entryTestProbeInfo{
+			{
+				RemoteAddress:     entryTestAddr1,
+				RemoteLinkAddress: entryTestLinkAddr1,
+			},
+		}
+		linkRes.mu.Lock()
+		diff := cmp.Diff(linkRes.probes, wantProbes)
+		linkRes.probes = nil
+		linkRes.mu.Unlock()
+		if diff != "" {
+			t.Fatalf("link address resolver probe #%d mismatch (-got, +want):\n%s", i+1, diff)
+		}
 
-	wantProbes := []entryTestProbeInfo{
-		// The first probe is caused by the Unknown-to-Incomplete transition.
-		{
-			RemoteAddress:     entryTestAddr1,
-			RemoteLinkAddress: tcpip.LinkAddress(""),
-			LocalAddress:      entryTestAddr2,
-		},
-		// The next three probe are caused by the Delay-to-Probe transition.
-		{
-			RemoteAddress:     entryTestAddr1,
-			RemoteLinkAddress: entryTestLinkAddr1,
-		},
-		{
-			RemoteAddress:     entryTestAddr1,
-			RemoteLinkAddress: entryTestLinkAddr1,
-		},
-		{
-			RemoteAddress:     entryTestAddr1,
-			RemoteLinkAddress: entryTestLinkAddr1,
-		},
+		e.mu.Lock()
+		if e.neigh.State != Probe {
+			t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+		}
+		e.mu.Unlock()
 	}
-	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
-	linkRes.mu.Unlock()
-	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+
+	// Wait for the last probe to expire, causing a transition to Failed.
+	clock.Advance(c.RetransmitTimer)
+	e.mu.Lock()
+	if e.neigh.State != Failed {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Failed)
 	}
+	e.mu.Unlock()
 
 	wantEvents := []testEntryEventInfo{
 		{
@@ -3023,12 +3045,6 @@ func TestEntryProbeToFailed(t *testing.T) {
 		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
-
-	e.mu.Lock()
-	if got, want := e.neigh.State, Failed; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
-	}
-	e.mu.Unlock()
 }
 
 func TestEntryFailedGetsDeleted(t *testing.T) {
