@@ -6,7 +6,7 @@ package(licenses = ["notice"])
 
 docker_image(
     name = "website",
-    data = [":files"],
+    data = ":files",
     statements = [
         "EXPOSE 8080/tcp",
         'ENTRYPOINT ["/server"]',

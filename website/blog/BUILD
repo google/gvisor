@@ -38,6 +38,17 @@ doc(
     permalink = "/blog/2020/09/18/containing-a-real-vulnerability/",
 )
 
+doc(
+    name = "platform_portability",
+    src = "2020-10-22-platform-portability.md",
+    authors = [
+        "ianlewis",
+        "mpratt",
+    ],
+    layout = "post",
+    permalink = "/blog/2020/09/22/platform-portability/",
+)
+
 docs(
     name = "posts",
     deps = [
