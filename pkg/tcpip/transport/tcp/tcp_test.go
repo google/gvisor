@@ -5131,6 +5131,7 @@ func TestKeepalive(t *testing.T) {
 }
 
 func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCookieInUse bool) (irs, iss seqnum.Value) {
+	t.Helper()
 	// Send a SYN request.
 	irs = seqnum.Value(789)
 	c.SendPacket(nil, &context.Headers{
@@ -5175,6 +5176,7 @@ func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCooki
 }
 
 func executeV6Handshake(t *testing.T, c *context.Context, srcPort uint16, synCookieInUse bool) (irs, iss seqnum.Value) {
+	t.Helper()
 	// Send a SYN request.
 	irs = seqnum.Value(789)
 	c.SendV6Packet(nil, &context.Headers{
@@ -5238,13 +5240,14 @@ func TestListenBacklogFull(t *testing.T) {
 
 	// Test acceptance.
 	// Start listening.
-	listenBacklog := 2
+	listenBacklog := 10
 	if err := c.EP.Listen(listenBacklog); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
-	for i := 0; i < listenBacklog; i++ {
-		executeHandshake(t, c, context.TestPort+uint16(i), false /*synCookieInUse */)
+	lastPortOffset := uint16(0)
+	for ; int(lastPortOffset) < listenBacklog; lastPortOffset++ {
+		executeHandshake(t, c, context.TestPort+lastPortOffset, false /*synCookieInUse */)
 	}
 
 	time.Sleep(50 * time.Millisecond)
@@ -5252,7 +5255,7 @@ func TestListenBacklogFull(t *testing.T) {
 	// Now execute send one more SYN. The stack should not respond as the backlog
 	// is full at this point.
 	c.SendPacket(nil, &context.Headers{
-		SrcPort: context.TestPort + 2,
+		SrcPort: context.TestPort + uint16(lastPortOffset),
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  seqnum.Value(789),
@@ -5293,7 +5296,7 @@ func TestListenBacklogFull(t *testing.T) {
 	}
 
 	// Now a new handshake must succeed.
-	executeHandshake(t, c, context.TestPort+2, false /*synCookieInUse */)
+	executeHandshake(t, c, context.TestPort+lastPortOffset, false /*synCookieInUse */)
 
 	newEP, _, err := c.EP.Accept(nil)
 	if err == tcpip.ErrWouldBlock {
