@@ -23,10 +23,9 @@ func (r *dirRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *dirRefs) afterLoad() {}
-
 func (r *dirRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (i *kcovInode) StateTypeName() string {

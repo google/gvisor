@@ -132,10 +132,9 @@ func (r *aioMappableRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *aioMappableRefs) afterLoad() {}
-
 func (r *aioMappableRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (s *fileRefcountSet) StateTypeName() string {
@@ -637,10 +636,9 @@ func (r *SpecialMappableRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *SpecialMappableRefs) afterLoad() {}
-
 func (r *SpecialMappableRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (s *vmaSet) StateTypeName() string {

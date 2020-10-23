@@ -53,10 +53,9 @@ func (r *tunEndpointRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *tunEndpointRefs) afterLoad() {}
-
 func (r *tunEndpointRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func init() {

@@ -126,10 +126,9 @@ func (r *queueRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *queueRefs) afterLoad() {}
-
 func (r *queueRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (l *messageList) StateTypeName() string {

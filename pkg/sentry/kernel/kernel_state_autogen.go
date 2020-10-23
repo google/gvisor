@@ -169,10 +169,9 @@ func (r *FDTableRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *FDTableRefs) afterLoad() {}
-
 func (r *FDTableRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (f *FSContext) StateTypeName() string {
@@ -230,10 +229,9 @@ func (r *FSContextRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *FSContextRefs) afterLoad() {}
-
 func (r *FSContextRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (i *IPCNamespace) StateTypeName() string {
@@ -285,10 +283,9 @@ func (r *IPCNamespaceRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *IPCNamespaceRefs) afterLoad() {}
-
 func (r *IPCNamespaceRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (k *Kernel) StateTypeName() string {
@@ -758,10 +755,9 @@ func (r *ProcessGroupRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *ProcessGroupRefs) afterLoad() {}
-
 func (r *ProcessGroupRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (p *ptraceOptions) StateTypeName() string {
@@ -932,10 +928,9 @@ func (r *SessionRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *SessionRefs) afterLoad() {}
-
 func (r *SessionRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (s *Session) StateTypeName() string {
