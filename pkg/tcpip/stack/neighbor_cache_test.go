@@ -128,9 +128,8 @@ func newTestEntryStore() *testEntryStore {
 		linkAddr := toLinkAddress(i)
 
 		store.entriesMap[addr] = NeighborEntry{
-			Addr:      addr,
-			LocalAddr: testEntryLocalAddr,
-			LinkAddr:  linkAddr,
+			Addr:     addr,
+			LinkAddr: linkAddr,
 		}
 	}
 	return store
@@ -294,9 +293,8 @@ func TestNeighborCacheEntry(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	_, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
-	if err != tcpip.ErrWouldBlock {
-		t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Errorf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 
 	clock.Advance(typicalLatency)
@@ -324,8 +322,8 @@ func TestNeighborCacheEntry(t *testing.T) {
 		t.Fatalf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
 	}
 
-	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != nil {
-		t.Fatalf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != nil {
+		t.Fatalf("unexpected error from neigh.entry(%s, '', _, nil): %s", entry.Addr, err)
 	}
 
 	// No more events should have been dispatched.
@@ -354,9 +352,9 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	_, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
-	if err != tcpip.ErrWouldBlock {
-		t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Errorf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 
 	clock.Advance(typicalLatency)
@@ -404,8 +402,8 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 		}
 	}
 
-	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrWouldBlock {
-		t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Errorf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 }
 
@@ -452,8 +450,8 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 		if !ok {
 			return fmt.Errorf("c.store.entry(%d) not found", i)
 		}
-		if _, _, err := c.neigh.entry(entry.Addr, entry.LocalAddr, c.linkRes, nil); err != tcpip.ErrWouldBlock {
-			return fmt.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+		if _, _, err := c.neigh.entry(entry.Addr, "", c.linkRes, nil); err != tcpip.ErrWouldBlock {
+			return fmt.Errorf("got c.neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 		}
 		c.clock.Advance(c.neigh.config().RetransmitTimer)
 
@@ -508,10 +506,9 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 			return fmt.Errorf("c.store.entry(%d) not found", i)
 		}
 		wantEntry := NeighborEntry{
-			Addr:      entry.Addr,
-			LocalAddr: entry.LocalAddr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Addr:     entry.Addr,
+			LinkAddr: entry.LinkAddr,
+			State:    Reachable,
 		}
 		wantUnsortedEntries = append(wantUnsortedEntries, wantEntry)
 	}
@@ -564,9 +561,8 @@ func TestNeighborCacheRemoveEntryThenOverflow(t *testing.T) {
 	if !ok {
 		t.Fatalf("c.store.entry(0) not found")
 	}
-	_, _, err := c.neigh.entry(entry.Addr, entry.LocalAddr, c.linkRes, nil)
-	if err != tcpip.ErrWouldBlock {
-		t.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := c.neigh.entry(entry.Addr, "", c.linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Errorf("got c.neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	c.clock.Advance(c.neigh.config().RetransmitTimer)
 	wantEvents := []testEntryEventInfo{
@@ -800,9 +796,8 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 	if !ok {
 		t.Fatalf("c.store.entry(0) not found")
 	}
-	_, _, err := c.neigh.entry(entry.Addr, entry.LocalAddr, c.linkRes, nil)
-	if err != tcpip.ErrWouldBlock {
-		t.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := c.neigh.entry(entry.Addr, "", c.linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Errorf("got c.neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	c.clock.Advance(typicalLatency)
 	wantEvents := []testEntryEventInfo{
@@ -861,10 +856,9 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 		startAtEntryIndex: 1,
 		wantStaticEntries: []NeighborEntry{
 			{
-				Addr:      entry.Addr,
-				LocalAddr: "", // static entries don't need a local address
-				LinkAddr:  staticLinkAddr,
-				State:     Static,
+				Addr:     entry.Addr,
+				LinkAddr: staticLinkAddr,
+				State:    Static,
 			},
 		},
 	}
@@ -896,12 +890,12 @@ func TestNeighborCacheNotifiesWaker(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	_, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, &w)
+	_, doneCh, err := neigh.entry(entry.Addr, "", linkRes, &w)
 	if err != tcpip.ErrWouldBlock {
-		t.Fatalf("got neigh.entry(%s, %s, _, _ = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+		t.Fatalf("got neigh.entry(%s, '', _, _ = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	if doneCh == nil {
-		t.Fatalf("expected done channel from neigh.entry(%s, %s, _, _)", entry.Addr, entry.LocalAddr)
+		t.Fatalf("expected done channel from neigh.entry(%s, '', _, _)", entry.Addr)
 	}
 	clock.Advance(typicalLatency)
 
@@ -913,7 +907,7 @@ func TestNeighborCacheNotifiesWaker(t *testing.T) {
 
 	id, ok := s.Fetch(false /* block */)
 	if !ok {
-		t.Errorf("expected waker to be notified after neigh.entry(%s, %s, _, _)", entry.Addr, entry.LocalAddr)
+		t.Errorf("expected waker to be notified after neigh.entry(%s, '', _, _)", entry.Addr)
 	}
 	if id != wakerID {
 		t.Errorf("got s.Fetch(false) = %d, want = %d", id, wakerID)
@@ -964,12 +958,12 @@ func TestNeighborCacheRemoveWaker(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	_, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, &w)
+	_, doneCh, err := neigh.entry(entry.Addr, "", linkRes, &w)
 	if err != tcpip.ErrWouldBlock {
-		t.Fatalf("got neigh.entry(%s, %s, _, _) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+		t.Fatalf("got neigh.entry(%s, '', _, _) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	if doneCh == nil {
-		t.Fatalf("expected done channel from neigh.entry(%s, %s, _, _)", entry.Addr, entry.LocalAddr)
+		t.Fatalf("expected done channel from neigh.entry(%s, '', _, _)", entry.Addr)
 	}
 
 	// Remove the waker before the neighbor cache has the opportunity to send a
@@ -1028,10 +1022,9 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		t.Errorf("unexpected error from c.neigh.entry(%s, \"\", _, nil): %s", entry.Addr, err)
 	}
 	want := NeighborEntry{
-		Addr:      entry.Addr,
-		LocalAddr: "", // static entries don't need a local address
-		LinkAddr:  entry.LinkAddr,
-		State:     Static,
+		Addr:     entry.Addr,
+		LinkAddr: entry.LinkAddr,
+		State:    Static,
 	}
 	if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
 		t.Errorf("c.neigh.entry(%s, \"\", _, nil) mismatch (-got, +want):\n%s", entry.Addr, diff)
@@ -1058,10 +1051,9 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		startAtEntryIndex: 1,
 		wantStaticEntries: []NeighborEntry{
 			{
-				Addr:      entry.Addr,
-				LocalAddr: "", // static entries don't need a local address
-				LinkAddr:  entry.LinkAddr,
-				State:     Static,
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Static,
 			},
 		},
 	}
@@ -1089,9 +1081,8 @@ func TestNeighborCacheClear(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	_, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
-	if err != tcpip.ErrWouldBlock {
-		t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Errorf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	clock.Advance(typicalLatency)
 
@@ -1185,9 +1176,8 @@ func TestNeighborCacheClearThenOverflow(t *testing.T) {
 	if !ok {
 		t.Fatalf("c.store.entry(0) not found")
 	}
-	_, _, err := c.neigh.entry(entry.Addr, entry.LocalAddr, c.linkRes, nil)
-	if err != tcpip.ErrWouldBlock {
-		t.Errorf("got c.neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := c.neigh.entry(entry.Addr, "", c.linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Errorf("got c.neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	c.clock.Advance(typicalLatency)
 	wantEvents := []testEntryEventInfo{
@@ -1274,15 +1264,15 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		if !ok {
 			t.Fatalf("store.entry(%d) not found", i)
 		}
-		_, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+		_, doneCh, err := neigh.entry(entry.Addr, "", linkRes, nil)
 		if err != tcpip.ErrWouldBlock {
-			t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+			t.Errorf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 		}
 		clock.Advance(typicalLatency)
 		select {
 		case <-doneCh:
 		default:
-			t.Fatalf("expected notification from done channel returned by neigh.entry(%s, %s, _, nil)", entry.Addr, entry.LocalAddr)
+			t.Fatalf("expected notification from done channel returned by neigh.entry(%s, '', _, nil)", entry.Addr)
 		}
 		wantEvents := []testEntryEventInfo{
 			{
@@ -1312,9 +1302,8 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	for i := neighborCacheSize; i < store.size(); i++ {
 		// Periodically refresh the frequently used entry
 		if i%(neighborCacheSize/2) == 0 {
-			_, _, err := neigh.entry(frequentlyUsedEntry.Addr, frequentlyUsedEntry.LocalAddr, linkRes, nil)
-			if err != nil {
-				t.Errorf("unexpected error from neigh.entry(%s, %s, _, nil): %s", frequentlyUsedEntry.Addr, frequentlyUsedEntry.LocalAddr, err)
+			if _, _, err := neigh.entry(frequentlyUsedEntry.Addr, "", linkRes, nil); err != nil {
+				t.Errorf("unexpected error from neigh.entry(%s, '', _, nil): %s", frequentlyUsedEntry.Addr, err)
 			}
 		}
 
@@ -1322,15 +1311,15 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		if !ok {
 			t.Fatalf("store.entry(%d) not found", i)
 		}
-		_, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+		_, doneCh, err := neigh.entry(entry.Addr, "", linkRes, nil)
 		if err != tcpip.ErrWouldBlock {
-			t.Errorf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+			t.Errorf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 		}
 		clock.Advance(typicalLatency)
 		select {
 		case <-doneCh:
 		default:
-			t.Fatalf("expected notification from done channel returned by neigh.entry(%s, %s, _, nil)", entry.Addr, entry.LocalAddr)
+			t.Fatalf("expected notification from done channel returned by neigh.entry(%s, '', _, nil)", entry.Addr)
 		}
 
 		// An entry should have been removed, as per the LRU eviction strategy
@@ -1374,10 +1363,9 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	// have to be sorted before comparison.
 	wantUnsortedEntries := []NeighborEntry{
 		{
-			Addr:      frequentlyUsedEntry.Addr,
-			LocalAddr: frequentlyUsedEntry.LocalAddr,
-			LinkAddr:  frequentlyUsedEntry.LinkAddr,
-			State:     Reachable,
+			Addr:     frequentlyUsedEntry.Addr,
+			LinkAddr: frequentlyUsedEntry.LinkAddr,
+			State:    Reachable,
 		},
 	}
 
@@ -1387,10 +1375,9 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			t.Fatalf("store.entry(%d) not found", i)
 		}
 		wantEntry := NeighborEntry{
-			Addr:      entry.Addr,
-			LocalAddr: entry.LocalAddr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Addr:     entry.Addr,
+			LinkAddr: entry.LinkAddr,
+			State:    Reachable,
 		}
 		wantUnsortedEntries = append(wantUnsortedEntries, wantEntry)
 	}
@@ -1430,9 +1417,8 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 			wg.Add(1)
 			go func(entry NeighborEntry) {
 				defer wg.Done()
-				e, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
-				if err != nil && err != tcpip.ErrWouldBlock {
-					t.Errorf("got neigh.entry(%s, %s, _, nil) = (%+v, _, %s), want (_, _, nil) or (_, _, %s)", entry.Addr, entry.LocalAddr, e, err, tcpip.ErrWouldBlock)
+				if e, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != nil && err != tcpip.ErrWouldBlock {
+					t.Errorf("got neigh.entry(%s, '', _, nil) = (%+v, _, %s), want (_, _, nil) or (_, _, %s)", entry.Addr, e, err, tcpip.ErrWouldBlock)
 				}
 			}(entry)
 		}
@@ -1456,10 +1442,9 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 			t.Errorf("store.entry(%d) not found", i)
 		}
 		wantEntry := NeighborEntry{
-			Addr:      entry.Addr,
-			LocalAddr: entry.LocalAddr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Addr:     entry.Addr,
+			LinkAddr: entry.LinkAddr,
+			State:    Reachable,
 		}
 		wantUnsortedEntries = append(wantUnsortedEntries, wantEntry)
 	}
@@ -1488,37 +1473,36 @@ func TestNeighborCacheReplace(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	_, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+	_, doneCh, err := neigh.entry(entry.Addr, "", linkRes, nil)
 	if err != tcpip.ErrWouldBlock {
-		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+		t.Fatalf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	clock.Advance(typicalLatency)
 	select {
 	case <-doneCh:
 	default:
-		t.Fatalf("expected notification from done channel returned by neigh.entry(%s, %s, _, nil)", entry.Addr, entry.LocalAddr)
+		t.Fatalf("expected notification from done channel returned by neigh.entry(%s, '', _, nil)", entry.Addr)
 	}
 
 	// Verify the entry exists
 	{
-		e, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+		e, doneCh, err := neigh.entry(entry.Addr, "", linkRes, nil)
 		if err != nil {
-			t.Errorf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
+			t.Errorf("unexpected error from neigh.entry(%s, '', _, nil): %s", entry.Addr, err)
 		}
 		if doneCh != nil {
-			t.Errorf("unexpected done channel from neigh.entry(%s, %s, _, nil): %v", entry.Addr, entry.LocalAddr, doneCh)
+			t.Errorf("unexpected done channel from neigh.entry(%s, '', _, nil): %v", entry.Addr, doneCh)
 		}
 		if t.Failed() {
 			t.FailNow()
 		}
 		want := NeighborEntry{
-			Addr:      entry.Addr,
-			LocalAddr: entry.LocalAddr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Addr:     entry.Addr,
+			LinkAddr: entry.LinkAddr,
+			State:    Reachable,
 		}
 		if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
-			t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", entry.Addr, entry.LinkAddr, diff)
+			t.Errorf("neigh.entry(%s, '', _, nil) mismatch (-got, +want):\n%s", entry.Addr, diff)
 		}
 	}
 
@@ -1542,37 +1526,35 @@ func TestNeighborCacheReplace(t *testing.T) {
 	//
 	// Verify the entry's new link address and the new state.
 	{
-		e, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+		e, _, err := neigh.entry(entry.Addr, "", linkRes, nil)
 		if err != nil {
-			t.Fatalf("neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
+			t.Fatalf("neigh.entry(%s, '', _, nil): %s", entry.Addr, err)
 		}
 		want := NeighborEntry{
-			Addr:      entry.Addr,
-			LocalAddr: entry.LocalAddr,
-			LinkAddr:  updatedLinkAddr,
-			State:     Delay,
+			Addr:     entry.Addr,
+			LinkAddr: updatedLinkAddr,
+			State:    Delay,
 		}
 		if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
-			t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", entry.Addr, entry.LocalAddr, diff)
+			t.Errorf("neigh.entry(%s, '', _, nil) mismatch (-got, +want):\n%s", entry.Addr, diff)
 		}
 		clock.Advance(config.DelayFirstProbeTime + typicalLatency)
 	}
 
 	// Verify that the neighbor is now reachable.
 	{
-		e, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+		e, _, err := neigh.entry(entry.Addr, "", linkRes, nil)
 		clock.Advance(typicalLatency)
 		if err != nil {
-			t.Errorf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
+			t.Errorf("unexpected error from neigh.entry(%s, '', _, nil): %s", entry.Addr, err)
 		}
 		want := NeighborEntry{
-			Addr:      entry.Addr,
-			LocalAddr: entry.LocalAddr,
-			LinkAddr:  updatedLinkAddr,
-			State:     Reachable,
+			Addr:     entry.Addr,
+			LinkAddr: updatedLinkAddr,
+			State:    Reachable,
 		}
 		if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
-			t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", entry.Addr, entry.LocalAddr, diff)
+			t.Errorf("neigh.entry(%s, '', _, nil) mismatch (-got, +want):\n%s", entry.Addr, diff)
 		}
 	}
 }
@@ -1601,35 +1583,34 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	clock.Advance(typicalLatency)
-	got, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+	got, _, err := neigh.entry(entry.Addr, "", linkRes, nil)
 	if err != nil {
-		t.Fatalf("unexpected error from neigh.entry(%s, %s, _, nil): %s", entry.Addr, entry.LocalAddr, err)
+		t.Fatalf("unexpected error from neigh.entry(%s, '', _, nil): %s", entry.Addr, err)
 	}
 	want := NeighborEntry{
-		Addr:      entry.Addr,
-		LocalAddr: entry.LocalAddr,
-		LinkAddr:  entry.LinkAddr,
-		State:     Reachable,
+		Addr:     entry.Addr,
+		LinkAddr: entry.LinkAddr,
+		State:    Reachable,
 	}
 	if diff := cmp.Diff(got, want, entryDiffOpts()...); diff != "" {
-		t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", entry.Addr, entry.LocalAddr, diff)
+		t.Errorf("neigh.entry(%s, '', _, nil) mismatch (-got, +want):\n%s", entry.Addr, diff)
 	}
 
 	// Verify that address resolution for an unknown address returns ErrNoLinkAddress
 	before := atomic.LoadUint32(&requestCount)
 
 	entry.Addr += "2"
-	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	waitFor := config.DelayFirstProbeTime + typicalLatency*time.Duration(config.MaxMulticastProbes)
 	clock.Advance(waitFor)
-	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrNoLinkAddress {
-		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrNoLinkAddress)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrNoLinkAddress {
+		t.Fatalf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrNoLinkAddress)
 	}
 
 	maxAttempts := neigh.config().MaxUnicastProbes
@@ -1659,13 +1640,13 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 	if !ok {
 		t.Fatalf("store.entry(0) not found")
 	}
-	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	waitFor := config.RetransmitTimer * time.Duration(config.MaxMulticastProbes)
 	clock.Advance(waitFor)
-	if _, _, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil); err != tcpip.ErrNoLinkAddress {
-		t.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrNoLinkAddress)
+	if _, _, err := neigh.entry(entry.Addr, "", linkRes, nil); err != tcpip.ErrNoLinkAddress {
+		t.Fatalf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrNoLinkAddress)
 	}
 }
 
@@ -1683,18 +1664,17 @@ func TestNeighborCacheStaticResolution(t *testing.T) {
 		delay:   typicalLatency,
 	}
 
-	got, _, err := neigh.entry(testEntryBroadcastAddr, testEntryLocalAddr, linkRes, nil)
+	got, _, err := neigh.entry(testEntryBroadcastAddr, "", linkRes, nil)
 	if err != nil {
-		t.Fatalf("unexpected error from neigh.entry(%s, %s, _, nil): %s", testEntryBroadcastAddr, testEntryLocalAddr, err)
+		t.Fatalf("unexpected error from neigh.entry(%s, '', _, nil): %s", testEntryBroadcastAddr, err)
 	}
 	want := NeighborEntry{
-		Addr:      testEntryBroadcastAddr,
-		LocalAddr: testEntryLocalAddr,
-		LinkAddr:  testEntryBroadcastLinkAddr,
-		State:     Static,
+		Addr:     testEntryBroadcastAddr,
+		LinkAddr: testEntryBroadcastLinkAddr,
+		State:    Static,
 	}
 	if diff := cmp.Diff(got, want, entryDiffOpts()...); diff != "" {
-		t.Errorf("neigh.entry(%s, %s, _, nil) mismatch (-got, +want):\n%s", testEntryBroadcastAddr, testEntryLocalAddr, diff)
+		t.Errorf("neigh.entry(%s, '', _, nil) mismatch (-got, +want):\n%s", testEntryBroadcastAddr, diff)
 	}
 }
 
@@ -1719,9 +1699,9 @@ func BenchmarkCacheClear(b *testing.B) {
 			if !ok {
 				b.Fatalf("store.entry(%d) not found", i)
 			}
-			_, doneCh, err := neigh.entry(entry.Addr, entry.LocalAddr, linkRes, nil)
+			_, doneCh, err := neigh.entry(entry.Addr, "", linkRes, nil)
 			if err != tcpip.ErrWouldBlock {
-				b.Fatalf("got neigh.entry(%s, %s, _, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrWouldBlock)
+				b.Fatalf("got neigh.entry(%s, '', _, nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 			}
 			if doneCh != nil {
 				<-doneCh

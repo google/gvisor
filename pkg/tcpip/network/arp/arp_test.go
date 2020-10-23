@@ -404,9 +404,6 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 			if got, want := neigh.LinkAddr, test.senderLinkAddr; got != want {
 				t.Errorf("got neighbor LinkAddr = %s, want = %s", got, want)
 			}
-			if got, want := neigh.LocalAddr, stackAddr; got != want {
-				t.Errorf("got neighbor LocalAddr = %s, want = %s", got, want)
-			}
 			if got, want := neigh.State, stack.Stale; got != want {
 				t.Errorf("got neighbor State = %s, want = %s", got, want)
 			}
@@ -427,10 +424,12 @@ var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {
 	stack.LinkEndpoint
+
+	nicID tcpip.NICID
 }
 
-func (*testInterface) ID() tcpip.NICID {
-	return 1
+func (t *testInterface) ID() tcpip.NICID {
+	return t.nicID
 }
 
 func (*testInterface) IsLoopback() bool {
@@ -454,42 +453,131 @@ func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gs
 }
 
 func TestLinkAddressRequest(t *testing.T) {
+	const nicID = 1
+
+	testAddr := tcpip.Address([]byte{1, 2, 3, 4})
+
 	tests := []struct {
 		name           string
+		nicAddr        tcpip.Address
+		localAddr      tcpip.Address
 		remoteLinkAddr tcpip.LinkAddress
-		expectLinkAddr tcpip.LinkAddress
+
+		expectedErr            *tcpip.Error
+		expectedLocalAddr      tcpip.Address
+		expectedRemoteLinkAddr tcpip.LinkAddress
 	}{
 		{
-			name:           "Unicast",
-			remoteLinkAddr: remoteLinkAddr,
-			expectLinkAddr: remoteLinkAddr,
+			name:                   "Unicast",
+			nicAddr:                stackAddr,
+			localAddr:              stackAddr,
+			remoteLinkAddr:         remoteLinkAddr,
+			expectedLocalAddr:      stackAddr,
+			expectedRemoteLinkAddr: remoteLinkAddr,
 		},
 		{
-			name:           "Multicast",
+			name:                   "Multicast",
+			nicAddr:                stackAddr,
+			localAddr:              stackAddr,
+			remoteLinkAddr:         "",
+			expectedLocalAddr:      stackAddr,
+			expectedRemoteLinkAddr: header.EthernetBroadcastAddress,
+		},
+		{
+			name:                   "Unicast with unspecified source",
+			nicAddr:                stackAddr,
+			remoteLinkAddr:         remoteLinkAddr,
+			expectedLocalAddr:      stackAddr,
+			expectedRemoteLinkAddr: remoteLinkAddr,
+		},
+		{
+			name:                   "Multicast with unspecified source",
+			nicAddr:                stackAddr,
+			remoteLinkAddr:         "",
+			expectedLocalAddr:      stackAddr,
+			expectedRemoteLinkAddr: header.EthernetBroadcastAddress,
+		},
+		{
+			name:           "Unicast with unassigned address",
+			localAddr:      testAddr,
+			remoteLinkAddr: remoteLinkAddr,
+			expectedErr:    tcpip.ErrBadLocalAddress,
+		},
+		{
+			name:           "Multicast with unassigned address",
+			localAddr:      testAddr,
 			remoteLinkAddr: "",
-			expectLinkAddr: header.EthernetBroadcastAddress,
+			expectedErr:    tcpip.ErrBadLocalAddress,
+		},
+		{
+			name:           "Unicast with no local address available",
+			remoteLinkAddr: remoteLinkAddr,
+			expectedErr:    tcpip.ErrNetworkUnreachable,
+		},
+		{
+			name:           "Multicast with no local address available",
+			remoteLinkAddr: "",
+			expectedErr:    tcpip.ErrNetworkUnreachable,
 		},
 	}
 
 	for _, test := range tests {
-		p := arp.NewProtocol(nil)
-		linkRes, ok := p.(stack.LinkAddressResolver)
-		if !ok {
-			t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")
-		}
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
+			})
+			p := s.NetworkProtocolInstance(arp.ProtocolNumber)
+			linkRes, ok := p.(stack.LinkAddressResolver)
+			if !ok {
+				t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")
+			}
 
-		linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
-		if err := linkRes.LinkAddressRequest(stackAddr, remoteAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP}); err != nil {
-			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s", stackAddr, remoteAddr, test.remoteLinkAddr, err)
-		}
+			linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
+			if err := s.CreateNIC(nicID, linkEP); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+			}
 
-		pkt, ok := linkEP.Read()
-		if !ok {
-			t.Fatal("expected to send a link address request")
-		}
+			if len(test.nicAddr) != 0 {
+				if err := s.AddAddress(nicID, ipv4.ProtocolNumber, test.nicAddr); err != nil {
+					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, test.nicAddr, err)
+				}
+			}
 
-		if got, want := pkt.Route.RemoteLinkAddress, test.expectLinkAddr; got != want {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", got, want)
-		}
+			// We pass a test network interface to LinkAddressRequest with the same
+			// NIC ID and link endpoint used by the NIC we created earlier so that we
+			// can mock a link address request and observe the packets sent to the
+			// link endpoint even though the stack uses the real NIC to validate the
+			// local address.
+			if err := linkRes.LinkAddressRequest(remoteAddr, test.localAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID}); err != test.expectedErr {
+				t.Fatalf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", remoteAddr, test.localAddr, test.remoteLinkAddr, err, test.expectedErr)
+			}
+
+			if test.expectedErr != nil {
+				return
+			}
+
+			pkt, ok := linkEP.Read()
+			if !ok {
+				t.Fatal("expected to send a link address request")
+			}
+
+			if pkt.Route.RemoteLinkAddress != test.expectedRemoteLinkAddr {
+				t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedRemoteLinkAddr)
+			}
+
+			rep := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+			if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
+				t.Errorf("got HardwareAddressSender = %s, want = %s", got, stackLinkAddr)
+			}
+			if got := tcpip.Address(rep.ProtocolAddressSender()); got != test.expectedLocalAddr {
+				t.Errorf("got ProtocolAddressSender = %s, want = %s", got, test.expectedLocalAddr)
+			}
+			if got, want := tcpip.LinkAddress(rep.HardwareAddressTarget()), tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"); got != want {
+				t.Errorf("got HardwareAddressTarget = %s, want = %s", got, want)
+			}
+			if got := tcpip.Address(rep.ProtocolAddressTarget()); got != remoteAddr {
+				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, remoteAddr)
+			}
+		})
 	}
 }

@@ -51,6 +51,7 @@ const (
 var (
 	lladdr0 = header.LinkLocalAddr(linkAddr0)
 	lladdr1 = header.LinkLocalAddr(linkAddr1)
+	lladdr2 = header.LinkLocalAddr(linkAddr2)
 )
 
 type stubLinkEndpoint struct {
@@ -108,15 +109,15 @@ type stubNUDHandler struct {
 
 var _ stack.NUDHandler = (*stubNUDHandler)(nil)
 
-func (s *stubNUDHandler) HandleProbe(remoteAddr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes stack.LinkAddressResolver) {
+func (s *stubNUDHandler) HandleProbe(tcpip.Address, tcpip.NetworkProtocolNumber, tcpip.LinkAddress, stack.LinkAddressResolver) {
 	s.probeCount++
 }
 
-func (s *stubNUDHandler) HandleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags stack.ReachabilityConfirmationFlags) {
+func (s *stubNUDHandler) HandleConfirmation(tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) {
 	s.confirmationCount++
 }
 
-func (*stubNUDHandler) HandleUpperLevelConfirmation(addr tcpip.Address) {
+func (*stubNUDHandler) HandleUpperLevelConfirmation(tcpip.Address) {
 }
 
 var _ stack.NetworkInterface = (*testInterface)(nil)
@@ -1245,22 +1246,66 @@ func TestLinkAddressRequest(t *testing.T) {
 	mcaddr := header.EthernetAddressFromMulticastIPv6Address(snaddr)
 
 	tests := []struct {
-		name             string
-		remoteLinkAddr   tcpip.LinkAddress
-		expectedLinkAddr tcpip.LinkAddress
-		expectedAddr     tcpip.Address
+		name           string
+		nicAddr        tcpip.Address
+		localAddr      tcpip.Address
+		remoteLinkAddr tcpip.LinkAddress
+
+		expectedErr            *tcpip.Error
+		expectedRemoteAddr     tcpip.Address
+		expectedRemoteLinkAddr tcpip.LinkAddress
 	}{
 		{
-			name:             "Unicast",
-			remoteLinkAddr:   linkAddr1,
-			expectedLinkAddr: linkAddr1,
-			expectedAddr:     lladdr0,
+			name:                   "Unicast",
+			nicAddr:                lladdr1,
+			localAddr:              lladdr1,
+			remoteLinkAddr:         linkAddr1,
+			expectedRemoteAddr:     lladdr0,
+			expectedRemoteLinkAddr: linkAddr1,
 		},
 		{
-			name:             "Multicast",
-			remoteLinkAddr:   "",
-			expectedLinkAddr: mcaddr,
-			expectedAddr:     snaddr,
+			name:                   "Multicast",
+			nicAddr:                lladdr1,
+			localAddr:              lladdr1,
+			remoteLinkAddr:         "",
+			expectedRemoteAddr:     snaddr,
+			expectedRemoteLinkAddr: mcaddr,
+		},
+		{
+			name:                   "Unicast with unspecified source",
+			nicAddr:                lladdr1,
+			remoteLinkAddr:         linkAddr1,
+			expectedRemoteAddr:     lladdr0,
+			expectedRemoteLinkAddr: linkAddr1,
+		},
+		{
+			name:                   "Multicast with unspecified source",
+			nicAddr:                lladdr1,
+			remoteLinkAddr:         "",
+			expectedRemoteAddr:     snaddr,
+			expectedRemoteLinkAddr: mcaddr,
+		},
+		{
+			name:           "Unicast with unassigned address",
+			localAddr:      lladdr1,
+			remoteLinkAddr: linkAddr1,
+			expectedErr:    tcpip.ErrNetworkUnreachable,
+		},
+		{
+			name:           "Multicast with unassigned address",
+			localAddr:      lladdr1,
+			remoteLinkAddr: "",
+			expectedErr:    tcpip.ErrNetworkUnreachable,
+		},
+		{
+			name:           "Unicast with no local address available",
+			remoteLinkAddr: linkAddr1,
+			expectedErr:    tcpip.ErrNetworkUnreachable,
+		},
+		{
+			name:           "Multicast with no local address available",
+			remoteLinkAddr: "",
+			expectedErr:    tcpip.ErrNetworkUnreachable,
 		},
 	}
 
@@ -1278,34 +1323,40 @@ func TestLinkAddressRequest(t *testing.T) {
 		if err := s.CreateNIC(nicID, linkEP); err != nil {
 			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 		}
-		if err := s.AddAddress(nicID, ProtocolNumber, lladdr1); err != nil {
-			t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, lladdr1, err)
+		if len(test.nicAddr) != 0 {
+			if err := s.AddAddress(nicID, ProtocolNumber, test.nicAddr); err != nil {
+				t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, test.nicAddr, err)
+			}
 		}
 
 		// We pass a test network interface to LinkAddressRequest with the same NIC
 		// ID and link endpoint used by the NIC we created earlier so that we can
 		// mock a link address request and observe the packets sent to the link
 		// endpoint even though the stack uses the real NIC.
-		if err := linkRes.LinkAddressRequest(lladdr0, lladdr1, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID}); err != nil {
-			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s", lladdr0, lladdr1, test.remoteLinkAddr, err)
+		if err := linkRes.LinkAddressRequest(lladdr0, test.localAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID}); err != test.expectedErr {
+			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", lladdr0, test.localAddr, test.remoteLinkAddr, err, test.expectedErr)
+		}
+
+		if test.expectedErr != nil {
+			return
 		}
 
 		pkt, ok := linkEP.Read()
 		if !ok {
 			t.Fatal("expected to send a link address request")
 		}
-		if pkt.Route.RemoteLinkAddress != test.expectedLinkAddr {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedLinkAddr)
+		if pkt.Route.RemoteLinkAddress != test.expectedRemoteLinkAddr {
+			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedRemoteLinkAddr)
 		}
-		if pkt.Route.RemoteAddress != test.expectedAddr {
-			t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.expectedAddr)
+		if pkt.Route.RemoteAddress != test.expectedRemoteAddr {
+			t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.expectedRemoteAddr)
 		}
 		if pkt.Route.LocalAddress != lladdr1 {
 			t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, lladdr1)
 		}
 		checker.IPv6(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()),
 			checker.SrcAddr(lladdr1),
-			checker.DstAddr(test.expectedAddr),
+			checker.DstAddr(test.expectedRemoteAddr),
 			checker.TTL(header.NDPHopLimit),
 			checker.NDPNS(
 				checker.NDPNSTargetAddress(lladdr0),
