@@ -89,7 +89,7 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 
 	taskInode := &taskInode{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
-	taskInode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	taskInode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	taskInode.EnableLeakCheck()
 
 	inode := &taskOwnedInode{Inode: taskInode, owner: task}
@@ -144,7 +144,7 @@ var _ kernfs.Inode = (*taskOwnedInode)(nil)
 
 func (fs *filesystem) newTaskOwnedInode(task *kernel.Task, ino uint64, perm linux.FileMode, inode dynamicInode) kernfs.Inode {
 	// Note: credentials are overridden by taskOwnedInode.
-	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, inode, perm)
+	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, inode, perm)
 
 	return &taskOwnedInode{Inode: inode, owner: task}
 }
@@ -152,7 +152,7 @@ func (fs *filesystem) newTaskOwnedInode(task *kernel.Task, ino uint64, perm linu
 func (fs *filesystem) newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.FileMode, children map[string]kernfs.Inode) kernfs.Inode {
 	// Note: credentials are overridden by taskOwnedInode.
 	fdOpts := kernfs.GenericDirectoryFDOptions{SeekEnd: kernfs.SeekEndZero}
-	dir := kernfs.NewStaticDir(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm, children, fdOpts)
+	dir := kernfs.NewStaticDir(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm, children, fdOpts)
 
 	return &taskOwnedInode{Inode: dir, owner: task}
 }

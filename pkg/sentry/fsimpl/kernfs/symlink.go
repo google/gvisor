@@ -38,16 +38,16 @@ type StaticSymlink struct {
 var _ Inode = (*StaticSymlink)(nil)
 
 // NewStaticSymlink creates a new symlink file pointing to 'target'.
-func NewStaticSymlink(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, target string) Inode {
+func NewStaticSymlink(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, target string) Inode {
 	inode := &StaticSymlink{}
-	inode.Init(creds, devMajor, devMinor, ino, target)
+	inode.Init(ctx, creds, devMajor, devMinor, ino, target)
 	return inode
 }
 
 // Init initializes the instance.
-func (s *StaticSymlink) Init(creds *auth.Credentials, devMajor uint32, devMinor uint32, ino uint64, target string) {
+func (s *StaticSymlink) Init(ctx context.Context, creds *auth.Credentials, devMajor uint32, devMinor uint32, ino uint64, target string) {
 	s.target = target
-	s.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeSymlink|0777)
+	s.InodeAttrs.Init(ctx, creds, devMajor, devMinor, ino, linux.ModeSymlink|0777)
 }
 
 // Readlink implements Inode.Readlink.

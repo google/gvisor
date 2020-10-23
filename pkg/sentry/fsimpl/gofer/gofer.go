@@ -916,10 +916,10 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	// This is consistent with regularFileFD.Seek(), which treats regular files
 	// as having no holes.
 	stat.Blocks = (stat.Size + 511) / 512
-	stat.Atime = statxTimestampFromDentry(atomic.LoadInt64(&d.atime))
-	stat.Btime = statxTimestampFromDentry(atomic.LoadInt64(&d.btime))
-	stat.Ctime = statxTimestampFromDentry(atomic.LoadInt64(&d.ctime))
-	stat.Mtime = statxTimestampFromDentry(atomic.LoadInt64(&d.mtime))
+	stat.Atime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.atime))
+	stat.Btime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.btime))
+	stat.Ctime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.ctime))
+	stat.Mtime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.mtime))
 	stat.DevMajor = linux.UNNAMED_MAJOR
 	stat.DevMinor = d.fs.devMinor
 }
@@ -967,10 +967,10 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		// Use client clocks for timestamps.
 		now = d.fs.clock.Now().Nanoseconds()
 		if stat.Mask&linux.STATX_ATIME != 0 && stat.Atime.Nsec == linux.UTIME_NOW {
-			stat.Atime = statxTimestampFromDentry(now)
+			stat.Atime = linux.NsecToStatxTimestamp(now)
 		}
 		if stat.Mask&linux.STATX_MTIME != 0 && stat.Mtime.Nsec == linux.UTIME_NOW {
-			stat.Mtime = statxTimestampFromDentry(now)
+			stat.Mtime = linux.NsecToStatxTimestamp(now)
 		}
 	}
 
@@ -1029,11 +1029,11 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	// !d.cachedMetadataAuthoritative() then we returned after calling
 	// d.file.setAttr(). For the same reason, now must have been initialized.
 	if stat.Mask&linux.STATX_ATIME != 0 {
-		atomic.StoreInt64(&d.atime, dentryTimestampFromStatx(stat.Atime))
+		atomic.StoreInt64(&d.atime, stat.Atime.ToNsec())
 		atomic.StoreUint32(&d.atimeDirty, 0)
 	}
 	if stat.Mask&linux.STATX_MTIME != 0 {
-		atomic.StoreInt64(&d.mtime, dentryTimestampFromStatx(stat.Mtime))
+		atomic.StoreInt64(&d.mtime, stat.Mtime.ToNsec())
 		atomic.StoreUint32(&d.mtimeDirty, 0)
 	}
 	atomic.StoreInt64(&d.ctime, now)

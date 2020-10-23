@@ -60,7 +60,7 @@ func (fstype *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	}
 
 	fstype.initOnce.Do(func() {
-		fs, root, err := fstype.newFilesystem(vfsObj, creds)
+		fs, root, err := fstype.newFilesystem(ctx, vfsObj, creds)
 		if err != nil {
 			fstype.initErr = err
 			return
@@ -93,7 +93,7 @@ type filesystem struct {
 
 // newFilesystem creates a new devpts filesystem with root directory and ptmx
 // master inode. It returns the filesystem and root Dentry.
-func (fstype *FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*filesystem, *kernfs.Dentry, error) {
+func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*filesystem, *kernfs.Dentry, error) {
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
 		return nil, nil, err
@@ -108,7 +108,7 @@ func (fstype *FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds
 	root := &rootInode{
 		replicas: make(map[uint32]*replicaInode),
 	}
-	root.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|0555)
+	root.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|0555)
 	root.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	root.EnableLeakCheck()
 
@@ -120,7 +120,7 @@ func (fstype *FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds
 	master := &masterInode{
 		root: root,
 	}
-	master.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|0666)
+	master.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|0666)
 
 	// Add the master as a child of the root.
 	links := root.OrderedChildren.Populate(map[string]kernfs.Inode{
@@ -170,7 +170,7 @@ type rootInode struct {
 var _ kernfs.Inode = (*rootInode)(nil)
 
 // allocateTerminal creates a new Terminal and installs a pts node for it.
-func (i *rootInode) allocateTerminal(creds *auth.Credentials) (*Terminal, error) {
+func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credentials) (*Terminal, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.nextIdx == math.MaxUint32 {
@@ -192,7 +192,7 @@ func (i *rootInode) allocateTerminal(creds *auth.Credentials) (*Terminal, error)
 	}
 	// Linux always uses pty index + 3 as the inode id. See
 	// fs/devpts/inode.c:devpts_pty_new().
-	replica.InodeAttrs.Init(creds, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|0600)
+	replica.InodeAttrs.Init(ctx, creds, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|0600)
 	i.replicas[idx] = replica
 
 	return t, nil
@@ -248,9 +248,10 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, erro
 }
 
 // IterDirents implements kernfs.Inode.IterDirents.
-func (i *rootInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+func (i *rootInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	i.InodeAttrs.TouchAtime(ctx, mnt)
 	ids := make([]int, 0, len(i.replicas))
 	for id := range i.replicas {
 		ids = append(ids, int(id))

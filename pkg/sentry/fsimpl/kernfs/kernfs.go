@@ -267,7 +267,9 @@ func (d *Dentry) OnZeroWatches(context.Context) {}
 // this dentry. This does not update the directory inode, so calling this on its
 // own isn't sufficient to insert a child into a directory.
 //
-// Precondition: d must represent a directory inode.
+// Preconditions:
+// * d must represent a directory inode.
+// * d.fs.mu must be locked for at least reading.
 func (d *Dentry) insertChild(name string, child *Dentry) {
 	d.dirMu.Lock()
 	d.insertChildLocked(name, child)
@@ -280,6 +282,7 @@ func (d *Dentry) insertChild(name string, child *Dentry) {
 // Preconditions:
 // * d must represent a directory inode.
 // * d.dirMu must be locked.
+// * d.fs.mu must be locked for at least reading.
 func (d *Dentry) insertChildLocked(name string, child *Dentry) {
 	if !d.isDir() {
 		panic(fmt.Sprintf("insertChildLocked called on non-directory Dentry: %+v.", d))
@@ -436,7 +439,7 @@ type inodeDirectory interface {
 	// the inode is a directory.
 	//
 	// The child returned by Lookup will be hashed into the VFS dentry tree,
-	// atleast for the duration of the current FS operation.
+	// at least for the duration of the current FS operation.
 	//
 	// Lookup must return the child with an extra reference whose ownership is
 	// transferred to the dentry that is created to point to that inode. If
@@ -454,7 +457,7 @@ type inodeDirectory interface {
 	// inside the entries returned by this IterDirents invocation. In other words,
 	// 'offset' should be used to calculate each vfs.Dirent.NextOff as well as
 	// the return value, while 'relOffset' is the place to start iteration.
-	IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error)
+	IterDirents(ctx context.Context, mnt *vfs.Mount, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error)
 }
 
 type inodeSymlink interface {

@@ -64,7 +64,7 @@ type fdDir struct {
 }
 
 // IterDirents implements kernfs.inodeDirectory.IterDirents.
-func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+func (i *fdDir) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	var fds []int32
 	i.task.WithMuLocked(func(t *kernel.Task) {
 		if fdTable := t.FDTable(); fdTable != nil {
@@ -127,15 +127,15 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) kernfs.Inode {
 			produceSymlink: true,
 		},
 	}
-	inode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.EnableLeakCheck()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
 }
 
 // IterDirents implements kernfs.inodeDirectory.IterDirents.
-func (i *fdDirInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
-	return i.fdDir.IterDirents(ctx, cb, offset, relOffset)
+func (i *fdDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+	return i.fdDir.IterDirents(ctx, mnt, cb, offset, relOffset)
 }
 
 // Lookup implements kernfs.inodeDirectory.Lookup.
@@ -209,7 +209,7 @@ func (fs *filesystem) newFDSymlink(task *kernel.Task, fd int32, ino uint64) kern
 		task: task,
 		fd:   fd,
 	}
-	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
 
@@ -264,7 +264,7 @@ func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) kernfs.Inode {
 			task: task,
 		},
 	}
-	inode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.EnableLeakCheck()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
@@ -288,8 +288,8 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode,
 }
 
 // IterDirents implements Inode.IterDirents.
-func (i *fdInfoDirInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
-	return i.fdDir.IterDirents(ctx, cb, offset, relOffset)
+func (i *fdInfoDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
+	return i.fdDir.IterDirents(ctx, mnt, cb, offset, relOffset)
 }
 
 // Open implements kernfs.Inode.Open.

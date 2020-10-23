@@ -21,9 +21,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // InodeNoopRefCount partially implements the Inode interface, specifically the
@@ -143,7 +145,7 @@ func (InodeNotDirectory) Lookup(ctx context.Context, name string) (Inode, error)
 }
 
 // IterDirents implements Inode.IterDirents.
-func (InodeNotDirectory) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
+func (InodeNotDirectory) IterDirents(ctx context.Context, mnt *vfs.Mount, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
 	panic("IterDirents called on non-directory inode")
 }
 
@@ -172,17 +174,23 @@ func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, 
 //
 // +stateify savable
 type InodeAttrs struct {
-	devMajor uint32
-	devMinor uint32
-	ino      uint64
-	mode     uint32
-	uid      uint32
-	gid      uint32
-	nlink    uint32
+	devMajor  uint32
+	devMinor  uint32
+	ino       uint64
+	mode      uint32
+	uid       uint32
+	gid       uint32
+	nlink     uint32
+	blockSize uint32
+
+	// Timestamps, all nsecs from the Unix epoch.
+	atime int64
+	mtime int64
+	ctime int64
 }
 
 // Init initializes this InodeAttrs.
-func (a *InodeAttrs) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, mode linux.FileMode) {
+func (a *InodeAttrs) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, mode linux.FileMode) {
 	if mode.FileType() == 0 {
 		panic(fmt.Sprintf("No file type specified in 'mode' for InodeAttrs.Init(): mode=0%o", mode))
 	}
@@ -198,6 +206,11 @@ func (a *InodeAttrs) Init(creds *auth.Credentials, devMajor, devMinor uint32, in
 	atomic.StoreUint32(&a.uid, uint32(creds.EffectiveKUID))
 	atomic.StoreUint32(&a.gid, uint32(creds.EffectiveKGID))
 	atomic.StoreUint32(&a.nlink, nlink)
+	atomic.StoreUint32(&a.blockSize, usermem.PageSize)
+	now := ktime.NowFromContext(ctx).Nanoseconds()
+	atomic.StoreInt64(&a.atime, now)
+	atomic.StoreInt64(&a.mtime, now)
+	atomic.StoreInt64(&a.ctime, now)
 }
 
 // DevMajor returns the device major number.
@@ -220,12 +233,33 @@ func (a *InodeAttrs) Mode() linux.FileMode {
 	return linux.FileMode(atomic.LoadUint32(&a.mode))
 }
 
+// TouchAtime updates a.atime to the current time.
+func (a *InodeAttrs) TouchAtime(ctx context.Context, mnt *vfs.Mount) {
+	if mnt.Flags.NoATime || mnt.ReadOnly() {
+		return
+	}
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return
+	}
+	atomic.StoreInt64(&a.atime, ktime.NowFromContext(ctx).Nanoseconds())
+	mnt.EndWrite()
+}
+
+// TouchCMtime updates a.{c/m}time to the current time. The caller should
+// synchronize calls to this so that ctime and mtime are updated to the same
+// value.
+func (a *InodeAttrs) TouchCMtime(ctx context.Context) {
+	now := ktime.NowFromContext(ctx).Nanoseconds()
+	atomic.StoreInt64(&a.mtime, now)
+	atomic.StoreInt64(&a.ctime, now)
+}
+
 // Stat partially implements Inode.Stat. Note that this function doesn't provide
 // all the stat fields, and the embedder should consider extending the result
 // with filesystem-specific fields.
 func (a *InodeAttrs) Stat(context.Context, *vfs.Filesystem, vfs.StatOptions) (linux.Statx, error) {
 	var stat linux.Statx
-	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_NLINK
+	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_NLINK | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME
 	stat.DevMajor = a.devMajor
 	stat.DevMinor = a.devMinor
 	stat.Ino = atomic.LoadUint64(&a.ino)
@@ -233,21 +267,15 @@ func (a *InodeAttrs) Stat(context.Context, *vfs.Filesystem, vfs.StatOptions) (li
 	stat.UID = atomic.LoadUint32(&a.uid)
 	stat.GID = atomic.LoadUint32(&a.gid)
 	stat.Nlink = atomic.LoadUint32(&a.nlink)
-
-	// TODO(gvisor.dev/issue/1193): Implement other stat fields like timestamps.
-
+	stat.Blksize = atomic.LoadUint32(&a.blockSize)
+	stat.Atime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&a.atime))
+	stat.Mtime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&a.mtime))
+	stat.Ctime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&a.ctime))
 	return stat, nil
 }
 
 // SetStat implements Inode.SetStat.
 func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
-	return a.SetInodeStat(ctx, fs, creds, opts)
-}
-
-// SetInodeStat sets the corresponding attributes from opts to InodeAttrs.
-// This function can be used by other kernfs-based filesystem implementation to
-// sets the unexported attributes into InodeAttrs.
-func (a *InodeAttrs) SetInodeStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
@@ -256,9 +284,7 @@ func (a *InodeAttrs) SetInodeStat(ctx context.Context, fs *vfs.Filesystem, creds
 	// inode numbers are immutable after node creation. Setting the size is often
 	// allowed by kernfs files but does not do anything. If some other behavior is
 	// needed, the embedder should consider extending SetStat.
-	//
-	// TODO(gvisor.dev/issue/1193): Implement other stat fields like timestamps.
-	if opts.Stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_SIZE) != 0 {
+	if opts.Stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_SIZE) != 0 {
 		return syserror.EPERM
 	}
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 && a.Mode().IsDir() {
@@ -284,6 +310,20 @@ func (a *InodeAttrs) SetInodeStat(ctx context.Context, fs *vfs.Filesystem, creds
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
 		atomic.StoreUint32(&a.gid, stat.GID)
+	}
+
+	now := ktime.NowFromContext(ctx).Nanoseconds()
+	if stat.Mask&linux.STATX_ATIME != 0 {
+		if stat.Atime.Nsec == linux.UTIME_NOW {
+			stat.Atime = linux.NsecToStatxTimestamp(now)
+		}
+		atomic.StoreInt64(&a.atime, stat.Atime.ToNsec())
+	}
+	if stat.Mask&linux.STATX_MTIME != 0 {
+		if stat.Mtime.Nsec == linux.UTIME_NOW {
+			stat.Mtime = linux.NsecToStatxTimestamp(now)
+		}
+		atomic.StoreInt64(&a.mtime, stat.Mtime.ToNsec())
 	}
 
 	return nil
@@ -421,7 +461,7 @@ func (o *OrderedChildren) Lookup(ctx context.Context, name string) (Inode, error
 }
 
 // IterDirents implements Inode.IterDirents.
-func (o *OrderedChildren) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
+func (o *OrderedChildren) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
 	// All entries from OrderedChildren have already been handled in
 	// GenericDirectoryFD.IterDirents.
 	return offset, nil
@@ -619,9 +659,9 @@ type StaticDirectory struct {
 var _ Inode = (*StaticDirectory)(nil)
 
 // NewStaticDir creates a new static directory and returns its dentry.
-func NewStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]Inode, fdOpts GenericDirectoryFDOptions) Inode {
+func NewStaticDir(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]Inode, fdOpts GenericDirectoryFDOptions) Inode {
 	inode := &StaticDirectory{}
-	inode.Init(creds, devMajor, devMinor, ino, perm, fdOpts)
+	inode.Init(ctx, creds, devMajor, devMinor, ino, perm, fdOpts)
 	inode.EnableLeakCheck()
 
 	inode.OrderedChildren.Init(OrderedChildrenOptions{})
@@ -632,12 +672,12 @@ func NewStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64
 }
 
 // Init initializes StaticDirectory.
-func (s *StaticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, fdOpts GenericDirectoryFDOptions) {
+func (s *StaticDirectory) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, fdOpts GenericDirectoryFDOptions) {
 	if perm&^linux.PermissionsMask != 0 {
 		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
 	}
 	s.fdOpts = fdOpts
-	s.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeDirectory|perm)
+	s.InodeAttrs.Init(ctx, creds, devMajor, devMinor, ino, linux.ModeDirectory|perm)
 }
 
 // Open implements Inode.Open.

@@ -41,17 +41,17 @@ type syntheticDirectory struct {
 
 var _ Inode = (*syntheticDirectory)(nil)
 
-func newSyntheticDirectory(creds *auth.Credentials, perm linux.FileMode) Inode {
+func newSyntheticDirectory(ctx context.Context, creds *auth.Credentials, perm linux.FileMode) Inode {
 	inode := &syntheticDirectory{}
-	inode.Init(creds, 0 /* devMajor */, 0 /* devMinor */, 0 /* ino */, perm)
+	inode.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, 0 /* ino */, perm)
 	return inode
 }
 
-func (dir *syntheticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
+func (dir *syntheticDirectory) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
 	if perm&^linux.PermissionsMask != 0 {
 		panic(fmt.Sprintf("perm contains non-permission bits: %#o", perm))
 	}
-	dir.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.S_IFDIR|perm)
+	dir.InodeAttrs.Init(ctx, creds, devMajor, devMinor, ino, linux.S_IFDIR|perm)
 	dir.OrderedChildren.Init(OrderedChildrenOptions{
 		Writable: true,
 	})
@@ -76,11 +76,12 @@ func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs
 	if !opts.ForSyntheticMountpoint {
 		return nil, syserror.EPERM
 	}
-	subdirI := newSyntheticDirectory(auth.CredentialsFromContext(ctx), opts.Mode&linux.PermissionsMask)
+	subdirI := newSyntheticDirectory(ctx, auth.CredentialsFromContext(ctx), opts.Mode&linux.PermissionsMask)
 	if err := dir.OrderedChildren.Insert(name, subdirI); err != nil {
 		subdirI.DecRef(ctx)
 		return nil, err
 	}
+	dir.TouchCMtime(ctx)
 	return subdirI, nil
 }
 
