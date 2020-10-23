@@ -1999,6 +1999,12 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	case tcpip.MulticastLoopOption:
 		return true, nil
 
+	case tcpip.AcceptConnOption:
+		e.LockUser()
+		defer e.UnlockUser()
+
+		return e.EndpointState() == StateListen, nil
+
 	default:
 		return false, tcpip.ErrUnknownProtocolOption
 	}
