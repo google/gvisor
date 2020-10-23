@@ -38,6 +38,7 @@ go_library(
         "//pkg/memutil",
         "//pkg/rand",
         "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/control",

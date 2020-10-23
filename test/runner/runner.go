@@ -53,6 +53,9 @@ var (
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 
 	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
+	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
+	// set to true as the default for the test runner.
+	leakCheck = flag.Bool("leak-check", false, "check for reference leaks")
 )
 
 // runTestCaseNative runs the test case directly on the host machine.
@@ -173,6 +176,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *addUDSTree {
 		args = append(args, "-fsgofer-host-uds")
+	}
+	if *leakCheck {
+		args = append(args, "-ref-leak-mode=log-names")
 	}
 
 	testLogDir := ""

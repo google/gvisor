@@ -8,7 +8,7 @@ go_template_instance(
     out = "root_inode_refs.go",
     package = "devpts",
     prefix = "rootInode",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "rootInode",
     },
@@ -33,6 +33,7 @@ go_library(
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs",

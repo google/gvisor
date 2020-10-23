@@ -31,12 +31,19 @@ type descriptorTable struct {
 	slice unsafe.Pointer `state:".(map[int32]*descriptor)"`
 }
 
-// init initializes the table.
+// initNoLeakCheck initializes the table without enabling leak checking.
 //
-// TODO(gvisor.dev/1486): Enable leak check for FDTable.
-func (f *FDTable) init() {
+// This is used when loading an FDTable after S/R, during which the ref count
+// object itself will enable leak checking if necessary.
+func (f *FDTable) initNoLeakCheck() {
 	var slice []unsafe.Pointer // Empty slice.
 	atomic.StorePointer(&f.slice, unsafe.Pointer(&slice))
+}
+
+// init initializes the table with leak checking.
+func (f *FDTable) init() {
+	f.initNoLeakCheck()
+	f.EnableLeakCheck()
 }
 
 // get gets a file entry.

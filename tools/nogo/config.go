@@ -168,7 +168,6 @@ func init() {
 			"pkg/pool/pool.go:15",
 			"pkg/refs/refcounter.go:510",
 			"pkg/refs/refcounter_test.go:169",
-			"pkg/refs_vfs2/refs.go:16",
 			"pkg/safemem/block_unsafe.go:89",
 			"pkg/seccomp/seccomp.go:82",
 			"pkg/segment/test/set_functions.go:15",

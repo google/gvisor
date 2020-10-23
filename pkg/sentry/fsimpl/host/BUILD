@@ -8,7 +8,7 @@ go_template_instance(
     out = "inode_refs.go",
     package = "host",
     prefix = "inode",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "inode",
     },
@@ -19,7 +19,7 @@ go_template_instance(
     out = "connected_endpoint_refs.go",
     package = "host",
     prefix = "ConnectedEndpoint",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "ConnectedEndpoint",
     },
@@ -51,6 +51,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal/primitive",
         "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs/fsutil",

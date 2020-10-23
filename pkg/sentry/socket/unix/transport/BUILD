@@ -20,7 +20,7 @@ go_template_instance(
     out = "queue_refs.go",
     package = "transport",
     prefix = "queue",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "queue",
     },
@@ -44,6 +44,7 @@ go_library(
         "//pkg/ilist",
         "//pkg/log",
         "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/tcpip",

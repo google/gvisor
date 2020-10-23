@@ -81,7 +81,6 @@ func NewWithDirent(ctx context.Context, d *fs.Dirent, ep transport.Endpoint, sty
 		},
 	}
 	s.EnableLeakCheck()
-
 	return fs.NewFile(ctx, d, flags, &s)
 }
 

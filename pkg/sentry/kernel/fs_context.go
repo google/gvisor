@@ -130,13 +130,15 @@ func (f *FSContext) Fork() *FSContext {
 		f.root.IncRef()
 	}
 
-	return &FSContext{
+	ctx := &FSContext{
 		cwd:      f.cwd,
 		root:     f.root,
 		cwdVFS2:  f.cwdVFS2,
 		rootVFS2: f.rootVFS2,
 		umask:    f.umask,
 	}
+	ctx.EnableLeakCheck()
+	return ctx
 }
 
 // WorkingDirectory returns the current working directory.
