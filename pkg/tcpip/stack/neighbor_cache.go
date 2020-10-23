@@ -68,7 +68,7 @@ var _ NUDHandler = (*neighborCache)(nil)
 // reset to state incomplete, and returned. If no matching entry exists and the
 // cache is not full, a new entry with state incomplete is allocated and
 // returned.
-func (n *neighborCache) getOrCreateEntry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver) *neighborEntry {
+func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address, linkRes LinkAddressResolver) *neighborEntry {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -84,7 +84,7 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr, localAddr tcpip.Address, li
 
 	// The entry that needs to be created must be dynamic since all static
 	// entries are directly added to the cache via addStaticEntry.
-	entry := newNeighborEntry(n.nic, remoteAddr, localAddr, n.state, linkRes)
+	entry := newNeighborEntry(n.nic, remoteAddr, n.state, linkRes)
 	if n.dynamic.count == neighborCacheSize {
 		e := n.dynamic.lru.Back()
 		e.mu.Lock()
@@ -111,6 +111,10 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr, localAddr tcpip.Address, li
 // provided, it will be notified when address resolution is complete (success
 // or not).
 //
+// If specified, the local address must be an address local to the interface the
+// neighbor cache belongs to. The local address is the source address of a
+// packet prompting NUD/link address resolution.
+//
 // If address resolution is required, ErrNoLinkAddress and a notification
 // channel is returned for the top level caller to block. Channel is closed
 // once address resolution is complete (success or not).
@@ -118,7 +122,6 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 	if linkAddr, ok := linkRes.ResolveStaticAddress(remoteAddr); ok {
 		e := NeighborEntry{
 			Addr:      remoteAddr,
-			LocalAddr: localAddr,
 			LinkAddr:  linkAddr,
 			State:     Static,
 			UpdatedAt: time.Now(),
@@ -126,13 +129,13 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 		return e, nil, nil
 	}
 
-	entry := n.getOrCreateEntry(remoteAddr, localAddr, linkRes)
+	entry := n.getOrCreateEntry(remoteAddr, linkRes)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
 	switch s := entry.neigh.State; s {
 	case Stale:
-		entry.handlePacketQueuedLocked()
+		entry.handlePacketQueuedLocked(localAddr)
 		fallthrough
 	case Reachable, Static, Delay, Probe:
 		// As per RFC 4861 section 7.3.3:
@@ -152,7 +155,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 			entry.done = make(chan struct{})
 		}
 
-		entry.handlePacketQueuedLocked()
+		entry.handlePacketQueuedLocked(localAddr)
 		return entry.neigh, entry.done, tcpip.ErrWouldBlock
 	case Failed:
 		return entry.neigh, nil, tcpip.ErrNoLinkAddress
@@ -292,8 +295,8 @@ func (n *neighborCache) setConfig(config NUDConfigurations) {
 // HandleProbe implements NUDHandler.HandleProbe by following the logic defined
 // in RFC 4861 section 7.2.3. Validation of the probe is expected to be handled
 // by the caller.
-func (n *neighborCache) HandleProbe(remoteAddr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver) {
-	entry := n.getOrCreateEntry(remoteAddr, localAddr, linkRes)
+func (n *neighborCache) HandleProbe(remoteAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver) {
+	entry := n.getOrCreateEntry(remoteAddr, linkRes)
 	entry.mu.Lock()
 	entry.handleProbeLocked(remoteLinkAddr)
 	entry.mu.Unlock()
