@@ -17,13 +17,14 @@ package state
 import (
 	"context"
 	"reflect"
+	"sort"
 
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 // objectEncodeState the type and identity of an object occupying a memory
 // address range. This is the value type for addrSet, and the intrusive entry
-// for the pending and deferred lists.
+// for the deferred list.
 type objectEncodeState struct {
 	// id is the assigned ID for this object.
 	id objectID
@@ -47,7 +48,6 @@ type objectEncodeState struct {
 	// references may be updated directly and automatically.
 	refs []*wire.Ref
 
-	pendingEntry
 	deferredEntry
 }
 
@@ -93,9 +93,15 @@ type encodeState struct {
 	// serialized.
 	pendingTypes []wire.Type
 
-	// pending is the list of objects to be serialized. Serialization does
+	// pending maps object IDs to objects to be serialized. Serialization does
 	// not actually occur until the full object graph is computed.
-	pending pendingList
+	pending map[objectID]*objectEncodeState
+
+	// encodedStructs maps reflect.Values representing structs to previous
+	// encodings of those structs. This is necessary to avoid duplicate calls
+	// to SaverLoader.StateSave() that may result in multiple calls to
+	// Sink.SaveValue() for a given field, resulting in object duplication.
+	encodedStructs map[reflect.Value]*wire.Struct
 
 	// stats tracks time data.
 	stats Stats
@@ -189,7 +195,8 @@ func (es *encodeState) resolve(obj reflect.Value, ref *wire.Ref) {
 			// depending on this value knows there's nothing there.
 			return
 		}
-		if seg, _ := es.values.Find(addr); seg.Ok() {
+		seg, gap := es.values.Find(addr)
+		if seg.Ok() {
 			// Ensure the map types match.
 			existing := seg.Value()
 			if existing.obj.Type() != obj.Type() {
@@ -203,13 +210,20 @@ func (es *encodeState) resolve(obj reflect.Value, ref *wire.Ref) {
 		}
 
 		// Record the map.
+		r := addrRange{addr, addr + 1}
 		oes := &objectEncodeState{
 			id:  es.nextID(),
 			obj: obj,
 			how: encodeMapAsValue,
 		}
-		es.values.Add(addrRange{addr, addr + 1}, oes)
-		es.pending.PushBack(oes)
+		// Use Insert instead of InsertWithoutMergingUnchecked when race
+		// detection is enabled to get additional sanity-checking from Merge.
+		if !raceEnabled {
+			es.values.InsertWithoutMergingUnchecked(gap, r, oes)
+		} else {
+			es.values.Insert(gap, r, oes)
+		}
+		es.pending[oes.id] = oes
 		es.deferred.PushBack(oes)
 
 		// See above: no ref recording.
@@ -245,7 +259,7 @@ func (es *encodeState) resolve(obj reflect.Value, ref *wire.Ref) {
 					obj: obj,
 				}
 				es.zeroValues[typ] = oes
-				es.pending.PushBack(oes)
+				es.pending[oes.id] = oes
 				es.deferred.PushBack(oes)
 			}
 
@@ -258,86 +272,112 @@ func (es *encodeState) resolve(obj reflect.Value, ref *wire.Ref) {
 		size = 1 // See above.
 	}
 
-	// Calculate the container.
 	end := addr + size
 	r := addrRange{addr, end}
-	if seg, _ := es.values.Find(addr); seg.Ok() {
+	seg := es.values.LowerBoundSegment(addr)
+	var (
+		oes *objectEncodeState
+		gap addrGapIterator
+	)
+
+	// Does at least one previously-registered object overlap this one?
+	if seg.Ok() && seg.Start() < end {
 		existing := seg.Value()
-		switch {
-		case seg.Start() == addr && seg.End() == end && obj.Type() == existing.obj.Type():
-			// The object is a perfect match. Happy path. Avoid the
-			// traversal and just return directly. We don't need to
-			// encode the type information or any dots here.
+
+		if seg.Range() == r && typ == existing.obj.Type() {
+			// This exact object is already registered. Avoid the traversal and
+			// just return directly. We don't need to encode the type
+			// information or any dots here.
 			ref.Root = wire.Uint(existing.id)
 			existing.refs = append(existing.refs, ref)
 			return
+		}
 
-		case (seg.Start() < addr && seg.End() >= end) || (seg.Start() <= addr && seg.End() > end):
-			// The previously registered object is larger than
-			// this, no need to update. But we expect some
-			// traversal below.
+		if seg.Range().IsSupersetOf(r) && (seg.Range() != r || isSameSizeParent(existing.obj, typ)) {
+			// This object is contained within a previously-registered object.
+			// Perform traversal from the container to the new object.
+			ref.Root = wire.Uint(existing.id)
+			ref.Dots = traverse(existing.obj.Type(), typ, seg.Start(), addr)
+			ref.Type = es.findType(existing.obj.Type())
+			existing.refs = append(existing.refs, ref)
+			return
+		}
 
-		case seg.Start() == addr && seg.End() == end:
-			if !isSameSizeParent(obj, existing.obj.Type()) {
-				break // Needs traversal.
+		// This object contains one or more previously-registered objects.
+		// Remove them and update existing references to use the new one.
+		oes := &objectEncodeState{
+			// Reuse the root ID of the first contained element.
+			id:  existing.id,
+			obj: obj,
+		}
+		type elementEncodeState struct {
+			addr uintptr
+			typ  reflect.Type
+			refs []*wire.Ref
+		}
+		var (
+			elems []elementEncodeState
+			gap   addrGapIterator
+		)
+		for {
+			// Each contained object should be completely contained within
+			// this one.
+			if raceEnabled && !r.IsSupersetOf(seg.Range()) {
+				Failf("containing object %#v does not contain existing object %#v", obj, existing.obj)
 			}
-			fallthrough // Needs update.
-
-		case (seg.Start() > addr && seg.End() <= end) || (seg.Start() >= addr && seg.End() < end):
-			// Update the object and redo the encoding.
-			old := existing.obj
-			existing.obj = obj
+			elems = append(elems, elementEncodeState{
+				addr: seg.Start(),
+				typ:  existing.obj.Type(),
+				refs: existing.refs,
+			})
+			delete(es.pending, existing.id)
 			es.deferred.Remove(existing)
-			es.deferred.PushBack(existing)
-
-			// The previously registered object is superseded by
-			// this new object. We are guaranteed to not have any
-			// mergeable neighbours in this segment set.
-			if !raceEnabled {
-				seg.SetRangeUnchecked(r)
-			} else {
-				// Add extra paranoid. This will be statically
-				// removed at compile time unless a race build.
-				es.values.Remove(seg)
-				es.values.Add(r, existing)
-				seg = es.values.LowerBoundSegment(addr)
+			gap = es.values.Remove(seg)
+			seg = gap.NextSegment()
+			if !seg.Ok() || seg.Start() >= end {
+				break
 			}
-
-			// Compute the traversal required & update references.
-			dots := traverse(obj.Type(), old.Type(), addr, seg.Start())
-			wt := es.findType(obj.Type())
-			for _, ref := range existing.refs {
+			existing = seg.Value()
+		}
+		wt := es.findType(typ)
+		for _, elem := range elems {
+			dots := traverse(typ, elem.typ, addr, elem.addr)
+			for _, ref := range elem.refs {
+				ref.Root = wire.Uint(oes.id)
 				ref.Dots = append(ref.Dots, dots...)
 				ref.Type = wt
 			}
-		default:
-			// There is a non-sensical overlap.
-			Failf("overlapping objects: [new object] %#v [existing object] %#v", obj, existing.obj)
+			oes.refs = append(oes.refs, elem.refs...)
 		}
-
-		// Compute the new reference, record and return it.
-		ref.Root = wire.Uint(existing.id)
-		ref.Dots = traverse(existing.obj.Type(), obj.Type(), seg.Start(), addr)
-		ref.Type = es.findType(obj.Type())
-		existing.refs = append(existing.refs, ref)
+		// Finally register the new containing object.
+		if !raceEnabled {
+			es.values.InsertWithoutMergingUnchecked(gap, r, oes)
+		} else {
+			es.values.Insert(gap, r, oes)
+		}
+		es.pending[oes.id] = oes
+		es.deferred.PushBack(oes)
+		ref.Root = wire.Uint(oes.id)
+		oes.refs = append(oes.refs, ref)
 		return
 	}
 
-	// The only remaining case is a pointer value that doesn't overlap with
-	// any registered addresses. Create a new entry for it, and start
-	// tracking the first reference we just created.
-	oes := &objectEncodeState{
+	// No existing object overlaps this one. Register a new object.
+	oes = &objectEncodeState{
 		id:  es.nextID(),
 		obj: obj,
 	}
-	if !raceEnabled {
-		es.values.AddWithoutMerging(r, oes)
+	if seg.Ok() {
+		gap = seg.PrevGap()
 	} else {
-		// Merges should never happen. This is just enabled extra
-		// sanity checks because the Merge function below will panic.
-		es.values.Add(r, oes)
+		gap = es.values.LastGap()
 	}
-	es.pending.PushBack(oes)
+	if !raceEnabled {
+		es.values.InsertWithoutMergingUnchecked(gap, r, oes)
+	} else {
+		es.values.Insert(gap, r, oes)
+	}
+	es.pending[oes.id] = oes
 	es.deferred.PushBack(oes)
 	ref.Root = wire.Uint(oes.id)
 	oes.refs = append(oes.refs, ref)
@@ -439,6 +479,14 @@ func (oe *objectEncoder) save(slot int, obj reflect.Value) {
 
 // encodeStruct encodes a composite object.
 func (es *encodeState) encodeStruct(obj reflect.Value, dest *wire.Object) {
+	if s, ok := es.encodedStructs[obj]; ok {
+		*dest = s
+		return
+	}
+	s := &wire.Struct{}
+	*dest = s
+	es.encodedStructs[obj] = s
+
 	// Ensure that the obj is addressable. There are two cases when it is
 	// not. First, is when this is dispatched via SaveValue. Second, when
 	// this is a map key as a struct. Either way, we need to make a copy to
@@ -448,10 +496,6 @@ func (es *encodeState) encodeStruct(obj reflect.Value, dest *wire.Object) {
 		localObj.Elem().Set(obj)
 		obj = localObj.Elem()
 	}
-
-	// Prepare the value.
-	s := &wire.Struct{}
-	*dest = s
 
 	// Look the type up in the database.
 	te, ok := es.types.Lookup(obj.Type())
@@ -730,44 +774,42 @@ func (es *encodeState) Save(obj reflect.Value) {
 		Failf("encoding error at object %#v: %w", oes.obj.Interface(), err)
 	}
 
-	// Check that items are pending.
-	if es.pending.Front() == nil {
+	// Check that we have objects to serialize.
+	if len(es.pending) == 0 {
 		Failf("pending is empty?")
 	}
 
-	// Write the header with the number of objects. Note that there is no
-	// way that es.lastID could conflict with objectID, which would
-	// indicate that an impossibly large encoding.
-	if err := WriteHeader(es.w, uint64(es.lastID), true); err != nil {
+	// Write the header with the number of objects.
+	if err := WriteHeader(es.w, uint64(len(es.pending)), true); err != nil {
 		Failf("error writing header: %w", err)
 	}
 
 	// Serialize all pending types and pending objects. Note that we don't
 	// bother removing from this list as we walk it because that just
 	// wastes time. It will not change after this point.
-	var id objectID
 	if err := safely(func() {
 		for _, wt := range es.pendingTypes {
 			// Encode the type.
 			wire.Save(es.w, &wt)
 		}
-		for oes = es.pending.Front(); oes != nil; oes = oes.pendingEntry.Next() {
-			id++ // First object is 1.
-			if oes.id != id {
-				Failf("expected id %d, got %d", id, oes.id)
-			}
-
-			// Marshall the object.
+		// Emit objects in ID order.
+		ids := make([]objectID, 0, len(es.pending))
+		for id := range es.pending {
+			ids = append(ids, id)
+		}
+		sort.Slice(ids, func(i, j int) bool {
+			return ids[i] < ids[j]
+		})
+		for _, id := range ids {
+			// Encode the id.
+			wire.Save(es.w, wire.Uint(id))
+			// Marshal the object.
+			oes := es.pending[id]
 			wire.Save(es.w, oes.encoded)
 		}
 	}); err != nil {
 		// Include the object and the error.
 		Failf("error serializing object %#v: %w", oes.encoded, err)
-	}
-
-	// Check what we wrote.
-	if id != es.lastID {
-		Failf("expected %d objects, wrote %d", es.lastID, id)
 	}
 }
 
@@ -796,11 +838,6 @@ func WriteHeader(w wire.Writer, length uint64, object bool) error {
 		wire.SaveUint(w, length)
 	})
 }
-
-// pendingMapper is for the pending list.
-type pendingMapper struct{}
-
-func (pendingMapper) linkerFor(oes *objectEncodeState) *pendingEntry { return &oes.pendingEntry }
 
 // deferredMapper is for the deferred list.
 type deferredMapper struct{}

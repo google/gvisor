@@ -42,6 +42,7 @@ func (p *printer) formatRef(x *wire.Ref, graph uint64) string {
 		buf.WriteString(typ)
 		buf.WriteString(")(")
 		buf.WriteString(baseRef)
+		buf.WriteString(")")
 		for _, component := range x.Dots {
 			switch v := component.(type) {
 			case *wire.FieldName:
@@ -53,7 +54,6 @@ func (p *printer) formatRef(x *wire.Ref, graph uint64) string {
 				panic(fmt.Sprintf("unreachable: switch should be exhaustive, unhandled case %v", reflect.TypeOf(component)))
 			}
 		}
-		buf.WriteString(")")
 		fullRef = buf.String()
 	}
 	if p.html {
@@ -242,19 +242,22 @@ func (p *printer) printStream(w io.Writer, r wire.Reader) (err error) {
 		// Note that this loop must match the general structure of the
 		// loop in decode.go. But we don't register type information,
 		// etc. and just print the raw structures.
+		type objectAndID struct {
+			id  uint64
+			obj wire.Object
+		}
 		var (
 			tid     uint64 = 1
-			objects []wire.Object
+			objects []objectAndID
 		)
-		for oid := uint64(1); oid <= length; {
-			// Unmarshal the object.
+		for i := uint64(0); i < length; {
+			// Unmarshal either a type object or object ID.
 			encoded := wire.Load(r)
-
-			// Is this a type?
-			if typ, ok := encoded.(*wire.Type); ok {
+			switch we := encoded.(type) {
+			case *wire.Type:
 				str, _ := p.format(graph, 0, encoded)
 				tag := fmt.Sprintf("g%dt%d", graph, tid)
-				p.typeSpecs[tag] = typ
+				p.typeSpecs[tag] = we
 				if p.html {
 					// See below.
 					tag = fmt.Sprintf("<a name=\"%s\">%s</a><a href=\"#%s\">&#9875;</a>", tag, tag, tag)
@@ -263,20 +266,22 @@ func (p *printer) printStream(w io.Writer, r wire.Reader) (err error) {
 					return err
 				}
 				tid++
-				continue
+			case wire.Uint:
+				// Unmarshal the actual object.
+				objects = append(objects, objectAndID{
+					id:  uint64(we),
+					obj: wire.Load(r),
+				})
+				i++
+			default:
+				return fmt.Errorf("wanted type or object ID, got %#v", encoded)
 			}
-
-			// Otherwise, it is a node.
-			objects = append(objects, encoded)
-			oid++
 		}
 
-		for i, encoded := range objects {
-			// oid starts at 1.
-			oid := i + 1
+		for _, objAndID := range objects {
 			// Format the node.
-			str, _ := p.format(graph, 0, encoded)
-			tag := fmt.Sprintf("g%dr%d", graph, oid)
+			str, _ := p.format(graph, 0, objAndID.obj)
+			tag := fmt.Sprintf("g%dr%d", graph, objAndID.id)
 			if p.html {
 				// Create a little tag with an anchor next to it for linking.
 				tag = fmt.Sprintf("<a name=\"%s\">%s</a><a href=\"#%s\">&#9875;</a>", tag, tag, tag)
