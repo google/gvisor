@@ -577,11 +577,18 @@ func listenForRedirectedConn(ctx context.Context, ipv6 bool, originalDsts []net.
 	connCh := make(chan int)
 	errCh := make(chan error)
 	go func() {
-		connFD, _, err := syscall.Accept(sockfd)
-		if err != nil {
-			errCh <- err
+		for {
+			connFD, _, err := syscall.Accept(sockfd)
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			if err != nil {
+				errCh <- err
+				return
+			}
+			connCh <- connFD
+			return
 		}
-		connCh <- connFD
 	}()
 
 	// Wait for accept() to return or for the context to finish.
