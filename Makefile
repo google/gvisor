@@ -260,7 +260,7 @@ website-build: load-jekyll ## Build the site image locally.
 .PHONY: website-build
 
 website-server: website-build ## Run a local server for development.
-	@docker run -i -p 8080:8080 gvisor.dev/images/website
+	@docker run -i -p 8080:8080 $(WEBSITE_IMAGE)
 .PHONY: website-server
 
 website-push: website-build ## Push a new image and update the service.
