@@ -205,7 +205,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	// root is the fusefs root directory.
-	root := fs.newRootInode(creds, fsopts.rootMode)
+	root := fs.newRootInode(ctx, creds, fsopts.rootMode)
 
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }
@@ -284,9 +284,9 @@ type inode struct {
 	link string
 }
 
-func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
+func (fs *filesystem) newRootInode(ctx context.Context, creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
 	i := &inode{fs: fs, nodeID: 1}
-	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
+	i.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.EnableLeakCheck()
 
@@ -295,10 +295,10 @@ func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode)
 	return &d
 }
 
-func (fs *filesystem) newInode(nodeID uint64, attr linux.FUSEAttr) kernfs.Inode {
+func (fs *filesystem) newInode(ctx context.Context, nodeID uint64, attr linux.FUSEAttr) kernfs.Inode {
 	i := &inode{fs: fs, nodeID: nodeID}
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
-	i.InodeAttrs.Init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
+	i.InodeAttrs.Init(ctx, &creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
 	atomic.StoreUint64(&i.size, attr.Size)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.EnableLeakCheck()
@@ -424,7 +424,7 @@ func (i *inode) Keep() bool {
 }
 
 // IterDirents implements kernfs.Inode.IterDirents.
-func (*inode) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+func (*inode) IterDirents(ctx context.Context, mnt *vfs.Mount, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	return offset, nil
 }
 
@@ -544,7 +544,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
 		return nil, syserror.EIO
 	}
-	child := i.fs.newInode(out.NodeID, out.Attr)
+	child := i.fs.newInode(ctx, out.NodeID, out.Attr)
 	return child, nil
 }
 
@@ -696,7 +696,7 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 	}
 
 	// Set the metadata of kernfs.InodeAttrs.
-	if err := i.SetInodeStat(ctx, fs, creds, vfs.SetStatOptions{
+	if err := i.InodeAttrs.SetStat(ctx, fs, creds, vfs.SetStatOptions{
 		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, i.fs.devMinor),
 	}); err != nil {
 		return linux.FUSEAttr{}, err
@@ -812,7 +812,7 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 
 	// Set the metadata of kernfs.InodeAttrs.
-	if err := i.SetInodeStat(ctx, fs, creds, vfs.SetStatOptions{
+	if err := i.InodeAttrs.SetStat(ctx, fs, creds, vfs.SetStatOptions{
 		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, i.fs.devMinor),
 	}); err != nil {
 		return err

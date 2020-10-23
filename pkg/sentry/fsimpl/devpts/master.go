@@ -50,7 +50,7 @@ var _ kernfs.Inode = (*masterInode)(nil)
 
 // Open implements kernfs.Inode.Open.
 func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	t, err := mi.root.allocateTerminal(rp.Credentials())
+	t, err := mi.root.allocateTerminal(ctx, rp.Credentials())
 	if err != nil {
 		return nil, err
 	}
