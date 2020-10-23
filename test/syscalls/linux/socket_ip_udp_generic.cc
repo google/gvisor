@@ -472,5 +472,19 @@ TEST_P(UDPSocketPairTest, SetAndGetSocketLinger) {
   EXPECT_EQ(0, memcmp(&sl, &got_linger, length));
 }
 
+// Test getsockopt for SO_ACCEPTCONN on udp socket.
+TEST_P(UDPSocketPairTest, GetSocketAcceptConn) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+      SyscallSucceedsWithValue(0));
+
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 0);
+}
+
 }  // namespace testing
 }  // namespace gvisor

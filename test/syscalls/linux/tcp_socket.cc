@@ -1725,6 +1725,63 @@ TEST_P(SimpleTcpSocketTest, CloseNonConnectedLingerOption) {
   ASSERT_LT((end_time - start_time), absl::Seconds(kLingerTimeout));
 }
 
+// Tests that SO_ACCEPTCONN returns non zero value for listening sockets.
+TEST_P(TcpSocketTest, GetSocketAcceptConnListener) {
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(getsockopt(listener_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+              SyscallSucceeds());
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 1);
+}
+
+// Tests that SO_ACCEPTCONN returns zero value for not listening sockets.
+TEST_P(TcpSocketTest, GetSocketAcceptConnNonListener) {
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+              SyscallSucceeds());
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 0);
+
+  ASSERT_THAT(getsockopt(t_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+              SyscallSucceeds());
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 0);
+}
+
+TEST_P(SimpleTcpSocketTest, GetSocketAcceptConnWithShutdown) {
+  // TODO(b/171345701): Fix the TCP state for listening socket on shutdown.
+  SKIP_IF(IsRunningOnGvisor());
+
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // Initialize address to the loopback one.
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  // Bind to some port then start listening.
+  ASSERT_THAT(bind(s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+              SyscallSucceeds());
+
+  ASSERT_THAT(listen(s.get(), SOMAXCONN), SyscallSucceeds());
+
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+              SyscallSucceeds());
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 1);
+
+  EXPECT_THAT(shutdown(s.get(), SHUT_RD), SyscallSucceeds());
+  ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+              SyscallSucceeds());
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 0);
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 

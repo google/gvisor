@@ -895,6 +895,9 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 
 		return v, nil
 
+	case tcpip.AcceptConnOption:
+		return false, nil
+
 	default:
 		return false, tcpip.ErrUnknownProtocolOption
 	}
