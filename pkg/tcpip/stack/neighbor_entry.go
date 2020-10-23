@@ -27,7 +27,6 @@ import (
 // NeighborEntry describes a neighboring device in the local network.
 type NeighborEntry struct {
 	Addr      tcpip.Address
-	LocalAddr tcpip.Address
 	LinkAddr  tcpip.LinkAddress
 	State     NeighborState
 	UpdatedAt time.Time
@@ -106,15 +105,14 @@ type neighborEntry struct {
 // state, Unknown. Transition out of Unknown by calling either
 // `handlePacketQueuedLocked` or `handleProbeLocked` on the newly created
 // neighborEntry.
-func newNeighborEntry(nic *NIC, remoteAddr tcpip.Address, localAddr tcpip.Address, nudState *NUDState, linkRes LinkAddressResolver) *neighborEntry {
+func newNeighborEntry(nic *NIC, remoteAddr tcpip.Address, nudState *NUDState, linkRes LinkAddressResolver) *neighborEntry {
 	return &neighborEntry{
 		nic:      nic,
 		linkRes:  linkRes,
 		nudState: nudState,
 		neigh: NeighborEntry{
-			Addr:      remoteAddr,
-			LocalAddr: localAddr,
-			State:     Unknown,
+			Addr:  remoteAddr,
+			State: Unknown,
 		},
 	}
 }
@@ -206,51 +204,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 
 	switch next {
 	case Incomplete:
-		var retryCounter uint32
-		var sendMulticastProbe func()
-
-		sendMulticastProbe = func() {
-			if retryCounter == config.MaxMulticastProbes {
-				// "If no Neighbor Advertisement is received after
-				// MAX_MULTICAST_SOLICIT solicitations, address resolution has failed.
-				// The sender MUST return ICMP destination unreachable indications with
-				// code 3 (Address Unreachable) for each packet queued awaiting address
-				// resolution." - RFC 4861 section 7.2.2
-				//
-				// There is no need to send an ICMP destination unreachable indication
-				// since the failure to resolve the address is expected to only occur
-				// on this node. Thus, redirecting traffic is currently not supported.
-				//
-				// "If the error occurs on a node other than the node originating the
-				// packet, an ICMP error message is generated. If the error occurs on
-				// the originating node, an implementation is not required to actually
-				// create and send an ICMP error packet to the source, as long as the
-				// upper-layer sender is notified through an appropriate mechanism
-				// (e.g. return value from a procedure call). Note, however, that an
-				// implementation may find it convenient in some cases to return errors
-				// to the sender by taking the offending packet, generating an ICMP
-				// error message, and then delivering it (locally) through the generic
-				// error-handling routines.' - RFC 4861 section 2.1
-				e.dispatchRemoveEventLocked()
-				e.setStateLocked(Failed)
-				return
-			}
-
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, e.neigh.LocalAddr, "", e.nic); err != nil {
-				// There is no need to log the error here; the NUD implementation may
-				// assume a working link. A valid link should be the responsibility of
-				// the NIC/stack.LinkEndpoint.
-				e.dispatchRemoveEventLocked()
-				e.setStateLocked(Failed)
-				return
-			}
-
-			retryCounter++
-			e.job = e.nic.stack.newJob(&e.mu, sendMulticastProbe)
-			e.job.Schedule(config.RetransmitTimer)
-		}
-
-		sendMulticastProbe()
+		panic(fmt.Sprintf("should never transition to Incomplete with setStateLocked; neigh = %#v, prev state = %s", e.neigh, prev))
 
 	case Reachable:
 		e.job = e.nic.stack.newJob(&e.mu, func() {
@@ -277,7 +231,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 				return
 			}
 
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, e.neigh.LocalAddr, e.neigh.LinkAddr, e.nic); err != nil {
+			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, "" /* localAddr */, e.neigh.LinkAddr, e.nic); err != nil {
 				e.dispatchRemoveEventLocked()
 				e.setStateLocked(Failed)
 				return
@@ -315,11 +269,67 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 // being queued for outgoing transmission.
 //
 // Follows the logic defined in RFC 4861 section 7.3.3.
-func (e *neighborEntry) handlePacketQueuedLocked() {
+func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	switch e.neigh.State {
 	case Unknown:
 		e.dispatchAddEventLocked(Incomplete)
-		e.setStateLocked(Incomplete)
+
+		e.neigh.State = Incomplete
+		e.neigh.UpdatedAt = time.Now()
+		config := e.nudState.Config()
+
+		var retryCounter uint32
+		var sendMulticastProbe func()
+
+		sendMulticastProbe = func() {
+			if retryCounter == config.MaxMulticastProbes {
+				// "If no Neighbor Advertisement is received after
+				// MAX_MULTICAST_SOLICIT solicitations, address resolution has failed.
+				// The sender MUST return ICMP destination unreachable indications with
+				// code 3 (Address Unreachable) for each packet queued awaiting address
+				// resolution." - RFC 4861 section 7.2.2
+				//
+				// There is no need to send an ICMP destination unreachable indication
+				// since the failure to resolve the address is expected to only occur
+				// on this node. Thus, redirecting traffic is currently not supported.
+				//
+				// "If the error occurs on a node other than the node originating the
+				// packet, an ICMP error message is generated. If the error occurs on
+				// the originating node, an implementation is not required to actually
+				// create and send an ICMP error packet to the source, as long as the
+				// upper-layer sender is notified through an appropriate mechanism
+				// (e.g. return value from a procedure call). Note, however, that an
+				// implementation may find it convenient in some cases to return errors
+				// to the sender by taking the offending packet, generating an ICMP
+				// error message, and then delivering it (locally) through the generic
+				// error-handling routines.' - RFC 4861 section 2.1
+				e.dispatchRemoveEventLocked()
+				e.setStateLocked(Failed)
+				return
+			}
+
+			// As per RFC 4861 section 7.2.2:
+			//
+			//  If the source address of the packet prompting the solicitation is the
+			//  same as one of the addresses assigned to the outgoing interface, that
+			//  address SHOULD be placed in the IP Source Address of the outgoing
+			//  solicitation.
+			//
+			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, localAddr, "", e.nic); err != nil {
+				// There is no need to log the error here; the NUD implementation may
+				// assume a working link. A valid link should be the responsibility of
+				// the NIC/stack.LinkEndpoint.
+				e.dispatchRemoveEventLocked()
+				e.setStateLocked(Failed)
+				return
+			}
+
+			retryCounter++
+			e.job = e.nic.stack.newJob(&e.mu, sendMulticastProbe)
+			e.job.Schedule(config.RetransmitTimer)
+		}
+
+		sendMulticastProbe()
 
 	case Stale:
 		e.dispatchChangeEventLocked(Delay)
