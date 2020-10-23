@@ -425,20 +425,17 @@ func (e *endpoint) notifyAborted() {
 // cookies to accept connections.
 func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header.TCPSynOptions) {
 	defer ctx.synRcvdCount.dec()
-	defer func() {
-		e.mu.Lock()
-		e.decSynRcvdCount()
-		e.mu.Unlock()
-	}()
 	defer s.decRef()
 
 	n, err := ctx.createEndpointAndPerformHandshake(s, opts, &waiter.Queue{}, e.owner)
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		e.stats.FailedConnectionAttempts.Increment()
+		e.decSynRcvdCount()
 		return
 	}
 	ctx.removePendingEndpoint(n)
+	e.decSynRcvdCount()
 	n.startAcceptedLoop()
 	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
@@ -456,7 +453,9 @@ func (e *endpoint) incSynRcvdCount() bool {
 }
 
 func (e *endpoint) decSynRcvdCount() {
+	e.mu.Lock()
 	e.synRcvdCount--
+	e.mu.Unlock()
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
