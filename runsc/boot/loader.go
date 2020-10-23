@@ -737,7 +737,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		return nil, err
 	}
 
-	// Add the HOME enviroment variable if it is not already set.
+	// Add the HOME environment variable if it is not already set.
 	var envv []string
 	if kernel.VFS2Enabled {
 		envv, err = user.MaybeAddExecUserHomeVFS2(ctx, info.procArgs.MountNamespaceVFS2,
