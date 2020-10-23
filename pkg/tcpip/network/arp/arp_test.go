@@ -423,6 +423,36 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 	}
 }
 
+var _ stack.NetworkInterface = (*testInterface)(nil)
+
+type testInterface struct {
+	stack.LinkEndpoint
+}
+
+func (*testInterface) ID() tcpip.NICID {
+	return 1
+}
+
+func (*testInterface) IsLoopback() bool {
+	return false
+}
+
+func (*testInterface) Name() string {
+	return ""
+}
+
+func (*testInterface) Enabled() bool {
+	return true
+}
+
+func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	r := stack.Route{
+		NetProto:          protocol,
+		RemoteLinkAddress: remoteLinkAddr,
+	}
+	return t.LinkEndpoint.WritePacket(&r, gso, protocol, pkt)
+}
+
 func TestLinkAddressRequest(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -449,7 +479,7 @@ func TestLinkAddressRequest(t *testing.T) {
 		}
 
 		linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
-		if err := linkRes.LinkAddressRequest(stackAddr, remoteAddr, test.remoteLinkAddr, linkEP); err != nil {
+		if err := linkRes.LinkAddressRequest(stackAddr, remoteAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP}); err != nil {
 			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s", stackAddr, remoteAddr, test.remoteLinkAddr, err)
 		}
 

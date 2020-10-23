@@ -441,9 +441,20 @@ func (FilterOutputDestination) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterOutputDestination) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	rules := [][]string{
-		{"-A", "OUTPUT", "-d", ip.String(), "-j", "ACCEPT"},
-		{"-P", "OUTPUT", "DROP"},
+	var rules [][]string
+	if ipv6 {
+		rules = [][]string{
+			{"-A", "OUTPUT", "-d", ip.String(), "-j", "ACCEPT"},
+			// Allow solicited node multicast addresses so we can send neighbor
+			// solicitations.
+			{"-A", "OUTPUT", "-d", "ff02::1:ff00:0/104", "-j", "ACCEPT"},
+			{"-P", "OUTPUT", "DROP"},
+		}
+	} else {
+		rules = [][]string{
+			{"-A", "OUTPUT", "-d", ip.String(), "-j", "ACCEPT"},
+			{"-P", "OUTPUT", "DROP"},
+		}
 	}
 	if err := filterTableRules(ipv6, rules); err != nil {
 		return err

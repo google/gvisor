@@ -178,7 +178,7 @@ func (*fwdTestNetworkProtocol) Close() {}
 
 func (*fwdTestNetworkProtocol) Wait() {}
 
-func (f *fwdTestNetworkProtocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkEP LinkEndpoint) *tcpip.Error {
+func (f *fwdTestNetworkProtocol) LinkAddressRequest(addr, _ tcpip.Address, remoteLinkAddr tcpip.LinkAddress, _ NetworkInterface) *tcpip.Error {
 	if f.onLinkAddressResolved != nil {
 		time.AfterFunc(f.addrResolveDelay, func() {
 			f.onLinkAddressResolved(f.addrCache, f.neigh, addr, remoteLinkAddr)

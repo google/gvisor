@@ -651,52 +651,46 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
-func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkEP stack.LinkEndpoint) *tcpip.Error {
-	// TODO(b/148672031): Use stack.FindRoute instead of manually creating the
-	// route here. Note, we would need the nicID to do this properly so the right
-	// NIC (associated to linkEP) is used to send the NDP NS message.
-	r := stack.Route{
-		LocalAddress:      localAddr,
-		RemoteAddress:     addr,
-		LocalLinkAddress:  linkEP.LinkAddress(),
-		RemoteLinkAddress: remoteLinkAddr,
+func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
+	remoteAddr := targetAddr
+	if len(remoteLinkAddr) == 0 {
+		remoteAddr = header.SolicitedNodeAddr(targetAddr)
+		remoteLinkAddr = header.EthernetAddressFromMulticastIPv6Address(remoteAddr)
 	}
 
-	// If a remote address is not already known, then send a multicast
-	// solicitation since multicast addresses have a static mapping to link
-	// addresses.
-	if len(r.RemoteLinkAddress) == 0 {
-		r.RemoteAddress = header.SolicitedNodeAddr(addr)
-		r.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(r.RemoteAddress)
+	r, err := p.stack.FindRoute(nic.ID(), localAddr, remoteAddr, ProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		return err
 	}
+	defer r.Release()
+	r.ResolveWith(remoteLinkAddr)
 
 	optsSerializer := header.NDPOptionsSerializer{
-		header.NDPSourceLinkLayerAddressOption(linkEP.LinkAddress()),
+		header.NDPSourceLinkLayerAddressOption(nic.LinkAddress()),
 	}
 	neighborSolicitSize := header.ICMPv6NeighborSolicitMinimumSize + optsSerializer.Length()
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + neighborSolicitSize,
+		ReserveHeaderBytes: int(r.MaxHeaderLength()) + neighborSolicitSize,
 	})
 	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 	packet := header.ICMPv6(pkt.TransportHeader().Push(neighborSolicitSize))
 	packet.SetType(header.ICMPv6NeighborSolicit)
 	ns := header.NDPNeighborSolicit(packet.NDPPayload())
-	ns.SetTargetAddress(addr)
+	ns.SetTargetAddress(targetAddr)
 	ns.Options().Serialize(optsSerializer)
 	packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-	length := uint16(pkt.Size())
-	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
-	ip.Encode(&header.IPv6Fields{
-		PayloadLength: length,
-		NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-		HopLimit:      header.NDPHopLimit,
-		SrcAddr:       r.LocalAddress,
-		DstAddr:       r.RemoteAddress,
-	})
+	stat := p.stack.Stats().ICMP.V6PacketsSent
+	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+		Protocol: header.ICMPv6ProtocolNumber,
+		TTL:      header.NDPHopLimit,
+	}, pkt); err != nil {
+		stat.Dropped.Increment()
+		return err
+	}
 
-	// TODO(stijlist): count this in ICMP stats.
-	return linkEP.WritePacket(&r, nil /* gso */, ProtocolNumber, pkt)
+	stat.NeighborSolicit.Increment()
+	return nil
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.

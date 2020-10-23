@@ -18,6 +18,7 @@
 package arp
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -153,25 +154,33 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			e.nud.HandleProbe(remoteAddr, localAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
 		}
 
-		// As per RFC 826, under Packet Reception:
-		//   Swap hardware and protocol fields, putting the local hardware and
-		//   protocol addresses in the sender fields.
-		//
-		//   Send the packet to the (new) target hardware address on the same
-		//   hardware on which the request was received.
-		origSender := h.HardwareAddressSender()
-		r.RemoteLinkAddress = tcpip.LinkAddress(origSender)
 		respPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.ARPSize,
 		})
 		packet := header.ARP(respPkt.NetworkHeader().Push(header.ARPSize))
 		packet.SetIPv4OverEthernet()
 		packet.SetOp(header.ARPReply)
-		copy(packet.HardwareAddressSender(), r.LocalLinkAddress[:])
-		copy(packet.ProtocolAddressSender(), h.ProtocolAddressTarget())
-		copy(packet.HardwareAddressTarget(), origSender)
-		copy(packet.ProtocolAddressTarget(), h.ProtocolAddressSender())
-		_ = e.nic.WritePacket(r, nil /* gso */, ProtocolNumber, respPkt)
+		// TODO(gvisor.dev/issue/4582): check copied length once TAP devices have a
+		// link address.
+		_ = copy(packet.HardwareAddressSender(), e.nic.LinkAddress())
+		if n := copy(packet.ProtocolAddressSender(), h.ProtocolAddressTarget()); n != header.IPv4AddressSize {
+			panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, header.IPv4AddressSize))
+		}
+		origSender := h.HardwareAddressSender()
+		if n := copy(packet.HardwareAddressTarget(), origSender); n != header.EthernetAddressSize {
+			panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, header.EthernetAddressSize))
+		}
+		if n := copy(packet.ProtocolAddressTarget(), h.ProtocolAddressSender()); n != header.IPv4AddressSize {
+			panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, header.IPv4AddressSize))
+		}
+
+		// As per RFC 826, under Packet Reception:
+		//   Swap hardware and protocol fields, putting the local hardware and
+		//   protocol addresses in the sender fields.
+		//
+		//   Send the packet to the (new) target hardware address on the same
+		//   hardware on which the request was received.
+		_ = e.nic.WritePacketToRemote(tcpip.LinkAddress(origSender), nil /* gso */, ProtocolNumber, respPkt)
 
 	case header.ARPReply:
 		addr := tcpip.Address(h.ProtocolAddressSender())
@@ -227,26 +236,28 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
-func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkEP stack.LinkEndpoint) *tcpip.Error {
-	r := &stack.Route{
-		NetProto:          ProtocolNumber,
-		RemoteLinkAddress: remoteLinkAddr,
-	}
-	if len(r.RemoteLinkAddress) == 0 {
-		r.RemoteLinkAddress = header.EthernetBroadcastAddress
+func (*protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
+	if len(remoteLinkAddr) == 0 {
+		remoteLinkAddr = header.EthernetBroadcastAddress
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(linkEP.MaxHeaderLength()) + header.ARPSize,
+		ReserveHeaderBytes: int(nic.MaxHeaderLength()) + header.ARPSize,
 	})
 	h := header.ARP(pkt.NetworkHeader().Push(header.ARPSize))
+	pkt.NetworkProtocolNumber = ProtocolNumber
 	h.SetIPv4OverEthernet()
 	h.SetOp(header.ARPRequest)
-	copy(h.HardwareAddressSender(), linkEP.LinkAddress())
-	copy(h.ProtocolAddressSender(), localAddr)
-	copy(h.ProtocolAddressTarget(), addr)
-
-	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
+	// TODO(gvisor.dev/issue/4582): check copied length once TAP devices have a
+	// link address.
+	_ = copy(h.HardwareAddressSender(), nic.LinkAddress())
+	if n := copy(h.ProtocolAddressSender(), localAddr); n != header.IPv4AddressSize {
+		panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, header.IPv4AddressSize))
+	}
+	if n := copy(h.ProtocolAddressTarget(), targetAddr); n != header.IPv4AddressSize {
+		panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, header.IPv4AddressSize))
+	}
+	return nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt)
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.ResolveStaticAddress.

@@ -236,7 +236,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 				return
 			}
 
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, e.neigh.LocalAddr, "", e.nic.LinkEndpoint); err != nil {
+			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, e.neigh.LocalAddr, "", e.nic); err != nil {
 				// There is no need to log the error here; the NUD implementation may
 				// assume a working link. A valid link should be the responsibility of
 				// the NIC/stack.LinkEndpoint.
@@ -277,7 +277,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 				return
 			}
 
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, e.neigh.LocalAddr, e.neigh.LinkAddr, e.nic.LinkEndpoint); err != nil {
+			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, e.neigh.LocalAddr, e.neigh.LinkAddr, e.nic); err != nil {
 				e.dispatchRemoveEventLocked()
 				e.setStateLocked(Failed)
 				return

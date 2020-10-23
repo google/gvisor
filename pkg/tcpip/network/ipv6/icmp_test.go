@@ -122,17 +122,13 @@ func (*stubNUDHandler) HandleUpperLevelConfirmation(addr tcpip.Address) {
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {
-	stack.NetworkLinkEndpoint
+	stack.LinkEndpoint
 
-	linkAddr tcpip.LinkAddress
-}
-
-func (i *testInterface) LinkAddress() tcpip.LinkAddress {
-	return i.linkAddr
+	nicID tcpip.NICID
 }
 
 func (*testInterface) ID() tcpip.NICID {
-	return 0
+	return nicID
 }
 
 func (*testInterface) IsLoopback() bool {
@@ -145,6 +141,14 @@ func (*testInterface) Name() string {
 
 func (*testInterface) Enabled() bool {
 	return true
+}
+
+func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	r := stack.Route{
+		NetProto:          protocol,
+		RemoteLinkAddress: remoteLinkAddr,
+	}
+	return t.LinkEndpoint.WritePacket(&r, gso, protocol, pkt)
 }
 
 func TestICMPCounts(t *testing.T) {
@@ -1235,6 +1239,8 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 }
 
 func TestLinkAddressRequest(t *testing.T) {
+	const nicID = 1
+
 	snaddr := header.SolicitedNodeAddr(lladdr0)
 	mcaddr := header.EthernetAddressFromMulticastIPv6Address(snaddr)
 
@@ -1269,7 +1275,18 @@ func TestLinkAddressRequest(t *testing.T) {
 		}
 
 		linkEP := channel.New(defaultChannelSize, defaultMTU, linkAddr0)
-		if err := linkRes.LinkAddressRequest(lladdr0, lladdr1, test.remoteLinkAddr, linkEP); err != nil {
+		if err := s.CreateNIC(nicID, linkEP); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		}
+		if err := s.AddAddress(nicID, ProtocolNumber, lladdr1); err != nil {
+			t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, lladdr1, err)
+		}
+
+		// We pass a test network interface to LinkAddressRequest with the same NIC
+		// ID and link endpoint used by the NIC we created earlier so that we can
+		// mock a link address request and observe the packets sent to the link
+		// endpoint even though the stack uses the real NIC.
+		if err := linkRes.LinkAddressRequest(lladdr0, lladdr1, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID}); err != nil {
 			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s", lladdr0, lladdr1, test.remoteLinkAddr, err)
 		}
 
@@ -1698,7 +1715,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 			}
 			nudHandler := &stubNUDHandler{}
-			ep := netProto.NewEndpoint(&testInterface{linkAddr: linkAddr0}, &stubLinkAddressCache{}, nudHandler, &stubDispatcher{})
+			ep := netProto.NewEndpoint(&testInterface{LinkEndpoint: channel.New(0, header.IPv6MinimumMTU, linkAddr0)}, &stubLinkAddressCache{}, nudHandler, &stubDispatcher{})
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
