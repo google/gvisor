@@ -1323,7 +1323,7 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 
 	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 	linkRes := s.linkAddrResolvers[protocol]
-	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.LinkEndpoint, waker)
+	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic, waker)
 }
 
 // Neighbors returns all IP to MAC address associations.

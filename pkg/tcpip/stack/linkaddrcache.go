@@ -180,7 +180,7 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEnt
 }
 
 // get reports any known link address for k.
-func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, linkEP LinkEndpoint, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	if linkRes != nil {
 		if addr, ok := linkRes.ResolveStaticAddress(k.Addr); ok {
 			return addr, nil, nil
@@ -221,7 +221,7 @@ func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, lo
 			}
 
 			entry.done = make(chan struct{})
-			go c.startAddressResolution(k, linkRes, localAddr, linkEP, entry.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
+			go c.startAddressResolution(k, linkRes, localAddr, nic, entry.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
 		}
 
 		return entry.linkAddr, entry.done, tcpip.ErrWouldBlock
@@ -240,11 +240,11 @@ func (c *linkAddrCache) removeWaker(k tcpip.FullAddress, waker *sleep.Waker) {
 	}
 }
 
-func (c *linkAddrCache) startAddressResolution(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, linkEP LinkEndpoint, done <-chan struct{}) {
+func (c *linkAddrCache) startAddressResolution(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, done <-chan struct{}) {
 	for i := 0; ; i++ {
 		// Send link request, then wait for the timeout limit and check
 		// whether the request succeeded.
-		linkRes.LinkAddressRequest(k.Addr, localAddr, "" /* linkAddr */, linkEP)
+		linkRes.LinkAddressRequest(k.Addr, localAddr, "" /* linkAddr */, nic)
 
 		select {
 		case now := <-time.After(c.resolutionTimeout):

@@ -490,6 +490,9 @@ type NetworkInterface interface {
 
 	// Enabled returns true if the interface is enabled.
 	Enabled() bool
+
+	// WritePacketToRemote writes the packet to the given remote link address.
+	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
 }
 
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
@@ -764,13 +767,13 @@ type InjectableLinkEndpoint interface {
 // A LinkAddressResolver is an extension to a NetworkProtocol that
 // can resolve link addresses.
 type LinkAddressResolver interface {
-	// LinkAddressRequest sends a request for the LinkAddress of addr. Broadcasts
-	// the request on the local network if remoteLinkAddr is the zero value. The
-	// request is sent on linkEP with localAddr as the source.
+	// LinkAddressRequest sends a request for the link address of the target
+	// address. The request is broadcasted on the local network if a remote link
+	// address is not provided.
 	//
-	// A valid response will cause the discovery protocol's network
-	// endpoint to call AddLinkAddress.
-	LinkAddressRequest(addr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkEP LinkEndpoint) *tcpip.Error
+	// The request is sent from the passed network interface. If the interface
+	// local address is unspecified, any interface local address may be used.
+	LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic NetworkInterface) *tcpip.Error
 
 	// ResolveStaticAddress attempts to resolve address without sending
 	// requests. It either resolves the name immediately or returns the
