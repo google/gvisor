@@ -6725,6 +6725,13 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 
 	c.CheckNoPacketTimeout("unexpected packet received in response to SYN", 1*time.Second)
 
+	// drain any older notifications from the notification channel before attempting
+	// 2nd connection.
+	select {
+	case <-ch:
+	default:
+	}
+
 	// Send a SYN request w/ sequence number higher than
 	// the highest sequence number sent.
 	iss = seqnum.Value(792)
