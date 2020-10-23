@@ -346,10 +346,9 @@ func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *inodeRefs) afterLoad() {}
-
 func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (l *requestList) StateTypeName() string {

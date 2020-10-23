@@ -23,10 +23,9 @@ func (r *DentryRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *DentryRefs) afterLoad() {}
-
 func (r *DentryRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (f *DynamicBytesFile) StateTypeName() string {
@@ -677,10 +676,9 @@ func (r *StaticDirectoryRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *StaticDirectoryRefs) afterLoad() {}
-
 func (r *StaticDirectoryRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (s *StaticSymlink) StateTypeName() string {
@@ -776,10 +774,9 @@ func (r *syntheticDirectoryRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *syntheticDirectoryRefs) afterLoad() {}
-
 func (r *syntheticDirectoryRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func init() {

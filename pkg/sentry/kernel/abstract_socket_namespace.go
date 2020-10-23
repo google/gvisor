@@ -19,7 +19,7 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs_vfs2"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -27,7 +27,7 @@ import (
 // +stateify savable
 type abstractEndpoint struct {
 	ep     transport.BoundEndpoint
-	socket refs_vfs2.RefCounter
+	socket refsvfs2.RefCounter
 	name   string
 	ns     *AbstractSocketNamespace
 }
@@ -57,7 +57,7 @@ func NewAbstractSocketNamespace() *AbstractSocketNamespace {
 // its backing socket.
 type boundEndpoint struct {
 	transport.BoundEndpoint
-	socket refs_vfs2.RefCounter
+	socket refsvfs2.RefCounter
 }
 
 // Release implements transport.BoundEndpoint.Release.
@@ -89,7 +89,7 @@ func (a *AbstractSocketNamespace) BoundEndpoint(name string) transport.BoundEndp
 //
 // When the last reference managed by socket is dropped, ep may be removed from the
 // namespace.
-func (a *AbstractSocketNamespace) Bind(ctx context.Context, name string, ep transport.BoundEndpoint, socket refs_vfs2.RefCounter) error {
+func (a *AbstractSocketNamespace) Bind(ctx context.Context, name string, ep transport.BoundEndpoint, socket refsvfs2.RefCounter) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -109,7 +109,7 @@ func (a *AbstractSocketNamespace) Bind(ctx context.Context, name string, ep tran
 
 // Remove removes the specified socket at name from the abstract socket
 // namespace, if it has not yet been replaced.
-func (a *AbstractSocketNamespace) Remove(name string, socket refs_vfs2.RefCounter) {
+func (a *AbstractSocketNamespace) Remove(name string, socket refsvfs2.RefCounter) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

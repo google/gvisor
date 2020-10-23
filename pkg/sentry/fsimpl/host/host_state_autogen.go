@@ -23,10 +23,9 @@ func (r *ConnectedEndpointRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *ConnectedEndpointRefs) afterLoad() {}
-
 func (r *ConnectedEndpointRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (f *filesystemType) StateTypeName() string {
@@ -191,10 +190,9 @@ func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *inodeRefs) afterLoad() {}
-
 func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (i *inodePlatformFile) StateTypeName() string {

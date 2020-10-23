@@ -2,11 +2,9 @@ package kernel
 
 import (
 	"fmt"
-	"runtime"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/log"
-	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 )
 
 // ownerType is used to customize logging. Note that we use a pointer to T so
@@ -18,11 +16,6 @@ var FSContextownerType *FSContext
 //
 // Note that the number of references is actually refCount + 1 so that a default
 // zero-value Refs object contains one reference.
-//
-// TODO(gvisor.dev/issue/1486): Store stack traces when leak check is enabled in
-// a map with 16-bit hashes, and store the hash in the top 16 bits of refCount.
-// This will allow us to add stack trace information to the leak messages
-// without growing the size of Refs.
 //
 // +stateify savable
 type FSContextRefs struct {
@@ -36,24 +29,16 @@ type FSContextRefs struct {
 	refCount int64
 }
 
-func (r *FSContextRefs) finalize() {
-	var note string
-	switch refs_vfs1.GetLeakMode() {
-	case refs_vfs1.NoLeakChecking:
-		return
-	case refs_vfs1.UninitializedLeakChecking:
-		note = "(Leak checker uninitialized): "
-	}
-	if n := r.ReadRefs(); n != 0 {
-		log.Warningf("%sRefs %p owned by %T garbage collected with ref count of %d (want 0)", note, r, FSContextownerType, n)
+// EnableLeakCheck enables reference leak checking on r.
+func (r *FSContextRefs) EnableLeakCheck() {
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.Register(r, fmt.Sprintf("%T", FSContextownerType))
 	}
 }
 
-// EnableLeakCheck checks for reference leaks when Refs gets garbage collected.
-func (r *FSContextRefs) EnableLeakCheck() {
-	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking {
-		runtime.SetFinalizer(r, (*FSContextRefs).finalize)
-	}
+// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+func (r *FSContextRefs) LeakMessage() string {
+	return fmt.Sprintf("%T %p: reference count of %d instead of 0", FSContextownerType, r, r.ReadRefs())
 }
 
 // ReadRefs returns the current number of references. The returned count is
@@ -68,7 +53,7 @@ func (r *FSContextRefs) ReadRefs() int64 {
 //go:nosplit
 func (r *FSContextRefs) IncRef() {
 	if v := atomic.AddInt64(&r.refCount, 1); v <= 0 {
-		panic(fmt.Sprintf("Incrementing non-positive ref count %p owned by %T", r, FSContextownerType))
+		panic(fmt.Sprintf("Incrementing non-positive count %p on %T", r, FSContextownerType))
 	}
 }
 
@@ -110,9 +95,18 @@ func (r *FSContextRefs) DecRef(destroy func()) {
 		panic(fmt.Sprintf("Decrementing non-positive ref count %p, owned by %T", r, FSContextownerType))
 
 	case v == -1:
+		if refsvfs2.LeakCheckEnabled() {
+			refsvfs2.Unregister(r, fmt.Sprintf("%T", FSContextownerType))
+		}
 
 		if destroy != nil {
 			destroy()
 		}
+	}
+}
+
+func (r *FSContextRefs) afterLoad() {
+	if refsvfs2.LeakCheckEnabled() && r.ReadRefs() > 0 {
+		r.EnableLeakCheck()
 	}
 }

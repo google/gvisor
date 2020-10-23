@@ -150,7 +150,6 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 
 		// 2. Creating a new NIC.
 		id := tcpip.NICID(s.UniqueID())
-		// TODO(gvisor.dev/1486): enable leak check for tunEndpoint.
 		endpoint := &tunEndpoint{
 			Endpoint: channel.New(defaultDevOutQueueLen, defaultDevMtu, ""),
 			stack:    s,
@@ -158,6 +157,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 			name:     name,
 			isTap:    prefix == "tap",
 		}
+		endpoint.EnableLeakCheck()
 		endpoint.Endpoint.LinkEPCapabilities = linkCaps
 		if endpoint.name == "" {
 			endpoint.name = fmt.Sprintf("%s%d", prefix, id)

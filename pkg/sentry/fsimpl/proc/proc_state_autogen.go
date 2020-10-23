@@ -23,10 +23,9 @@ func (r *fdDirInodeRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *fdDirInodeRefs) afterLoad() {}
-
 func (r *fdDirInodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (r *fdInfoDirInodeRefs) StateTypeName() string {
@@ -46,10 +45,9 @@ func (r *fdInfoDirInodeRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *fdInfoDirInodeRefs) afterLoad() {}
-
 func (r *fdInfoDirInodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (ft *FilesystemType) StateTypeName() string {
@@ -267,10 +265,9 @@ func (r *subtasksInodeRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *subtasksInodeRefs) afterLoad() {}
-
 func (r *subtasksInodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (i *taskInode) StateTypeName() string {
@@ -1101,10 +1098,9 @@ func (r *taskInodeRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *taskInodeRefs) afterLoad() {}
-
 func (r *taskInodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (n *ifinet6) StateTypeName() string {
@@ -1747,10 +1743,9 @@ func (r *tasksInodeRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *tasksInodeRefs) afterLoad() {}
-
 func (r *tasksInodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (t *tcpMemDir) StateTypeName() string {

@@ -690,10 +690,9 @@ func (r *FileDescriptionRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *FileDescriptionRefs) afterLoad() {}
-
 func (r *FileDescriptionRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (fs *Filesystem) StateTypeName() string {
@@ -802,10 +801,9 @@ func (r *FilesystemRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *FilesystemRefs) afterLoad() {}
-
 func (r *FilesystemRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (r *registeredFilesystemType) StateTypeName() string {
@@ -1169,10 +1167,9 @@ func (r *MountNamespaceRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *MountNamespaceRefs) afterLoad() {}
-
 func (r *MountNamespaceRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (g *GetDentryOptions) StateTypeName() string {

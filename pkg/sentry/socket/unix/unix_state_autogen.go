@@ -23,10 +23,9 @@ func (r *socketOperationsRefs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *socketOperationsRefs) afterLoad() {}
-
 func (r *socketOperationsRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (r *socketVFS2Refs) StateTypeName() string {
@@ -46,10 +45,9 @@ func (r *socketVFS2Refs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.refCount)
 }
 
-func (r *socketVFS2Refs) afterLoad() {}
-
 func (r *socketVFS2Refs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (s *SocketOperations) StateTypeName() string {

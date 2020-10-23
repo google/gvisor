@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package refs_vfs2 defines an interface for a reference-counted object.
-package refs_vfs2
+// Package refsvfs2 defines an interface for a reference-counted object.
+package refsvfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
