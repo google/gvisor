@@ -42,6 +42,5 @@ build:remote --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-defa
 build:remote --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote --platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote --crosstool_top=@rbe_default//cc:toolchain
-# TODO(b/171495162): Revert to 300 jobs once bug is fixed.
-build:remote --jobs=100
+build:remote --jobs=300
 build:remote --remote_timeout=3600
