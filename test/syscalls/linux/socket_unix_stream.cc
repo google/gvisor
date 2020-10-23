@@ -121,6 +121,19 @@ TEST_P(StreamUnixSocketPairTest, SetAndGetSocketLinger) {
   EXPECT_EQ(0, memcmp(&got_linger, &sl, length));
 }
 
+TEST_P(StreamUnixSocketPairTest, GetSocketAcceptConn) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+      SyscallSucceedsWithValue(0));
+
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 0);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(

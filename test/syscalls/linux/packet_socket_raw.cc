@@ -664,6 +664,17 @@ TEST_P(RawPacketTest, SetAndGetSocketLinger) {
   EXPECT_EQ(0, memcmp(&sl, &got_linger, length));
 }
 
+TEST_P(RawPacketTest, GetSocketAcceptConn) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 0);
+}
 INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
                          ::testing::Values(ETH_P_IP, ETH_P_ALL));
 

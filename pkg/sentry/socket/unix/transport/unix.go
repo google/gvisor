@@ -879,7 +879,7 @@ func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 
 func (e *baseEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
-	case tcpip.KeepaliveEnabledOption:
+	case tcpip.KeepaliveEnabledOption, tcpip.AcceptConnOption:
 		return false, nil
 
 	case tcpip.PasscredOption:

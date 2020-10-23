@@ -438,6 +438,19 @@ TEST_F(RawSocketICMPTest, SetAndGetSocketLinger) {
   EXPECT_EQ(0, memcmp(&sl, &got_linger, length));
 }
 
+// Test getsockopt for SO_ACCEPTCONN.
+TEST_F(RawSocketICMPTest, GetSocketAcceptConn) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_EQ(length, sizeof(got));
+  EXPECT_EQ(got, 0);
+}
+
 void RawSocketICMPTest::ExpectICMPSuccess(const struct icmphdr& icmp) {
   // We're going to receive both the echo request and reply, but the order is
   // indeterminate.
