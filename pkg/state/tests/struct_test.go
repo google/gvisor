@@ -15,6 +15,7 @@
 package tests
 
 import (
+	"math/rand"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/state"
@@ -67,12 +68,23 @@ func TestRegisterTypeOnlyStruct(t *testing.T) {
 }
 
 func TestEmbeddedPointers(t *testing.T) {
-	var (
-		ofs outerSame
-		of1 outerFieldFirst
-		of2 outerFieldSecond
-		oa  outerArray
-	)
+	// Give each int64 a random value to prevent Go from using
+	// runtime.staticuint64s, which confounds tests for struct duplication.
+	magic := func() int64 {
+		for {
+			n := rand.Int63()
+			if n < 0 || n > 255 {
+				return n
+			}
+		}
+	}
+
+	ofs := outerSame{inner{magic()}}
+	of1 := outerFieldFirst{inner{magic()}, magic()}
+	of2 := outerFieldSecond{magic(), inner{magic()}}
+	oa := outerArray{[2]inner{{magic()}, {magic()}}}
+	osl := outerSlice{oa.inner[:]}
+	ofv := outerFieldValue{innerFieldValue{magic()}}
 
 	runTestCases(t, false, "embedded-pointers", []interface{}{
 		system{&ofs, &ofs.inner},
@@ -85,5 +97,15 @@ func TestEmbeddedPointers(t *testing.T) {
 		system{&oa, &oa.inner[1]},
 		system{&oa.inner[0], &oa},
 		system{&oa.inner[1], &oa},
+		system3{&oa, &oa.inner[0], &oa.inner[1]},
+		system3{&oa, &oa.inner[1], &oa.inner[0]},
+		system3{&oa.inner[0], &oa, &oa.inner[1]},
+		system3{&oa.inner[1], &oa, &oa.inner[0]},
+		system3{&oa.inner[0], &oa.inner[1], &oa},
+		system3{&oa.inner[1], &oa.inner[0], &oa},
+		system{&oa, &osl},
+		system{&osl, &oa},
+		system{&ofv, &ofv.inner},
+		system{&ofv.inner, &ofv},
 	})
 }
