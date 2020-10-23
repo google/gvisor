@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,33 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build arm64
+
 package linux
 
-// semctl Command Definitions. Source: include/uapi/linux/sem.h
-const (
-	GETPID  = 11
-	GETVAL  = 12
-	GETALL  = 13
-	GETNCNT = 14
-	GETZCNT = 15
-	SETVAL  = 16
-	SETALL  = 17
-)
-
-// ipcs ctl cmds. Source: include/uapi/linux/sem.h
-const (
-	SEM_STAT     = 18
-	SEM_INFO     = 19
-	SEM_STAT_ANY = 20
-)
-
-const SEM_UNDO = 0x1000
-
-// Sembuf is equivalent to struct sembuf.
+// SemidDS is equivalent to struct semid64_ds.
 //
-// +marshal slice:SembufSlice
-type Sembuf struct {
-	SemNum uint16
-	SemOp  int16
-	SemFlg int16
+// Source: include/uapi/asm-generic/sembuf.h
+//
+// +marshal
+type SemidDS struct {
+	SemPerm  IPCPerm
+	SemOTime TimeT
+	SemCTime TimeT
+	SemNSems uint64
+	unused3  uint64
+	unused4  uint64
 }
