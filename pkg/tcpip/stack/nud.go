@@ -177,7 +177,7 @@ type NUDHandler interface {
 	// Neighbor Solicitation for ARP or NDP, respectively). Validation of the
 	// probe needs to be performed before calling this function since the
 	// Neighbor Cache doesn't have access to view the NIC's assigned addresses.
-	HandleProbe(remoteAddr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver)
+	HandleProbe(remoteAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver)
 
 	// HandleConfirmation processes an incoming neighbor confirmation (e.g. ARP
 	// reply or Neighbor Advertisement for ARP or NDP, respectively).

@@ -151,7 +151,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 
 			remoteAddr := tcpip.Address(h.ProtocolAddressSender())
 			remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
-			e.nud.HandleProbe(remoteAddr, localAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
+			e.nud.HandleProbe(remoteAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
 		}
 
 		respPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -208,6 +208,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 
 // protocol implements stack.NetworkProtocol and stack.LinkAddressResolver.
 type protocol struct {
+	stack *stack.Stack
 }
 
 func (p *protocol) Number() tcpip.NetworkProtocolNumber { return ProtocolNumber }
@@ -236,9 +237,25 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
-func (*protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
+func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
 	if len(remoteLinkAddr) == 0 {
 		remoteLinkAddr = header.EthernetBroadcastAddress
+	}
+
+	nicID := nic.ID()
+	if len(localAddr) == 0 {
+		addr, err := p.stack.GetMainNICAddress(nicID, header.IPv4ProtocolNumber)
+		if err != nil {
+			return err
+		}
+
+		if len(addr.Address) == 0 {
+			return tcpip.ErrNetworkUnreachable
+		}
+
+		localAddr = addr.Address
+	} else if p.stack.CheckLocalAddress(nicID, header.IPv4ProtocolNumber, localAddr) == 0 {
+		return tcpip.ErrBadLocalAddress
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -297,6 +314,6 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 // Note, to make sure that the ARP endpoint receives ARP packets, the "arp"
 // address must be added to every NIC that should respond to ARP requests. See
 // ProtocolAddress for more details.
-func NewProtocol(*stack.Stack) stack.NetworkProtocol {
-	return &protocol{}
+func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
+	return &protocol{stack: s}
 }
