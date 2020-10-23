@@ -499,6 +499,10 @@ type fileDescription struct {
 	// directory that contains the current file/directory. This is only used
 	// if allowRuntimeEnable is set to true.
 	parentMerkleWriter *vfs.FileDescription
+
+	// off is the file offset. off is protected by mu.
+	mu  sync.Mutex `state:"nosave"`
+	off int64
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -736,6 +740,16 @@ func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 		// be allowed.
 		return 0, syserror.ENOSYS
 	}
+}
+
+// Read implements vfs.FileDescriptionImpl.Read.
+func (fd *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	// Implement Read with PRead by setting offset.
+	fd.mu.Lock()
+	n, err := fd.PRead(ctx, dst, fd.off, opts)
+	fd.off += n
+	fd.mu.Unlock()
+	return n, err
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
