@@ -20,7 +20,7 @@ go_template_instance(
     out = "inode_refs.go",
     package = "fuse",
     prefix = "inode",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "inode",
     },
@@ -49,6 +49,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/kernfs",

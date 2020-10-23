@@ -8,7 +8,7 @@ go_template_instance(
     out = "tun_endpoint_refs.go",
     package = "tun",
     prefix = "tunEndpoint",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "tunEndpoint",
     },
@@ -28,6 +28,7 @@ go_library(
         "//pkg/context",
         "//pkg/log",
         "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/tcpip",

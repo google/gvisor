@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
@@ -475,6 +476,12 @@ func (l *Loader) Destroy() {
 	// Release all kernel resources. This is only safe after we can no longer
 	// save/restore.
 	l.k.Release()
+
+	// All sentry-created resources should have been released at this point;
+	// check for reference leaks.
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.DoLeakCheck()
+	}
 
 	// In the success case, stdioFDs and goferFDs will only contain
 	// released/closed FDs that ownership has been passed over to host FDs and

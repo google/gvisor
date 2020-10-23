@@ -110,7 +110,7 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 
 func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 	ctx := context.Background()
-	f.init() // Initialize table.
+	f.initNoLeakCheck() // Initialize table.
 	f.used = 0
 	for fd, d := range m {
 		if file, fileVFS2 := f.setAll(ctx, fd, d.file, d.fileVFS2, d.flags); file != nil || fileVFS2 != nil {

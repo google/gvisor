@@ -79,7 +79,7 @@ go_template_instance(
     out = "fd_table_refs.go",
     package = "kernel",
     prefix = "FDTable",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "FDTable",
     },
@@ -90,7 +90,7 @@ go_template_instance(
     out = "fs_context_refs.go",
     package = "kernel",
     prefix = "FSContext",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "FSContext",
     },
@@ -101,7 +101,7 @@ go_template_instance(
     out = "ipc_namespace_refs.go",
     package = "kernel",
     prefix = "IPCNamespace",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "IPCNamespace",
     },
@@ -112,7 +112,7 @@ go_template_instance(
     out = "process_group_refs.go",
     package = "kernel",
     prefix = "ProcessGroup",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "ProcessGroup",
     },
@@ -123,7 +123,7 @@ go_template_instance(
     out = "session_refs.go",
     package = "kernel",
     prefix = "Session",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "Session",
     },
@@ -229,7 +229,7 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/metric",
         "//pkg/refs",
-        "//pkg/refs_vfs2",
+        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",

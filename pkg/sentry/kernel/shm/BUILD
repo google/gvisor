@@ -8,7 +8,7 @@ go_template_instance(
     out = "shm_refs.go",
     package = "shm",
     prefix = "Shm",
-    template = "//pkg/refs_vfs2:refs_template",
+    template = "//pkg/refsvfs2:refs_template",
     types = {
         "T": "Shm",
     },
@@ -27,7 +27,7 @@ go_library(
         "//pkg/context",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refs_vfs2",
+        "//pkg/refsvfs2",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
