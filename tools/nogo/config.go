@@ -116,6 +116,7 @@ var analyzerConfig = map[*analysis.Analyzer]matcher{
 			"pkg/sentry/platform/systrap/stub_unsafe.go",               // Special case.
 			"pkg/sentry/platform/systrap/switchto_google_unsafe.go",    // Special case.
 			"pkg/sentry/platform/systrap/sysmsg_thread_unsafe.go",      // Special case.
+			"pkg/state/decode_unsafe.go",                               // Special case.
 		),
 	),
 	unusedresult.Analyzer: alwaysMatches(),

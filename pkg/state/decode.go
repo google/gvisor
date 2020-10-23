@@ -21,6 +21,7 @@ import (
 	"math"
 	"reflect"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
@@ -258,7 +259,7 @@ func (ds *decodeState) waitObject(ods *objectDecodeState, encoded wire.Object, c
 // For the purposes of this function, a child object is either a field within a
 // struct or an array element, with one such indirection per element in
 // path. The returned value may be an unexported field, so it may not be
-// directly assignable. See unsafePointerTo.
+// directly assignable. See decode_unsafe.go.
 func walkChild(path []wire.Dot, obj reflect.Value) reflect.Value {
 	// See wire.Ref.Dots. The path here is specified in reverse order.
 	for i := len(path) - 1; i >= 0; i-- {
@@ -519,9 +520,7 @@ func (ds *decodeState) decodeObject(ods *objectDecodeState, obj reflect.Value, e
 
 		// Normal assignment: authoritative only if no dots.
 		v := ds.register(x, obj.Type().Elem())
-		if v.IsValid() {
-			obj.Set(unsafePointerTo(v))
-		}
+		obj.Set(reflectValueRWAddr(v))
 	case wire.Bool:
 		obj.SetBool(bool(x))
 	case wire.Int:
@@ -559,7 +558,7 @@ func (ds *decodeState) decodeObject(ods *objectDecodeState, obj reflect.Value, e
 		// contents will still be filled in later on.
 		typ := reflect.ArrayOf(int(x.Capacity), obj.Type().Elem()) // The object type.
 		v := ds.register(&x.Ref, typ)
-		obj.Set(v.Slice3(0, int(x.Length), int(x.Capacity)))
+		obj.Set(reflectValueRWSlice3(v, 0, int(x.Length), int(x.Capacity)))
 	case *wire.Array:
 		ds.decodeArray(ods, obj, x)
 	case *wire.Struct:
@@ -592,7 +591,7 @@ func (ds *decodeState) Load(obj reflect.Value) {
 	ds.pending.PushBack(rootOds)
 
 	// Read the number of objects.
-	lastID, object, err := ReadHeader(ds.r)
+	numObjects, object, err := ReadHeader(ds.r)
 	if err != nil {
 		Failf("header error: %w", err)
 	}
@@ -604,42 +603,44 @@ func (ds *decodeState) Load(obj reflect.Value) {
 	var (
 		encoded wire.Object
 		ods     *objectDecodeState
-		id      = objectID(1)
+		id      objectID
 		tid     = typeID(1)
 	)
 	if err := safely(func() {
 		// Decode all objects in the stream.
 		//
-		// Note that the structure of this decoding loop should match
-		// the raw decoding loop in printer.go.
-		for id <= objectID(lastID) {
-			// Unmarshal the object.
+		// Note that the structure of this decoding loop should match the raw
+		// decoding loop in state/pretty/pretty.printer.printStream().
+		for i := uint64(0); i < numObjects; {
+			// Unmarshal either a type object or object ID.
 			encoded = wire.Load(ds.r)
-
-			// Is this a type object? Handle inline.
-			if wt, ok := encoded.(*wire.Type); ok {
-				ds.types.Register(wt)
+			switch we := encoded.(type) {
+			case *wire.Type:
+				ds.types.Register(we)
 				tid++
 				encoded = nil
 				continue
+			case wire.Uint:
+				id = objectID(we)
+				i++
+				// Unmarshal and resolve the actual object.
+				encoded = wire.Load(ds.r)
+				ods = ds.lookup(id)
+				if ods != nil {
+					// Decode the object.
+					ds.decodeObject(ods, ods.obj, encoded)
+				} else {
+					// If an object hasn't had interest registered
+					// previously or isn't yet valid, we deferred
+					// decoding until interest is registered.
+					ds.deferred[id] = encoded
+				}
+				// For error handling.
+				ods = nil
+				encoded = nil
+			default:
+				Failf("wanted type or object ID, got %#v", encoded)
 			}
-
-			// Actually resolve the object.
-			ods = ds.lookup(id)
-			if ods != nil {
-				// Decode the object.
-				ds.decodeObject(ods, ods.obj, encoded)
-			} else {
-				// If an object hasn't had interest registered
-				// previously or isn't yet valid, we deferred
-				// decoding until interest is registered.
-				ds.deferred[id] = encoded
-			}
-
-			// For error handling.
-			ods = nil
-			encoded = nil
-			id++
 		}
 	}); err != nil {
 		// Include as much information as we can, taking into account
@@ -647,16 +648,25 @@ func (ds *decodeState) Load(obj reflect.Value) {
 		if ods != nil {
 			Failf("error decoding object ID %d (%T) from %#v: %w", id, ods.obj.Interface(), encoded, err)
 		} else if encoded != nil {
-			Failf("lookup error decoding object ID %d from %#v: %w", id, encoded, err)
+			Failf("error decoding from %#v: %w", encoded, err)
 		} else {
 			Failf("general decoding error: %w", err)
 		}
 	}
 
 	// Check if we have any deferred objects.
+	numDeferred := 0
 	for id, encoded := range ds.deferred {
-		// Shoud never happen, the graph was bogus.
-		Failf("still have deferred objects: one is ID %d, %#v", id, encoded)
+		numDeferred++
+		if s, ok := encoded.(*wire.Struct); ok && s.TypeID != 0 {
+			typ := ds.types.LookupType(typeID(s.TypeID))
+			log.Warningf("unused deferred object: ID %d, type %v", id, typ)
+		} else {
+			log.Warningf("unused deferred object: ID %d, %#v", id, encoded)
+		}
+	}
+	if numDeferred != 0 {
+		Failf("still had %d deferred objects", numDeferred)
 	}
 
 	// Scan and fire all callbacks. We iterate over the list of incomplete

@@ -4,19 +4,6 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
-    name = "pending_list",
-    out = "pending_list.go",
-    package = "state",
-    prefix = "pending",
-    template = "//pkg/ilist:generic_list",
-    types = {
-        "Element": "*objectEncodeState",
-        "ElementMapper": "pendingMapper",
-        "Linker": "*pendingEntry",
-    },
-)
-
-go_template_instance(
     name = "deferred_list",
     out = "deferred_list.go",
     package = "state",
@@ -83,7 +70,6 @@ go_library(
         "deferred_list.go",
         "encode.go",
         "encode_unsafe.go",
-        "pending_list.go",
         "state.go",
         "state_norace.go",
         "state_race.go",

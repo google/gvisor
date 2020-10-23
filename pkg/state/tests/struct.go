@@ -54,12 +54,47 @@ type outerArray struct {
 }
 
 // +stateify savable
+type outerSlice struct {
+	inner []inner
+}
+
+// +stateify savable
 type inner struct {
 	v int64
+}
+
+// +stateify savable
+type outerFieldValue struct {
+	inner innerFieldValue
+}
+
+// +stateify savable
+type innerFieldValue struct {
+	v int64 `state:".(*savedFieldValue)"`
+}
+
+// +stateify savable
+type savedFieldValue struct {
+	v int64
+}
+
+func (ifv *innerFieldValue) saveV() *savedFieldValue {
+	return &savedFieldValue{ifv.v}
+}
+
+func (ifv *innerFieldValue) loadV(sfv *savedFieldValue) {
+	ifv.v = sfv.v
 }
 
 // +stateify savable
 type system struct {
 	v1 interface{}
 	v2 interface{}
+}
+
+// +stateify savable
+type system3 struct {
+	v1 interface{}
+	v2 interface{}
+	v3 interface{}
 }
