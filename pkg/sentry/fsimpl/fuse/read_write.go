@@ -132,7 +132,7 @@ func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off u
 	// May need to update the signature.
 
 	i := fd.inode()
-	// TODO(gvisor.dev/issue/1193): Invalidate or update atime.
+	i.InodeAttrs.TouchAtime(ctx, fd.vfsfd.Mount())
 
 	// Reached EOF.
 	if sizeRead < size {
@@ -179,6 +179,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 		Flags:      fd.statusFlags(),
 	}
 
+	inode := fd.inode()
 	var written uint32
 
 	// This loop is intended for fragmented write where the bytes to write is
@@ -203,7 +204,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 		in.Offset = off + uint64(written)
 		in.Size = toWrite
 
-		req, err := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), fd.inode().nodeID, linux.FUSE_WRITE, &in)
+		req, err := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), inode.nodeID, linux.FUSE_WRITE, &in)
 		if err != nil {
 			return 0, err
 		}
@@ -237,6 +238,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 			break
 		}
 	}
+	inode.InodeAttrs.TouchCMtime(ctx)
 
 	return written, nil
 }

@@ -55,7 +55,7 @@ func NewVFS2(t *kernel.Task, family int, skType linux.SockType, protocol int, qu
 	}
 
 	mnt := t.Kernel().SocketMount()
-	d := sockfs.NewDentry(t.Credentials(), mnt)
+	d := sockfs.NewDentry(t, mnt)
 	defer d.DecRef(t)
 
 	s := &SocketVFS2{

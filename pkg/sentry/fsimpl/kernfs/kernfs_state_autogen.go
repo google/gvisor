@@ -273,6 +273,10 @@ func (a *InodeAttrs) StateFields() []string {
 		"uid",
 		"gid",
 		"nlink",
+		"blockSize",
+		"atime",
+		"mtime",
+		"ctime",
 	}
 }
 
@@ -287,6 +291,10 @@ func (a *InodeAttrs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &a.uid)
 	stateSinkObject.Save(5, &a.gid)
 	stateSinkObject.Save(6, &a.nlink)
+	stateSinkObject.Save(7, &a.blockSize)
+	stateSinkObject.Save(8, &a.atime)
+	stateSinkObject.Save(9, &a.mtime)
+	stateSinkObject.Save(10, &a.ctime)
 }
 
 func (a *InodeAttrs) afterLoad() {}
@@ -299,6 +307,10 @@ func (a *InodeAttrs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &a.uid)
 	stateSourceObject.Load(5, &a.gid)
 	stateSourceObject.Load(6, &a.nlink)
+	stateSourceObject.Load(7, &a.blockSize)
+	stateSourceObject.Load(8, &a.atime)
+	stateSourceObject.Load(9, &a.mtime)
+	stateSourceObject.Load(10, &a.ctime)
 }
 
 func (s *slot) StateTypeName() string {

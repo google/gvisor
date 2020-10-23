@@ -373,7 +373,7 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		if !opts.ForSyntheticMountpoint || err == syserror.EEXIST {
 			return err
 		}
-		childI = newSyntheticDirectory(rp.Credentials(), opts.Mode)
+		childI = newSyntheticDirectory(ctx, rp.Credentials(), opts.Mode)
 	}
 	var child Dentry
 	child.Init(fs, childI)
@@ -517,9 +517,6 @@ afterTrailingSymlink:
 		}
 		var child Dentry
 		child.Init(fs, childI)
-		// FIXME(gvisor.dev/issue/1193): Race between checking existence with
-		// fs.stepExistingLocked and parent.insertChild. If possible, we should hold
-		// dirMu from one to the other.
 		parent.insertChild(pc, &child)
 		// Open may block so we need to unlock fs.mu. IncRef child to prevent
 		// its destruction while fs.mu is unlocked.

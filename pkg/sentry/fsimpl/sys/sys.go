@@ -67,23 +67,23 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
 
-	root := fs.newDir(creds, defaultSysDirMode, map[string]kernfs.Inode{
-		"block": fs.newDir(creds, defaultSysDirMode, nil),
-		"bus":   fs.newDir(creds, defaultSysDirMode, nil),
-		"class": fs.newDir(creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"power_supply": fs.newDir(creds, defaultSysDirMode, nil),
+	root := fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+		"block": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"bus":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"class": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		}),
-		"dev": fs.newDir(creds, defaultSysDirMode, nil),
-		"devices": fs.newDir(creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"system": fs.newDir(creds, defaultSysDirMode, map[string]kernfs.Inode{
+		"dev": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"devices": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 				"cpu": cpuDir(ctx, fs, creds),
 			}),
 		}),
-		"firmware": fs.newDir(creds, defaultSysDirMode, nil),
-		"fs":       fs.newDir(creds, defaultSysDirMode, nil),
+		"firmware": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"fs":       fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"kernel":   kernelDir(ctx, fs, creds),
-		"module":   fs.newDir(creds, defaultSysDirMode, nil),
-		"power":    fs.newDir(creds, defaultSysDirMode, nil),
+		"module":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"power":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	})
 	var rootD kernfs.Dentry
 	rootD.Init(&fs.Filesystem, root)
@@ -94,14 +94,14 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 	k := kernel.KernelFromContext(ctx)
 	maxCPUCores := k.ApplicationCores()
 	children := map[string]kernfs.Inode{
-		"online":   fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
-		"possible": fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
-		"present":  fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
+		"online":   fs.newCPUFile(ctx, creds, maxCPUCores, linux.FileMode(0444)),
+		"possible": fs.newCPUFile(ctx, creds, maxCPUCores, linux.FileMode(0444)),
+		"present":  fs.newCPUFile(ctx, creds, maxCPUCores, linux.FileMode(0444)),
 	}
 	for i := uint(0); i < maxCPUCores; i++ {
-		children[fmt.Sprintf("cpu%d", i)] = fs.newDir(creds, linux.FileMode(0555), nil)
+		children[fmt.Sprintf("cpu%d", i)] = fs.newDir(ctx, creds, linux.FileMode(0555), nil)
 	}
-	return fs.newDir(creds, defaultSysDirMode, children)
+	return fs.newDir(ctx, creds, defaultSysDirMode, children)
 }
 
 func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs.Inode {
@@ -111,12 +111,12 @@ func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) ker
 	var children map[string]kernfs.Inode
 	if coverage.KcovAvailable() {
 		children = map[string]kernfs.Inode{
-			"debug": fs.newDir(creds, linux.FileMode(0700), map[string]kernfs.Inode{
+			"debug": fs.newDir(ctx, creds, linux.FileMode(0700), map[string]kernfs.Inode{
 				"kcov": fs.newKcovFile(ctx, creds),
 			}),
 		}
 	}
-	return fs.newDir(creds, defaultSysDirMode, children)
+	return fs.newDir(ctx, creds, defaultSysDirMode, children)
 }
 
 // Release implements vfs.FilesystemImpl.Release.
@@ -140,9 +140,9 @@ type dir struct {
 	locks vfs.FileLocks
 }
 
-func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
+func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
 	d := &dir{}
-	d.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
+	d.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	d.EnableLeakCheck()
 	d.IncLinks(d.OrderedChildren.Populate(contents))
@@ -191,9 +191,9 @@ func (c *cpuFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-func (fs *filesystem) newCPUFile(creds *auth.Credentials, maxCores uint, mode linux.FileMode) kernfs.Inode {
+func (fs *filesystem) newCPUFile(ctx context.Context, creds *auth.Credentials, maxCores uint, mode linux.FileMode) kernfs.Inode {
 	c := &cpuFile{maxCores: maxCores}
-	c.DynamicBytesFile.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), c, mode)
+	c.DynamicBytesFile.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), c, mode)
 	return c
 }
 

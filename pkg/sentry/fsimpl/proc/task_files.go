@@ -249,7 +249,7 @@ type commInode struct {
 
 func (fs *filesystem) newComm(task *kernel.Task, ino uint64, perm linux.FileMode) kernfs.Inode {
 	inode := &commInode{task: task}
-	inode.DynamicBytesFile.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, &commData{task: task}, perm)
+	inode.DynamicBytesFile.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, &commData{task: task}, perm)
 	return inode
 }
 
@@ -657,7 +657,7 @@ var _ kernfs.Inode = (*exeSymlink)(nil)
 
 func (fs *filesystem) newExeSymlink(task *kernel.Task, ino uint64) kernfs.Inode {
 	inode := &exeSymlink{task: task}
-	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
 
@@ -733,7 +733,7 @@ var _ kernfs.Inode = (*cwdSymlink)(nil)
 
 func (fs *filesystem) newCwdSymlink(task *kernel.Task, ino uint64) kernfs.Inode {
 	inode := &cwdSymlink{task: task}
-	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
 
@@ -850,7 +850,7 @@ func (fs *filesystem) newNamespaceSymlink(task *kernel.Task, ino uint64, ns stri
 
 	inode := &namespaceSymlink{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
-	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
+	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
 
 	taskInode := &taskOwnedInode{Inode: inode, owner: task}
 	return taskInode
@@ -872,8 +872,10 @@ func (s *namespaceSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vir
 
 	// Create a synthetic inode to represent the namespace.
 	fs := mnt.Filesystem().Impl().(*filesystem)
+	nsInode := &namespaceInode{}
+	nsInode.Init(ctx, auth.CredentialsFromContext(ctx), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0444)
 	dentry := &kernfs.Dentry{}
-	dentry.Init(&fs.Filesystem, &namespaceInode{})
+	dentry.Init(&fs.Filesystem, nsInode)
 	vd := vfs.MakeVirtualDentry(mnt, dentry.VFSDentry())
 	// Only IncRef vd.Mount() because vd.Dentry() already holds a ref of 1.
 	mnt.IncRef()
@@ -897,11 +899,11 @@ type namespaceInode struct {
 var _ kernfs.Inode = (*namespaceInode)(nil)
 
 // Init initializes a namespace inode.
-func (i *namespaceInode) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
+func (i *namespaceInode) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
 	if perm&^linux.PermissionsMask != 0 {
 		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
 	}
-	i.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeRegular|perm)
+	i.InodeAttrs.Init(ctx, creds, devMajor, devMinor, ino, linux.ModeRegular|perm)
 }
 
 // Open implements kernfs.Inode.Open.
