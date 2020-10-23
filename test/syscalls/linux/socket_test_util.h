@@ -467,9 +467,12 @@ PosixError FreeAvailablePort(int port);
 // SendMsg converts a buffer to an iovec and adds it to msg before sending it.
 PosixErrorOr<int> SendMsg(int sock, msghdr* msg, char buf[], int buf_size);
 
-// RecvMsgTimeout calls select on sock with timeout and then calls recv on sock.
-PosixErrorOr<int> RecvMsgTimeout(int sock, char buf[], int buf_size,
-                                 int timeout);
+// RecvTimeout calls select on sock with timeout and then calls recv on sock.
+PosixErrorOr<int> RecvTimeout(int sock, char buf[], int buf_size, int timeout);
+
+// RecvMsgTimeout calls select on sock with timeout and then calls recvmsg on
+// sock.
+PosixErrorOr<int> RecvMsgTimeout(int sock, msghdr* msg, int timeout);
 
 // RecvNoData checks that no data is receivable on sock.
 void RecvNoData(int sock);
