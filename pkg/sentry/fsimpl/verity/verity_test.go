@@ -180,9 +180,9 @@ func TestOpen(t *testing.T) {
 	}
 }
 
-// TestUnmodifiedFileSucceeds ensures that read from an untouched verity file
-// succeeds after enabling verity for it.
-func TestReadUnmodifiedFileSucceeds(t *testing.T) {
+// TestPReadUnmodifiedFileSucceeds ensures that pread from an untouched verity
+// file succeeds after enabling verity for it.
+func TestPReadUnmodifiedFileSucceeds(t *testing.T) {
 	ctx := contexttest.Context(t)
 	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
@@ -206,6 +206,39 @@ func TestReadUnmodifiedFileSucceeds(t *testing.T) {
 	n, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0 /* offset */, vfs.ReadOptions{})
 	if err != nil && err != io.EOF {
 		t.Fatalf("fd.PRead: %v", err)
+	}
+
+	if n != int64(size) {
+		t.Errorf("fd.PRead got read length %d, want %d", n, size)
+	}
+}
+
+// TestReadUnmodifiedFileSucceeds ensures that read from an untouched verity
+// file succeeds after enabling verity for it.
+func TestReadUnmodifiedFileSucceeds(t *testing.T) {
+	ctx := contexttest.Context(t)
+	vfsObj, root, err := newVerityRoot(ctx, t)
+	if err != nil {
+		t.Fatalf("newVerityRoot: %v", err)
+	}
+
+	filename := "verity-test-file"
+	fd, size, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+	if err != nil {
+		t.Fatalf("newFileFD: %v", err)
+	}
+
+	// Enable verity on the file and confirm a normal read succeeds.
+	var args arch.SyscallArguments
+	args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+	if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+		t.Fatalf("Ioctl: %v", err)
+	}
+
+	buf := make([]byte, size)
+	n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	if err != nil && err != io.EOF {
+		t.Fatalf("fd.Read: %v", err)
 	}
 
 	if n != int64(size) {
@@ -248,8 +281,9 @@ func TestReopenUnmodifiedFileSucceeds(t *testing.T) {
 	}
 }
 
-// TestModifiedFileFails ensures that read from a modified verity file fails.
-func TestModifiedFileFails(t *testing.T) {
+// TestPReadModifiedFileFails ensures that read from a modified verity file
+// fails.
+func TestPReadModifiedFileFails(t *testing.T) {
 	ctx := contexttest.Context(t)
 	vfsObj, root, err := newVerityRoot(ctx, t)
 	if err != nil {
@@ -289,7 +323,53 @@ func TestModifiedFileFails(t *testing.T) {
 	// Confirm that read from the modified file fails.
 	buf := make([]byte, size)
 	if _, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0 /* offset */, vfs.ReadOptions{}); err == nil {
-		t.Fatalf("fd.PRead succeeded with modified file")
+		t.Fatalf("fd.PRead succeeded, expected failure")
+	}
+}
+
+// TestReadModifiedFileFails ensures that read from a modified verity file
+// fails.
+func TestReadModifiedFileFails(t *testing.T) {
+	ctx := contexttest.Context(t)
+	vfsObj, root, err := newVerityRoot(ctx, t)
+	if err != nil {
+		t.Fatalf("newVerityRoot: %v", err)
+	}
+
+	filename := "verity-test-file"
+	fd, size, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+	if err != nil {
+		t.Fatalf("newFileFD: %v", err)
+	}
+
+	// Enable verity on the file.
+	var args arch.SyscallArguments
+	args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+	if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+		t.Fatalf("Ioctl: %v", err)
+	}
+
+	// Open a new lowerFD that's read/writable.
+	lowerVD := fd.Impl().(*fileDescription).d.lowerVD
+
+	lowerFD, err := vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+		Root:  lowerVD,
+		Start: lowerVD,
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDWR,
+	})
+	if err != nil {
+		t.Fatalf("OpenAt: %v", err)
+	}
+
+	if err := corruptRandomBit(ctx, lowerFD, size); err != nil {
+		t.Fatalf("corruptRandomBit: %v", err)
+	}
+
+	// Confirm that read from the modified file fails.
+	buf := make([]byte, size)
+	if _, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{}); err == nil {
+		t.Fatalf("fd.Read succeeded, expected failure")
 	}
 }
 
