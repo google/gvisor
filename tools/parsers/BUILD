@@ -7,6 +7,7 @@ go_test(
     size = "small",
     srcs = ["go_parser_test.go"],
     library = ":parsers",
+    nogo = False,
     deps = [
         "//tools/bigquery",
         "@com_github_google_go_cmp//cmp:go_default_library",
@@ -19,6 +20,7 @@ go_library(
     srcs = [
         "go_parser.go",
     ],
+    nogo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//test/benchmarks/tools",
