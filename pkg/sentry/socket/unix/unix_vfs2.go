@@ -55,7 +55,7 @@ var _ = socket.SocketVFS2(&SocketVFS2{})
 // returns a corresponding file description.
 func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) (*vfs.FileDescription, *syserr.Error) {
 	mnt := t.Kernel().SocketMount()
-	d := sockfs.NewDentry(t.Credentials(), mnt)
+	d := sockfs.NewDentry(t, mnt)
 	defer d.DecRef(t)
 
 	fd, err := NewFileDescription(ep, stype, linux.O_RDWR, mnt, d, &vfs.FileLocks{})

@@ -62,19 +62,19 @@ type tasksInode struct {
 
 var _ kernfs.Inode = (*tasksInode)(nil)
 
-func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) *tasksInode {
+func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) *tasksInode {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]kernfs.Inode{
-		"cpuinfo":     fs.newInode(root, 0444, newStaticFileSetStat(cpuInfoData(k))),
-		"filesystems": fs.newInode(root, 0444, &filesystemsData{}),
-		"loadavg":     fs.newInode(root, 0444, &loadavgData{}),
-		"sys":         fs.newSysDir(root, k),
-		"meminfo":     fs.newInode(root, 0444, &meminfoData{}),
-		"mounts":      kernfs.NewStaticSymlink(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/mounts"),
-		"net":         kernfs.NewStaticSymlink(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/net"),
-		"stat":        fs.newInode(root, 0444, &statData{}),
-		"uptime":      fs.newInode(root, 0444, &uptimeData{}),
-		"version":     fs.newInode(root, 0444, &versionData{}),
+		"cpuinfo":     fs.newInode(ctx, root, 0444, newStaticFileSetStat(cpuInfoData(k))),
+		"filesystems": fs.newInode(ctx, root, 0444, &filesystemsData{}),
+		"loadavg":     fs.newInode(ctx, root, 0444, &loadavgData{}),
+		"sys":         fs.newSysDir(ctx, root, k),
+		"meminfo":     fs.newInode(ctx, root, 0444, &meminfoData{}),
+		"mounts":      kernfs.NewStaticSymlink(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/mounts"),
+		"net":         kernfs.NewStaticSymlink(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/net"),
+		"stat":        fs.newInode(ctx, root, 0444, &statData{}),
+		"uptime":      fs.newInode(ctx, root, 0444, &uptimeData{}),
+		"version":     fs.newInode(ctx, root, 0444, &versionData{}),
 	}
 
 	inode := &tasksInode{
@@ -82,7 +82,7 @@ func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace
 		fs:                fs,
 		cgroupControllers: cgroupControllers,
 	}
-	inode.InodeAttrs.Init(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.EnableLeakCheck()
 
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
@@ -106,9 +106,9 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 		// If it failed to parse, check if it's one of the special handled files.
 		switch name {
 		case selfName:
-			return i.newSelfSymlink(root), nil
+			return i.newSelfSymlink(ctx, root), nil
 		case threadSelfName:
-			return i.newThreadSelfSymlink(root), nil
+			return i.newThreadSelfSymlink(ctx, root), nil
 		}
 		return nil, syserror.ENOENT
 	}
@@ -122,7 +122,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 }
 
 // IterDirents implements kernfs.inodeDirectory.IterDirents.
-func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, _ int64) (int64, error) {
+func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, _ int64) (int64, error) {
 	// fs/proc/internal.h: #define FIRST_PROCESS_ENTRY 256
 	const FIRST_PROCESS_ENTRY = 256
 

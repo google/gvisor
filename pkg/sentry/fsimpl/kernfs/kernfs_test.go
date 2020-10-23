@@ -36,7 +36,7 @@ const staticFileContent = "This is sample content for a static test file."
 
 // RootDentryFn is a generator function for creating the root dentry of a test
 // filesystem. See newTestSystem.
-type RootDentryFn func(*auth.Credentials, *filesystem) kernfs.Inode
+type RootDentryFn func(context.Context, *auth.Credentials, *filesystem) kernfs.Inode
 
 // newTestSystem sets up a minimal environment for running a test, including an
 // instance of a test filesystem. Tests can control the contents of the
@@ -72,10 +72,10 @@ type file struct {
 	content string
 }
 
-func (fs *filesystem) newFile(creds *auth.Credentials, content string) kernfs.Inode {
+func (fs *filesystem) newFile(ctx context.Context, creds *auth.Credentials, content string) kernfs.Inode {
 	f := &file{}
 	f.content = content
-	f.DynamicBytesFile.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), f, 0777)
+	f.DynamicBytesFile.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), f, 0777)
 	return f
 }
 
@@ -105,9 +105,9 @@ type readonlyDir struct {
 	locks vfs.FileLocks
 }
 
-func (fs *filesystem) newReadonlyDir(creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
+func (fs *filesystem) newReadonlyDir(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
 	dir := &readonlyDir{}
-	dir.attrs.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
+	dir.attrs.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	dir.EnableLeakCheck()
 	dir.IncLinks(dir.OrderedChildren.Populate(contents))
@@ -142,10 +142,10 @@ type dir struct {
 	fs *filesystem
 }
 
-func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
+func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
 	dir := &dir{}
 	dir.fs = fs
-	dir.attrs.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
+	dir.attrs.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 	dir.EnableLeakCheck()
 
@@ -169,22 +169,24 @@ func (d *dir) DecRef(ctx context.Context) {
 
 func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (kernfs.Inode, error) {
 	creds := auth.CredentialsFromContext(ctx)
-	dir := d.fs.newDir(creds, opts.Mode, nil)
+	dir := d.fs.newDir(ctx, creds, opts.Mode, nil)
 	if err := d.OrderedChildren.Insert(name, dir); err != nil {
 		dir.DecRef(ctx)
 		return nil, err
 	}
+	d.TouchCMtime(ctx)
 	d.IncLinks(1)
 	return dir, nil
 }
 
 func (d *dir) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (kernfs.Inode, error) {
 	creds := auth.CredentialsFromContext(ctx)
-	f := d.fs.newFile(creds, "")
+	f := d.fs.newFile(ctx, creds, "")
 	if err := d.OrderedChildren.Insert(name, f); err != nil {
 		f.DecRef(ctx)
 		return nil, err
 	}
+	d.TouchCMtime(ctx)
 	return f, nil
 }
 
@@ -209,7 +211,7 @@ func (fsType) Release(ctx context.Context) {}
 func (fst fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opt vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fs := &filesystem{}
 	fs.VFSFilesystem().Init(vfsObj, &fst, fs)
-	root := fst.rootFn(creds, fs)
+	root := fst.rootFn(ctx, creds, fs)
 	var d kernfs.Dentry
 	d.Init(&fs.Filesystem, root)
 	return fs.VFSFilesystem(), d.VFSDentry(), nil
@@ -218,9 +220,9 @@ func (fst fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesyst
 // -------------------- Remainder of the file are test cases --------------------
 
 func TestBasic(t *testing.T) {
-	sys := newTestSystem(t, func(creds *auth.Credentials, fs *filesystem) kernfs.Inode {
-		return fs.newReadonlyDir(creds, 0755, map[string]kernfs.Inode{
-			"file1": fs.newFile(creds, staticFileContent),
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"file1": fs.newFile(ctx, creds, staticFileContent),
 		})
 	})
 	defer sys.Destroy()
@@ -228,9 +230,9 @@ func TestBasic(t *testing.T) {
 }
 
 func TestMkdirGetDentry(t *testing.T) {
-	sys := newTestSystem(t, func(creds *auth.Credentials, fs *filesystem) kernfs.Inode {
-		return fs.newReadonlyDir(creds, 0755, map[string]kernfs.Inode{
-			"dir1": fs.newDir(creds, 0755, nil),
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"dir1": fs.newDir(ctx, creds, 0755, nil),
 		})
 	})
 	defer sys.Destroy()
@@ -243,9 +245,9 @@ func TestMkdirGetDentry(t *testing.T) {
 }
 
 func TestReadStaticFile(t *testing.T) {
-	sys := newTestSystem(t, func(creds *auth.Credentials, fs *filesystem) kernfs.Inode {
-		return fs.newReadonlyDir(creds, 0755, map[string]kernfs.Inode{
-			"file1": fs.newFile(creds, staticFileContent),
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"file1": fs.newFile(ctx, creds, staticFileContent),
 		})
 	})
 	defer sys.Destroy()
@@ -269,9 +271,9 @@ func TestReadStaticFile(t *testing.T) {
 }
 
 func TestCreateNewFileInStaticDir(t *testing.T) {
-	sys := newTestSystem(t, func(creds *auth.Credentials, fs *filesystem) kernfs.Inode {
-		return fs.newReadonlyDir(creds, 0755, map[string]kernfs.Inode{
-			"dir1": fs.newDir(creds, 0755, nil),
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"dir1": fs.newDir(ctx, creds, 0755, nil),
 		})
 	})
 	defer sys.Destroy()
@@ -296,8 +298,8 @@ func TestCreateNewFileInStaticDir(t *testing.T) {
 }
 
 func TestDirFDReadWrite(t *testing.T) {
-	sys := newTestSystem(t, func(creds *auth.Credentials, fs *filesystem) kernfs.Inode {
-		return fs.newReadonlyDir(creds, 0755, nil)
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newReadonlyDir(ctx, creds, 0755, nil)
 	})
 	defer sys.Destroy()
 
@@ -320,14 +322,14 @@ func TestDirFDReadWrite(t *testing.T) {
 }
 
 func TestDirFDIterDirents(t *testing.T) {
-	sys := newTestSystem(t, func(creds *auth.Credentials, fs *filesystem) kernfs.Inode {
-		return fs.newReadonlyDir(creds, 0755, map[string]kernfs.Inode{
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
 			// Fill root with nodes backed by various inode implementations.
-			"dir1": fs.newReadonlyDir(creds, 0755, nil),
-			"dir2": fs.newDir(creds, 0755, map[string]kernfs.Inode{
-				"dir3": fs.newDir(creds, 0755, nil),
+			"dir1": fs.newReadonlyDir(ctx, creds, 0755, nil),
+			"dir2": fs.newDir(ctx, creds, 0755, map[string]kernfs.Inode{
+				"dir3": fs.newDir(ctx, creds, 0755, nil),
 			}),
-			"file1": fs.newFile(creds, staticFileContent),
+			"file1": fs.newFile(ctx, creds, staticFileContent),
 		})
 	})
 	defer sys.Destroy()
