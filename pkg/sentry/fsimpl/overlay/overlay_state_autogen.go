@@ -183,8 +183,6 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(21, &d.watches)
 }
 
-func (d *dentry) afterLoad() {}
-
 func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
 	stateSourceObject.Load(1, &d.refs)
@@ -208,6 +206,7 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(19, &d.isMappable)
 	stateSourceObject.Load(20, &d.locks)
 	stateSourceObject.Load(21, &d.watches)
+	stateSourceObject.AfterLoad(d.afterLoad)
 }
 
 func (fd *fileDescription) StateTypeName() string {

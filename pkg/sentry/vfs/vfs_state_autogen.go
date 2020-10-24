@@ -1075,8 +1075,6 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &mnt.writers)
 }
 
-func (mnt *Mount) afterLoad() {}
-
 func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mnt.vfs)
 	stateSourceObject.Load(1, &mnt.fs)
@@ -1089,6 +1087,7 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &mnt.umounted)
 	stateSourceObject.Load(10, &mnt.writers)
 	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y interface{}) { mnt.loadKey(y.(VirtualDentry)) })
+	stateSourceObject.AfterLoad(mnt.afterLoad)
 }
 
 func (mntns *MountNamespace) StateTypeName() string {

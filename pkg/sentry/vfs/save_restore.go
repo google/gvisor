@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 )
 
 // FilesystemImplSaveRestoreExtension is an optional extension to
@@ -106,6 +107,12 @@ func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
 	vfs.mounts.Init()
 	for _, mount := range mounts {
 		vfs.mounts.Insert(mount)
+	}
+}
+
+func (mnt *Mount) afterLoad() {
+	if refsvfs2.LeakCheckEnabled() && atomic.LoadInt64(&mnt.refs) != 0 {
+		refsvfs2.Register(mnt, "vfs.Mount")
 	}
 }
 

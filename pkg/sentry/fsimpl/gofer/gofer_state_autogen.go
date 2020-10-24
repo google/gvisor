@@ -128,6 +128,7 @@ func (fs *filesystem) StateFields() []string {
 		"specialFileFDs",
 		"lastIno",
 		"savedDentryRW",
+		"released",
 	}
 }
 
@@ -148,6 +149,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &fs.specialFileFDs)
 	stateSinkObject.Save(11, &fs.lastIno)
 	stateSinkObject.Save(12, &fs.savedDentryRW)
+	stateSinkObject.Save(13, &fs.released)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -166,6 +168,7 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(10, &fs.specialFileFDs)
 	stateSourceObject.Load(11, &fs.lastIno)
 	stateSourceObject.Load(12, &fs.savedDentryRW)
+	stateSourceObject.Load(13, &fs.released)
 }
 
 func (f *filesystemOptions) StateTypeName() string {
