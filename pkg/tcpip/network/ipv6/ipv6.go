@@ -41,7 +41,7 @@ const (
 	//
 	// Linux also uses 60 seconds for reassembly timeout:
 	// https://github.com/torvalds/linux/blob/47ec5303d73ea344e84f46660fff693c57641386/include/net/ipv6.h#L456
-	reassembleTimeout = 60 * time.Second
+	ReassembleTimeout = 60 * time.Second
 
 	// ProtocolNumber is the ipv6 protocol number.
 	ProtocolNumber = header.IPv6ProtocolNumber
@@ -777,6 +777,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				continue
 			}
 
+			fragmentFieldOffset := it.ParseOffset()
+
 			// Don't consume the iterator if we have the first fragment because we
 			// will use it to validate that the first fragment holds the upper layer
 			// header.
@@ -834,15 +836,57 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				return
 			}
 
+			// As per RFC 2460 Section 4.5:
+			//
+			//    If the length of a fragment, as derived from the fragment packet's
+			//    Payload Length field, is not a multiple of 8 octets and the M flag
+			//    of that fragment is 1, then that fragment must be discarded and an
+			//    ICMP Parameter Problem, Code 0, message should be sent to the source
+			//    of the fragment, pointing to the Payload Length field of the
+			//    fragment packet.
+			if extHdr.More() && fragmentPayloadLen%header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit != 0 {
+				r.Stats().IP.MalformedPacketsReceived.Increment()
+				r.Stats().IP.MalformedFragmentsReceived.Increment()
+				_ = e.protocol.returnError(r, &icmpReasonParameterProblem{
+					code:    header.ICMPv6ErroneousHeader,
+					pointer: header.IPv6PayloadLenOffset,
+				}, pkt)
+				return
+			}
+
 			// The packet is a fragment, let's try to reassemble it.
 			start := extHdr.FragmentOffset() * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
 
-			// Drop the fragment if the size of the reassembled payload would exceed
-			// the maximum payload size.
+			// As per RFC 2460 Section 4.5:
+			//
+			//    If the length and offset of a fragment are such that the Payload
+			//    Length of the packet reassembled from that fragment would exceed
+			//    65,535 octets, then that fragment must be discarded and an ICMP
+			//    Parameter Problem, Code 0, message should be sent to the source of
+			//    the fragment, pointing to the Fragment Offset field of the fragment
+			//    packet.
 			if int(start)+fragmentPayloadLen > header.IPv6MaximumPayloadSize {
 				r.Stats().IP.MalformedPacketsReceived.Increment()
 				r.Stats().IP.MalformedFragmentsReceived.Increment()
+				_ = e.protocol.returnError(r, &icmpReasonParameterProblem{
+					code:    header.ICMPv6ErroneousHeader,
+					pointer: fragmentFieldOffset,
+				}, pkt)
 				return
+			}
+
+			// Set up a callback in case we need to send a Time Exceeded Message as
+			// per RFC 2460 Section 4.5.
+			var releaseCB func(bool)
+			if start == 0 {
+				pkt := pkt.Clone()
+				r := r.Clone()
+				releaseCB = func(timedOut bool) {
+					if timedOut {
+						_ = e.protocol.returnError(&r, &icmpReasonReassemblyTimeout{}, pkt)
+					}
+					r.Release()
+				}
 			}
 
 			// Note that pkt doesn't have its transport header set after reassembly,
@@ -860,6 +904,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 				extHdr.More(),
 				uint8(rawPayload.Identifier),
 				rawPayload.Buf,
+				releaseCB,
 			)
 			if err != nil {
 				r.Stats().IP.MalformedPacketsReceived.Increment()
@@ -1535,7 +1580,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 	return func(s *stack.Stack) stack.NetworkProtocol {
 		p := &protocol{
 			stack:         s,
-			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, reassembleTimeout, s.Clock()),
+			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
 			ids:           ids,
 			hashIV:        hashIV,
 

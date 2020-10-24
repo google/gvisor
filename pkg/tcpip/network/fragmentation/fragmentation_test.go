@@ -105,7 +105,7 @@ func TestFragmentationProcess(t *testing.T) {
 			f := NewFragmentation(minBlockSize, 1024, 512, reassembleTimeout, &faketime.NullClock{})
 			firstFragmentProto := c.in[0].proto
 			for i, in := range c.in {
-				vv, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.vv)
+				vv, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.vv, nil)
 				if err != nil {
 					t.Fatalf("f.Process(%+v, %d, %d, %t, %d, %X) failed: %s",
 						in.id, in.first, in.last, in.more, in.proto, in.vv.ToView(), err)
@@ -240,7 +240,7 @@ func TestReassemblingTimeout(t *testing.T) {
 			for _, event := range test.events {
 				clock.Advance(event.clockAdvance)
 				if frag := event.fragment; frag != nil {
-					_, _, done, err := f.Process(FragmentID{}, frag.first, frag.last, frag.more, protocol, vv(len(frag.data), frag.data))
+					_, _, done, err := f.Process(FragmentID{}, frag.first, frag.last, frag.more, protocol, vv(len(frag.data), frag.data), nil)
 					if err != nil {
 						t.Fatalf("%s: f.Process failed: %s", event.name, err)
 					}
@@ -259,15 +259,15 @@ func TestReassemblingTimeout(t *testing.T) {
 func TestMemoryLimits(t *testing.T) {
 	f := NewFragmentation(minBlockSize, 3, 1, reassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
-	f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, vv(1, "0"))
+	f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, vv(1, "0"), nil)
 	// Send first fragment with id = 1.
-	f.Process(FragmentID{ID: 1}, 0, 0, true, 0xFF, vv(1, "1"))
+	f.Process(FragmentID{ID: 1}, 0, 0, true, 0xFF, vv(1, "1"), nil)
 	// Send first fragment with id = 2.
-	f.Process(FragmentID{ID: 2}, 0, 0, true, 0xFF, vv(1, "2"))
+	f.Process(FragmentID{ID: 2}, 0, 0, true, 0xFF, vv(1, "2"), nil)
 
 	// Send first fragment with id = 3. This should caused id = 0 and id = 1 to be
 	// evicted.
-	f.Process(FragmentID{ID: 3}, 0, 0, true, 0xFF, vv(1, "3"))
+	f.Process(FragmentID{ID: 3}, 0, 0, true, 0xFF, vv(1, "3"), nil)
 
 	if _, ok := f.reassemblers[FragmentID{ID: 0}]; ok {
 		t.Errorf("Memory limits are not respected: id=0 has not been evicted.")
@@ -283,9 +283,9 @@ func TestMemoryLimits(t *testing.T) {
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
 	f := NewFragmentation(minBlockSize, 1, 0, reassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
-	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"))
+	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"), nil)
 	// Send the same packet again.
-	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"))
+	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"), nil)
 
 	got := f.size
 	want := 1
@@ -377,7 +377,7 @@ func TestErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
-			_, _, done, err := f.Process(FragmentID{}, test.first, test.last, test.more, 0, vv(len(test.data), test.data))
+			_, _, done, err := f.Process(FragmentID{}, test.first, test.last, test.more, 0, vv(len(test.data), test.data), nil)
 			if !errors.Is(err, test.err) {
 				t.Errorf("got Process(_, %d, %d, %t, _, %q) = (_, _, _, %v), want = (_, _, _, %v)", test.first, test.last, test.more, test.data, err, test.err)
 			}
@@ -493,6 +493,92 @@ func TestPacketFragmenter(t *testing.T) {
 			}
 			if diff := cmp.Diff(reassembledPayload.ToView(), originalPayload.ToView()); diff != "" {
 				t.Errorf("reassembledPayload mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestReleaseCallback(t *testing.T) {
+	const (
+		proto = 99
+	)
+
+	var result int
+	var callbackReasonIsTimeout bool
+	cb1 := func(timedOut bool) { result = 1; callbackReasonIsTimeout = timedOut }
+	cb2 := func(timedOut bool) { result = 2; callbackReasonIsTimeout = timedOut }
+
+	tests := []struct {
+		name                        string
+		callbacks                   []func(bool)
+		timeout                     bool
+		wantResult                  int
+		wantCallbackReasonIsTimeout bool
+	}{
+		{
+			name:                        "callback runs on release",
+			callbacks:                   []func(bool){cb1},
+			timeout:                     false,
+			wantResult:                  1,
+			wantCallbackReasonIsTimeout: false,
+		},
+		{
+			name:                        "first callback is nil",
+			callbacks:                   []func(bool){nil, cb2},
+			timeout:                     false,
+			wantResult:                  2,
+			wantCallbackReasonIsTimeout: false,
+		},
+		{
+			name:                        "two callbacks - first one is set",
+			callbacks:                   []func(bool){cb1, cb2},
+			timeout:                     false,
+			wantResult:                  1,
+			wantCallbackReasonIsTimeout: false,
+		},
+		{
+			name:                        "callback runs on timeout",
+			callbacks:                   []func(bool){cb1},
+			timeout:                     true,
+			wantResult:                  1,
+			wantCallbackReasonIsTimeout: true,
+		},
+		{
+			name:                        "no callbacks",
+			callbacks:                   []func(bool){nil},
+			timeout:                     false,
+			wantResult:                  0,
+			wantCallbackReasonIsTimeout: false,
+		},
+	}
+
+	id := FragmentID{ID: 0}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result = 0
+			callbackReasonIsTimeout = false
+
+			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
+
+			for i, cb := range test.callbacks {
+				_, _, _, err := f.Process(id, uint16(i), uint16(i), true, proto, vv(1, "0"), cb)
+				if err != nil {
+					t.Errorf("f.Process error = %s", err)
+				}
+			}
+
+			r, ok := f.reassemblers[id]
+			if !ok {
+				t.Fatalf("Reassemberr not found")
+			}
+			f.release(r, test.timeout)
+
+			if result != test.wantResult {
+				t.Errorf("got result = %d, want = %d", result, test.wantResult)
+			}
+			if callbackReasonIsTimeout != test.wantCallbackReasonIsTimeout {
+				t.Errorf("got callbackReasonIsTimeout = %t, want = %t", callbackReasonIsTimeout, test.wantCallbackReasonIsTimeout)
 			}
 		})
 	}

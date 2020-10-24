@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -788,7 +789,6 @@ func TestInvalidFragments(t *testing.T) {
 		autoChecksum bool // if true, the Checksum field will be overwritten.
 	}
 
-	// These packets have both IHL and TotalLength set to 0.
 	tests := []struct {
 		name                   string
 		fragments              []fragmentData
@@ -1028,7 +1028,6 @@ func TestInvalidFragments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{
 					ipv4.NewProtocol,
@@ -1067,6 +1066,259 @@ func TestInvalidFragments(t *testing.T) {
 			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), test.wantMalformedFragments; got != want {
 				t.Errorf("incorrect Stats.IP.MalformedFragmentsReceived, got: %d, want: %d", got, want)
 			}
+		})
+	}
+}
+
+func TestFragmentReassemblyTimeout(t *testing.T) {
+	const (
+		nicID    = 1
+		linkAddr = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
+		addr1    = "\x0a\x00\x00\x01"
+		addr2    = "\x0a\x00\x00\x02"
+		tos      = 0
+		ident    = 1
+		ttl      = 48
+		protocol = 99
+		data     = "TEST_FRAGMENT_REASSEMBLY_TIMEOUT"
+	)
+
+	type fragmentData struct {
+		ipv4fields header.IPv4Fields
+		payload    []byte
+	}
+
+	tests := []struct {
+		name       string
+		fragments  []fragmentData
+		expectICMP bool
+	}{
+		{
+			name: "first fragment only",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 16,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[:16],
+				},
+			},
+			expectICMP: true,
+		},
+		{
+			name: "two first fragments",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 16,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[:16],
+				},
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 16,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[:16],
+				},
+			},
+			expectICMP: true,
+		},
+		{
+			name: "second fragment only",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    uint16(header.IPv4MinimumSize + len(data) - 16),
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 8,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[16:],
+				},
+			},
+			expectICMP: false,
+		},
+		{
+			name: "two fragments with a gap",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 8,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[:8],
+				},
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    uint16(header.IPv4MinimumSize + len(data) - 16),
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 16,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[16:],
+				},
+			},
+			expectICMP: true,
+		},
+		{
+			name: "two fragments with a gap in reverse order",
+			fragments: []fragmentData{
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    uint16(header.IPv4MinimumSize + len(data) - 16),
+						ID:             ident,
+						Flags:          0,
+						FragmentOffset: 16,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[16:],
+				},
+				{
+					ipv4fields: header.IPv4Fields{
+						IHL:            header.IPv4MinimumSize,
+						TOS:            tos,
+						TotalLength:    header.IPv4MinimumSize + 8,
+						ID:             ident,
+						Flags:          header.IPv4FlagMoreFragments,
+						FragmentOffset: 0,
+						TTL:            ttl,
+						Protocol:       protocol,
+						SrcAddr:        addr1,
+						DstAddr:        addr2,
+					},
+					payload: []byte(data)[:8],
+				},
+			},
+			expectICMP: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{
+					ipv4.NewProtocol,
+				},
+				Clock: clock,
+			})
+			e := channel.New(1, 1500, linkAddr)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, addr2, err)
+			}
+			s.SetRouteTable([]tcpip.Route{{
+				Destination: header.IPv4EmptySubnet,
+				NIC:         nicID,
+			}})
+
+			var firstFragmentSent buffer.View
+			for _, f := range test.fragments {
+				pktSize := header.IPv4MinimumSize
+				hdr := buffer.NewPrependable(pktSize)
+
+				ip := header.IPv4(hdr.Prepend(pktSize))
+				ip.Encode(&f.ipv4fields)
+
+				ip.SetChecksum(0)
+				ip.SetChecksum(^ip.CalculateChecksum())
+
+				vv := hdr.View().ToVectorisedView()
+				vv.AppendView(f.payload)
+
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: vv,
+				})
+
+				if firstFragmentSent == nil && ip.FragmentOffset() == 0 {
+					firstFragmentSent = stack.PayloadSince(pkt.NetworkHeader())
+				}
+
+				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
+			}
+
+			clock.Advance(ipv4.ReassembleTimeout)
+
+			reply, ok := e.Read()
+			if !test.expectICMP {
+				if ok {
+					t.Fatalf("unexpected ICMP error message received: %#v", reply)
+				}
+				return
+			}
+			if !ok {
+				t.Fatal("expected ICMP error message missing")
+			}
+			if firstFragmentSent == nil {
+				t.Fatalf("unexpected ICMP error message received: %#v", reply)
+			}
+
+			checker.IPv4(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+				checker.SrcAddr(addr2),
+				checker.DstAddr(addr1),
+				checker.IPFullLength(uint16(header.IPv4MinimumSize+header.ICMPv4MinimumSize+firstFragmentSent.Size())),
+				checker.IPv4HeaderLength(header.IPv4MinimumSize),
+				checker.ICMPv4(
+					checker.ICMPv4Type(header.ICMPv4TimeExceeded),
+					checker.ICMPv4Code(header.ICMPv4ReassemblyTimeout),
+					checker.ICMPv4Checksum(),
+					checker.ICMPv4Payload([]byte(firstFragmentSent)),
+				),
+			)
 		})
 	}
 }

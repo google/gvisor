@@ -99,7 +99,8 @@ const (
 
 // ICMP codes for ICMPv4 Time Exceeded messages as defined in RFC 792.
 const (
-	ICMPv4TTLExceeded ICMPv4Code = 0
+	ICMPv4TTLExceeded       ICMPv4Code = 0
+	ICMPv4ReassemblyTimeout ICMPv4Code = 1
 )
 
 // ICMP codes for ICMPv4 Destination Unreachable messages as defined in RFC 792.
