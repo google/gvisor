@@ -2435,6 +2435,7 @@ cc_library(
         "@com_google_absl//absl/memory",
         gtest,
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:test_util",
     ],
     alwayslink = 1,
