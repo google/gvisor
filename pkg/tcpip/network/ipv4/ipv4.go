@@ -38,7 +38,7 @@ const (
 	// Considering that it is an old recommendation, we use the same reassembly
 	// timeout that linux defines, which is 30 seconds:
 	// https://github.com/torvalds/linux/blob/47ec5303d73ea344e84f46660fff693c57641386/include/net/ip.h#L138
-	reassembleTimeout = 30 * time.Second
+	ReassembleTimeout = 30 * time.Second
 
 	// ProtocolNumber is the ipv4 protocol number.
 	ProtocolNumber = header.IPv4ProtocolNumber
@@ -520,6 +520,28 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
 			return
 		}
+
+		// Set up a callback in case we need to send a Time Exceeded Message, as per
+		// RFC 792:
+		//
+		//   If a host reassembling a fragmented datagram cannot complete the
+		//   reassembly due to missing fragments within its time limit it discards
+		//   the datagram, and it may send a time exceeded message.
+		//
+		//   If fragment zero is not available then no time exceeded need be sent at
+		//   all.
+		var releaseCB func(bool)
+		if start == 0 {
+			pkt := pkt.Clone()
+			r := r.Clone()
+			releaseCB = func(timedOut bool) {
+				if timedOut {
+					_ = e.protocol.returnError(&r, &icmpReasonReassemblyTimeout{}, pkt)
+				}
+				r.Release()
+			}
+		}
+
 		var ready bool
 		var err error
 		proto := h.Protocol()
@@ -537,6 +559,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			h.More(),
 			proto,
 			pkt.Data,
+			releaseCB,
 		)
 		if err != nil {
 			r.Stats().IP.MalformedPacketsReceived.Increment()
@@ -856,7 +879,7 @@ func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 		ids:           ids,
 		hashIV:        hashIV,
 		defaultTTL:    DefaultTTL,
-		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, reassembleTimeout, s.Clock()),
+		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
 	}
 }
 

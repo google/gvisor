@@ -41,6 +41,7 @@ type reassembler struct {
 	heap         fragHeap
 	done         bool
 	creationTime int64
+	callback     func(bool)
 }
 
 func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
@@ -122,4 +123,25 @@ func (r *reassembler) checkDoneOrMark() bool {
 	r.done = true
 	r.mu.Unlock()
 	return prev
+}
+
+func (r *reassembler) setCallback(c func(bool)) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.callback != nil {
+		return false
+	}
+	r.callback = c
+	return true
+}
+
+func (r *reassembler) release(timedOut bool) {
+	r.mu.Lock()
+	callback := r.callback
+	r.callback = nil
+	r.mu.Unlock()
+
+	if callback != nil {
+		callback(timedOut)
+	}
 }

@@ -237,6 +237,13 @@ type icmpReasonProtoUnreachable struct{}
 
 func (*icmpReasonProtoUnreachable) isICMPReason() {}
 
+// icmpReasonReassemblyTimeout is an error where insufficient fragments are
+// received to complete reassembly of a packet within a configured time after
+// the reception of the first-arriving fragment of that packet.
+type icmpReasonReassemblyTimeout struct{}
+
+func (*icmpReasonReassemblyTimeout) isICMPReason() {}
+
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv4 and sends it back to the remote device that sent
 // the problematic packet. It incorporates as much of that packet as
@@ -377,17 +384,24 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 	icmpPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 
 	icmpHdr := header.ICMPv4(icmpPkt.TransportHeader().Push(header.ICMPv4MinimumSize))
+	var counter *tcpip.StatCounter
 	switch reason.(type) {
 	case *icmpReasonPortUnreachable:
+		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4PortUnreachable)
+		counter = sent.DstUnreachable
 	case *icmpReasonProtoUnreachable:
+		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4ProtoUnreachable)
+		counter = sent.DstUnreachable
+	case *icmpReasonReassemblyTimeout:
+		icmpHdr.SetType(header.ICMPv4TimeExceeded)
+		icmpHdr.SetCode(header.ICMPv4ReassemblyTimeout)
+		counter = sent.TimeExceeded
 	default:
 		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
 	}
-	icmpHdr.SetType(header.ICMPv4DstUnreachable)
 	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data))
-	counter := sent.DstUnreachable
 
 	if err := route.WritePacket(
 		nil, /* gso */
