@@ -71,7 +71,7 @@ func (tcpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Ma
 	}
 
 	if filter.Protocol != header.TCPProtocolNumber {
-		return nil, fmt.Errorf("TCP matching is only valid for protocol %d.", header.TCPProtocolNumber)
+		return nil, fmt.Errorf("TCP matching is only valid for protocol %d", header.TCPProtocolNumber)
 	}
 
 	return &TCPMatcher{

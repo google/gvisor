@@ -487,7 +487,7 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds
 		c := q.control.Clone()
 
 		// Don't consume data since we are peeking.
-		copied, data, _ = vecCopy(data, q.buffer)
+		copied, _, _ = vecCopy(data, q.buffer)
 
 		return copied, copied, c, false, q.addr, notify, nil
 	}

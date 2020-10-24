@@ -36,9 +36,9 @@ type SCMRightsVFS2 interface {
 	Files(ctx context.Context, max int) (rf RightsFilesVFS2, truncated bool)
 }
 
-// RightsFilesVFS2 represents a SCM_RIGHTS socket control message. A reference is
-// maintained for each vfs.FileDescription and is release either when an FD is created or
-// when the Release method is called.
+// RightsFilesVFS2 represents a SCM_RIGHTS socket control message. A reference
+// is maintained for each vfs.FileDescription and is release either when an FD
+// is created or when the Release method is called.
 //
 // +stateify savable
 type RightsFilesVFS2 []*vfs.FileDescription
