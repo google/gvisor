@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -53,9 +54,7 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	// Purge cached dentries, which may not be reopenable after restore due to
 	// permission changes.
 	fs.renameMu.Lock()
-	for fs.cachedDentriesLen != 0 {
-		fs.evictCachedDentryLocked(ctx)
-	}
+	fs.evictAllCachedDentriesLocked(ctx)
 	fs.renameMu.Unlock()
 
 	// Buffer pipe data so that it's available for reading after restore. (This
@@ -141,6 +140,9 @@ func (d *dentry) beforeSave() {
 // afterLoad is invoked by stateify.
 func (d *dentry) afterLoad() {
 	d.hostFD = -1
+	if refsvfs2.LeakCheckEnabled() && atomic.LoadInt64(&d.refs) != -1 {
+		refsvfs2.Register(d, "gofer.dentry")
+	}
 }
 
 // afterLoad is invoked by stateify.

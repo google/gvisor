@@ -6,6 +6,7 @@ go_library(
     name = "verity",
     srcs = [
         "filesystem.go",
+        "save_restore.go",
         "verity.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -15,6 +16,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/marshal/primitive",
         "//pkg/merkletree",
+        "//pkg/refsvfs2",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel",

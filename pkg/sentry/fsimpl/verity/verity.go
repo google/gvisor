@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/merkletree"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -331,6 +332,9 @@ func (fs *filesystem) newDentry() *dentry {
 		fs: fs,
 	}
 	d.vfsd.Init(d)
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.Register(d, "verity.dentry")
+	}
 	return d
 }
 
@@ -393,6 +397,9 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	if d.lowerVD.Ok() {
 		d.lowerVD.DecRef(ctx)
 	}
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.Unregister(d, "verity.dentry")
+	}
 
 	if d.lowerMerkleVD.Ok() {
 		d.lowerMerkleVD.DecRef(ctx)
@@ -410,6 +417,11 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 			panic("verity.dentry.DecRef() called without holding a reference")
 		}
 	}
+}
+
+// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+func (d *dentry) LeakMessage() string {
+	return fmt.Sprintf("[verity.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
