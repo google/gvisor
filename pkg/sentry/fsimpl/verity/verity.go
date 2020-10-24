@@ -23,6 +23,7 @@ package verity
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"sync/atomic"
 
@@ -290,11 +291,12 @@ type dentry struct {
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
 
-	// mode, uid and gid are the file mode, owner, and group of the file in
-	// the underlying file system.
+	// mode, uid, gid and size are the file mode, owner, group, and size of
+	// the file in the underlying file system.
 	mode uint32
 	uid  uint32
 	gid  uint32
+	size uint32
 
 	// parent is the dentry corresponding to this dentry's parent directory.
 	// name is this dentry's name in parent. If this dentry is a filesystem
@@ -548,6 +550,32 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	// Verity files are read-only.
 	return syserror.EPERM
+}
+
+// Seek implements vfs.FileDescriptionImpl.Seek.
+func (fd *fileDescription) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	n := int64(0)
+	switch whence {
+	case linux.SEEK_SET:
+		// use offset as specified
+	case linux.SEEK_CUR:
+		n = fd.off
+	case linux.SEEK_END:
+		n = int64(fd.d.size)
+	default:
+		return 0, syserror.EINVAL
+	}
+	if offset > math.MaxInt64-n {
+		return 0, syserror.EINVAL
+	}
+	offset += n
+	if offset < 0 {
+		return 0, syserror.EINVAL
+	}
+	fd.off = offset
+	return offset, nil
 }
 
 // generateMerkle generates a Merkle tree file for fd. If fd points to a file

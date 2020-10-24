@@ -365,6 +365,7 @@ func (fs *filesystem) verifyStat(ctx context.Context, d *dentry, stat linux.Stat
 	d.mode = uint32(stat.Mode)
 	d.uid = stat.UID
 	d.gid = stat.GID
+	d.size = uint32(size)
 	return nil
 }
 
