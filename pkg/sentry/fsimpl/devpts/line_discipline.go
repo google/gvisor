@@ -100,10 +100,10 @@ type lineDiscipline struct {
 	column int
 
 	// masterWaiter is used to wait on the master end of the TTY.
-	masterWaiter waiter.Queue `state:"zerovalue"`
+	masterWaiter waiter.Queue
 
 	// replicaWaiter is used to wait on the replica end of the TTY.
-	replicaWaiter waiter.Queue `state:"zerovalue"`
+	replicaWaiter waiter.Queue
 }
 
 func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {

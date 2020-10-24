@@ -33,6 +33,8 @@ import (
 
 // VFSPipe represents the actual pipe, analagous to an inode. VFSPipes should
 // not be copied.
+//
+// +stateify savable
 type VFSPipe struct {
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
@@ -164,6 +166,8 @@ func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, l
 // VFSPipeFD implements vfs.FileDescriptionImpl for pipes. It also implements
 // non-atomic usermem.IO methods, allowing it to be passed as usermem.IO to
 // other FileDescriptions for splice(2) and tee(2).
+//
+// +stateify savable
 type VFSPipeFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

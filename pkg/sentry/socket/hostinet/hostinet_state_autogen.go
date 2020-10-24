@@ -44,6 +44,42 @@ func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &s.fd)
 }
 
+func (s *socketVFS2) StateTypeName() string {
+	return "pkg/sentry/socket/hostinet.socketVFS2"
+}
+
+func (s *socketVFS2) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"LockFD",
+		"DentryMetadataFileDescriptionImpl",
+		"socketOpsCommon",
+	}
+}
+
+func (s *socketVFS2) beforeSave() {}
+
+func (s *socketVFS2) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.vfsfd)
+	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &s.LockFD)
+	stateSinkObject.Save(3, &s.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(4, &s.socketOpsCommon)
+}
+
+func (s *socketVFS2) afterLoad() {}
+
+func (s *socketVFS2) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.vfsfd)
+	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &s.LockFD)
+	stateSourceObject.Load(3, &s.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(4, &s.socketOpsCommon)
+}
+
 func init() {
 	state.Register((*socketOpsCommon)(nil))
+	state.Register((*socketVFS2)(nil))
 }

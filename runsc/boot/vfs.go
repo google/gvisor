@@ -210,6 +210,9 @@ func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *c
 		ReadOnly: c.root.Readonly,
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
 			Data: strings.Join(data, ","),
+			InternalData: gofer.InternalFilesystemOptions{
+				UniqueID: "/",
+			},
 		},
 		InternalMount: true,
 	}
@@ -427,6 +430,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 	fsName := m.Type
 	useOverlay := false
 	var data []string
+	var iopts interface{}
 
 	// Find filesystem name and FS specific data field.
 	switch m.Type {
@@ -451,6 +455,9 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 			return "", nil, false, fmt.Errorf("9P mount requires a connection FD")
 		}
 		data = p9MountData(m.fd, c.getMountAccessType(m.Mount), true /* vfs2 */)
+		iopts = gofer.InternalFilesystemOptions{
+			UniqueID: m.Destination,
+		}
 
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
@@ -462,7 +469,8 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 
 	opts := &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			Data: strings.Join(data, ","),
+			Data:         strings.Join(data, ","),
+			InternalData: iopts,
 		},
 		InternalMount: true,
 	}
@@ -666,4 +674,22 @@ func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Crede
 		return nil
 	}
 	return c.k.VFS().MakeSyntheticMountpoint(ctx, dest, root, creds)
+}
+
+// configureRestore returns an updated context.Context including filesystem
+// state used by restore defined by conf.
+func (c *containerMounter) configureRestore(ctx context.Context, conf *config.Config) (context.Context, error) {
+	fdmap := make(map[string]int)
+	fdmap["/"] = c.fds.remove()
+	mounts, err := c.prepareMountsVFS2()
+	if err != nil {
+		return ctx, err
+	}
+	for i := range c.mounts {
+		submount := &mounts[i]
+		if submount.fd >= 0 {
+			fdmap[submount.Destination] = submount.fd
+		}
+	}
+	return context.WithValue(ctx, gofer.CtxRestoreServerFDMap, fdmap), nil
 }

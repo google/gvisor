@@ -43,12 +43,6 @@ func timespecToStatxTimestamp(ts unix.Timespec) linux.StatxTimestamp {
 	return linux.StatxTimestamp{Sec: int64(ts.Sec), Nsec: uint32(ts.Nsec)}
 }
 
-// wouldBlock returns true for file types that can return EWOULDBLOCK
-// for blocking operations, e.g. pipes, character devices, and sockets.
-func wouldBlock(fileType uint32) bool {
-	return fileType == syscall.S_IFIFO || fileType == syscall.S_IFCHR || fileType == syscall.S_IFSOCK
-}
-
 // isBlockError checks if an error is EAGAIN or EWOULDBLOCK.
 // If so, they can be transformed into syserror.ErrWouldBlock.
 func isBlockError(err error) bool {

@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -367,12 +368,20 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 
 	// Set up the restore environment.
+	ctx := k.SupervisorContext()
 	mntr := newContainerMounter(cm.l.root.spec, cm.l.root.goferFDs, cm.l.k, cm.l.mountHints)
-	renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
-	if err != nil {
-		return fmt.Errorf("creating RestoreEnvironment: %v", err)
+	if kernel.VFS2Enabled {
+		ctx, err = mntr.configureRestore(ctx, cm.l.root.conf)
+		if err != nil {
+			return fmt.Errorf("configuring filesystem restore: %v", err)
+		}
+	} else {
+		renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
+		if err != nil {
+			return fmt.Errorf("creating RestoreEnvironment: %v", err)
+		}
+		fs.SetRestoreEnvironment(*renv)
 	}
-	fs.SetRestoreEnvironment(*renv)
 
 	// Prepare to load from the state file.
 	if eps, ok := networkStack.(*netstack.Stack); ok {
@@ -399,7 +408,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: specFile}
-	if err := loadOpts.Load(k, networkStack, time.NewCalibratedClocks()); err != nil {
+	if err := loadOpts.Load(ctx, k, networkStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return err
 	}
 

@@ -35,6 +35,8 @@ import (
 
 // SocketVFS2 encapsulates all the state needed to represent a network stack
 // endpoint in the kernel context.
+//
+// +stateify savable
 type SocketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

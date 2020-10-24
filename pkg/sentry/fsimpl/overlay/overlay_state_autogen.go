@@ -147,9 +147,7 @@ func (d *dentry) StateFields() []string {
 		"devMajor",
 		"devMinor",
 		"ino",
-		"mapsMu",
 		"lowerMappings",
-		"dataMu",
 		"wrappedMappable",
 		"isMappable",
 		"locks",
@@ -178,13 +176,11 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &d.devMajor)
 	stateSinkObject.Save(15, &d.devMinor)
 	stateSinkObject.Save(16, &d.ino)
-	stateSinkObject.Save(17, &d.mapsMu)
-	stateSinkObject.Save(18, &d.lowerMappings)
-	stateSinkObject.Save(19, &d.dataMu)
-	stateSinkObject.Save(20, &d.wrappedMappable)
-	stateSinkObject.Save(21, &d.isMappable)
-	stateSinkObject.Save(22, &d.locks)
-	stateSinkObject.Save(23, &d.watches)
+	stateSinkObject.Save(17, &d.lowerMappings)
+	stateSinkObject.Save(18, &d.wrappedMappable)
+	stateSinkObject.Save(19, &d.isMappable)
+	stateSinkObject.Save(20, &d.locks)
+	stateSinkObject.Save(21, &d.watches)
 }
 
 func (d *dentry) afterLoad() {}
@@ -207,13 +203,11 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(14, &d.devMajor)
 	stateSourceObject.Load(15, &d.devMinor)
 	stateSourceObject.Load(16, &d.ino)
-	stateSourceObject.Load(17, &d.mapsMu)
-	stateSourceObject.Load(18, &d.lowerMappings)
-	stateSourceObject.Load(19, &d.dataMu)
-	stateSourceObject.Load(20, &d.wrappedMappable)
-	stateSourceObject.Load(21, &d.isMappable)
-	stateSourceObject.Load(22, &d.locks)
-	stateSourceObject.Load(23, &d.watches)
+	stateSourceObject.Load(17, &d.lowerMappings)
+	stateSourceObject.Load(18, &d.wrappedMappable)
+	stateSourceObject.Load(19, &d.isMappable)
+	stateSourceObject.Load(20, &d.locks)
+	stateSourceObject.Load(21, &d.watches)
 }
 
 func (fd *fileDescription) StateTypeName() string {

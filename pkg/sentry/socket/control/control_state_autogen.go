@@ -43,7 +43,16 @@ func (c *scmCredentials) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &c.kgid)
 }
 
+func (fs *RightsFilesVFS2) StateTypeName() string {
+	return "pkg/sentry/socket/control.RightsFilesVFS2"
+}
+
+func (fs *RightsFilesVFS2) StateFields() []string {
+	return nil
+}
+
 func init() {
 	state.Register((*RightsFiles)(nil))
 	state.Register((*scmCredentials)(nil))
+	state.Register((*RightsFilesVFS2)(nil))
 }

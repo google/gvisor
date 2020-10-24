@@ -61,8 +61,9 @@ type FilesystemType struct{}
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
-	// memFile is used to allocate pages to for regular files.
-	memFile *pgalloc.MemoryFile
+	// mfp is used to allocate memory that stores regular file contents. mfp is
+	// immutable.
+	mfp pgalloc.MemoryFileProvider
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock time.Clock
@@ -106,8 +107,8 @@ type FilesystemOpts struct {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, _ string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	memFileProvider := pgalloc.MemoryFileProviderFromContext(ctx)
-	if memFileProvider == nil {
+	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
+	if mfp == nil {
 		panic("MemoryFileProviderFromContext returned nil")
 	}
 
@@ -181,7 +182,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	clock := time.RealtimeClockFromContext(ctx)
 	fs := filesystem{
-		memFile:  memFileProvider.MemoryFile(),
+		mfp:      mfp,
 		clock:    clock,
 		devMinor: devMinor,
 	}

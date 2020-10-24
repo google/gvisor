@@ -168,7 +168,7 @@ func NewChannelEntry(c chan struct{}) (Entry, chan struct{}) {
 //
 // +stateify savable
 type Queue struct {
-	list waiterList   `state:"zerovalue"`
+	list waiterList
 	mu   sync.RWMutex `state:"nosave"`
 }
 

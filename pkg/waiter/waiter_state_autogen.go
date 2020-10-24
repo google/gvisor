@@ -40,21 +40,22 @@ func (q *Queue) StateTypeName() string {
 }
 
 func (q *Queue) StateFields() []string {
-	return []string{}
+	return []string{
+		"list",
+	}
 }
 
 func (q *Queue) beforeSave() {}
 
 func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
-	if !state.IsZeroValue(&q.list) {
-		state.Failf("list is %#v, expected zero", &q.list)
-	}
+	stateSinkObject.Save(0, &q.list)
 }
 
 func (q *Queue) afterLoad() {}
 
 func (q *Queue) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &q.list)
 }
 
 func (l *waiterList) StateTypeName() string {

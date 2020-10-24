@@ -70,6 +70,13 @@ func (f *HostFileMapper) Init() {
 	f.mappings = make(map[uint64]mapping)
 }
 
+// IsInited returns true if f.Init() has been called. This is used when
+// restoring a checkpoint that contains a HostFileMapper that may or may not
+// have been initialized.
+func (f *HostFileMapper) IsInited() bool {
+	return f.refs != nil
+}
+
 // NewHostFileMapper returns an initialized HostFileMapper allocated on the
 // heap with no references or cached mappings.
 func NewHostFileMapper() *HostFileMapper {
