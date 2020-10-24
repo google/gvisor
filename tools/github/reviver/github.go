@@ -121,13 +121,24 @@ func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 	return true, nil
 }
 
-// parseIssueNo parses the issue number out of the issue url.
-func parseIssueNo(url string) (int, error) {
-	const prefix = "gvisor.dev/issue/"
+var issuePrefixes = []string{
+	"gvisor.dev/issue/",
+	"gvisor.dev/issues/",
+}
 
+// parseIssueNo parses the issue number out of the issue url.
+//
+// 0 is returned if url does not correspond to an issue.
+func parseIssueNo(url string) (int, error) {
 	// First check if I can handle the TODO.
-	idStr := strings.TrimPrefix(url, prefix)
-	if len(url) == len(idStr) {
+	var idStr string
+	for _, p := range issuePrefixes {
+		if str := strings.TrimPrefix(url, p); len(str) < len(url) {
+			idStr = str
+			break
+		}
+	}
+	if len(idStr) == 0 {
 		return 0, nil
 	}
 

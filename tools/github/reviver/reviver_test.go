@@ -33,6 +33,15 @@ func TestProcessLine(t *testing.T) {
 			},
 		},
 		{
+			line: "// TODO(foobar.com/issues/123): comment, bla. blabla.",
+			want: &Todo{
+				Issue: "foobar.com/issues/123",
+				Locations: []Location{
+					{Comment: "comment, bla. blabla."},
+				},
+			},
+		},
+		{
 			line: "// FIXME(b/123): internal bug",
 			want: &Todo{
 				Issue: "b/123",
