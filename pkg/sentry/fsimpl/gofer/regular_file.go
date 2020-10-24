@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -31,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -624,23 +624,7 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *regularFileFD) Sync(ctx context.Context) error {
-	return fd.dentry().syncCachedFile(ctx)
-}
-
-func (d *dentry) syncCachedFile(ctx context.Context) error {
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-
-	if h := d.writeHandleLocked(); h.isOpen() {
-		d.dataMu.Lock()
-		// Write dirty cached data to the remote file.
-		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mfp.MemoryFile(), h.writeFromBlocksAt)
-		d.dataMu.Unlock()
-		if err != nil {
-			return err
-		}
-	}
-	return d.syncRemoteFileLocked(ctx)
+	return fd.dentry().syncCachedFile(ctx, false /* lowSyncExpectations */)
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
@@ -913,7 +897,7 @@ type dentryPlatformFile struct {
 	hostFileMapper fsutil.HostFileMapper
 
 	// hostFileMapperInitOnce is used to lazily initialize hostFileMapper.
-	hostFileMapperInitOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
+	hostFileMapperInitOnce sync.Once `state:"nosave"`
 }
 
 // IncRef implements memmap.File.IncRef.

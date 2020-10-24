@@ -74,7 +74,7 @@ type epollInterestKey struct {
 // +stateify savable
 type epollInterest struct {
 	// epoll is the owning EpollInstance. epoll is immutable.
-	epoll *EpollInstance
+	epoll *EpollInstance `state:"wait"`
 
 	// key is the file to which this epollInterest applies. key is immutable.
 	key epollInterestKey

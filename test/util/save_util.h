@@ -17,9 +17,17 @@
 
 namespace gvisor {
 namespace testing {
-// Disable save prevents saving while the given function executes.
+
+// Returns true if the environment in which the calling process is executing
+// allows the test to be checkpointed and restored during execution.
+bool IsRunningWithSaveRestore();
+
+// May perform a co-operative save cycle.
 //
-// This lasts the duration of the object, unless reset is called.
+// errno is guaranteed to be preserved.
+void MaybeSave();
+
+// Causes MaybeSave to become a no-op until destroyed or reset.
 class DisableSave {
  public:
   DisableSave();
@@ -37,13 +45,13 @@ class DisableSave {
   bool reset_ = false;
 };
 
-// May perform a co-operative save cycle.
+namespace internal {
+
+// Causes a co-operative save cycle to occur.
 //
 // errno is guaranteed to be preserved.
-void MaybeSave();
+void DoCooperativeSave();
 
-namespace internal {
-bool ShouldSave();
 }  // namespace internal
 
 }  // namespace testing

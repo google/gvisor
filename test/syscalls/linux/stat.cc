@@ -31,6 +31,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -328,7 +329,10 @@ TEST_F(StatTest, LeadingDoubleSlash) {
   ASSERT_THAT(lstat(double_slash_path.c_str(), &double_slash_st),
               SyscallSucceeds());
   EXPECT_EQ(st.st_dev, double_slash_st.st_dev);
-  EXPECT_EQ(st.st_ino, double_slash_st.st_ino);
+  // Inode numbers for gofer-accessed files may change across save/restore.
+  if (!IsRunningWithSaveRestore()) {
+    EXPECT_EQ(st.st_ino, double_slash_st.st_ino);
+  }
 }
 
 // Test that a rename doesn't change the underlying file.
@@ -346,8 +350,14 @@ TEST_F(StatTest, StatDoesntChangeAfterRename) {
 
   EXPECT_EQ(st_old.st_nlink, st_new.st_nlink);
   EXPECT_EQ(st_old.st_dev, st_new.st_dev);
+  // Inode numbers for gofer-accessed files on which no reference is held may
+  // change across save/restore because the information that the gofer client
+  // uses to track file identity (9P QID path) is inconsistent between gofer
+  // processes, which are restarted across save/restore.
+  //
   // Overlay filesystems may synthesize directory inode numbers on the fly.
-  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir()))) {
+  if (!IsRunningWithSaveRestore() &&
+      !ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir()))) {
     EXPECT_EQ(st_old.st_ino, st_new.st_ino);
   }
   EXPECT_EQ(st_old.st_mode, st_new.st_mode);
@@ -539,6 +549,26 @@ TEST_F(StatTest, LstatELOOPPath) {
 
   struct stat s = {};
   ASSERT_THAT(lstat(path.c_str(), &s), SyscallFailsWithErrno(ELOOP));
+}
+
+TEST(SimpleStatTest, DifferentFilesHaveDifferentDeviceInodeNumberPairs) {
+  // TODO(gvisor.dev/issue/1624): This test case fails in VFS1 save/restore
+  // tests because VFS1 gofer inode number assignment restarts after
+  // save/restore, such that the inodes for file1 and file2 (which are
+  // unreferenced and therefore not retained in sentry checkpoints before the
+  // calls to lstat()) are assigned the same inode number.
+  SKIP_IF(IsRunningWithVFS1() && IsRunningWithSaveRestore());
+
+  TempPath file1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  TempPath file2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  MaybeSave();
+  struct stat st1 = ASSERT_NO_ERRNO_AND_VALUE(Lstat(file1.path()));
+  MaybeSave();
+  struct stat st2 = ASSERT_NO_ERRNO_AND_VALUE(Lstat(file2.path()));
+  EXPECT_FALSE(st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino)
+      << "both files have device number " << st1.st_dev << " and inode number "
+      << st1.st_ino;
 }
 
 // Ensure that inode allocation for anonymous devices work correctly across

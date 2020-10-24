@@ -26,11 +26,6 @@
 namespace gvisor {
 namespace testing {
 
-class PosixErrorIsMatcherCommonImpl;
-
-template <typename T>
-class PosixErrorOr;
-
 class ABSL_MUST_USE_RESULT PosixError {
  public:
   PosixError() {}
@@ -49,7 +44,8 @@ class ABSL_MUST_USE_RESULT PosixError {
   // PosixErrorOr.
   const PosixError& error() const { return *this; }
 
-  std::string error_message() const { return msg_; }
+  int errno_value() const { return errno_; }
+  std::string message() const { return msg_; }
 
   // ToString produces a full string representation of this posix error
   // including the printable representation of the errno and the error message.
@@ -61,14 +57,8 @@ class ABSL_MUST_USE_RESULT PosixError {
   void IgnoreError() const {}
 
  private:
-  int errno_value() const { return errno_; }
   int errno_ = 0;
   std::string msg_;
-
-  friend class PosixErrorIsMatcherCommonImpl;
-
-  template <typename T>
-  friend class PosixErrorOr;
 };
 
 template <typename T>
@@ -94,14 +84,11 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
   template <typename U>
   PosixErrorOr& operator=(PosixErrorOr<U> other);
 
-  // Return a reference to the error or NoError().
-  PosixError error() const;
-
-  // Returns this->error().error_message();
-  std::string error_message() const;
-
   // Returns true if this PosixErrorOr contains some T.
   bool ok() const;
+
+  // Return a copy of the contained PosixError or NoError().
+  PosixError error() const;
 
   // Returns a reference to our current value, or CHECK-fails if !this->ok().
   const T& ValueOrDie() const&;
@@ -115,7 +102,6 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
   void IgnoreError() const {}
 
  private:
-  int errno_value() const;
   absl::variant<T, PosixError> value_;
 
   friend class PosixErrorIsMatcherCommonImpl;
@@ -168,16 +154,6 @@ PosixError PosixErrorOr<T>::error() const {
     return PosixError();
   }
   return absl::get<PosixError>(value_);
-}
-
-template <typename T>
-int PosixErrorOr<T>::errno_value() const {
-  return error().errno_value();
-}
-
-template <typename T>
-std::string PosixErrorOr<T>::error_message() const {
-  return error().error_message();
 }
 
 template <typename T>

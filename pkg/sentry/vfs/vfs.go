@@ -71,7 +71,7 @@ type VirtualFilesystem struct {
 	// points.
 	//
 	// mounts is analogous to Linux's mount_hashtable.
-	mounts mountTable
+	mounts mountTable `state:".([]*Mount)"`
 
 	// mountpoints maps mount points to mounts at those points in all
 	// namespaces. mountpoints is protected by mountMu.
@@ -780,23 +780,27 @@ func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Cre
 
 // SyncAllFilesystems has the semantics of Linux's sync(2).
 func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
-	fss := make(map[*Filesystem]struct{})
-	vfs.filesystemsMu.Lock()
-	for fs := range vfs.filesystems {
-		if !fs.TryIncRef() {
-			continue
-		}
-		fss[fs] = struct{}{}
-	}
-	vfs.filesystemsMu.Unlock()
 	var retErr error
-	for fs := range fss {
+	for fs := range vfs.getFilesystems() {
 		if err := fs.impl.Sync(ctx); err != nil && retErr == nil {
 			retErr = err
 		}
 		fs.DecRef(ctx)
 	}
 	return retErr
+}
+
+func (vfs *VirtualFilesystem) getFilesystems() map[*Filesystem]struct{} {
+	fss := make(map[*Filesystem]struct{})
+	vfs.filesystemsMu.Lock()
+	defer vfs.filesystemsMu.Unlock()
+	for fs := range vfs.filesystems {
+		if !fs.TryIncRef() {
+			continue
+		}
+		fss[fs] = struct{}{}
+	}
+	return fss
 }
 
 // MkdirAllAt recursively creates non-existent directories on the given path
