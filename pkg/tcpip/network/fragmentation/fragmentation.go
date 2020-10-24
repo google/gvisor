@@ -136,8 +136,16 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 // proto is the protocol number marked in the fragment being processed. It has
 // to be given here outside of the FragmentID struct because IPv6 should not use
 // the protocol to identify a fragment.
+//
+// releaseCB is a callback that will run when the fragment reassembly of a
+// packet is complete or cancelled. releaseCB take a a boolean argument which is
+// true iff the reassembly is cancelled due to timeout. releaseCB should be
+// passed only with the first fragment of a packet. If more than one releaseCB
+// are passed for the same packet, only the first releaseCB will be saved for
+// the packet and the succeeding ones will be dropped by running them
+// immediately with a false argument.
 func (f *Fragmentation) Process(
-	id FragmentID, first, last uint16, more bool, proto uint8, vv buffer.VectorisedView) (
+	id FragmentID, first, last uint16, more bool, proto uint8, vv buffer.VectorisedView, releaseCB func(bool)) (
 	buffer.VectorisedView, uint8, bool, error) {
 	if first > last {
 		return buffer.VectorisedView{}, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
@@ -171,6 +179,12 @@ func (f *Fragmentation) Process(
 			f.releaseReassemblersLocked()
 		}
 	}
+	if releaseCB != nil {
+		if !r.setCallback(releaseCB) {
+			// We got a duplicate callback. Release it immediately.
+			releaseCB(false /* timedOut */)
+		}
+	}
 	f.mu.Unlock()
 
 	res, firstFragmentProto, done, consumed, err := r.process(first, last, more, proto, vv)
@@ -178,14 +192,14 @@ func (f *Fragmentation) Process(
 		// We probably got an invalid sequence of fragments. Just
 		// discard the reassembler and move on.
 		f.mu.Lock()
-		f.release(r)
+		f.release(r, false /* timedOut */)
 		f.mu.Unlock()
 		return buffer.VectorisedView{}, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
 	}
 	f.mu.Lock()
 	f.size += consumed
 	if done {
-		f.release(r)
+		f.release(r, false /* timedOut */)
 	}
 	// Evict reassemblers if we are consuming more memory than highLimit until
 	// we reach lowLimit.
@@ -195,14 +209,14 @@ func (f *Fragmentation) Process(
 			if tail == nil {
 				break
 			}
-			f.release(tail)
+			f.release(tail, false /* timedOut */)
 		}
 	}
 	f.mu.Unlock()
 	return res, firstFragmentProto, done, nil
 }
 
-func (f *Fragmentation) release(r *reassembler) {
+func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	// Before releasing a fragment we need to check if r is already marked as done.
 	// Otherwise, we would delete it twice.
 	if r.checkDoneOrMark() {
@@ -216,6 +230,8 @@ func (f *Fragmentation) release(r *reassembler) {
 		log.Printf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.size)
 		f.size = 0
 	}
+
+	r.release(timedOut) // releaseCB may run.
 }
 
 // releaseReassemblersLocked releases already-expired reassemblers, then
@@ -238,7 +254,7 @@ func (f *Fragmentation) releaseReassemblersLocked() {
 			break
 		}
 		// If the oldest reassembler has already expired, release it.
-		f.release(r)
+		f.release(r, true /* timedOut*/)
 	}
 }
 
