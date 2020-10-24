@@ -425,7 +425,7 @@ func Mount(src, dst, typ string, flags uint32) error {
 		// Special case, as there is no source directory for proc mounts.
 		isDir = true
 	} else if fi, err := os.Stat(src); err != nil {
-		return fmt.Errorf("Stat(%q) failed: %v", src, err)
+		return fmt.Errorf("stat(%q) failed: %v", src, err)
 	} else {
 		isDir = fi.IsDir()
 	}
@@ -433,25 +433,25 @@ func Mount(src, dst, typ string, flags uint32) error {
 	if isDir {
 		// Create the destination directory.
 		if err := os.MkdirAll(dst, 0777); err != nil {
-			return fmt.Errorf("Mkdir(%q) failed: %v", dst, err)
+			return fmt.Errorf("mkdir(%q) failed: %v", dst, err)
 		}
 	} else {
 		// Create the parent destination directory.
 		parent := path.Dir(dst)
 		if err := os.MkdirAll(parent, 0777); err != nil {
-			return fmt.Errorf("Mkdir(%q) failed: %v", parent, err)
+			return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
 		}
 		// Create the destination file if it does not exist.
 		f, err := os.OpenFile(dst, syscall.O_CREAT, 0777)
 		if err != nil {
-			return fmt.Errorf("Open(%q) failed: %v", dst, err)
+			return fmt.Errorf("open(%q) failed: %v", dst, err)
 		}
 		f.Close()
 	}
 
 	// Do the mount.
 	if err := syscall.Mount(src, dst, typ, uintptr(flags), ""); err != nil {
-		return fmt.Errorf("Mount(%q, %q, %d) failed: %v", src, dst, flags, err)
+		return fmt.Errorf("mount(%q, %q, %d) failed: %v", src, dst, flags, err)
 	}
 	return nil
 }
