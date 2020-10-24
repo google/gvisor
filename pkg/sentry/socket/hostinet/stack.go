@@ -430,18 +430,18 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 	}
 
 	if rawLine == "" {
-		return fmt.Errorf("Failed to get raw line")
+		return fmt.Errorf("failed to get raw line")
 	}
 
 	parts := strings.SplitN(rawLine, ":", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("Failed to get prefix from: %q", rawLine)
+		return fmt.Errorf("failed to get prefix from: %q", rawLine)
 	}
 
 	sliceStat = toSlice(stat)
 	fields := strings.Fields(strings.TrimSpace(parts[1]))
 	if len(fields) != len(sliceStat) {
-		return fmt.Errorf("Failed to parse fields: %q", rawLine)
+		return fmt.Errorf("failed to parse fields: %q", rawLine)
 	}
 	if _, ok := stat.(*inet.StatSNMPTCP); ok {
 		snmpTCP = true
@@ -457,7 +457,7 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			sliceStat[i], err = strconv.ParseUint(fields[i], 10, 64)
 		}
 		if err != nil {
-			return fmt.Errorf("Failed to parse field %d from: %q, %v", i, rawLine, err)
+			return fmt.Errorf("failed to parse field %d from: %q, %v", i, rawLine, err)
 		}
 	}
 
