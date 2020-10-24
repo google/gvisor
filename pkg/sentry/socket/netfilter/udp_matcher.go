@@ -68,7 +68,7 @@ func (udpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Ma
 	}
 
 	if filter.Protocol != header.UDPProtocolNumber {
-		return nil, fmt.Errorf("UDP matching is only valid for protocol %d.", header.UDPProtocolNumber)
+		return nil, fmt.Errorf("UDP matching is only valid for protocol %d", header.UDPProtocolNumber)
 	}
 
 	return &UDPMatcher{

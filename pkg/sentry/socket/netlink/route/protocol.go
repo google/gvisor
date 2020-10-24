@@ -36,9 +36,9 @@ type commandKind int
 
 const (
 	kindNew commandKind = 0x0
-	kindDel             = 0x1
-	kindGet             = 0x2
-	kindSet             = 0x3
+	kindDel commandKind = 0x1
+	kindGet commandKind = 0x2
+	kindSet commandKind = 0x3
 )
 
 func typeKind(typ uint16) commandKind {
