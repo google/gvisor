@@ -744,6 +744,13 @@ type icmpReasonPortUnreachable struct{}
 
 func (*icmpReasonPortUnreachable) isICMPReason() {}
 
+// icmpReasonReassemblyTimeout is an error where insufficient fragments are
+// received to complete reassembly of a packet within a configured time after
+// the reception of the first-arriving fragment of that packet.
+type icmpReasonReassemblyTimeout struct{}
+
+func (*icmpReasonReassemblyTimeout) isICMPReason() {}
+
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
 func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
@@ -836,7 +843,9 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 	if payloadLen > available {
 		payloadLen = available
 	}
-	payload := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+	payload := network.ToVectorisedView()
+	payload.AppendView(transport)
+	payload.Append(pkt.Data)
 	payload.CapLength(payloadLen)
 
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -857,6 +866,10 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 		icmpHdr.SetType(header.ICMPv6DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv6PortUnreachable)
 		counter = sent.DstUnreachable
+	case *icmpReasonReassemblyTimeout:
+		icmpHdr.SetType(header.ICMPv6TimeExceeded)
+		icmpHdr.SetCode(header.ICMPv6ReassemblyTimeout)
+		counter = sent.TimeExceeded
 	default:
 		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
 	}

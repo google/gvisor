@@ -105,3 +105,26 @@ func TestUpdateHoles(t *testing.T) {
 		}
 	}
 }
+
+func TestSetCallback(t *testing.T) {
+	result := 0
+	reasonTimeout := false
+
+	cb1 := func(timedOut bool) { result = 1; reasonTimeout = timedOut }
+	cb2 := func(timedOut bool) { result = 2; reasonTimeout = timedOut }
+
+	r := newReassembler(FragmentID{}, &faketime.NullClock{})
+	if !r.setCallback(cb1) {
+		t.Errorf("setCallback failed")
+	}
+	if r.setCallback(cb2) {
+		t.Errorf("setCallback should fail if one is already set")
+	}
+	r.release(true)
+	if result != 1 {
+		t.Errorf("got result = %d, want = 1", result)
+	}
+	if !reasonTimeout {
+		t.Errorf("got reasonTimeout = %t, want = true", reasonTimeout)
+	}
+}

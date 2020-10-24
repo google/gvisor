@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/testutil"
@@ -1912,16 +1913,19 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 
 func TestInvalidIPv6Fragments(t *testing.T) {
 	const (
-		nicID             = 1
-		fragmentExtHdrLen = 8
+		addr1     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+		addr2     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+		linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
+		nicID     = 1
+		hoplimit  = 255
+		ident     = 1
+		data      = "TEST_INVALID_IPV6_FRAGMENTS"
 	)
 
-	payloadGen := func(payloadLen int) []byte {
-		payload := make([]byte, payloadLen)
-		for i := 0; i < len(payload); i++ {
-			payload[i] = 0x30
-		}
-		return payload
+	type fragmentData struct {
+		ipv6Fields         header.IPv6Fields
+		ipv6FragmentFields header.IPv6FragmentFields
+		payload            []byte
 	}
 
 	tests := []struct {
@@ -1929,31 +1933,64 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 		fragments              []fragmentData
 		wantMalformedIPPackets uint64
 		wantMalformedFragments uint64
+		expectICMP             bool
+		expectICMPType         header.ICMPv6Type
+		expectICMPCode         header.ICMPv6Code
+		expectICMPTypeSpecific uint32
 	}{
 		{
-			name: "fragments reassembled into a payload exceeding the max IPv6 payload size",
+			name: "fragment size is not a multiple of 8 and the M flag is true",
 			fragments: []fragmentData{
 				{
-					srcAddr: addr1,
-					dstAddr: addr2,
-					nextHdr: fragmentExtHdrID,
-					data: buffer.NewVectorisedView(
-						fragmentExtHdrLen+(header.IPv6MaximumPayloadSize+1)-16,
-						[]buffer.View{
-							// Fragment extension header.
-							// Fragment offset = 8190, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0,
-								((header.IPv6MaximumPayloadSize + 1) - 16) >> 8,
-								((header.IPv6MaximumPayloadSize + 1) - 16) & math.MaxUint8,
-								0, 0, 0, 1}),
-							// Payload length = 16
-							payloadGen(16),
-						},
-					),
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: header.IPv6FragmentHeaderSize + 9,
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 0 >> 3,
+						M:              true,
+						Identification: ident,
+					},
+					payload: []byte(data)[:9],
 				},
 			},
 			wantMalformedIPPackets: 1,
 			wantMalformedFragments: 1,
+			expectICMP:             true,
+			expectICMPType:         header.ICMPv6ParamProblem,
+			expectICMPCode:         header.ICMPv6ErroneousHeader,
+			expectICMPTypeSpecific: header.IPv6PayloadLenOffset,
+		},
+		{
+			name: "fragments reassembled into a payload exceeding the max IPv6 payload size",
+			fragments: []fragmentData{
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: header.IPv6FragmentHeaderSize + 16,
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: ((header.IPv6MaximumPayloadSize + 1) - 16) >> 3,
+						M:              false,
+						Identification: ident,
+					},
+					payload: []byte(data)[:16],
+				},
+			},
+			wantMalformedIPPackets: 1,
+			wantMalformedFragments: 1,
+			expectICMP:             true,
+			expectICMPType:         header.ICMPv6ParamProblem,
+			expectICMPCode:         header.ICMPv6ErroneousHeader,
+			expectICMPTypeSpecific: header.IPv6MinimumSize + 2, /* offset for 'Fragment Offset' in the fragment header */
 		},
 	}
 
@@ -1964,33 +2001,40 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 					NewProtocol,
 				},
 			})
-			e := channel.New(0, 1500, linkAddr1)
+			e := channel.New(1, 1500, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 			if err := s.AddAddress(nicID, ProtocolNumber, addr2); err != nil {
 				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, addr2, err)
 			}
+			s.SetRouteTable([]tcpip.Route{{
+				Destination: header.IPv6EmptySubnet,
+				NIC:         nicID,
+			}})
 
+			var expectICMPPayload buffer.View
 			for _, f := range test.fragments {
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize)
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
 
-				// Serialize IPv6 fixed header.
-				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
-				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(f.data.Size()),
-					NextHeader:    f.nextHdr,
-					HopLimit:      255,
-					SrcAddr:       f.srcAddr,
-					DstAddr:       f.dstAddr,
-				})
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize))
+				ip.Encode(&f.ipv6Fields)
+
+				fragHDR := header.IPv6Fragment(hdr.View()[header.IPv6MinimumSize:])
+				fragHDR.Encode(&f.ipv6FragmentFields)
 
 				vv := hdr.View().ToVectorisedView()
-				vv.Append(f.data)
+				vv.AppendView(f.payload)
 
-				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: vv,
-				}))
+				})
+
+				if test.expectICMP {
+					expectICMPPayload = stack.PayloadSince(pkt.NetworkHeader())
+				}
+
+				e.InjectInbound(ProtocolNumber, pkt)
 			}
 
 			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), test.wantMalformedIPPackets; got != want {
@@ -1999,6 +2043,287 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), test.wantMalformedFragments; got != want {
 				t.Errorf("got Stats.IP.MalformedFragmentsReceived = %d, want = %d", got, want)
 			}
+
+			reply, ok := e.Read()
+			if !test.expectICMP {
+				if ok {
+					t.Fatalf("unexpected ICMP error message received: %#v", reply)
+				}
+				return
+			}
+			if !ok {
+				t.Fatal("expected ICMP error message missing")
+			}
+
+			checker.IPv6(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+				checker.SrcAddr(addr2),
+				checker.DstAddr(addr1),
+				checker.IPFullLength(uint16(header.IPv6MinimumSize+header.ICMPv6MinimumSize+expectICMPPayload.Size())),
+				checker.ICMPv6(
+					checker.ICMPv6Type(test.expectICMPType),
+					checker.ICMPv6Code(test.expectICMPCode),
+					checker.ICMPv6TypeSpecific(test.expectICMPTypeSpecific),
+					checker.ICMPv6Payload([]byte(expectICMPPayload)),
+				),
+			)
+		})
+	}
+}
+
+func TestFragmentReassemblyTimeout(t *testing.T) {
+	const (
+		addr1     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+		addr2     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+		linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
+		nicID     = 1
+		hoplimit  = 255
+		ident     = 1
+		data      = "TEST_FRAGMENT_REASSEMBLY_TIMEOUT"
+	)
+
+	type fragmentData struct {
+		ipv6Fields         header.IPv6Fields
+		ipv6FragmentFields header.IPv6FragmentFields
+		payload            []byte
+	}
+
+	tests := []struct {
+		name       string
+		fragments  []fragmentData
+		expectICMP bool
+	}{
+		{
+			name: "first fragment only",
+			fragments: []fragmentData{
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: header.IPv6FragmentHeaderSize + 16,
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 0,
+						M:              true,
+						Identification: ident,
+					},
+					payload: []byte(data)[:16],
+				},
+			},
+			expectICMP: true,
+		},
+		{
+			name: "two first fragments",
+			fragments: []fragmentData{
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: header.IPv6FragmentHeaderSize + 16,
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 0,
+						M:              true,
+						Identification: ident,
+					},
+					payload: []byte(data)[:16],
+				},
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: header.IPv6FragmentHeaderSize + 16,
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 0,
+						M:              true,
+						Identification: ident,
+					},
+					payload: []byte(data)[:16],
+				},
+			},
+			expectICMP: true,
+		},
+		{
+			name: "second fragment only",
+			fragments: []fragmentData{
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 8,
+						M:              false,
+						Identification: ident,
+					},
+					payload: []byte(data)[16:],
+				},
+			},
+			expectICMP: false,
+		},
+		{
+			name: "two fragments with a gap",
+			fragments: []fragmentData{
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: header.IPv6FragmentHeaderSize + 16,
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 0,
+						M:              true,
+						Identification: ident,
+					},
+					payload: []byte(data)[:16],
+				},
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 8,
+						M:              false,
+						Identification: ident,
+					},
+					payload: []byte(data)[16:],
+				},
+			},
+			expectICMP: true,
+		},
+		{
+			name: "two fragments with a gap in reverse order",
+			fragments: []fragmentData{
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 8,
+						M:              false,
+						Identification: ident,
+					},
+					payload: []byte(data)[16:],
+				},
+				{
+					ipv6Fields: header.IPv6Fields{
+						PayloadLength: header.IPv6FragmentHeaderSize + 16,
+						NextHeader:    header.IPv6FragmentHeader,
+						HopLimit:      hoplimit,
+						SrcAddr:       addr1,
+						DstAddr:       addr2,
+					},
+					ipv6FragmentFields: header.IPv6FragmentFields{
+						NextHeader:     uint8(header.UDPProtocolNumber),
+						FragmentOffset: 0,
+						M:              true,
+						Identification: ident,
+					},
+					payload: []byte(data)[:16],
+				},
+			},
+			expectICMP: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{
+					NewProtocol,
+				},
+				Clock: clock,
+			})
+
+			e := channel.New(1, 1500, linkAddr1)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr2, err)
+			}
+			s.SetRouteTable([]tcpip.Route{{
+				Destination: header.IPv6EmptySubnet,
+				NIC:         nicID,
+			}})
+
+			var firstFragmentSent buffer.View
+			for _, f := range test.fragments {
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
+
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize))
+				ip.Encode(&f.ipv6Fields)
+
+				fragHDR := header.IPv6Fragment(hdr.View()[header.IPv6MinimumSize:])
+				fragHDR.Encode(&f.ipv6FragmentFields)
+
+				vv := hdr.View().ToVectorisedView()
+				vv.AppendView(f.payload)
+
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: vv,
+				})
+
+				if firstFragmentSent == nil && fragHDR.FragmentOffset() == 0 {
+					firstFragmentSent = stack.PayloadSince(pkt.NetworkHeader())
+				}
+
+				e.InjectInbound(ProtocolNumber, pkt)
+			}
+
+			clock.Advance(ReassembleTimeout)
+
+			reply, ok := e.Read()
+			if !test.expectICMP {
+				if ok {
+					t.Fatalf("unexpected ICMP error message received: %#v", reply)
+				}
+				return
+			}
+			if !ok {
+				t.Fatal("expected ICMP error message missing")
+			}
+			if firstFragmentSent == nil {
+				t.Fatalf("unexpected ICMP error message received: %#v", reply)
+			}
+
+			checker.IPv6(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+				checker.SrcAddr(addr2),
+				checker.DstAddr(addr1),
+				checker.IPFullLength(uint16(header.IPv6MinimumSize+header.ICMPv6MinimumSize+firstFragmentSent.Size())),
+				checker.ICMPv6(
+					checker.ICMPv6Type(header.ICMPv6TimeExceeded),
+					checker.ICMPv6Code(header.ICMPv6ReassemblyTimeout),
+					checker.ICMPv6Payload([]byte(firstFragmentSent)),
+				),
+			)
 		})
 	}
 }
