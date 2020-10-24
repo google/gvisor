@@ -46,6 +46,8 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
+	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -109,8 +111,8 @@ type filesystem struct {
 
 	// cachedDentries contains all dentries with 0 references. (Due to race
 	// conditions, it may also contain dentries with non-zero references.)
-	// cachedDentriesLen is the number of dentries in cachedDentries. These
-	// fields are protected by renameMu.
+	// cachedDentriesLen is the number of dentries in cachedDentries. These fields
+	// are protected by renameMu.
 	cachedDentries    dentryList
 	cachedDentriesLen uint64
 
@@ -134,6 +136,10 @@ type filesystem struct {
 
 	// savedDentryRW records open read/write handles during save/restore.
 	savedDentryRW map[*dentry]savedDentryRW
+
+	// released is nonzero once filesystem.Release has been called. It is accessed
+	// with atomic memory operations.
+	released int32
 }
 
 // +stateify savable
@@ -454,9 +460,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 	// Set the root's reference count to 2. One reference is returned to the
-	// caller, and the other is deliberately leaked to prevent the root from
-	// being "cached" and subsequently evicted. Its resources will still be
-	// cleaned up by fs.Release().
+	// caller, and the other is held by fs to prevent the root from being "cached"
+	// and subsequently evicted.
 	root.refs = 2
 	fs.root = root
 
@@ -526,15 +531,16 @@ func (fs *filesystem) dial(ctx context.Context) error {
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
-	mf := fs.mfp.MemoryFile()
+	atomic.StoreInt32(&fs.released, 1)
 
+	mf := fs.mfp.MemoryFile()
 	fs.syncMu.Lock()
 	for d := range fs.syncableDentries {
 		d.handleMu.Lock()
 		d.dataMu.Lock()
 		if h := d.writeHandleLocked(); h.isOpen() {
 			// Write dirty cached data to the remote file.
-			if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, fs.mfp.MemoryFile(), h.writeFromBlocksAt); err != nil {
+			if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, mf, h.writeFromBlocksAt); err != nil {
 				log.Warningf("gofer.filesystem.Release: failed to flush dentry: %v", err)
 			}
 			// TODO(jamieliu): Do we need to flushf/fsync d?
@@ -555,12 +561,52 @@ func (fs *filesystem) Release(ctx context.Context) {
 	// fs.
 	fs.syncMu.Unlock()
 
+	// If leak checking is enabled, release all outstanding references in the
+	// filesystem. We deliberately avoid doing this outside of leak checking; we
+	// have released all external resources above rather than relying on dentry
+	// destructors.
+	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking {
+		fs.renameMu.Lock()
+		fs.root.releaseSyntheticRecursiveLocked(ctx)
+		fs.evictAllCachedDentriesLocked(ctx)
+		fs.renameMu.Unlock()
+
+		// An extra reference was held by the filesystem on the root to prevent it from
+		// being cached/evicted.
+		fs.root.DecRef(ctx)
+	}
+
 	if !fs.iopts.LeakConnection {
 		// Close the connection to the server. This implicitly clunks all fids.
 		fs.client.Close()
 	}
 
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+}
+
+// releaseSyntheticRecursiveLocked traverses the tree with root d and decrements
+// the reference count on every synthetic dentry. Synthetic dentries have one
+// reference for existence that should be dropped during filesystem.Release.
+//
+// Precondition: d.fs.renameMu is locked.
+func (d *dentry) releaseSyntheticRecursiveLocked(ctx context.Context) {
+	if d.isSynthetic() {
+		d.decRefLocked()
+		d.checkCachingLocked(ctx)
+	}
+	if d.isDir() {
+		var children []*dentry
+		d.dirMu.Lock()
+		for _, child := range d.children {
+			children = append(children, child)
+		}
+		d.dirMu.Unlock()
+		for _, child := range children {
+			if child != nil {
+				child.releaseSyntheticRecursiveLocked(ctx)
+			}
+		}
+	}
 }
 
 // dentry implements vfs.DentryImpl.
@@ -815,6 +861,9 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		d.nlink = uint32(attr.NLink)
 	}
 	d.vfsd.Init(d)
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.Register(d, "gofer.dentry")
+	}
 
 	fs.syncMu.Lock()
 	fs.syncableDentries[d] = struct{}{}
@@ -1210,6 +1259,11 @@ func (d *dentry) decRefLocked() {
 	}
 }
 
+// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+func (d *dentry) LeakMessage() string {
+	return fmt.Sprintf("[gofer.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+}
+
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
 func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {
 	if d.isDir() {
@@ -1292,6 +1346,16 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	if d.watches.Size() > 0 {
 		return
 	}
+
+	if atomic.LoadInt32(&d.fs.released) != 0 {
+		if d.parent != nil {
+			d.parent.dirMu.Lock()
+			delete(d.parent.children, d.name)
+			d.parent.dirMu.Unlock()
+		}
+		d.destroyLocked(ctx)
+	}
+
 	// If d is already cached, just move it to the front of the LRU.
 	if d.cached {
 		d.fs.cachedDentries.Remove(d)
@@ -1307,6 +1371,14 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 		d.fs.evictCachedDentryLocked(ctx)
 		// Whether or not victim was destroyed, we brought fs.cachedDentriesLen
 		// back down to fs.opts.maxCachedDentries, so we don't loop.
+	}
+}
+
+// Precondition: fs.renameMu must be locked for writing; it may be temporarily
+// unlocked.
+func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
+	for fs.cachedDentriesLen != 0 {
+		fs.evictCachedDentryLocked(ctx)
 	}
 }
 
@@ -1421,6 +1493,10 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		} else if refs < 0 {
 			panic("gofer.dentry.DecRef() called without holding a reference")
 		}
+	}
+
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.Unregister(d, "gofer.dentry")
 	}
 }
 

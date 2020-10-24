@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -105,6 +106,9 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 	}
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
+	}
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.Register(mnt, "vfs.Mount")
 	}
 	return mnt
 }
@@ -489,24 +493,36 @@ func (mnt *Mount) IncRef() {
 
 // DecRef decrements mnt's reference count.
 func (mnt *Mount) DecRef(ctx context.Context) {
-	refs := atomic.AddInt64(&mnt.refs, -1)
-	if refs&^math.MinInt64 == 0 { // mask out MSB
-		var vd VirtualDentry
-		if mnt.parent() != nil {
-			mnt.vfs.mountMu.Lock()
-			mnt.vfs.mounts.seq.BeginWrite()
-			vd = mnt.vfs.disconnectLocked(mnt)
-			mnt.vfs.mounts.seq.EndWrite()
-			mnt.vfs.mountMu.Unlock()
+	r := atomic.AddInt64(&mnt.refs, -1)
+	if r&^math.MinInt64 == 0 { // mask out MSB
+		if refsvfs2.LeakCheckEnabled() {
+			refsvfs2.Unregister(mnt, "vfs.Mount")
 		}
-		if mnt.root != nil {
-			mnt.root.DecRef(ctx)
-		}
-		mnt.fs.DecRef(ctx)
-		if vd.Ok() {
-			vd.DecRef(ctx)
-		}
+		mnt.destroy(ctx)
 	}
+}
+
+func (mnt *Mount) destroy(ctx context.Context) {
+	var vd VirtualDentry
+	if mnt.parent() != nil {
+		mnt.vfs.mountMu.Lock()
+		mnt.vfs.mounts.seq.BeginWrite()
+		vd = mnt.vfs.disconnectLocked(mnt)
+		mnt.vfs.mounts.seq.EndWrite()
+		mnt.vfs.mountMu.Unlock()
+	}
+	if mnt.root != nil {
+		mnt.root.DecRef(ctx)
+	}
+	mnt.fs.DecRef(ctx)
+	if vd.Ok() {
+		vd.DecRef(ctx)
+	}
+}
+
+// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+func (mnt *Mount) LeakMessage() string {
+	return fmt.Sprintf("[vfs.Mount %p] reference count of %d instead of 0", mnt, atomic.LoadInt64(&mnt.refs))
 }
 
 // DecRef decrements mntns' reference count.

@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -99,6 +100,9 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		blockSize: usermem.PageSize, // arbitrary
 		hostFD:    -1,
 		nlink:     uint32(2),
+	}
+	if refsvfs2.LeakCheckEnabled() {
+		refsvfs2.Register(child, "gofer.dentry")
 	}
 	switch opts.mode.FileType() {
 	case linux.S_IFDIR:
