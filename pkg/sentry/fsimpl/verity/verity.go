@@ -815,6 +815,16 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	return n, err
 }
 
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
+func (fd *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	return 0, syserror.EROFS
+}
+
+// Write implements vfs.FileDescriptionImpl.Write.
+func (fd *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	return 0, syserror.EROFS
+}
+
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
 func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
 	return fd.lowerFD.LockPOSIX(ctx, uid, t, start, length, whence, block)
