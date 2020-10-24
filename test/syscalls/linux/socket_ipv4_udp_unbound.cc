@@ -28,6 +28,7 @@
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -2108,6 +2109,9 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
 
   constexpr int kMessageSize = 10;
 
+  // Saving during each iteration of the following loop is too expensive.
+  DisableSave ds;
+
   for (int i = 0; i < 100; ++i) {
     // Send a new message to the REUSEADDR/REUSEPORT group. We use a new socket
     // each time so that a new ephemerial port will be used each time. This
@@ -2119,6 +2123,8 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
                                    addr.addr_len),
                 SyscallSucceedsWithValue(sizeof(send_buf)));
   }
+
+  ds.reset();
 
   // Check that both receivers got messages. This checks that we are using load
   // balancing (REUSEPORT) instead of the most recently bound socket
