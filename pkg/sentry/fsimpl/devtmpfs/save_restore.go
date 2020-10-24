@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __linux__
+package devtmpfs
 
-#include "test/util/logging.h"
-
-namespace gvisor {
-namespace testing {
-namespace internal {
-
-void DoCooperativeSave() {
-  TEST_CHECK_MSG(false, "DoCooperativeSave not implemented");
+// afterLoad is invoked by stateify.
+func (fst *FilesystemType) afterLoad() {
+	if fst.fs != nil {
+		// Ensure that we don't create another filesystem.
+		fst.initOnce.Do(func() {})
+	}
 }
-
-}  // namespace internal
-}  // namespace testing
-}  // namespace gvisor
-
-#endif

@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package lock provides POSIX and BSD style file locking for VFS2 file
-// implementations.
-//
-// The actual implementations can be found in the lock package under
-// sentry/fs/lock.
 package vfs
 
 import (

@@ -125,6 +125,16 @@ TEST(MknodTest, Socket) {
   ASSERT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }
 
+PosixErrorOr<FileDescriptor> OpenRetryEINTR(std::string const& path, int flags,
+                                            mode_t mode = 0) {
+  while (true) {
+    auto maybe_fd = Open(path, flags, mode);
+    if (maybe_fd.ok() || maybe_fd.error().errno_value() != EINTR) {
+      return maybe_fd;
+    }
+  }
+}
+
 TEST(MknodTest, Fifo) {
   const std::string fifo = NewTempAbsPath();
   ASSERT_THAT(mknod(fifo.c_str(), S_IFIFO | S_IRUSR | S_IWUSR, 0),
@@ -139,14 +149,16 @@ TEST(MknodTest, Fifo) {
 
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {
-    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
+    FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(OpenRetryEINTR(fifo.c_str(), O_RDONLY));
     EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
     EXPECT_EQ(msg, std::string(buf.data()));
   });
 
   // Write-end of the pipe.
-  FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_WRONLY));
+  FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenRetryEINTR(fifo.c_str(), O_WRONLY));
   EXPECT_THAT(WriteFd(wfd.get(), msg.c_str(), msg.length()),
               SyscallSucceedsWithValue(msg.length()));
 }
@@ -164,15 +176,16 @@ TEST(MknodTest, FifoOtrunc) {
   std::vector<char> buf(512);
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {
-    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
+    FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(OpenRetryEINTR(fifo.c_str(), O_RDONLY));
     EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
     EXPECT_EQ(msg, std::string(buf.data()));
   });
 
   // Write-end of the pipe.
-  FileDescriptor wfd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_WRONLY | O_TRUNC));
+  FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(
+      OpenRetryEINTR(fifo.c_str(), O_WRONLY | O_TRUNC));
   EXPECT_THAT(WriteFd(wfd.get(), msg.c_str(), msg.length()),
               SyscallSucceedsWithValue(msg.length()));
 }
@@ -192,14 +205,15 @@ TEST(MknodTest, FifoTruncNoOp) {
   std::vector<char> buf(512);
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {
-    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
+    FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(OpenRetryEINTR(fifo.c_str(), O_RDONLY));
     EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
     EXPECT_EQ(msg, std::string(buf.data()));
   });
 
-  FileDescriptor wfd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_WRONLY | O_TRUNC));
+  FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(
+      OpenRetryEINTR(fifo.c_str(), O_WRONLY | O_TRUNC));
   EXPECT_THAT(ftruncate(wfd.get(), 0), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(WriteFd(wfd.get(), msg.c_str(), msg.length()),
               SyscallSucceedsWithValue(msg.length()));

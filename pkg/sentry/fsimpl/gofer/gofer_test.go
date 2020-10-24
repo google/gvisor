@@ -26,12 +26,13 @@ import (
 func TestDestroyIdempotent(t *testing.T) {
 	ctx := contexttest.Context(t)
 	fs := filesystem{
-		mfp:              pgalloc.MemoryFileProviderFromContext(ctx),
-		syncableDentries: make(map[*dentry]struct{}),
+		mfp: pgalloc.MemoryFileProviderFromContext(ctx),
 		opts: filesystemOptions{
 			// Test relies on no dentry being held in the cache.
 			maxCachedDentries: 0,
 		},
+		syncableDentries: make(map[*dentry]struct{}),
+		inoByQIDPath:     make(map[uint64]uint64),
 	}
 
 	attr := &p9.Attr{

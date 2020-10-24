@@ -34,6 +34,7 @@
 #include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -131,7 +132,9 @@ TEST(MountTest, UmountDetach) {
       ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "tmpfs", 0, "mode=0700",
                                       /* umountflags= */ MNT_DETACH));
   const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
-  EXPECT_NE(before.st_ino, after.st_ino);
+  EXPECT_FALSE(before.st_dev == after.st_dev && before.st_ino == after.st_ino)
+      << "mount point has device number " << before.st_dev
+      << " and inode number " << before.st_ino << " before and after mount";
 
   // Create files in the new mount.
   constexpr char kContents[] = "no no no";
@@ -147,12 +150,14 @@ TEST(MountTest, UmountDetach) {
   // Unmount the tmpfs.
   mount.Release()();
 
-  // Only check for inode number equality if the directory is not in overlayfs.
-  // If xino option is not enabled and if all overlayfs layers do not belong to
-  // the same filesystem then "the value of st_ino for directory objects may not
-  // be persistent and could change even while the overlay filesystem is
-  // mounted."  -- Documentation/filesystems/overlayfs.txt
-  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
+  // Inode numbers for gofer-accessed files may change across save/restore.
+  //
+  // For overlayfs, if xino option is not enabled and if all overlayfs layers do
+  // not belong to the same filesystem then "the value of st_ino for directory
+  // objects may not be persistent and could change even while the overlay
+  // filesystem is mounted."  -- Documentation/filesystems/overlayfs.txt
+  if (!IsRunningWithSaveRestore() &&
+      !ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
     const struct stat after2 = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
     EXPECT_EQ(before.st_ino, after2.st_ino);
   }
@@ -214,18 +219,23 @@ TEST(MountTest, MountTmpfs) {
 
     const struct stat s = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
     EXPECT_EQ(s.st_mode, S_IFDIR | 0700);
-    EXPECT_NE(s.st_ino, before.st_ino);
+    EXPECT_FALSE(before.st_dev == s.st_dev && before.st_ino == s.st_ino)
+        << "mount point has device number " << before.st_dev
+        << " and inode number " << before.st_ino << " before and after mount";
 
     EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
   }
 
   // Now that dir is unmounted again, we should have the old inode back.
-  // Only check for inode number equality if the directory is not in overlayfs.
-  // If xino option is not enabled and if all overlayfs layers do not belong to
-  // the same filesystem then "the value of st_ino for directory objects may not
-  // be persistent and could change even while the overlay filesystem is
-  // mounted."  -- Documentation/filesystems/overlayfs.txt
-  if (!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
+  //
+  // Inode numbers for gofer-accessed files may change across save/restore.
+  //
+  // For overlayfs, if xino option is not enabled and if all overlayfs layers do
+  // not belong to the same filesystem then "the value of st_ino for directory
+  // objects may not be persistent and could change even while the overlay
+  // filesystem is mounted."  -- Documentation/filesystems/overlayfs.txt
+  if (!IsRunningWithSaveRestore() &&
+      !ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir.path()))) {
     const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
     EXPECT_EQ(before.st_ino, after.st_ino);
   }

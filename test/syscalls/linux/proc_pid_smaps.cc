@@ -191,7 +191,7 @@ PosixErrorOr<std::vector<ProcPidSmapsEntry>> ParseProcPidSmaps(
     // amount of whitespace).
     if (!entry) {
       std::cerr << "smaps line not considered a maps line: "
-                << maybe_maps_entry.error_message() << std::endl;
+                << maybe_maps_entry.error().message() << std::endl;
       return PosixError(
           EINVAL,
           absl::StrCat("smaps field line without preceding maps line: ", l));

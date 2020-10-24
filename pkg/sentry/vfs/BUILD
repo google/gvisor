@@ -87,6 +87,7 @@ go_library(
         "pathname.go",
         "permissions.go",
         "resolving_path.go",
+        "save_restore.go",
         "vfs.go",
     ],
     visibility = ["//pkg/sentry:internal"],

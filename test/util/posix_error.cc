@@ -87,7 +87,7 @@ bool PosixErrorIsMatcherCommonImpl::MatchAndExplain(
     return false;
   }
 
-  if (!message_matcher_.Matches(error.error_message())) {
+  if (!message_matcher_.Matches(error.message())) {
     return false;
   }
 

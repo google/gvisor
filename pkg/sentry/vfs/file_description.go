@@ -183,7 +183,6 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		}
 		fd.vd.DecRef(ctx)
 		fd.flagsMu.Lock()
-		// TODO(gvisor.dev/issue/1663): We may need to unregister during save, as we do in VFS1.
 		if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
 			fd.asyncHandler.Unregister(fd)
 		}

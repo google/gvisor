@@ -4,7 +4,10 @@ licenses(["notice"])
 
 go_library(
     name = "devtmpfs",
-    srcs = ["devtmpfs.go"],
+    srcs = [
+        "devtmpfs.go",
+        "save_restore.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

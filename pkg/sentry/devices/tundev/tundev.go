@@ -39,6 +39,8 @@ const (
 )
 
 // tunDevice implements vfs.Device for /dev/net/tun.
+//
+// +stateify savable
 type tunDevice struct{}
 
 // Open implements vfs.Device.Open.
@@ -53,6 +55,8 @@ func (tunDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opt
 }
 
 // tunFD implements vfs.FileDescriptionImpl for /dev/net/tun.
+//
+// +stateify savable
 type tunFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

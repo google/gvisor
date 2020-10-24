@@ -240,6 +240,10 @@ func (f *FDTable) String() string {
 
 		case fileVFS2 != nil:
 			vfsObj := fileVFS2.Mount().Filesystem().VirtualFilesystem()
+			vd := fileVFS2.VirtualDentry()
+			if vd.Dentry() == nil {
+				panic(fmt.Sprintf("fd %d (type %T) has nil dentry: %#v", fd, fileVFS2.Impl(), fileVFS2))
+			}
 			name, err := vfsObj.PathnameWithDeleted(ctx, vfs.VirtualDentry{}, fileVFS2.VirtualDentry())
 			if err != nil {
 				fmt.Fprintf(&buf, "<err: %v>\n", err)

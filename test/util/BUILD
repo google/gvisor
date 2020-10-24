@@ -155,6 +155,10 @@ cc_library(
     ],
     hdrs = ["save_util.h"],
     defines = select_system(),
+    deps = [
+        ":logging",
+        "@com_google_absl//absl/types:optional",
+    ],
 )
 
 cc_library(

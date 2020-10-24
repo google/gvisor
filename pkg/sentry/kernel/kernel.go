@@ -430,9 +430,8 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(w wire.Writer) error {
+func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	saveStart := time.Now()
-	ctx := k.SupervisorContext()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
 	k.extMu.Lock()
@@ -446,38 +445,55 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 	k.mf.StartEvictions()
 	k.mf.WaitForEvictions()
 
-	// Flush write operations on open files so data reaches backing storage.
-	// This must come after MemoryFile eviction since eviction may cause file
-	// writes.
-	if err := k.tasks.flushWritesToFiles(ctx); err != nil {
-		return err
-	}
+	if VFS2Enabled {
+		// Discard unsavable mappings, such as those for host file descriptors.
+		if err := k.invalidateUnsavableMappings(ctx); err != nil {
+			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+		}
 
-	// Remove all epoll waiter objects from underlying wait queues.
-	// NOTE: for programs to resume execution in future snapshot scenarios,
-	// we will need to re-establish these waiter objects after saving.
-	k.tasks.unregisterEpollWaiters(ctx)
+		// Prepare filesystems for saving. This must be done after
+		// invalidateUnsavableMappings(), since dropping memory mappings may
+		// affect filesystem state (e.g. page cache reference counts).
+		if err := k.vfs.PrepareSave(ctx); err != nil {
+			return err
+		}
+	} else {
+		// Flush cached file writes to backing storage. This must come after
+		// MemoryFile eviction since eviction may cause file writes.
+		if err := k.flushWritesToFiles(ctx); err != nil {
+			return err
+		}
 
-	// Clear the dirent cache before saving because Dirents must be Loaded in a
-	// particular order (parents before children), and Loading dirents from a cache
-	// breaks that order.
-	if err := k.flushMountSourceRefs(ctx); err != nil {
-		return err
-	}
+		// Remove all epoll waiter objects from underlying wait queues.
+		// NOTE: for programs to resume execution in future snapshot scenarios,
+		// we will need to re-establish these waiter objects after saving.
+		k.tasks.unregisterEpollWaiters(ctx)
 
-	// Ensure that all inode and mount release operations have completed.
-	fs.AsyncBarrier()
+		// Clear the dirent cache before saving because Dirents must be Loaded in a
+		// particular order (parents before children), and Loading dirents from a cache
+		// breaks that order.
+		if err := k.flushMountSourceRefs(ctx); err != nil {
+			return err
+		}
 
-	// Once all fs work has completed (flushed references have all been released),
-	// reset mount mappings. This allows individual mounts to save how inodes map
-	// to filesystem resources. Without this, fs.Inodes cannot be restored.
-	fs.SaveInodeMappings()
+		// Ensure that all inode and mount release operations have completed.
+		fs.AsyncBarrier()
 
-	// Discard unsavable mappings, such as those for host file descriptors.
-	// This must be done after waiting for "asynchronous fs work", which
-	// includes async I/O that may touch application memory.
-	if err := k.invalidateUnsavableMappings(ctx); err != nil {
-		return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+		// Once all fs work has completed (flushed references have all been released),
+		// reset mount mappings. This allows individual mounts to save how inodes map
+		// to filesystem resources. Without this, fs.Inodes cannot be restored.
+		fs.SaveInodeMappings()
+
+		// Discard unsavable mappings, such as those for host file descriptors.
+		// This must be done after waiting for "asynchronous fs work", which
+		// includes async I/O that may touch application memory.
+		//
+		// TODO(gvisor.dev/issue/1624): This rationale is believed to be
+		// obsolete since AIO callbacks are now waited-for by Kernel.Pause(),
+		// but this order is conservatively retained for VFS1.
+		if err := k.invalidateUnsavableMappings(ctx); err != nil {
+			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+		}
 	}
 
 	// Save the CPUID FeatureSet before the rest of the kernel so we can
@@ -486,14 +502,14 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 	//
 	// N.B. This will also be saved along with the full kernel save below.
 	cpuidStart := time.Now()
-	if _, err := state.Save(k.SupervisorContext(), w, k.FeatureSet()); err != nil {
+	if _, err := state.Save(ctx, w, k.FeatureSet()); err != nil {
 		return err
 	}
 	log.Infof("CPUID save took [%s].", time.Since(cpuidStart))
 
 	// Save the kernel state.
 	kernelStart := time.Now()
-	stats, err := state.Save(k.SupervisorContext(), w, k)
+	stats, err := state.Save(ctx, w, k)
 	if err != nil {
 		return err
 	}
@@ -502,7 +518,7 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 
 	// Save the memory file's state.
 	memoryStart := time.Now()
-	if err := k.mf.SaveTo(k.SupervisorContext(), w); err != nil {
+	if err := k.mf.SaveTo(ctx, w); err != nil {
 		return err
 	}
 	log.Infof("Memory save took [%s].", time.Since(memoryStart))
@@ -514,11 +530,9 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 
 // flushMountSourceRefs flushes the MountSources for all mounted filesystems
 // and open FDs.
+//
+// Preconditions: !VFS2Enabled.
 func (k *Kernel) flushMountSourceRefs(ctx context.Context) error {
-	if VFS2Enabled {
-		return nil // Not relevant.
-	}
-
 	// Flush all mount sources for currently mounted filesystems in each task.
 	flushed := make(map[*fs.MountNamespace]struct{})
 	k.tasks.mu.RLock()
@@ -561,13 +575,9 @@ func (ts *TaskSet) forEachFDPaused(ctx context.Context, f func(*fs.File, *vfs.Fi
 	return err
 }
 
-func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
-	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
-	if VFS2Enabled {
-		return nil
-	}
-
-	return ts.forEachFDPaused(ctx, func(file *fs.File, _ *vfs.FileDescription) error {
+// Preconditions: !VFS2Enabled.
+func (k *Kernel) flushWritesToFiles(ctx context.Context) error {
+	return k.tasks.forEachFDPaused(ctx, func(file *fs.File, _ *vfs.FileDescription) error {
 		if flags := file.Flags(); !flags.Write {
 			return nil
 		}
@@ -587,6 +597,32 @@ func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+// Preconditions: !VFS2Enabled.
+func (ts *TaskSet) unregisterEpollWaiters(ctx context.Context) {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	// Tasks that belong to the same process could potentially point to the
+	// same FDTable. So we retain a map of processed ones to avoid
+	// processing the same FDTable multiple times.
+	processed := make(map[*FDTable]struct{})
+	for t := range ts.Root.tids {
+		// We can skip locking Task.mu here since the kernel is paused.
+		if t.fdTable == nil {
+			continue
+		}
+		if _, ok := processed[t.fdTable]; ok {
+			continue
+		}
+		t.fdTable.forEach(ctx, func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
+			if e, ok := file.FileOperations.(*epoll.EventPoll); ok {
+				e.UnregisterEpollWaiters()
+			}
+		})
+		processed[t.fdTable] = struct{}{}
+	}
 }
 
 // Preconditions: The kernel must be paused.
@@ -614,38 +650,8 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 	return nil
 }
 
-func (ts *TaskSet) unregisterEpollWaiters(ctx context.Context) {
-	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
-	if VFS2Enabled {
-		return
-	}
-
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	// Tasks that belong to the same process could potentially point to the
-	// same FDTable. So we retain a map of processed ones to avoid
-	// processing the same FDTable multiple times.
-	processed := make(map[*FDTable]struct{})
-	for t := range ts.Root.tids {
-		// We can skip locking Task.mu here since the kernel is paused.
-		if t.fdTable == nil {
-			continue
-		}
-		if _, ok := processed[t.fdTable]; ok {
-			continue
-		}
-		t.fdTable.forEach(ctx, func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
-			if e, ok := file.FileOperations.(*epoll.EventPoll); ok {
-				e.UnregisterEpollWaiters()
-			}
-		})
-		processed[t.fdTable] = struct{}{}
-	}
-}
-
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(r wire.Reader, net inet.Stack, clocks sentrytime.Clocks) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	loadStart := time.Now()
 
 	initAppCores := k.applicationCores
@@ -656,7 +662,7 @@ func (k *Kernel) LoadFrom(r wire.Reader, net inet.Stack, clocks sentrytime.Clock
 	// don't need to explicitly install it in the Kernel.
 	cpuidStart := time.Now()
 	var features cpuid.FeatureSet
-	if _, err := state.Load(k.SupervisorContext(), r, &features); err != nil {
+	if _, err := state.Load(ctx, r, &features); err != nil {
 		return err
 	}
 	log.Infof("CPUID load took [%s].", time.Since(cpuidStart))
@@ -671,7 +677,7 @@ func (k *Kernel) LoadFrom(r wire.Reader, net inet.Stack, clocks sentrytime.Clock
 
 	// Load the kernel state.
 	kernelStart := time.Now()
-	stats, err := state.Load(k.SupervisorContext(), r, k)
+	stats, err := state.Load(ctx, r, k)
 	if err != nil {
 		return err
 	}
@@ -684,7 +690,7 @@ func (k *Kernel) LoadFrom(r wire.Reader, net inet.Stack, clocks sentrytime.Clock
 
 	// Load the memory file's state.
 	memoryStart := time.Now()
-	if err := k.mf.LoadFrom(k.SupervisorContext(), r); err != nil {
+	if err := k.mf.LoadFrom(ctx, r); err != nil {
 		return err
 	}
 	log.Infof("Memory load took [%s].", time.Since(memoryStart))
@@ -696,11 +702,17 @@ func (k *Kernel) LoadFrom(r wire.Reader, net inet.Stack, clocks sentrytime.Clock
 		net.Resume()
 	}
 
-	// Ensure that all pending asynchronous work is complete:
-	//   - namedpipe opening
-	//   - inode file opening
-	if err := fs.AsyncErrorBarrier(); err != nil {
-		return err
+	if VFS2Enabled {
+		if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
+			return err
+		}
+	} else {
+		// Ensure that all pending asynchronous work is complete:
+		//   - namedpipe opening
+		//   - inode file opening
+		if err := fs.AsyncErrorBarrier(); err != nil {
+			return err
+		}
 	}
 
 	tcpip.AsyncLoading.Wait()

@@ -51,8 +51,24 @@ func blockUntilNonblockingPipeHasWriter(ctx context.Context, fd int32) error {
 		if ok {
 			return nil
 		}
-		if err := sleepBetweenNamedPipeOpenChecks(ctx); err != nil {
-			return err
+		if sleepErr := sleepBetweenNamedPipeOpenChecks(ctx); sleepErr != nil {
+			// Another application thread may have opened this pipe for
+			// writing, succeeded because we previously opened the pipe for
+			// reading, and subsequently interrupted us for checkpointing (e.g.
+			// this occurs in mknod tests under cooperative save/restore). In
+			// this case, our open has to succeed for the checkpoint to include
+			// a readable FD for the pipe, which is in turn necessary to
+			// restore the other thread's writable FD for the same pipe
+			// (otherwise it will get ENXIO). So we have to check
+			// nonblockingPipeHasWriter() once last time.
+			ok, err := nonblockingPipeHasWriter(fd)
+			if err != nil {
+				return err
+			}
+			if ok {
+				return nil
+			}
+			return sleepErr
 		}
 	}
 }

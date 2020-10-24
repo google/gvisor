@@ -98,7 +98,6 @@ type mountTable struct {
 	// length and cap in separate uint32s) for ~free.
 	size uint64
 
-	// FIXME(gvisor.dev/issue/1663): Slots need to be saved.
 	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
 
@@ -209,6 +208,26 @@ loop:
 			}
 			off = (off + mountSlotBytes) & offmask
 		}
+	}
+}
+
+// Range calls f on each Mount in mt. If f returns false, Range stops iteration
+// and returns immediately.
+func (mt *mountTable) Range(f func(*Mount) bool) {
+	tcap := uintptr(1) << (mt.size & mtSizeOrderMask)
+	slotPtr := mt.slots
+	last := unsafe.Pointer(uintptr(mt.slots) + ((tcap - 1) * mountSlotBytes))
+	for {
+		slot := (*mountSlot)(slotPtr)
+		if slot.value != nil {
+			if !f((*Mount)(slot.value)) {
+				return
+			}
+		}
+		if slotPtr == last {
+			return
+		}
+		slotPtr = unsafe.Pointer(uintptr(slotPtr) + mountSlotBytes)
 	}
 }
 

@@ -48,6 +48,7 @@ go_library(
         "inode_refs.go",
         "named_pipe.go",
         "regular_file.go",
+        "save_restore.go",
         "socket_file.go",
         "symlink.go",
         "tmpfs.go",

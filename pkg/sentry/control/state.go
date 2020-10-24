@@ -69,5 +69,5 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 			s.Kernel.Kill(kernel.ExitStatus{})
 		},
 	}
-	return saveOpts.Save(s.Kernel, s.Watchdog)
+	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
 }

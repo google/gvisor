@@ -21,34 +21,46 @@
 #include <atomic>
 #include <cerrno>
 
-#define GVISOR_COOPERATIVE_SAVE_TEST "GVISOR_COOPERATIVE_SAVE_TEST"
+#include "absl/types/optional.h"
 
 namespace gvisor {
 namespace testing {
 namespace {
 
-enum class CooperativeSaveMode {
-  kUnknown = 0,  // cooperative_save_mode is statically-initialized to 0
-  kAvailable,
-  kNotAvailable,
-};
+std::atomic<absl::optional<bool>> cooperative_save_present;
+std::atomic<absl::optional<bool>> random_save_present;
 
-std::atomic<CooperativeSaveMode> cooperative_save_mode;
-
-bool CooperativeSaveEnabled() {
-  auto mode = cooperative_save_mode.load();
-  if (mode == CooperativeSaveMode::kUnknown) {
-    mode = (getenv(GVISOR_COOPERATIVE_SAVE_TEST) != nullptr)
-               ? CooperativeSaveMode::kAvailable
-               : CooperativeSaveMode::kNotAvailable;
-    cooperative_save_mode.store(mode);
+bool CooperativeSavePresent() {
+  auto present = cooperative_save_present.load();
+  if (!present.has_value()) {
+    present = getenv("GVISOR_COOPERATIVE_SAVE_TEST") != nullptr;
+    cooperative_save_present.store(present);
   }
-  return mode == CooperativeSaveMode::kAvailable;
+  return present.value();
+}
+
+bool RandomSavePresent() {
+  auto present = random_save_present.load();
+  if (!present.has_value()) {
+    present = getenv("GVISOR_RANDOM_SAVE_TEST") != nullptr;
+    random_save_present.store(present);
+  }
+  return present.value();
 }
 
 std::atomic<int> save_disable;
 
 }  // namespace
+
+bool IsRunningWithSaveRestore() {
+  return CooperativeSavePresent() || RandomSavePresent();
+}
+
+void MaybeSave() {
+  if (CooperativeSavePresent() && save_disable.load() == 0) {
+    internal::DoCooperativeSave();
+  }
+}
 
 DisableSave::DisableSave() { save_disable++; }
 
@@ -60,12 +72,6 @@ void DisableSave::reset() {
     save_disable--;
   }
 }
-
-namespace internal {
-bool ShouldSave() {
-  return CooperativeSaveEnabled() && (save_disable.load() == 0);
-}
-}  // namespace internal
 
 }  // namespace testing
 }  // namespace gvisor

@@ -30,19 +30,19 @@
 
 namespace gvisor {
 namespace testing {
+namespace internal {
 
-void MaybeSave() {
-  if (internal::ShouldSave()) {
-    int orig_errno = errno;
-    // We use it to trigger saving the sentry state
-    // when this syscall is called.
-    // Notice: this needs to be a valid syscall
-    // that is not used in any of the syscall tests.
-    syscall(SYS_TRIGGER_SAVE, nullptr, 0);
-    errno = orig_errno;
-  }
+void DoCooperativeSave() {
+  int orig_errno = errno;
+  // We use it to trigger saving the sentry state
+  // when this syscall is called.
+  // Notice: this needs to be a valid syscall
+  // that is not used in any of the syscall tests.
+  syscall(SYS_TRIGGER_SAVE, nullptr, 0);
+  errno = orig_errno;
 }
 
+}  // namespace internal
 }  // namespace testing
 }  // namespace gvisor
 
