@@ -101,8 +101,44 @@ func (k *kernelSCM) afterLoad() {}
 func (k *kernelSCM) StateLoad(stateSourceObject state.Source) {
 }
 
+func (s *SocketVFS2) StateTypeName() string {
+	return "pkg/sentry/socket/netlink.SocketVFS2"
+}
+
+func (s *SocketVFS2) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"LockFD",
+		"socketOpsCommon",
+	}
+}
+
+func (s *SocketVFS2) beforeSave() {}
+
+func (s *SocketVFS2) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.vfsfd)
+	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &s.LockFD)
+	stateSinkObject.Save(4, &s.socketOpsCommon)
+}
+
+func (s *SocketVFS2) afterLoad() {}
+
+func (s *SocketVFS2) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.vfsfd)
+	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &s.LockFD)
+	stateSourceObject.Load(4, &s.socketOpsCommon)
+}
+
 func init() {
 	state.Register((*Socket)(nil))
 	state.Register((*socketOpsCommon)(nil))
 	state.Register((*kernelSCM)(nil))
+	state.Register((*SocketVFS2)(nil))
 }

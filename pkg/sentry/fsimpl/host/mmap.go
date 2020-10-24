@@ -43,7 +43,7 @@ type inodePlatformFile struct {
 	fileMapper fsutil.HostFileMapper
 
 	// fileMapperInitOnce is used to lazily initialize fileMapper.
-	fileMapperInitOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
+	fileMapperInitOnce sync.Once `state:"nosave"`
 }
 
 // IncRef implements memmap.File.IncRef.

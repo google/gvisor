@@ -79,7 +79,7 @@ func fdsToFiles(ctx context.Context, fds []int) []*vfs.FileDescription {
 		}
 
 		// Create the file backed by hostFD.
-		file, err := ImportFD(ctx, kernel.KernelFromContext(ctx).HostMount(), fd, false /* isTTY */)
+		file, err := NewFD(ctx, kernel.KernelFromContext(ctx).HostMount(), fd, &NewFDOptions{})
 		if err != nil {
 			ctx.Warningf("Error creating file from host FD: %v", err)
 			break

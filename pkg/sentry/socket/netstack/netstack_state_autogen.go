@@ -94,6 +94,41 @@ func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(14, &s.sockOptInq)
 }
 
+func (s *SocketVFS2) StateTypeName() string {
+	return "pkg/sentry/socket/netstack.SocketVFS2"
+}
+
+func (s *SocketVFS2) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"LockFD",
+		"socketOpsCommon",
+	}
+}
+
+func (s *SocketVFS2) beforeSave() {}
+
+func (s *SocketVFS2) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.vfsfd)
+	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &s.LockFD)
+	stateSinkObject.Save(4, &s.socketOpsCommon)
+}
+
+func (s *SocketVFS2) afterLoad() {}
+
+func (s *SocketVFS2) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.vfsfd)
+	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &s.LockFD)
+	stateSourceObject.Load(4, &s.socketOpsCommon)
+}
+
 func (s *Stack) StateTypeName() string {
 	return "pkg/sentry/socket/netstack.Stack"
 }
@@ -115,5 +150,6 @@ func (s *Stack) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*SocketOperations)(nil))
 	state.Register((*socketOpsCommon)(nil))
+	state.Register((*SocketVFS2)(nil))
 	state.Register((*Stack)(nil))
 }

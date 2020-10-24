@@ -119,6 +119,64 @@ func (rw *ReaderWriter) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rw.Pipe)
 }
 
+func (vp *VFSPipe) StateTypeName() string {
+	return "pkg/sentry/kernel/pipe.VFSPipe"
+}
+
+func (vp *VFSPipe) StateFields() []string {
+	return []string{
+		"pipe",
+	}
+}
+
+func (vp *VFSPipe) beforeSave() {}
+
+func (vp *VFSPipe) StateSave(stateSinkObject state.Sink) {
+	vp.beforeSave()
+	stateSinkObject.Save(0, &vp.pipe)
+}
+
+func (vp *VFSPipe) afterLoad() {}
+
+func (vp *VFSPipe) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &vp.pipe)
+}
+
+func (fd *VFSPipeFD) StateTypeName() string {
+	return "pkg/sentry/kernel/pipe.VFSPipeFD"
+}
+
+func (fd *VFSPipeFD) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"LockFD",
+		"pipe",
+	}
+}
+
+func (fd *VFSPipeFD) beforeSave() {}
+
+func (fd *VFSPipeFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &fd.LockFD)
+	stateSinkObject.Save(4, &fd.pipe)
+}
+
+func (fd *VFSPipeFD) afterLoad() {}
+
+func (fd *VFSPipeFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &fd.LockFD)
+	stateSourceObject.Load(4, &fd.pipe)
+}
+
 func (w *Writer) StateTypeName() string {
 	return "pkg/sentry/kernel/pipe.Writer"
 }
@@ -147,5 +205,7 @@ func init() {
 	state.Register((*Pipe)(nil))
 	state.Register((*Reader)(nil))
 	state.Register((*ReaderWriter)(nil))
+	state.Register((*VFSPipe)(nil))
+	state.Register((*VFSPipeFD)(nil))
 	state.Register((*Writer)(nil))
 }

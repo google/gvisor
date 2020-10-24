@@ -166,3 +166,27 @@ var bgContext = &logContext{Logger: log.Log()}
 func Background() Context {
 	return bgContext
 }
+
+// WithValue returns a copy of parent in which the value associated with key is
+// val.
+func WithValue(parent Context, key, val interface{}) Context {
+	return &withValue{
+		Context: parent,
+		key:     key,
+		val:     val,
+	}
+}
+
+type withValue struct {
+	Context
+	key interface{}
+	val interface{}
+}
+
+// Value implements Context.Value.
+func (ctx *withValue) Value(key interface{}) interface{} {
+	if key == ctx.key {
+		return ctx.val
+	}
+	return ctx.Context.Value(key)
+}

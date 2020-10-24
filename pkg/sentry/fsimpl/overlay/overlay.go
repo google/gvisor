@@ -458,9 +458,9 @@ type dentry struct {
 	//
 	// - isMappable is non-zero iff wrappedMappable is non-nil. isMappable is
 	// accessed using atomic memory operations.
-	mapsMu          sync.Mutex
+	mapsMu          sync.Mutex `state:"nosave"`
 	lowerMappings   memmap.MappingSet
-	dataMu          sync.RWMutex
+	dataMu          sync.RWMutex `state:"nosave"`
 	wrappedMappable memmap.Mappable
 	isMappable      uint32
 

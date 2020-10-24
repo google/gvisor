@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// +stateify savable
 type socketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

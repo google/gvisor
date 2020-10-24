@@ -26,6 +26,9 @@
 //             *** "memmap.Mappable locks taken by Translate" below this point
 //             dentry.handleMu
 //               dentry.dataMu
+//           filesystem.inoMu
+//   specialFileFD.mu
+//     specialFileFD.bufMu
 //
 // Locking dentry.dirMu in multiple dentries requires that either ancestor
 // dentries are locked before descendant dentries, or that filesystem.renameMu
@@ -36,7 +39,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -53,6 +55,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -81,13 +84,16 @@ type filesystem struct {
 	iopts InternalFilesystemOptions
 
 	// client is the client used by this filesystem. client is immutable.
-	client *p9.Client `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
+	client *p9.Client `state:"nosave"`
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock ktime.Clock
 
 	// devMinor is the filesystem's minor device number. devMinor is immutable.
 	devMinor uint32
+
+	// root is the root dentry. root is immutable.
+	root *dentry
 
 	// renameMu serves two purposes:
 	//
@@ -108,34 +114,26 @@ type filesystem struct {
 	cachedDentries    dentryList
 	cachedDentriesLen uint64
 
-	// syncableDentries contains all dentries in this filesystem for which
-	// !dentry.file.isNil(). specialFileFDs contains all open specialFileFDs.
-	// These fields are protected by syncMu.
+	// syncableDentries contains all non-synthetic dentries. specialFileFDs
+	// contains all open specialFileFDs. These fields are protected by syncMu.
 	syncMu           sync.Mutex `state:"nosave"`
 	syncableDentries map[*dentry]struct{}
 	specialFileFDs   map[*specialFileFD]struct{}
 
-	// syntheticSeq stores a counter to used to generate unique inodeNumber for
-	// synthetic dentries.
-	syntheticSeq uint64
-}
+	// inoByQIDPath maps previously-observed QID.Paths to inode numbers
+	// assigned to those paths. inoByQIDPath is not preserved across
+	// checkpoint/restore because QIDs may be reused between different gofer
+	// processes, so QIDs may be repeated for different files across
+	// checkpoint/restore. inoByQIDPath is protected by inoMu.
+	inoMu        sync.Mutex        `state:"nosave"`
+	inoByQIDPath map[uint64]uint64 `state:"nosave"`
 
-// inodeNumber represents inode number reported in Dirent.Ino. For regular
-// dentries, it comes from QID.Path from the 9P server. Synthetic dentries
-// have have their inodeNumber generated sequentially, with the MSB reserved to
-// prevent conflicts with regular dentries.
-//
-// +stateify savable
-type inodeNumber uint64
+	// lastIno is the last inode number assigned to a file. lastIno is accessed
+	// using atomic memory operations.
+	lastIno uint64
 
-// Reserve MSB for synthetic mounts.
-const syntheticInoMask = uint64(1) << 63
-
-func inoFromPath(path uint64) inodeNumber {
-	if path&syntheticInoMask != 0 {
-		log.Warningf("Dropping MSB from ino, collision is possible. Original: %d, new: %d", path, path&^syntheticInoMask)
-	}
-	return inodeNumber(path &^ syntheticInoMask)
+	// savedDentryRW records open read/write handles during save/restore.
+	savedDentryRW map[*dentry]savedDentryRW
 }
 
 // +stateify savable
@@ -247,6 +245,10 @@ const (
 //
 // +stateify savable
 type InternalFilesystemOptions struct {
+	// If UniqueID is non-empty, it is an opaque string used to reassociate the
+	// filesystem with a new server FD during restoration from checkpoint.
+	UniqueID string
+
 	// If LeakConnection is true, do not close the connection to the server
 	// when the Filesystem is released. This is necessary for deployments in
 	// which servers can handle only a single client and report failure if that
@@ -286,46 +288,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	mopts := vfs.GenericParseMountOptions(opts.Data)
 	var fsopts filesystemOptions
 
-	// Check that the transport is "fd".
-	trans, ok := mopts["trans"]
-	if !ok {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: transport must be specified as 'trans=fd'")
-		return nil, nil, syserror.EINVAL
-	}
-	delete(mopts, "trans")
-	if trans != "fd" {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: unsupported transport: trans=%s", trans)
-		return nil, nil, syserror.EINVAL
-	}
-
-	// Check that read and write FDs are provided and identical.
-	rfdstr, ok := mopts["rfdno"]
-	if !ok {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: read FD must be specified as 'rfdno=<file descriptor>")
-		return nil, nil, syserror.EINVAL
-	}
-	delete(mopts, "rfdno")
-	rfd, err := strconv.Atoi(rfdstr)
+	fd, err := getFDFromMountOptionsMap(ctx, mopts)
 	if err != nil {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid read FD: rfdno=%s", rfdstr)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, err
 	}
-	wfdstr, ok := mopts["wfdno"]
-	if !ok {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: write FD must be specified as 'wfdno=<file descriptor>")
-		return nil, nil, syserror.EINVAL
-	}
-	delete(mopts, "wfdno")
-	wfd, err := strconv.Atoi(wfdstr)
-	if err != nil {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid write FD: wfdno=%s", wfdstr)
-		return nil, nil, syserror.EINVAL
-	}
-	if rfd != wfd {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: read FD (%d) and write FD (%d) must be equal", rfd, wfd)
-		return nil, nil, syserror.EINVAL
-	}
-	fsopts.fd = rfd
+	fsopts.fd = fd
 
 	// Get the attach name.
 	fsopts.aname = "/"
@@ -441,56 +408,43 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	// If !ok, iopts being the zero value is correct.
 
-	// Establish a connection with the server.
-	conn, err := unet.NewSocket(fsopts.fd)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Perform version negotiation with the server.
-	ctx.UninterruptibleSleepStart(false)
-	client, err := p9.NewClient(conn, fsopts.msize, fsopts.version)
-	ctx.UninterruptibleSleepFinish(false)
-	if err != nil {
-		conn.Close()
-		return nil, nil, err
-	}
-	// Ownership of conn has been transferred to client.
-
-	// Perform attach to obtain the filesystem root.
-	ctx.UninterruptibleSleepStart(false)
-	attached, err := client.Attach(fsopts.aname)
-	ctx.UninterruptibleSleepFinish(false)
-	if err != nil {
-		client.Close()
-		return nil, nil, err
-	}
-	attachFile := p9file{attached}
-	qid, attrMask, attr, err := attachFile.getAttr(ctx, dentryAttrMask())
-	if err != nil {
-		attachFile.close(ctx)
-		client.Close()
-		return nil, nil, err
-	}
-
 	// Construct the filesystem object.
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
-		attachFile.close(ctx)
-		client.Close()
 		return nil, nil, err
 	}
 	fs := &filesystem{
 		mfp:              mfp,
 		opts:             fsopts,
 		iopts:            iopts,
-		client:           client,
 		clock:            ktime.RealtimeClockFromContext(ctx),
 		devMinor:         devMinor,
 		syncableDentries: make(map[*dentry]struct{}),
 		specialFileFDs:   make(map[*specialFileFD]struct{}),
+		inoByQIDPath:     make(map[uint64]uint64),
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
+
+	// Connect to the server.
+	if err := fs.dial(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	// Perform attach to obtain the filesystem root.
+	ctx.UninterruptibleSleepStart(false)
+	attached, err := fs.client.Attach(fsopts.aname)
+	ctx.UninterruptibleSleepFinish(false)
+	if err != nil {
+		fs.vfsfs.DecRef(ctx)
+		return nil, nil, err
+	}
+	attachFile := p9file{attached}
+	qid, attrMask, attr, err := attachFile.getAttr(ctx, dentryAttrMask())
+	if err != nil {
+		attachFile.close(ctx)
+		fs.vfsfs.DecRef(ctx)
+		return nil, nil, err
+	}
 
 	// Construct the root dentry.
 	root, err := fs.newDentry(ctx, attachFile, qid, attrMask, &attr)
@@ -504,8 +458,70 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// being "cached" and subsequently evicted. Its resources will still be
 	// cleaned up by fs.Release().
 	root.refs = 2
+	fs.root = root
 
 	return &fs.vfsfs, &root.vfsd, nil
+}
+
+func getFDFromMountOptionsMap(ctx context.Context, mopts map[string]string) (int, error) {
+	// Check that the transport is "fd".
+	trans, ok := mopts["trans"]
+	if !ok || trans != "fd" {
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: transport must be specified as 'trans=fd'")
+		return -1, syserror.EINVAL
+	}
+	delete(mopts, "trans")
+
+	// Check that read and write FDs are provided and identical.
+	rfdstr, ok := mopts["rfdno"]
+	if !ok {
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: read FD must be specified as 'rfdno=<file descriptor>'")
+		return -1, syserror.EINVAL
+	}
+	delete(mopts, "rfdno")
+	rfd, err := strconv.Atoi(rfdstr)
+	if err != nil {
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid read FD: rfdno=%s", rfdstr)
+		return -1, syserror.EINVAL
+	}
+	wfdstr, ok := mopts["wfdno"]
+	if !ok {
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: write FD must be specified as 'wfdno=<file descriptor>'")
+		return -1, syserror.EINVAL
+	}
+	delete(mopts, "wfdno")
+	wfd, err := strconv.Atoi(wfdstr)
+	if err != nil {
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid write FD: wfdno=%s", wfdstr)
+		return -1, syserror.EINVAL
+	}
+	if rfd != wfd {
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: read FD (%d) and write FD (%d) must be equal", rfd, wfd)
+		return -1, syserror.EINVAL
+	}
+	return rfd, nil
+}
+
+// Preconditions: fs.client == nil.
+func (fs *filesystem) dial(ctx context.Context) error {
+	// Establish a connection with the server.
+	conn, err := unet.NewSocket(fs.opts.fd)
+	if err != nil {
+		return err
+	}
+
+	// Perform version negotiation with the server.
+	ctx.UninterruptibleSleepStart(false)
+	client, err := p9.NewClient(conn, fs.opts.msize, fs.opts.version)
+	ctx.UninterruptibleSleepFinish(false)
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	// Ownership of conn has been transferred to client.
+
+	fs.client = client
+	return nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
@@ -574,12 +590,15 @@ type dentry struct {
 	// filesystem.renameMu.
 	name string
 
+	// qidPath is the p9.QID.Path for this file. qidPath is immutable.
+	qidPath uint64
+
 	// file is the unopened p9.File that backs this dentry. file is immutable.
 	//
 	// If file.isNil(), this dentry represents a synthetic file, i.e. a file
 	// that does not exist on the remote filesystem. As of this writing, the
 	// only files that can be synthetic are sockets, pipes, and directories.
-	file p9file `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
+	file p9file `state:"nosave"`
 
 	// If deleted is non-zero, the file represented by this dentry has been
 	// deleted. deleted is accessed using atomic memory operations.
@@ -623,12 +642,12 @@ type dentry struct {
 	// To mutate:
 	//   - Lock metadataMu and use atomic operations to update because we might
 	//     have atomic readers that don't hold the lock.
-	metadataMu sync.Mutex  `state:"nosave"`
-	ino        inodeNumber // immutable
-	mode       uint32      // type is immutable, perms are mutable
-	uid        uint32      // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid        uint32      // auth.KGID, but ...
-	blockSize  uint32      // 0 if unknown
+	metadataMu sync.Mutex `state:"nosave"`
+	ino        uint64     // immutable
+	mode       uint32     // type is immutable, perms are mutable
+	uid        uint32     // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid        uint32     // auth.KGID, but ...
+	blockSize  uint32     // 0 if unknown
 	// Timestamps, all nsecs from the Unix epoch.
 	atime int64
 	mtime int64
@@ -679,9 +698,9 @@ type dentry struct {
 	// (isNil() == false), it may be mutated with handleMu locked, but cannot
 	// be closed until the dentry is destroyed.
 	handleMu  sync.RWMutex `state:"nosave"`
-	readFile  p9file       `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
-	writeFile p9file       `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
-	hostFD    int32
+	readFile  p9file       `state:"nosave"`
+	writeFile p9file       `state:"nosave"`
+	hostFD    int32        `state:"nosave"`
 
 	dataMu sync.RWMutex `state:"nosave"`
 
@@ -758,8 +777,9 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 
 	d := &dentry{
 		fs:        fs,
+		qidPath:   qid.Path,
 		file:      file,
-		ino:       inoFromPath(qid.Path),
+		ino:       fs.inoFromQIDPath(qid.Path),
 		mode:      uint32(attr.Mode),
 		uid:       uint32(fs.opts.dfltuid),
 		gid:       uint32(fs.opts.dfltgid),
@@ -800,6 +820,21 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 	fs.syncableDentries[d] = struct{}{}
 	fs.syncMu.Unlock()
 	return d, nil
+}
+
+func (fs *filesystem) inoFromQIDPath(qidPath uint64) uint64 {
+	fs.inoMu.Lock()
+	defer fs.inoMu.Unlock()
+	if ino, ok := fs.inoByQIDPath[qidPath]; ok {
+		return ino
+	}
+	ino := fs.nextIno()
+	fs.inoByQIDPath[qidPath] = ino
+	return ino
+}
+
+func (fs *filesystem) nextIno() uint64 {
+	return atomic.AddUint64(&fs.lastIno, 1)
 }
 
 func (d *dentry) isSynthetic() bool {
@@ -853,7 +888,7 @@ func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 	}
 }
 
-// Preconditions: !d.isSynthetic()
+// Preconditions: !d.isSynthetic().
 func (d *dentry) updateFromGetattr(ctx context.Context) error {
 	// Use d.readFile or d.writeFile, which represent 9P fids that have been
 	// opened, in preference to d.file, which represents a 9P fid that has not.
@@ -1269,30 +1304,37 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	d.fs.cachedDentriesLen++
 	d.cached = true
 	if d.fs.cachedDentriesLen > d.fs.opts.maxCachedDentries {
-		victim := d.fs.cachedDentries.Back()
-		d.fs.cachedDentries.Remove(victim)
-		d.fs.cachedDentriesLen--
-		victim.cached = false
-		// victim.refs may have become non-zero from an earlier path resolution
-		// since it was inserted into fs.cachedDentries.
-		if atomic.LoadInt64(&victim.refs) == 0 {
-			if victim.parent != nil {
-				victim.parent.dirMu.Lock()
-				if !victim.vfsd.IsDead() {
-					// Note that victim can't be a mount point (in any mount
-					// namespace), since VFS holds references on mount points.
-					d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &victim.vfsd)
-					delete(victim.parent.children, victim.name)
-					// We're only deleting the dentry, not the file it
-					// represents, so we don't need to update
-					// victimParent.dirents etc.
-				}
-				victim.parent.dirMu.Unlock()
-			}
-			victim.destroyLocked(ctx)
-		}
+		d.fs.evictCachedDentryLocked(ctx)
 		// Whether or not victim was destroyed, we brought fs.cachedDentriesLen
 		// back down to fs.opts.maxCachedDentries, so we don't loop.
+	}
+}
+
+// Preconditions:
+// * fs.renameMu must be locked for writing; it may be temporarily unlocked.
+// * fs.cachedDentriesLen != 0.
+func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
+	victim := fs.cachedDentries.Back()
+	fs.cachedDentries.Remove(victim)
+	fs.cachedDentriesLen--
+	victim.cached = false
+	// victim.refs may have become non-zero from an earlier path resolution
+	// since it was inserted into fs.cachedDentries.
+	if atomic.LoadInt64(&victim.refs) == 0 {
+		if victim.parent != nil {
+			victim.parent.dirMu.Lock()
+			if !victim.vfsd.IsDead() {
+				// Note that victim can't be a mount point (in any mount
+				// namespace), since VFS holds references on mount points.
+				fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &victim.vfsd)
+				delete(victim.parent.children, victim.name)
+				// We're only deleting the dentry, not the file it
+				// represents, so we don't need to update
+				// victimParent.dirents etc.
+			}
+			victim.parent.dirMu.Unlock()
+		}
+		victim.destroyLocked(ctx)
 	}
 }
 
@@ -1623,6 +1665,33 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
 	return nil
 }
 
+func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) error {
+	d.handleMu.RLock()
+	defer d.handleMu.RUnlock()
+	h := d.writeHandleLocked()
+	if h.isOpen() {
+		// Write back dirty pages to the remote file.
+		d.dataMu.Lock()
+		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mfp.MemoryFile(), h.writeFromBlocksAt)
+		d.dataMu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+	if err := d.syncRemoteFileLocked(ctx); err != nil {
+		if !forFilesystemSync {
+			return err
+		}
+		// Only return err if we can reasonably have expected sync to succeed
+		// (d is a regular file and was opened for writing).
+		if d.isRegularFile() && h.isOpen() {
+			return err
+		}
+		ctx.Debugf("gofer.dentry.syncCachedFile: syncing non-writable or non-regular-file dentry failed: %v", err)
+	}
+	return nil
+}
+
 // incLinks increments link count.
 func (d *dentry) incLinks() {
 	if atomic.LoadUint32(&d.nlink) == 0 {
@@ -1650,7 +1719,7 @@ type fileDescription struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
 
-	lockLogging sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
+	lockLogging sync.Once `state:"nosave"`
 }
 
 func (fd *fileDescription) filesystem() *filesystem {

@@ -37,6 +37,8 @@ import (
 // to/from the kernel.
 //
 // SocketVFS2 implements socket.SocketVFS2 and transport.Credentialer.
+//
+// +stateify savable
 type SocketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

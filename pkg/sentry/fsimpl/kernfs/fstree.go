@@ -34,7 +34,7 @@ func genericPrependPath(vfsroot vfs.VirtualDentry, mnt *vfs.Mount, d *Dentry, b 
 		if mnt == vfsroot.Mount() && &d.vfsd == vfsroot.Dentry() {
 			return vfs.PrependPathAtVFSRootError{}
 		}
-		if &d.vfsd == mnt.Root() {
+		if mnt != nil && &d.vfsd == mnt.Root() {
 			return nil
 		}
 		if d.parent == nil {
@@ -43,4 +43,13 @@ func genericPrependPath(vfsroot vfs.VirtualDentry, mnt *vfs.Mount, d *Dentry, b 
 		b.PrependComponent(d.name)
 		d = d.parent
 	}
+}
+
+// DebugPathname returns a pathname to d relative to its filesystem root.
+// DebugPathname does not correspond to any Linux function; it's used to
+// generate dentry pathnames for debugging.
+func genericDebugPathname(d *Dentry) string {
+	var b fspath.Builder
+	_ = genericPrependPath(vfs.VirtualDentry{}, nil, d, &b)
+	return b.String()
 }

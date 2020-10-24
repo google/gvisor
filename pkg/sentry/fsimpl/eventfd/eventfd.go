@@ -43,7 +43,7 @@ type EventFileDescription struct {
 
 	// queue is used to notify interested parties when the event object
 	// becomes readable or writable.
-	queue waiter.Queue `state:"zerovalue"`
+	queue waiter.Queue
 
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`

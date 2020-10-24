@@ -27,12 +27,11 @@ func (fst *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fst.root)
 }
 
-func (fst *FilesystemType) afterLoad() {}
-
 func (fst *FilesystemType) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fst.initErr)
 	stateSourceObject.Load(1, &fst.fs)
 	stateSourceObject.Load(2, &fst.root)
+	stateSourceObject.AfterLoad(fst.afterLoad)
 }
 
 func init() {

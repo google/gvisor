@@ -212,7 +212,6 @@ func (rf *regularFile) StateTypeName() string {
 func (rf *regularFile) StateFields() []string {
 	return []string{
 		"inode",
-		"memFile",
 		"memoryUsageKind",
 		"mappings",
 		"writableMappingPages",
@@ -227,26 +226,23 @@ func (rf *regularFile) beforeSave() {}
 func (rf *regularFile) StateSave(stateSinkObject state.Sink) {
 	rf.beforeSave()
 	stateSinkObject.Save(0, &rf.inode)
-	stateSinkObject.Save(1, &rf.memFile)
-	stateSinkObject.Save(2, &rf.memoryUsageKind)
-	stateSinkObject.Save(3, &rf.mappings)
-	stateSinkObject.Save(4, &rf.writableMappingPages)
-	stateSinkObject.Save(5, &rf.data)
-	stateSinkObject.Save(6, &rf.seals)
-	stateSinkObject.Save(7, &rf.size)
+	stateSinkObject.Save(1, &rf.memoryUsageKind)
+	stateSinkObject.Save(2, &rf.mappings)
+	stateSinkObject.Save(3, &rf.writableMappingPages)
+	stateSinkObject.Save(4, &rf.data)
+	stateSinkObject.Save(5, &rf.seals)
+	stateSinkObject.Save(6, &rf.size)
 }
-
-func (rf *regularFile) afterLoad() {}
 
 func (rf *regularFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rf.inode)
-	stateSourceObject.Load(1, &rf.memFile)
-	stateSourceObject.Load(2, &rf.memoryUsageKind)
-	stateSourceObject.Load(3, &rf.mappings)
-	stateSourceObject.Load(4, &rf.writableMappingPages)
-	stateSourceObject.Load(5, &rf.data)
-	stateSourceObject.Load(6, &rf.seals)
-	stateSourceObject.Load(7, &rf.size)
+	stateSourceObject.Load(1, &rf.memoryUsageKind)
+	stateSourceObject.Load(2, &rf.mappings)
+	stateSourceObject.Load(3, &rf.writableMappingPages)
+	stateSourceObject.Load(4, &rf.data)
+	stateSourceObject.Load(5, &rf.seals)
+	stateSourceObject.Load(6, &rf.size)
+	stateSourceObject.AfterLoad(rf.afterLoad)
 }
 
 func (fd *regularFileFD) StateTypeName() string {
@@ -353,7 +349,7 @@ func (fs *filesystem) StateTypeName() string {
 func (fs *filesystem) StateFields() []string {
 	return []string{
 		"vfsfs",
-		"memFile",
+		"mfp",
 		"clock",
 		"devMinor",
 		"nextInoMinusOne",
@@ -366,7 +362,7 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
-	stateSinkObject.Save(1, &fs.memFile)
+	stateSinkObject.Save(1, &fs.mfp)
 	stateSinkObject.Save(2, &fs.clock)
 	stateSinkObject.Save(3, &fs.devMinor)
 	stateSinkObject.Save(4, &fs.nextInoMinusOne)
@@ -377,7 +373,7 @@ func (fs *filesystem) afterLoad() {}
 
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
-	stateSourceObject.Load(1, &fs.memFile)
+	stateSourceObject.Load(1, &fs.mfp)
 	stateSourceObject.Load(2, &fs.clock)
 	stateSourceObject.Load(3, &fs.devMinor)
 	stateSourceObject.Load(4, &fs.nextInoMinusOne)

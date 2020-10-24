@@ -28,6 +28,77 @@ func (r *ConnectedEndpointRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
+func (i *inode) StateTypeName() string {
+	return "pkg/sentry/fsimpl/host.inode"
+}
+
+func (i *inode) StateFields() []string {
+	return []string{
+		"InodeNoStatFS",
+		"InodeNotDirectory",
+		"InodeNotSymlink",
+		"InodeTemporary",
+		"locks",
+		"inodeRefs",
+		"hostFD",
+		"ino",
+		"ftype",
+		"mayBlock",
+		"seekable",
+		"isTTY",
+		"savable",
+		"queue",
+		"mappings",
+		"pf",
+		"haveBuf",
+		"buf",
+	}
+}
+
+func (i *inode) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.InodeNoStatFS)
+	stateSinkObject.Save(1, &i.InodeNotDirectory)
+	stateSinkObject.Save(2, &i.InodeNotSymlink)
+	stateSinkObject.Save(3, &i.InodeTemporary)
+	stateSinkObject.Save(4, &i.locks)
+	stateSinkObject.Save(5, &i.inodeRefs)
+	stateSinkObject.Save(6, &i.hostFD)
+	stateSinkObject.Save(7, &i.ino)
+	stateSinkObject.Save(8, &i.ftype)
+	stateSinkObject.Save(9, &i.mayBlock)
+	stateSinkObject.Save(10, &i.seekable)
+	stateSinkObject.Save(11, &i.isTTY)
+	stateSinkObject.Save(12, &i.savable)
+	stateSinkObject.Save(13, &i.queue)
+	stateSinkObject.Save(14, &i.mappings)
+	stateSinkObject.Save(15, &i.pf)
+	stateSinkObject.Save(16, &i.haveBuf)
+	stateSinkObject.Save(17, &i.buf)
+}
+
+func (i *inode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.InodeNoStatFS)
+	stateSourceObject.Load(1, &i.InodeNotDirectory)
+	stateSourceObject.Load(2, &i.InodeNotSymlink)
+	stateSourceObject.Load(3, &i.InodeTemporary)
+	stateSourceObject.Load(4, &i.locks)
+	stateSourceObject.Load(5, &i.inodeRefs)
+	stateSourceObject.Load(6, &i.hostFD)
+	stateSourceObject.Load(7, &i.ino)
+	stateSourceObject.Load(8, &i.ftype)
+	stateSourceObject.Load(9, &i.mayBlock)
+	stateSourceObject.Load(10, &i.seekable)
+	stateSourceObject.Load(11, &i.isTTY)
+	stateSourceObject.Load(12, &i.savable)
+	stateSourceObject.Load(13, &i.queue)
+	stateSourceObject.Load(14, &i.mappings)
+	stateSourceObject.Load(15, &i.pf)
+	stateSourceObject.Load(16, &i.haveBuf)
+	stateSourceObject.Load(17, &i.buf)
+	stateSourceObject.AfterLoad(i.afterLoad)
+}
+
 func (f *filesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.filesystemType"
 }
@@ -71,71 +142,6 @@ func (fs *filesystem) afterLoad() {}
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
-}
-
-func (i *inode) StateTypeName() string {
-	return "pkg/sentry/fsimpl/host.inode"
-}
-
-func (i *inode) StateFields() []string {
-	return []string{
-		"InodeNoStatFS",
-		"InodeNotDirectory",
-		"InodeNotSymlink",
-		"InodeTemporary",
-		"locks",
-		"inodeRefs",
-		"hostFD",
-		"ino",
-		"isTTY",
-		"seekable",
-		"wouldBlock",
-		"queue",
-		"canMap",
-		"mappings",
-		"pf",
-	}
-}
-
-func (i *inode) beforeSave() {}
-
-func (i *inode) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.InodeNoStatFS)
-	stateSinkObject.Save(1, &i.InodeNotDirectory)
-	stateSinkObject.Save(2, &i.InodeNotSymlink)
-	stateSinkObject.Save(3, &i.InodeTemporary)
-	stateSinkObject.Save(4, &i.locks)
-	stateSinkObject.Save(5, &i.inodeRefs)
-	stateSinkObject.Save(6, &i.hostFD)
-	stateSinkObject.Save(7, &i.ino)
-	stateSinkObject.Save(8, &i.isTTY)
-	stateSinkObject.Save(9, &i.seekable)
-	stateSinkObject.Save(10, &i.wouldBlock)
-	stateSinkObject.Save(11, &i.queue)
-	stateSinkObject.Save(12, &i.canMap)
-	stateSinkObject.Save(13, &i.mappings)
-	stateSinkObject.Save(14, &i.pf)
-}
-
-func (i *inode) afterLoad() {}
-
-func (i *inode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.InodeNoStatFS)
-	stateSourceObject.Load(1, &i.InodeNotDirectory)
-	stateSourceObject.Load(2, &i.InodeNotSymlink)
-	stateSourceObject.Load(3, &i.InodeTemporary)
-	stateSourceObject.Load(4, &i.locks)
-	stateSourceObject.Load(5, &i.inodeRefs)
-	stateSourceObject.Load(6, &i.hostFD)
-	stateSourceObject.Load(7, &i.ino)
-	stateSourceObject.Load(8, &i.isTTY)
-	stateSourceObject.Load(9, &i.seekable)
-	stateSourceObject.Load(10, &i.wouldBlock)
-	stateSourceObject.Load(11, &i.queue)
-	stateSourceObject.Load(12, &i.canMap)
-	stateSourceObject.Load(13, &i.mappings)
-	stateSourceObject.Load(14, &i.pf)
 }
 
 func (f *fileDescription) StateTypeName() string {
@@ -216,12 +222,11 @@ func (i *inodePlatformFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.fileMapper)
 }
 
-func (i *inodePlatformFile) afterLoad() {}
-
 func (i *inodePlatformFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.inode)
 	stateSourceObject.Load(1, &i.fdRefs)
 	stateSourceObject.Load(2, &i.fileMapper)
+	stateSourceObject.AfterLoad(i.afterLoad)
 }
 
 func (c *ConnectedEndpoint) StateTypeName() string {
@@ -290,9 +295,9 @@ func (t *TTYFileDescription) StateLoad(stateSourceObject state.Source) {
 
 func init() {
 	state.Register((*ConnectedEndpointRefs)(nil))
+	state.Register((*inode)(nil))
 	state.Register((*filesystemType)(nil))
 	state.Register((*filesystem)(nil))
-	state.Register((*inode)(nil))
 	state.Register((*fileDescription)(nil))
 	state.Register((*inodeRefs)(nil))
 	state.Register((*inodePlatformFile)(nil))

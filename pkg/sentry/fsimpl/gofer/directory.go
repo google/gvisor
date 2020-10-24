@@ -16,7 +16,6 @@ package gofer
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -26,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -92,7 +92,7 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	child := &dentry{
 		refs:      1, // held by d
 		fs:        d.fs,
-		ino:       d.fs.nextSyntheticIno(),
+		ino:       d.fs.nextIno(),
 		mode:      uint32(opts.mode),
 		uid:       uint32(opts.kuid),
 		gid:       uint32(opts.kgid),
@@ -235,7 +235,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 				}
 				dirent := vfs.Dirent{
 					Name:    p9d.Name,
-					Ino:     uint64(inoFromPath(p9d.QID.Path)),
+					Ino:     d.fs.inoFromQIDPath(p9d.QID.Path),
 					NextOff: int64(len(dirents) + 1),
 				}
 				// p9 does not expose 9P2000.U's DMDEVICE, DMNAMEDPIPE, or

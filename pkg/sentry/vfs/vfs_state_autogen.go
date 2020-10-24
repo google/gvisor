@@ -288,16 +288,15 @@ func (epi *epollInterest) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &epi.userData)
 }
 
-func (epi *epollInterest) afterLoad() {}
-
 func (epi *epollInterest) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &epi.epoll)
+	stateSourceObject.LoadWait(0, &epi.epoll)
 	stateSourceObject.Load(1, &epi.key)
 	stateSourceObject.Load(2, &epi.waiter)
 	stateSourceObject.Load(3, &epi.mask)
 	stateSourceObject.Load(4, &epi.ready)
 	stateSourceObject.Load(5, &epi.epollInterestEntry)
 	stateSourceObject.Load(6, &epi.userData)
+	stateSourceObject.AfterLoad(epi.afterLoad)
 }
 
 func (l *epollInterestList) StateTypeName() string {
@@ -1732,7 +1731,8 @@ func (vfs *VirtualFilesystem) beforeSave() {}
 
 func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	vfs.beforeSave()
-	stateSinkObject.Save(0, &vfs.mounts)
+	var mountsValue []*Mount = vfs.saveMounts()
+	stateSinkObject.SaveValue(0, mountsValue)
 	stateSinkObject.Save(1, &vfs.mountpoints)
 	stateSinkObject.Save(2, &vfs.lastMountID)
 	stateSinkObject.Save(3, &vfs.anonMount)
@@ -1746,7 +1746,6 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 func (vfs *VirtualFilesystem) afterLoad() {}
 
 func (vfs *VirtualFilesystem) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &vfs.mounts)
 	stateSourceObject.Load(1, &vfs.mountpoints)
 	stateSourceObject.Load(2, &vfs.lastMountID)
 	stateSourceObject.Load(3, &vfs.anonMount)
@@ -1755,6 +1754,7 @@ func (vfs *VirtualFilesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &vfs.anonBlockDevMinor)
 	stateSourceObject.Load(7, &vfs.fsTypes)
 	stateSourceObject.Load(8, &vfs.filesystems)
+	stateSourceObject.LoadValue(0, new([]*Mount), func(y interface{}) { vfs.loadMounts(y.([]*Mount)) })
 }
 
 func (p *PathOperation) StateTypeName() string {
