@@ -1,5 +1,5 @@
 FROM ubuntu:focal
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends install -y apt-utils ca-certificates \
         # iptables to disable OS native packet processing.
         iptables \
         # nc to check that the posix_server is running.

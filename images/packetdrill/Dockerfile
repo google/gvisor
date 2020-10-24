@@ -1,5 +1,5 @@
 FROM ubuntu:bionic
-RUN apt-get update && apt-get install -y net-tools git iptables iputils-ping \
+RUN apt-get update && apt-get --no-install-recommends install -y apt-utils ca-certificates net-tools git iptables iputils-ping \
         netcat tcpdump jq tar bison flex make
 # Pick up updated git.
 RUN hash -r
