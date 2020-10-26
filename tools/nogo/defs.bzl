@@ -2,6 +2,28 @@
 
 load("//tools/bazeldefs:go.bzl", "go_context", "go_importpath", "go_rule", "go_test_library")
 
+NogoConfigInfo = provider(
+    "information about a nogo configuration",
+    fields = {
+        "srcs": "the collection of configuration files",
+    },
+)
+
+def _nogo_config_impl(ctx):
+    return [NogoConfigInfo(
+        srcs = ctx.files.srcs,
+    )]
+
+nogo_config = rule(
+    implementation = _nogo_config_impl,
+    attrs = {
+        "srcs": attr.label_list(
+            doc = "a list of yaml files (schema defined by tool/nogo/config.go).",
+            allow_files = True,
+        ),
+    },
+)
+
 NogoTargetInfo = provider(
     "information about the Go target",
     fields = {
@@ -20,11 +42,14 @@ nogo_target = go_rule(
     rule,
     implementation = _nogo_target_impl,
     attrs = {
-        # goarch is the build architecture. This will normally be provided by a
-        # select statement, but this information is propagated to other rules.
-        "goarch": attr.string(mandatory = True),
-        # goos is similarly the build operating system target.
-        "goos": attr.string(mandatory = True),
+        "goarch": attr.string(
+            doc = "the Go build architecture (propagated to other rules).",
+            mandatory = True,
+        ),
+        "goos": attr.string(
+            doc = "the Go OS target (propagated to other rules).",
+            mandatory = True,
+        ),
     },
 )
 
@@ -81,7 +106,7 @@ NogoStdlibInfo = provider(
     "information for nogo analysis (standard library facts)",
     fields = {
         "facts": "serialized standard library facts",
-        "findings": "package findings (if relevant)",
+        "raw_findings": "raw package findings (if relevant)",
     },
 )
 
@@ -90,7 +115,7 @@ def _nogo_stdlib_impl(ctx):
     nogo_target_info = ctx.attr._nogo_target[NogoTargetInfo]
     go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
     facts = ctx.actions.declare_file(ctx.label.name + ".facts")
-    findings = ctx.actions.declare_file(ctx.label.name + ".findings")
+    raw_findings = ctx.actions.declare_file(ctx.label.name + ".raw_findings")
     config = struct(
         Srcs = [f.path for f in go_ctx.stdlib_srcs],
         GOOS = go_ctx.goos,
@@ -101,15 +126,15 @@ def _nogo_stdlib_impl(ctx):
     ctx.actions.write(config_file, config.to_json())
     ctx.actions.run(
         inputs = [config_file] + go_ctx.stdlib_srcs,
-        outputs = [facts, findings],
+        outputs = [facts, raw_findings],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo_objdump_tool),
         executable = ctx.files._nogo_check[0],
-        mnemonic = "GoStandardLibraryAnalysis",
+        mnemonic = "NogoStandardLibraryAnalysis",
         progress_message = "Analyzing Go Standard Library",
         arguments = go_ctx.nogo_args + [
             "-objdump_tool=%s" % ctx.files._nogo_objdump_tool[0].path,
             "-stdlib=%s" % config_file.path,
-            "-findings=%s" % findings.path,
+            "-findings=%s" % raw_findings.path,
             "-facts=%s" % facts.path,
         ],
     )
@@ -117,7 +142,7 @@ def _nogo_stdlib_impl(ctx):
     # Return the stdlib facts as output.
     return [NogoStdlibInfo(
         facts = facts,
-        findings = findings,
+        raw_findings = raw_findings,
     )]
 
 nogo_stdlib = go_rule(
@@ -148,7 +173,8 @@ NogoInfo = provider(
     "information for nogo analysis",
     fields = {
         "facts": "serialized package facts",
-        "findings": "package findings (if relevant)",
+        "raw_findings": "raw package findings (if relevant)",
+        "escapes": "escape-only findings (if relevant)",
         "importpath": "package import path",
         "binaries": "package binary files",
         "srcs": "srcs (for go_test support)",
@@ -214,6 +240,7 @@ def _nogo_aspect_impl(target, ctx):
     # Collect all info from shadow dependencies.
     fact_map = dict()
     import_map = dict()
+    all_raw_findings = []
     for dep in deps:
         # There will be no file attribute set for all transitive dependencies
         # that are not go_library or go_binary rules, such as a proto rules.
@@ -231,6 +258,9 @@ def _nogo_aspect_impl(target, ctx):
         import_map[info.importpath] = x_files[0]
         fact_map[info.importpath] = info.facts.path
 
+        # Collect all findings; duplicates are resolved at the end.
+        all_raw_findings.extend(info.raw_findings)
+
         # Ensure the above are available as inputs.
         inputs.append(info.facts)
         inputs += info.binaries
@@ -244,7 +274,7 @@ def _nogo_aspect_impl(target, ctx):
     nogo_target_info = ctx.attr._nogo_target[NogoTargetInfo]
     go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
     facts = ctx.actions.declare_file(target.label.name + ".facts")
-    findings = ctx.actions.declare_file(target.label.name + ".findings")
+    raw_findings = ctx.actions.declare_file(target.label.name + ".raw_findings")
     escapes = ctx.actions.declare_file(target.label.name + ".escapes")
     config = struct(
         ImportPath = importpath,
@@ -262,39 +292,39 @@ def _nogo_aspect_impl(target, ctx):
     inputs.append(config_file)
     ctx.actions.run(
         inputs = inputs,
-        outputs = [facts, findings, escapes],
+        outputs = [facts, raw_findings, escapes],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo_objdump_tool),
         executable = ctx.files._nogo_check[0],
-        mnemonic = "GoStaticAnalysis",
+        mnemonic = "NogoAnalysis",
         progress_message = "Analyzing %s" % target.label,
         arguments = go_ctx.nogo_args + [
             "-binary=%s" % target_objfile.path,
             "-objdump_tool=%s" % ctx.files._nogo_objdump_tool[0].path,
             "-package=%s" % config_file.path,
-            "-findings=%s" % findings.path,
+            "-findings=%s" % raw_findings.path,
             "-facts=%s" % facts.path,
             "-escapes=%s" % escapes.path,
         ],
     )
 
+    # Flatten all findings from all dependencies.
+    #
+    # This is done because all the filtering must be done at the
+    # top-level nogo_test to dynamically apply a configuration.
+    # This does not actually add any additional work here, but
+    # will simply propagate the full list of files.
+    all_raw_findings = [stdlib_info.raw_findings] + depset(all_raw_findings).to_list() + [raw_findings]
+
     # Return the package facts as output.
-    return [
-        NogoInfo(
-            facts = facts,
-            findings = findings,
-            importpath = importpath,
-            binaries = binaries,
-            srcs = srcs,
-            deps = deps,
-        ),
-        OutputGroupInfo(
-            # Expose all findings (should just be a single file). This can be
-            # used for build analysis of the nogo findings.
-            nogo_findings = depset([findings]),
-            # Expose all escape analysis findings (see above).
-            nogo_escapes = depset([escapes]),
-        ),
-    ]
+    return [NogoInfo(
+        facts = facts,
+        raw_findings = all_raw_findings,
+        escapes = escapes,
+        importpath = importpath,
+        binaries = binaries,
+        srcs = srcs,
+        deps = deps,
+    )]
 
 nogo_aspect = go_rule(
     aspect,
@@ -327,41 +357,72 @@ nogo_aspect = go_rule(
 def _nogo_test_impl(ctx):
     """Check nogo findings."""
 
-    # Build a runner that checks the facts files.
-    findings = [dep[NogoInfo].findings for dep in ctx.attr.deps]
-    runner = ctx.actions.declare_file(ctx.label.name)
+    # Ensure there's a single dependency.
+    if len(ctx.attr.deps) != 1:
+        fail("nogo_test requires exactly one dep.")
+    raw_findings = ctx.attr.deps[0][NogoInfo].raw_findings
+    escapes = ctx.attr.deps[0][NogoInfo].escapes
+
+    # Build a step that applies the configuration.
+    config_srcs = ctx.attr.config[NogoConfigInfo].srcs
+    findings = ctx.actions.declare_file(ctx.label.name + ".findings")
     ctx.actions.run(
-        inputs = findings + ctx.files.srcs,
-        outputs = [runner],
-        tools = depset(ctx.files._gentest),
-        executable = ctx.files._gentest[0],
-        mnemonic = "Gentest",
+        inputs = raw_findings + ctx.files.srcs + config_srcs,
+        outputs = [findings],
+        tools = depset(ctx.files._filter),
+        executable = ctx.files._filter[0],
+        mnemonic = "GoStaticAnalysis",
         progress_message = "Generating %s" % ctx.label,
-        arguments = [runner.path] + [f.path for f in findings],
+        arguments = ["-input=%s" % f.path for f in raw_findings] +
+                    ["-config=%s" % f.path for f in config_srcs] +
+                    ["-output=%s" % findings.path],
     )
+
+    # Build a runner that checks the filtered facts.
+    #
+    # Note that this calls the filter binary without any configuration, so all
+    # findings will be included. But this is expected, since we've already
+    # filtered out everything that should not be included.
+    runner = ctx.actions.declare_file(ctx.label.name)
+    runner_content = [
+        "#!/bin/bash",
+        "exec %s -input=%s" % (ctx.files._filter[0].short_path, findings.short_path),
+        "",
+    ]
+    ctx.actions.write(runner, "\n".join(runner_content), is_executable = True)
+
     return [DefaultInfo(
+        # The runner just executes the filter again, on the
+        # newly generated filtered findings. We still need
+        # the filter tool as part of our runfiles, however.
+        runfiles = ctx.runfiles(files = ctx.files._filter + [findings]),
         executable = runner,
+    ), OutputGroupInfo(
+        # Propagate the filtered filters, for consumption by
+        # build tooling. Note that the build tooling typically
+        # pays attention to the mnemoic above, so this must be
+        # what is expected by the tooling.
+        nogo_findings = depset([findings]),
+        # Expose all escape analysis findings (see above).
+        nogo_escapes = depset([escapes]),
     )]
 
-_nogo_test = rule(
+nogo_test = rule(
     implementation = _nogo_test_impl,
     attrs = {
-        # deps should have only a single element.
-        "deps": attr.label_list(aspects = [nogo_aspect]),
-        # srcs exist here only to ensure that this target is
-        # directly affected by changes to the source files.
-        "srcs": attr.label_list(allow_files = True),
-        "_gentest": attr.label(default = "//tools/nogo:gentest"),
+        "config": attr.label(
+            mandatory = True,
+            doc = "A rule of kind nogo_config.",
+        ),
+        "deps": attr.label_list(
+            aspects = [nogo_aspect],
+            doc = "Exactly one Go dependency to be analyzed.",
+        ),
+        "srcs": attr.label_list(
+            allow_files = True,
+            doc = "Relevant src files. This is ignored except to make the nogo_test directly affected by the files.",
+        ),
+        "_filter": attr.label(default = "//tools/nogo/filter:filter"),
     },
     test = True,
 )
-
-def nogo_test(name, srcs, library, **kwargs):
-    tags = kwargs.pop("tags", []) + ["nogo"]
-    _nogo_test(
-        name = name,
-        srcs = srcs,
-        deps = [library],
-        tags = tags,
-        **kwargs
-    )

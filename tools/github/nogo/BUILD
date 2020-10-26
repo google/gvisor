@@ -10,7 +10,7 @@ go_library(
         "//tools/github:__subpackages__",
     ],
     deps = [
-        "//tools/nogo/util",
+        "//tools/nogo",
         "@com_github_google_go_github_v28//github:go_default_library",
     ],
 )

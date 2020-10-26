@@ -11,6 +11,11 @@ docker_image(
         "EXPOSE 8080/tcp",
         'ENTRYPOINT ["/server"]',
     ],
+    tags = [
+        "local",
+        "manual",
+        "nosandbox",
+    ],
 )
 
 # files is the full file system of the generated container.
