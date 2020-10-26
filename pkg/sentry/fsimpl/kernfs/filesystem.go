@@ -632,7 +632,10 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			// Won't overwrite existing node since RENAME_NOREPLACE was requested.
 			return syserror.EEXIST
 		}
-		dst = dstDir.children[pc]
+		dst, err = fs.revalidateChildLocked(ctx, rp.VirtualFilesystem(), dstDir, pc, dstDir.children[pc])
+		if err != nil {
+			return err
+		}
 		if dst == nil {
 			panic(fmt.Sprintf("Child %q for parent Dentry %+v disappeared inside atomic section?", pc, dstDir))
 		}

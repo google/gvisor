@@ -381,6 +381,23 @@ TEST(MountTest, MountFuseFilesystem) {
       ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "fuse", 0, mopts, 0));
 }
 
+TEST(MountTest, MountAndRenameNotExistingDirectory) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", dir.path().c_str(), "sysfs", 0, nullptr),
+              SyscallSucceeds());
+  EXPECT_THAT(chdir(dir.path().c_str()), SyscallSucceeds());
+
+  // In VFS1 rename returns zero if the old file and new file are same, even
+  // if the old file does not exist.
+  if (IsRunningWithVFS1()) {
+    ASSERT_THAT(rename("bus", "bus"), SyscallSucceeds());
+    return;
+  }
+  ASSERT_THAT(rename("bus", "bus"), SyscallFailsWithErrno(ENOENT));
+}
+
 }  // namespace
 
 }  // namespace testing
