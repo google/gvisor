@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_binary", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -24,6 +24,18 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//test/benchmarks/tools",
+        "//tools/bigquery",
+    ],
+)
+
+go_binary(
+    name = "parser",
+    testonly = 1,
+    srcs = ["parser_main.go"],
+    nogo = False,
+    deps = [
+        ":parsers",
+        "//runsc/flag",
         "//tools/bigquery",
     ],
 )

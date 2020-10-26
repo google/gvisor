@@ -27,20 +27,21 @@ import (
 	"gvisor.dev/gvisor/tools/bigquery"
 )
 
-// parseOutput expects golang benchmark output returns a Benchmark struct formatted for BigQuery.
-func parseOutput(output string, metadata *bigquery.Metadata, official bool) ([]*bigquery.Benchmark, error) {
-	var benchmarks []*bigquery.Benchmark
+// ParseOutput expects golang benchmark output and returns a struct formatted
+// for BigQuery.
+func ParseOutput(output string, name string, official bool) (*bigquery.Suite, error) {
+	suite := bigquery.NewSuite(name)
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
-		bm, err := parseLine(line, metadata, official)
+		bm, err := parseLine(line, official)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse line '%s': %v", line, err)
 		}
 		if bm != nil {
-			benchmarks = append(benchmarks, bm)
+			suite.Benchmarks = append(suite.Benchmarks, bm)
 		}
 	}
-	return benchmarks, nil
+	return suite, nil
 }
 
 // parseLine handles parsing a benchmark line into a bigquery.Benchmark.
@@ -58,9 +59,8 @@ func parseOutput(output string, metadata *bigquery.Metadata, official bool) ([]*
 //		{Name: ns/op, Unit: ns/op, Sample: 1397875880}
 //		{Name: requests_per_second, Unit: QPS, Sample: 140 }
 //  }
-//  Metadata: metadata
 //}
-func parseLine(line string, metadata *bigquery.Metadata, official bool) (*bigquery.Benchmark, error) {
+func parseLine(line string, official bool) (*bigquery.Benchmark, error) {
 	fields := strings.Fields(line)
 
 	// Check if this line is a Benchmark line. Otherwise ignore the line.
@@ -79,7 +79,6 @@ func parseLine(line string, metadata *bigquery.Metadata, official bool) (*bigque
 	}
 
 	bm := bigquery.NewBenchmark(name, iters, official)
-	bm.Metadata = metadata
 	for _, p := range params {
 		bm.AddCondition(p.Name, p.Value)
 	}

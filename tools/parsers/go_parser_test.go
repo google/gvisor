@@ -94,12 +94,10 @@ func TestParseLine(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseLine(tc.data, nil, false)
+			got, err := parseLine(tc.data, false)
 			if err != nil {
 				t.Fatalf("parseLine failed with: %v", err)
 			}
-
-			tc.want.Timestamp = got.Timestamp
 
 			if !cmp.Equal(tc.want, got, nil) {
 				for _, c := range got.Condition {
@@ -150,14 +148,14 @@ BenchmarkRuby/server_threads.5-6 1	1416003331 ns/op	0.00950 average_latency.s 46
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			bms, err := parseOutput(tc.data, nil, false)
+			suite, err := ParseOutput(tc.data, "", false)
 			if err != nil {
 				t.Fatalf("parseOutput failed: %v", err)
-			} else if len(bms) != tc.numBenchmarks {
-				t.Fatalf("NumBenchmarks failed want: %d got: %d %+v", tc.numBenchmarks, len(bms), bms)
+			} else if len(suite.Benchmarks) != tc.numBenchmarks {
+				t.Fatalf("NumBenchmarks failed want: %d got: %d %+v", tc.numBenchmarks, len(suite.Benchmarks), suite.Benchmarks)
 			}
 
-			for _, bm := range bms {
+			for _, bm := range suite.Benchmarks {
 				if len(bm.Metric) != tc.numMetrics {
 					t.Fatalf("NumMetrics failed want: %d got: %d %+v", tc.numMetrics, len(bm.Metric), bm.Metric)
 				}

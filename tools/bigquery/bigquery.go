@@ -25,22 +25,30 @@ import (
 	"time"
 
 	bq "cloud.google.com/go/bigquery"
+	"google.golang.org/api/option"
 )
 
-// Benchmark is the top level structure of recorded benchmark data. BigQuery
+// Suite is the top level structure for a benchmark run. BigQuery
 // will infer the schema from this.
+type Suite struct {
+	Name       string       `bq:"name"`
+	Conditions []*Condition `bq:"conditions"`
+	Benchmarks []*Benchmark `bq:"benchmarks"`
+	Official   bool         `bq:"official"`
+	Timestamp  time.Time    `bq:"timestamp"`
+}
+
+// Benchmark represents an individual benchmark in a suite.
 type Benchmark struct {
 	Name      string       `bq:"name"`
 	Condition []*Condition `bq:"condition"`
-	Timestamp time.Time    `bq:"timestamp"`
-	Official  bool         `bq:"official"`
 	Metric    []*Metric    `bq:"metric"`
-	Metadata  *Metadata    `bq:"metadata"`
 }
 
-// Condition represents qualifiers for the benchmark. For example:
+// Condition represents qualifiers for the benchmark or suite. For example:
 // Get_Pid/1/real_time would have Benchmark Name "Get_Pid" with "1"
-// and "real_time" parameters as conditions.
+// and "real_time" parameters as conditions. Suite conditions include
+// information such as the CL number and platform name.
 type Condition struct {
 	Name  string `bq:"name"`
 	Value string `bq:"value"`
@@ -53,19 +61,9 @@ type Metric struct {
 	Sample float64 `bq:"sample"`
 }
 
-// Metadata about this benchmark.
-type Metadata struct {
-	CL          string `bq:"changelist"`
-	IterationID string `bq:"iteration_id"`
-	PendingCL   string `bq:"pending_cl"`
-	Workflow    string `bq:"workflow"`
-	Platform    string `bq:"platform"`
-	Gofer       string `bq:"gofer"`
-}
-
 // InitBigQuery initializes a BigQuery dataset/table in the project. If the dataset/table already exists, it is not duplicated.
-func InitBigQuery(ctx context.Context, projectID, datasetID, tableID string) error {
-	client, err := bq.NewClient(ctx, projectID)
+func InitBigQuery(ctx context.Context, projectID, datasetID, tableID string, opts []option.ClientOption) error {
+	client, err := bq.NewClient(ctx, projectID, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize client on project %s: %v", projectID, err)
 	}
@@ -77,7 +75,7 @@ func InitBigQuery(ctx context.Context, projectID, datasetID, tableID string) err
 	}
 
 	table := dataset.Table(tableID)
-	schema, err := bq.InferSchema(Benchmark{})
+	schema, err := bq.InferSchema(Suite{})
 	if err != nil {
 		return fmt.Errorf("failed to infer schema: %v", err)
 	}
@@ -109,24 +107,32 @@ func (bm *Benchmark) AddMetric(metricName, unit string, sample float64) {
 // NewBenchmark initializes a new benchmark.
 func NewBenchmark(name string, iters int, official bool) *Benchmark {
 	return &Benchmark{
-		Name:      name,
-		Timestamp: time.Now().UTC(),
-		Official:  official,
-		Metric:    make([]*Metric, 0),
+		Name:   name,
+		Metric: make([]*Metric, 0),
+	}
+}
+
+// NewSuite initializes a new Suite.
+func NewSuite(name string) *Suite {
+	return &Suite{
+		Name:       name,
+		Timestamp:  time.Now().UTC(),
+		Benchmarks: make([]*Benchmark, 0),
+		Conditions: make([]*Condition, 0),
 	}
 }
 
 // SendBenchmarks sends the slice of benchmarks to the BigQuery dataset/table.
-func SendBenchmarks(ctx context.Context, benchmarks []*Benchmark, projectID, datasetID, tableID string) error {
-	client, err := bq.NewClient(ctx, projectID)
+func SendBenchmarks(ctx context.Context, suite *Suite, projectID, datasetID, tableID string, opts []option.ClientOption) error {
+	client, err := bq.NewClient(ctx, projectID, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize client on project: %s: %v", projectID, err)
 	}
 	defer client.Close()
 
 	uploader := client.Dataset(datasetID).Table(tableID).Uploader()
-	if err = uploader.Put(ctx, benchmarks); err != nil {
-		return fmt.Errorf("failed to upload benchmarks to proejct %s, table %s.%s: %v", projectID, datasetID, tableID, err)
+	if err = uploader.Put(ctx, suite); err != nil {
+		return fmt.Errorf("failed to upload benchmarks %s to project %s, table %s.%s: %v", suite.Name, projectID, datasetID, tableID, err)
 	}
 
 	return nil
