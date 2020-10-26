@@ -4,6 +4,18 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 licenses(["notice"])
 
 go_template_instance(
+    name = "dentry_list",
+    out = "dentry_list.go",
+    package = "kernfs",
+    prefix = "dentry",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*Dentry",
+        "Linker": "*Dentry",
+    },
+)
+
+go_template_instance(
     name = "fstree",
     out = "fstree.go",
     package = "kernfs",
@@ -23,17 +35,6 @@ go_template_instance(
     types = {
         "Element": "*slot",
         "Linker": "*slot",
-    },
-)
-
-go_template_instance(
-    name = "dentry_refs",
-    out = "dentry_refs.go",
-    package = "kernfs",
-    prefix = "Dentry",
-    template = "//pkg/refsvfs2:refs_template",
-    types = {
-        "T": "Dentry",
     },
 )
 
@@ -84,7 +85,7 @@ go_template_instance(
 go_library(
     name = "kernfs",
     srcs = [
-        "dentry_refs.go",
+        "dentry_list.go",
         "dynamic_bytes_file.go",
         "fd_impl_util.go",
         "filesystem.go",
@@ -105,6 +106,7 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",
+        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",

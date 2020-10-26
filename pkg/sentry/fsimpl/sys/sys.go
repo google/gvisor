@@ -18,6 +18,7 @@ package sys
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -29,9 +30,12 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// Name is the default filesystem name.
-const Name = "sysfs"
-const defaultSysDirMode = linux.FileMode(0755)
+const (
+	// Name is the default filesystem name.
+	Name                     = "sysfs"
+	defaultSysDirMode        = linux.FileMode(0755)
+	defaultMaxCachedDentries = uint64(1000)
+)
 
 // FilesystemType implements vfs.FilesystemType.
 //
@@ -62,9 +66,21 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	maxCachedDentries := defaultMaxCachedDentries
+	if str, ok := mopts["dentry_cache_limit"]; ok {
+		delete(mopts, "dentry_cache_limit")
+		maxCachedDentries, err = strconv.ParseUint(str, 10, 64)
+		if err != nil {
+			ctx.Warningf("sys.FilesystemType.GetFilesystem: invalid dentry cache limit: dentry_cache_limit=%s", str)
+			return nil, nil, syserror.EINVAL
+		}
+	}
+
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.MaxCachedDentries = maxCachedDentries
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
 
 	root := fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
