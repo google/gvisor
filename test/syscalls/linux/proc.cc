@@ -26,6 +26,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/utsname.h>
@@ -510,6 +511,413 @@ TEST(ProcSelfAuxv, EntryValues) {
         << "a_type: " << a_type;
   }
   EXPECT_EQ(i, proc_auxv.size());
+}
+
+// Just open and read a part of /proc/self/mem, check that we can read an item.
+TEST(ProcPidMem, Read) {
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDONLY));
+  char input[] = "hello-world";
+  char output[sizeof(input)];
+  ASSERT_THAT(pread(memfd.get(), output, sizeof(output),
+                    reinterpret_cast<off_t>(input)),
+              SyscallSucceedsWithValue(sizeof(input)));
+  ASSERT_STREQ(input, output);
+}
+
+// Perform read on an unmapped region.
+TEST(ProcPidMem, Unmapped) {
+  // Strategy: map then unmap, so we have a guaranteed unmapped region
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDONLY));
+  Mapping mapping = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  // Fill it with things
+  memset(mapping.ptr(), 'x', mapping.len());
+  char expected = 'x', output;
+  ASSERT_THAT(pread(memfd.get(), &output, sizeof(output),
+                    reinterpret_cast<off_t>(mapping.ptr())),
+              SyscallSucceedsWithValue(sizeof(output)));
+  ASSERT_EQ(expected, output);
+
+  // Unmap region again
+  ASSERT_THAT(munmap(mapping.ptr(), mapping.len()), SyscallSucceeds());
+
+  // Now we want EIO error
+  ASSERT_THAT(pread(memfd.get(), &output, sizeof(output),
+                    reinterpret_cast<off_t>(mapping.ptr())),
+              SyscallFailsWithErrno(EIO));
+}
+
+// Perform read repeatedly to verify offset change.
+TEST(ProcPidMem, RepeatedRead) {
+  auto const num_reads = 3;
+  char expected[] = "01234567890abcdefghijkl";
+  char output[sizeof(expected) / num_reads];
+
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDONLY));
+  ASSERT_THAT(lseek(memfd.get(), reinterpret_cast<off_t>(&expected), SEEK_SET),
+              SyscallSucceedsWithValue(reinterpret_cast<off_t>(&expected)));
+  for (auto i = 0; i < num_reads; i++) {
+    ASSERT_THAT(read(memfd.get(), &output, sizeof(output)),
+                SyscallSucceedsWithValue(sizeof(output)));
+    ASSERT_EQ(strncmp(&expected[i * sizeof(output)], output, sizeof(output)),
+              0);
+  }
+}
+
+// Perform seek operations repeatedly.
+TEST(ProcPidMem, RepeatedSeek) {
+  auto const num_reads = 3;
+  char expected[] = "01234567890abcdefghijkl";
+  char output[sizeof(expected) / num_reads];
+
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDONLY));
+  ASSERT_THAT(lseek(memfd.get(), reinterpret_cast<off_t>(&expected), SEEK_SET),
+              SyscallSucceedsWithValue(reinterpret_cast<off_t>(&expected)));
+  // Read from start
+  ASSERT_THAT(read(memfd.get(), &output, sizeof(output)),
+              SyscallSucceedsWithValue(sizeof(output)));
+  ASSERT_EQ(strncmp(&expected[0 * sizeof(output)], output, sizeof(output)), 0);
+  // Skip ahead one read
+  ASSERT_THAT(lseek(memfd.get(), sizeof(output), SEEK_CUR),
+              SyscallSucceedsWithValue(reinterpret_cast<off_t>(&expected) +
+                                       sizeof(output) * 2));
+  // Do read again
+  ASSERT_THAT(read(memfd.get(), &output, sizeof(output)),
+              SyscallSucceedsWithValue(sizeof(output)));
+  ASSERT_EQ(strncmp(&expected[2 * sizeof(output)], output, sizeof(output)), 0);
+  // Skip back three reads
+  ASSERT_THAT(lseek(memfd.get(), -3 * sizeof(output), SEEK_CUR),
+              SyscallSucceedsWithValue(reinterpret_cast<off_t>(&expected)));
+  // Do read again
+  ASSERT_THAT(read(memfd.get(), &output, sizeof(output)),
+              SyscallSucceedsWithValue(sizeof(output)));
+  ASSERT_EQ(strncmp(&expected[0 * sizeof(output)], output, sizeof(output)), 0);
+  // Check that SEEK_END does not work
+  ASSERT_THAT(lseek(memfd.get(), 0, SEEK_END), SyscallFailsWithErrno(EINVAL));
+}
+
+// Perform read past an allocated memory region.
+TEST(ProcPidMem, PartialRead) {
+  // Strategy: map large region, then do unmap and remap smaller region
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDONLY));
+
+  Mapping mapping = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  ASSERT_THAT(munmap(mapping.ptr(), mapping.len()), SyscallSucceeds());
+  Mapping smaller_mapping = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(mapping.ptr(), kPageSize, PROT_READ | PROT_WRITE,
+           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
+  // Fill it with things
+  memset(smaller_mapping.ptr(), 'x', smaller_mapping.len());
+
+  // Now we want no error
+  char expected[] = {'x'};
+  char output[kPageSize] = {0};
+  off_t read_offset =
+      reinterpret_cast<off_t>(smaller_mapping.ptr()) + kPageSize - 1;
+  ASSERT_THAT(pread(memfd.get(), &output, sizeof(output), read_offset),
+              SyscallSucceedsWithValue(sizeof(expected)));
+  // Since output is larger, than expected we have to do manual compare
+  ASSERT_EQ(expected[0], output[0]);
+}
+
+// Perform read on /proc/[pid]/mem after exit.
+TEST(ProcPidMem, AfterExit) {
+  int pfd1[2] = {};
+  int pfd2[2] = {};
+
+  char expected[] = "hello-world";
+
+  ASSERT_THAT(pipe(pfd1), SyscallSucceeds());
+  ASSERT_THAT(pipe(pfd2), SyscallSucceeds());
+
+  // Create child process
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // Close reading end of first pipe
+    close(pfd1[0]);
+
+    // Tell parent about location of input
+    char ok = 1;
+    TEST_CHECK(WriteFd(pfd1[1], &ok, sizeof(ok)) == sizeof(ok));
+    TEST_PCHECK(close(pfd1[1]) == 0);
+
+    // Close writing end of second pipe
+    TEST_PCHECK(close(pfd2[1]) == 0);
+
+    // Await parent OK to die
+    ok = 0;
+    TEST_CHECK(ReadFd(pfd2[0], &ok, sizeof(ok)) == sizeof(ok));
+
+    // Close rest pipes
+    TEST_PCHECK(close(pfd2[0]) == 0);
+    _exit(0);
+  }
+
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Close writing end of first pipe
+  EXPECT_THAT(close(pfd1[1]), SyscallSucceeds());
+
+  // Wait for child to be alive and well
+  char ok = 0;
+  EXPECT_THAT(ReadFd(pfd1[0], &ok, sizeof(ok)),
+              SyscallSucceedsWithValue(sizeof(ok)));
+  // Close reading end of first pipe
+  EXPECT_THAT(close(pfd1[0]), SyscallSucceeds());
+
+  // Open /proc/pid/mem fd
+  std::string mempath = absl::StrCat("/proc/", child_pid, "/mem");
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open(mempath, O_RDONLY));
+
+  // Expect that we can read
+  char output[sizeof(expected)];
+  EXPECT_THAT(pread(memfd.get(), &output, sizeof(output),
+                    reinterpret_cast<off_t>(&expected)),
+              SyscallSucceedsWithValue(sizeof(output)));
+  EXPECT_STREQ(expected, output);
+
+  // Tell proc its ok to go
+  EXPECT_THAT(close(pfd2[0]), SyscallSucceeds());
+  ok = 1;
+  EXPECT_THAT(WriteFd(pfd2[1], &ok, sizeof(ok)),
+              SyscallSucceedsWithValue(sizeof(ok)));
+  EXPECT_THAT(close(pfd2[1]), SyscallSucceeds());
+
+  // Expect termination
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+
+  // Expect that we can't read anymore
+  EXPECT_THAT(pread(memfd.get(), &output, sizeof(output),
+                    reinterpret_cast<off_t>(&expected)),
+              SyscallSucceedsWithValue(0));
+}
+
+// Read from /proc/[pid]/mem with different UID/GID and attached state.
+TEST(ProcPidMem, DifferentUserAttached) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_OVERRIDE)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_PTRACE)));
+
+  int pfd1[2] = {};
+  int pfd2[2] = {};
+
+  ASSERT_THAT(pipe(pfd1), SyscallSucceeds());
+  ASSERT_THAT(pipe(pfd2), SyscallSucceeds());
+
+  // Create child process
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // Close reading end of first pipe
+    close(pfd1[0]);
+
+    // Tell parent about location of input
+    char input[] = "hello-world";
+    off_t input_location = reinterpret_cast<off_t>(input);
+    TEST_CHECK(WriteFd(pfd1[1], &input_location, sizeof(input_location)) ==
+               sizeof(input_location));
+    TEST_PCHECK(close(pfd1[1]) == 0);
+
+    // Close writing end of second pipe
+    TEST_PCHECK(close(pfd2[1]) == 0);
+
+    // Await parent OK to die
+    char ok = 0;
+    TEST_CHECK(ReadFd(pfd2[0], &ok, sizeof(ok)) == sizeof(ok));
+
+    // Close rest pipes
+    TEST_PCHECK(close(pfd2[0]) == 0);
+    _exit(0);
+  }
+
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Close writing end of first pipe
+  EXPECT_THAT(close(pfd1[1]), SyscallSucceeds());
+
+  // Read target location from child
+  off_t target_location;
+  EXPECT_THAT(ReadFd(pfd1[0], &target_location, sizeof(target_location)),
+              SyscallSucceedsWithValue(sizeof(target_location)));
+  // Close reading end of first pipe
+  EXPECT_THAT(close(pfd1[0]), SyscallSucceeds());
+
+  ScopedThread([&] {
+    // Attach to child subprocess without stopping it
+    EXPECT_THAT(ptrace(PTRACE_SEIZE, child_pid, NULL, NULL), SyscallSucceeds());
+
+    // Keep capabilities after setuid
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0), SyscallSucceeds());
+    constexpr int kNobody = 65534;
+    EXPECT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+
+    // Only restore CAP_SYS_PTRACE and CAP_DAC_OVERRIDE
+    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, true));
+    EXPECT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, true));
+
+    // Open /proc/pid/mem fd
+    std::string mempath = absl::StrCat("/proc/", child_pid, "/mem");
+    auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open(mempath, O_RDONLY));
+    char expected[] = "hello-world";
+    char output[sizeof(expected)];
+    EXPECT_THAT(pread(memfd.get(), output, sizeof(output),
+                      reinterpret_cast<off_t>(target_location)),
+                SyscallSucceedsWithValue(sizeof(output)));
+    EXPECT_STREQ(expected, output);
+
+    // Tell proc its ok to go
+    EXPECT_THAT(close(pfd2[0]), SyscallSucceeds());
+    char ok = 1;
+    EXPECT_THAT(WriteFd(pfd2[1], &ok, sizeof(ok)),
+                SyscallSucceedsWithValue(sizeof(ok)));
+    EXPECT_THAT(close(pfd2[1]), SyscallSucceeds());
+
+    // Expect termination
+    int status;
+    ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        << " status " << status;
+  });
+}
+
+// Attempt to read from /proc/[pid]/mem with different UID/GID.
+TEST(ProcPidMem, DifferentUser) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  int pfd1[2] = {};
+  int pfd2[2] = {};
+
+  ASSERT_THAT(pipe(pfd1), SyscallSucceeds());
+  ASSERT_THAT(pipe(pfd2), SyscallSucceeds());
+
+  // Create child process
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // Close reading end of first pipe
+    close(pfd1[0]);
+
+    // Tell parent about location of input
+    char input[] = "hello-world";
+    off_t input_location = reinterpret_cast<off_t>(input);
+    TEST_CHECK(WriteFd(pfd1[1], &input_location, sizeof(input_location)) ==
+               sizeof(input_location));
+    TEST_PCHECK(close(pfd1[1]) == 0);
+
+    // Close writing end of second pipe
+    TEST_PCHECK(close(pfd2[1]) == 0);
+
+    // Await parent OK to die
+    char ok = 0;
+    TEST_CHECK(ReadFd(pfd2[0], &ok, sizeof(ok)) == sizeof(ok));
+
+    // Close rest pipes
+    TEST_PCHECK(close(pfd2[0]) == 0);
+    _exit(0);
+  }
+
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Close writing end of first pipe
+  EXPECT_THAT(close(pfd1[1]), SyscallSucceeds());
+
+  // Read target location from child
+  off_t target_location;
+  EXPECT_THAT(ReadFd(pfd1[0], &target_location, sizeof(target_location)),
+              SyscallSucceedsWithValue(sizeof(target_location)));
+  // Close reading end of first pipe
+  EXPECT_THAT(close(pfd1[0]), SyscallSucceeds());
+
+  ScopedThread([&] {
+    constexpr int kNobody = 65534;
+    EXPECT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+
+    // Attempt to open /proc/[child_pid]/mem
+    std::string mempath = absl::StrCat("/proc/", child_pid, "/mem");
+    EXPECT_THAT(open(mempath.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+
+    // Tell proc its ok to go
+    EXPECT_THAT(close(pfd2[0]), SyscallSucceeds());
+    char ok = 1;
+    EXPECT_THAT(WriteFd(pfd2[1], &ok, sizeof(ok)),
+                SyscallSucceedsWithValue(sizeof(ok)));
+    EXPECT_THAT(close(pfd2[1]), SyscallSucceeds());
+
+    // Expect termination
+    int status;
+    ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+  });
+}
+
+// Perform read on /proc/[pid]/mem with same UID/GID.
+TEST(ProcPidMem, SameUser) {
+  int pfd1[2] = {};
+  int pfd2[2] = {};
+
+  ASSERT_THAT(pipe(pfd1), SyscallSucceeds());
+  ASSERT_THAT(pipe(pfd2), SyscallSucceeds());
+
+  // Create child process
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // Close reading end of first pipe
+    close(pfd1[0]);
+
+    // Tell parent about location of input
+    char input[] = "hello-world";
+    off_t input_location = reinterpret_cast<off_t>(input);
+    TEST_CHECK(WriteFd(pfd1[1], &input_location, sizeof(input_location)) ==
+               sizeof(input_location));
+    TEST_PCHECK(close(pfd1[1]) == 0);
+
+    // Close writing end of second pipe
+    TEST_PCHECK(close(pfd2[1]) == 0);
+
+    // Await parent OK to die
+    char ok = 0;
+    TEST_CHECK(ReadFd(pfd2[0], &ok, sizeof(ok)) == sizeof(ok));
+
+    // Close rest pipes
+    TEST_PCHECK(close(pfd2[0]) == 0);
+    _exit(0);
+  }
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Close writing end of first pipe
+  EXPECT_THAT(close(pfd1[1]), SyscallSucceeds());
+
+  // Read target location from child
+  off_t target_location;
+  EXPECT_THAT(ReadFd(pfd1[0], &target_location, sizeof(target_location)),
+              SyscallSucceedsWithValue(sizeof(target_location)));
+  // Close reading end of first pipe
+  EXPECT_THAT(close(pfd1[0]), SyscallSucceeds());
+
+  // Open /proc/pid/mem fd
+  std::string mempath = absl::StrCat("/proc/", child_pid, "/mem");
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open(mempath, O_RDONLY));
+  char expected[] = "hello-world";
+  char output[sizeof(expected)];
+  EXPECT_THAT(pread(memfd.get(), output, sizeof(output),
+                    reinterpret_cast<off_t>(target_location)),
+              SyscallSucceedsWithValue(sizeof(output)));
+  EXPECT_STREQ(expected, output);
+
+  // Tell proc its ok to go
+  EXPECT_THAT(close(pfd2[0]), SyscallSucceeds());
+  char ok = 1;
+  EXPECT_THAT(WriteFd(pfd2[1], &ok, sizeof(ok)),
+              SyscallSucceedsWithValue(sizeof(ok)));
+  EXPECT_THAT(close(pfd2[1]), SyscallSucceeds());
+
+  // Expect termination
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
 }
 
 // Just open and read /proc/self/maps, check that we can find [stack]
