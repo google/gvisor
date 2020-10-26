@@ -20,22 +20,6 @@ import (
 	"os"
 )
 
-var (
-	// internalPrefix is the internal path prefix. Note that this is not
-	// special, as paths should be passed relative to the repository root
-	// and should not have any special prefix applied.
-	internalPrefix = fmt.Sprintf("^")
-
-	// internalDefault is applied when no paths are provided.
-	internalDefault = fmt.Sprintf("%s/.*", notPath("external"))
-
-	// generatedPrefix is a regex for generated files.
-	generatedPrefix = "^(.*/)?(bazel-genfiles|bazel-out|bazel-bin)/"
-
-	// externalPrefix is external workspace packages.
-	externalPrefix = "^external/"
-)
-
 // findStdPkg needs to find the bundled standard library packages.
 func findStdPkg(GOOS, GOARCH, path string) (io.ReadCloser, error) {
 	if path == "C" {

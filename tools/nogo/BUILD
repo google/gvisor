@@ -20,20 +20,14 @@ nogo_stdlib(
     visibility = ["//visibility:public"],
 )
 
-sh_binary(
-    name = "gentest",
-    srcs = ["gentest.sh"],
-    visibility = ["//visibility:public"],
-)
-
 go_library(
     name = "nogo",
     srcs = [
+        "analyzers.go",
         "build.go",
         "config.go",
-        "matchers.go",
+        "findings.go",
         "nogo.go",
-        "register.go",
     ],
     nogo = False,
     visibility = ["//:sandbox"],

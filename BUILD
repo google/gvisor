@@ -1,9 +1,16 @@
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
+load("//tools/nogo:defs.bzl", "nogo_config")
 load("//website:defs.bzl", "doc")
 
 package(licenses = ["notice"])
 
 exports_files(["LICENSE"])
+
+nogo_config(
+    name = "nogo_config",
+    srcs = ["nogo.yaml"],
+    visibility = ["//:sandbox"],
+)
 
 doc(
     name = "contributing",

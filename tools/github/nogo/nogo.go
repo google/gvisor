@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/github"
-	"gvisor.dev/gvisor/tools/nogo/util"
+	"gvisor.dev/gvisor/tools/nogo"
 )
 
 // FindingsPoster is a simple wrapper around the GitHub api.
@@ -35,7 +35,7 @@ type FindingsPoster struct {
 	dryRun    bool
 	startTime time.Time
 
-	findings map[util.Finding]struct{}
+	findings map[nogo.Finding]struct{}
 	client   *github.Client
 }
 
@@ -47,7 +47,7 @@ func NewFindingsPoster(client *github.Client, owner, repo, commit string, dryRun
 		commit:    commit,
 		dryRun:    dryRun,
 		startTime: time.Now(),
-		findings:  make(map[util.Finding]struct{}),
+		findings:  make(map[nogo.Finding]struct{}),
 		client:    client,
 	}
 }
@@ -63,7 +63,7 @@ func (p *FindingsPoster) Walk(paths []string) error {
 			if !strings.HasSuffix(filename, ".findings") || info.IsDir() {
 				return nil
 			}
-			findings, err := util.ExtractFindingsFromFile(filename)
+			findings, err := nogo.ExtractFindingsFromFile(filename)
 			if err != nil {
 				return err
 			}
@@ -86,7 +86,7 @@ func (p *FindingsPoster) Post() error {
 	if p.dryRun {
 		for finding, _ := range p.findings {
 			// Pretty print, so that this is useful for debugging.
-			fmt.Printf("%s: (%s+%d) %s\n", finding.Category, finding.Path, finding.Line, finding.Message)
+			fmt.Printf("%s: (%s+%d) %s\n", finding.Category, finding.Position.Filename, finding.Position.Line, finding.Message)
 		}
 		return nil
 	}
@@ -115,12 +115,13 @@ func (p *FindingsPoster) Post() error {
 	}
 	annotationLevel := "failure" // Always.
 	for finding, _ := range p.findings {
+		title := string(finding.Category)
 		opts.Output.Annotations = append(opts.Output.Annotations, &github.CheckRunAnnotation{
-			Path:            &finding.Path,
-			StartLine:       &finding.Line,
-			EndLine:         &finding.Line,
+			Path:            &finding.Position.Filename,
+			StartLine:       &finding.Position.Line,
+			EndLine:         &finding.Position.Line,
 			Message:         &finding.Message,
-			Title:           &finding.Category,
+			Title:           &title,
 			AnnotationLevel: &annotationLevel,
 		})
 	}
