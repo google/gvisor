@@ -32,6 +32,8 @@ import (
 const initialLimit = 16 * 1024
 
 // A RightsControlMessage is a control message containing FDs.
+//
+// +stateify savable
 type RightsControlMessage interface {
 	// Clone returns a copy of the RightsControlMessage.
 	Clone() RightsControlMessage
@@ -336,7 +338,7 @@ type Receiver interface {
 	RecvMaxQueueSize() int64
 
 	// Release releases any resources owned by the Receiver. It should be
-	// called before droping all references to a Receiver.
+	// called before dropping all references to a Receiver.
 	Release(ctx context.Context)
 }
 
@@ -572,6 +574,12 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds
 	return copied, copied, c, cmTruncated, q.addr, notify, nil
 }
 
+// Release implements Receiver.Release.
+func (q *streamQueueReceiver) Release(ctx context.Context) {
+	q.queueReceiver.Release(ctx)
+	q.control.Release(ctx)
+}
+
 // A ConnectedEndpoint is an Endpoint that can be used to send Messages.
 type ConnectedEndpoint interface {
 	// Passcred implements Endpoint.Passcred.
@@ -619,7 +627,7 @@ type ConnectedEndpoint interface {
 	SendMaxQueueSize() int64
 
 	// Release releases any resources owned by the ConnectedEndpoint. It should
-	// be called before droping all references to a ConnectedEndpoint.
+	// be called before dropping all references to a ConnectedEndpoint.
 	Release(ctx context.Context)
 
 	// CloseUnread sets the fact that this end is closed with unread data to
