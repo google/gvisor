@@ -630,9 +630,7 @@ TEST_P(UnixSocketPairCmsgTest, FDPassNotCoalesced) {
   TransferTest(pair2->first_fd(), pair2->second_fd());
 }
 
-// TODO(b/171425923): Enable random/cooperative save once fixed.
-TEST_P(UnixSocketPairCmsgTest, FDPassPeek_NoRandomSave) {
-  const DisableSave ds;
+TEST_P(UnixSocketPairCmsgTest, FDPassPeek) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[20];
