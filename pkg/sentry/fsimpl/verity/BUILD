@@ -40,10 +40,12 @@ go_test(
         "//pkg/context",
         "//pkg/fspath",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/fsimpl/tmpfs",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/contexttest",
         "//pkg/sentry/vfs",
+        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )
