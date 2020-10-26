@@ -25,10 +25,12 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -41,11 +43,18 @@ const maxDataSize = 100000
 // newVerityRoot creates a new verity mount, and returns the root. The
 // underlying file system is tmpfs. If the error is not nil, then cleanup
 // should be called when the root is no longer needed.
-func newVerityRoot(ctx context.Context, t *testing.T) (*vfs.VirtualFilesystem, vfs.VirtualDentry, error) {
+func newVerityRoot(t *testing.T) (*vfs.VirtualFilesystem, vfs.VirtualDentry, *kernel.Task, error) {
+	k, err := testutil.Boot()
+	if err != nil {
+		t.Fatalf("testutil.Boot: %v", err)
+	}
+
+	ctx := k.SupervisorContext()
+
 	rand.Seed(time.Now().UnixNano())
 	vfsObj := &vfs.VirtualFilesystem{}
 	if err := vfsObj.Init(ctx); err != nil {
-		return nil, vfs.VirtualDentry{}, fmt.Errorf("VFS init: %v", err)
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %v", err)
 	}
 
 	vfsObj.MustRegisterFilesystemType("verity", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -67,16 +76,26 @@ func newVerityRoot(ctx context.Context, t *testing.T) (*vfs.VirtualFilesystem, v
 		},
 	})
 	if err != nil {
-		return nil, vfs.VirtualDentry{}, fmt.Errorf("NewMountNamespace: %v", err)
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("NewMountNamespace: %v", err)
 	}
 	root := mntns.Root()
 	root.IncRef()
+
+	// Use lowerRoot in the task as we modify the lower file system
+	// directly in many tests.
+	lowerRoot := root.Dentry().Impl().(*dentry).lowerVD
+	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	task, err := testutil.CreateTask(ctx, "name", tc, mntns, lowerRoot, lowerRoot)
+	if err != nil {
+		t.Fatalf("testutil.CreateTask: %v", err)
+	}
+
 	t.Helper()
 	t.Cleanup(func() {
 		root.DecRef(ctx)
 		mntns.DecRef(ctx)
 	})
-	return vfsObj, root, nil
+	return vfsObj, root, task, nil
 }
 
 // newFileFD creates a new file in the verity mount, and returns the FD. The FD
@@ -145,8 +164,7 @@ func corruptRandomBit(ctx context.Context, fd *vfs.FileDescription, size int) er
 // TestOpen ensures that when a file is created, the corresponding Merkle tree
 // file and the root Merkle tree file exist.
 func TestOpen(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -183,8 +201,7 @@ func TestOpen(t *testing.T) {
 // TestPReadUnmodifiedFileSucceeds ensures that pread from an untouched verity
 // file succeeds after enabling verity for it.
 func TestPReadUnmodifiedFileSucceeds(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -216,8 +233,7 @@ func TestPReadUnmodifiedFileSucceeds(t *testing.T) {
 // TestReadUnmodifiedFileSucceeds ensures that read from an untouched verity
 // file succeeds after enabling verity for it.
 func TestReadUnmodifiedFileSucceeds(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -249,8 +265,7 @@ func TestReadUnmodifiedFileSucceeds(t *testing.T) {
 // TestReopenUnmodifiedFileSucceeds ensures that reopen an untouched verity file
 // succeeds after enabling verity for it.
 func TestReopenUnmodifiedFileSucceeds(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -284,8 +299,7 @@ func TestReopenUnmodifiedFileSucceeds(t *testing.T) {
 // TestPReadModifiedFileFails ensures that read from a modified verity file
 // fails.
 func TestPReadModifiedFileFails(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -330,8 +344,7 @@ func TestPReadModifiedFileFails(t *testing.T) {
 // TestReadModifiedFileFails ensures that read from a modified verity file
 // fails.
 func TestReadModifiedFileFails(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -376,8 +389,7 @@ func TestReadModifiedFileFails(t *testing.T) {
 // TestModifiedMerkleFails ensures that read from a verity file fails if the
 // corresponding Merkle tree file is modified.
 func TestModifiedMerkleFails(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -430,8 +442,7 @@ func TestModifiedMerkleFails(t *testing.T) {
 // verity enabled directory fails if the hashes related to the target file in
 // the parent Merkle tree file is modified.
 func TestModifiedParentMerkleFails(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -508,8 +519,7 @@ func TestModifiedParentMerkleFails(t *testing.T) {
 // TestUnmodifiedStatSucceeds ensures that stat of an untouched verity file
 // succeeds after enabling verity for it.
 func TestUnmodifiedStatSucceeds(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -535,8 +545,7 @@ func TestUnmodifiedStatSucceeds(t *testing.T) {
 // TestModifiedStatFails checks that getting stat for a file with modified stat
 // should fail.
 func TestModifiedStatFails(t *testing.T) {
-	ctx := contexttest.Context(t)
-	vfsObj, root, err := newVerityRoot(ctx, t)
+	vfsObj, root, ctx, err := newVerityRoot(t)
 	if err != nil {
 		t.Fatalf("newVerityRoot: %v", err)
 	}
@@ -567,5 +576,125 @@ func TestModifiedStatFails(t *testing.T) {
 
 	if _, err := fd.Stat(ctx, vfs.StatOptions{}); err == nil {
 		t.Errorf("fd.Stat succeeded when it should fail")
+	}
+}
+
+// TestOpenDeletedOrRenamedFileFails ensures that opening a deleted/renamed
+// verity enabled file or the corresponding Merkle tree file fails with the
+// verify error.
+func TestOpenDeletedFileFails(t *testing.T) {
+	testCases := []struct {
+		// Tests removing files is remove is true. Otherwise tests
+		// renaming files.
+		remove bool
+		// The original file is removed/renamed if changeFile is true.
+		changeFile bool
+		// The Merkle tree file is removed/renamed if changeMerkleFile
+		// is true.
+		changeMerkleFile bool
+	}{
+		{
+			remove:           true,
+			changeFile:       true,
+			changeMerkleFile: false,
+		},
+		{
+			remove:           true,
+			changeFile:       false,
+			changeMerkleFile: true,
+		},
+		{
+			remove:           false,
+			changeFile:       true,
+			changeMerkleFile: false,
+		},
+		{
+			remove:           false,
+			changeFile:       true,
+			changeMerkleFile: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("remove:%t", tc.remove), func(t *testing.T) {
+			vfsObj, root, ctx, err := newVerityRoot(t)
+			if err != nil {
+				t.Fatalf("newVerityRoot: %v", err)
+			}
+
+			filename := "verity-test-file"
+			fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+			if err != nil {
+				t.Fatalf("newFileFD: %v", err)
+			}
+
+			// Enable verity on the file.
+			var args arch.SyscallArguments
+			args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+			if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+				t.Fatalf("Ioctl: %v", err)
+			}
+
+			rootLowerVD := root.Dentry().Impl().(*dentry).lowerVD
+			if tc.remove {
+				if tc.changeFile {
+					if err := vfsObj.UnlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+						Root:  rootLowerVD,
+						Start: rootLowerVD,
+						Path:  fspath.Parse(filename),
+					}); err != nil {
+						t.Fatalf("UnlinkAt: %v", err)
+					}
+				}
+				if tc.changeMerkleFile {
+					if err := vfsObj.UnlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+						Root:  rootLowerVD,
+						Start: rootLowerVD,
+						Path:  fspath.Parse(merklePrefix + filename),
+					}); err != nil {
+						t.Fatalf("UnlinkAt: %v", err)
+					}
+				}
+			} else {
+				newFilename := "renamed-test-file"
+				if tc.changeFile {
+					if err := vfsObj.RenameAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+						Root:  rootLowerVD,
+						Start: rootLowerVD,
+						Path:  fspath.Parse(filename),
+					}, &vfs.PathOperation{
+						Root:  rootLowerVD,
+						Start: rootLowerVD,
+						Path:  fspath.Parse(newFilename),
+					}, &vfs.RenameOptions{}); err != nil {
+						t.Fatalf("RenameAt: %v", err)
+					}
+				}
+				if tc.changeMerkleFile {
+					if err := vfsObj.RenameAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+						Root:  rootLowerVD,
+						Start: rootLowerVD,
+						Path:  fspath.Parse(merklePrefix + filename),
+					}, &vfs.PathOperation{
+						Root:  rootLowerVD,
+						Start: rootLowerVD,
+						Path:  fspath.Parse(merklePrefix + newFilename),
+					}, &vfs.RenameOptions{}); err != nil {
+						t.Fatalf("UnlinkAt: %v", err)
+					}
+				}
+			}
+
+			// Ensure reopening the verity enabled file fails.
+			if _, err = vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(filename),
+			}, &vfs.OpenOptions{
+				Flags: linux.O_RDONLY,
+				Mode:  linux.ModeRegular,
+			}); err != syserror.EIO {
+				t.Errorf("got OpenAt error: %v, expected EIO", err)
+			}
+		})
 	}
 }
