@@ -17,6 +17,7 @@ package proc
 
 import (
 	"fmt"
+	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -24,10 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// Name is the default filesystem name.
-const Name = "proc"
+const (
+	// Name is the default filesystem name.
+	Name                     = "proc"
+	defaultMaxCachedDentries = uint64(1000)
+)
 
 // FilesystemType is the factory class for procfs.
 //
@@ -63,9 +68,22 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	if err != nil {
 		return nil, nil, err
 	}
+
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	maxCachedDentries := defaultMaxCachedDentries
+	if str, ok := mopts["dentry_cache_limit"]; ok {
+		delete(mopts, "dentry_cache_limit")
+		maxCachedDentries, err = strconv.ParseUint(str, 10, 64)
+		if err != nil {
+			ctx.Warningf("proc.FilesystemType.GetFilesystem: invalid dentry cache limit: dentry_cache_limit=%s", str)
+			return nil, nil, syserror.EINVAL
+		}
+	}
+
 	procfs := &filesystem{
 		devMinor: devMinor,
 	}
+	procfs.MaxCachedDentries = maxCachedDentries
 	procfs.VFSFilesystem().Init(vfsObj, &ft, procfs)
 
 	var cgroups map[string]string

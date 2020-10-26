@@ -153,8 +153,7 @@ type filesystemOptions struct {
 	msize   uint32
 	version string
 
-	// maxCachedDentries is the maximum number of dentries with 0 references
-	// retained by the client.
+	// maxCachedDentries is the maximum size of filesystem.cachedDentries.
 	maxCachedDentries uint64
 
 	// If forcePageCache is true, host FDs may not be used for application
@@ -1312,16 +1311,16 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	// resolution, which requires renameMu, so if d.refs is zero then it will
 	// remain zero while we hold renameMu for writing.)
 	refs := atomic.LoadInt64(&d.refs)
+	if refs == -1 {
+		// Dentry has already been destroyed.
+		return
+	}
 	if refs > 0 {
 		if d.cached {
 			d.fs.cachedDentries.Remove(d)
 			d.fs.cachedDentriesLen--
 			d.cached = false
 		}
-		return
-	}
-	if refs == -1 {
-		// Dentry has already been destroyed.
 		return
 	}
 	// Deleted and invalidated dentries with zero references are no longer
