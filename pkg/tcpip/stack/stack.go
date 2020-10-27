@@ -830,6 +830,20 @@ func (s *Stack) AddRoute(route tcpip.Route) {
 	s.routeTable = append(s.routeTable, route)
 }
 
+// RemoveRoutes removes matching routes from the route table.
+func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var filteredRoutes []tcpip.Route
+	for _, route := range s.routeTable {
+		if !match(route) {
+			filteredRoutes = append(filteredRoutes, route)
+		}
+	}
+	s.routeTable = filteredRoutes
+}
+
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
 func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	t, ok := s.transportProtocols[transport]
