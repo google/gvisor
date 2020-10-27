@@ -303,15 +303,19 @@ func TestNeighborCacheEntry(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -363,15 +367,19 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -389,9 +397,11 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 			{
 				EventType: entryTestRemoved,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  entry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: entry.LinkAddr,
+					State:    Reachable,
+				},
 			},
 		}
 		nudDisp.mu.Lock()
@@ -468,23 +478,29 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 			wantEvents = append(wantEvents, testEntryEventInfo{
 				EventType: entryTestRemoved,
 				NICID:     1,
-				Addr:      removedEntry.Addr,
-				LinkAddr:  removedEntry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     removedEntry.Addr,
+					LinkAddr: removedEntry.LinkAddr,
+					State:    Reachable,
+				},
 			})
 		}
 
 		wantEvents = append(wantEvents, testEntryEventInfo{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		}, testEntryEventInfo{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		})
 
 		c.nudDisp.mu.Lock()
@@ -569,15 +585,19 @@ func TestNeighborCacheRemoveEntryThenOverflow(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	c.nudDisp.mu.Lock()
@@ -596,9 +616,11 @@ func TestNeighborCacheRemoveEntryThenOverflow(t *testing.T) {
 			{
 				EventType: entryTestRemoved,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  entry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: entry.LinkAddr,
+					State:    Reachable,
+				},
 			},
 		}
 		c.nudDisp.mu.Lock()
@@ -636,9 +658,11 @@ func TestNeighborCacheDuplicateStaticEntryWithSameLinkAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  staticLinkAddr,
-			State:     Static,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: staticLinkAddr,
+				State:    Static,
+			},
 		},
 	}
 	c.nudDisp.mu.Lock()
@@ -678,9 +702,11 @@ func TestNeighborCacheDuplicateStaticEntryWithDifferentLinkAddress(t *testing.T)
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  staticLinkAddr,
-			State:     Static,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: staticLinkAddr,
+				State:    Static,
+			},
 		},
 	}
 	c.nudDisp.mu.Lock()
@@ -699,9 +725,11 @@ func TestNeighborCacheDuplicateStaticEntryWithDifferentLinkAddress(t *testing.T)
 			{
 				EventType: entryTestChanged,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  staticLinkAddr,
-				State:     Static,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: staticLinkAddr,
+					State:    Static,
+				},
 			},
 		}
 		c.nudDisp.mu.Lock()
@@ -736,9 +764,11 @@ func TestNeighborCacheRemoveStaticEntryThenOverflow(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  staticLinkAddr,
-			State:     Static,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: staticLinkAddr,
+				State:    Static,
+			},
 		},
 	}
 	c.nudDisp.mu.Lock()
@@ -756,9 +786,11 @@ func TestNeighborCacheRemoveStaticEntryThenOverflow(t *testing.T) {
 			{
 				EventType: entryTestRemoved,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  staticLinkAddr,
-				State:     Static,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: staticLinkAddr,
+					State:    Static,
+				},
 			},
 		}
 		c.nudDisp.mu.Lock()
@@ -804,15 +836,19 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	c.nudDisp.mu.Lock()
@@ -831,16 +867,20 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 			{
 				EventType: entryTestRemoved,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  entry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: entry.LinkAddr,
+					State:    Reachable,
+				},
 			},
 			{
 				EventType: entryTestAdded,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  staticLinkAddr,
-				State:     Static,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: staticLinkAddr,
+					State:    Static,
+				},
 			},
 		}
 		c.nudDisp.mu.Lock()
@@ -917,15 +957,19 @@ func TestNeighborCacheNotifiesWaker(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -985,15 +1029,19 @@ func TestNeighborCacheRemoveWaker(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1034,9 +1082,11 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Static,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Static,
+			},
 		},
 	}
 	c.nudDisp.mu.Lock()
@@ -1090,15 +1140,19 @@ func TestNeighborCacheClear(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1117,9 +1171,11 @@ func TestNeighborCacheClear(t *testing.T) {
 			{
 				EventType: entryTestAdded,
 				NICID:     1,
-				Addr:      entryTestAddr1,
-				LinkAddr:  entryTestLinkAddr1,
-				State:     Static,
+				Entry: NeighborEntry{
+					Addr:     entryTestAddr1,
+					LinkAddr: entryTestLinkAddr1,
+					State:    Static,
+				},
 			},
 		}
 		nudDisp.mu.Lock()
@@ -1140,16 +1196,20 @@ func TestNeighborCacheClear(t *testing.T) {
 		{
 			EventType: entryTestRemoved,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestRemoved,
 			NICID:     1,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Static,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Static,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1184,15 +1244,19 @@ func TestNeighborCacheClearThenOverflow(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     1,
-			Addr:      entry.Addr,
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:  entry.Addr,
+				State: Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     1,
-			Addr:      entry.Addr,
-			LinkAddr:  entry.LinkAddr,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entry.Addr,
+				LinkAddr: entry.LinkAddr,
+				State:    Reachable,
+			},
 		},
 	}
 	c.nudDisp.mu.Lock()
@@ -1210,9 +1274,11 @@ func TestNeighborCacheClearThenOverflow(t *testing.T) {
 			{
 				EventType: entryTestRemoved,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  entry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: entry.LinkAddr,
+					State:    Reachable,
+				},
 			},
 		}
 		c.nudDisp.mu.Lock()
@@ -1278,15 +1344,19 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			{
 				EventType: entryTestAdded,
 				NICID:     1,
-				Addr:      entry.Addr,
-				State:     Incomplete,
+				Entry: NeighborEntry{
+					Addr:  entry.Addr,
+					State: Incomplete,
+				},
 			},
 			{
 				EventType: entryTestChanged,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  entry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: entry.LinkAddr,
+					State:    Reachable,
+				},
 			},
 		}
 		nudDisp.mu.Lock()
@@ -1331,22 +1401,28 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			{
 				EventType: entryTestRemoved,
 				NICID:     1,
-				Addr:      removedEntry.Addr,
-				LinkAddr:  removedEntry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     removedEntry.Addr,
+					LinkAddr: removedEntry.LinkAddr,
+					State:    Reachable,
+				},
 			},
 			{
 				EventType: entryTestAdded,
 				NICID:     1,
-				Addr:      entry.Addr,
-				State:     Incomplete,
+				Entry: NeighborEntry{
+					Addr:  entry.Addr,
+					State: Incomplete,
+				},
 			},
 			{
 				EventType: entryTestChanged,
 				NICID:     1,
-				Addr:      entry.Addr,
-				LinkAddr:  entry.LinkAddr,
-				State:     Reachable,
+				Entry: NeighborEntry{
+					Addr:     entry.Addr,
+					LinkAddr: entry.LinkAddr,
+					State:    Reachable,
+				},
 			},
 		}
 		nudDisp.mu.Lock()

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -78,13 +79,11 @@ func (t eventType) String() string {
 type eventInfo struct {
 	eventType eventType
 	nicID     tcpip.NICID
-	addr      tcpip.Address
-	linkAddr  tcpip.LinkAddress
-	state     stack.NeighborState
+	entry     stack.NeighborEntry
 }
 
 func (e eventInfo) String() string {
-	return fmt.Sprintf("%s event for NIC #%d, addr=%q, linkAddr=%q, state=%q", e.eventType, e.nicID, e.addr, e.linkAddr, e.state)
+	return fmt.Sprintf("%s event for NIC #%d, %#v", e.eventType, e.nicID, e.entry)
 }
 
 // arpDispatcher implements NUDDispatcher to validate the dispatching of
@@ -96,35 +95,29 @@ type arpDispatcher struct {
 
 var _ stack.NUDDispatcher = (*arpDispatcher)(nil)
 
-func (d *arpDispatcher) OnNeighborAdded(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress, state stack.NeighborState, updatedAt time.Time) {
+func (d *arpDispatcher) OnNeighborAdded(nicID tcpip.NICID, entry stack.NeighborEntry) {
 	e := eventInfo{
 		eventType: entryAdded,
 		nicID:     nicID,
-		addr:      addr,
-		linkAddr:  linkAddr,
-		state:     state,
+		entry:     entry,
 	}
 	d.C <- e
 }
 
-func (d *arpDispatcher) OnNeighborChanged(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress, state stack.NeighborState, updatedAt time.Time) {
+func (d *arpDispatcher) OnNeighborChanged(nicID tcpip.NICID, entry stack.NeighborEntry) {
 	e := eventInfo{
 		eventType: entryChanged,
 		nicID:     nicID,
-		addr:      addr,
-		linkAddr:  linkAddr,
-		state:     state,
+		entry:     entry,
 	}
 	d.C <- e
 }
 
-func (d *arpDispatcher) OnNeighborRemoved(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress, state stack.NeighborState, updatedAt time.Time) {
+func (d *arpDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry stack.NeighborEntry) {
 	e := eventInfo{
 		eventType: entryRemoved,
 		nicID:     nicID,
-		addr:      addr,
-		linkAddr:  linkAddr,
-		state:     state,
+		entry:     entry,
 	}
 	d.C <- e
 }
@@ -132,7 +125,7 @@ func (d *arpDispatcher) OnNeighborRemoved(nicID tcpip.NICID, addr tcpip.Address,
 func (d *arpDispatcher) waitForEvent(ctx context.Context, want eventInfo) error {
 	select {
 	case got := <-d.C:
-		if diff := cmp.Diff(got, want, cmp.AllowUnexported(got)); diff != "" {
+		if diff := cmp.Diff(got, want, cmp.AllowUnexported(got), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
 			return fmt.Errorf("got invalid event (-got +want):\n%s", diff)
 		}
 	case <-ctx.Done():
@@ -373,9 +366,11 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 			wantEvent := eventInfo{
 				eventType: entryAdded,
 				nicID:     nicID,
-				addr:      test.senderAddr,
-				linkAddr:  tcpip.LinkAddress(test.senderLinkAddr),
-				state:     stack.Stale,
+				entry: stack.NeighborEntry{
+					Addr:     test.senderAddr,
+					LinkAddr: tcpip.LinkAddress(test.senderLinkAddr),
+					State:    stack.Stale,
+				},
 			}
 			if err := c.nudDisp.waitForEventWithTimeout(wantEvent, time.Second); err != nil {
 				t.Fatal(err)
