@@ -124,6 +124,32 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &fs.lastDirIno)
 }
 
+func (l *layerDevNumber) StateTypeName() string {
+	return "pkg/sentry/fsimpl/overlay.layerDevNumber"
+}
+
+func (l *layerDevNumber) StateFields() []string {
+	return []string{
+		"major",
+		"minor",
+	}
+}
+
+func (l *layerDevNumber) beforeSave() {}
+
+func (l *layerDevNumber) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.major)
+	stateSinkObject.Save(1, &l.minor)
+}
+
+func (l *layerDevNumber) afterLoad() {}
+
+func (l *layerDevNumber) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.major)
+	stateSourceObject.Load(1, &l.minor)
+}
+
 func (d *dentry) StateTypeName() string {
 	return "pkg/sentry/fsimpl/overlay.dentry"
 }
@@ -278,6 +304,7 @@ func init() {
 	state.Register((*FilesystemType)(nil))
 	state.Register((*FilesystemOptions)(nil))
 	state.Register((*filesystem)(nil))
+	state.Register((*layerDevNumber)(nil))
 	state.Register((*dentry)(nil))
 	state.Register((*fileDescription)(nil))
 	state.Register((*regularFileFD)(nil))
