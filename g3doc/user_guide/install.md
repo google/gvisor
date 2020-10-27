@@ -13,15 +13,19 @@ To download and install the latest release manually follow these steps:
 (
   set -e
   URL=https://storage.googleapis.com/gvisor/releases/release/latest
-  wget ${URL}/runsc ${URL}/runsc.sha512
-  sha512sum -c runsc.sha512
-  rm -f runsc.sha512
-  sudo mv runsc /usr/local/bin
-  sudo chmod a+rx /usr/local/bin/runsc
+  wget ${URL}/runsc ${URL}/runsc.sha512 \
+    ${URL}/gvisor-containerd-shim ${URL}/gvisor-containerd-shim.sha512 \
+    ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
+  sha512sum -c runsc.sha512 \
+    -c gvisor-containerd-shim.sha512 \
+    -c containerd-shim-runsc-v1.sha512
+  rm -f *.sha512
+  chmod a+rx runsc gvisor-containerd-shim containerd-shim-runsc-v1
+  sudo mv runsc gvisor-containerd-shim containerd-shim-runsc-v1 /usr/local/bin
 )
 ```
 
-To install gVisor with Docker, run the following commands:
+To install gVisor as a Docker runtime, run the following commands:
 
 ```bash
 /usr/local/bin/runsc install
@@ -165,5 +169,6 @@ You can use this link with the steps described in
 Note that `apt` installation of a specific point release is not supported.
 
 After installation, try out `runsc` by following the
-[Docker Quick Start](./quick_start/docker.md) or
+[Docker Quick Start](./quick_start/docker.md),
+[Containerd QuickStart](./containerd/quick_start.md), or
 [OCI Quick Start](./quick_start/oci.md).
