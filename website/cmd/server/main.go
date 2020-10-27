@@ -45,14 +45,16 @@ var redirects = map[string]string{
 	"/c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64/",
 
 	// Redirect for old URLs.
-	"/docs/user_guide/compatibility/amd64/": "/docs/user_guide/compatibility/linux/amd64/",
-	"/docs/user_guide/compatibility/amd64":  "/docs/user_guide/compatibility/linux/amd64/",
-	"/docs/user_guide/kubernetes/":          "/docs/user_guide/quick_start/kubernetes/",
-	"/docs/user_guide/kubernetes":           "/docs/user_guide/quick_start/kubernetes/",
-	"/docs/user_guide/oci/":                 "/docs/user_guide/quick_start/oci/",
-	"/docs/user_guide/oci":                  "/docs/user_guide/quick_start/oci/",
-	"/docs/user_guide/docker/":              "/docs/user_guide/quick_start/docker/",
-	"/docs/user_guide/docker":               "/docs/user_guide/quick_start/docker/",
+	"/docs/user_guide/compatibility/amd64/":  "/docs/user_guide/compatibility/linux/amd64/",
+	"/docs/user_guide/compatibility/amd64":   "/docs/user_guide/compatibility/linux/amd64/",
+	"/docs/user_guide/kubernetes/":           "/docs/user_guide/quick_start/kubernetes/",
+	"/docs/user_guide/kubernetes":            "/docs/user_guide/quick_start/kubernetes/",
+	"/docs/user_guide/oci/":                  "/docs/user_guide/quick_start/oci/",
+	"/docs/user_guide/oci":                   "/docs/user_guide/quick_start/oci/",
+	"/docs/user_guide/docker/":               "/docs/user_guide/quick_start/docker/",
+	"/docs/user_guide/docker":                "/docs/user_guide/quick_start/docker/",
+	"/blog/2020/09/22/platform-portability":  "/blog/2020/10/22/platform-portability/",
+	"/blog/2020/09/22/platform-portability/": "/blog/2020/10/22/platform-portability/",
 
 	// Deprecated, but links continue to work.
 	"/cl": "https://gvisor-review.googlesource.com",

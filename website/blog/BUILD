@@ -46,7 +46,7 @@ doc(
         "mpratt",
     ],
     layout = "post",
-    permalink = "/blog/2020/09/22/platform-portability/",
+    permalink = "/blog/2020/10/22/platform-portability/",
 )
 
 docs(
