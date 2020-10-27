@@ -117,22 +117,23 @@ func newNeighborEntry(nic *NIC, remoteAddr tcpip.Address, nudState *NUDState, li
 	}
 }
 
-// newStaticNeighborEntry creates a neighbor cache entry starting at the Static
-// state. The entry can only transition out of Static by directly calling
-// `setStateLocked`.
+// newStaticNeighborEntry creates a neighbor cache entry starting at the
+// Static state. The entry can only transition out of Static by directly
+// calling `setStateLocked`.
 func newStaticNeighborEntry(nic *NIC, addr tcpip.Address, linkAddr tcpip.LinkAddress, state *NUDState) *neighborEntry {
+	entry := NeighborEntry{
+		Addr:      addr,
+		LinkAddr:  linkAddr,
+		State:     Static,
+		UpdatedAt: time.Now(),
+	}
 	if nic.stack.nudDisp != nil {
-		nic.stack.nudDisp.OnNeighborAdded(nic.id, addr, linkAddr, Static, time.Now())
+		nic.stack.nudDisp.OnNeighborAdded(nic.id, entry)
 	}
 	return &neighborEntry{
 		nic:      nic,
 		nudState: state,
-		neigh: NeighborEntry{
-			Addr:      addr,
-			LinkAddr:  linkAddr,
-			State:     Static,
-			UpdatedAt: time.Now(),
-		},
+		neigh:    entry,
 	}
 }
 
@@ -163,17 +164,17 @@ func (e *neighborEntry) notifyWakersLocked() {
 
 // dispatchAddEventLocked signals to stack's NUD Dispatcher that the entry has
 // been added.
-func (e *neighborEntry) dispatchAddEventLocked(nextState NeighborState) {
+func (e *neighborEntry) dispatchAddEventLocked() {
 	if nudDisp := e.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborAdded(e.nic.id, e.neigh.Addr, e.neigh.LinkAddr, nextState, time.Now())
+		nudDisp.OnNeighborAdded(e.nic.id, e.neigh)
 	}
 }
 
 // dispatchChangeEventLocked signals to stack's NUD Dispatcher that the entry
 // has changed state or link-layer address.
-func (e *neighborEntry) dispatchChangeEventLocked(nextState NeighborState) {
+func (e *neighborEntry) dispatchChangeEventLocked() {
 	if nudDisp := e.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborChanged(e.nic.id, e.neigh.Addr, e.neigh.LinkAddr, nextState, time.Now())
+		nudDisp.OnNeighborChanged(e.nic.id, e.neigh)
 	}
 }
 
@@ -181,7 +182,7 @@ func (e *neighborEntry) dispatchChangeEventLocked(nextState NeighborState) {
 // has been removed.
 func (e *neighborEntry) dispatchRemoveEventLocked() {
 	if nudDisp := e.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborRemoved(e.nic.id, e.neigh.Addr, e.neigh.LinkAddr, e.neigh.State, time.Now())
+		nudDisp.OnNeighborRemoved(e.nic.id, e.neigh)
 	}
 }
 
@@ -208,15 +209,15 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 
 	case Reachable:
 		e.job = e.nic.stack.newJob(&e.mu, func() {
-			e.dispatchChangeEventLocked(Stale)
 			e.setStateLocked(Stale)
+			e.dispatchChangeEventLocked()
 		})
 		e.job.Schedule(e.nudState.ReachableTime())
 
 	case Delay:
 		e.job = e.nic.stack.newJob(&e.mu, func() {
-			e.dispatchChangeEventLocked(Probe)
 			e.setStateLocked(Probe)
+			e.dispatchChangeEventLocked()
 		})
 		e.job.Schedule(config.DelayFirstProbeTime)
 
@@ -266,10 +267,11 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	switch e.neigh.State {
 	case Unknown:
-		e.dispatchAddEventLocked(Incomplete)
-
 		e.neigh.State = Incomplete
 		e.neigh.UpdatedAt = time.Now()
+
+		e.dispatchAddEventLocked()
+
 		config := e.nudState.Config()
 
 		var retryCounter uint32
@@ -326,8 +328,8 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		sendMulticastProbe()
 
 	case Stale:
-		e.dispatchChangeEventLocked(Delay)
 		e.setStateLocked(Delay)
+		e.dispatchChangeEventLocked()
 
 	case Incomplete, Reachable, Delay, Probe, Static, Failed:
 		// Do nothing
@@ -349,21 +351,21 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 	switch e.neigh.State {
 	case Unknown, Incomplete, Failed:
 		e.neigh.LinkAddr = remoteLinkAddr
-		e.dispatchAddEventLocked(Stale)
 		e.setStateLocked(Stale)
 		e.notifyWakersLocked()
+		e.dispatchAddEventLocked()
 
 	case Reachable, Delay, Probe:
 		if e.neigh.LinkAddr != remoteLinkAddr {
 			e.neigh.LinkAddr = remoteLinkAddr
-			e.dispatchChangeEventLocked(Stale)
 			e.setStateLocked(Stale)
+			e.dispatchChangeEventLocked()
 		}
 
 	case Stale:
 		if e.neigh.LinkAddr != remoteLinkAddr {
 			e.neigh.LinkAddr = remoteLinkAddr
-			e.dispatchChangeEventLocked(Stale)
+			e.dispatchChangeEventLocked()
 		}
 
 	case Static:
@@ -397,12 +399,11 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 
 		e.neigh.LinkAddr = linkAddr
 		if flags.Solicited {
-			e.dispatchChangeEventLocked(Reachable)
 			e.setStateLocked(Reachable)
 		} else {
-			e.dispatchChangeEventLocked(Stale)
 			e.setStateLocked(Stale)
 		}
+		e.dispatchChangeEventLocked()
 		e.isRouter = flags.IsRouter
 		e.notifyWakersLocked()
 
@@ -415,8 +416,8 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		if isLinkAddrDifferent {
 			if !flags.Override {
 				if e.neigh.State == Reachable {
-					e.dispatchChangeEventLocked(Stale)
 					e.setStateLocked(Stale)
+					e.dispatchChangeEventLocked()
 				}
 				break
 			}
@@ -425,23 +426,24 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 
 			if !flags.Solicited {
 				if e.neigh.State != Stale {
-					e.dispatchChangeEventLocked(Stale)
 					e.setStateLocked(Stale)
+					e.dispatchChangeEventLocked()
 				} else {
 					// Notify the LinkAddr change, even though NUD state hasn't changed.
-					e.dispatchChangeEventLocked(e.neigh.State)
+					e.dispatchChangeEventLocked()
 				}
 				break
 			}
 		}
 
 		if flags.Solicited && (flags.Override || !isLinkAddrDifferent) {
-			if e.neigh.State != Reachable {
-				e.dispatchChangeEventLocked(Reachable)
-			}
+			wasReachable := e.neigh.State == Reachable
 			// Set state to Reachable again to refresh timers.
 			e.setStateLocked(Reachable)
 			e.notifyWakersLocked()
+			if !wasReachable {
+				e.dispatchChangeEventLocked()
+			}
 		}
 
 		if e.isRouter && !flags.IsRouter && header.IsV6UnicastAddress(e.neigh.Addr) {
@@ -479,11 +481,12 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
 	switch e.neigh.State {
 	case Reachable, Stale, Delay, Probe:
-		if e.neigh.State != Reachable {
-			e.dispatchChangeEventLocked(Reachable)
-			// Set state to Reachable again to refresh timers.
-		}
+		wasReachable := e.neigh.State == Reachable
+		// Set state to Reachable again to refresh timers.
 		e.setStateLocked(Reachable)
+		if !wasReachable {
+			e.dispatchChangeEventLocked()
+		}
 
 	case Unknown, Incomplete, Failed, Static:
 		// Do nothing
