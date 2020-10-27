@@ -32,8 +32,12 @@ type Stack interface {
 	InterfaceAddrs() map[int32][]InterfaceAddr
 
 	// AddInterfaceAddr adds an address to the network interface identified by
-	// index.
+	// idx.
 	AddInterfaceAddr(idx int32, addr InterfaceAddr) error
+
+	// RemoveInterfaceAddr removes an address from the network interface
+	// identified by idx.
+	RemoveInterfaceAddr(idx int32, addr InterfaceAddr) error
 
 	// SupportsIPv6 returns true if the stack supports IPv6 connectivity.
 	SupportsIPv6() bool

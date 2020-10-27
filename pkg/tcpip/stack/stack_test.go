@@ -3672,3 +3672,87 @@ func TestGetMainNICAddressWhenNICDisabled(t *testing.T) {
 		t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, gotAddr, protocolAddress.AddressWithPrefix)
 	}
 }
+
+// TestAddRoute tests Stack.AddRoute
+func TestAddRoute(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{})
+
+	subnet1, err := tcpip.NewSubnet("\x00", "\x00")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subnet2, err := tcpip.NewSubnet("\x01", "\x01")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []tcpip.Route{
+		{Destination: subnet1, Gateway: "\x00", NIC: 1},
+		{Destination: subnet2, Gateway: "\x00", NIC: 1},
+	}
+
+	// Initialize the route table with one route.
+	s.SetRouteTable([]tcpip.Route{expected[0]})
+
+	// Add another route.
+	s.AddRoute(expected[1])
+
+	rt := s.GetRouteTable()
+	if got, want := len(rt), len(expected); got != want {
+		t.Fatalf("Unexpected route table length got = %d, want = %d", got, want)
+	}
+	for i, route := range rt {
+		if got, want := route, expected[i]; got != want {
+			t.Fatalf("Unexpected route got = %#v, want = %#v", got, want)
+		}
+	}
+}
+
+// TestRemoveRoutes tests Stack.RemoveRoutes
+func TestRemoveRoutes(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{})
+
+	addressToRemove := tcpip.Address("\x01")
+	subnet1, err := tcpip.NewSubnet(addressToRemove, "\x01")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subnet2, err := tcpip.NewSubnet(addressToRemove, "\x01")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subnet3, err := tcpip.NewSubnet("\x02", "\x02")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Initialize the route table with three routes.
+	s.SetRouteTable([]tcpip.Route{
+		{Destination: subnet1, Gateway: "\x00", NIC: 1},
+		{Destination: subnet2, Gateway: "\x00", NIC: 1},
+		{Destination: subnet3, Gateway: "\x00", NIC: 1},
+	})
+
+	// Remove routes with the specific address.
+	s.RemoveRoutes(func(r tcpip.Route) bool {
+		return r.Destination.ID() == addressToRemove
+	})
+
+	expected := []tcpip.Route{{Destination: subnet3, Gateway: "\x00", NIC: 1}}
+	rt := s.GetRouteTable()
+	if got, want := len(rt), len(expected); got != want {
+		t.Fatalf("Unexpected route table length got = %d, want = %d", got, want)
+	}
+	for i, route := range rt {
+		if got, want := route, expected[i]; got != want {
+			t.Fatalf("Unexpected route got = %#v, want = %#v", got, want)
+		}
+	}
+}

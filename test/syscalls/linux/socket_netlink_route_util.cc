@@ -29,6 +29,8 @@ constexpr uint32_t kSeq = 12345;
 // Types of address modifications that may be performed on an interface.
 enum class LinkAddrModification {
   kAdd,
+  kAddExclusive,
+  kReplace,
   kDelete,
 };
 
@@ -39,6 +41,14 @@ PosixError PopulateNlmsghdr(LinkAddrModification modification,
     case LinkAddrModification::kAdd:
       hdr->nlmsg_type = RTM_NEWADDR;
       hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+      return NoError();
+    case LinkAddrModification::kAddExclusive:
+      hdr->nlmsg_type = RTM_NEWADDR;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_EXCL | NLM_F_ACK;
+      return NoError();
+    case LinkAddrModification::kReplace:
+      hdr->nlmsg_type = RTM_NEWADDR;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK;
       return NoError();
     case LinkAddrModification::kDelete:
       hdr->nlmsg_type = RTM_DELADDR;
@@ -142,6 +152,18 @@ PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen) {
   return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
                              LinkAddrModification::kAdd);
+}
+
+PosixError LinkAddExclusiveLocalAddr(int index, int family, int prefixlen,
+                                     const void* addr, int addrlen) {
+  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+                             LinkAddrModification::kAddExclusive);
+}
+
+PosixError LinkReplaceLocalAddr(int index, int family, int prefixlen,
+                                const void* addr, int addrlen) {
+  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+                             LinkAddrModification::kReplace);
 }
 
 PosixError LinkDelLocalAddr(int index, int family, int prefixlen,
