@@ -210,7 +210,7 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 		} else {
 			// Static entry found with the same address but different link address.
 			entry.neigh.LinkAddr = linkAddr
-			entry.dispatchChangeEventLocked(entry.neigh.State)
+			entry.dispatchChangeEventLocked()
 			entry.mu.Unlock()
 			return
 		}
@@ -223,8 +223,7 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 		entry.mu.Unlock()
 	}
 
-	entry := newStaticNeighborEntry(n.nic, addr, linkAddr, n.state)
-	n.cache[addr] = entry
+	n.cache[addr] = newStaticNeighborEntry(n.nic, addr, linkAddr, n.state)
 }
 
 // removeEntryLocked removes the specified entry from the neighbor cache.

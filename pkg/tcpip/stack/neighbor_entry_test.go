@@ -52,19 +52,16 @@ const (
 // predict the time that an event will be dispatched.
 func eventDiffOpts() []cmp.Option {
 	return []cmp.Option{
-		cmpopts.IgnoreFields(testEntryEventInfo{}, "UpdatedAt"),
+		cmpopts.IgnoreFields(NeighborEntry{}, "UpdatedAt"),
 	}
 }
 
 // eventDiffOptsWithSort is like eventDiffOpts but also includes an option to
 // sort slices of events for cases where ordering must be ignored.
 func eventDiffOptsWithSort() []cmp.Option {
-	return []cmp.Option{
-		cmpopts.IgnoreFields(testEntryEventInfo{}, "UpdatedAt"),
-		cmpopts.SortSlices(func(a, b testEntryEventInfo) bool {
-			return strings.Compare(string(a.Addr), string(b.Addr)) < 0
-		}),
-	}
+	return append(eventDiffOpts(), cmpopts.SortSlices(func(a, b testEntryEventInfo) bool {
+		return strings.Compare(string(a.Entry.Addr), string(b.Entry.Addr)) < 0
+	}))
 }
 
 // The following unit tests exercise every state transition and verify its
@@ -125,14 +122,11 @@ func (t testEntryEventType) String() string {
 type testEntryEventInfo struct {
 	EventType testEntryEventType
 	NICID     tcpip.NICID
-	Addr      tcpip.Address
-	LinkAddr  tcpip.LinkAddress
-	State     NeighborState
-	UpdatedAt time.Time
+	Entry     NeighborEntry
 }
 
 func (e testEntryEventInfo) String() string {
-	return fmt.Sprintf("%s event for NIC #%d, addr=%q, linkAddr=%q, state=%q", e.EventType, e.NICID, e.Addr, e.LinkAddr, e.State)
+	return fmt.Sprintf("%s event for NIC #%d, %#v", e.EventType, e.NICID, e.Entry)
 }
 
 // testNUDDispatcher implements NUDDispatcher to validate the dispatching of
@@ -150,36 +144,27 @@ func (d *testNUDDispatcher) queueEvent(e testEntryEventInfo) {
 	d.events = append(d.events, e)
 }
 
-func (d *testNUDDispatcher) OnNeighborAdded(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress, state NeighborState, updatedAt time.Time) {
+func (d *testNUDDispatcher) OnNeighborAdded(nicID tcpip.NICID, entry NeighborEntry) {
 	d.queueEvent(testEntryEventInfo{
 		EventType: entryTestAdded,
 		NICID:     nicID,
-		Addr:      addr,
-		LinkAddr:  linkAddr,
-		State:     state,
-		UpdatedAt: updatedAt,
+		Entry:     entry,
 	})
 }
 
-func (d *testNUDDispatcher) OnNeighborChanged(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress, state NeighborState, updatedAt time.Time) {
+func (d *testNUDDispatcher) OnNeighborChanged(nicID tcpip.NICID, entry NeighborEntry) {
 	d.queueEvent(testEntryEventInfo{
 		EventType: entryTestChanged,
 		NICID:     nicID,
-		Addr:      addr,
-		LinkAddr:  linkAddr,
-		State:     state,
-		UpdatedAt: updatedAt,
+		Entry:     entry,
 	})
 }
 
-func (d *testNUDDispatcher) OnNeighborRemoved(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress, state NeighborState, updatedAt time.Time) {
+func (d *testNUDDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry NeighborEntry) {
 	d.queueEvent(testEntryEventInfo{
 		EventType: entryTestRemoved,
 		NICID:     nicID,
-		Addr:      addr,
-		LinkAddr:  linkAddr,
-		State:     state,
-		UpdatedAt: updatedAt,
+		Entry:     entry,
 	})
 }
 
@@ -350,9 +335,11 @@ func TestEntryUnknownToIncomplete(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 	}
 	{
@@ -388,9 +375,11 @@ func TestEntryUnknownToStale(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -468,16 +457,20 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestRemoved,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -530,16 +523,20 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -605,16 +602,20 @@ func TestEntryAddsAndClearsWakers(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -663,16 +664,20 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -719,16 +724,20 @@ func TestEntryIncompleteToStale(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -783,16 +792,20 @@ func TestEntryIncompleteToFailed(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestRemoved,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -866,16 +879,20 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -932,16 +949,20 @@ func TestEntryStaysReachableWhenProbeWithSameAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -992,23 +1013,29 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1062,23 +1089,29 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1136,23 +1169,29 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1210,23 +1249,29 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1283,16 +1328,20 @@ func TestEntryStaysStaleWhenProbeWithSameAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1347,23 +1396,29 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1418,23 +1473,29 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1489,23 +1550,29 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1556,23 +1623,29 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1620,23 +1693,29 @@ func TestEntryStaleToDelay(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1692,37 +1771,47 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1786,37 +1875,47 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1880,37 +1979,47 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -1966,23 +2075,29 @@ func TestEntryStaysDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2031,30 +2146,38 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2107,30 +2230,38 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2183,30 +2314,38 @@ func TestEntryDelayToProbe(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2272,37 +2411,47 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2372,37 +2521,47 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2475,30 +2634,38 @@ func TestEntryStaysProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2567,37 +2734,47 @@ func TestEntryUnknownToStaleToProbeToReachable(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2671,44 +2848,56 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr2,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr2,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2779,44 +2968,56 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithSameAddress(t *testin
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -2887,44 +3088,56 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Reachable,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Reachable,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -3007,37 +3220,47 @@ func TestEntryProbeToFailed(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestRemoved,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
@@ -3103,37 +3326,47 @@ func TestEntryFailedGetsDeleted(t *testing.T) {
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  tcpip.LinkAddress(""),
-			State:     Incomplete,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Stale,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Delay,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
 		},
 		{
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 		{
 			EventType: entryTestRemoved,
 			NICID:     entryTestNICID,
-			Addr:      entryTestAddr1,
-			LinkAddr:  entryTestLinkAddr1,
-			State:     Probe,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
 		},
 	}
 	nudDisp.mu.Lock()
