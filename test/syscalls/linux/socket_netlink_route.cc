@@ -511,53 +511,42 @@ TEST(NetlinkRouteTest, LookupAll) {
   ASSERT_GT(count, 0);
 }
 
-TEST(NetlinkRouteTest, AddAddr) {
+TEST(NetlinkRouteTest, AddAndRemoveAddr) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
 
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
-
-  struct request {
-    struct nlmsghdr hdr;
-    struct ifaddrmsg ifa;
-    struct rtattr rtattr;
-    struct in_addr addr;
-    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
-  };
-
-  struct request req = {};
-  req.hdr.nlmsg_type = RTM_NEWADDR;
-  req.hdr.nlmsg_seq = kSeq;
-  req.ifa.ifa_family = AF_INET;
-  req.ifa.ifa_prefixlen = 24;
-  req.ifa.ifa_flags = 0;
-  req.ifa.ifa_scope = 0;
-  req.ifa.ifa_index = loopback_link.index;
-  req.rtattr.rta_type = IFA_LOCAL;
-  req.rtattr.rta_len = RTA_LENGTH(sizeof(req.addr));
-  inet_pton(AF_INET, "10.0.0.1", &req.addr);
-  req.hdr.nlmsg_len =
-      NLMSG_LENGTH(sizeof(req.ifa)) + NLMSG_ALIGN(req.rtattr.rta_len);
+  struct in_addr addr;
+  ASSERT_EQ(inet_pton(AF_INET, "10.0.0.1", &addr), 1);
 
   // Create should succeed, as no such address in kernel.
-  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK;
-  EXPECT_NO_ERRNO(
-      NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, req.hdr.nlmsg_len));
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET,
+                                   /*prefixlen=*/24, &addr, sizeof(addr)));
+
+  Cleanup defer_addr_removal = Cleanup(
+      [loopback_link = std::move(loopback_link), addr = std::move(addr)] {
+        // First delete should succeed, as address exists.
+        EXPECT_NO_ERRNO(LinkDelLocalAddr(loopback_link.index, AF_INET,
+                                         /*prefixlen=*/24, &addr,
+                                         sizeof(addr)));
+
+        // Second delete should fail, as address no longer exists.
+        EXPECT_THAT(LinkDelLocalAddr(loopback_link.index, AF_INET,
+                                     /*prefixlen=*/24, &addr, sizeof(addr)),
+                    PosixErrorIs(EINVAL, ::testing::_));
+      });
 
   // Replace an existing address should succeed.
-  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK;
-  req.hdr.nlmsg_seq++;
-  EXPECT_NO_ERRNO(
-      NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, req.hdr.nlmsg_len));
+  ASSERT_NO_ERRNO(LinkReplaceLocalAddr(loopback_link.index, AF_INET,
+                                       /*prefixlen=*/24, &addr, sizeof(addr)));
 
   // Create exclusive should fail, as we created the address above.
-  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
-  req.hdr.nlmsg_seq++;
-  EXPECT_THAT(
-      NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, req.hdr.nlmsg_len),
-      PosixErrorIs(EEXIST, ::testing::_));
+  EXPECT_THAT(LinkAddExclusiveLocalAddr(loopback_link.index, AF_INET,
+                                        /*prefixlen=*/24, &addr, sizeof(addr)),
+              PosixErrorIs(EEXIST, ::testing::_));
 }
 
 // GetRouteDump tests a RTM_GETROUTE + NLM_F_DUMP request.

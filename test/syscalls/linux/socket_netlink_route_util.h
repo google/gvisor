@@ -39,9 +39,18 @@ PosixErrorOr<std::vector<Link>> DumpLinks();
 // Returns the loopback link on the system. ENOENT if not found.
 PosixErrorOr<Link> LoopbackLink();
 
-// LinkAddLocalAddr sets IFA_LOCAL attribute on the interface.
+// LinkAddLocalAddr adds a new IFA_LOCAL address to the interface.
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen);
+
+// LinkAddExclusiveLocalAddr adds a new IFA_LOCAL address with NLM_F_EXCL flag
+// to the interface.
+PosixError LinkAddExclusiveLocalAddr(int index, int family, int prefixlen,
+                                     const void* addr, int addrlen);
+
+// LinkReplaceLocalAddr replaces an IFA_LOCAL address on the interface.
+PosixError LinkReplaceLocalAddr(int index, int family, int prefixlen,
+                                const void* addr, int addrlen);
 
 // LinkDelLocalAddr removes IFA_LOCAL attribute on the interface.
 PosixError LinkDelLocalAddr(int index, int family, int prefixlen,

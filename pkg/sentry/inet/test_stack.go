@@ -15,6 +15,9 @@
 package inet
 
 import (
+	"bytes"
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -55,6 +58,24 @@ func (s *TestStack) InterfaceAddrs() map[int32][]InterfaceAddr {
 // AddInterfaceAddr implements Stack.AddInterfaceAddr.
 func (s *TestStack) AddInterfaceAddr(idx int32, addr InterfaceAddr) error {
 	s.InterfaceAddrsMap[idx] = append(s.InterfaceAddrsMap[idx], addr)
+	return nil
+}
+
+// RemoveInterfaceAddr implements Stack.RemoveInterfaceAddr.
+func (s *TestStack) RemoveInterfaceAddr(idx int32, addr InterfaceAddr) error {
+	interfaceAddrs, ok := s.InterfaceAddrsMap[idx]
+	if !ok {
+		return fmt.Errorf("unknown idx: %d", idx)
+	}
+
+	var filteredAddrs []InterfaceAddr
+	for _, interfaceAddr := range interfaceAddrs {
+		if !bytes.Equal(interfaceAddr.Addr, addr.Addr) {
+			filteredAddrs = append(filteredAddrs, addr)
+		}
+	}
+	s.InterfaceAddrsMap[idx] = filteredAddrs
+
 	return nil
 }
 
