@@ -122,7 +122,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	return tcpip.ErrNotSupported
 }
 
-func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	if !e.isEnabled() {
 		return
 	}
@@ -145,7 +145,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
 		} else {
-			if r.Stack().CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+			if e.protocol.stack.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
 				return // we have no useful answer, ignore the request
 			}
 
@@ -158,6 +158,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.ARPSize,
 		})
 		packet := header.ARP(respPkt.NetworkHeader().Push(header.ARPSize))
+		respPkt.NetworkProtocolNumber = ProtocolNumber
 		packet.SetIPv4OverEthernet()
 		packet.SetOp(header.ARPReply)
 		// TODO(gvisor.dev/issue/4582): check copied length once TAP devices have a

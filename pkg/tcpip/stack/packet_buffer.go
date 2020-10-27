@@ -112,6 +112,18 @@ type PacketBuffer struct {
 	// PktType indicates the SockAddrLink.PacketType of the packet as defined in
 	// https://www.man7.org/linux/man-pages/man7/packet.7.html.
 	PktType tcpip.PacketType
+
+	// NICID is the ID of the interface the network packet was received at.
+	NICID tcpip.NICID
+
+	// InterfaceCapabilities are the capabilities available to the interface when
+	// the packet was received.
+	//
+	// Ignored for outgoing packets.
+	InterfaceCapabilities LinkEndpointCapabilities
+
+	// NetworkPacketInfo holds an incoming packet's network-layer information.
+	NetworkPacketInfo NetworkPacketInfo
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -240,20 +252,33 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v buffer.View, consum
 // Clone should be called in such cases so that no modifications is done to
 // underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
-	newPk := &PacketBuffer{
+	return &PacketBuffer{
 		PacketBufferEntry:       pk.PacketBufferEntry,
 		Data:                    pk.Data.Clone(nil),
 		headers:                 pk.headers,
 		header:                  pk.header,
 		Hash:                    pk.Hash,
 		Owner:                   pk.Owner,
-		EgressRoute:             pk.EgressRoute,
 		GSOOptions:              pk.GSOOptions,
 		NetworkProtocolNumber:   pk.NetworkProtocolNumber,
 		NatDone:                 pk.NatDone,
 		TransportProtocolNumber: pk.TransportProtocolNumber,
+		PktType:                 pk.PktType,
+		NICID:                   pk.NICID,
+		InterfaceCapabilities:   pk.InterfaceCapabilities,
+		NetworkPacketInfo:       pk.NetworkPacketInfo,
 	}
-	return newPk
+}
+
+// SourceLinkAddress returns the source link address of the packet.
+func (pk *PacketBuffer) SourceLinkAddress() tcpip.LinkAddress {
+	link := pk.LinkHeader().View()
+
+	if link.IsEmpty() {
+		return ""
+	}
+
+	return header.Ethernet(link).SourceAddress()
 }
 
 // Network returns the network header as a header.Network.
