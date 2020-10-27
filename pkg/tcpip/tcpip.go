@@ -356,10 +356,9 @@ func (s *Subnet) IsBroadcast(address Address) bool {
 	return s.Prefix() <= 30 && s.Broadcast() == address
 }
 
-// Equal returns true if s equals o.
-//
-// Needed to use cmp.Equal on Subnet as its fields are unexported.
+// Equal returns true if this Subnet is equal to the given Subnet.
 func (s Subnet) Equal(o Subnet) bool {
+	// If this changes, update Route.Equal accordingly.
 	return s == o
 }
 
@@ -1258,6 +1257,12 @@ func (r Route) String() string {
 	}
 	fmt.Fprintf(&out, " nic %d", r.NIC)
 	return out.String()
+}
+
+// Equal returns true if the given Route is equal to this Route.
+func (r Route) Equal(to Route) bool {
+	// NOTE: This relies on the fact that r.Destination == to.Destination
+	return r == to
 }
 
 // TransportProtocolNumber is the number of a transport protocol.

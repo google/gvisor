@@ -324,7 +324,12 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 }
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
-func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+func (s *Stack) AddInterfaceAddr(int32, inet.InterfaceAddr) error {
+	return syserror.EACCES
+}
+
+// RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
+func (s *Stack) RemoveInterfaceAddr(int32, inet.InterfaceAddr) error {
 	return syserror.EACCES
 }
 
@@ -359,7 +364,7 @@ func (s *Stack) TCPSACKEnabled() (bool, error) {
 }
 
 // SetTCPSACKEnabled implements inet.Stack.SetTCPSACKEnabled.
-func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
+func (s *Stack) SetTCPSACKEnabled(bool) error {
 	return syserror.EACCES
 }
 
@@ -369,7 +374,7 @@ func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
 }
 
 // SetTCPRecovery implements inet.Stack.SetTCPRecovery.
-func (s *Stack) SetTCPRecovery(recovery inet.TCPLossRecovery) error {
+func (s *Stack) SetTCPRecovery(inet.TCPLossRecovery) error {
 	return syserror.EACCES
 }
 
@@ -495,6 +500,6 @@ func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
 }
 
 // SetForwarding implements inet.Stack.SetForwarding.
-func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+func (s *Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
 	return syserror.EACCES
 }
