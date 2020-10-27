@@ -486,6 +486,62 @@ TEST(SemaphoreTest, SemIpcSet) {
   ASSERT_THAT(semop(sem.get(), &buf, 1), SyscallFailsWithErrno(EACCES));
 }
 
+TEST(SemaphoreTest, SemCtlIpcStat) {
+  // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
+  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  const uid_t kUid = getuid();
+  const gid_t kGid = getgid();
+  time_t start_time = time(nullptr);
+
+  AutoSem sem(semget(IPC_PRIVATE, 10, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+
+  struct semid_ds ds;
+  EXPECT_THAT(semctl(sem.get(), 0, IPC_STAT, &ds), SyscallSucceeds());
+
+  EXPECT_EQ(ds.sem_perm.__key, IPC_PRIVATE);
+  EXPECT_EQ(ds.sem_perm.uid, kUid);
+  EXPECT_EQ(ds.sem_perm.gid, kGid);
+  EXPECT_EQ(ds.sem_perm.cuid, kUid);
+  EXPECT_EQ(ds.sem_perm.cgid, kGid);
+  EXPECT_EQ(ds.sem_perm.mode, 0600);
+  // Last semop time is not set on creation.
+  EXPECT_EQ(ds.sem_otime, 0);
+  EXPECT_GE(ds.sem_ctime, start_time);
+  EXPECT_EQ(ds.sem_nsems, 10);
+
+  // The timestamps only have a resolution of seconds; slow down so we actually
+  // see the timestamps change.
+  absl::SleepFor(absl::Seconds(1));
+
+  // Set semid_ds structure of the set.
+  auto last_ctime = ds.sem_ctime;
+  start_time = time(nullptr);
+  struct semid_ds semid_to_set = {};
+  semid_to_set.sem_perm.uid = kUid;
+  semid_to_set.sem_perm.gid = kGid;
+  semid_to_set.sem_perm.mode = 0666;
+  ASSERT_THAT(semctl(sem.get(), 0, IPC_SET, &semid_to_set), SyscallSucceeds());
+  struct sembuf buf = {};
+  buf.sem_op = 1;
+  ASSERT_THAT(semop(sem.get(), &buf, 1), SyscallSucceeds());
+
+  EXPECT_THAT(semctl(sem.get(), 0, IPC_STAT, &ds), SyscallSucceeds());
+  EXPECT_EQ(ds.sem_perm.mode, 0666);
+  EXPECT_GE(ds.sem_otime, start_time);
+  EXPECT_GT(ds.sem_ctime, last_ctime);
+
+  // An invalid semid fails the syscall with errno EINVAL.
+  EXPECT_THAT(semctl(sem.get() + 1, 0, IPC_STAT, &ds),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Make semaphore not readable and check the signal fails.
+  semid_to_set.sem_perm.mode = 0200;
+  ASSERT_THAT(semctl(sem.get(), 0, IPC_SET, &semid_to_set), SyscallSucceeds());
+  EXPECT_THAT(semctl(sem.get(), 0, IPC_STAT, &ds),
+              SyscallFailsWithErrno(EACCES));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
