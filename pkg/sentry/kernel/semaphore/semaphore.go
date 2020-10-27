@@ -283,6 +283,33 @@ func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.File
 	return nil
 }
 
+// GetStat extracts semid_ds information from the set.
+func (s *Set) GetStat(creds *auth.Credentials) (*linux.SemidDS, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// "The calling process must have read permission on the semaphore set."
+	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+		return nil, syserror.EACCES
+	}
+
+	ds := &linux.SemidDS{
+		SemPerm: linux.IPCPerm{
+			Key:  uint32(s.key),
+			UID:  uint32(creds.UserNamespace.MapFromKUID(s.owner.UID)),
+			GID:  uint32(creds.UserNamespace.MapFromKGID(s.owner.GID)),
+			CUID: uint32(creds.UserNamespace.MapFromKUID(s.creator.UID)),
+			CGID: uint32(creds.UserNamespace.MapFromKGID(s.creator.GID)),
+			Mode: uint16(s.perms.LinuxMode()),
+			Seq:  0, // IPC sequence not supported.
+		},
+		SemOTime: s.opTime.TimeT(),
+		SemCTime: s.changeTime.TimeT(),
+		SemNSems: uint64(s.Size()),
+	}
+	return ds, nil
+}
+
 // SetVal overrides a semaphore value, waking up waiters as needed.
 func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Credentials, pid int32) error {
 	if val < 0 || val > valueMax {
@@ -320,7 +347,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 	}
 
 	for _, val := range vals {
-		if val < 0 || val > valueMax {
+		if val > valueMax {
 			return syserror.ERANGE
 		}
 	}
