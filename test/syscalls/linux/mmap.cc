@@ -592,6 +592,12 @@ TEST_F(MMapTest, ProtExec) {
 
   memcpy(reinterpret_cast<void*>(addr), machine_code, sizeof(machine_code));
 
+#if defined(__aarch64__)
+  // We use this as a memory barrier for Arm64.
+  ASSERT_THAT(Protect(addr, kPageSize, PROT_READ | PROT_EXEC),
+              SyscallSucceeds());
+#endif
+
   func = reinterpret_cast<uint32_t (*)(void)>(addr);
 
   EXPECT_EQ(42, func());
