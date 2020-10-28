@@ -189,20 +189,17 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gs
 		// Calculate UDP checksum and set it.
 		if hook == Output {
 			udpHeader.SetChecksum(0)
+			netHeader := pkt.Network()
+			netHeader.SetDestinationAddress(rt.Addr)
 
 			// Only calculate the checksum if offloading isn't supported.
-			if r.Capabilities()&CapabilityTXChecksumOffload == 0 {
+			if !r.HasTXTransportChecksumOffloadCapability() {
 				length := uint16(pkt.Size()) - uint16(len(pkt.NetworkHeader().View()))
-				xsum := r.PseudoHeaderChecksum(protocol, length)
-				for _, v := range pkt.Data.Views() {
-					xsum = header.Checksum(v, xsum)
-				}
-				udpHeader.SetChecksum(0)
+				xsum := header.PseudoHeaderChecksum(protocol, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
+				xsum = header.ChecksumVV(pkt.Data, xsum)
 				udpHeader.SetChecksum(^udpHeader.CalculateChecksum(xsum))
 			}
 		}
-
-		pkt.Network().SetDestinationAddress(rt.Addr)
 
 		// After modification, IPv4 packets need a valid checksum.
 		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {

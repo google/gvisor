@@ -166,6 +166,38 @@ func TestForwarding(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "IPv4 host2 server with routerNIC1 client",
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, host2Stack, udp.ProtocolNumber, ipv4.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, routerStack, udp.ProtocolNumber, ipv4.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:         ep1,
+					serverAddr:       host2IPv4Addr.AddressWithPrefix.Address,
+					serverReadableCH: ep1WECH,
+
+					clientEP:         ep2,
+					clientAddr:       routerNIC1IPv4Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+				}
+			},
+		},
+		{
+			name: "IPv6 routerNIC2 server with host1 client",
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, routerStack, udp.ProtocolNumber, ipv6.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host1Stack, udp.ProtocolNumber, ipv6.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:         ep1,
+					serverAddr:       routerNIC2IPv6Addr.AddressWithPrefix.Address,
+					serverReadableCH: ep1WECH,
+
+					clientEP:         ep2,
+					clientAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+				}
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -321,12 +353,8 @@ func TestForwarding(t *testing.T) {
 				if err == tcpip.ErrNoLinkAddress {
 					// Wait for link resolution to complete.
 					<-ch
-
 					n, _, err = ep.Write(dataPayload, wOpts)
-				} else if err != nil {
-					t.Fatalf("ep.Write(_, _): %s", err)
 				}
-
 				if err != nil {
 					t.Fatalf("ep.Write(_, _): %s", err)
 				}
@@ -343,7 +371,6 @@ func TestForwarding(t *testing.T) {
 
 				// Wait for the endpoint to be readable.
 				<-ch
-
 				var addr tcpip.FullAddress
 				v, _, err := ep.Read(&addr)
 				if err != nil {

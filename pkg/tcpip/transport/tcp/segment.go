@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -45,9 +46,19 @@ type segment struct {
 	ep     *endpoint
 	qFlags queueFlags
 	id     stack.TransportEndpointID `state:"manual"`
-	route  stack.Route               `state:"manual"`
-	data   buffer.VectorisedView     `state:".(buffer.VectorisedView)"`
-	hdr    header.TCP
+
+	// TODO(gvisor.dev/issue/4417): Hold a stack.PacketBuffer instead of
+	// individual members for link/network packet info.
+	srcAddr                      tcpip.Address
+	dstAddr                      tcpip.Address
+	netProto                     tcpip.NetworkProtocolNumber
+	nicID                        tcpip.NICID
+	remoteLinkAddr               tcpip.LinkAddress
+	rxTransportChecksumValidated bool
+
+	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
+
+	hdr header.TCP
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
 	views [8]buffer.View `state:"nosave"`
@@ -76,11 +87,17 @@ type segment struct {
 	acked bool
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
+func newIncomingSegment(id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
+	netHdr := pkt.Network()
 	s := &segment{
-		refCnt: 1,
-		id:     id,
-		route:  r.Clone(),
+		refCnt:                       1,
+		id:                           id,
+		srcAddr:                      netHdr.SourceAddress(),
+		dstAddr:                      netHdr.DestinationAddress(),
+		netProto:                     pkt.NetworkProtocolNumber,
+		nicID:                        pkt.NICID,
+		remoteLinkAddr:               pkt.SourceLinkAddress(),
+		rxTransportChecksumValidated: pkt.RXTransportChecksumValidated,
 	}
 	s.data = pkt.Data.Clone(s.views[:])
 	s.hdr = header.TCP(pkt.TransportHeader().View())
@@ -88,11 +105,10 @@ func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketB
 	return s
 }
 
-func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.View) *segment {
+func newOutgoingSegment(id stack.TransportEndpointID, v buffer.View) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
-		route:  r.Clone(),
 	}
 	s.rcvdTime = time.Now()
 	if len(v) != 0 {
@@ -104,19 +120,22 @@ func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.V
 
 func (s *segment) clone() *segment {
 	t := &segment{
-		refCnt:         1,
-		id:             s.id,
-		sequenceNumber: s.sequenceNumber,
-		ackNumber:      s.ackNumber,
-		flags:          s.flags,
-		window:         s.window,
-		route:          s.route.Clone(),
-		viewToDeliver:  s.viewToDeliver,
-		rcvdTime:       s.rcvdTime,
-		xmitTime:       s.xmitTime,
-		xmitCount:      s.xmitCount,
-		ep:             s.ep,
-		qFlags:         s.qFlags,
+		refCnt:                       1,
+		id:                           s.id,
+		sequenceNumber:               s.sequenceNumber,
+		ackNumber:                    s.ackNumber,
+		flags:                        s.flags,
+		window:                       s.window,
+		netProto:                     s.netProto,
+		nicID:                        s.nicID,
+		remoteLinkAddr:               s.remoteLinkAddr,
+		rxTransportChecksumValidated: s.rxTransportChecksumValidated,
+		viewToDeliver:                s.viewToDeliver,
+		rcvdTime:                     s.rcvdTime,
+		xmitTime:                     s.xmitTime,
+		xmitCount:                    s.xmitCount,
+		ep:                           s.ep,
+		qFlags:                       s.qFlags,
 	}
 	t.data = s.data.Clone(t.views[:])
 	return t
@@ -160,7 +179,6 @@ func (s *segment) decRef() {
 				panic(fmt.Sprintf("unexpected queue flag %b set for segment", s.qFlags))
 			}
 		}
-		s.route.Release()
 	}
 }
 
@@ -220,16 +238,14 @@ func (s *segment) parse() bool {
 	s.options = []byte(s.hdr[header.TCPMinimumSize:])
 	s.parsedOptions = header.ParseTCPOptions(s.options)
 
-	// Query the link capabilities to decide if checksum validation is
-	// required.
 	verifyChecksum := true
-	if s.route.Capabilities()&stack.CapabilityRXChecksumOffload != 0 {
+	if s.rxTransportChecksumValidated {
 		s.csumValid = true
 		verifyChecksum = false
 	}
 	if verifyChecksum {
 		s.csum = s.hdr.Checksum()
-		xsum := s.route.PseudoHeaderChecksum(ProtocolNumber, uint16(s.data.Size()+len(s.hdr)))
+		xsum := header.PseudoHeaderChecksum(ProtocolNumber, s.srcAddr, s.dstAddr, uint16(s.data.Size()+len(s.hdr)))
 		xsum = s.hdr.CalculateChecksum(xsum)
 		xsum = header.ChecksumVV(s.data, xsum)
 		s.csumValid = xsum == 0xffff

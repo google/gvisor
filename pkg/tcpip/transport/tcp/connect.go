@@ -293,9 +293,9 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 		MSS:           amss,
 	}
 	if ttl == 0 {
-		ttl = s.route.DefaultTTL()
+		ttl = h.ep.route.DefaultTTL()
 	}
-	h.ep.sendSynTCP(&s.route, tcpFields{
+	h.ep.sendSynTCP(&h.ep.route, tcpFields{
 		id:     h.ep.ID,
 		ttl:    ttl,
 		tos:    h.ep.sendTOS,
@@ -356,7 +356,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			SACKPermitted: h.ep.sackPermitted,
 			MSS:           h.ep.amss,
 		}
-		h.ep.sendSynTCP(&s.route, tcpFields{
+		h.ep.sendSynTCP(&h.ep.route, tcpFields{
 			id:     h.ep.ID,
 			ttl:    h.ep.ttl,
 			tos:    h.ep.sendTOS,
@@ -767,7 +767,7 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 		// TCP header, then the kernel calculate a checksum of the
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
-	} else if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
+	} else if !r.HasTXTransportChecksumOffloadCapability() {
 		xsum = header.ChecksumVV(pkt.Data, xsum)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
@@ -1040,13 +1040,13 @@ func (e *endpoint) transitionToStateCloseLocked() {
 // only when the endpoint is in StateClose and we want to deliver the segment
 // to any other listening endpoint. We reply with RST if we cannot find one.
 func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
-	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.ID, &s.route)
+	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.ID, s.nicID)
 	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.EndpointInfo.TransportEndpointInfo.ID.LocalAddress.To4() != "" {
 		// Dual-stack socket, try IPv4.
-		ep = e.stack.FindTransportEndpoint(header.IPv4ProtocolNumber, e.TransProto, e.ID, &s.route)
+		ep = e.stack.FindTransportEndpoint(header.IPv4ProtocolNumber, e.TransProto, e.ID, s.nicID)
 	}
 	if ep == nil {
-		replyWithReset(s, stack.DefaultTOS, s.route.DefaultTTL())
+		replyWithReset(e.stack, s, stack.DefaultTOS, 0 /* ttl */)
 		s.decRef()
 		return
 	}
@@ -1620,7 +1620,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 				netProtos = []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber, header.IPv6ProtocolNumber}
 			}
 			for _, netProto := range netProtos {
-				if listenEP := e.stack.FindTransportEndpoint(netProto, info.TransProto, newID, &s.route); listenEP != nil {
+				if listenEP := e.stack.FindTransportEndpoint(netProto, info.TransProto, newID, s.nicID); listenEP != nil {
 					tcpEP := listenEP.(*endpoint)
 					if EndpointState(tcpEP.State()) == StateListen {
 						reuseTW = func() {

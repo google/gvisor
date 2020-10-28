@@ -199,18 +199,25 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
 // the connection parameters given by the arguments.
-func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, irs seqnum.Value, rcvdSynOpts *header.TCPSynOptions, queue *waiter.Queue) *endpoint {
+func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, irs seqnum.Value, rcvdSynOpts *header.TCPSynOptions, queue *waiter.Queue) (*endpoint, *tcpip.Error) {
 	// Create a new endpoint.
 	netProto := l.netProto
 	if netProto == 0 {
-		netProto = s.route.NetProto
+		netProto = s.netProto
 	}
 	n := newEndpoint(l.stack, netProto, queue)
 	n.v6only = l.v6Only
 	n.ID = s.id
-	n.boundNICID = s.route.NICID()
-	n.route = s.route.Clone()
-	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.route.NetProto}
+	n.boundNICID = s.nicID
+
+	route, err := l.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
+	if err != nil {
+		return nil, err
+	}
+	route.ResolveWith(s.remoteLinkAddr)
+
+	n.route = route
+	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.netProto}
 	n.rcvBufSize = int(l.rcvWnd)
 	n.amss = calculateAdvertisedMSS(n.userMSS, n.route)
 	n.setEndpointState(StateConnecting)
@@ -225,7 +232,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	// window to grow to a really large value.
 	n.rcvAutoParams.prevCopied = n.initialReceiveWindow()
 
-	return n
+	return n, nil
 }
 
 // createEndpointAndPerformHandshake creates a new endpoint in connected state
@@ -236,7 +243,10 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	// Create new endpoint.
 	irs := s.sequenceNumber
 	isn := generateSecureISN(s.id, l.stack.Seed())
-	ep := l.createConnectingEndpoint(s, isn, irs, opts, queue)
+	ep, err := l.createConnectingEndpoint(s, isn, irs, opts, queue)
+	if err != nil {
+		return nil, err
+	}
 
 	// Lock the endpoint before registering to ensure that no out of
 	// band changes are possible due to incoming packets etc till
@@ -477,7 +487,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
 		// must be sent in response to a SYN-ACK while in the listen
 		// state to prevent completing a handshake from an old SYN.
-		replyWithReset(s, e.sendTOS, e.ttl)
+		replyWithReset(e.stack, s, e.sendTOS, e.ttl)
 		return
 	}
 
@@ -510,6 +520,12 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			}
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 
+			route, err := e.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
+			if err != nil {
+				return
+			}
+			route.ResolveWith(s.remoteLinkAddr)
+
 			// Send SYN without window scaling because we currently
 			// don't encode this information in the cookie.
 			//
@@ -523,9 +539,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				TS:    opts.TS,
 				TSVal: tcpTimeStamp(time.Now(), timeStampOffset()),
 				TSEcr: opts.TSVal,
-				MSS:   calculateAdvertisedMSS(e.userMSS, s.route),
+				MSS:   calculateAdvertisedMSS(e.userMSS, route),
 			}
-			e.sendSynTCP(&s.route, tcpFields{
+			e.sendSynTCP(&route, tcpFields{
 				id:     s.id,
 				ttl:    e.ttl,
 				tos:    e.sendTOS,
@@ -534,6 +550,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				ack:    s.sequenceNumber + 1,
 				rcvWnd: ctx.rcvWnd,
 			}, synOpts)
+			route.Release()
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
 
@@ -566,7 +583,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// The only time we should reach here when a connection
 			// was opened and closed really quickly and a delayed
 			// ACK was received from the sender.
-			replyWithReset(s, e.sendTOS, e.ttl)
+			replyWithReset(e.stack, s, e.sendTOS, e.ttl)
 			return
 		}
 
@@ -608,7 +625,10 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			rcvdSynOptions.TSEcr = s.parsedOptions.TSEcr
 		}
 
-		n := ctx.createConnectingEndpoint(s, iss, irs, rcvdSynOptions, &waiter.Queue{})
+		n, err := ctx.createConnectingEndpoint(s, iss, irs, rcvdSynOptions, &waiter.Queue{})
+		if err != nil {
+			return
+		}
 
 		n.mu.Lock()
 
