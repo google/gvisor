@@ -127,6 +127,12 @@ func (b ICMPv4) Code() ICMPv4Code { return ICMPv4Code(b[1]) }
 // SetCode sets the ICMP code field.
 func (b ICMPv4) SetCode(c ICMPv4Code) { b[1] = byte(c) }
 
+// Pointer returns the pointer field in a Parameter Problem packet.
+func (b ICMPv4) Pointer() byte { return b[icmpv4PointerOffset] }
+
+// SetPointer sets the pointer field in a Parameter Problem packet.
+func (b ICMPv4) SetPointer(c byte) { b[icmpv4PointerOffset] = c }
+
 // Checksum is the ICMP checksum field.
 func (b ICMPv4) Checksum() uint16 {
 	return binary.BigEndian.Uint16(b[icmpv4ChecksumOffset:])
