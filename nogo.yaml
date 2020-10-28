@@ -32,6 +32,8 @@ global:
       # go_embed_data rules generate unicode literals.
       - "string literal contains the Unicode format character"
       - "string literal contains the Unicode control character"
+      - "string literal contains Unicode control characters"
+      - "string literal contains Unicode format and control characters"
       # Some external code will generate protov1
       # implementations. These should be ignored.
       - "proto.* is deprecated"
@@ -101,6 +103,7 @@ global:
       - pkg/sentry/fs/dev/net_tun.go:63
       - pkg/sentry/fs/dev/null.go:97
       - pkg/sentry/fs/dirent_cache.go:64
+      - pkg/sentry/fs/fdpipe/pipe_opener_test.go:366
       - pkg/sentry/fs/file_overlay.go:327
       - pkg/sentry/fs/file_overlay.go:524
       - pkg/sentry/fs/filetest/filetest.go:55
