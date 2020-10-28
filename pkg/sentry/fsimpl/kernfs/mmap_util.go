@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package host
+package kernfs
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
@@ -26,11 +26,14 @@ import (
 // inodePlatformFile implements memmap.File. It exists solely because inode
 // cannot implement both kernfs.Inode.IncRef and memmap.File.IncRef.
 //
-// inodePlatformFile should only be used if inode.canMap is true.
-//
 // +stateify savable
 type inodePlatformFile struct {
-	*inode
+	// hostFD contains the host fd that this file was originally created from,
+	// which must be available at time of restore.
+	//
+	// This field is initialized at creation time and is immutable.
+	// inodePlatformFile does not own hostFD and hence should not close it.
+	hostFD int
 
 	// fdRefsMu protects fdRefs.
 	fdRefsMu sync.Mutex `state:"nosave"`
@@ -46,9 +49,9 @@ type inodePlatformFile struct {
 	fileMapperInitOnce sync.Once `state:"nosave"`
 }
 
+var _ memmap.File = (*inodePlatformFile)(nil)
+
 // IncRef implements memmap.File.IncRef.
-//
-// Precondition: i.inode.canMap must be true.
 func (i *inodePlatformFile) IncRef(fr memmap.FileRange) {
 	i.fdRefsMu.Lock()
 	i.fdRefs.IncRefAndAccount(fr)
@@ -56,8 +59,6 @@ func (i *inodePlatformFile) IncRef(fr memmap.FileRange) {
 }
 
 // DecRef implements memmap.File.DecRef.
-//
-// Precondition: i.inode.canMap must be true.
 func (i *inodePlatformFile) DecRef(fr memmap.FileRange) {
 	i.fdRefsMu.Lock()
 	i.fdRefs.DecRefAndAccount(fr)
@@ -65,8 +66,6 @@ func (i *inodePlatformFile) DecRef(fr memmap.FileRange) {
 }
 
 // MapInternal implements memmap.File.MapInternal.
-//
-// Precondition: i.inode.canMap must be true.
 func (i *inodePlatformFile) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
 	return i.fileMapper.MapInternal(fr, i.hostFD, at.Write)
 }
@@ -76,10 +75,32 @@ func (i *inodePlatformFile) FD() int {
 	return i.hostFD
 }
 
-// AddMapping implements memmap.Mappable.AddMapping.
+// CachedMappable implements memmap.Mappable. This utility can be embedded in a
+// kernfs.Inode that represents a host file  to make the inode mappable.
+// CachedMappable caches the mappings of the host file. CachedMappable must be
+// initialized (via Init) with a hostFD before use.
 //
-// Precondition: i.inode.canMap must be true.
-func (i *inode) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+// +stateify savable
+type CachedMappable struct {
+	// mapsMu protects mappings.
+	mapsMu sync.Mutex `state:"nosave"`
+
+	// mappings tracks mappings of hostFD into memmap.MappingSpaces.
+	mappings memmap.MappingSet
+
+	// pf implements memmap.File for mappings backed by a host fd.
+	pf inodePlatformFile
+}
+
+var _ memmap.Mappable = (*CachedMappable)(nil)
+
+// Init initializes i.pf. This must be called before using CachedMappable.
+func (i *CachedMappable) Init(hostFD int) {
+	i.pf.hostFD = hostFD
+}
+
+// AddMapping implements memmap.Mappable.AddMapping.
+func (i *CachedMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
 	i.mapsMu.Lock()
 	mapped := i.mappings.AddMapping(ms, ar, offset, writable)
 	for _, r := range mapped {
@@ -90,9 +111,7 @@ func (i *inode) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar userm
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-//
-// Precondition: i.inode.canMap must be true.
-func (i *inode) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (i *CachedMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
 	i.mapsMu.Lock()
 	unmapped := i.mappings.RemoveMapping(ms, ar, offset, writable)
 	for _, r := range unmapped {
@@ -102,16 +121,12 @@ func (i *inode) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar us
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-//
-// Precondition: i.inode.canMap must be true.
-func (i *inode) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (i *CachedMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
 	return i.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.
-//
-// Precondition: i.inode.canMap must be true.
-func (i *inode) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (i *CachedMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
 	mr := optional
 	return []memmap.Translation{
 		{
@@ -124,10 +139,26 @@ func (i *inode) Translate(ctx context.Context, required, optional memmap.Mappabl
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-//
-// Precondition: i.inode.canMap must be true.
-func (i *inode) InvalidateUnsavable(ctx context.Context) error {
+func (i *CachedMappable) InvalidateUnsavable(ctx context.Context) error {
 	// We expect the same host fd across save/restore, so all translations
 	// should be valid.
 	return nil
+}
+
+// InvalidateRange invalidates the passed range on i.mappings.
+func (i *CachedMappable) InvalidateRange(r memmap.MappableRange) {
+	i.mapsMu.Lock()
+	i.mappings.Invalidate(r, memmap.InvalidateOpts{
+		// Compare Linux's mm/truncate.c:truncate_setsize() =>
+		// truncate_pagecache() =>
+		// mm/memory.c:unmap_mapping_range(evencows=1).
+		InvalidatePrivate: true,
+	})
+	i.mapsMu.Unlock()
+}
+
+// InitFileMapperOnce initializes the host file mapper. It ensures that the
+// file mapper is initialized just once.
+func (i *CachedMappable) InitFileMapperOnce() {
+	i.pf.fileMapperInitOnce.Do(i.pf.fileMapper.Init)
 }
