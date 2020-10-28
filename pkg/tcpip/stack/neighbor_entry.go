@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -26,10 +25,10 @@ import (
 
 // NeighborEntry describes a neighboring device in the local network.
 type NeighborEntry struct {
-	Addr      tcpip.Address
-	LinkAddr  tcpip.LinkAddress
-	State     NeighborState
-	UpdatedAt time.Time
+	Addr           tcpip.Address
+	LinkAddr       tcpip.LinkAddress
+	State          NeighborState
+	UpdatedAtNanos int64
 }
 
 // NeighborState defines the state of a NeighborEntry within the Neighbor
@@ -122,10 +121,10 @@ func newNeighborEntry(nic *NIC, remoteAddr tcpip.Address, nudState *NUDState, li
 // calling `setStateLocked`.
 func newStaticNeighborEntry(nic *NIC, addr tcpip.Address, linkAddr tcpip.LinkAddress, state *NUDState) *neighborEntry {
 	entry := NeighborEntry{
-		Addr:      addr,
-		LinkAddr:  linkAddr,
-		State:     Static,
-		UpdatedAt: time.Now(),
+		Addr:           addr,
+		LinkAddr:       linkAddr,
+		State:          Static,
+		UpdatedAtNanos: nic.stack.clock.NowNanoseconds(),
 	}
 	if nic.stack.nudDisp != nil {
 		nic.stack.nudDisp.OnNeighborAdded(nic.id, entry)
@@ -200,7 +199,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 
 	prev := e.neigh.State
 	e.neigh.State = next
-	e.neigh.UpdatedAt = time.Now()
+	e.neigh.UpdatedAtNanos = e.nic.stack.clock.NowNanoseconds()
 	config := e.nudState.Config()
 
 	switch next {
@@ -268,7 +267,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	switch e.neigh.State {
 	case Unknown:
 		e.neigh.State = Incomplete
-		e.neigh.UpdatedAt = time.Now()
+		e.neigh.UpdatedAtNanos = e.nic.stack.clock.NowNanoseconds()
 
 		e.dispatchAddEventLocked()
 

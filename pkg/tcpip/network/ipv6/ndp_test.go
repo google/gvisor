@@ -341,7 +341,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testi
 					if diff := cmp.Diff(existing, n); diff != "" {
 						t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry (-existing +got):\n%s", nicID, diff)
 					}
-					t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry: %s", nicID, existing)
+					t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry: %#v", nicID, existing)
 				}
 				neighborByAddr[n.Addr] = n
 			}
@@ -368,7 +368,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testi
 				}
 
 				if ok {
-					t.Fatalf("unexpectedly got neighbor entry: %s", neigh)
+					t.Fatalf("unexpectedly got neighbor entry: %#v", neigh)
 				}
 			}
 		})
@@ -913,13 +913,13 @@ func TestNeighorAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *test
 					if diff := cmp.Diff(existing, n); diff != "" {
 						t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry (-existing +got):\n%s", nicID, diff)
 					}
-					t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry: %s", nicID, existing)
+					t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry: %#v", nicID, existing)
 				}
 				neighborByAddr[n.Addr] = n
 			}
 
 			if neigh, ok := neighborByAddr[lladdr1]; ok {
-				t.Fatalf("unexpectedly got neighbor entry: %s", neigh)
+				t.Fatalf("unexpectedly got neighbor entry: %#v", neigh)
 			}
 
 			if test.isValid {

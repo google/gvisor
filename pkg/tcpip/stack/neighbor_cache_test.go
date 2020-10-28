@@ -61,23 +61,20 @@ const (
 )
 
 // entryDiffOpts returns the options passed to cmp.Diff to compare neighbor
-// entries. The UpdatedAt field is ignored due to a lack of a deterministic
-// method to predict the time that an event will be dispatched.
+// entries. The UpdatedAtNanos field is ignored due to a lack of a
+// deterministic method to predict the time that an event will be dispatched.
 func entryDiffOpts() []cmp.Option {
 	return []cmp.Option{
-		cmpopts.IgnoreFields(NeighborEntry{}, "UpdatedAt"),
+		cmpopts.IgnoreFields(NeighborEntry{}, "UpdatedAtNanos"),
 	}
 }
 
 // entryDiffOptsWithSort is like entryDiffOpts but also includes an option to
 // sort slices of entries for cases where ordering must be ignored.
 func entryDiffOptsWithSort() []cmp.Option {
-	return []cmp.Option{
-		cmpopts.IgnoreFields(NeighborEntry{}, "UpdatedAt"),
-		cmpopts.SortSlices(func(a, b NeighborEntry) bool {
-			return strings.Compare(string(a.Addr), string(b.Addr)) < 0
-		}),
-	}
+	return append(entryDiffOpts(), cmpopts.SortSlices(func(a, b NeighborEntry) bool {
+		return strings.Compare(string(a.Addr), string(b.Addr)) < 0
+	}))
 }
 
 func newTestNeighborCache(nudDisp NUDDispatcher, config NUDConfigurations, clock tcpip.Clock) *neighborCache {
