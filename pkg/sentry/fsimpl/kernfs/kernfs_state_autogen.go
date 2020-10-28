@@ -664,6 +664,60 @@ func (d *Dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &d.inode)
 }
 
+func (i *inodePlatformFile) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.inodePlatformFile"
+}
+
+func (i *inodePlatformFile) StateFields() []string {
+	return []string{
+		"hostFD",
+		"fdRefs",
+		"fileMapper",
+	}
+}
+
+func (i *inodePlatformFile) beforeSave() {}
+
+func (i *inodePlatformFile) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.hostFD)
+	stateSinkObject.Save(1, &i.fdRefs)
+	stateSinkObject.Save(2, &i.fileMapper)
+}
+
+func (i *inodePlatformFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.hostFD)
+	stateSourceObject.Load(1, &i.fdRefs)
+	stateSourceObject.Load(2, &i.fileMapper)
+	stateSourceObject.AfterLoad(i.afterLoad)
+}
+
+func (i *CachedMappable) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.CachedMappable"
+}
+
+func (i *CachedMappable) StateFields() []string {
+	return []string{
+		"mappings",
+		"pf",
+	}
+}
+
+func (i *CachedMappable) beforeSave() {}
+
+func (i *CachedMappable) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.mappings)
+	stateSinkObject.Save(1, &i.pf)
+}
+
+func (i *CachedMappable) afterLoad() {}
+
+func (i *CachedMappable) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.mappings)
+	stateSourceObject.Load(1, &i.pf)
+}
+
 func (l *slotList) StateTypeName() string {
 	return "pkg/sentry/fsimpl/kernfs.slotList"
 }
@@ -860,6 +914,8 @@ func init() {
 	state.Register((*InodeNoStatFS)(nil))
 	state.Register((*Filesystem)(nil))
 	state.Register((*Dentry)(nil))
+	state.Register((*inodePlatformFile)(nil))
+	state.Register((*CachedMappable)(nil))
 	state.Register((*slotList)(nil))
 	state.Register((*slotEntry)(nil))
 	state.Register((*StaticDirectoryRefs)(nil))

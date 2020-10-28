@@ -48,6 +48,7 @@ type inode struct {
 	kernfs.InodeNoStatFS
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.CachedMappable
 	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
 
 	locks vfs.FileLocks
@@ -96,16 +97,6 @@ type inode struct {
 	// Event queue for blocking operations.
 	queue waiter.Queue
 
-	// mapsMu protects mappings.
-	mapsMu sync.Mutex `state:"nosave"`
-
-	// If this file is mmappable, mappings tracks mappings of hostFD into
-	// memmap.MappingSpaces.
-	mappings memmap.MappingSet
-
-	// pf implements platform.File for mappings of hostFD.
-	pf inodePlatformFile
-
 	// If haveBuf is non-zero, hostFD represents a pipe, and buf contains data
 	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
 	// and buf are protected by bufMu. haveBuf is accessed using atomic memory
@@ -135,7 +126,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 		isTTY:    isTTY,
 		savable:  savable,
 	}
-	i.pf.inode = i
+	i.CachedMappable.Init(hostFD)
 	i.EnableLeakCheck()
 
 	// If the hostFD can return EWOULDBLOCK when set to non-blocking, do so and
@@ -439,14 +430,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 			oldpgend, _ := usermem.PageRoundUp(oldSize)
 			newpgend, _ := usermem.PageRoundUp(s.Size)
 			if oldpgend != newpgend {
-				i.mapsMu.Lock()
-				i.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{
-					// Compare Linux's mm/truncate.c:truncate_setsize() =>
-					// truncate_pagecache() =>
-					// mm/memory.c:unmap_mapping_range(evencows=1).
-					InvalidatePrivate: true,
-				})
-				i.mapsMu.Unlock()
+				i.CachedMappable.InvalidateRange(memmap.MappableRange{newpgend, oldpgend})
 			}
 		}
 	}
@@ -797,7 +781,7 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 		return syserror.ENODEV
 	}
 	i := f.inode
-	i.pf.fileMapperInitOnce.Do(i.pf.fileMapper.Init)
+	i.CachedMappable.InitFileMapperOnce()
 	return vfs.GenericConfigureMMap(&f.vfsfd, i, opts)
 }
 
