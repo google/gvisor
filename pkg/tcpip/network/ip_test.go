@@ -694,6 +694,10 @@ func TestIPv4ReceiveControl(t *testing.T) {
 				view[i] = uint8(i)
 			}
 
+			icmp.SetChecksum(0)
+			checksum := ^header.Checksum(icmp, 0 /* initial */)
+			icmp.SetChecksum(checksum)
+
 			// Give packet to IPv4 endpoint, dispatcher will validate that
 			// it's ok.
 			nic.testObject.protocol = 10

@@ -1505,6 +1505,15 @@ type IPStats struct {
 	// IPTablesOutputDropped is the total number of IP packets dropped in
 	// the Output chain.
 	IPTablesOutputDropped *StatCounter
+
+	// OptionTSReceived is the number of Timestamp options seen.
+	OptionTSReceived *StatCounter
+
+	// OptionRRReceived is the number of Record Route options seen.
+	OptionRRReceived *StatCounter
+
+	// OptionUnknownReceived is the number of unknown IP options seen.
+	OptionUnknownReceived *StatCounter
 }
 
 // TCPStats collects TCP-specific stats.
