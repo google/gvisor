@@ -624,12 +624,20 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    # Enable net and user namespace for native versions of this test. We do this
+    # because this test makes excessive bind calls to specific ports not held by
+    # the process running the test case, which causes tests to be flaky.
+    isolate_native_tests_in_ns = True,
     shard_count = 50,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
 )
 
 syscall_test(
     size = "large",
+    # Enable net and user namespace for native versions of this test. We do this
+    # because this test makes excessive bind calls to specific ports not held by
+    # the process running the test case, which causes tests to be flaky.
+    isolate_native_tests_in_ns = True,
     shard_count = 50,
     # Takes too long for TSAN. Creates a lot of TCP sockets.
     tags = ["nogotsan"],

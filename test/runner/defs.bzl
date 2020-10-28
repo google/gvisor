@@ -62,6 +62,7 @@ def _syscall_test(
         file_access = "exclusive",
         overlay = False,
         add_uds_tree = False,
+        isolate_native_tests_in_ns = False,
         vfs2 = False,
         fuse = False):
     # Prepend "runsc" to non-native platform names.
@@ -114,6 +115,7 @@ def _syscall_test(
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-uds-tree=" + str(add_uds_tree),
+        "--isolate-native-tests-in-ns=" + str(isolate_native_tests_in_ns),
         "--vfs2=" + str(vfs2),
         "--fuse=" + str(fuse),
         "--strace=" + str(debug),
@@ -133,11 +135,13 @@ def _syscall_test(
 
 def syscall_test(
         test,
+        name = "",
         shard_count = 5,
         size = "small",
         use_tmpfs = False,
         add_overlay = False,
         add_uds_tree = False,
+        isolate_native_tests_in_ns = False,
         add_hostinet = False,
         vfs2 = True,
         fuse = False,
@@ -147,12 +151,17 @@ def syscall_test(
 
     Args:
       test: the test target.
+      name: unused but here to satisfy Buildifier.
       shard_count: shards for defined tests.
       size: the defined test size.
       use_tmpfs: use tmpfs in the defined tests.
       add_overlay: add an overlay test.
       add_uds_tree: add a UDS test.
+      isolate_native_tests_in_ns: adds a user and network namespace for native tests
       add_hostinet: add a hostinet test.
+      vfs2: run test with vfs2 enabled.
+      fuse: enable fuse for test.
+      debug: turn on debug and strace logs.
       tags: starting test tags.
     """
     if not tags:
@@ -178,6 +187,7 @@ def syscall_test(
         platform = default_platform,
         use_tmpfs = use_tmpfs,
         add_uds_tree = add_uds_tree,
+        isolate_native_tests_in_ns = isolate_native_tests_in_ns,
         tags = platforms[default_platform] + vfs2_tags,
         debug = debug,
         vfs2 = True,
@@ -194,6 +204,7 @@ def syscall_test(
         platform = "native",
         use_tmpfs = False,
         add_uds_tree = add_uds_tree,
+        isolate_native_tests_in_ns = isolate_native_tests_in_ns,
         tags = list(tags),
         debug = debug,
     )
@@ -206,6 +217,7 @@ def syscall_test(
             platform = platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
+            isolate_native_tests_in_ns = isolate_native_tests_in_ns,
             tags = platform_tags + tags,
             debug = debug,
         )
@@ -235,6 +247,7 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
+            isolate_native_tests_in_ns = isolate_native_tests_in_ns,
             tags = platforms[default_platform] + overlay_vfs2_tags,
             debug = debug,
             overlay = True,
@@ -250,6 +263,7 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             network = "host",
             add_uds_tree = add_uds_tree,
+            isolate_native_tests_in_ns = isolate_native_tests_in_ns,
             tags = platforms[default_platform] + tags,
             debug = debug,
         )
@@ -263,6 +277,7 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
+            isolate_native_tests_in_ns = isolate_native_tests_in_ns,
             tags = platforms[default_platform] + tags,
             debug = debug,
             file_access = "shared",
@@ -274,6 +289,7 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
+            isolate_native_tests_in_ns = isolate_native_tests_in_ns,
             tags = platforms[default_platform] + vfs2_tags,
             debug = debug,
             file_access = "shared",

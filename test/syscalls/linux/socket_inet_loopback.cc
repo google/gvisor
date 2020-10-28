@@ -1410,8 +1410,8 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
         Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
     int fd = listener_fds[i].get();
 
-    ASSERT_THAT(setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
-                           sizeof(kSockOptOn)),
+    ASSERT_THAT(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                           &kSockOptOn, sizeof(kSockOptOn)),
                 SyscallSucceeds());
     ASSERT_THAT(
         bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
