@@ -41,14 +41,31 @@ const (
 	// net.ipv4.ipfrag_low_thresh for more information.
 	LowFragThreshold = 3 << 20 // 3MB
 
+	// TinyFragmentThreshold is the threshold used to decide if a fragment is
+	// "tiny". A tiny fragment is likely to be crafted intentionally.
+	TinyFragmentThreshold = 400
+
+	// MaxTinyFragments is the maximum number of tiny fragments allowed to receive
+	// at the same time. Allowing too many tiny fragments is likely to cause a
+	// security risk.
+	MaxTinyFragments = 20
+
 	// minBlockSize is the minimum block size for fragments.
 	minBlockSize = 1
 )
 
 var (
-	// ErrInvalidArgs indicates to the caller that that an invalid argument was
+	// ErrInvalidArgs indicates to the caller that an invalid argument was
 	// provided.
 	ErrInvalidArgs = errors.New("invalid args")
+
+	// ErrFragmentOverlap indicates that, during reassembly, a fragment overlaps
+	// with another one.
+	ErrFragmentOverlap = errors.New("overlapping fragments")
+
+	// ErrTooManyTinyFragments indicates that we are processing too many tiny
+	// fragments at the same time.
+	ErrTooManyTinyFragments = errors.New("too many tiny fragments")
 )
 
 // FragmentID is the identifier for a fragment.
@@ -79,6 +96,9 @@ type Fragmentation struct {
 	size         int
 	timeout      time.Duration
 	blockSize    uint16
+	tinyFragTHLD uint16
+	maxTinyFrags int
+	numTinyFrags int
 	clock        tcpip.Clock
 	releaseJob   *tcpip.Job
 }
@@ -86,6 +106,11 @@ type Fragmentation struct {
 // NewFragmentation creates a new Fragmentation.
 //
 // blockSize specifies the fragment block size, in bytes.
+//
+// tinyFragmentThreshold specifies the threshold size to decide if the fragment
+// is tiny.
+//
+// maxTinyFragments is the maximum number of tiny fragments held at the same time.
 //
 // highMemoryLimit specifies the limit on the memory consumed
 // by the fragments stored by Fragmentation (overhead of internal data-structures
@@ -97,7 +122,7 @@ type Fragmentation struct {
 // reassemblingTimeout specifies the maximum time allowed to reassemble a packet.
 // Fragments are lazily evicted only when a new a packet with an
 // already existing fragmentation-id arrives after the timeout.
-func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, reassemblingTimeout time.Duration, clock tcpip.Clock) *Fragmentation {
+func NewFragmentation(blockSize uint16, tinyFragmentThreshold uint16, maxTinyFragments int, highMemoryLimit, lowMemoryLimit int, reassemblingTimeout time.Duration, clock tcpip.Clock) *Fragmentation {
 	if lowMemoryLimit >= highMemoryLimit {
 		lowMemoryLimit = highMemoryLimit
 	}
@@ -112,6 +137,8 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 
 	f := &Fragmentation{
 		reassemblers: make(map[FragmentID]*reassembler),
+		tinyFragTHLD: tinyFragmentThreshold,
+		maxTinyFrags: maxTinyFragments,
 		highLimit:    highMemoryLimit,
 		lowLimit:     lowMemoryLimit,
 		timeout:      reassemblingTimeout,
@@ -165,7 +192,17 @@ func (f *Fragmentation) Process(
 	}
 	vv.CapLength(int(fragmentSize))
 
+	isTinyFrag := false
+	if more && fragmentSize < f.tinyFragTHLD {
+		isTinyFrag = true
+	}
+
 	f.mu.Lock()
+	if isTinyFrag && f.numTinyFrags == f.maxTinyFrags {
+		f.mu.Unlock()
+		return buffer.VectorisedView{}, 0, false, fmt.Errorf("got more than %d tiny fragments (its size is less than %d bytes) pending in the fragment queue: %w", f.maxTinyFrags, f.tinyFragTHLD, ErrTooManyTinyFragments)
+	}
+
 	r, ok := f.reassemblers[id]
 	if !ok {
 		r = newReassembler(id, f.clock)
@@ -178,6 +215,10 @@ func (f *Fragmentation) Process(
 			// rescheduling itself until the list becomes empty.
 			f.releaseReassemblersLocked()
 		}
+	}
+	if isTinyFrag {
+		r.IncrTinyFrags()
+		f.numTinyFrags++
 	}
 	if releaseCB != nil {
 		if !r.setCallback(releaseCB) {
@@ -229,6 +270,11 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	if f.size < 0 {
 		log.Printf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.size)
 		f.size = 0
+	}
+	f.numTinyFrags -= r.tinyFrags
+	if f.numTinyFrags < 0 {
+		log.Printf("tiny fragmet counter < 0 (%d), this is an accounting bug that requires investigation", f.numTinyFrags)
+		f.numTinyFrags = 0
 	}
 
 	r.release(timedOut) // releaseCB may run.

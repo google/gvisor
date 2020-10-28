@@ -909,7 +909,7 @@ func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 		ids:           ids,
 		hashIV:        hashIV,
 		defaultTTL:    DefaultTTL,
-		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
+		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.TinyFragmentThreshold, fragmentation.MaxTinyFragments, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
 	}
 }
 

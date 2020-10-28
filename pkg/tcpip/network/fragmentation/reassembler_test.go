@@ -16,93 +16,125 @@ package fragmentation
 
 import (
 	"math"
-	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
 
-type updateHolesInput struct {
-	first uint16
-	last  uint16
-	more  bool
-}
-
-var holesTestCases = []struct {
-	comment string
-	in      []updateHolesInput
-	want    []hole
-}{
-	{
-		comment: "No fragments. Expected holes: {[0 -> inf]}.",
-		in:      []updateHolesInput{},
-		want:    []hole{{first: 0, last: math.MaxUint16, deleted: false}},
-	},
-	{
-		comment: "One fragment at beginning. Expected holes: {[2, inf]}.",
-		in:      []updateHolesInput{{first: 0, last: 1, more: true}},
-		want: []hole{
-			{first: 0, last: math.MaxUint16, deleted: true},
-			{first: 2, last: math.MaxUint16, deleted: false},
-		},
-	},
-	{
-		comment: "One fragment in the middle. Expected holes: {[0, 0], [3, inf]}.",
-		in:      []updateHolesInput{{first: 1, last: 2, more: true}},
-		want: []hole{
-			{first: 0, last: math.MaxUint16, deleted: true},
-			{first: 0, last: 0, deleted: false},
-			{first: 3, last: math.MaxUint16, deleted: false},
-		},
-	},
-	{
-		comment: "One fragment at the end. Expected holes: {[0, 0]}.",
-		in:      []updateHolesInput{{first: 1, last: 2, more: false}},
-		want: []hole{
-			{first: 0, last: math.MaxUint16, deleted: true},
-			{first: 0, last: 0, deleted: false},
-		},
-	},
-	{
-		comment: "One fragment completing a packet. Expected holes: {}.",
-		in:      []updateHolesInput{{first: 0, last: 1, more: false}},
-		want: []hole{
-			{first: 0, last: math.MaxUint16, deleted: true},
-		},
-	},
-	{
-		comment: "Two non-overlapping fragments completing a packet. Expected holes: {}.",
-		in: []updateHolesInput{
-			{first: 0, last: 1, more: true},
-			{first: 2, last: 3, more: false},
-		},
-		want: []hole{
-			{first: 0, last: math.MaxUint16, deleted: true},
-			{first: 2, last: math.MaxUint16, deleted: true},
-		},
-	},
-	{
-		comment: "Two overlapping fragments completing a packet. Expected holes: {}.",
-		in: []updateHolesInput{
-			{first: 0, last: 2, more: true},
-			{first: 2, last: 3, more: false},
-		},
-		want: []hole{
-			{first: 0, last: math.MaxUint16, deleted: true},
-			{first: 3, last: math.MaxUint16, deleted: true},
-		},
-	},
+type updateHolesParams struct {
+	first     uint16
+	last      uint16
+	more      bool
+	wantUsed  bool
+	wantError error
 }
 
 func TestUpdateHoles(t *testing.T) {
-	for _, c := range holesTestCases {
-		r := newReassembler(FragmentID{}, &faketime.NullClock{})
-		for _, i := range c.in {
-			r.updateHoles(i.first, i.last, i.more)
-		}
-		if !reflect.DeepEqual(r.holes, c.want) {
-			t.Errorf("Test \"%s\" produced unexepetced holes. Got %v. Want %v", c.comment, r.holes, c.want)
-		}
+	var tests = []struct {
+		name   string
+		params []updateHolesParams
+		want   []hole
+	}{
+		{
+			name:   "No fragments",
+			params: nil,
+			want:   []hole{{first: 0, last: math.MaxUint16, filled: false}},
+		},
+		{
+			name:   "One fragment at beginning",
+			params: []updateHolesParams{{first: 0, last: 1, more: true, wantUsed: true, wantError: nil}},
+			want: []hole{
+				{first: 0, last: 1, filled: true},
+				{first: 2, last: math.MaxUint16, filled: false},
+			},
+		},
+		{
+			name:   "One fragment in the middle",
+			params: []updateHolesParams{{first: 1, last: 2, more: true, wantUsed: true, wantError: nil}},
+			want: []hole{
+				{first: 1, last: 2, filled: true},
+				{first: 0, last: 0, filled: false},
+				{first: 3, last: math.MaxUint16, filled: false},
+			},
+		},
+		{
+			name:   "One fragment at the end",
+			params: []updateHolesParams{{first: 1, last: 2, more: false, wantUsed: true, wantError: nil}},
+			want: []hole{
+				{first: 1, last: 2, filled: true},
+				{first: 0, last: 0, filled: false},
+			},
+		},
+		{
+			name:   "One fragment completing a packet",
+			params: []updateHolesParams{{first: 0, last: 1, more: false, wantUsed: true, wantError: nil}},
+			want: []hole{
+				{first: 0, last: 1, filled: true},
+			},
+		},
+		{
+			name: "Two fragments completing a packet",
+			params: []updateHolesParams{
+				{first: 0, last: 1, more: true, wantUsed: true, wantError: nil},
+				{first: 2, last: 3, more: false, wantUsed: true, wantError: nil},
+			},
+			want: []hole{
+				{first: 0, last: 1, filled: true},
+				{first: 2, last: 3, filled: true},
+			},
+		},
+		{
+			name: "Two fragments completing a packet with a duplicate",
+			params: []updateHolesParams{
+				{first: 0, last: 1, more: true, wantUsed: true, wantError: nil},
+				{first: 0, last: 1, more: true, wantUsed: false, wantError: nil},
+				{first: 2, last: 3, more: false, wantUsed: true, wantError: nil},
+			},
+			want: []hole{
+				{first: 0, last: 1, filled: true},
+				{first: 2, last: 3, filled: true},
+			},
+		},
+		{
+			name: "Two overlapping fragments",
+			params: []updateHolesParams{
+				{first: 0, last: 10, more: true, wantUsed: true, wantError: nil},
+				{first: 5, last: 15, more: false, wantUsed: false, wantError: ErrFragmentOverlap},
+				{first: 11, last: 15, more: false, wantUsed: true, wantError: nil},
+			},
+			want: []hole{
+				{first: 0, last: 10, filled: true},
+				{first: 11, last: 15, filled: true},
+			},
+		},
+		{
+			name: "Out of bounds fragment",
+			params: []updateHolesParams{
+				{first: 0, last: 10, more: true, wantUsed: true, wantError: nil},
+				{first: 11, last: 15, more: false, wantUsed: true, wantError: nil},
+				{first: 16, last: 20, more: false, wantUsed: false, wantError: ErrInvalidArgs},
+			},
+			want: []hole{
+				{first: 0, last: 10, filled: true},
+				{first: 11, last: 15, filled: true},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r := newReassembler(FragmentID{}, &faketime.NullClock{})
+			for _, param := range test.params {
+				used, err := r.updateHoles(param.first, param.last, param.more)
+				if used != param.wantUsed || err != param.wantError {
+					t.Errorf("got r.updateHoles(%d, %d, %t) = (%t, %v), want = (%t, %v)", param.first, param.last, param.more, used, err, param.wantUsed, param.wantError)
+				}
+			}
+			if diff := cmp.Diff(test.want, r.holes, cmp.AllowUnexported(hole{})); diff != "" {
+				t.Errorf("r.holes mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

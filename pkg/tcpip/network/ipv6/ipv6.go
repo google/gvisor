@@ -1580,7 +1580,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 	return func(s *stack.Stack) stack.NetworkProtocol {
 		p := &protocol{
 			stack:         s,
-			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
+			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.TinyFragmentThreshold, fragmentation.MaxTinyFragments, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
 			ids:           ids,
 			hashIV:        hashIV,
 

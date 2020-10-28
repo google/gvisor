@@ -102,7 +102,7 @@ var processTestCases = []struct {
 func TestFragmentationProcess(t *testing.T) {
 	for _, c := range processTestCases {
 		t.Run(c.comment, func(t *testing.T) {
-			f := NewFragmentation(minBlockSize, 1024, 512, reassembleTimeout, &faketime.NullClock{})
+			f := NewFragmentation(minBlockSize, 0, 0, 1024, 512, reassembleTimeout, &faketime.NullClock{})
 			firstFragmentProto := c.in[0].proto
 			for i, in := range c.in {
 				vv, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.vv, nil)
@@ -236,7 +236,7 @@ func TestReassemblingTimeout(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			clock := faketime.NewManualClock()
-			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassemblyTimeout, clock)
+			f := NewFragmentation(minBlockSize, 0, 0, HighFragThreshold, LowFragThreshold, reassemblyTimeout, clock)
 			for _, event := range test.events {
 				clock.Advance(event.clockAdvance)
 				if frag := event.fragment; frag != nil {
@@ -257,7 +257,7 @@ func TestReassemblingTimeout(t *testing.T) {
 }
 
 func TestMemoryLimits(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 3, 1, reassembleTimeout, &faketime.NullClock{})
+	f := NewFragmentation(minBlockSize, 0, 0, 3, 1, reassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, vv(1, "0"), nil)
 	// Send first fragment with id = 1.
@@ -281,7 +281,7 @@ func TestMemoryLimits(t *testing.T) {
 }
 
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 1, 0, reassembleTimeout, &faketime.NullClock{})
+	f := NewFragmentation(minBlockSize, 0, 0, 1, 0, reassembleTimeout, &faketime.NullClock{})
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{}, 0, 0, true, 0xFF, vv(1, "0"), nil)
 	// Send the same packet again.
@@ -376,7 +376,7 @@ func TestErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
+			f := NewFragmentation(test.blockSize, 0, 0, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
 			_, _, done, err := f.Process(FragmentID{}, test.first, test.last, test.more, 0, vv(len(test.data), test.data), nil)
 			if !errors.Is(err, test.err) {
 				t.Errorf("got Process(_, %d, %d, %t, _, %q) = (_, _, _, %v), want = (_, _, _, %v)", test.first, test.last, test.more, test.data, err, test.err)
@@ -559,7 +559,7 @@ func TestReleaseCallback(t *testing.T) {
 			result = 0
 			callbackReasonIsTimeout = false
 
-			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
+			f := NewFragmentation(minBlockSize, 0, 0, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
 
 			for i, cb := range test.callbacks {
 				_, _, _, err := f.Process(id, uint16(i), uint16(i), true, proto, vv(1, "0"), cb)
@@ -581,5 +581,46 @@ func TestReleaseCallback(t *testing.T) {
 				t.Errorf("got callbackReasonIsTimeout = %t, want = %t", callbackReasonIsTimeout, test.wantCallbackReasonIsTimeout)
 			}
 		})
+	}
+}
+
+func TestTinyFragments(t *testing.T) {
+	const (
+		proto             = 99
+		tinyfragThreshold = 2
+		maxTinyFrags      = 5
+		reassemblyTimeout = 1
+	)
+
+	clock := faketime.NewManualClock()
+	f := NewFragmentation(minBlockSize, tinyfragThreshold, maxTinyFrags, HighFragThreshold, LowFragThreshold, reassembleTimeout, clock)
+
+	id := FragmentID{ID: 0}
+	offset := uint16(0)
+
+	for i := 0; i < maxTinyFrags; i++ {
+		_, _, _, err := f.Process(id, offset, offset, true, proto, vv(1, "0"), nil)
+		if err != nil {
+			t.Errorf("f.Process error = %s", err)
+		}
+		offset++
+	}
+	_, _, _, err := f.Process(id, offset, offset, true, proto, vv(1, "0"), nil)
+	if !errors.Is(err, ErrTooManyTinyFragments) {
+		t.Errorf("got f.Process error = %s, want = %s", err, ErrTooManyTinyFragments)
+	}
+
+	clock.Advance(reassembleTimeout)
+
+	for i := 0; i < maxTinyFrags; i++ {
+		_, _, _, err := f.Process(id, offset, offset, true, proto, vv(1, "0"), nil)
+		if err != nil {
+			t.Errorf("f.Process error = %s", err)
+		}
+		offset++
+	}
+	_, _, _, err = f.Process(id, offset, offset, true, proto, vv(1, "0"), nil)
+	if !errors.Is(err, ErrTooManyTinyFragments) {
+		t.Errorf("got f.Process error = %s, want = %s", err, ErrTooManyTinyFragments)
 	}
 }
