@@ -121,6 +121,9 @@ const (
 
 // Constants from uapi/linux/fsverity.h.
 const (
+	FS_VERITY_HASH_ALG_SHA256 = 1
+	FS_VERITY_HASH_ALG_SHA512 = 2
+
 	FS_IOC_ENABLE_VERITY  = 1082156677
 	FS_IOC_MEASURE_VERITY = 3221513862
 )
