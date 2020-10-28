@@ -77,6 +77,7 @@ var (
 		"gid_map":       linux.DT_REG,
 		"io":            linux.DT_REG,
 		"maps":          linux.DT_REG,
+		"mem":           linux.DT_REG,
 		"mountinfo":     linux.DT_REG,
 		"mounts":        linux.DT_REG,
 		"net":           linux.DT_DIR,
