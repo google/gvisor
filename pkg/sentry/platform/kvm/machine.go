@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
+	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -624,4 +625,36 @@ func (c *vCPU) BounceToKernel() {
 //go:nosplit
 func (c *vCPU) BounceToHost() {
 	c.bounce(true)
+}
+
+// setSystemTimeLegacy calibrates and sets an approximate system time.
+func (c *vCPU) setSystemTimeLegacy() error {
+	const minIterations = 10
+	minimum := uint64(0)
+	for iter := 0; ; iter++ {
+		// Try to set the TSC to an estimate of where it will be
+		// on the host during a "fast" system call iteration.
+		start := uint64(ktime.Rdtsc())
+		if err := c.setTSC(start + (minimum / 2)); err != nil {
+			return err
+		}
+		// See if this is our new minimum call time. Note that this
+		// serves two functions: one, we make sure that we are
+		// accurately predicting the offset we need to set. Second, we
+		// don't want to do the final set on a slow call, which could
+		// produce a really bad result.
+		end := uint64(ktime.Rdtsc())
+		if end < start {
+			continue // Totally bogus: unstable TSC?
+		}
+		current := end - start
+		if current < minimum || iter == 0 {
+			minimum = current // Set our new minimum.
+		}
+		// Is this past minIterations and within ~10% of minimum?
+		upperThreshold := (((minimum << 3) + minimum) >> 3)
+		if iter >= minIterations && current <= upperThreshold {
+			return nil
+		}
+	}
 }
