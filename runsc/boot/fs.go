@@ -105,19 +105,8 @@ func addOverlay(ctx context.Context, conf *config.Config, lower *fs.Inode, name 
 // mandatory mounts that are required by the OCI specification.
 func compileMounts(spec *specs.Spec) []specs.Mount {
 	// Keep track of whether proc and sys were mounted.
-	var procMounted, sysMounted bool
+	var procMounted, sysMounted, devMounted, devptsMounted bool
 	var mounts []specs.Mount
-
-	// Always mount /dev.
-	mounts = append(mounts, specs.Mount{
-		Type:        devtmpfs.Name,
-		Destination: "/dev",
-	})
-
-	mounts = append(mounts, specs.Mount{
-		Type:        devpts.Name,
-		Destination: "/dev/pts",
-	})
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
@@ -125,13 +114,19 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 			log.Warningf("ignoring dev mount at %q", m.Destination)
 			continue
 		}
-		mounts = append(mounts, m)
 		switch filepath.Clean(m.Destination) {
 		case "/proc":
 			procMounted = true
 		case "/sys":
 			sysMounted = true
+		case "/dev":
+			m.Type = devtmpfs.Name
+			devMounted = true
+		case "/dev/pts":
+			m.Type = devpts.Name
+			devptsMounted = true
 		}
+		mounts = append(mounts, m)
 	}
 
 	// Mount proc and sys even if the user did not ask for it, as the spec
@@ -147,6 +142,18 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 		mandatoryMounts = append(mandatoryMounts, specs.Mount{
 			Type:        sysvfs2.Name,
 			Destination: "/sys",
+		})
+	}
+	if !devMounted {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        devtmpfs.Name,
+			Destination: "/dev",
+		})
+	}
+	if !devptsMounted {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        devpts.Name,
+			Destination: "/dev/pts",
 		})
 	}
 

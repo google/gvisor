@@ -344,15 +344,9 @@ func IsSupportedDevMount(m specs.Mount) bool {
 	var existingDevices = []string{
 		"/dev/fd", "/dev/stdin", "/dev/stdout", "/dev/stderr",
 		"/dev/null", "/dev/zero", "/dev/full", "/dev/random",
-		"/dev/urandom", "/dev/shm", "/dev/pts", "/dev/ptmx",
+		"/dev/urandom", "/dev/shm", "/dev/ptmx",
 	}
 	dst := filepath.Clean(m.Destination)
-	if dst == "/dev" {
-		// OCI spec uses many different mounts for the things inside of '/dev'. We
-		// have a single mount at '/dev' that is always mounted, regardless of
-		// whether it was asked for, as the spec says we SHOULD.
-		return false
-	}
 	for _, dev := range existingDevices {
 		if dst == dev || strings.HasPrefix(dst, dev+"/") {
 			return false
