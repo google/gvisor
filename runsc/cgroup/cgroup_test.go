@@ -647,3 +647,83 @@ func TestPids(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cgroups string
+		want    map[string]string
+		err     string
+	}{
+		{
+			name:    "abs-path",
+			cgroups: "0:ctr:/path",
+			want:    map[string]string{"ctr": "/path"},
+		},
+		{
+			name:    "rel-path",
+			cgroups: "0:ctr:rel-path",
+			want:    map[string]string{"ctr": "rel-path"},
+		},
+		{
+			name:    "non-controller",
+			cgroups: "0:name=systemd:/path",
+			want:    map[string]string{"systemd": "/path"},
+		},
+		{
+			name: "empty",
+		},
+		{
+			name: "multiple",
+			cgroups: "0:ctr0:/path0\n" +
+				"1:ctr1:/path1\n" +
+				"2::/empty\n",
+			want: map[string]string{
+				"ctr0": "/path0",
+				"ctr1": "/path1",
+			},
+		},
+		{
+			name:    "missing-field",
+			cgroups: "0:nopath\n",
+			err:     "invalid cgroups file",
+		},
+		{
+			name:    "too-many-fields",
+			cgroups: "0:ctr:/path:extra\n",
+			err:     "invalid cgroups file",
+		},
+		{
+			name: "multiple-malformed",
+			cgroups: "0:ctr0:/path0\n" +
+				"1:ctr1:/path1\n" +
+				"2:\n",
+			err: "invalid cgroups file",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := strings.NewReader(tc.cgroups)
+			got, err := loadPathsHelper(r)
+			if len(tc.err) == 0 {
+				if err != nil {
+					t.Fatalf("Unexpected error: %v", err)
+				}
+			} else if !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("Wrong error message, want: *%s*, got: %v", tc.err, err)
+			}
+			for key, vWant := range tc.want {
+				vGot, ok := got[key]
+				if !ok {
+					t.Errorf("Missing controller %q", key)
+				}
+				if vWant != vGot {
+					t.Errorf("Wrong controller %q value, want: %q, got: %q", key, vWant, vGot)
+				}
+				delete(got, key)
+			}
+			for k, v := range got {
+				t.Errorf("Unexpected controller %q: %q", k, v)
+			}
+		})
+	}
+}
