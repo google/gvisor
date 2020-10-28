@@ -49,6 +49,7 @@ func RegisterFlags() {
 		flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
 		flag.Bool("alsologtostderr", false, "send log messages to stderr.")
 		flag.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
+		flag.String("traceback", "system", "golang runtime's traceback level")
 
 		// Debugging flags: strace related
 		flag.Bool("strace", false, "enable strace.")

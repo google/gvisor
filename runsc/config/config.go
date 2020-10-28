@@ -37,6 +37,9 @@ type Config struct {
 	// RootDir is the runtime root directory.
 	RootDir string `flag:"root"`
 
+	// Traceback changes the Go runtime's traceback level.
+	Traceback string `flag:"traceback"`
+
 	// Debug indicates that debug logging should be enabled.
 	Debug bool `flag:"debug"`
 
