@@ -373,6 +373,9 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, 
 	const icmpv4VariableHeaderOffset = 4
 	copy(icmp[icmpv4VariableHeaderOffset:], p1)
 	copy(icmp[header.ICMPv4PayloadOffset:], p2)
+	icmp.SetChecksum(0)
+	checksum := ^header.Checksum(icmp, 0 /* initial */)
+	icmp.SetChecksum(checksum)
 
 	// Inject packet.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{

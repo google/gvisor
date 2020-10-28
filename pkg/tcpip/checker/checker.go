@@ -205,7 +205,7 @@ func IPv4Options(want []byte) NetworkChecker {
 		if !ok {
 			t.Fatalf("unexpected network header passed to checker, got = %T, want = header.IPv4", h[0])
 		}
-		options := ip.Options()
+		options := []byte(ip.Options())
 		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
 		if len(want) == 0 && len(options) == 0 {
 			return
@@ -855,6 +855,21 @@ func ICMPv4Seq(want uint16) TransportChecker {
 		}
 		if got := icmpv4.Sequence(); got != want {
 			t.Fatalf("unexpected ICMP sequence, got = %d, want = %d", got, want)
+		}
+	}
+}
+
+// ICMPv4Pointer creates a checker that checks the ICMPv4 Param Problem pointer.
+func ICMPv4Pointer(want uint8) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		icmpv4, ok := h.(header.ICMPv4)
+		if !ok {
+			t.Fatalf("unexpected transport header passed to checker, got = %T, want = header.ICMPv4", h)
+		}
+		if got := icmpv4.Pointer(); got != want {
+			t.Fatalf("unexpected ICMP Param Problem pointer, got = %d, want = %d", got, want)
 		}
 	}
 }
