@@ -679,6 +679,43 @@ TEST_P(UdpSocketTest, SendToAddressOtherThanConnected) {
               SyscallSucceedsWithValue(sizeof(buf)));
 }
 
+TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
+  ASSERT_NO_ERRNO(BindLoopback());
+  // Close the socket to release the port so that we get an ICMP error.
+  ASSERT_THAT(close(bind_.release()), SyscallSucceeds());
+
+  // Connect to loopback:bind_addr_ which should *hopefully* not be bound by an
+  // UDP socket. There is no easy way to ensure that the UDP port is not bound
+  // by another conncurrently running test. *This is potentially flaky*.
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  char buf[512];
+  EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  constexpr int kTimeout = 1000;
+  // Poll to make sure we get the ICMP error back before issuing more writes.
+  struct pollfd pfd = {sock_.get(), POLLERR, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+
+  // Next write should fail with ECONNREFUSED due to the ICMP error generated in
+  // response to the previous write.
+  ASSERT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ECONNREFUSED));
+
+  // The next write should succeed again since the last write call would have
+  // retrieved and cleared the socket error.
+  ASSERT_THAT(send(sock_.get(), buf, sizeof(buf), 0), SyscallSucceeds());
+
+  // Poll to make sure we get the ICMP error back before issuing more writes.
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+
+  // Next write should fail with ECONNREFUSED due to the ICMP error generated in
+  // response to the previous write.
+  ASSERT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ECONNREFUSED));
+}
+
 TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
   // TODO(gvisor.dev/issue/1202): Hostinet does not support zero length writes.
   SKIP_IF(IsRunningWithHostinet());
