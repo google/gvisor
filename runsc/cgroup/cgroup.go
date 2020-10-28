@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -198,14 +199,22 @@ func LoadPaths(pid string) (map[string]string, error) {
 	}
 	defer f.Close()
 
+	return loadPathsHelper(f)
+}
+
+func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
 	paths := make(map[string]string)
-	scanner := bufio.NewScanner(f)
+
+	scanner := bufio.NewScanner(cgroup)
 	for scanner.Scan() {
 		// Format: ID:[name=]controller1,controller2:path
 		// Example: 2:cpu,cpuacct:/user.slice
 		tokens := strings.Split(scanner.Text(), ":")
 		if len(tokens) != 3 {
 			return nil, fmt.Errorf("invalid cgroups file, line: %q", scanner.Text())
+		}
+		if len(tokens[1]) == 0 {
+			continue
 		}
 		for _, ctrlr := range strings.Split(tokens[1], ",") {
 			// Remove prefix for cgroups with no controller, eg. systemd.
