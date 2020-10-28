@@ -976,7 +976,10 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		return nil, err
 	}
-	// Finally construct the overlay FD.
+	// Finally construct the overlay FD. Below this point, we don't perform
+	// cleanup (the file was created successfully even if we can no longer open
+	// it for some reason).
+	parent.dirents = nil
 	upperFlags := upperFD.StatusFlags()
 	fd := &regularFileFD{
 		copiedUp:    true,
@@ -987,8 +990,6 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 	upperFDOpts := upperFD.Options()
 	if err := fd.vfsfd.Init(fd, upperFlags, mnt, &child.vfsd, &upperFDOpts); err != nil {
 		upperFD.DecRef(ctx)
-		// Don't bother with cleanup; the file was created successfully, we
-		// just can't open it anymore for some reason.
 		return nil, err
 	}
 	parent.watches.Notify(ctx, childName, linux.IN_CREATE, 0 /* cookie */, vfs.PathEvent, false /* unlinked */)
