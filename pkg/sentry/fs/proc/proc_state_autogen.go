@@ -1089,6 +1089,55 @@ func (n *namespaceSymlink) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &n.t)
 }
 
+func (m *memData) StateTypeName() string {
+	return "pkg/sentry/fs/proc.memData"
+}
+
+func (m *memData) StateFields() []string {
+	return []string{
+		"SimpleFileInode",
+		"t",
+	}
+}
+
+func (m *memData) beforeSave() {}
+
+func (m *memData) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.SimpleFileInode)
+	stateSinkObject.Save(1, &m.t)
+}
+
+func (m *memData) afterLoad() {}
+
+func (m *memData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.SimpleFileInode)
+	stateSourceObject.Load(1, &m.t)
+}
+
+func (m *memDataFile) StateTypeName() string {
+	return "pkg/sentry/fs/proc.memDataFile"
+}
+
+func (m *memDataFile) StateFields() []string {
+	return []string{
+		"t",
+	}
+}
+
+func (m *memDataFile) beforeSave() {}
+
+func (m *memDataFile) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.t)
+}
+
+func (m *memDataFile) afterLoad() {}
+
+func (m *memDataFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.t)
+}
+
 func (md *mapsData) StateTypeName() string {
 	return "pkg/sentry/fs/proc.mapsData"
 }
@@ -1555,6 +1604,8 @@ func init() {
 	state.Register((*exe)(nil))
 	state.Register((*cwd)(nil))
 	state.Register((*namespaceSymlink)(nil))
+	state.Register((*memData)(nil))
+	state.Register((*memDataFile)(nil))
 	state.Register((*mapsData)(nil))
 	state.Register((*smapsData)(nil))
 	state.Register((*taskStatData)(nil))

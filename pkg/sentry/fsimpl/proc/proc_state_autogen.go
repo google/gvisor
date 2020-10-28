@@ -672,6 +672,82 @@ func (d *idMapData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &d.gids)
 }
 
+func (f *memInode) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.memInode"
+}
+
+func (f *memInode) StateFields() []string {
+	return []string{
+		"InodeAttrs",
+		"InodeNoStatFS",
+		"InodeNoopRefCount",
+		"InodeNotDirectory",
+		"InodeNotSymlink",
+		"task",
+		"locks",
+	}
+}
+
+func (f *memInode) beforeSave() {}
+
+func (f *memInode) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.InodeAttrs)
+	stateSinkObject.Save(1, &f.InodeNoStatFS)
+	stateSinkObject.Save(2, &f.InodeNoopRefCount)
+	stateSinkObject.Save(3, &f.InodeNotDirectory)
+	stateSinkObject.Save(4, &f.InodeNotSymlink)
+	stateSinkObject.Save(5, &f.task)
+	stateSinkObject.Save(6, &f.locks)
+}
+
+func (f *memInode) afterLoad() {}
+
+func (f *memInode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.InodeAttrs)
+	stateSourceObject.Load(1, &f.InodeNoStatFS)
+	stateSourceObject.Load(2, &f.InodeNoopRefCount)
+	stateSourceObject.Load(3, &f.InodeNotDirectory)
+	stateSourceObject.Load(4, &f.InodeNotSymlink)
+	stateSourceObject.Load(5, &f.task)
+	stateSourceObject.Load(6, &f.locks)
+}
+
+func (fd *memFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.memFD"
+}
+
+func (fd *memFD) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"LockFD",
+		"inode",
+		"offset",
+	}
+}
+
+func (fd *memFD) beforeSave() {}
+
+func (fd *memFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.LockFD)
+	stateSinkObject.Save(3, &fd.inode)
+	stateSinkObject.Save(4, &fd.offset)
+}
+
+func (fd *memFD) afterLoad() {}
+
+func (fd *memFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.LockFD)
+	stateSourceObject.Load(3, &fd.inode)
+	stateSourceObject.Load(4, &fd.offset)
+}
+
 func (d *mapsData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.mapsData"
 }
@@ -1941,6 +2017,8 @@ func init() {
 	state.Register((*commInode)(nil))
 	state.Register((*commData)(nil))
 	state.Register((*idMapData)(nil))
+	state.Register((*memInode)(nil))
+	state.Register((*memFD)(nil))
 	state.Register((*mapsData)(nil))
 	state.Register((*smapsData)(nil))
 	state.Register((*taskStatData)(nil))
