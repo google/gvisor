@@ -1369,6 +1369,12 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 		e.rcvMu.Unlock()
 	}
 
+	e.lastErrorMu.Lock()
+	hasError := e.lastError != nil
+	e.lastErrorMu.Unlock()
+	if hasError {
+		result |= waiter.EventErr
+	}
 	return result
 }
 
@@ -1468,14 +1474,16 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	if typ == stack.ControlPortUnreachable {
 		e.mu.RLock()
-		defer e.mu.RUnlock()
-
 		if e.state == StateConnected {
 			e.lastErrorMu.Lock()
-			defer e.lastErrorMu.Unlock()
-
 			e.lastError = tcpip.ErrConnectionRefused
+			e.lastErrorMu.Unlock()
+			e.mu.RUnlock()
+
+			e.waiterQueue.Notify(waiter.EventErr)
+			return
 		}
+		e.mu.RUnlock()
 	}
 }
 
