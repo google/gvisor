@@ -33,7 +33,6 @@ go_library(
         "host.go",
         "inode_refs.go",
         "ioctl_unsafe.go",
-        "mmap.go",
         "save_restore.go",
         "socket.go",
         "socket_iovec.go",
