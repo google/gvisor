@@ -16,7 +16,6 @@ package stack
 
 import (
 	"fmt"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -121,10 +120,10 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address, linkRes LinkA
 func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver, w *sleep.Waker) (NeighborEntry, <-chan struct{}, *tcpip.Error) {
 	if linkAddr, ok := linkRes.ResolveStaticAddress(remoteAddr); ok {
 		e := NeighborEntry{
-			Addr:      remoteAddr,
-			LinkAddr:  linkAddr,
-			State:     Static,
-			UpdatedAt: time.Now(),
+			Addr:           remoteAddr,
+			LinkAddr:       linkAddr,
+			State:          Static,
+			UpdatedAtNanos: 0,
 		}
 		return e, nil, nil
 	}
