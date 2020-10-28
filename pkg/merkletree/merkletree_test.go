@@ -22,54 +22,114 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func TestLayout(t *testing.T) {
 	testCases := []struct {
 		dataSize              int64
+		hashAlgorithms        int
 		dataAndTreeInSameFile bool
+		expectedDigestSize    int64
 		expectedLevelOffset   []int64
 	}{
 		{
 			dataSize:              100,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
+			expectedDigestSize:    32,
 			expectedLevelOffset:   []int64{0},
 		},
 		{
 			dataSize:              100,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA512,
+			dataAndTreeInSameFile: false,
+			expectedDigestSize:    64,
+			expectedLevelOffset:   []int64{0},
+		},
+		{
+			dataSize:              100,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: true,
+			expectedDigestSize:    32,
+			expectedLevelOffset:   []int64{usermem.PageSize},
+		},
+		{
+			dataSize:              100,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA512,
+			dataAndTreeInSameFile: true,
+			expectedDigestSize:    64,
 			expectedLevelOffset:   []int64{usermem.PageSize},
 		},
 		{
 			dataSize:              1000000,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
+			expectedDigestSize:    32,
 			expectedLevelOffset:   []int64{0, 2 * usermem.PageSize, 3 * usermem.PageSize},
 		},
 		{
 			dataSize:              1000000,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA512,
+			dataAndTreeInSameFile: false,
+			expectedDigestSize:    64,
+			expectedLevelOffset:   []int64{0, 4 * usermem.PageSize, 5 * usermem.PageSize},
+		},
+		{
+			dataSize:              1000000,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: true,
+			expectedDigestSize:    32,
 			expectedLevelOffset:   []int64{245 * usermem.PageSize, 247 * usermem.PageSize, 248 * usermem.PageSize},
 		},
 		{
+			dataSize:              1000000,
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA512,
+			dataAndTreeInSameFile: true,
+			expectedDigestSize:    64,
+			expectedLevelOffset:   []int64{245 * usermem.PageSize, 249 * usermem.PageSize, 250 * usermem.PageSize},
+		},
+		{
 			dataSize:              4096 * int64(usermem.PageSize),
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
+			expectedDigestSize:    32,
 			expectedLevelOffset:   []int64{0, 32 * usermem.PageSize, 33 * usermem.PageSize},
 		},
 		{
 			dataSize:              4096 * int64(usermem.PageSize),
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA512,
+			dataAndTreeInSameFile: false,
+			expectedDigestSize:    64,
+			expectedLevelOffset:   []int64{0, 64 * usermem.PageSize, 65 * usermem.PageSize},
+		},
+		{
+			dataSize:              4096 * int64(usermem.PageSize),
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: true,
+			expectedDigestSize:    32,
 			expectedLevelOffset:   []int64{4096 * usermem.PageSize, 4128 * usermem.PageSize, 4129 * usermem.PageSize},
+		},
+		{
+			dataSize:              4096 * int64(usermem.PageSize),
+			hashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA512,
+			dataAndTreeInSameFile: true,
+			expectedDigestSize:    64,
+			expectedLevelOffset:   []int64{4096 * usermem.PageSize, 4160 * usermem.PageSize, 4161 * usermem.PageSize},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%d", tc.dataSize), func(t *testing.T) {
-			l := InitLayout(tc.dataSize, tc.dataAndTreeInSameFile)
+			l, err := InitLayout(tc.dataSize, tc.hashAlgorithms, tc.dataAndTreeInSameFile)
+			if err != nil {
+				t.Fatalf("Failed to InitLayout: %v", err)
+			}
 			if l.blockSize != int64(usermem.PageSize) {
 				t.Errorf("Got blockSize %d, want %d", l.blockSize, usermem.PageSize)
 			}
-			if l.digestSize != sha256DigestSize {
+			if l.digestSize != tc.expectedDigestSize {
 				t.Errorf("Got digestSize %d, want %d", l.digestSize, sha256DigestSize)
 			}
 			if l.numLevels() != len(tc.expectedLevelOffset) {
@@ -118,24 +178,49 @@ func TestGenerate(t *testing.T) {
 	// The input data has size dataSize. It starts with the data in startWith,
 	// and all other bytes are zeroes.
 	testCases := []struct {
-		data         []byte
-		expectedHash []byte
+		data           []byte
+		hashAlgorithms int
+		expectedHash   []byte
 	}{
 		{
-			data:         bytes.Repeat([]byte{0}, usermem.PageSize),
-			expectedHash: []byte{64, 253, 58, 72, 192, 131, 82, 184, 193, 33, 108, 142, 43, 46, 179, 134, 244, 21, 29, 190, 14, 39, 66, 129, 6, 46, 200, 211, 30, 247, 191, 252},
+			data:           bytes.Repeat([]byte{0}, usermem.PageSize),
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
+			expectedHash:   []byte{64, 253, 58, 72, 192, 131, 82, 184, 193, 33, 108, 142, 43, 46, 179, 134, 244, 21, 29, 190, 14, 39, 66, 129, 6, 46, 200, 211, 30, 247, 191, 252},
 		},
 		{
-			data:         bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
-			expectedHash: []byte{182, 223, 218, 62, 65, 185, 160, 219, 93, 119, 186, 88, 205, 32, 122, 231, 173, 72, 78, 76, 65, 57, 177, 146, 159, 39, 44, 123, 230, 156, 97, 26},
+			data:           bytes.Repeat([]byte{0}, usermem.PageSize),
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA512,
+			expectedHash:   []byte{14, 27, 126, 158, 9, 94, 163, 51, 243, 162, 82, 167, 183, 127, 93, 121, 221, 23, 184, 59, 104, 166, 111, 49, 161, 195, 229, 111, 121, 201, 233, 68, 10, 154, 78, 142, 154, 236, 170, 156, 110, 167, 15, 144, 155, 97, 241, 235, 202, 233, 246, 217, 138, 88, 152, 179, 238, 46, 247, 185, 125, 20, 101, 201},
 		},
 		{
-			data:         []byte{'a'},
-			expectedHash: []byte{28, 201, 8, 36, 150, 178, 111, 5, 193, 212, 129, 205, 206, 124, 211, 90, 224, 142, 81, 183, 72, 165, 243, 240, 242, 241, 76, 127, 101, 61, 63, 11},
+			data:           bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
+			expectedHash:   []byte{182, 223, 218, 62, 65, 185, 160, 219, 93, 119, 186, 88, 205, 32, 122, 231, 173, 72, 78, 76, 65, 57, 177, 146, 159, 39, 44, 123, 230, 156, 97, 26},
 		},
 		{
-			data:         bytes.Repeat([]byte{'a'}, usermem.PageSize),
-			expectedHash: []byte{106, 58, 160, 152, 41, 68, 38, 108, 245, 74, 177, 84, 64, 193, 19, 176, 249, 86, 27, 193, 85, 164, 99, 240, 79, 104, 148, 222, 76, 46, 191, 79},
+			data:           bytes.Repeat([]byte{0}, 128*usermem.PageSize+1),
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA512,
+			expectedHash:   []byte{55, 204, 240, 1, 224, 252, 58, 131, 251, 174, 45, 140, 107, 57, 118, 11, 18, 236, 203, 204, 19, 59, 27, 196, 3, 78, 21, 7, 22, 98, 197, 128, 17, 128, 90, 122, 54, 83, 253, 108, 156, 67, 59, 229, 236, 241, 69, 88, 99, 44, 127, 109, 204, 183, 150, 232, 187, 57, 228, 137, 209, 235, 241, 172},
+		},
+		{
+			data:           []byte{'a'},
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
+			expectedHash:   []byte{28, 201, 8, 36, 150, 178, 111, 5, 193, 212, 129, 205, 206, 124, 211, 90, 224, 142, 81, 183, 72, 165, 243, 240, 242, 241, 76, 127, 101, 61, 63, 11},
+		},
+		{
+			data:           []byte{'a'},
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA512,
+			expectedHash:   []byte{207, 233, 114, 94, 113, 212, 243, 160, 59, 232, 226, 77, 28, 81, 176, 61, 211, 213, 222, 190, 148, 196, 90, 166, 237, 56, 113, 148, 230, 154, 23, 105, 14, 97, 144, 211, 12, 122, 226, 207, 167, 203, 136, 193, 38, 249, 227, 187, 92, 238, 101, 97, 170, 255, 246, 209, 246, 98, 241, 150, 175, 253, 173, 206},
+		},
+		{
+			data:           bytes.Repeat([]byte{'a'}, usermem.PageSize),
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
+			expectedHash:   []byte{106, 58, 160, 152, 41, 68, 38, 108, 245, 74, 177, 84, 64, 193, 19, 176, 249, 86, 27, 193, 85, 164, 99, 240, 79, 104, 148, 222, 76, 46, 191, 79},
+		},
+		{
+			data:           bytes.Repeat([]byte{'a'}, usermem.PageSize),
+			hashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA512,
+			expectedHash:   []byte{110, 103, 29, 250, 27, 211, 235, 119, 112, 65, 49, 156, 6, 92, 66, 105, 133, 1, 187, 172, 169, 13, 186, 34, 105, 72, 252, 131, 12, 159, 91, 188, 79, 184, 240, 227, 40, 164, 72, 193, 65, 31, 227, 153, 191, 6, 117, 42, 82, 122, 33, 255, 92, 215, 215, 249, 2, 131, 170, 134, 39, 192, 222, 33},
 		},
 	}
 
@@ -149,6 +234,7 @@ func TestGenerate(t *testing.T) {
 					Mode:                  defaultMode,
 					UID:                   defaultUID,
 					GID:                   defaultGID,
+					HashAlgorithms:        tc.hashAlgorithms,
 					TreeReader:            &tree,
 					TreeWriter:            &tree,
 					DataAndTreeInSameFile: dataAndTreeInSameFile,
@@ -348,77 +434,81 @@ func TestVerify(t *testing.T) {
 			// Generate random bytes in data.
 			rand.Read(data)
 
-			for _, dataAndTreeInSameFile := range []bool{false, true} {
-				var tree bytesReadWriter
-				genParams := GenerateParams{
-					Size:                  int64(len(data)),
-					Name:                  defaultName,
-					Mode:                  defaultMode,
-					UID:                   defaultUID,
-					GID:                   defaultGID,
-					TreeReader:            &tree,
-					TreeWriter:            &tree,
-					DataAndTreeInSameFile: dataAndTreeInSameFile,
-				}
-				if dataAndTreeInSameFile {
-					tree.Write(data)
-					genParams.File = &tree
-				} else {
-					genParams.File = &bytesReadWriter{
-						bytes: data,
+			for _, hashAlgorithms := range []int{linux.FS_VERITY_HASH_ALG_SHA256, linux.FS_VERITY_HASH_ALG_SHA512} {
+				for _, dataAndTreeInSameFile := range []bool{false, true} {
+					var tree bytesReadWriter
+					genParams := GenerateParams{
+						Size:                  int64(len(data)),
+						Name:                  defaultName,
+						Mode:                  defaultMode,
+						UID:                   defaultUID,
+						GID:                   defaultGID,
+						HashAlgorithms:        hashAlgorithms,
+						TreeReader:            &tree,
+						TreeWriter:            &tree,
+						DataAndTreeInSameFile: dataAndTreeInSameFile,
 					}
-				}
-				hash, err := Generate(&genParams)
-				if err != nil {
-					t.Fatalf("Generate failed: %v", err)
-				}
+					if dataAndTreeInSameFile {
+						tree.Write(data)
+						genParams.File = &tree
+					} else {
+						genParams.File = &bytesReadWriter{
+							bytes: data,
+						}
+					}
+					hash, err := Generate(&genParams)
+					if err != nil {
+						t.Fatalf("Generate failed: %v", err)
+					}
 
-				// Flip a bit in data and checks Verify results.
-				var buf bytes.Buffer
-				data[tc.modifyByte] ^= 1
-				verifyParams := VerifyParams{
-					Out:                   &buf,
-					File:                  bytes.NewReader(data),
-					Tree:                  &tree,
-					Size:                  tc.dataSize,
-					Name:                  defaultName,
-					Mode:                  defaultMode,
-					UID:                   defaultUID,
-					GID:                   defaultGID,
-					ReadOffset:            tc.verifyStart,
-					ReadSize:              tc.verifySize,
-					Expected:              hash,
-					DataAndTreeInSameFile: dataAndTreeInSameFile,
-				}
-				if tc.modifyName {
-					verifyParams.Name = defaultName + "abc"
-				}
-				if tc.modifyMode {
-					verifyParams.Mode = defaultMode + 1
-				}
-				if tc.modifyUID {
-					verifyParams.UID = defaultUID + 1
-				}
-				if tc.modifyGID {
-					verifyParams.GID = defaultGID + 1
-				}
-				if tc.shouldSucceed {
-					n, err := Verify(&verifyParams)
-					if err != nil && err != io.EOF {
-						t.Errorf("Verification failed when expected to succeed: %v", err)
+					// Flip a bit in data and checks Verify results.
+					var buf bytes.Buffer
+					data[tc.modifyByte] ^= 1
+					verifyParams := VerifyParams{
+						Out:                   &buf,
+						File:                  bytes.NewReader(data),
+						Tree:                  &tree,
+						Size:                  tc.dataSize,
+						Name:                  defaultName,
+						Mode:                  defaultMode,
+						UID:                   defaultUID,
+						GID:                   defaultGID,
+						HashAlgorithms:        hashAlgorithms,
+						ReadOffset:            tc.verifyStart,
+						ReadSize:              tc.verifySize,
+						Expected:              hash,
+						DataAndTreeInSameFile: dataAndTreeInSameFile,
 					}
-					if n != tc.verifySize {
-						t.Errorf("Got Verify output size %d, want %d", n, tc.verifySize)
+					if tc.modifyName {
+						verifyParams.Name = defaultName + "abc"
 					}
-					if int64(buf.Len()) != tc.verifySize {
-						t.Errorf("Got Verify output buf size %d, want %d,", buf.Len(), tc.verifySize)
+					if tc.modifyMode {
+						verifyParams.Mode = defaultMode + 1
 					}
-					if !bytes.Equal(data[tc.verifyStart:tc.verifyStart+tc.verifySize], buf.Bytes()) {
-						t.Errorf("Incorrect output buf from Verify")
+					if tc.modifyUID {
+						verifyParams.UID = defaultUID + 1
 					}
-				} else {
-					if _, err := Verify(&verifyParams); err == nil {
-						t.Errorf("Verification succeeded when expected to fail")
+					if tc.modifyGID {
+						verifyParams.GID = defaultGID + 1
+					}
+					if tc.shouldSucceed {
+						n, err := Verify(&verifyParams)
+						if err != nil && err != io.EOF {
+							t.Errorf("Verification failed when expected to succeed: %v", err)
+						}
+						if n != tc.verifySize {
+							t.Errorf("Got Verify output size %d, want %d", n, tc.verifySize)
+						}
+						if int64(buf.Len()) != tc.verifySize {
+							t.Errorf("Got Verify output buf size %d, want %d,", buf.Len(), tc.verifySize)
+						}
+						if !bytes.Equal(data[tc.verifyStart:tc.verifyStart+tc.verifySize], buf.Bytes()) {
+							t.Errorf("Incorrect output buf from Verify")
+						}
+					} else {
+						if _, err := Verify(&verifyParams); err == nil {
+							t.Errorf("Verification succeeded when expected to fail")
+						}
 					}
 				}
 			}
@@ -435,87 +525,91 @@ func TestVerifyRandom(t *testing.T) {
 	// Generate random bytes in data.
 	rand.Read(data)
 
-	for _, dataAndTreeInSameFile := range []bool{false, true} {
-		var tree bytesReadWriter
-		genParams := GenerateParams{
-			Size:                  int64(len(data)),
-			Name:                  defaultName,
-			Mode:                  defaultMode,
-			UID:                   defaultUID,
-			GID:                   defaultGID,
-			TreeReader:            &tree,
-			TreeWriter:            &tree,
-			DataAndTreeInSameFile: dataAndTreeInSameFile,
-		}
-
-		if dataAndTreeInSameFile {
-			tree.Write(data)
-			genParams.File = &tree
-		} else {
-			genParams.File = &bytesReadWriter{
-				bytes: data,
+	for _, hashAlgorithms := range []int{linux.FS_VERITY_HASH_ALG_SHA256, linux.FS_VERITY_HASH_ALG_SHA512} {
+		for _, dataAndTreeInSameFile := range []bool{false, true} {
+			var tree bytesReadWriter
+			genParams := GenerateParams{
+				Size:                  int64(len(data)),
+				Name:                  defaultName,
+				Mode:                  defaultMode,
+				UID:                   defaultUID,
+				GID:                   defaultGID,
+				HashAlgorithms:        hashAlgorithms,
+				TreeReader:            &tree,
+				TreeWriter:            &tree,
+				DataAndTreeInSameFile: dataAndTreeInSameFile,
 			}
-		}
-		hash, err := Generate(&genParams)
-		if err != nil {
-			t.Fatalf("Generate failed: %v", err)
-		}
 
-		// Pick a random portion of data.
-		start := rand.Int63n(dataSize - 1)
-		size := rand.Int63n(dataSize) + 1
+			if dataAndTreeInSameFile {
+				tree.Write(data)
+				genParams.File = &tree
+			} else {
+				genParams.File = &bytesReadWriter{
+					bytes: data,
+				}
+			}
+			hash, err := Generate(&genParams)
+			if err != nil {
+				t.Fatalf("Generate failed: %v", err)
+			}
 
-		var buf bytes.Buffer
-		verifyParams := VerifyParams{
-			Out:                   &buf,
-			File:                  bytes.NewReader(data),
-			Tree:                  &tree,
-			Size:                  dataSize,
-			Name:                  defaultName,
-			Mode:                  defaultMode,
-			UID:                   defaultUID,
-			GID:                   defaultGID,
-			ReadOffset:            start,
-			ReadSize:              size,
-			Expected:              hash,
-			DataAndTreeInSameFile: dataAndTreeInSameFile,
-		}
+			// Pick a random portion of data.
+			start := rand.Int63n(dataSize - 1)
+			size := rand.Int63n(dataSize) + 1
 
-		// Checks that the random portion of data from the original data is
-		// verified successfully.
-		n, err := Verify(&verifyParams)
-		if err != nil && err != io.EOF {
-			t.Errorf("Verification failed for correct data: %v", err)
-		}
-		if size > dataSize-start {
-			size = dataSize - start
-		}
-		if n != size {
-			t.Errorf("Got Verify output size %d, want %d", n, size)
-		}
-		if int64(buf.Len()) != size {
-			t.Errorf("Got Verify output buf size %d, want %d", buf.Len(), size)
-		}
-		if !bytes.Equal(data[start:start+size], buf.Bytes()) {
-			t.Errorf("Incorrect output buf from Verify")
-		}
+			var buf bytes.Buffer
+			verifyParams := VerifyParams{
+				Out:                   &buf,
+				File:                  bytes.NewReader(data),
+				Tree:                  &tree,
+				Size:                  dataSize,
+				Name:                  defaultName,
+				Mode:                  defaultMode,
+				UID:                   defaultUID,
+				GID:                   defaultGID,
+				HashAlgorithms:        hashAlgorithms,
+				ReadOffset:            start,
+				ReadSize:              size,
+				Expected:              hash,
+				DataAndTreeInSameFile: dataAndTreeInSameFile,
+			}
 
-		// Verify that modified metadata should fail verification.
-		buf.Reset()
-		verifyParams.Name = defaultName + "abc"
-		if _, err := Verify(&verifyParams); err == nil {
-			t.Error("Verify succeeded for modified metadata, expect failure")
-		}
+			// Checks that the random portion of data from the original data is
+			// verified successfully.
+			n, err := Verify(&verifyParams)
+			if err != nil && err != io.EOF {
+				t.Errorf("Verification failed for correct data: %v", err)
+			}
+			if size > dataSize-start {
+				size = dataSize - start
+			}
+			if n != size {
+				t.Errorf("Got Verify output size %d, want %d", n, size)
+			}
+			if int64(buf.Len()) != size {
+				t.Errorf("Got Verify output buf size %d, want %d", buf.Len(), size)
+			}
+			if !bytes.Equal(data[start:start+size], buf.Bytes()) {
+				t.Errorf("Incorrect output buf from Verify")
+			}
 
-		// Flip a random bit in randPortion, and check that verification fails.
-		buf.Reset()
-		randBytePos := rand.Int63n(size)
-		data[start+randBytePos] ^= 1
-		verifyParams.File = bytes.NewReader(data)
-		verifyParams.Name = defaultName
+			// Verify that modified metadata should fail verification.
+			buf.Reset()
+			verifyParams.Name = defaultName + "abc"
+			if _, err := Verify(&verifyParams); err == nil {
+				t.Error("Verify succeeded for modified metadata, expect failure")
+			}
 
-		if _, err := Verify(&verifyParams); err == nil {
-			t.Error("Verification succeeded for modified data, expect failure")
+			// Flip a random bit in randPortion, and check that verification fails.
+			buf.Reset()
+			randBytePos := rand.Int63n(size)
+			data[start+randBytePos] ^= 1
+			verifyParams.File = bytes.NewReader(data)
+			verifyParams.Name = defaultName
+
+			if _, err := Verify(&verifyParams); err == nil {
+				t.Error("Verification succeeded for modified data, expect failure")
+			}
 		}
 	}
 }

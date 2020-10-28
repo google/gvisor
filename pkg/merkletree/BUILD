@@ -6,12 +6,18 @@ go_library(
     name = "merkletree",
     srcs = ["merkletree.go"],
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/usermem"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/usermem",
+    ],
 )
 
 go_test(
     name = "merkletree_test",
     srcs = ["merkletree_test.go"],
     library = ":merkletree",
-    deps = ["//pkg/usermem"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/usermem",
+    ],
 )
