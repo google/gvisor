@@ -600,6 +600,8 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 	params := &merkletree.GenerateParams{
 		TreeReader: &merkleReader,
 		TreeWriter: &merkleWriter,
+		//TODO(b/156980949): Support passing other hash algorithms.
+		HashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
 	}
 
 	switch atomic.LoadUint32(&fd.d.mode) & linux.S_IFMT {
@@ -836,14 +838,16 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	}
 
 	n, err := merkletree.Verify(&merkletree.VerifyParams{
-		Out:                   dst.Writer(ctx),
-		File:                  &dataReader,
-		Tree:                  &merkleReader,
-		Size:                  int64(size),
-		Name:                  fd.d.name,
-		Mode:                  fd.d.mode,
-		UID:                   fd.d.uid,
-		GID:                   fd.d.gid,
+		Out:  dst.Writer(ctx),
+		File: &dataReader,
+		Tree: &merkleReader,
+		Size: int64(size),
+		Name: fd.d.name,
+		Mode: fd.d.mode,
+		UID:  fd.d.uid,
+		GID:  fd.d.gid,
+		//TODO(b/156980949): Support passing other hash algorithms.
+		HashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 		ReadOffset:            offset,
 		ReadSize:              dst.NumBytes(),
 		Expected:              fd.d.hash,

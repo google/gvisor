@@ -18,21 +18,32 @@ package merkletree
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
 	"io"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
 	// sha256DigestSize specifies the digest size of a SHA256 hash.
 	sha256DigestSize = 32
+	// sha512DigestSize specifies the digest size of a SHA512 hash.
+	sha512DigestSize = 64
 )
 
 // DigestSize returns the size (in bytes) of a digest.
-// TODO(b/156980949): Allow config other hash methods (SHA384/SHA512).
-func DigestSize() int {
-	return sha256DigestSize
+// TODO(b/156980949): Allow config SHA384.
+func DigestSize(hashAlgorithm int) int {
+	switch hashAlgorithm {
+	case linux.FS_VERITY_HASH_ALG_SHA256:
+		return sha256DigestSize
+	case linux.FS_VERITY_HASH_ALG_SHA512:
+		return sha512DigestSize
+	default:
+		return -1
+	}
 }
 
 // Layout defines the scale of a Merkle tree.
@@ -51,11 +62,19 @@ type Layout struct {
 
 // InitLayout initializes and returns a new Layout object describing the structure
 // of a tree. dataSize specifies the size of input data in bytes.
-func InitLayout(dataSize int64, dataAndTreeInSameFile bool) Layout {
+func InitLayout(dataSize int64, hashAlgorithms int, dataAndTreeInSameFile bool) (Layout, error) {
 	layout := Layout{
 		blockSize: usermem.PageSize,
-		// TODO(b/156980949): Allow config other hash methods (SHA384/SHA512).
-		digestSize: sha256DigestSize,
+	}
+
+	// TODO(b/156980949): Allow config SHA384.
+	switch hashAlgorithms {
+	case linux.FS_VERITY_HASH_ALG_SHA256:
+		layout.digestSize = sha256DigestSize
+	case linux.FS_VERITY_HASH_ALG_SHA512:
+		layout.digestSize = sha512DigestSize
+	default:
+		return Layout{}, fmt.Errorf("unexpected hash algorithms")
 	}
 
 	// treeStart is the offset (in bytes) of the first level of the tree in
@@ -88,7 +107,7 @@ func InitLayout(dataSize int64, dataAndTreeInSameFile bool) Layout {
 	}
 	layout.levelOffset = append(layout.levelOffset, treeStart+offset*layout.blockSize)
 
-	return layout
+	return layout, nil
 }
 
 // hashesPerBlock() returns the number of digests in each block.  For example,
@@ -139,12 +158,33 @@ func (d *VerityDescriptor) String() string {
 }
 
 // verify generates a hash from d, and compares it with expected.
-func (d *VerityDescriptor) verify(expected []byte) error {
-	h := sha256.Sum256([]byte(d.String()))
+func (d *VerityDescriptor) verify(expected []byte, hashAlgorithms int) error {
+	h, err := hashData([]byte(d.String()), hashAlgorithms)
+	if err != nil {
+		return err
+	}
 	if !bytes.Equal(h[:], expected) {
 		return fmt.Errorf("unexpected root hash")
 	}
 	return nil
+
+}
+
+// hashData hashes data and returns the result hash based on the hash
+// algorithms.
+func hashData(data []byte, hashAlgorithms int) ([]byte, error) {
+	var digest []byte
+	switch hashAlgorithms {
+	case linux.FS_VERITY_HASH_ALG_SHA256:
+		digestArray := sha256.Sum256(data)
+		digest = digestArray[:]
+	case linux.FS_VERITY_HASH_ALG_SHA512:
+		digestArray := sha512.Sum512(data)
+		digest = digestArray[:]
+	default:
+		return nil, fmt.Errorf("unexpected hash algorithms")
+	}
+	return digest, nil
 }
 
 // GenerateParams contains the parameters used to generate a Merkle tree.
@@ -161,6 +201,8 @@ type GenerateParams struct {
 	UID uint32
 	// GID is the group ID of the target file.
 	GID uint32
+	// HashAlgorithms is the algorithms used to hash data.
+	HashAlgorithms int
 	// TreeReader is a reader for the Merkle tree.
 	TreeReader io.ReaderAt
 	// TreeWriter is a writer for the Merkle tree.
@@ -176,7 +218,10 @@ type GenerateParams struct {
 // Generate returns a hash of a VerityDescriptor, which contains the file
 // metadata and the hash from file content.
 func Generate(params *GenerateParams) ([]byte, error) {
-	layout := InitLayout(params.Size, params.DataAndTreeInSameFile)
+	layout, err := InitLayout(params.Size, params.HashAlgorithms, params.DataAndTreeInSameFile)
+	if err != nil {
+		return nil, err
+	}
 
 	numBlocks := (params.Size + layout.blockSize - 1) / layout.blockSize
 
@@ -218,10 +263,13 @@ func Generate(params *GenerateParams) ([]byte, error) {
 				return nil, err
 			}
 			// Hash the bytes in buf.
-			digest := sha256.Sum256(buf)
+			digest, err := hashData(buf, params.HashAlgorithms)
+			if err != nil {
+				return nil, err
+			}
 
 			if level == layout.rootLevel() {
-				root = digest[:]
+				root = digest
 			}
 
 			// Write the generated hash to the end of the tree file.
@@ -246,8 +294,7 @@ func Generate(params *GenerateParams) ([]byte, error) {
 		GID:      params.GID,
 		RootHash: root,
 	}
-	ret := sha256.Sum256([]byte(descriptor.String()))
-	return ret[:], nil
+	return hashData([]byte(descriptor.String()), params.HashAlgorithms)
 }
 
 // VerifyParams contains the params used to verify a portion of a file against
@@ -269,6 +316,8 @@ type VerifyParams struct {
 	UID uint32
 	// GID is the group ID of the target file.
 	GID uint32
+	// HashAlgorithms is the algorithms used to hash data.
+	HashAlgorithms int
 	// ReadOffset is the offset of the data range to be verified.
 	ReadOffset int64
 	// ReadSize is the size of the data range to be verified.
@@ -298,7 +347,7 @@ func verifyMetadata(params *VerifyParams, layout *Layout) error {
 		GID:      params.GID,
 		RootHash: root,
 	}
-	return descriptor.verify(params.Expected)
+	return descriptor.verify(params.Expected, params.HashAlgorithms)
 }
 
 // Verify verifies the content read from data with offset. The content is
@@ -313,7 +362,10 @@ func Verify(params *VerifyParams) (int64, error) {
 	if params.ReadSize < 0 {
 		return 0, fmt.Errorf("unexpected read size: %d", params.ReadSize)
 	}
-	layout := InitLayout(int64(params.Size), params.DataAndTreeInSameFile)
+	layout, err := InitLayout(int64(params.Size), params.HashAlgorithms, params.DataAndTreeInSameFile)
+	if err != nil {
+		return 0, err
+	}
 	if params.ReadSize == 0 {
 		return 0, verifyMetadata(params, &layout)
 	}
@@ -354,7 +406,7 @@ func Verify(params *VerifyParams) (int64, error) {
 			UID:  params.UID,
 			GID:  params.GID,
 		}
-		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.Expected); err != nil {
+		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.HashAlgorithms, params.Expected); err != nil {
 			return 0, err
 		}
 
@@ -395,7 +447,7 @@ func Verify(params *VerifyParams) (int64, error) {
 // fails if the calculated hash from block is different from any level of
 // hashes stored in tree. And the final root hash is compared with
 // expected.
-func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout, dataBlock []byte, blockIndex int64, expected []byte) error {
+func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout, dataBlock []byte, blockIndex int64, hashAlgorithms int, expected []byte) error {
 	if len(dataBlock) != int(layout.blockSize) {
 		return fmt.Errorf("incorrect block size")
 	}
@@ -406,8 +458,11 @@ func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout,
 	for level := 0; level < layout.numLevels(); level++ {
 		// Calculate hash.
 		if level == 0 {
-			digestArray := sha256.Sum256(dataBlock)
-			digest = digestArray[:]
+			h, err := hashData(dataBlock, hashAlgorithms)
+			if err != nil {
+				return err
+			}
+			digest = h
 		} else {
 			// Read a block in previous level that contains the
 			// hash we just generated, and generate a next level
@@ -415,8 +470,11 @@ func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout,
 			if _, err := tree.ReadAt(treeBlock, layout.blockOffset(level-1, blockIndex)); err != nil {
 				return err
 			}
-			digestArray := sha256.Sum256(treeBlock)
-			digest = digestArray[:]
+			h, err := hashData(treeBlock, hashAlgorithms)
+			if err != nil {
+				return err
+			}
+			digest = h
 		}
 
 		// Read the digest for the current block and store in
@@ -434,5 +492,5 @@ func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout,
 	// Verification for the tree succeeded. Now hash the descriptor with
 	// the root hash and compare it with expected.
 	descriptor.RootHash = digest
-	return descriptor.verify(expected)
+	return descriptor.verify(expected, hashAlgorithms)
 }

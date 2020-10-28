@@ -267,16 +267,18 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// Verify returns with success.
 	var buf bytes.Buffer
 	if _, err := merkletree.Verify(&merkletree.VerifyParams{
-		Out:                   &buf,
-		File:                  &fdReader,
-		Tree:                  &fdReader,
-		Size:                  int64(parentSize),
-		Name:                  parent.name,
-		Mode:                  uint32(parentStat.Mode),
-		UID:                   parentStat.UID,
-		GID:                   parentStat.GID,
+		Out:  &buf,
+		File: &fdReader,
+		Tree: &fdReader,
+		Size: int64(parentSize),
+		Name: parent.name,
+		Mode: uint32(parentStat.Mode),
+		UID:  parentStat.UID,
+		GID:  parentStat.GID,
+		//TODO(b/156980949): Support passing other hash algorithms.
+		HashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
 		ReadOffset:            int64(offset),
-		ReadSize:              int64(merkletree.DigestSize()),
+		ReadSize:              int64(merkletree.DigestSize(linux.FS_VERITY_HASH_ALG_SHA256)),
 		Expected:              parent.hash,
 		DataAndTreeInSameFile: true,
 	}); err != nil && err != io.EOF {
@@ -342,14 +344,16 @@ func (fs *filesystem) verifyStat(ctx context.Context, d *dentry, stat linux.Stat
 
 	var buf bytes.Buffer
 	params := &merkletree.VerifyParams{
-		Out:        &buf,
-		Tree:       &fdReader,
-		Size:       int64(size),
-		Name:       d.name,
-		Mode:       uint32(stat.Mode),
-		UID:        stat.UID,
-		GID:        stat.GID,
-		ReadOffset: 0,
+		Out:  &buf,
+		Tree: &fdReader,
+		Size: int64(size),
+		Name: d.name,
+		Mode: uint32(stat.Mode),
+		UID:  stat.UID,
+		GID:  stat.GID,
+		//TODO(b/156980949): Support passing other hash algorithms.
+		HashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
+		ReadOffset:     0,
 		// Set read size to 0 so only the metadata is verified.
 		ReadSize:              0,
 		Expected:              d.hash,
