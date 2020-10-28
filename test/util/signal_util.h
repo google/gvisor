@@ -88,7 +88,7 @@ inline void FixupFault(ucontext_t* ctx) {
 #elif __aarch64__
 inline void Fault() {
   // Zero and dereference x0.
-  asm("mov xzr, x0\r\n"
+  asm("mov x0, xzr\r\n"
       "str xzr, [x0]\r\n"
       :
       :
