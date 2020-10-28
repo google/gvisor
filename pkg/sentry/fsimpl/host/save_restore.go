@@ -68,11 +68,3 @@ func (i *inode) afterLoad() {
 		}
 	}
 }
-
-// afterLoad is invoked by stateify.
-func (i *inodePlatformFile) afterLoad() {
-	if i.fileMapper.IsInited() {
-		// Ensure that we don't call i.fileMapper.Init() again.
-		i.fileMapperInitOnce.Do(func() {})
-	}
-}
