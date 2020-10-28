@@ -48,11 +48,11 @@ const (
 )
 
 // eventDiffOpts are the options passed to cmp.Diff to compare entry events.
-// The UpdatedAt field is ignored due to a lack of a deterministic method to
-// predict the time that an event will be dispatched.
+// The UpdatedAtNanos field is ignored due to a lack of a deterministic method
+// to predict the time that an event will be dispatched.
 func eventDiffOpts() []cmp.Option {
 	return []cmp.Option{
-		cmpopts.IgnoreFields(NeighborEntry{}, "UpdatedAt"),
+		cmpopts.IgnoreFields(NeighborEntry{}, "UpdatedAtNanos"),
 	}
 }
 
@@ -399,7 +399,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 	if got, want := e.neigh.State, Incomplete; got != want {
 		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
 	}
-	updatedAt := e.neigh.UpdatedAt
+	updatedAtNanos := e.neigh.UpdatedAtNanos
 	e.mu.Unlock()
 
 	clock.Advance(c.RetransmitTimer)
@@ -426,7 +426,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.UpdatedAt, updatedAt; got != want {
+	if got, want := e.neigh.UpdatedAtNanos, updatedAtNanos; got != want {
 		t.Errorf("got e.neigh.UpdatedAt = %q, want = %q", got, want)
 	}
 	e.mu.Unlock()
@@ -480,7 +480,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if got, notWant := e.neigh.UpdatedAt, updatedAt; got == notWant {
+	if got, notWant := e.neigh.UpdatedAtNanos, updatedAtNanos; got == notWant {
 		t.Errorf("expected e.neigh.UpdatedAt to change, got = %q", got)
 	}
 	e.mu.Unlock()
