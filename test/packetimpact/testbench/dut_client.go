@@ -19,7 +19,7 @@ import (
 	pb "gvisor.dev/gvisor/test/packetimpact/proto/posix_server_go_proto"
 )
 
-// PosixClient is a gRPC client for the Posix service.
+// POSIXClient is a gRPC client for the Posix service.
 type POSIXClient pb.PosixClient
 
 // NewPOSIXClient makes a new gRPC client for the POSIX service.
