@@ -236,6 +236,25 @@ func TestV6ConnectWhenBoundToWildcard(t *testing.T) {
 	testV6Connect(t, c)
 }
 
+func TestStackV6OnlyConnectWhenBoundToWildcard(t *testing.T) {
+	c := context.NewWithOpts(t, context.Options{
+		EnableV6: true,
+		MTU:      defaultMTU,
+	})
+	defer c.Cleanup()
+
+	// Create a v6 endpoint but don't set the v6-only TCP option.
+	c.CreateV6Endpoint(false)
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+
+	// Test the connection request.
+	testV6Connect(t, c)
+}
+
 func TestV6ConnectWhenBoundToLocalAddress(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
