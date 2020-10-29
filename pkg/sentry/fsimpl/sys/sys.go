@@ -102,7 +102,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"power":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	})
 	var rootD kernfs.Dentry
-	rootD.Init(&fs.Filesystem, root)
+	rootD.InitRoot(&fs.Filesystem, root)
 	return fs.VFSFilesystem(), rootD.VFSDentry(), nil
 }
 

@@ -94,7 +94,7 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 
 	inode := procfs.newTasksInode(ctx, k, pidns, cgroups)
 	var dentry kernfs.Dentry
-	dentry.Init(&procfs.Filesystem, inode)
+	dentry.InitRoot(&procfs.Filesystem, inode)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil
 }
 

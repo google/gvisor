@@ -16,15 +16,11 @@ package refsvfs2
 
 import (
 	"fmt"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
 	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
-
-// TODO(gvisor.dev/issue/1193): re-enable once kernfs refs are fixed.
-var ignored []string = []string{"kernfs.", "proc.", "sys.", "devpts.", "fuse."}
 
 var (
 	// liveObjects is a global map of reference-counted objects. Objects are
@@ -60,11 +56,6 @@ func leakCheckEnabled() bool {
 // Register adds obj to the live object map.
 func Register(obj CheckedObject) {
 	if leakCheckEnabled() {
-		for _, str := range ignored {
-			if strings.Contains(obj.RefType(), str) {
-				return
-			}
-		}
 		liveObjectsMu.Lock()
 		if _, ok := liveObjects[obj]; ok {
 			panic(fmt.Sprintf("Unexpected entry in leak checking map: reference %p already added", obj))
@@ -81,11 +72,6 @@ func Unregister(obj CheckedObject) {
 		liveObjectsMu.Lock()
 		defer liveObjectsMu.Unlock()
 		if _, ok := liveObjects[obj]; !ok {
-			for _, str := range ignored {
-				if strings.Contains(obj.RefType(), str) {
-					return
-				}
-			}
 			panic(fmt.Sprintf("Expected to find entry in leak checking map for reference %p", obj))
 		}
 		delete(liveObjects, obj)
