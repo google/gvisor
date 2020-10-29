@@ -210,6 +210,15 @@ iptables-tests: load-iptables
 	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
 .PHONY: iptables-tests
 
+# Run the iptables tests with runsc only. Useful for developing to skip runc
+# testing.
+iptables-runsc-tests: load-iptables
+	@sudo modprobe iptable_filter
+	@sudo modprobe ip6table_filter
+	@$(call submake,install-test-runtime RUNTIME="iptables" ARGS="--net-raw")
+	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
+.PHONY: iptables-runsc-tests
+
 packetdrill-tests: load-packetdrill
 	@$(call submake,install-test-runtime RUNTIME="packetdrill")
 	@$(call submake,test-runtime RUNTIME="packetdrill" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetdrill, tests(//...))')")
