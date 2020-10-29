@@ -118,6 +118,10 @@ func (rt *returnTarget) id() targetID {
 
 type redirectTarget struct {
 	stack.RedirectTarget
+
+	// addr must be (un)marshalled when reading and writing the target to
+	// userspace, but does not affect behavior.
+	addr tcpip.Address
 }
 
 func (rt *redirectTarget) id() targetID {
@@ -296,7 +300,7 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	binary.Unmarshal(buf, usermem.ByteOrder, &rt)
 
 	// Copy linux.XTRedirectTarget to stack.RedirectTarget.
-	target := redirectTarget{stack.RedirectTarget{
+	target := redirectTarget{RedirectTarget: stack.RedirectTarget{
 		NetworkProtocol: filter.NetworkProtocol(),
 	}}
 
@@ -326,7 +330,7 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	target.Addr = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
+	target.addr = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
 	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
 
 	return &target, nil
@@ -361,8 +365,8 @@ func (*nfNATTargetMaker) marshal(target target) []byte {
 		},
 	}
 	copy(nt.Target.Name[:], RedirectTargetName)
-	copy(nt.Range.MinAddr[:], rt.Addr)
-	copy(nt.Range.MaxAddr[:], rt.Addr)
+	copy(nt.Range.MinAddr[:], rt.addr)
+	copy(nt.Range.MaxAddr[:], rt.addr)
 
 	nt.Range.MinProto = htons(rt.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
@@ -403,11 +407,13 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	target := redirectTarget{stack.RedirectTarget{
-		NetworkProtocol: filter.NetworkProtocol(),
-		Addr:            tcpip.Address(natRange.MinAddr[:]),
-		Port:            ntohs(natRange.MinProto),
-	}}
+	target := redirectTarget{
+		RedirectTarget: stack.RedirectTarget{
+			NetworkProtocol: filter.NetworkProtocol(),
+			Port:            ntohs(natRange.MinProto),
+		},
+		addr: tcpip.Address(natRange.MinAddr[:]),
+	}
 
 	return &target, nil
 }
