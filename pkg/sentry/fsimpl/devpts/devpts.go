@@ -113,7 +113,7 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	root.EnableLeakCheck()
 
 	var rootD kernfs.Dentry
-	rootD.Init(&fs.Filesystem, root)
+	rootD.InitRoot(&fs.Filesystem, root)
 
 	// Construct the pts master inode and dentry. Linux always uses inode
 	// id 2 for ptmx. See fs/devpts/inode.c:mknod_ptmx.

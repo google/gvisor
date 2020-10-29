@@ -61,6 +61,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -118,6 +119,12 @@ type Filesystem struct {
 	// MaxCachedDentries is the maximum size of cachedDentries. If not set,
 	// defaults to 0 and kernfs does not cache any dentries. This is immutable.
 	MaxCachedDentries uint64
+
+	// root is the root dentry of this filesystem. Note that root may be nil for
+	// filesystems on a disconnected mount without a root (e.g. pipefs, sockfs,
+	// hostfs). Filesystem holds an extra reference on root to prevent it from
+	// being destroyed prematurely. This is immutable.
+	root *Dentry
 }
 
 // deferDecRef defers dropping a dentry ref until the next call to
@@ -214,17 +221,19 @@ type Dentry struct {
 func (d *Dentry) IncRef() {
 	// d.refs may be 0 if d.fs.mu is locked, which serializes against
 	// d.cacheLocked().
-	atomic.AddInt64(&d.refs, 1)
+	r := atomic.AddInt64(&d.refs, 1)
+	refsvfs2.LogIncRef(d, r)
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *Dentry) TryIncRef() bool {
 	for {
-		refs := atomic.LoadInt64(&d.refs)
-		if refs <= 0 {
+		r := atomic.LoadInt64(&d.refs)
+		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, refs, refs+1) {
+		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+			refsvfs2.LogTryIncRef(d, r+1)
 			return true
 		}
 	}
@@ -232,11 +241,23 @@ func (d *Dentry) TryIncRef() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *Dentry) DecRef(ctx context.Context) {
-	if refs := atomic.AddInt64(&d.refs, -1); refs == 0 {
+	r := atomic.AddInt64(&d.refs, -1)
+	refsvfs2.LogDecRef(d, r)
+	if r == 0 {
 		d.fs.mu.Lock()
 		d.cacheLocked(ctx)
 		d.fs.mu.Unlock()
-	} else if refs < 0 {
+	} else if r < 0 {
+		panic("kernfs.Dentry.DecRef() called without holding a reference")
+	}
+}
+
+func (d *Dentry) decRefLocked(ctx context.Context) {
+	r := atomic.AddInt64(&d.refs, -1)
+	refsvfs2.LogDecRef(d, r)
+	if r == 0 {
+		d.cacheLocked(ctx)
+	} else if r < 0 {
 		panic("kernfs.Dentry.DecRef() called without holding a reference")
 	}
 }
@@ -298,11 +319,20 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 	if d.fs.cachedDentriesLen <= d.fs.MaxCachedDentries {
 		return
 	}
+	d.fs.evictCachedDentryLocked(ctx)
+	// Whether or not victim was destroyed, we brought fs.cachedDentriesLen
+	// back down to fs.opts.maxCachedDentries, so we don't loop.
+}
+
+// Preconditions:
+// * fs.mu must be locked for writing.
+// * fs.cachedDentriesLen != 0.
+func (fs *Filesystem) evictCachedDentryLocked(ctx context.Context) {
 	// Evict the least recently used dentry because cache size is greater than
 	// max cache size (configured on mount).
-	victim := d.fs.cachedDentries.Back()
-	d.fs.cachedDentries.Remove(victim)
-	d.fs.cachedDentriesLen--
+	victim := fs.cachedDentries.Back()
+	fs.cachedDentries.Remove(victim)
+	fs.cachedDentriesLen--
 	victim.cached = false
 	// victim.refs may have become non-zero from an earlier path resolution
 	// after it was inserted into fs.cachedDentries.
@@ -311,7 +341,7 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 			victim.parent.dirMu.Lock()
 			// Note that victim can't be a mount point (in any mount
 			// namespace), since VFS holds references on mount points.
-			d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, victim.VFSDentry())
+			fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, victim.VFSDentry())
 			delete(victim.parent.children, victim.name)
 			victim.parent.dirMu.Unlock()
 		}
@@ -330,7 +360,8 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 //   by path traversal.
 // * d.vfsd.IsDead() is true.
 func (d *Dentry) destroyLocked(ctx context.Context) {
-	switch atomic.LoadInt64(&d.refs) {
+	refs := atomic.LoadInt64(&d.refs)
+	switch refs {
 	case 0:
 		// Mark the dentry destroyed.
 		atomic.StoreInt64(&d.refs, -1)
@@ -343,15 +374,42 @@ func (d *Dentry) destroyLocked(ctx context.Context) {
 	d.inode.DecRef(ctx) // IncRef from Init.
 	d.inode = nil
 
-	// Drop the reference held by d on its parent without recursively locking
-	// d.fs.mu.
 	if d.parent != nil {
-		if refs := atomic.AddInt64(&d.parent.refs, -1); refs == 0 {
-			d.parent.cacheLocked(ctx)
-		} else if refs < 0 {
-			panic("kernfs.Dentry.DecRef() called without holding a reference")
-		}
+		d.parent.decRefLocked(ctx)
 	}
+
+	refsvfs2.Unregister(d)
+}
+
+// RefType implements refsvfs2.CheckedObject.Type.
+func (d *Dentry) RefType() string {
+	return "kernfs.Dentry"
+}
+
+// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+func (d *Dentry) LeakMessage() string {
+	return fmt.Sprintf("[kernfs.Dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+}
+
+// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+//
+// This should only be set to true for debugging purposes, as it can generate an
+// extremely large amount of output and drastically degrade performance.
+func (d *Dentry) LogRefs() bool {
+	return false
+}
+
+// InitRoot initializes this dentry as the root of the filesystem.
+//
+// Precondition: Caller must hold a reference on inode.
+//
+// Postcondition: Caller's reference on inode is transferred to the dentry.
+func (d *Dentry) InitRoot(fs *Filesystem, inode Inode) {
+	d.Init(fs, inode)
+	fs.root = d
+	// Hold an extra reference on the root dentry. It is held by fs to prevent the
+	// root from being "cached" and subsequently evicted.
+	d.IncRef()
 }
 
 // Init initializes this dentry.
@@ -371,6 +429,7 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	if ftype == linux.ModeSymlink {
 		d.flags |= dflagsIsSymlink
 	}
+	refsvfs2.Register(d)
 }
 
 // VFSDentry returns the generic vfs dentry for this kernfs dentry.
