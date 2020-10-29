@@ -350,10 +350,6 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownListen) {
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
 
-  // TODO(b/157236388): Remove Disable save after bug is fixed. S/R test can
-  // fail because the last socket may not be delivered to the accept queue
-  // by the time connect returns.
-  DisableSave ds;
   for (int i = 0; i < kBacklog; i++) {
     auto client = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
@@ -558,11 +554,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownWhileConnect) {
   });
 }
 
-// TODO(b/157236388): Remove _NoRandomSave once bug is fixed. Test fails w/
-// random save as established connections which can't be delivered to the accept
-// queue because the queue is full are not correctly delivered after restore
-// causing the last accept to timeout on the restore.
-TEST_P(SocketInetLoopbackTest, TCPbacklog_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPBacklog) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -1151,8 +1143,6 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
 
-  // TODO(b/157236388): Reenable Cooperative S/R once bug is fixed.
-  DisableSave ds;
   ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(),
                                   reinterpret_cast<sockaddr*>(&conn_addr),
                                   connector.addr_len),

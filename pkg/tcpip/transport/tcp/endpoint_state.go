@@ -47,6 +47,11 @@ func (e *endpoint) beforeSave() {
 	e.segmentQueue.freeze()
 
 	e.mu.Lock()
+	e.saveBegun = true
+	e.mu.Unlock()
+
+	e.pendingHandshakes.Wait()
+	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	epState := e.EndpointState()
@@ -96,7 +101,13 @@ func (e *endpoint) beforeSave() {
 }
 
 // saveAcceptedChan is invoked by stateify.
+//
+// Note that this would not work for save-resume, which is not currently
+// supported in gVisor (see b/26588733). If we were ever to support save-resume,
+// we would have to put everything back into the channel after saving.
 func (e *endpoint) saveAcceptedChan() []*endpoint {
+	e.acceptMu.Lock()
+	defer e.acceptMu.Unlock()
 	if e.acceptedChan == nil {
 		return nil
 	}
@@ -109,13 +120,7 @@ func (e *endpoint) saveAcceptedChan() []*endpoint {
 			panic("endpoint acceptedChan buffer got consumed by background context")
 		}
 	}
-	for i := 0; i < len(acceptedEndpoints); i++ {
-		select {
-		case e.acceptedChan <- acceptedEndpoints[i]:
-		default:
-			panic("endpoint acceptedChan buffer got populated by background context")
-		}
-	}
+	e.acceptedChanSaved = true
 	return acceptedEndpoints
 }
 
@@ -165,6 +170,8 @@ func (e *endpoint) loadState(epState EndpointState) {
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.origEndpointState = e.state
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Resume.
@@ -174,6 +181,17 @@ func (e *endpoint) afterLoad() {
 	e.acceptCond = sync.NewCond(&e.acceptMu)
 	e.keepalive.timer.init(&e.keepalive.waker)
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
+	e.establishedEPsMu.Lock()
+	defer e.establishedEPsMu.Unlock()
+	for ep := range e.establishedEPs {
+		established := ep
+		delete(e.establishedEPs, ep)
+		go func() {
+			established.mu.Lock()
+			established.startAcceptedLoop()
+			e.deliverAccepted(established)
+		}()
+	}
 }
 
 // Resume implements tcpip.ResumableEndpoint.Resume.

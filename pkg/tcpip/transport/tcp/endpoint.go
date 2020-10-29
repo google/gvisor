@@ -616,9 +616,6 @@ type endpoint struct {
 	// to the acceptedChan below terminate before we close acceptedChan.
 	pendingAccepted sync.WaitGroup `state:"nosave"`
 
-	// acceptMu protects acceptedChan.
-	acceptMu sync.Mutex `state:"nosave"`
-
 	// acceptCond is a condition variable that can be used to block on when
 	// acceptedChan is full and an endpoint is ready to be delivered.
 	//
@@ -633,10 +630,19 @@ type endpoint struct {
 	// full ( See: endpoint.deliverAccepted ).
 	acceptCond *sync.Cond `state:"nosave"`
 
+	// acceptMu protects acceptedChan and acceptedChanSaved.
+	acceptMu sync.Mutex `state:"nosave"`
+
 	// acceptedChan is used by a listening endpoint protocol goroutine to
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
 	acceptedChan chan *endpoint `state:".([]*endpoint)"`
+
+	// acceptedChanSaved indicates whether acceptedChan was saved. Note that this
+	// field assumes that we tear down after saving, so that it is false again
+	// after restore. This does not work properly for save-resume, which is not
+	// currently supported in gVisor (see b/26588733).
+	acceptedChanSaved bool `state:"nosave"`
 
 	// The following are only used from the protocol goroutine, and
 	// therefore don't need locks to protect them.
@@ -694,6 +700,26 @@ type endpoint struct {
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
+
+	// The fields below are only needed for save/restore on a listening endpoint.
+	//
+	// saveBegun indicates whether the save process has begun for this endpoint.
+	// Note that this field assumes that we tear down after saving, so that it is
+	// false again after restore. This does not work properly for save-resume,
+	// which is not currently supported in gVisor (see b/26588733).
+	//
+	// establishedEPs is the set of endpoints created by connect requests on this
+	// endpoint, which have been established (i.e. the TCP handshake is complete)
+	// but not yet delivered to the accept queue. Once a connection is established,
+	// it must eventually be accepted or reset, even across save/restore.
+	// establishedEPs is protected by establishedEPsMu.
+	//
+	// pendingHandshakes tracks the handshakes in progress. It can be accessed
+	// without holding endpoint.mu.
+	saveBegun         bool `state:"nosave"`
+	establishedEPs    map[*endpoint]struct{}
+	establishedEPsMu  sync.Mutex     `state:"nosave"`
+	pendingHandshakes sync.WaitGroup `state:"nosave"`
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -882,10 +908,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 			interval: 75 * time.Second,
 			count:    9,
 		},
-		uniqueID:      s.UniqueID(),
-		txHash:        s.Rand().Uint32(),
-		windowClamp:   DefaultReceiveBufferSize,
-		maxSynRetries: DefaultSynRetries,
+		uniqueID:       s.UniqueID(),
+		txHash:         s.Rand().Uint32(),
+		windowClamp:    DefaultReceiveBufferSize,
+		maxSynRetries:  DefaultSynRetries,
+		establishedEPs: make(map[*endpoint]struct{}),
 	}
 	e.ops.InitHandler(e)
 

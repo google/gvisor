@@ -22,6 +22,7 @@ import (
 	"io"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -252,57 +253,53 @@ func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, q
 		return nil, err
 	}
 
+	cu := cleanup.Make(func() {
+		ep.Close()
+	})
+	defer cu.Clean()
+
+	if l.listenEP != nil {
+		l.listenEP.pendingHandshakes.Add(1)
+		cu.Add(func() {
+			l.listenEP.pendingHandshakes.Done()
+		})
+	}
+
 	// Lock the endpoint before registering to ensure that no out of
 	// band changes are possible due to incoming packets etc till
 	// the endpoint is done initializing.
 	ep.mu.Lock()
+	cu.Add(func() {
+		ep.mu.Unlock()
+	})
 	ep.owner = owner
 
 	// listenEP is nil when listenContext is used by tcp.Forwarder.
 	deferAccept := time.Duration(0)
 	if l.listenEP != nil {
 		if l.listenEP.EndpointState() != StateListen {
-
-			// Ensure we release any registrations done by the newly
-			// created endpoint.
-			ep.mu.Unlock()
-			ep.Close()
-
 			return nil, tcpip.ErrConnectionAborted
 		}
 		l.addPendingEndpoint(ep)
+		cu.Add(func() {
+			l.removePendingEndpoint(ep)
+		})
 
 		// Propagate any inheritable options from the listening endpoint
 		// to the newly created endpoint.
 		l.listenEP.propagateInheritableOptionsLocked(ep)
-
 		if !ep.reserveTupleLocked() {
-			ep.mu.Unlock()
-			ep.Close()
-
-			l.removePendingEndpoint(ep)
-
 			return nil, tcpip.ErrConnectionAborted
 		}
-
 		deferAccept = l.listenEP.deferAccept
 	}
 
 	// Register new endpoint so that packets are routed to it.
 	if err := ep.stack.RegisterTransportEndpoint(ep.boundNICID, ep.effectiveNetProtos, ProtocolNumber, ep.ID, ep, ep.boundPortFlags, ep.boundBindToDevice); err != nil {
-		ep.mu.Unlock()
-		ep.Close()
-
-		if l.listenEP != nil {
-			l.removePendingEndpoint(ep)
-		}
-
-		ep.drainClosingSegmentQueue()
-
 		return nil, err
 	}
-
 	ep.isRegistered = true
+	cu.Release()
 
 	// Initialize and start the handshake.
 	h := ep.newPassiveHandshake(isn, irs, opts, deferAccept)
@@ -365,6 +362,7 @@ func (l *listenContext) cleanupFailedHandshake(h *handshake) {
 	e.notifyAborted()
 	if l.listenEP != nil {
 		l.removePendingEndpoint(e)
+		l.listenEP.pendingHandshakes.Done()
 	}
 	e.drainClosingSegmentQueue()
 	e.h = nil
@@ -373,11 +371,17 @@ func (l *listenContext) cleanupFailedHandshake(h *handshake) {
 // cleanupCompletedHandshake transfers any state from the completed handshake to
 // the new endpoint.
 //
-// Precondition: h.ep.mu must be held.
+// Preconditions:
+// * h.ep.mu must be locked.
+// * If l.listenEP != nil, l.listenEP.mu must be locked.
 func (l *listenContext) cleanupCompletedHandshake(h *handshake) {
 	e := h.ep
 	if l.listenEP != nil {
 		l.removePendingEndpoint(e)
+		l.listenEP.establishedEPsMu.Lock()
+		l.listenEP.establishedEPs[e] = struct{}{}
+		l.listenEP.establishedEPsMu.Unlock()
+		l.listenEP.pendingHandshakes.Done()
 	}
 	e.isConnectNotified = true
 
@@ -401,15 +405,26 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 
 	e.acceptMu.Lock()
 	for {
+		if e.acceptedChanSaved {
+			// Stop trying to deliver n for now; try again after restore.
+			e.acceptMu.Unlock()
+			return
+		}
 		if e.acceptedChan == nil {
 			e.acceptMu.Unlock()
 			n.notifyProtocolGoroutine(notifyReset)
+			e.establishedEPsMu.Lock()
+			delete(e.establishedEPs, n)
+			e.establishedEPsMu.Unlock()
 			return
 		}
 		select {
 		case e.acceptedChan <- n:
 			e.acceptMu.Unlock()
 			e.waiterQueue.Notify(waiter.EventIn)
+			e.establishedEPsMu.Lock()
+			delete(e.establishedEPs, n)
+			e.establishedEPsMu.Unlock()
 			return
 		default:
 			e.acceptCond.Wait()
@@ -455,10 +470,6 @@ func (e *endpoint) reserveTupleLocked() bool {
 
 // notifyAborted wakes up any waiters on registered, but not accepted
 // endpoints.
-//
-// This is strictly not required normally as a socket that was never accepted
-// can't really have any registered waiters except when stack.Wait() is called
-// which waits for all registered endpoints to stop and expects an EventHUp.
 func (e *endpoint) notifyAborted() {
 	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 }
@@ -473,7 +484,10 @@ func (e *endpoint) notifyAborted() {
 // Precondition: if ctx.listenEP != nil, ctx.listenEP.mu must be locked.
 func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header.TCPSynOptions) *tcpip.Error {
 	defer s.decRef()
-
+	if e.saveBegun {
+		// Drop any incoming connection requests to prevent racing with save.
+		return nil
+	}
 	h, err := ctx.startHandshake(s, opts, &waiter.Queue{}, e.owner)
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
@@ -726,20 +740,20 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) *tcpip.Er
 			sndWndScale: rcvdSynOptions.WS,
 			mss:         rcvdSynOptions.MSS,
 		})
-
-		// Do the delivery in a separate goroutine so
-		// that we don't block the listen loop in case
-		// the application is slow to accept or stops
-		// accepting.
-		//
-		// NOTE: This won't result in an unbounded
-		// number of goroutines as we do check before
-		// entering here that there was at least some
-		// space available in the backlog.
+		e.establishedEPsMu.Lock()
+		e.establishedEPs[n] = struct{}{}
+		e.establishedEPsMu.Unlock()
 
 		// Start the protocol goroutine.
 		n.startAcceptedLoop()
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
+
+		// Do the delivery in a separate goroutine so that we don't block the listen
+		// loop in case the application is slow to accept or stops accepting.
+		//
+		// NOTE: This won't result in an unbounded number of goroutines as we do check
+		// before entering here that there was at least some space available in the
+		// backlog.
 		go e.deliverAccepted(n)
 		return nil
 
