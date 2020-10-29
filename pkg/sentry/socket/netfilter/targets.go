@@ -26,6 +26,15 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// ErrorTargetName is used to mark targets as error targets. Error targets
+// shouldn't be reached - an error has occurred if we fall through to one.
+const ErrorTargetName = "ERROR"
+
+// RedirectTargetName is used to mark targets as redirect targets. Redirect
+// targets should be reached for only NAT and Mangle tables. These targets will
+// change the destination port and/or IP for packets.
+const RedirectTargetName = "REDIRECT"
+
 func init() {
 	// Standard targets include ACCEPT, DROP, RETURN, and JUMP.
 	registerTargetMaker(&standardTargetMaker{
@@ -52,25 +61,92 @@ func init() {
 	})
 }
 
+// The stack package provides some basic, useful targets for us. The following
+// types wrap them for compatibility with the extension system.
+
+type acceptTarget struct {
+	stack.AcceptTarget
+}
+
+func (at *acceptTarget) id() targetID {
+	return targetID{
+		networkProtocol: at.NetworkProtocol,
+	}
+}
+
+type dropTarget struct {
+	stack.DropTarget
+}
+
+func (dt *dropTarget) id() targetID {
+	return targetID{
+		networkProtocol: dt.NetworkProtocol,
+	}
+}
+
+type errorTarget struct {
+	stack.ErrorTarget
+}
+
+func (et *errorTarget) id() targetID {
+	return targetID{
+		name:            ErrorTargetName,
+		networkProtocol: et.NetworkProtocol,
+	}
+}
+
+type userChainTarget struct {
+	stack.UserChainTarget
+}
+
+func (uc *userChainTarget) id() targetID {
+	return targetID{
+		name:            ErrorTargetName,
+		networkProtocol: uc.NetworkProtocol,
+	}
+}
+
+type returnTarget struct {
+	stack.ReturnTarget
+}
+
+func (rt *returnTarget) id() targetID {
+	return targetID{
+		networkProtocol: rt.NetworkProtocol,
+	}
+}
+
+type redirectTarget struct {
+	stack.RedirectTarget
+}
+
+func (rt *redirectTarget) id() targetID {
+	return targetID{
+		name:            RedirectTargetName,
+		networkProtocol: rt.NetworkProtocol,
+	}
+}
+
 type standardTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (sm *standardTargetMaker) id() stack.TargetID {
+func (sm *standardTargetMaker) id() targetID {
 	// Standard targets have the empty string as a name and no revisions.
-	return stack.TargetID{
-		NetworkProtocol: sm.NetworkProtocol,
+	return targetID{
+		networkProtocol: sm.NetworkProtocol,
 	}
 }
-func (*standardTargetMaker) marshal(target stack.Target) []byte {
+
+func (*standardTargetMaker) marshal(target target) []byte {
 	// Translate verdicts the same way as the iptables tool.
 	var verdict int32
 	switch tg := target.(type) {
-	case *stack.AcceptTarget:
+	case *acceptTarget:
 		verdict = -linux.NF_ACCEPT - 1
-	case *stack.DropTarget:
+	case *dropTarget:
 		verdict = -linux.NF_DROP - 1
-	case *stack.ReturnTarget:
+	case *returnTarget:
 		verdict = linux.NF_RETURN
 	case *JumpTarget:
 		verdict = int32(tg.Offset)
@@ -90,7 +166,7 @@ func (*standardTargetMaker) marshal(target stack.Target) []byte {
 	return binary.Marshal(ret, usermem.ByteOrder, xt)
 }
 
-func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Target, *syserr.Error) {
+func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
 	if len(buf) != linux.SizeOfXTStandardTarget {
 		nflog("buf has wrong size for standard target %d", len(buf))
 		return nil, syserr.ErrInvalidArgument
@@ -114,20 +190,20 @@ type errorTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (em *errorTargetMaker) id() stack.TargetID {
+func (em *errorTargetMaker) id() targetID {
 	// Error targets have no revision.
-	return stack.TargetID{
-		Name:            stack.ErrorTargetName,
-		NetworkProtocol: em.NetworkProtocol,
+	return targetID{
+		name:            ErrorTargetName,
+		networkProtocol: em.NetworkProtocol,
 	}
 }
 
-func (*errorTargetMaker) marshal(target stack.Target) []byte {
+func (*errorTargetMaker) marshal(target target) []byte {
 	var errorName string
 	switch tg := target.(type) {
-	case *stack.ErrorTarget:
-		errorName = stack.ErrorTargetName
-	case *stack.UserChainTarget:
+	case *errorTarget:
+		errorName = ErrorTargetName
+	case *userChainTarget:
 		errorName = tg.Name
 	default:
 		panic(fmt.Sprintf("errorMakerTarget cannot marshal unknown type %T", target))
@@ -140,37 +216,38 @@ func (*errorTargetMaker) marshal(target stack.Target) []byte {
 		},
 	}
 	copy(xt.Name[:], errorName)
-	copy(xt.Target.Name[:], stack.ErrorTargetName)
+	copy(xt.Target.Name[:], ErrorTargetName)
 
 	ret := make([]byte, 0, linux.SizeOfXTErrorTarget)
 	return binary.Marshal(ret, usermem.ByteOrder, xt)
 }
 
-func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Target, *syserr.Error) {
+func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
 	if len(buf) != linux.SizeOfXTErrorTarget {
 		nflog("buf has insufficient size for error target %d", len(buf))
 		return nil, syserr.ErrInvalidArgument
 	}
-	var errorTarget linux.XTErrorTarget
+	var errTgt linux.XTErrorTarget
 	buf = buf[:linux.SizeOfXTErrorTarget]
-	binary.Unmarshal(buf, usermem.ByteOrder, &errorTarget)
+	binary.Unmarshal(buf, usermem.ByteOrder, &errTgt)
 
 	// Error targets are used in 2 cases:
-	// * An actual error case. These rules have an error
-	//   named stack.ErrorTargetName. The last entry of the table
-	//   is usually an error case to catch any packets that
-	//   somehow fall through every rule.
+	// * An actual error case. These rules have an error named
+	//   ErrorTargetName. The last entry of the table is usually an error
+	//   case to catch any packets that somehow fall through every rule.
 	// * To mark the start of a user defined chain. These
 	//   rules have an error with the name of the chain.
-	switch name := errorTarget.Name.String(); name {
-	case stack.ErrorTargetName:
-		return &stack.ErrorTarget{NetworkProtocol: filter.NetworkProtocol()}, nil
+	switch name := errTgt.Name.String(); name {
+	case ErrorTargetName:
+		return &errorTarget{stack.ErrorTarget{
+			NetworkProtocol: filter.NetworkProtocol(),
+		}}, nil
 	default:
 		// User defined chain.
-		return &stack.UserChainTarget{
+		return &userChainTarget{stack.UserChainTarget{
 			Name:            name,
 			NetworkProtocol: filter.NetworkProtocol(),
-		}, nil
+		}}, nil
 	}
 }
 
@@ -178,22 +255,22 @@ type redirectTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (rm *redirectTargetMaker) id() stack.TargetID {
-	return stack.TargetID{
-		Name:            stack.RedirectTargetName,
-		NetworkProtocol: rm.NetworkProtocol,
+func (rm *redirectTargetMaker) id() targetID {
+	return targetID{
+		name:            RedirectTargetName,
+		networkProtocol: rm.NetworkProtocol,
 	}
 }
 
-func (*redirectTargetMaker) marshal(target stack.Target) []byte {
-	rt := target.(*stack.RedirectTarget)
+func (*redirectTargetMaker) marshal(target target) []byte {
+	rt := target.(*redirectTarget)
 	// This is a redirect target named redirect
 	xt := linux.XTRedirectTarget{
 		Target: linux.XTEntryTarget{
 			TargetSize: linux.SizeOfXTRedirectTarget,
 		},
 	}
-	copy(xt.Target.Name[:], stack.RedirectTargetName)
+	copy(xt.Target.Name[:], RedirectTargetName)
 
 	ret := make([]byte, 0, linux.SizeOfXTRedirectTarget)
 	xt.NfRange.RangeSize = 1
@@ -203,7 +280,7 @@ func (*redirectTargetMaker) marshal(target stack.Target) []byte {
 	return binary.Marshal(ret, usermem.ByteOrder, xt)
 }
 
-func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Target, *syserr.Error) {
+func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
 	if len(buf) < linux.SizeOfXTRedirectTarget {
 		nflog("redirectTargetMaker: buf has insufficient size for redirect target %d", len(buf))
 		return nil, syserr.ErrInvalidArgument
@@ -214,15 +291,17 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	var redirectTarget linux.XTRedirectTarget
+	var rt linux.XTRedirectTarget
 	buf = buf[:linux.SizeOfXTRedirectTarget]
-	binary.Unmarshal(buf, usermem.ByteOrder, &redirectTarget)
+	binary.Unmarshal(buf, usermem.ByteOrder, &rt)
 
 	// Copy linux.XTRedirectTarget to stack.RedirectTarget.
-	target := stack.RedirectTarget{NetworkProtocol: filter.NetworkProtocol()}
+	target := redirectTarget{stack.RedirectTarget{
+		NetworkProtocol: filter.NetworkProtocol(),
+	}}
 
 	// RangeSize should be 1.
-	nfRange := redirectTarget.NfRange
+	nfRange := rt.NfRange
 	if nfRange.RangeSize != 1 {
 		nflog("redirectTargetMaker: bad rangesize %d", nfRange.RangeSize)
 		return nil, syserr.ErrInvalidArgument
@@ -264,15 +343,15 @@ type nfNATTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (rm *nfNATTargetMaker) id() stack.TargetID {
-	return stack.TargetID{
-		Name:            stack.RedirectTargetName,
-		NetworkProtocol: rm.NetworkProtocol,
+func (rm *nfNATTargetMaker) id() targetID {
+	return targetID{
+		name:            RedirectTargetName,
+		networkProtocol: rm.NetworkProtocol,
 	}
 }
 
-func (*nfNATTargetMaker) marshal(target stack.Target) []byte {
-	rt := target.(*stack.RedirectTarget)
+func (*nfNATTargetMaker) marshal(target target) []byte {
+	rt := target.(*redirectTarget)
 	nt := nfNATTarget{
 		Target: linux.XTEntryTarget{
 			TargetSize: nfNATMarhsalledSize,
@@ -281,7 +360,7 @@ func (*nfNATTargetMaker) marshal(target stack.Target) []byte {
 			Flags: linux.NF_NAT_RANGE_PROTO_SPECIFIED,
 		},
 	}
-	copy(nt.Target.Name[:], stack.RedirectTargetName)
+	copy(nt.Target.Name[:], RedirectTargetName)
 	copy(nt.Range.MinAddr[:], rt.Addr)
 	copy(nt.Range.MaxAddr[:], rt.Addr)
 
@@ -292,7 +371,7 @@ func (*nfNATTargetMaker) marshal(target stack.Target) []byte {
 	return binary.Marshal(ret, usermem.ByteOrder, nt)
 }
 
-func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Target, *syserr.Error) {
+func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
 	if size := nfNATMarhsalledSize; len(buf) < size {
 		nflog("nfNATTargetMaker: buf has insufficient size (%d) for nfNAT target (%d)", len(buf), size)
 		return nil, syserr.ErrInvalidArgument
@@ -324,29 +403,35 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (sta
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	target := stack.RedirectTarget{
+	target := redirectTarget{stack.RedirectTarget{
 		NetworkProtocol: filter.NetworkProtocol(),
 		Addr:            tcpip.Address(natRange.MinAddr[:]),
 		Port:            ntohs(natRange.MinProto),
-	}
+	}}
 
 	return &target, nil
 }
 
 // translateToStandardTarget translates from the value in a
 // linux.XTStandardTarget to an stack.Verdict.
-func translateToStandardTarget(val int32, netProto tcpip.NetworkProtocolNumber) (stack.Target, *syserr.Error) {
+func translateToStandardTarget(val int32, netProto tcpip.NetworkProtocolNumber) (target, *syserr.Error) {
 	// TODO(gvisor.dev/issue/170): Support other verdicts.
 	switch val {
 	case -linux.NF_ACCEPT - 1:
-		return &stack.AcceptTarget{NetworkProtocol: netProto}, nil
+		return &acceptTarget{stack.AcceptTarget{
+			NetworkProtocol: netProto,
+		}}, nil
 	case -linux.NF_DROP - 1:
-		return &stack.DropTarget{NetworkProtocol: netProto}, nil
+		return &dropTarget{stack.DropTarget{
+			NetworkProtocol: netProto,
+		}}, nil
 	case -linux.NF_QUEUE - 1:
 		nflog("unsupported iptables verdict QUEUE")
 		return nil, syserr.ErrInvalidArgument
 	case linux.NF_RETURN:
-		return &stack.ReturnTarget{NetworkProtocol: netProto}, nil
+		return &returnTarget{stack.ReturnTarget{
+			NetworkProtocol: netProto,
+		}}, nil
 	default:
 		nflog("unknown iptables verdict %d", val)
 		return nil, syserr.ErrInvalidArgument
@@ -382,9 +467,9 @@ type JumpTarget struct {
 }
 
 // ID implements Target.ID.
-func (jt *JumpTarget) ID() stack.TargetID {
-	return stack.TargetID{
-		NetworkProtocol: jt.NetworkProtocol,
+func (jt *JumpTarget) id() targetID {
+	return targetID{
+		networkProtocol: jt.NetworkProtocol,
 	}
 }
 

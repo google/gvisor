@@ -518,6 +518,10 @@ type Options struct {
 	//
 	// RandSource must be thread-safe.
 	RandSource mathrand.Source
+
+	// IPTables are the initial iptables rules. If nil, iptables will allow
+	// all traffic.
+	IPTables *IPTables
 }
 
 // TransportEndpointInfo holds useful information about a transport endpoint
@@ -620,6 +624,10 @@ func New(opts Options) *Stack {
 		randSrc = &lockedRandomSource{src: mathrand.NewSource(generateRandInt64())}
 	}
 
+	if opts.IPTables == nil {
+		opts.IPTables = DefaultTables()
+	}
+
 	opts.NUDConfigs.resetInvalidFields()
 
 	s := &Stack{
@@ -633,7 +641,7 @@ func New(opts Options) *Stack {
 		clock:              clock,
 		stats:              opts.Stats.FillIn(),
 		handleLocal:        opts.HandleLocal,
-		tables:             DefaultTables(),
+		tables:             opts.IPTables,
 		icmpRateLimiter:    NewICMPRateLimiter(),
 		seed:               generateRandUint32(),
 		nudConfigs:         opts.NUDConfigs,

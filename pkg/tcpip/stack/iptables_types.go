@@ -37,7 +37,6 @@ import (
 // ----->[Prerouting]----->routing----->[Forward]---------[Postrouting]----->
 type Hook uint
 
-// These values correspond to values in include/uapi/linux/netfilter.h.
 const (
 	// Prerouting happens before a packet is routed to applications or to
 	// be forwarded.
@@ -86,8 +85,8 @@ type IPTables struct {
 	mu sync.RWMutex
 	// v4Tables and v6tables map tableIDs to tables. They hold builtin
 	// tables only, not user tables. mu must be locked for accessing.
-	v4Tables [numTables]Table
-	v6Tables [numTables]Table
+	v4Tables [NumTables]Table
+	v6Tables [NumTables]Table
 	// modified is whether tables have been modified at least once. It is
 	// used to elide the iptables performance overhead for workloads that
 	// don't utilize iptables.
@@ -96,12 +95,30 @@ type IPTables struct {
 	// priorities maps each hook to a list of table names. The order of the
 	// list is the order in which each table should be visited for that
 	// hook. It is immutable.
-	priorities [NumHooks][]tableID
+	priorities [NumHooks][]TableID
 
 	connections ConnTrack
 
 	// reaperDone can be signaled to stop the reaper goroutine.
 	reaperDone chan struct{}
+}
+
+// VisitTargets traverses all the targets of all tables and replaces each with
+// transform(target).
+func (it *IPTables) VisitTargets(transform func(Target) Target) {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+
+	for tid := range it.v4Tables {
+		for i, rule := range it.v4Tables[tid].Rules {
+			it.v4Tables[tid].Rules[i].Target = transform(rule.Target)
+		}
+	}
+	for tid := range it.v6Tables {
+		for i, rule := range it.v6Tables[tid].Rules {
+			it.v6Tables[tid].Rules[i].Target = transform(rule.Target)
+		}
+	}
 }
 
 // A Table defines a set of chains and hooks into the network stack.
@@ -169,7 +186,6 @@ type IPHeaderFilter struct {
 
 	// CheckProtocol determines whether the Protocol field should be
 	// checked during matching.
-	// TODO(gvisor.dev/issue/3549): Check this field during matching.
 	CheckProtocol bool
 
 	// Dst matches the destination IP address.
@@ -309,23 +325,8 @@ type Matcher interface {
 	Match(hook Hook, packet *PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
 }
 
-// A TargetID uniquely identifies a target.
-type TargetID struct {
-	// Name is the target name as stored in the xt_entry_target struct.
-	Name string
-
-	// NetworkProtocol is the protocol to which the target applies.
-	NetworkProtocol tcpip.NetworkProtocolNumber
-
-	// Revision is the version of the target.
-	Revision uint8
-}
-
 // A Target is the interface for taking an action for a packet.
 type Target interface {
-	// ID uniquely identifies the Target.
-	ID() TargetID
-
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
 	// Jump, it also returns the index of the rule to jump to.
