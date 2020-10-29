@@ -505,9 +505,7 @@ func (fs *filesystem) newDentry() *dentry {
 	}
 	d.lowerVDs = d.inlineLowerVDs[:0]
 	d.vfsd.Init(d)
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Register(d, "overlay.dentry")
-	}
+	refsvfs2.Register(d)
 	return d
 }
 
@@ -515,17 +513,19 @@ func (fs *filesystem) newDentry() *dentry {
 func (d *dentry) IncRef() {
 	// d.refs may be 0 if d.fs.renameMu is locked, which serializes against
 	// d.checkDropLocked().
-	atomic.AddInt64(&d.refs, 1)
+	r := atomic.AddInt64(&d.refs, 1)
+	refsvfs2.LogIncRef(d, r)
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *dentry) TryIncRef() bool {
 	for {
-		refs := atomic.LoadInt64(&d.refs)
-		if refs <= 0 {
+		r := atomic.LoadInt64(&d.refs)
+		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, refs, refs+1) {
+		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+			refsvfs2.LogTryIncRef(d, r+1)
 			return true
 		}
 	}
@@ -533,12 +533,24 @@ func (d *dentry) TryIncRef() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
-	if refs := atomic.AddInt64(&d.refs, -1); refs == 0 {
+	r := atomic.AddInt64(&d.refs, -1)
+	refsvfs2.LogDecRef(d, r)
+	if r == 0 {
 		d.fs.renameMu.Lock()
 		d.checkDropLocked(ctx)
 		d.fs.renameMu.Unlock()
-	} else if refs < 0 {
+	} else if r < 0 {
 		panic("overlay.dentry.DecRef() called without holding a reference")
+	}
+}
+
+func (d *dentry) decRefLocked(ctx context.Context) {
+	r := atomic.AddInt64(&d.refs, -1)
+	refsvfs2.LogDecRef(d, r)
+	if r == 0 {
+		d.checkDropLocked(ctx)
+	} else if r < 0 {
+		panic("overlay.dentry.decRefLocked() called without holding a reference")
 	}
 }
 
@@ -601,20 +613,27 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		d.parent.dirMu.Unlock()
 		// Drop the reference held by d on its parent without recursively
 		// locking d.fs.renameMu.
-		if refs := atomic.AddInt64(&d.parent.refs, -1); refs == 0 {
-			d.parent.checkDropLocked(ctx)
-		} else if refs < 0 {
-			panic("overlay.dentry.DecRef() called without holding a reference")
-		}
+		d.parent.decRefLocked(ctx)
 	}
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Unregister(d, "overlay.dentry")
-	}
+	refsvfs2.Unregister(d)
+}
+
+// RefType implements refsvfs2.CheckedObject.Type.
+func (d *dentry) RefType() string {
+	return "overlay.dentry"
 }
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
 	return fmt.Sprintf("[overlay.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+}
+
+// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+//
+// This should only be set to true for debugging purposes, as it can generate an
+// extremely large amount of output and drastically degrade performance.
+func (d *dentry) LogRefs() bool {
+	return false
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.

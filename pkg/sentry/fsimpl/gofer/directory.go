@@ -101,9 +101,7 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		hostFD:    -1,
 		nlink:     uint32(2),
 	}
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Register(child, "gofer.dentry")
-	}
+	refsvfs2.Register(child)
 	switch opts.mode.FileType() {
 	case linux.S_IFDIR:
 		// Nothing else needs to be done.
