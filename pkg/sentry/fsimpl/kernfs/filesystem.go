@@ -245,7 +245,41 @@ func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) er
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *Filesystem) Release(context.Context) {
+func (fs *Filesystem) Release(ctx context.Context) {
+	root := fs.root
+	if root == nil {
+		return
+	}
+	fs.mu.Lock()
+	root.releaseKeptDentriesLocked(ctx)
+	for fs.cachedDentriesLen != 0 {
+		fs.evictCachedDentryLocked(ctx)
+	}
+	fs.mu.Unlock()
+	// Drop ref acquired in Dentry.InitRoot().
+	root.DecRef(ctx)
+}
+
+// releaseKeptDentriesLocked recursively drops all dentry references created by
+// Lookup when Dentry.inode.Keep() is true.
+//
+// Precondition: Filesystem.mu is held.
+func (d *Dentry) releaseKeptDentriesLocked(ctx context.Context) {
+	if d.inode.Keep() {
+		d.decRefLocked(ctx)
+	}
+
+	if d.isDir() {
+		var children []*Dentry
+		d.dirMu.Lock()
+		for _, child := range d.children {
+			children = append(children, child)
+		}
+		d.dirMu.Unlock()
+		for _, child := range children {
+			child.releaseKeptDentriesLocked(ctx)
+		}
+	}
 }
 
 // Sync implements vfs.FilesystemImpl.Sync.

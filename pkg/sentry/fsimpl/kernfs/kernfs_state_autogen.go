@@ -588,6 +588,7 @@ func (fs *Filesystem) StateFields() []string {
 		"cachedDentries",
 		"cachedDentriesLen",
 		"MaxCachedDentries",
+		"root",
 	}
 }
 
@@ -601,6 +602,7 @@ func (fs *Filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fs.cachedDentries)
 	stateSinkObject.Save(4, &fs.cachedDentriesLen)
 	stateSinkObject.Save(5, &fs.MaxCachedDentries)
+	stateSinkObject.Save(6, &fs.root)
 }
 
 func (fs *Filesystem) afterLoad() {}
@@ -612,6 +614,7 @@ func (fs *Filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &fs.cachedDentries)
 	stateSourceObject.Load(4, &fs.cachedDentriesLen)
 	stateSourceObject.Load(5, &fs.MaxCachedDentries)
+	stateSourceObject.Load(6, &fs.root)
 }
 
 func (d *Dentry) StateTypeName() string {
@@ -649,8 +652,6 @@ func (d *Dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &d.inode)
 }
 
-func (d *Dentry) afterLoad() {}
-
 func (d *Dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
 	stateSourceObject.Load(1, &d.refs)
@@ -662,6 +663,7 @@ func (d *Dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &d.dentryEntry)
 	stateSourceObject.Load(8, &d.children)
 	stateSourceObject.Load(9, &d.inode)
+	stateSourceObject.AfterLoad(d.afterLoad)
 }
 
 func (i *inodePlatformFile) StateTypeName() string {

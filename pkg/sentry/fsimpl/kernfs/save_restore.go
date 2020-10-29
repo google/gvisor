@@ -14,6 +14,19 @@
 
 package kernfs
 
+import (
+	"sync/atomic"
+
+	"gvisor.dev/gvisor/pkg/refsvfs2"
+)
+
+// afterLoad is invoked by stateify.
+func (d *Dentry) afterLoad() {
+	if atomic.LoadInt64(&d.refs) >= 0 {
+		refsvfs2.Register(d)
+	}
+}
+
 // afterLoad is invoked by stateify.
 func (i *inodePlatformFile) afterLoad() {
 	if i.fileMapper.IsInited() {
