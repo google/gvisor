@@ -252,6 +252,9 @@ ALL_TESTS = [
         expect_netstack_failure = True,
     ),
     PacketimpactTestInfo(
+        name = "ipv4_fragment_reassembly",
+    ),
+    PacketimpactTestInfo(
         name = "ipv6_fragment_reassembly",
     ),
     PacketimpactTestInfo(
