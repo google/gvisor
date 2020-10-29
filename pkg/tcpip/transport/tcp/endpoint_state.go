@@ -172,6 +172,7 @@ func (e *endpoint) afterLoad() {
 	// Condition variables and mutexs are not S/R'ed so reinitialize
 	// acceptCond with e.acceptMu.
 	e.acceptCond = sync.NewCond(&e.acceptMu)
+	e.keepalive.timer.init(&e.keepalive.waker)
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 
