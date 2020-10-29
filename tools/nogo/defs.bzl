@@ -123,7 +123,7 @@ def _nogo_stdlib_impl(ctx):
         Tags = go_ctx.tags,
     )
     config_file = ctx.actions.declare_file(ctx.label.name + ".cfg")
-    ctx.actions.write(config_file, config.to_json())
+    ctx.actions.write(config_file, json.encode(config))
     ctx.actions.run(
         inputs = [config_file] + go_ctx.stdlib_srcs,
         outputs = [facts, raw_findings],
@@ -286,7 +286,7 @@ def _nogo_aspect_impl(target, ctx):
         StdlibFacts = stdlib_facts.path,
     )
     config_file = ctx.actions.declare_file(target.label.name + ".cfg")
-    ctx.actions.write(config_file, config.to_json())
+    ctx.actions.write(config_file, json.encode(config))
     inputs.append(config_file)
     ctx.actions.run(
         inputs = inputs,
