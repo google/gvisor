@@ -25,7 +25,7 @@ import (
 // TableID identifies a specific table.
 type TableID int
 
-// Each value identifies a specfic table.
+// Each value identifies a specific table.
 const (
 	NATID TableID = iota
 	MangleID
