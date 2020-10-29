@@ -839,6 +839,61 @@ func (conn *TCPIPv4) Drain(t *testing.T) {
 	conn.sniffer.Drain(t)
 }
 
+// IPv4Conn maintains the state for all the layers in a IPv4 connection.
+type IPv4Conn Connection
+
+// NewIPv4Conn creates a new IPv4Conn connection with reasonable defaults.
+func NewIPv4Conn(t *testing.T, outgoingIPv4, incomingIPv4 IPv4) IPv4Conn {
+	t.Helper()
+
+	etherState, err := newEtherState(Ether{}, Ether{})
+	if err != nil {
+		t.Fatalf("can't make EtherState: %s", err)
+	}
+	ipv4State, err := newIPv4State(outgoingIPv4, incomingIPv4)
+	if err != nil {
+		t.Fatalf("can't make IPv4State: %s", err)
+	}
+
+	injector, err := NewInjector(t)
+	if err != nil {
+		t.Fatalf("can't make injector: %s", err)
+	}
+	sniffer, err := NewSniffer(t)
+	if err != nil {
+		t.Fatalf("can't make sniffer: %s", err)
+	}
+
+	return IPv4Conn{
+		layerStates: []layerState{etherState, ipv4State},
+		injector:    injector,
+		sniffer:     sniffer,
+	}
+}
+
+// Send sends a frame with ipv4 overriding the IPv4 layer defaults and
+// additionalLayers added after it.
+func (c *IPv4Conn) Send(t *testing.T, ipv4 IPv4, additionalLayers ...Layer) {
+	t.Helper()
+
+	(*Connection)(c).send(t, Layers{&ipv4}, additionalLayers...)
+}
+
+// Close cleans up any resources held.
+func (c *IPv4Conn) Close(t *testing.T) {
+	t.Helper()
+
+	(*Connection)(c).Close(t)
+}
+
+// ExpectFrame expects a frame that matches the provided Layers within the
+// timeout specified. If it doesn't arrive in time, an error is returned.
+func (c *IPv4Conn) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration) (Layers, error) {
+	t.Helper()
+
+	return (*Connection)(c).ExpectFrame(t, frame, timeout)
+}
+
 // IPv6Conn maintains the state for all the layers in a IPv6 connection.
 type IPv6Conn Connection
 
