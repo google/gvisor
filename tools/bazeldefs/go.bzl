@@ -94,10 +94,10 @@ def go_rule(rule, implementation, **kwargs):
     toolchains = kwargs.get("toolchains", []) + ["@io_bazel_rules_go//go:toolchain"]
     return rule(implementation, attrs = attrs, toolchains = toolchains, **kwargs)
 
-def go_test_library(target):
-    if hasattr(target.attr, "embed") and len(target.attr.embed) > 0:
-        return target.attr.embed[0]
-    return None
+def go_embed_libraries(target):
+    if hasattr(target.attr, "embed"):
+        return target.attr.embed
+    return []
 
 def go_context(ctx, goos = None, goarch = None, std = False):
     """Extracts a standard Go context struct.
