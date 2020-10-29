@@ -74,7 +74,9 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	}
 	var icmpv4 testbench.ICMPv4 = testbench.ICMPv4{
 		Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
-		Code: testbench.ICMPv4Code(header.ICMPv4HostUnreachable)}
+		Code: testbench.ICMPv4Code(header.ICMPv4HostUnreachable),
+	}
+
 	layers = append(layers, &icmpv4, ip, tcp)
 	rawConn.SendFrameStateless(t, layers)
 

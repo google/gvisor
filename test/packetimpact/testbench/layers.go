@@ -879,6 +879,9 @@ type ICMPv4 struct {
 	Type     *header.ICMPv4Type
 	Code     *header.ICMPv4Code
 	Checksum *uint16
+	Ident    *uint16
+	Sequence *uint16
+	Payload  []byte
 }
 
 func (l *ICMPv4) String() string {
@@ -887,7 +890,7 @@ func (l *ICMPv4) String() string {
 
 // ToBytes implements Layer.ToBytes.
 func (l *ICMPv4) ToBytes() ([]byte, error) {
-	b := make([]byte, header.ICMPv4MinimumSize)
+	b := make([]byte, header.ICMPv4MinimumSize+len(l.Payload))
 	h := header.ICMPv4(b)
 	if l.Type != nil {
 		h.SetType(*l.Type)
@@ -895,15 +898,33 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 	if l.Code != nil {
 		h.SetCode(*l.Code)
 	}
+	if copied := copy(h.Payload(), l.Payload); copied != len(l.Payload) {
+		panic(fmt.Sprintf("wrong number of bytes copied into h.Payload(): got = %d, want = %d", len(h.Payload()), len(l.Payload)))
+	}
+	if l.Ident != nil {
+		h.SetIdent(*l.Ident)
+	}
+	if l.Sequence != nil {
+		h.SetSequence(*l.Sequence)
+	}
+
+	// The checksum must be handled last because the ICMPv4 header fields are
+	// included in the computation.
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
-		return h, nil
+	} else {
+		// Compute the checksum based on the ICMPv4.Payload and also the subsequent
+		// layers.
+		payload, err := payload(l)
+		if err != nil {
+			return nil, err
+		}
+		var vv buffer.VectorisedView
+		vv.AppendView(buffer.View(l.Payload))
+		vv.Append(payload)
+		h.SetChecksum(header.ICMPv4Checksum(h, vv))
 	}
-	payload, err := payload(l)
-	if err != nil {
-		return nil, err
-	}
-	h.SetChecksum(header.ICMPv4Checksum(h, payload))
+
 	return h, nil
 }
 
@@ -915,8 +936,11 @@ func parseICMPv4(b []byte) (Layer, layerParser) {
 		Type:     ICMPv4Type(h.Type()),
 		Code:     ICMPv4Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
+		Ident:    Uint16(h.Ident()),
+		Sequence: Uint16(h.Sequence()),
+		Payload:  h.Payload(),
 	}
-	return &icmpv4, parsePayload
+	return &icmpv4, nil
 }
 
 func (l *ICMPv4) match(other Layer) bool {
