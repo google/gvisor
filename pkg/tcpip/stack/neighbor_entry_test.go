@@ -47,12 +47,6 @@ const (
 	entryTestNetDefaultMTU = 65536
 )
 
-// runImmediatelyScheduledJobs runs all jobs scheduled to run at the current
-// time.
-func runImmediatelyScheduledJobs(clock *faketime.ManualClock) {
-	clock.Advance(immediateDuration)
-}
-
 // eventDiffOpts are the options passed to cmp.Diff to compare entry events.
 // The UpdatedAtNanos field is ignored due to a lack of a deterministic method
 // to predict the time that an event will be dispatched.
@@ -314,7 +308,7 @@ func TestEntryUnknownToUnknownWhenConfirmationWithUnknownAddress(t *testing.T) {
 
 func TestEntryUnknownToIncomplete(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
@@ -323,7 +317,6 @@ func TestEntryUnknownToIncomplete(t *testing.T) {
 	}
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -361,7 +354,7 @@ func TestEntryUnknownToIncomplete(t *testing.T) {
 
 func TestEntryUnknownToStale(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handleProbeLocked(entryTestLinkAddr1)
@@ -371,7 +364,6 @@ func TestEntryUnknownToStale(t *testing.T) {
 	e.mu.Unlock()
 
 	// No probes should have been sent.
-	runImmediatelyScheduledJobs(clock)
 	linkRes.mu.Lock()
 	diff := cmp.Diff(linkRes.probes, []entryTestProbeInfo(nil))
 	linkRes.mu.Unlock()
@@ -496,7 +488,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 
 func TestEntryIncompleteToReachable(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
@@ -505,7 +497,6 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 	}
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -564,7 +555,7 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 // to Reachable.
 func TestEntryAddsAndClearsWakers(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	w := sleep.Waker{}
 	s := sleep.Sleeper{}
@@ -575,7 +566,6 @@ func TestEntryAddsAndClearsWakers(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -643,7 +633,7 @@ func TestEntryAddsAndClearsWakers(t *testing.T) {
 
 func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
@@ -652,7 +642,6 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 	}
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -709,7 +698,7 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 
 func TestEntryIncompleteToStale(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
@@ -718,7 +707,6 @@ func TestEntryIncompleteToStale(t *testing.T) {
 	}
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -854,7 +842,7 @@ func (*testLocker) Unlock() {}
 
 func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	ipv6EP := e.nic.networkEndpoints[header.IPv6ProtocolNumber].(*testIPv6Endpoint)
 
@@ -862,7 +850,6 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -938,13 +925,12 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 
 func TestEntryStaysReachableWhenProbeWithSameAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1017,7 +1003,6 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1089,13 +1074,12 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 
 func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1163,13 +1147,12 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 
 func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1241,13 +1224,12 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 
 func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1319,13 +1301,12 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 
 func TestEntryStaysStaleWhenProbeWithSameAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1387,13 +1368,12 @@ func TestEntryStaysStaleWhenProbeWithSameAddress(t *testing.T) {
 
 func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1468,13 +1448,12 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 
 func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1549,13 +1528,12 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 
 func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1630,13 +1608,12 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 
 func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1707,13 +1684,12 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 
 func TestEntryStaleToDelay(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1792,7 +1768,6 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1892,7 +1867,6 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -1999,7 +1973,6 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -2094,13 +2067,12 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 
 func TestEntryStaysDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -2176,13 +2148,12 @@ func TestEntryStaysDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 
 func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -2260,13 +2231,12 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 
 func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
+	e, nudDisp, linkRes, _ := entryTestSetup(c)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	wantProbes := []entryTestProbeInfo{
 		{
 			RemoteAddress:     entryTestAddr1,
@@ -2354,7 +2324,6 @@ func TestEntryDelayToProbe(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -2459,7 +2428,6 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -2574,7 +2542,6 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -2693,7 +2660,6 @@ func TestEntryStaysProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -2918,7 +2884,6 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -3055,7 +3020,6 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithSameAddress(t *testin
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -3189,7 +3153,6 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -3321,7 +3284,6 @@ func TestEntryProbeToFailed(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{
@@ -3448,7 +3410,6 @@ func TestEntryFailedGetsDeleted(t *testing.T) {
 	e.handlePacketQueuedLocked(entryTestAddr2)
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
 	{
 		wantProbes := []entryTestProbeInfo{
 			{

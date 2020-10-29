@@ -869,7 +869,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 						if got := invalid.Value(); got != 1 {
 							t.Fatalf("got invalid = %d, want = 1", got)
 						}
-						if !isRouter && typ.routerOnly && test.useNeighborCache {
+						if !isRouter && typ.routerOnly {
 							// Router only count should have increased.
 							if got := routerOnly.Value(); got != 1 {
 								t.Fatalf("got RouterOnlyPacketsReceivedByHost = %d, want = 1", got)

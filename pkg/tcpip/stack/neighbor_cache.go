@@ -26,7 +26,7 @@ const neighborCacheSize = 512 // max entries per interface
 
 // neighborCache maps IP addresses to link addresses. It uses the Least
 // Recently Used (LRU) eviction strategy to implement a bounded cache for
-// dynmically acquired entries. It contains the state machine and configuration
+// dynamically acquired entries. It contains the state machine and configuration
 // for running Neighbor Unreachability Detection (NUD).
 //
 // There are two types of entries in the neighbor cache:
