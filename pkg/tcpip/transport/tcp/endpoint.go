@@ -2690,14 +2690,16 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err *tcpip.Error) {
 		return err
 	}
 
-	// Expand netProtos to include v4 and v6 if the caller is binding to a
-	// wildcard (empty) address, and this is an IPv6 endpoint with v6only
-	// set to false.
 	netProtos := []tcpip.NetworkProtocolNumber{netProto}
-	if netProto == header.IPv6ProtocolNumber && !e.v6only && addr.Addr == "" {
-		netProtos = []tcpip.NetworkProtocolNumber{
-			header.IPv6ProtocolNumber,
-			header.IPv4ProtocolNumber,
+
+	// Expand netProtos to include v4 and v6 under dual-stack if the caller is
+	// binding to a wildcard (empty) address, and this is an IPv6 endpoint with
+	// v6only set to false.
+	if netProto == header.IPv6ProtocolNumber {
+		stackHasV4 := e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber)
+		alsoBindToV4 := !e.v6only && addr.Addr == "" && stackHasV4
+		if alsoBindToV4 {
+			netProtos = append(netProtos, header.IPv4ProtocolNumber)
 		}
 	}
 
