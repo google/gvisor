@@ -100,24 +100,43 @@ func unmarshalMatcher(match linux.XTEntryMatch, filter stack.IPHeaderFilter, buf
 // marshalTarget and unmarshalTarget can be used.
 type targetMaker interface {
 	// id uniquely identifies the target.
-	id() stack.TargetID
+	id() targetID
 
-	// marshal converts from a stack.Target to an ABI struct.
-	marshal(target stack.Target) []byte
+	// marshal converts from a target to an ABI struct.
+	marshal(target target) []byte
 
-	// unmarshal converts from the ABI matcher struct to a stack.Target.
-	unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Target, *syserr.Error)
+	// unmarshal converts from the ABI matcher struct to a target.
+	unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error)
 }
 
-// targetMakers maps the TargetID of supported targets to the targetMaker that
+// A targetID uniquely identifies a target.
+type targetID struct {
+	// name is the target name as stored in the xt_entry_target struct.
+	name string
+
+	// networkProtocol is the protocol to which the target applies.
+	networkProtocol tcpip.NetworkProtocolNumber
+
+	// revision is the version of the target.
+	revision uint8
+}
+
+// target extends a stack.Target, allowing it to be used with the extension
+// system. The sentry only uses targets, never stack.Targets directly.
+type target interface {
+	stack.Target
+	id() targetID
+}
+
+// targetMakers maps the targetID of supported targets to the targetMaker that
 // marshals and unmarshals it. It is immutable after package initialization.
-var targetMakers = map[stack.TargetID]targetMaker{}
+var targetMakers = map[targetID]targetMaker{}
 
 func targetRevision(name string, netProto tcpip.NetworkProtocolNumber, rev uint8) (uint8, bool) {
-	tid := stack.TargetID{
-		Name:            name,
-		NetworkProtocol: netProto,
-		Revision:        rev,
+	tid := targetID{
+		name:            name,
+		networkProtocol: netProto,
+		revision:        rev,
 	}
 	if _, ok := targetMakers[tid]; !ok {
 		return 0, false
@@ -126,8 +145,8 @@ func targetRevision(name string, netProto tcpip.NetworkProtocolNumber, rev uint8
 	// Return the highest supported revision unless rev is higher.
 	for _, other := range targetMakers {
 		otherID := other.id()
-		if name == otherID.Name && netProto == otherID.NetworkProtocol && otherID.Revision > rev {
-			rev = uint8(otherID.Revision)
+		if name == otherID.name && netProto == otherID.networkProtocol && otherID.revision > rev {
+			rev = uint8(otherID.revision)
 		}
 	}
 	return rev, true
@@ -142,19 +161,21 @@ func registerTargetMaker(tm targetMaker) {
 	targetMakers[tm.id()] = tm
 }
 
-func marshalTarget(target stack.Target) []byte {
-	targetMaker, ok := targetMakers[target.ID()]
+func marshalTarget(tgt stack.Target) []byte {
+	// The sentry only uses targets, never stack.Targets directly.
+	target := tgt.(target)
+	targetMaker, ok := targetMakers[target.id()]
 	if !ok {
-		panic(fmt.Sprintf("unknown target of type %T with id %+v.", target, target.ID()))
+		panic(fmt.Sprintf("unknown target of type %T with id %+v.", target, target.id()))
 	}
 	return targetMaker.marshal(target)
 }
 
-func unmarshalTarget(target linux.XTEntryTarget, filter stack.IPHeaderFilter, buf []byte) (stack.Target, *syserr.Error) {
-	tid := stack.TargetID{
-		Name:            target.Name.String(),
-		NetworkProtocol: filter.NetworkProtocol(),
-		Revision:        target.Revision,
+func unmarshalTarget(target linux.XTEntryTarget, filter stack.IPHeaderFilter, buf []byte) (target, *syserr.Error) {
+	tid := targetID{
+		name:            target.Name.String(),
+		networkProtocol: filter.NetworkProtocol(),
+		revision:        target.Revision,
 	}
 	targetMaker, ok := targetMakers[tid]
 	if !ok {
