@@ -140,8 +140,8 @@ func (d *dentry) beforeSave() {
 // afterLoad is invoked by stateify.
 func (d *dentry) afterLoad() {
 	d.hostFD = -1
-	if refsvfs2.LeakCheckEnabled() && atomic.LoadInt64(&d.refs) != -1 {
-		refsvfs2.Register(d, "gofer.dentry")
+	if atomic.LoadInt64(&d.refs) != -1 {
+		refsvfs2.Register(d)
 	}
 }
 

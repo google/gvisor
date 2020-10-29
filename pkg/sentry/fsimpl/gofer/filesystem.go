@@ -262,7 +262,7 @@ func (fs *filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 			// treat their invalidation as deletion.
 			child.setDeleted()
 			parent.syntheticChildren--
-			child.decRefLocked()
+			child.decRefNoCaching()
 			parent.dirents = nil
 		}
 		*ds = appendDentry(*ds, child)
@@ -631,7 +631,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		child.setDeleted()
 		if child.isSynthetic() {
 			parent.syntheticChildren--
-			child.decRefLocked()
+			child.decRefNoCaching()
 		}
 		ds = appendDentry(ds, child)
 	}
@@ -1361,7 +1361,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		replaced.setDeleted()
 		if replaced.isSynthetic() {
 			newParent.syntheticChildren--
-			replaced.decRefLocked()
+			replaced.decRefNoCaching()
 		}
 		ds = appendDentry(ds, replaced)
 	}
@@ -1370,7 +1370,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// with reference counts and queue oldParent for checkCachingLocked if the
 	// parent isn't actually changing.
 	if oldParent != newParent {
-		oldParent.decRefLocked()
+		oldParent.decRefNoCaching()
 		ds = appendDentry(ds, oldParent)
 		newParent.IncRef()
 		if renamed.isSynthetic() {

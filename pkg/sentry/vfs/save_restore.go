@@ -111,8 +111,8 @@ func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
 }
 
 func (mnt *Mount) afterLoad() {
-	if refsvfs2.LeakCheckEnabled() && atomic.LoadInt64(&mnt.refs) != 0 {
-		refsvfs2.Register(mnt, "vfs.Mount")
+	if atomic.LoadInt64(&mnt.refs) != 0 {
+		refsvfs2.Register(mnt)
 	}
 }
 
