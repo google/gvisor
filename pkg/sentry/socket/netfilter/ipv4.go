@@ -46,13 +46,13 @@ func convertNetstackToBinary4(stk *stack.Stack, tablename linux.TableName) (linu
 		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("table name %q too long", tablename)
 	}
 
-	table, ok := stk.IPTables().GetTable(tablename.String(), false)
+	id, ok := nameToID[tablename.String()]
 	if !ok {
 		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q", tablename)
 	}
 
 	// Setup the info struct.
-	entries, info := getEntries4(table, tablename)
+	entries, info := getEntries4(stk.IPTables().GetTable(id, false), tablename)
 	return entries, info, nil
 }
 

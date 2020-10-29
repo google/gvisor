@@ -2360,13 +2360,10 @@ func TestWriteStats(t *testing.T) {
 				// Install Output DROP rule.
 				t.Helper()
 				ipt := stk.IPTables()
-				filter, ok := ipt.GetTable(stack.FilterTable, true /* ipv6 */)
-				if !ok {
-					t.Fatalf("failed to find filter table")
-				}
+				filter := ipt.GetTable(stack.FilterID, true /* ipv6 */)
 				ruleIdx := filter.BuiltinChains[stack.Output]
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
-				if err := ipt.ReplaceTable(stack.FilterTable, filter, true /* ipv6 */); err != nil {
+				if err := ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */); err != nil {
 					t.Fatalf("failed to replace table: %v", err)
 				}
 			},
@@ -2381,17 +2378,14 @@ func TestWriteStats(t *testing.T) {
 				// of the 3 packets.
 				t.Helper()
 				ipt := stk.IPTables()
-				filter, ok := ipt.GetTable(stack.FilterTable, true /* ipv6 */)
-				if !ok {
-					t.Fatalf("failed to find filter table")
-				}
+				filter := ipt.GetTable(stack.FilterID, true /* ipv6 */)
 				// We'll match and DROP the last packet.
 				ruleIdx := filter.BuiltinChains[stack.Output]
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&limitedMatcher{nPackets - 1}}
 				// Make sure the next rule is ACCEPT.
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				if err := ipt.ReplaceTable(stack.FilterTable, filter, true /* ipv6 */); err != nil {
+				if err := ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */); err != nil {
 					t.Fatalf("failed to replace table: %v", err)
 				}
 			},

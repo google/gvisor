@@ -26,13 +26,6 @@ type AcceptTarget struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-// ID implements Target.ID.
-func (at *AcceptTarget) ID() TargetID {
-	return TargetID{
-		NetworkProtocol: at.NetworkProtocol,
-	}
-}
-
 // Action implements Target.Action.
 func (*AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleAccept, 0
@@ -44,35 +37,16 @@ type DropTarget struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-// ID implements Target.ID.
-func (dt *DropTarget) ID() TargetID {
-	return TargetID{
-		NetworkProtocol: dt.NetworkProtocol,
-	}
-}
-
 // Action implements Target.Action.
 func (*DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
-
-// ErrorTargetName is used to mark targets as error targets. Error targets
-// shouldn't be reached - an error has occurred if we fall through to one.
-const ErrorTargetName = "ERROR"
 
 // ErrorTarget logs an error and drops the packet. It represents a target that
 // should be unreachable.
 type ErrorTarget struct {
 	// NetworkProtocol is the network protocol the target is used with.
 	NetworkProtocol tcpip.NetworkProtocolNumber
-}
-
-// ID implements Target.ID.
-func (et *ErrorTarget) ID() TargetID {
-	return TargetID{
-		Name:            ErrorTargetName,
-		NetworkProtocol: et.NetworkProtocol,
-	}
 }
 
 // Action implements Target.Action.
@@ -90,14 +64,6 @@ type UserChainTarget struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-// ID implements Target.ID.
-func (uc *UserChainTarget) ID() TargetID {
-	return TargetID{
-		Name:            ErrorTargetName,
-		NetworkProtocol: uc.NetworkProtocol,
-	}
-}
-
 // Action implements Target.Action.
 func (*UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
@@ -110,22 +76,10 @@ type ReturnTarget struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-// ID implements Target.ID.
-func (rt *ReturnTarget) ID() TargetID {
-	return TargetID{
-		NetworkProtocol: rt.NetworkProtocol,
-	}
-}
-
 // Action implements Target.Action.
 func (*ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
-
-// RedirectTargetName is used to mark targets as redirect targets. Redirect
-// targets should be reached for only NAT and Mangle tables. These targets will
-// change the destination port/destination IP for packets.
-const RedirectTargetName = "REDIRECT"
 
 // RedirectTarget redirects the packet by modifying the destination port/IP.
 // TODO(gvisor.dev/issue/170): Other flags need to be added after we support
@@ -139,14 +93,6 @@ type RedirectTarget struct {
 
 	// NetworkProtocol is the network protocol the target is used with.
 	NetworkProtocol tcpip.NetworkProtocolNumber
-}
-
-// ID implements Target.ID.
-func (rt *RedirectTarget) ID() TargetID {
-	return TargetID{
-		Name:            RedirectTargetName,
-		NetworkProtocol: rt.NetworkProtocol,
-	}
 }
 
 // Action implements Target.Action.

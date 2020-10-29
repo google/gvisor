@@ -50,6 +50,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux/vfs2"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -1084,6 +1085,7 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (in
 		// privileges.
 		RawFactory: raw.EndpointFactory{},
 		UniqueID:   uniqueID,
+		IPTables:   netfilter.DefaultLinuxTables(),
 	})}
 
 	// Enable SACK Recovery.
