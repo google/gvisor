@@ -319,7 +319,8 @@ func makeStackKey(pcs []uintptr) stackKey {
 	return key
 }
 
-func recordStack() []uintptr {
+// RecordStack constructs and returns the PCs on the current stack.
+func RecordStack() []uintptr {
 	pcs := make([]uintptr, maxStackFrames)
 	n := runtime.Callers(1, pcs)
 	if n == 0 {
@@ -342,7 +343,8 @@ func recordStack() []uintptr {
 	return v
 }
 
-func formatStack(pcs []uintptr) string {
+// FormatStack converts the given stack into a readable format.
+func FormatStack(pcs []uintptr) string {
 	frames := runtime.CallersFrames(pcs)
 	var trace bytes.Buffer
 	for {
@@ -367,7 +369,7 @@ func (r *AtomicRefCount) finalize() {
 	if n := r.ReadRefs(); n != 0 {
 		msg := fmt.Sprintf("%sAtomicRefCount %p owned by %q garbage collected with ref count of %d (want 0)", note, r, r.name, n)
 		if len(r.stack) != 0 {
-			msg += ":\nCaller:\n" + formatStack(r.stack)
+			msg += ":\nCaller:\n" + FormatStack(r.stack)
 		} else {
 			msg += " (enable trace logging to debug)"
 		}
@@ -392,7 +394,7 @@ func (r *AtomicRefCount) EnableLeakCheck(name string) {
 	case NoLeakChecking:
 		return
 	case LeaksLogTraces:
-		r.stack = recordStack()
+		r.stack = RecordStack()
 	}
 	r.name = name
 	runtime.SetFinalizer(r, (*AtomicRefCount).finalize)

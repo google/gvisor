@@ -479,9 +479,7 @@ func (l *Loader) Destroy() {
 
 	// All sentry-created resources should have been released at this point;
 	// check for reference leaks.
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.DoLeakCheck()
-	}
+	refsvfs2.DoLeakCheck()
 
 	// In the success case, stdioFDs and goferFDs will only contain
 	// released/closed FDs that ownership has been passed over to host FDs and

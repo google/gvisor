@@ -590,7 +590,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 // Precondition: d.fs.renameMu is locked.
 func (d *dentry) releaseSyntheticRecursiveLocked(ctx context.Context) {
 	if d.isSynthetic() {
-		d.decRefLocked()
+		d.decRefNoCaching()
 		d.checkCachingLocked(ctx)
 	}
 	if d.isDir() {
@@ -860,10 +860,7 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		d.nlink = uint32(attr.NLink)
 	}
 	d.vfsd.Init(d)
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Register(d, "gofer.dentry")
-	}
-
+	refsvfs2.Register(d)
 	fs.syncMu.Lock()
 	fs.syncableDentries[d] = struct{}{}
 	fs.syncMu.Unlock()
@@ -1222,17 +1219,19 @@ func dentryGIDFromP9GID(gid p9.GID) uint32 {
 func (d *dentry) IncRef() {
 	// d.refs may be 0 if d.fs.renameMu is locked, which serializes against
 	// d.checkCachingLocked().
-	atomic.AddInt64(&d.refs, 1)
+	r := atomic.AddInt64(&d.refs, 1)
+	refsvfs2.LogIncRef(d, r)
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *dentry) TryIncRef() bool {
 	for {
-		refs := atomic.LoadInt64(&d.refs)
-		if refs <= 0 {
+		r := atomic.LoadInt64(&d.refs)
+		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, refs, refs+1) {
+		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+			refsvfs2.LogTryIncRef(d, r+1)
 			return true
 		}
 	}
@@ -1240,27 +1239,41 @@ func (d *dentry) TryIncRef() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
-	if refs := atomic.AddInt64(&d.refs, -1); refs == 0 {
+	if d.decRefNoCaching() == 0 {
 		d.fs.renameMu.Lock()
 		d.checkCachingLocked(ctx)
 		d.fs.renameMu.Unlock()
-	} else if refs < 0 {
-		panic("gofer.dentry.DecRef() called without holding a reference")
 	}
 }
 
-// decRefLocked decrements d's reference count without calling
+// decRefNoCaching decrements d's reference count without calling
 // d.checkCachingLocked, even if d's reference count reaches 0; callers are
 // responsible for ensuring that d.checkCachingLocked will be called later.
-func (d *dentry) decRefLocked() {
-	if refs := atomic.AddInt64(&d.refs, -1); refs < 0 {
-		panic("gofer.dentry.decRefLocked() called without holding a reference")
+func (d *dentry) decRefNoCaching() int64 {
+	r := atomic.AddInt64(&d.refs, -1)
+	refsvfs2.LogDecRef(d, r)
+	if r < 0 {
+		panic("gofer.dentry.decRefNoCaching() called without holding a reference")
 	}
+	return r
+}
+
+// RefType implements refsvfs2.CheckedObject.Type.
+func (d *dentry) RefType() string {
+	return "gofer.dentry"
 }
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
 	return fmt.Sprintf("[gofer.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+}
+
+// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+//
+// This should only be set to true for debugging purposes, as it can generate an
+// extremely large amount of output and drastically degrade performance.
+func (d *dentry) LogRefs() bool {
+	return false
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
@@ -1486,17 +1499,10 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 
 	// Drop the reference held by d on its parent without recursively locking
 	// d.fs.renameMu.
-	if d.parent != nil {
-		if refs := atomic.AddInt64(&d.parent.refs, -1); refs == 0 {
-			d.parent.checkCachingLocked(ctx)
-		} else if refs < 0 {
-			panic("gofer.dentry.DecRef() called without holding a reference")
-		}
+	if d.parent != nil && d.parent.decRefNoCaching() == 0 {
+		d.parent.checkCachingLocked(ctx)
 	}
-
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Unregister(d, "gofer.dentry")
-	}
+	refsvfs2.Unregister(d)
 }
 
 func (d *dentry) isDeleted() bool {
