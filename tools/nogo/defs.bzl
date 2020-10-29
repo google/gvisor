@@ -1,6 +1,6 @@
 """Nogo rules."""
 
-load("//tools/bazeldefs:go.bzl", "go_context", "go_importpath", "go_rule", "go_test_library")
+load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -200,14 +200,12 @@ def _nogo_aspect_impl(target, ctx):
     # If we're using the "library" attribute, then we need to aggregate the
     # original library sources and dependencies into this target to perform
     # proper type analysis.
-    if ctx.rule.kind == "go_test":
-        library = go_test_library(ctx.rule)
-        if library != None:
-            info = library[NogoInfo]
-            if hasattr(info, "srcs"):
-                srcs = srcs + info.srcs
-            if hasattr(info, "deps"):
-                deps = deps + info.deps
+    for embed in go_embed_libraries(ctx.rule):
+        info = embed[NogoInfo]
+        if hasattr(info, "srcs"):
+            srcs = srcs + info.srcs
+        if hasattr(info, "deps"):
+            deps = deps + info.deps
 
     # Start with all target files and srcs as input.
     inputs = target.files.to_list() + srcs
