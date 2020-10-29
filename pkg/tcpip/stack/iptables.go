@@ -22,29 +22,16 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// tableID is an index into IPTables.tables.
-type tableID int
+// TableID identifies a specific table.
+type TableID int
 
+// Each value identifies a specfic table.
 const (
-	natID tableID = iota
-	mangleID
-	filterID
-	numTables
+	NATID TableID = iota
+	MangleID
+	FilterID
+	NumTables
 )
-
-// Table names.
-const (
-	NATTable    = "nat"
-	MangleTable = "mangle"
-	FilterTable = "filter"
-)
-
-// nameToID is immutable.
-var nameToID = map[string]tableID{
-	NATTable:    natID,
-	MangleTable: mangleID,
-	FilterTable: filterID,
-}
 
 // HookUnset indicates that there is no hook set for an entrypoint or
 // underflow.
@@ -57,8 +44,8 @@ const reaperDelay = 5 * time.Second
 // all packets.
 func DefaultTables() *IPTables {
 	return &IPTables{
-		v4Tables: [numTables]Table{
-			natID: Table{
+		v4Tables: [NumTables]Table{
+			NATID: Table{
 				Rules: []Rule{
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
@@ -81,7 +68,7 @@ func DefaultTables() *IPTables {
 					Postrouting: 3,
 				},
 			},
-			mangleID: Table{
+			MangleID: Table{
 				Rules: []Rule{
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
@@ -99,7 +86,7 @@ func DefaultTables() *IPTables {
 					Postrouting: HookUnset,
 				},
 			},
-			filterID: Table{
+			FilterID: Table{
 				Rules: []Rule{
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
@@ -122,8 +109,8 @@ func DefaultTables() *IPTables {
 				},
 			},
 		},
-		v6Tables: [numTables]Table{
-			natID: Table{
+		v6Tables: [NumTables]Table{
+			NATID: Table{
 				Rules: []Rule{
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
@@ -146,7 +133,7 @@ func DefaultTables() *IPTables {
 					Postrouting: 3,
 				},
 			},
-			mangleID: Table{
+			MangleID: Table{
 				Rules: []Rule{
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
@@ -164,7 +151,7 @@ func DefaultTables() *IPTables {
 					Postrouting: HookUnset,
 				},
 			},
-			filterID: Table{
+			FilterID: Table{
 				Rules: []Rule{
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 					Rule{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
@@ -187,10 +174,10 @@ func DefaultTables() *IPTables {
 				},
 			},
 		},
-		priorities: [NumHooks][]tableID{
-			Prerouting: []tableID{mangleID, natID},
-			Input:      []tableID{natID, filterID},
-			Output:     []tableID{mangleID, natID, filterID},
+		priorities: [NumHooks][]TableID{
+			Prerouting: []TableID{MangleID, NATID},
+			Input:      []TableID{NATID, FilterID},
+			Output:     []TableID{MangleID, NATID, FilterID},
 		},
 		connections: ConnTrack{
 			seed: generateRandUint32(),
@@ -229,26 +216,20 @@ func EmptyNATTable() Table {
 	}
 }
 
-// GetTable returns a table by name.
-func (it *IPTables) GetTable(name string, ipv6 bool) (Table, bool) {
-	id, ok := nameToID[name]
-	if !ok {
-		return Table{}, false
-	}
+// GetTable returns a table with the given id and IP version. It panics when an
+// invalid id is provided.
+func (it *IPTables) GetTable(id TableID, ipv6 bool) Table {
 	it.mu.RLock()
 	defer it.mu.RUnlock()
 	if ipv6 {
-		return it.v6Tables[id], true
+		return it.v6Tables[id]
 	}
-	return it.v4Tables[id], true
+	return it.v4Tables[id]
 }
 
-// ReplaceTable replaces or inserts table by name.
-func (it *IPTables) ReplaceTable(name string, table Table, ipv6 bool) *tcpip.Error {
-	id, ok := nameToID[name]
-	if !ok {
-		return tcpip.ErrInvalidOptionValue
-	}
+// ReplaceTable replaces or inserts table by name. It panics when an invalid id
+// is provided.
+func (it *IPTables) ReplaceTable(id TableID, table Table, ipv6 bool) *tcpip.Error {
 	it.mu.Lock()
 	defer it.mu.Unlock()
 	// If iptables is being enabled, initialize the conntrack table and
@@ -311,7 +292,7 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, prer
 	for _, tableID := range priorities {
 		// If handlePacket already NATed the packet, we don't need to
 		// check the NAT table.
-		if tableID == natID && pkt.NatDone {
+		if tableID == NATID && pkt.NatDone {
 			continue
 		}
 		var table Table

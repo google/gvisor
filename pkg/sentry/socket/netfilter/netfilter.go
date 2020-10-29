@@ -42,6 +42,45 @@ func nflog(format string, args ...interface{}) {
 	}
 }
 
+// Table names.
+const (
+	natTable    = "nat"
+	mangleTable = "mangle"
+	filterTable = "filter"
+)
+
+// nameToID is immutable.
+var nameToID = map[string]stack.TableID{
+	natTable:    stack.NATID,
+	mangleTable: stack.MangleID,
+	filterTable: stack.FilterID,
+}
+
+// DefaultLinuxTables returns the rules of stack.DefaultTables() wrapped for
+// compatability with netfilter extensions.
+func DefaultLinuxTables() *stack.IPTables {
+	tables := stack.DefaultTables()
+	tables.VisitTargets(func(oldTarget stack.Target) stack.Target {
+		switch val := oldTarget.(type) {
+		case *stack.AcceptTarget:
+			return &acceptTarget{AcceptTarget: *val}
+		case *stack.DropTarget:
+			return &dropTarget{DropTarget: *val}
+		case *stack.ErrorTarget:
+			return &errorTarget{ErrorTarget: *val}
+		case *stack.UserChainTarget:
+			return &userChainTarget{UserChainTarget: *val}
+		case *stack.ReturnTarget:
+			return &returnTarget{ReturnTarget: *val}
+		case *stack.RedirectTarget:
+			return &redirectTarget{RedirectTarget: *val}
+		default:
+			panic(fmt.Sprintf("Unknown rule in default iptables of type %T", val))
+		}
+	})
+	return tables
+}
+
 // GetInfo returns information about iptables.
 func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, ipv6 bool) (linux.IPTGetinfo, *syserr.Error) {
 	// Read in the struct and table name.
@@ -144,9 +183,9 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	// TODO(gvisor.dev/issue/170): Support other tables.
 	var table stack.Table
 	switch replace.Name.String() {
-	case stack.FilterTable:
+	case filterTable:
 		table = stack.EmptyFilterTable()
-	case stack.NATTable:
+	case natTable:
 		table = stack.EmptyNATTable()
 	default:
 		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())
@@ -177,7 +216,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 				}
 				if offset == replace.Underflow[hook] {
 					if !validUnderflow(table.Rules[ruleIdx], ipv6) {
-						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP", ruleIdx)
+						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP: %+v", ruleIdx)
 						return syserr.ErrInvalidArgument
 					}
 					table.Underflows[hk] = ruleIdx
@@ -253,8 +292,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	// - There are no chains without an unconditional final rule.
 	// - There are no chains without an unconditional underflow rule.
 
-	return syserr.TranslateNetstackError(stk.IPTables().ReplaceTable(replace.Name.String(), table, ipv6))
-
+	return syserr.TranslateNetstackError(stk.IPTables().ReplaceTable(nameToID[replace.Name.String()], table, ipv6))
 }
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
@@ -308,7 +346,7 @@ func validUnderflow(rule stack.Rule, ipv6 bool) bool {
 		return false
 	}
 	switch rule.Target.(type) {
-	case *stack.AcceptTarget, *stack.DropTarget:
+	case *acceptTarget, *dropTarget:
 		return true
 	default:
 		return false
@@ -319,7 +357,7 @@ func isUnconditionalAccept(rule stack.Rule, ipv6 bool) bool {
 	if !validUnderflow(rule, ipv6) {
 		return false
 	}
-	_, ok := rule.Target.(*stack.AcceptTarget)
+	_, ok := rule.Target.(*acceptTarget)
 	return ok
 }
 
