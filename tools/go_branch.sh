@@ -61,14 +61,6 @@ go_branch=$( \
 )
 readonly go_branch
 
-declare commit
-commit=$(git rev-parse HEAD)
-readonly commit
-if [[ -n "$(git branch --contains="${commit}" go)" ]]; then
-   # The go branch already has the commit.
-   exit 0
-fi
-
 # Clone the current repository to the temporary directory, and check out the
 # current go_branch directory. We move to the new repository for convenience.
 declare repo_orig
@@ -130,7 +122,11 @@ find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
 # Update the current working set and commit.
-git add . && git commit -m "Merge ${head} (automated)"
+# If the current working commit has already been committed to the remote go
+# branch, then we have nothing to commit here. So allow empty commit. This can
+# occur when this script is run parallely (via pull_request and push events)
+# and the push workflow finishes before the pull_request workflow can run this.
+git add . && git commit --allow-empty -m "Merge ${head} (automated)"
 
 # Push the branch back to the original repository.
 git remote add orig "${repo_orig}" && git push -f orig go:go
