@@ -5,7 +5,7 @@ By
   {% assign author_id=include.authors[i] %}
   {% assign author=site.authors[author_id] %}
   {% if author %}
-    <a href="mailto:{{ author.email }}">{{ author.name }}</a>
+    <a href="{% if author.url %}{{ author.url }}{% else %}mailto:{{ author.email }}{% endif %}">{{ author.name }}</a>
   {% else %}
     {{ author_id }}
   {% endif %}
