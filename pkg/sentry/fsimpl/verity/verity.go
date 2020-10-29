@@ -43,32 +43,41 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// Name is the default filesystem name.
-const Name = "verity"
+const (
+	// Name is the default filesystem name.
+	Name = "verity"
 
-// merklePrefix is the prefix of the Merkle tree files. For example, the Merkle
-// tree file for "/foo" is "/.merkle.verity.foo".
-const merklePrefix = ".merkle.verity."
+	// merklePrefix is the prefix of the Merkle tree files. For example, the Merkle
+	// tree file for "/foo" is "/.merkle.verity.foo".
+	merklePrefix = ".merkle.verity."
 
-// merkleoffsetInParentXattr is the extended attribute name specifying the
-// offset of child hash in its parent's Merkle tree.
-const merkleOffsetInParentXattr = "user.merkle.offset"
+	// merkleOffsetInParentXattr is the extended attribute name specifying the
+	// offset of the child hash in its parent's Merkle tree.
+	merkleOffsetInParentXattr = "user.merkle.offset"
 
-// merkleSizeXattr is the extended attribute name specifying the size of data
-// hashed by the corresponding Merkle tree. For a file, it's the size of the
-// whole file. For a directory, it's the size of all its children's hashes.
-const merkleSizeXattr = "user.merkle.size"
+	// merkleSizeXattr is the extended attribute name specifying the size of data
+	// hashed by the corresponding Merkle tree. For a regular file, this is the
+	// file size. For a directory, this is the size of all its children's hashes.
+	merkleSizeXattr = "user.merkle.size"
 
-// sizeOfStringInt32 is the size for a 32 bit integer stored as string in
-// extended attributes. The maximum value of a 32 bit integer is 10 digits.
-const sizeOfStringInt32 = 10
+	// sizeOfStringInt32 is the size for a 32 bit integer stored as string in
+	// extended attributes. The maximum value of a 32 bit integer has 10 digits.
+	sizeOfStringInt32 = 10
+)
 
-// noCrashOnVerificationFailure indicates whether the sandbox should panic
-// whenever verification fails. If true, an error is returned instead of
-// panicking. This should only be set for tests.
-// TOOD(b/165661693): Decide whether to panic or return error based on this
-// flag.
-var noCrashOnVerificationFailure bool
+var (
+	// noCrashOnVerificationFailure indicates whether the sandbox should panic
+	// whenever verification fails. If true, an error is returned instead of
+	// panicking. This should only be set for tests.
+	//
+	// TODO(b/165661693): Decide whether to panic or return error based on this
+	// flag.
+	noCrashOnVerificationFailure bool
+
+	// verityMu synchronizes concurrent operations that enable verity and perform
+	// verification checks.
+	verityMu sync.RWMutex
+)
 
 // FilesystemType implements vfs.FilesystemType.
 //
@@ -334,25 +343,25 @@ func (fs *filesystem) newDentry() *dentry {
 		fs: fs,
 	}
 	d.vfsd.Init(d)
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Register(d, "verity.dentry")
-	}
+	refsvfs2.Register(d)
 	return d
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
 func (d *dentry) IncRef() {
-	atomic.AddInt64(&d.refs, 1)
+	r := atomic.AddInt64(&d.refs, 1)
+	refsvfs2.LogIncRef(d, r)
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *dentry) TryIncRef() bool {
 	for {
-		refs := atomic.LoadInt64(&d.refs)
-		if refs <= 0 {
+		r := atomic.LoadInt64(&d.refs)
+		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, refs, refs+1) {
+		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+			refsvfs2.LogTryIncRef(d, r+1)
 			return true
 		}
 	}
@@ -360,12 +369,24 @@ func (d *dentry) TryIncRef() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
-	if refs := atomic.AddInt64(&d.refs, -1); refs == 0 {
+	r := atomic.AddInt64(&d.refs, -1)
+	refsvfs2.LogDecRef(d, r)
+	if r == 0 {
 		d.fs.renameMu.Lock()
 		d.checkDropLocked(ctx)
 		d.fs.renameMu.Unlock()
-	} else if refs < 0 {
+	} else if r < 0 {
 		panic("verity.dentry.DecRef() called without holding a reference")
+	}
+}
+
+func (d *dentry) decRefLocked(ctx context.Context) {
+	r := atomic.AddInt64(&d.refs, -1)
+	refsvfs2.LogDecRef(d, r)
+	if r == 0 {
+		d.checkDropLocked(ctx)
+	} else if r < 0 {
+		panic("verity.dentry.decRefLocked() called without holding a reference")
 	}
 }
 
@@ -399,31 +420,36 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	if d.lowerVD.Ok() {
 		d.lowerVD.DecRef(ctx)
 	}
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Unregister(d, "verity.dentry")
-	}
-
 	if d.lowerMerkleVD.Ok() {
 		d.lowerMerkleVD.DecRef(ctx)
 	}
-
 	if d.parent != nil {
 		d.parent.dirMu.Lock()
 		if !d.vfsd.IsDead() {
 			delete(d.parent.children, d.name)
 		}
 		d.parent.dirMu.Unlock()
-		if refs := atomic.AddInt64(&d.parent.refs, -1); refs == 0 {
-			d.parent.checkDropLocked(ctx)
-		} else if refs < 0 {
-			panic("verity.dentry.DecRef() called without holding a reference")
-		}
+		d.parent.decRefLocked(ctx)
 	}
+	refsvfs2.Unregister(d)
+}
+
+// RefType implements refsvfs2.CheckedObject.Type.
+func (d *dentry) RefType() string {
+	return "verity.dentry"
 }
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
 	return fmt.Sprintf("[verity.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+}
+
+// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+//
+// This should only be set to true for debugging purposes, as it can generate an
+// extremely large amount of output and drastically degrade performance.
+func (d *dentry) LogRefs() bool {
+	return false
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.

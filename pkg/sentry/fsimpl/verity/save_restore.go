@@ -21,7 +21,7 @@ import (
 )
 
 func (d *dentry) afterLoad() {
-	if refsvfs2.LeakCheckEnabled() && atomic.LoadInt64(&d.refs) != -1 {
-		refsvfs2.Register(d, "verity.dentry")
+	if atomic.LoadInt64(&d.refs) != -1 {
+		refsvfs2.Register(d)
 	}
 }

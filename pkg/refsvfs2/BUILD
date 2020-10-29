@@ -8,6 +8,9 @@ go_template(
     srcs = [
         "refs_template.go",
     ],
+    opt_consts = [
+        "logTrace",
+    ],
     types = [
         "T",
     ],

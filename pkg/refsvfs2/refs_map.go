@@ -37,61 +37,98 @@ var (
 // CheckedObject represents a reference-counted object with an informative
 // leak detection message.
 type CheckedObject interface {
+	// RefType is the type of the reference-counted object.
+	RefType() string
+
 	// LeakMessage supplies a warning to be printed upon leak detection.
 	LeakMessage() string
+
+	// LogRefs indicates whether reference-related events should be logged.
+	LogRefs() bool
 }
 
 func init() {
 	liveObjects = make(map[CheckedObject]struct{})
 }
 
-// LeakCheckEnabled returns whether leak checking is enabled. The following
+// leakCheckEnabled returns whether leak checking is enabled. The following
 // functions should only be called if it returns true.
-func LeakCheckEnabled() bool {
+func leakCheckEnabled() bool {
 	return refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking
 }
 
 // Register adds obj to the live object map.
-func Register(obj CheckedObject, typ string) {
-	for _, str := range ignored {
-		if strings.Contains(typ, str) {
-			return
-		}
-	}
-	liveObjectsMu.Lock()
-	if _, ok := liveObjects[obj]; ok {
-		panic(fmt.Sprintf("Unexpected entry in leak checking map: reference %p already added", obj))
-	}
-	liveObjects[obj] = struct{}{}
-	liveObjectsMu.Unlock()
-}
-
-// Unregister removes obj from the live object map.
-func Unregister(obj CheckedObject, typ string) {
-	liveObjectsMu.Lock()
-	defer liveObjectsMu.Unlock()
-	if _, ok := liveObjects[obj]; !ok {
+func Register(obj CheckedObject) {
+	if leakCheckEnabled() {
 		for _, str := range ignored {
-			if strings.Contains(typ, str) {
+			if strings.Contains(obj.RefType(), str) {
 				return
 			}
 		}
-		panic(fmt.Sprintf("Expected to find entry in leak checking map for reference %p", obj))
+		liveObjectsMu.Lock()
+		if _, ok := liveObjects[obj]; ok {
+			panic(fmt.Sprintf("Unexpected entry in leak checking map: reference %p already added", obj))
+		}
+		liveObjects[obj] = struct{}{}
+		liveObjectsMu.Unlock()
+		logEvent(obj, "registered")
 	}
-	delete(liveObjects, obj)
+}
+
+// Unregister removes obj from the live object map.
+func Unregister(obj CheckedObject) {
+	if leakCheckEnabled() {
+		liveObjectsMu.Lock()
+		defer liveObjectsMu.Unlock()
+		if _, ok := liveObjects[obj]; !ok {
+			for _, str := range ignored {
+				if strings.Contains(obj.RefType(), str) {
+					return
+				}
+			}
+			panic(fmt.Sprintf("Expected to find entry in leak checking map for reference %p", obj))
+		}
+		delete(liveObjects, obj)
+		logEvent(obj, "unregistered")
+	}
+}
+
+// LogIncRef logs a reference increment.
+func LogIncRef(obj CheckedObject, refs int64) {
+	logEvent(obj, fmt.Sprintf("IncRef to %d", refs))
+}
+
+// LogTryIncRef logs a successful TryIncRef call.
+func LogTryIncRef(obj CheckedObject, refs int64) {
+	logEvent(obj, fmt.Sprintf("TryIncRef to %d", refs))
+}
+
+// LogDecRef logs a reference decrement.
+func LogDecRef(obj CheckedObject, refs int64) {
+	logEvent(obj, fmt.Sprintf("DecRef to %d", refs))
+}
+
+// logEvent logs a message for the given reference-counted object.
+func logEvent(obj CheckedObject, msg string) {
+	if obj.LogRefs() {
+		log.Infof("[%s %p] %s:", obj.RefType(), obj, msg)
+		log.Infof(refs_vfs1.FormatStack(refs_vfs1.RecordStack()))
+	}
 }
 
 // DoLeakCheck iterates through the live object map and logs a message for each
 // object. It is called once no reference-counted objects should be reachable
 // anymore, at which point anything left in the map is considered a leak.
 func DoLeakCheck() {
-	liveObjectsMu.Lock()
-	defer liveObjectsMu.Unlock()
-	leaked := len(liveObjects)
-	if leaked > 0 {
-		log.Warningf("Leak checking detected %d leaked objects:", leaked)
-		for obj := range liveObjects {
-			log.Warningf(obj.LeakMessage())
+	if leakCheckEnabled() {
+		liveObjectsMu.Lock()
+		defer liveObjectsMu.Unlock()
+		leaked := len(liveObjects)
+		if leaked > 0 {
+			log.Warningf("Leak checking detected %d leaked objects:", leaked)
+			for obj := range liveObjects {
+				log.Warningf(obj.LeakMessage())
+			}
 		}
 	}
 }

@@ -107,9 +107,7 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
 	}
-	if refsvfs2.LeakCheckEnabled() {
-		refsvfs2.Register(mnt, "vfs.Mount")
-	}
+	refsvfs2.Register(mnt)
 	return mnt
 }
 
@@ -474,11 +472,12 @@ func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 // tryIncMountedRef does not require that a reference is held on mnt.
 func (mnt *Mount) tryIncMountedRef() bool {
 	for {
-		refs := atomic.LoadInt64(&mnt.refs)
-		if refs <= 0 { // refs < 0 => MSB set => eagerly unmounted
+		r := atomic.LoadInt64(&mnt.refs)
+		if r <= 0 { // r < 0 => MSB set => eagerly unmounted
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&mnt.refs, refs, refs+1) {
+		if atomic.CompareAndSwapInt64(&mnt.refs, r, r+1) {
+			refsvfs2.LogTryIncRef(mnt, r+1)
 			return true
 		}
 	}
@@ -488,16 +487,15 @@ func (mnt *Mount) tryIncMountedRef() bool {
 func (mnt *Mount) IncRef() {
 	// In general, negative values for mnt.refs are valid because the MSB is
 	// the eager-unmount bit.
-	atomic.AddInt64(&mnt.refs, 1)
+	r := atomic.AddInt64(&mnt.refs, 1)
+	refsvfs2.LogIncRef(mnt, r)
 }
 
 // DecRef decrements mnt's reference count.
 func (mnt *Mount) DecRef(ctx context.Context) {
 	r := atomic.AddInt64(&mnt.refs, -1)
 	if r&^math.MinInt64 == 0 { // mask out MSB
-		if refsvfs2.LeakCheckEnabled() {
-			refsvfs2.Unregister(mnt, "vfs.Mount")
-		}
+		refsvfs2.Unregister(mnt)
 		mnt.destroy(ctx)
 	}
 }
@@ -520,9 +518,22 @@ func (mnt *Mount) destroy(ctx context.Context) {
 	}
 }
 
+// RefType implements refsvfs2.CheckedObject.Type.
+func (mnt *Mount) RefType() string {
+	return "vfs.Mount"
+}
+
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (mnt *Mount) LeakMessage() string {
 	return fmt.Sprintf("[vfs.Mount %p] reference count of %d instead of 0", mnt, atomic.LoadInt64(&mnt.refs))
+}
+
+// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+//
+// This should only be set to true for debugging purposes, as it can generate an
+// extremely large amount of output and drastically degrade performance.
+func (mnt *Mount) LogRefs() bool {
+	return false
 }
 
 // DecRef decrements mntns' reference count.
