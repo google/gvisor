@@ -84,6 +84,10 @@ func (t *timer) init(w *sleep.Waker) {
 
 // cleanup frees all resources associated with the timer.
 func (t *timer) cleanup() {
+	if t.timer == nil {
+		// No cleanup needed.
+		return
+	}
 	t.timer.Stop()
 	*t = timer{}
 }
