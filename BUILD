@@ -93,6 +93,7 @@ go_path(
         "//runsc/cli",
         "//shim/v1/cli",
         "//shim/v2/cli",
+        "//webhook/pkg/cli",
 
         # Packages that are not dependencies of the above.
         "//pkg/sentry/kernel/memevent",

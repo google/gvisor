@@ -1,6 +1,6 @@
 groups:
   # We define three basic groups: generated (all generated files),
-  # exteranl (all files outside the repository), and internal (all
+  # external (all files outside the repository), and internal (all
   # files within the local repository). We can't enforce many style
   # checks on generated and external code, so enable those cases
   # selectively for analyzers below.
@@ -42,6 +42,10 @@ global:
       # Generated gRPC code is not compliant either.
       - "error strings should not be capitalized"
       - "grpc.Errorf is deprecated"
+      # Generated proto code does not always follow capitalization conventions.
+      - "(field|method|struct|type) .* should be .*"
+      # Generated proto code sometimes duplicates imports with aliases.
+      - "duplicate import"
   internal:
     suppress:
       # We use ALL_CAPS for system definitions,
