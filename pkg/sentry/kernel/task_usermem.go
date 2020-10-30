@@ -18,7 +18,8 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -281,29 +282,89 @@ func (t *Task) IovecsIOSequence(addr usermem.Addr, iovcnt int, opts usermem.IOOp
 	}, nil
 }
 
-// copyContext implements marshal.CopyContext. It wraps a task to allow copying
-// memory to and from the task memory with custom usermem.IOOpts.
-type copyContext struct {
-	*Task
+type taskCopyContext struct {
+	ctx  context.Context
+	t    *Task
 	opts usermem.IOOpts
 }
 
-// AsCopyContext wraps the task and returns it as CopyContext.
-func (t *Task) AsCopyContext(opts usermem.IOOpts) marshal.CopyContext {
-	return &copyContext{t, opts}
+// CopyContext returns a marshal.CopyContext that copies to/from t's address
+// space using opts.
+func (t *Task) CopyContext(ctx context.Context, opts usermem.IOOpts) *taskCopyContext {
+	return &taskCopyContext{
+		ctx:  ctx,
+		t:    t,
+		opts: opts,
+	}
 }
 
-// CopyInString copies a string in from the task's memory.
-func (t *copyContext) CopyInString(addr usermem.Addr, maxLen int) (string, error) {
-	return usermem.CopyStringIn(t, t.MemoryManager(), addr, maxLen, t.opts)
+// CopyScratchBuffer implements marshal.CopyContext.CopyScratchBuffer.
+func (cc *taskCopyContext) CopyScratchBuffer(size int) []byte {
+	if ctxTask, ok := cc.ctx.(*Task); ok {
+		return ctxTask.CopyScratchBuffer(size)
+	}
+	return make([]byte, size)
 }
 
-// CopyInBytes copies task memory into dst from an IO context.
-func (t *copyContext) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
-	return t.MemoryManager().CopyIn(t, addr, dst, t.opts)
+func (cc *taskCopyContext) getMemoryManager() (*mm.MemoryManager, error) {
+	cc.t.mu.Lock()
+	tmm := cc.t.MemoryManager()
+	cc.t.mu.Unlock()
+	if !tmm.IncUsers() {
+		return nil, syserror.EFAULT
+	}
+	return tmm, nil
 }
 
-// CopyOutBytes copies src into task memoryfrom an IO context.
-func (t *copyContext) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
-	return t.MemoryManager().CopyOut(t, addr, src, t.opts)
+// CopyInBytes implements marshal.CopyContext.CopyInBytes.
+func (cc *taskCopyContext) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
+	tmm, err := cc.getMemoryManager()
+	if err != nil {
+		return 0, err
+	}
+	defer tmm.DecUsers(cc.ctx)
+	return tmm.CopyIn(cc.ctx, addr, dst, cc.opts)
+}
+
+// CopyOutBytes implements marshal.CopyContext.CopyOutBytes.
+func (cc *taskCopyContext) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
+	tmm, err := cc.getMemoryManager()
+	if err != nil {
+		return 0, err
+	}
+	defer tmm.DecUsers(cc.ctx)
+	return tmm.CopyOut(cc.ctx, addr, src, cc.opts)
+}
+
+type ownTaskCopyContext struct {
+	t    *Task
+	opts usermem.IOOpts
+}
+
+// OwnCopyContext returns a marshal.CopyContext that copies to/from t's address
+// space using opts. The returned CopyContext may only be used by t's task
+// goroutine.
+//
+// Since t already implements marshal.CopyContext, this is only needed to
+// override the usermem.IOOpts used for the copy.
+func (t *Task) OwnCopyContext(opts usermem.IOOpts) *ownTaskCopyContext {
+	return &ownTaskCopyContext{
+		t:    t,
+		opts: opts,
+	}
+}
+
+// CopyScratchBuffer implements marshal.CopyContext.CopyScratchBuffer.
+func (cc *ownTaskCopyContext) CopyScratchBuffer(size int) []byte {
+	return cc.t.CopyScratchBuffer(size)
+}
+
+// CopyInBytes implements marshal.CopyContext.CopyInBytes.
+func (cc *ownTaskCopyContext) CopyInBytes(addr usermem.Addr, dst []byte) (int, error) {
+	return cc.t.MemoryManager().CopyIn(cc.t, addr, dst, cc.opts)
+}
+
+// CopyOutBytes implements marshal.CopyContext.CopyOutBytes.
+func (cc *ownTaskCopyContext) CopyOutBytes(addr usermem.Addr, src []byte) (int, error) {
+	return cc.t.MemoryManager().CopyOut(cc.t, addr, src, cc.opts)
 }
