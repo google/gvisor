@@ -76,8 +76,13 @@ TEST_F(StatTest, StatNormal) {
   // Check filesystem operation result.
   struct stat expected_stat = {
       .st_ino = attr.ino,
+#ifdef __aarch64__
+      .st_mode = expected_mode,
+      .st_nlink = attr.nlink,
+#else
       .st_nlink = attr.nlink,
       .st_mode = expected_mode,
+#endif
       .st_uid = attr.uid,
       .st_gid = attr.gid,
       .st_rdev = attr.rdev,
@@ -152,8 +157,13 @@ TEST_F(StatTest, FstatNormal) {
   // Check filesystem operation result.
   struct stat expected_stat = {
       .st_ino = attr.ino,
+#ifdef __aarch64__
+      .st_mode = expected_mode,
+      .st_nlink = attr.nlink,
+#else
       .st_nlink = attr.nlink,
       .st_mode = expected_mode,
+#endif
       .st_uid = attr.uid,
       .st_gid = attr.gid,
       .st_rdev = attr.rdev,
