@@ -5717,6 +5717,53 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	}
 }
 
+func TestSYNRetransmit(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Create TCP endpoint.
+	var err *tcpip.Error
+	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %s", err)
+	}
+
+	// Start listening.
+	if err := c.EP.Listen(10); err != nil {
+		t.Fatalf("Listen failed: %s", err)
+	}
+
+	// Send the same SYN packet multiple times. We should still get a valid SYN-ACK
+	// reply.
+	irs := seqnum.Value(789)
+	for i := 0; i < 5; i++ {
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: context.StackPort,
+			Flags:   header.TCPFlagSyn,
+			SeqNum:  irs,
+			RcvWnd:  30000,
+		})
+	}
+
+	// Receive the SYN-ACK reply.
+	tcpCheckers := []checker.TransportChecker{
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck | header.TCPFlagSyn),
+		checker.TCPAckNum(uint32(irs) + 1),
+	}
+	checker.IPv4(t, c.GetPacket(), checker.TCP(tcpCheckers...))
+	if p := c.GetPacketWithTimeout(1 * time.Second); p != nil {
+		t.Fatalf("Unexpected packet received: %#v", p)
+	}
+}
+
 func TestSynRcvdBadSeqNumber(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()

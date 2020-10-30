@@ -895,7 +895,7 @@ func (n *NIC) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 }
 
 // isValidForOutgoing returns true if the endpoint can be used to send out a
-// packet. It requires the endpoint to not be marked expired (i.e., its address)
+// packet. It requires the endpoint to not be marked expired (i.e., its address
 // has been removed) unless the NIC is in spoofing mode, or temporary.
 func (n *NIC) isValidForOutgoing(ep AssignableAddressEndpoint) bool {
 	n.mu.RLock()

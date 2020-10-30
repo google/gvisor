@@ -191,7 +191,7 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 }
 
 // IsResolutionRequired returns true if Resolve() must be called to resolve
-// the link address before the this route can be written to.
+// the link address before r can be written to.
 //
 // The NIC r uses must not be locked.
 func (r *Route) IsResolutionRequired() bool {
