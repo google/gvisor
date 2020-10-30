@@ -497,11 +497,9 @@ type Options struct {
 	// NUDConfigs is the default NUD configurations used by interfaces.
 	NUDConfigs NUDConfigurations
 
-	// UseNeighborCache indicates whether ARP and NDP packets should be handled
-	// by the Neighbor Unreachability Detection (NUD) state machine. This flag
-	// also enables the APIs for inspecting and modifying the neighbor table via
-	// NUDDispatcher and the following Stack methods: Neighbors, RemoveNeighbor,
-	// and ClearNeighbors.
+	// UseNeighborCache is deprecated and is scheduled for removal. Setting this
+	// field to true is a noop.
+	// TODO(gvisor.dev/issue/4658): Remove this field as part of NUD rollout.
 	UseNeighborCache bool
 
 	// NUDDisp is the NUD event dispatcher that an integrator can provide to
@@ -645,7 +643,7 @@ func New(opts Options) *Stack {
 		icmpRateLimiter:    NewICMPRateLimiter(),
 		seed:               generateRandUint32(),
 		nudConfigs:         opts.NUDConfigs,
-		useNeighborCache:   opts.UseNeighborCache,
+		useNeighborCache:   true,
 		uniqueIDGenerator:  opts.UniqueID,
 		nudDisp:            opts.NUDDisp,
 		randomGenerator:    mathrand.New(randSrc),

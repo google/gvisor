@@ -323,10 +323,7 @@ func TestForwarding(t *testing.T) {
 					<-ch
 
 					n, _, err = ep.Write(dataPayload, wOpts)
-				} else if err != nil {
-					t.Fatalf("ep.Write(_, _): %s", err)
 				}
-
 				if err != nil {
 					t.Fatalf("ep.Write(_, _): %s", err)
 				}
