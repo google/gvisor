@@ -41,9 +41,9 @@ All images will be tagged and memoized using a hash of the directory contents.
 As a result, every image should be made completely reproducible if possible.
 This means using fixed tags and fixed versions whenever feasible.
 
-Notes that images should also be made architecture-independent if possible. The
-build scripts will handling loading the appropriate architecture onto the
-machine and tagging it with the single canonical tag.
+Note that images should also be made architecture-independent if possible. The
+build scripts will handle loading the appropriate architecture onto the machine
+and tagging it with the single canonical tag.
 
 Add a `load-<image>` dependency in the Makefile if the image is required for a
 particular set of tests. This target will pull the tag from the image repository
