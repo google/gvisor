@@ -26,13 +26,13 @@ BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
 BUILD_ROOTS := bazel-bin/ bazel-out/
 
 # Bazel container configuration (see below).
-USER ?= gvisor
-HASH ?= $(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
+USER := $(shell whoami)
+HASH := $(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
 BUILDER_BASE := gvisor.dev/images/default
 BUILDER_IMAGE := gvisor.dev/images/builder
-BUILDER_NAME ?= gvisor-builder-$(HASH)
-DOCKER_NAME ?= gvisor-bazel-$(HASH)
-DOCKER_PRIVILEGED ?= --privileged
+BUILDER_NAME := gvisor-builder-$(HASH)
+DOCKER_NAME := gvisor-bazel-$(HASH)
+DOCKER_PRIVILEGED := --privileged
 BAZEL_CACHE := $(shell readlink -m ~/.cache/bazel/)
 GCLOUD_CONFIG := $(shell readlink -m ~/.config/gcloud/)
 DOCKER_SOCKET := /var/run/docker.sock
@@ -57,6 +57,25 @@ FULL_DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 FULL_DOCKER_EXEC_OPTIONS += --interactive
 ifeq (true,$(shell [[ -t 0 ]] && echo true))
 FULL_DOCKER_EXEC_OPTIONS += --tty
+endif
+
+# Add basic UID/GID options.
+#
+# Note that USERADD_DOCKER and GROUPADD_DOCKER are both defined as "deferred"
+# variables in Make terminology, that is they will be expanded at time of use
+# and may include other variables, including those defined below.
+#
+# NOTE: we pass -l to useradd below because otherwise you can hit a bug
+# best described here:
+#  https://github.com/moby/moby/issues/5419#issuecomment-193876183
+# TLDR; trying to add to /var/log/lastlog (sparse file) runs the machine out
+# out of disk space.
+ifneq ($(UID),0)
+USERADD_DOCKER += useradd -l --uid $(UID) --non-unique --no-create-home \
+                    --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) &&
+endif
+ifneq ($(GID),0)
+GROUPADD_DOCKER += groupadd --gid $(GID) --non-unique $(USER) &&
 endif
 
 # Add docker passthrough options.
@@ -91,19 +110,12 @@ ifneq (,$(BAZEL_CONFIG))
 OPTIONS += --config=$(BAZEL_CONFIG)
 endif
 
-# NOTE: we pass -l to useradd below because otherwise you can hit a bug
-# best described here:
-#  https://github.com/moby/moby/issues/5419#issuecomment-193876183
-# TLDR; trying to add to /var/log/lastlog (sparse file) runs the machine out
-# out of disk space.
 bazel-image: load-default
 	@if docker ps --all | grep $(BUILDER_NAME); then docker rm -f $(BUILDER_NAME); fi
 	docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) \
 		$(BUILDER_BASE) \
-		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
-		       $(GROUPADD_DOCKER) \
-		       useradd -l --uid $(UID) --non-unique --no-create-home \
-		               --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) && \
+		sh -c "$(GROUPADD_DOCKER) \
+		       $(USERADD_DOCKER) \
 		       if [[ -e /dev/kvm ]]; then chmod a+rw /dev/kvm; fi"
 	docker commit $(BUILDER_NAME) $(BUILDER_IMAGE)
 	@docker rm -f $(BUILDER_NAME)
