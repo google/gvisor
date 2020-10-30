@@ -355,7 +355,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	}
 	if opts.ChildSetTID {
 		ctid := nt.ThreadID()
-		ctid.CopyOut(nt.AsCopyContext(usermem.IOOpts{AddressSpaceActive: false}), opts.ChildTID)
+		ctid.CopyOut(nt.CopyContext(t, usermem.IOOpts{AddressSpaceActive: false}), opts.ChildTID)
 	}
 	ntid := t.tg.pidns.IDOfTask(nt)
 	if opts.ParentSetTID {

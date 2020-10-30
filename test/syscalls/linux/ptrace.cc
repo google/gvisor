@@ -30,10 +30,13 @@
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/fs_util.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/platform_util.h"
 #include "test/util/signal_util.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 #include "test/util/time_util.h"
@@ -113,10 +116,21 @@ TEST(PtraceTest, AttachParent_PeekData_PokeData_SignalSuppression) {
   // except disabled.
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 0);
 
-  constexpr long kBeforePokeDataValue = 10;
-  constexpr long kAfterPokeDataValue = 20;
+  // Test PTRACE_POKE/PEEKDATA on both anonymous and file mappings.
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  ASSERT_NO_ERRNO(Truncate(file.path(), kPageSize));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  const auto file_mapping = ASSERT_NO_ERRNO_AND_VALUE(Mmap(
+      nullptr, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0));
 
-  volatile long word = kBeforePokeDataValue;
+  constexpr long kBeforePokeDataAnonValue = 10;
+  constexpr long kAfterPokeDataAnonValue = 20;
+  constexpr long kBeforePokeDataFileValue = 0;  // implicit, due to truncate()
+  constexpr long kAfterPokeDataFileValue = 30;
+
+  volatile long anon_word = kBeforePokeDataAnonValue;
+  auto* file_word_ptr = static_cast<volatile long*>(file_mapping.ptr());
 
   pid_t const child_pid = fork();
   if (child_pid == 0) {
@@ -134,12 +148,22 @@ TEST(PtraceTest, AttachParent_PeekData_PokeData_SignalSuppression) {
     MaybeSave();
     TEST_CHECK(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
 
-    // Replace the value of word in the parent process with kAfterPokeDataValue.
-    long const parent_word = ptrace(PTRACE_PEEKDATA, parent_pid, &word, 0);
+    // Replace the value of anon_word in the parent process with
+    // kAfterPokeDataAnonValue.
+    long parent_word = ptrace(PTRACE_PEEKDATA, parent_pid, &anon_word, 0);
     MaybeSave();
-    TEST_CHECK(parent_word == kBeforePokeDataValue);
-    TEST_PCHECK(
-        ptrace(PTRACE_POKEDATA, parent_pid, &word, kAfterPokeDataValue) == 0);
+    TEST_CHECK(parent_word == kBeforePokeDataAnonValue);
+    TEST_PCHECK(ptrace(PTRACE_POKEDATA, parent_pid, &anon_word,
+                       kAfterPokeDataAnonValue) == 0);
+    MaybeSave();
+
+    // Replace the value pointed to by file_word_ptr in the mapped file with
+    // kAfterPokeDataFileValue, via the parent process' mapping.
+    parent_word = ptrace(PTRACE_PEEKDATA, parent_pid, file_word_ptr, 0);
+    MaybeSave();
+    TEST_CHECK(parent_word == kBeforePokeDataFileValue);
+    TEST_PCHECK(ptrace(PTRACE_POKEDATA, parent_pid, file_word_ptr,
+                       kAfterPokeDataFileValue) == 0);
     MaybeSave();
 
     // Detach from the parent and suppress the SIGSTOP. If the SIGSTOP is not
@@ -160,7 +184,8 @@ TEST(PtraceTest, AttachParent_PeekData_PokeData_SignalSuppression) {
       << " status " << status;
 
   // Check that the child's PTRACE_POKEDATA was effective.
-  EXPECT_EQ(kAfterPokeDataValue, word);
+  EXPECT_EQ(kAfterPokeDataAnonValue, anon_word);
+  EXPECT_EQ(kAfterPokeDataFileValue, *file_word_ptr);
 }
 
 TEST(PtraceTest, GetSigMask) {

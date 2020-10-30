@@ -1000,7 +1000,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		// at the address specified by the data parameter, and the return value
 		// is the error flag." - ptrace(2)
 		word := t.Arch().Native(0)
-		if _, err := word.CopyIn(target.AsCopyContext(usermem.IOOpts{IgnorePermissions: true}), addr); err != nil {
+		if _, err := word.CopyIn(target.CopyContext(t, usermem.IOOpts{IgnorePermissions: true}), addr); err != nil {
 			return err
 		}
 		_, err := word.CopyOut(t, data)
@@ -1008,7 +1008,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 
 	case linux.PTRACE_POKETEXT, linux.PTRACE_POKEDATA:
 		word := t.Arch().Native(uintptr(data))
-		_, err := word.CopyOut(target.AsCopyContext(usermem.IOOpts{IgnorePermissions: true}), addr)
+		_, err := word.CopyOut(target.CopyContext(t, usermem.IOOpts{IgnorePermissions: true}), addr)
 		return err
 
 	case linux.PTRACE_GETREGSET:
