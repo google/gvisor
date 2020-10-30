@@ -29,11 +29,12 @@ require (
 	github.com/godbus/dbus v0.0.0-20190422162347-ade71ed3457e // indirect
 	github.com/gofrs/flock v0.6.1-0.20180915234121-886344bea079 // indirect
 	github.com/gogo/googleapis v1.4.0 // indirect
-	github.com/google/go-cmp v0.5.1 // indirect
+	github.com/google/go-cmp v0.5.3-0.20201020212313-ab46b8bd0abd // indirect
 	github.com/google/go-github/v28 v28.1.2-0.20191108005307-e555eab49ce8 // indirect
 	github.com/google/subcommands v1.0.2-0.20190508160503-636abe8753b8 // indirect
 	github.com/hashicorp/go-multierror v1.0.0 // indirect
 	github.com/kr/pty v1.1.4-0.20190131011033-7dc38fb350b1 // indirect
+	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v0.1.1 // indirect
@@ -43,12 +44,13 @@ require (
 	github.com/urfave/cli v1.22.2 // indirect
 	github.com/vishvananda/netlink v1.0.1-0.20190930145447-2ec5bdc52b86 // indirect
 	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
-	go.uber.org/atomic v1.7.0 // indirect
-	go.uber.org/multierr v1.2.0 // indirect
+	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
-	golang.org/x/tools v0.0.0-20201002184944-ecd9fd270d5d // indirect
+	golang.org/x/tools v0.0.0-20201021000207-d49c4edd7d96 // indirect
 	google.golang.org/grpc v1.29.0 // indirect
-	google.golang.org/protobuf v1.25.1-0.20200808011614-a180de9f97d9 // indirect
-	gopkg.in/yaml.v2 v2.2.8 // indirect
+	google.golang.org/protobuf v1.25.1-0.20201020201750-d3470999428b // indirect
 	gotest.tools v2.2.0+incompatible // indirect
+	k8s.io/api v0.16.13
+	k8s.io/apimachinery v0.16.14-rc.0
+	k8s.io/client-go v0.16.13
 )
