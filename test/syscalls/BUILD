@@ -695,6 +695,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:socket_ip_unbound_netlink_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:socket_netdevice_test",
 )
 

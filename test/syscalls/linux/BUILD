@@ -2884,6 +2884,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_ip_unbound_netlink_test",
+    testonly = 1,
+    srcs = [
+        "socket_ip_unbound_netlink.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_netlink_route_util",
+        ":socket_test_util",
+        "//test/util:capability_util",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "socket_domain_test",
     testonly = 1,
     srcs = [

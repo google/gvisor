@@ -4,7 +4,6 @@ test_asyncore,b/162973328,
 test_epoll,b/162983393,
 test_fcntl,b/162978767,fcntl invalid argument -- artificial test to make sure something works in 64 bit mode.
 test_httplib,b/163000009,OSError: [Errno 98] Address already in use
-test_imaplib,b/162979661,
 test_logging,b/162980079,
 test_multiprocessing_fork,,Flaky. Sometimes times out.
 test_multiprocessing_forkserver,,Flaky. Sometimes times out.
