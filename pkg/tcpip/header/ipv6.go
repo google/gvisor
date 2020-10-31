@@ -375,6 +375,12 @@ func IsV6LinkLocalAddress(addr tcpip.Address) bool {
 	return addr[0] == 0xfe && (addr[1]&0xc0) == 0x80
 }
 
+// IsV6LoopbackAddress determines if the provided address is an IPv6 loopback
+// address.
+func IsV6LoopbackAddress(addr tcpip.Address) bool {
+	return addr == IPv6Loopback
+}
+
 // IsV6LinkLocalMulticastAddress determines if the provided address is an IPv6
 // link-local multicast address.
 func IsV6LinkLocalMulticastAddress(addr tcpip.Address) bool {
