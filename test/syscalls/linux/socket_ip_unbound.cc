@@ -454,23 +454,15 @@ TEST_P(IPUnboundSocketTest, SetReuseAddr) {
 
 INSTANTIATE_TEST_SUITE_P(
     IPUnboundSockets, IPUnboundSocketTest,
-    ::testing::ValuesIn(VecCat<SocketKind>(VecCat<SocketKind>(
+    ::testing::ValuesIn(VecCat<SocketKind>(
         ApplyVec<SocketKind>(IPv4UDPUnboundSocket,
-                             AllBitwiseCombinations(List<int>{SOCK_DGRAM},
-                                                    List<int>{0,
-                                                              SOCK_NONBLOCK})),
+                             std::vector<int>{0, SOCK_NONBLOCK}),
         ApplyVec<SocketKind>(IPv6UDPUnboundSocket,
-                             AllBitwiseCombinations(List<int>{SOCK_DGRAM},
-                                                    List<int>{0,
-                                                              SOCK_NONBLOCK})),
+                             std::vector<int>{0, SOCK_NONBLOCK}),
         ApplyVec<SocketKind>(IPv4TCPUnboundSocket,
-                             AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                                    List<int>{0,
-                                                              SOCK_NONBLOCK})),
+                             std::vector{0, SOCK_NONBLOCK}),
         ApplyVec<SocketKind>(IPv6TCPUnboundSocket,
-                             AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                                    List<int>{
-                                                        0, SOCK_NONBLOCK}))))));
+                             std::vector{0, SOCK_NONBLOCK}))));
 
 }  // namespace testing
 }  // namespace gvisor
