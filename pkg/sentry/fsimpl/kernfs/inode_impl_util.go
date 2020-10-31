@@ -568,13 +568,6 @@ func (o *OrderedChildren) RmDir(ctx context.Context, name string, child Inode) e
 	return o.Unlink(ctx, name, child)
 }
 
-// +stateify savable
-type renameAcrossDifferentImplementationsError struct{}
-
-func (renameAcrossDifferentImplementationsError) Error() string {
-	return "rename across inodes with different implementations"
-}
-
 // Rename implements Inode.Rename.
 //
 // Precondition: Rename may only be called across two directory inodes with
@@ -587,7 +580,7 @@ func (renameAcrossDifferentImplementationsError) Error() string {
 func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, child, dstDir Inode) error {
 	dst, ok := dstDir.(interface{}).(*OrderedChildren)
 	if !ok {
-		return renameAcrossDifferentImplementationsError{}
+		return syserror.ENODEV
 	}
 	if !o.writable || !dst.writable {
 		return syserror.EPERM
