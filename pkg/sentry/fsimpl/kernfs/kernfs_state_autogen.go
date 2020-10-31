@@ -427,25 +427,6 @@ func (o *OrderedChildren) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &o.set)
 }
 
-func (r *renameAcrossDifferentImplementationsError) StateTypeName() string {
-	return "pkg/sentry/fsimpl/kernfs.renameAcrossDifferentImplementationsError"
-}
-
-func (r *renameAcrossDifferentImplementationsError) StateFields() []string {
-	return []string{}
-}
-
-func (r *renameAcrossDifferentImplementationsError) beforeSave() {}
-
-func (r *renameAcrossDifferentImplementationsError) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-}
-
-func (r *renameAcrossDifferentImplementationsError) afterLoad() {}
-
-func (r *renameAcrossDifferentImplementationsError) StateLoad(stateSourceObject state.Source) {
-}
-
 func (i *InodeSymlink) StateTypeName() string {
 	return "pkg/sentry/fsimpl/kernfs.InodeSymlink"
 }
@@ -908,7 +889,6 @@ func init() {
 	state.Register((*slot)(nil))
 	state.Register((*OrderedChildrenOptions)(nil))
 	state.Register((*OrderedChildren)(nil))
-	state.Register((*renameAcrossDifferentImplementationsError)(nil))
 	state.Register((*InodeSymlink)(nil))
 	state.Register((*StaticDirectory)(nil))
 	state.Register((*InodeAlwaysValid)(nil))
