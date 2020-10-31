@@ -578,13 +578,18 @@ func (o *OrderedChildren) RmDir(ctx context.Context, name string, child Inode) e
 //
 // Postcondition: reference on any replaced dentry transferred to caller.
 func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, child, dstDir Inode) error {
-	dst, ok := dstDir.(interface{}).(*OrderedChildren)
-	if !ok {
-		return syserror.ENODEV
-	}
-	if !o.writable || !dst.writable {
+	if !o.writable {
 		return syserror.EPERM
 	}
+
+	dst, ok := dstDir.(interface{}).(*OrderedChildren)
+	if !ok {
+		return syserror.EXDEV
+	}
+	if !dst.writable {
+		return syserror.EPERM
+	}
+
 	// Note: There's a potential deadlock below if concurrent calls to Rename
 	// refer to the same src and dst directories in reverse. We avoid any
 	// ordering issues because the caller is required to serialize concurrent
