@@ -575,6 +575,13 @@ func (s *Set) destroy() {
 	}
 }
 
+func abs(val int16) int16 {
+	if val < 0 {
+		return -val
+	}
+	return val
+}
+
 // wakeWaiters goes over all waiters and checks which of them can be notified.
 func (s *sem) wakeWaiters() {
 	// Note that this will release all waiters waiting for 0 too.
