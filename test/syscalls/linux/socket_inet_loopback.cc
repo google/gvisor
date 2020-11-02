@@ -940,7 +940,7 @@ void setupTimeWaitClose(const TestAddress* listener,
   }
 
   // shutdown to trigger TIME_WAIT.
-  ASSERT_THAT(shutdown(active_closefd.get(), SHUT_RDWR), SyscallSucceeds());
+  ASSERT_THAT(shutdown(active_closefd.get(), SHUT_WR), SyscallSucceeds());
   {
     const int kTimeout = 10000;
     struct pollfd pfd = {
@@ -950,7 +950,8 @@ void setupTimeWaitClose(const TestAddress* listener,
     ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
     ASSERT_EQ(pfd.revents, POLLIN);
   }
-  ScopedThread t([&]() {
+  ASSERT_THAT(shutdown(passive_closefd.get(), SHUT_WR), SyscallSucceeds());
+  {
     constexpr int kTimeout = 10000;
     constexpr int16_t want_events = POLLHUP;
     struct pollfd pfd = {
@@ -958,11 +959,8 @@ void setupTimeWaitClose(const TestAddress* listener,
         .events = want_events,
     };
     ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
-  });
+  }
 
-  passive_closefd.reset();
-  t.Join();
-  active_closefd.reset();
   // This sleep is needed to reduce flake to ensure that the passive-close
   // ensures the state transitions to CLOSE from LAST_ACK.
   absl::SleepFor(absl::Seconds(1));
