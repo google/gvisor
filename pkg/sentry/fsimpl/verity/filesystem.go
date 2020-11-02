@@ -276,9 +276,9 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 		UID:  parentStat.UID,
 		GID:  parentStat.GID,
 		//TODO(b/156980949): Support passing other hash algorithms.
-		HashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
+		HashAlgorithms:        fs.alg.toLinuxHashAlg(),
 		ReadOffset:            int64(offset),
-		ReadSize:              int64(merkletree.DigestSize(linux.FS_VERITY_HASH_ALG_SHA256)),
+		ReadSize:              int64(merkletree.DigestSize(fs.alg.toLinuxHashAlg())),
 		Expected:              parent.hash,
 		DataAndTreeInSameFile: true,
 	}); err != nil && err != io.EOF {
@@ -352,7 +352,7 @@ func (fs *filesystem) verifyStat(ctx context.Context, d *dentry, stat linux.Stat
 		UID:  stat.UID,
 		GID:  stat.GID,
 		//TODO(b/156980949): Support passing other hash algorithms.
-		HashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
+		HashAlgorithms: fs.alg.toLinuxHashAlg(),
 		ReadOffset:     0,
 		// Set read size to 0 so only the metadata is verified.
 		ReadSize:              0,

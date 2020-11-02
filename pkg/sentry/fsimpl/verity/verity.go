@@ -79,6 +79,27 @@ var (
 	verityMu sync.RWMutex
 )
 
+// HashAlgorithm is a type specifying the algorithm used to hash the file
+// content.
+type HashAlgorithm int
+
+// Currently supported hashing algorithms include SHA256 and SHA512.
+const (
+	SHA256 HashAlgorithm = iota
+	SHA512
+)
+
+func (alg HashAlgorithm) toLinuxHashAlg() int {
+	switch alg {
+	case SHA256:
+		return linux.FS_VERITY_HASH_ALG_SHA256
+	case SHA512:
+		return linux.FS_VERITY_HASH_ALG_SHA512
+	default:
+		return 0
+	}
+}
+
 // FilesystemType implements vfs.FilesystemType.
 //
 // +stateify savable
@@ -108,6 +129,10 @@ type filesystem struct {
 	// stores the root hash of the whole file system in bytes.
 	rootDentry *dentry
 
+	// alg is the algorithms used to hash the files in the verity file
+	// system.
+	alg HashAlgorithm
+
 	// renameMu synchronizes renaming with non-renaming operations in order
 	// to ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
@@ -135,6 +160,10 @@ type InternalFilesystemOptions struct {
 
 	// LowerName is the name of the filesystem wrapped by verity fs.
 	LowerName string
+
+	// Alg is the algorithms used to hash the files in the verity file
+	// system.
+	Alg HashAlgorithm
 
 	// RootHash is the root hash of the overall verity file system.
 	RootHash []byte
@@ -194,6 +223,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	fs := &filesystem{
 		creds:              creds.Fork(),
+		alg:                iopts.Alg,
 		lowerMount:         mnt,
 		allowRuntimeEnable: iopts.AllowRuntimeEnable,
 	}
@@ -627,7 +657,7 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 		TreeReader: &merkleReader,
 		TreeWriter: &merkleWriter,
 		//TODO(b/156980949): Support passing other hash algorithms.
-		HashAlgorithms: linux.FS_VERITY_HASH_ALG_SHA256,
+		HashAlgorithms: fd.d.fs.alg.toLinuxHashAlg(),
 	}
 
 	switch atomic.LoadUint32(&fd.d.mode) & linux.S_IFMT {
@@ -873,7 +903,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		UID:  fd.d.uid,
 		GID:  fd.d.gid,
 		//TODO(b/156980949): Support passing other hash algorithms.
-		HashAlgorithms:        linux.FS_VERITY_HASH_ALG_SHA256,
+		HashAlgorithms:        fd.d.fs.alg.toLinuxHashAlg(),
 		ReadOffset:            offset,
 		ReadSize:              dst.NumBytes(),
 		Expected:              fd.d.hash,
