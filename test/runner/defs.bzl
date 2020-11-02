@@ -97,10 +97,10 @@ def _syscall_test(
     # we figure out how to request ipv4 sockets on Guitar machines.
     if network == "host":
         tags.append("noguitar")
-        tags.append("block-network")
 
     # Disable off-host networking.
     tags.append("requires-net:loopback")
+    tags.append("block-network")
 
     # gotsan makes sense only if tests are running in gVisor.
     if platform == "native":
