@@ -536,7 +536,7 @@ TEST(NetlinkRouteTest, AddAndRemoveAddr) {
         // Second delete should fail, as address no longer exists.
         EXPECT_THAT(LinkDelLocalAddr(loopback_link.index, AF_INET,
                                      /*prefixlen=*/24, &addr, sizeof(addr)),
-                    PosixErrorIs(EINVAL, ::testing::_));
+                    PosixErrorIs(EADDRNOTAVAIL, ::testing::_));
       });
 
   // Replace an existing address should succeed.
