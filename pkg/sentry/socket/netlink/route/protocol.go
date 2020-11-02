@@ -487,7 +487,7 @@ func (p *Protocol) delAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 				Addr:      value,
 			})
 			if err != nil {
-				return syserr.ErrInvalidArgument
+				return syserr.ErrBadLocalAddress
 			}
 		case linux.IFA_ADDRESS:
 		default:
