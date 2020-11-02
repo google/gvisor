@@ -280,6 +280,20 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
+    name = "ipv4_fragment_icmp_error",
+    srcs = ["ipv4_fragment_icmp_error_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/network/ipv4",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
     name = "ipv6_fragment_reassembly",
     srcs = ["ipv6_fragment_reassembly_test.go"],
     deps = [

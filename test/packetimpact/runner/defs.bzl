@@ -261,6 +261,9 @@ ALL_TESTS = [
         name = "ipv4_fragment_reassembly",
     ),
     PacketimpactTestInfo(
+        name = "ipv4_fragment_icmp_error",
+    ),
+    PacketimpactTestInfo(
         name = "ipv6_fragment_reassembly",
     ),
     PacketimpactTestInfo(
