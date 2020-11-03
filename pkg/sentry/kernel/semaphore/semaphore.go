@@ -423,6 +423,29 @@ func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
 	return sem.pid, nil
 }
 
+// GetZeroWaiters returns number of waiters waiting for the sem to go to zero.
+func (s *Set) GetZeroWaiters(num int32, creds *auth.Credentials) (uint16, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// The calling process must have read permission on the semaphore set.
+	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+		return 0, syserror.EACCES
+	}
+
+	sem := s.findSem(num)
+	if sem == nil {
+		return 0, syserror.ERANGE
+	}
+	var semzcnt uint16
+	for w := sem.waiters.Front(); w != nil; w = w.Next() {
+		if w.value == 0 {
+			semzcnt++
+		}
+	}
+	return semzcnt, nil
+}
+
 // ExecuteOps attempts to execute a list of operations to the set. It only
 // succeeds when all operations can be applied. No changes are made if it fails.
 //
