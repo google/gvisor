@@ -358,6 +358,10 @@
 #define ESR_ELx_WFx_ISS_WFE	(UL(1) << 0)
 #define ESR_ELx_xVC_IMM_MASK	((1UL << 16) - 1)
 
+/* ISS field definitions for system error */
+#define ESR_ELx_SERR_MASK	(0x1)
+#define ESR_ELx_SERR_NMI	(0x1)
+
 // LOAD_KERNEL_ADDRESS loads a kernel address.
 #define LOAD_KERNEL_ADDRESS(from, to) \
 	MOVD from, to; \
@@ -761,7 +765,7 @@ el0_sp_pc:
 	B ·Shutdown(SB)
 
 el0_undef:
-	EXCEPTION_WITH_ERROR(1, El0Sync_undef)
+	EXCEPTION_WITH_ERROR(1, El0SyncUndef)
 
 el0_dbg:
 	B ·Shutdown(SB)
@@ -777,6 +781,29 @@ TEXT ·El0_fiq(SB),NOSPLIT,$0
 
 TEXT ·El0_error(SB),NOSPLIT,$0
 	KERNEL_ENTRY_FROM_EL0
+	WORD $0xd5385219        // MRS ESR_EL1, R25
+	AND $ESR_ELx_SERR_MASK, R25, R24
+	CMP $ESR_ELx_SERR_NMI, R24
+	BEQ el0_nmi
+	B el0_bounce
+el0_nmi:
+        WORD $0xd538d092     //MRS   TPIDR_EL1, R18
+        WORD $0xd538601a     //MRS   FAR_EL1, R26
+
+        MOVD R26, CPU_FAULT_ADDR(RSV_REG)
+
+        MOVD $1, R3
+        MOVD R3, CPU_ERROR_TYPE(RSV_REG) // Set error type to user.
+
+        MOVD $El0ErrNMI, R3
+        MOVD R3, CPU_VECTOR_CODE(RSV_REG)
+
+        MRS ESR_EL1, R3
+        MOVD R3, CPU_ERROR_CODE(RSV_REG)
+
+        B ·kernelExitToEl1(SB)
+
+el0_bounce:
 	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
 	WORD $0xd538601a     //MRS   FAR_EL1, R26
 
@@ -788,7 +815,7 @@ TEXT ·El0_error(SB),NOSPLIT,$0
 	MOVD $VirtualizationException, R3
 	MOVD R3, CPU_VECTOR_CODE(RSV_REG)
 
-	B ·HaltAndResume(SB)
+	B ·kernelExitToEl1(SB)
 
 TEXT ·El0_sync_invalid(SB),NOSPLIT,$0
 	B ·Shutdown(SB)
