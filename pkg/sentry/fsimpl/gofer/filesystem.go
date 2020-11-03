@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Sync implements vfs.FilesystemImpl.Sync.
@@ -842,7 +841,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				mode: opts.Mode,
 				kuid: creds.EffectiveKUID,
 				kgid: creds.EffectiveKGID,
-				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize),
+				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize),
 			})
 			return nil
 		}

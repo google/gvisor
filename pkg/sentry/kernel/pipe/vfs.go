@@ -54,9 +54,9 @@ type VFSPipe struct {
 }
 
 // NewVFSPipe returns an initialized VFSPipe.
-func NewVFSPipe(isNamed bool, sizeBytes, atomicIOBytes int64) *VFSPipe {
+func NewVFSPipe(isNamed bool, sizeBytes int64) *VFSPipe {
 	var vp VFSPipe
-	initPipe(&vp.pipe, isNamed, sizeBytes, atomicIOBytes)
+	initPipe(&vp.pipe, isNamed, sizeBytes)
 	return &vp
 }
 

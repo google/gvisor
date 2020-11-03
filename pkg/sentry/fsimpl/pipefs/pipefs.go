@@ -101,7 +101,7 @@ type inode struct {
 func newInode(ctx context.Context, fs *filesystem) *inode {
 	creds := auth.CredentialsFromContext(ctx)
 	return &inode{
-		pipe:  pipe.NewVFSPipe(false /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize),
+		pipe:  pipe.NewVFSPipe(false /* isNamed */, pipe.DefaultPipeSize),
 		ino:   fs.Filesystem.NextIno(),
 		uid:   creds.EffectiveKUID,
 		gid:   creds.EffectiveKGID,

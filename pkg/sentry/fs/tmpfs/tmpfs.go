@@ -336,7 +336,7 @@ type Fifo struct {
 // NewFifo creates a new named pipe.
 func NewFifo(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource) *fs.Inode {
 	// First create a pipe.
-	p := pipe.NewPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize)
+	p := pipe.NewPipe(true /* isNamed */, pipe.DefaultPipeSize)
 
 	// Build pipe InodeOperations.
 	iops := pipe.NewInodeOperations(ctx, perms, p)

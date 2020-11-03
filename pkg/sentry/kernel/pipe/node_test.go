@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type sleeper struct {
@@ -66,7 +65,8 @@ func testOpenOrDie(ctx context.Context, t *testing.T, n fs.InodeOperations, flag
 	d := fs.NewDirent(ctx, inode, "pipe")
 	file, err := n.GetFile(ctx, d, flags)
 	if err != nil {
-		t.Fatalf("open with flags %+v failed: %v", flags, err)
+		t.Errorf("open with flags %+v failed: %v", flags, err)
+		return nil, err
 	}
 	if doneChan != nil {
 		doneChan <- struct{}{}
@@ -85,11 +85,11 @@ func testOpen(ctx context.Context, t *testing.T, n fs.InodeOperations, flags fs.
 }
 
 func newNamedPipe(t *testing.T) *Pipe {
-	return NewPipe(true, DefaultPipeSize, usermem.PageSize)
+	return NewPipe(true, DefaultPipeSize)
 }
 
 func newAnonPipe(t *testing.T) *Pipe {
-	return NewPipe(false, DefaultPipeSize, usermem.PageSize)
+	return NewPipe(false, DefaultPipeSize)
 }
 
 // assertRecvBlocks ensures that a recv attempt on c blocks for at least

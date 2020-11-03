@@ -26,18 +26,27 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
 	// MinimumPipeSize is a hard limit of the minimum size of a pipe.
-	MinimumPipeSize = 64 << 10
-
-	// DefaultPipeSize is the system-wide default size of a pipe in bytes.
-	DefaultPipeSize = MinimumPipeSize
+	// It corresponds to fs/pipe.c:pipe_min_size.
+	MinimumPipeSize = usermem.PageSize
 
 	// MaximumPipeSize is a hard limit on the maximum size of a pipe.
-	MaximumPipeSize = 8 << 20
+	// It corresponds to fs/pipe.c:pipe_max_size.
+	MaximumPipeSize = 1048576
+
+	// DefaultPipeSize is the system-wide default size of a pipe in bytes.
+	// It corresponds to pipe_fs_i.h:PIPE_DEF_BUFFERS.
+	DefaultPipeSize = 16 * usermem.PageSize
+
+	// atomicIOBytes is the maximum number of bytes that the pipe will
+	// guarantee atomic reads or writes atomically.
+	// It corresponds to limits.h:PIPE_BUF.
+	atomicIOBytes = 4096
 )
 
 // Pipe is an encapsulation of a platform-independent pipe.
@@ -52,12 +61,6 @@ type Pipe struct {
 	//
 	// This value is immutable.
 	isNamed bool
-
-	// atomicIOBytes is the maximum number of bytes that the pipe will
-	// guarantee atomic reads or writes atomically.
-	//
-	// This value is immutable.
-	atomicIOBytes int64
 
 	// The number of active readers for this pipe.
 	//
@@ -94,47 +97,34 @@ type Pipe struct {
 
 // NewPipe initializes and returns a pipe.
 //
-// N.B. The size and atomicIOBytes will be bounded.
-func NewPipe(isNamed bool, sizeBytes, atomicIOBytes int64) *Pipe {
+// N.B. The size will be bounded.
+func NewPipe(isNamed bool, sizeBytes int64) *Pipe {
 	if sizeBytes < MinimumPipeSize {
 		sizeBytes = MinimumPipeSize
 	}
 	if sizeBytes > MaximumPipeSize {
 		sizeBytes = MaximumPipeSize
 	}
-	if atomicIOBytes <= 0 {
-		atomicIOBytes = 1
-	}
-	if atomicIOBytes > sizeBytes {
-		atomicIOBytes = sizeBytes
-	}
 	var p Pipe
-	initPipe(&p, isNamed, sizeBytes, atomicIOBytes)
+	initPipe(&p, isNamed, sizeBytes)
 	return &p
 }
 
-func initPipe(pipe *Pipe, isNamed bool, sizeBytes, atomicIOBytes int64) {
+func initPipe(pipe *Pipe, isNamed bool, sizeBytes int64) {
 	if sizeBytes < MinimumPipeSize {
 		sizeBytes = MinimumPipeSize
 	}
 	if sizeBytes > MaximumPipeSize {
 		sizeBytes = MaximumPipeSize
 	}
-	if atomicIOBytes <= 0 {
-		atomicIOBytes = 1
-	}
-	if atomicIOBytes > sizeBytes {
-		atomicIOBytes = sizeBytes
-	}
 	pipe.isNamed = isNamed
 	pipe.max = sizeBytes
-	pipe.atomicIOBytes = atomicIOBytes
 }
 
 // NewConnectedPipe initializes a pipe and returns a pair of objects
 // representing the read and write ends of the pipe.
-func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.File, *fs.File) {
-	p := NewPipe(false /* isNamed */, sizeBytes, atomicIOBytes)
+func NewConnectedPipe(ctx context.Context, sizeBytes int64) (*fs.File, *fs.File) {
+	p := NewPipe(false /* isNamed */, sizeBytes)
 
 	// Build an fs.Dirent for the pipe which will be shared by both
 	// returned files.
@@ -264,7 +254,7 @@ func (p *Pipe) writeLocked(ctx context.Context, ops writeOps) (int64, error) {
 	wanted := ops.left()
 	avail := p.max - p.view.Size()
 	if wanted > avail {
-		if wanted <= p.atomicIOBytes {
+		if wanted <= atomicIOBytes {
 			return 0, syserror.ErrWouldBlock
 		}
 		ops.limit(avail)
