@@ -25,9 +25,7 @@ func HaltAndResume()
 func HaltEl1SvcAndResume()
 
 // init initializes architecture-specific state.
-func (k *Kernel) init(opts KernelOpts, maxCPUs int) {
-	// Save the root page tables.
-	k.PageTables = opts.PageTables
+func (k *Kernel) init(maxCPUs int) {
 }
 
 // init initializes architecture-specific state.
