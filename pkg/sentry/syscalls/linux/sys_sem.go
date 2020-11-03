@@ -138,12 +138,15 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 		return 0, nil, err
 
+	case linux.GETZCNT:
+		v, err := getSemzcnt(t, id, num)
+		return uintptr(v), nil, err
+
 	case linux.IPC_INFO,
 		linux.SEM_INFO,
 		linux.SEM_STAT,
 		linux.SEM_STAT_ANY,
-		linux.GETNCNT,
-		linux.GETZCNT:
+		linux.GETNCNT:
 
 		t.Kernel().EmitUnimplementedEvent(t)
 		fallthrough
@@ -257,4 +260,14 @@ func getPID(t *kernel.Task, id int32, num int32) (int32, error) {
 		return 0, nil
 	}
 	return int32(tg.ID()), nil
+}
+
+func getSemzcnt(t *kernel.Task, id int32, num int32) (uint16, error) {
+	r := t.IPCNamespace().SemaphoreRegistry()
+	set := r.FindByID(id)
+	if set == nil {
+		return 0, syserror.EINVAL
+	}
+	creds := auth.CredentialsFromContext(t)
+	return set.GetZeroWaiters(num, creds)
 }
