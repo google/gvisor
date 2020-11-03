@@ -19,6 +19,7 @@ package specutils
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -169,7 +170,7 @@ func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 // ReadSpecFromFile reads an OCI runtime spec from the given File, and
 // normalizes all relative paths into absolute by prepending the bundle dir.
 func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) (*specs.Spec, error) {
-	if _, err := specFile.Seek(0, os.SEEK_SET); err != nil {
+	if _, err := specFile.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
 	}
 	specBytes, err := ioutil.ReadAll(specFile)
