@@ -30,6 +30,10 @@ type PageTables struct {
 	Allocator Allocator
 
 	// root is the pagetable root.
+	//
+	// For same archs such as amd64, the upper of the PTEs is cloned
+	// from and owned by upperSharedPageTables which are shared among
+	// many PageTables if upperSharedPageTables is not nil.
 	root *PTEs
 
 	// rootPhysical is the cached physical address of the root.
@@ -39,13 +43,50 @@ type PageTables struct {
 
 	// archPageTables includes architecture-specific features.
 	archPageTables
+
+	// upperSharedPageTables represents a read-only shared upper
+	// of the Pagetable. When it is not nil, the upper is not
+	// allowed to be modified.
+	upperSharedPageTables *PageTables
+
+	// upperStart is the start address of the upper portion that
+	// are shared from upperSharedPageTables
+	upperStart uintptr
+
+	// readOnlyShared indicates the Pagetables are read-only and
+	// own the ranges that are shared with other Pagetables.
+	readOnlyShared bool
+}
+
+// NewWithUpper returns new PageTables.
+//
+// upperSharedPageTables are used for mapping the upper of addresses,
+// starting at upperStart. These pageTables should not be touched (as
+// invalidations may be incorrect) after they are passed as an
+// upperSharedPageTables. Only when all dependent PageTables are gone
+// may they be used. The intenteded use case is for kernel page tables,
+// which are static and fixed.
+//
+// Precondition: upperStart must be between canonical ranges.
+// Precondition: upperStart must be pgdSize aligned.
+// precondition: upperSharedPageTables must be marked read-only shared.
+func NewWithUpper(a Allocator, upperSharedPageTables *PageTables, upperStart uintptr) *PageTables {
+	p := new(PageTables)
+	p.Init(a)
+	if upperSharedPageTables != nil {
+		if !upperSharedPageTables.readOnlyShared {
+			panic("Only read-only shared pagetables can be used as upper")
+		}
+		p.upperSharedPageTables = upperSharedPageTables
+		p.upperStart = upperStart
+		p.cloneUpperShared()
+	}
+	return p
 }
 
 // New returns new PageTables.
 func New(a Allocator) *PageTables {
-	p := new(PageTables)
-	p.Init(a)
-	return p
+	return NewWithUpper(a, nil, 0)
 }
 
 // mapVisitor is used for map.
@@ -90,6 +131,21 @@ func (*mapVisitor) requiresSplit() bool { return true }
 //
 //go:nosplit
 func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
+	if p.readOnlyShared {
+		panic("Should not modify read-only shared pagetables.")
+	}
+	if uintptr(addr)+length < uintptr(addr) {
+		panic("addr & length overflow")
+	}
+	if p.upperSharedPageTables != nil {
+		// ignore change to the read-only upper shared portion.
+		if uintptr(addr) >= p.upperStart {
+			return false
+		}
+		if uintptr(addr)+length > p.upperStart {
+			length = p.upperStart - uintptr(addr)
+		}
+	}
 	if !opts.AccessType.Any() {
 		return p.Unmap(addr, length)
 	}
@@ -128,12 +184,27 @@ func (v *unmapVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 //
 // True is returned iff there was a previous mapping in the range.
 //
-// Precondition: addr & length must be page-aligned.
+// Precondition: addr & length must be page-aligned, their sum must not overflow.
 //
 // +checkescape:hard,stack
 //
 //go:nosplit
 func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
+	if p.readOnlyShared {
+		panic("Should not modify read-only shared pagetables.")
+	}
+	if uintptr(addr)+length < uintptr(addr) {
+		panic("addr & length overflow")
+	}
+	if p.upperSharedPageTables != nil {
+		// ignore change to the read-only upper shared portion.
+		if uintptr(addr) >= p.upperStart {
+			return false
+		}
+		if uintptr(addr)+length > p.upperStart {
+			length = p.upperStart - uintptr(addr)
+		}
+	}
 	w := unmapWalker{
 		pageTables: p,
 		visitor: unmapVisitor{
@@ -217,4 +288,11 @@ func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, opts MapOpts) 
 	}
 	w.iterateRange(uintptr(addr), uintptr(addr)+1)
 	return w.visitor.physical + offset, w.visitor.opts
+}
+
+// MarkReadOnlyShared marks the pagetables read-only and can be shared.
+//
+// It is usually used on the pagetables that are used as the upper
+func (p *PageTables) MarkReadOnlyShared() {
+	p.readOnlyShared = true
 }

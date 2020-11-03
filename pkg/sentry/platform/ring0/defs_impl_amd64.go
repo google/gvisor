@@ -15,6 +15,9 @@ import (
 //
 // This contains global state, shared by multiple CPUs.
 type Kernel struct {
+	// PageTables are the kernel pagetables; this must be provided.
+	PageTables *pagetables.PageTables
+
 	KernelArchState
 }
 
@@ -145,17 +148,9 @@ var (
 	KernelDataSegment SegmentDescriptor
 )
 
-// KernelOpts has initialization options for the kernel.
-type KernelOpts struct {
-	// PageTables are the kernel pagetables; this must be provided.
-	PageTables *pagetables.PageTables
-}
-
 // KernelArchState contains architecture-specific state.
 type KernelArchState struct {
-	KernelOpts
-
-	// cpuEntries is array of kernelEntry for all cpus
+	// cpuEntries is array of kernelEntry for all cpus.
 	cpuEntries []kernelEntry
 
 	// globalIDT is our set of interrupt gates.

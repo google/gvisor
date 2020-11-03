@@ -50,5 +50,26 @@ func (p *PageTables) Init(allocator Allocator) {
 	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
 }
 
+func pgdIndex(upperStart uintptr) uintptr {
+	if upperStart&(pgdSize-1) != 0 {
+		panic("upperStart should be pgd size aligned")
+	}
+	if upperStart >= upperBottom {
+		return entriesPerPage/2 + (upperStart-upperBottom)/pgdSize
+	}
+	if upperStart < lowerTop {
+		return upperStart / pgdSize
+	}
+	panic("upperStart should be in canonical range")
+}
+
+// cloneUpperShared clone the upper from the upper shared page tables.
+//
+//go:nosplit
+func (p *PageTables) cloneUpperShared() {
+	start := pgdIndex(p.upperStart)
+	copy(p.root[start:entriesPerPage], p.upperSharedPageTables.root[start:entriesPerPage])
+}
+
 // PTEs is a collection of entries.
 type PTEs [entriesPerPage]PTE
