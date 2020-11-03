@@ -431,9 +431,6 @@ func (rw *fileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 
 			// Continue.
 			seg, gap = gap.NextSegment(), fsutil.FileRangeGapIterator{}
-
-		default:
-			break
 		}
 	}
 	return done, nil
@@ -532,9 +529,6 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 
 			// Write to that memory as usual.
 			seg, gap = rw.f.data.Insert(gap, gapMR, fr.Start), fsutil.FileRangeGapIterator{}
-
-		default:
-			break
 		}
 	}
 	return done, nil

@@ -149,6 +149,9 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 	}
 
 	ws, err := cont.Wait()
+	if err != nil {
+		Fatalf("Error waiting for container: %v", err)
+	}
 	*waitStatus = ws
 
 	return subcommands.ExitSuccess
