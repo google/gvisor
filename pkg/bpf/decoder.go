@@ -109,7 +109,7 @@ func decodeLdSize(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case B:
 		w.WriteString("1")
 	default:
-		return fmt.Errorf("Invalid BPF LD size: %v", inst)
+		return fmt.Errorf("invalid BPF LD size: %v", inst)
 	}
 	return nil
 }

@@ -86,9 +86,9 @@ func (*tcpMemInode) Truncate(context.Context, *fs.Inode, int64) error {
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
-func (m *tcpMemInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+func (t *tcpMemInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	flags.Pread = true
-	return fs.NewFile(ctx, dirent, flags, &tcpMemFile{tcpMemInode: m}), nil
+	return fs.NewFile(ctx, dirent, flags, &tcpMemFile{tcpMemInode: t}), nil
 }
 
 // +stateify savable

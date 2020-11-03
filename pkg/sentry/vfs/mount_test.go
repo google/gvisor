@@ -29,7 +29,7 @@ func TestMountTableLookupEmpty(t *testing.T) {
 	parent := &Mount{}
 	point := &Dentry{}
 	if m := mt.Lookup(parent, point); m != nil {
-		t.Errorf("empty mountTable lookup: got %p, wanted nil", m)
+		t.Errorf("Empty mountTable lookup: got %p, wanted nil", m)
 	}
 }
 
@@ -111,13 +111,16 @@ func BenchmarkMountTableParallelLookup(b *testing.B) {
 							k := keys[i&(numMounts-1)]
 							m := mt.Lookup(k.mount, k.dentry)
 							if m == nil {
-								b.Fatalf("lookup failed")
+								b.Errorf("Lookup failed")
+								return
 							}
 							if parent := m.parent(); parent != k.mount {
-								b.Fatalf("lookup returned mount with parent %p, wanted %p", parent, k.mount)
+								b.Errorf("Lookup returned mount with parent %p, wanted %p", parent, k.mount)
+								return
 							}
 							if point := m.point(); point != k.dentry {
-								b.Fatalf("lookup returned mount with point %p, wanted %p", point, k.dentry)
+								b.Errorf("Lookup returned mount with point %p, wanted %p", point, k.dentry)
+								return
 							}
 						}
 					}()
@@ -167,13 +170,16 @@ func BenchmarkMountMapParallelLookup(b *testing.B) {
 							m := ms[k]
 							mu.RUnlock()
 							if m == nil {
-								b.Fatalf("lookup failed")
+								b.Errorf("Lookup failed")
+								return
 							}
 							if parent := m.parent(); parent != k.mount {
-								b.Fatalf("lookup returned mount with parent %p, wanted %p", parent, k.mount)
+								b.Errorf("Lookup returned mount with parent %p, wanted %p", parent, k.mount)
+								return
 							}
 							if point := m.point(); point != k.dentry {
-								b.Fatalf("lookup returned mount with point %p, wanted %p", point, k.dentry)
+								b.Errorf("Lookup returned mount with point %p, wanted %p", point, k.dentry)
+								return
 							}
 						}
 					}()
@@ -220,14 +226,17 @@ func BenchmarkMountSyncMapParallelLookup(b *testing.B) {
 							k := keys[i&(numMounts-1)]
 							mi, ok := ms.Load(k)
 							if !ok {
-								b.Fatalf("lookup failed")
+								b.Errorf("Lookup failed")
+								return
 							}
 							m := mi.(*Mount)
 							if parent := m.parent(); parent != k.mount {
-								b.Fatalf("lookup returned mount with parent %p, wanted %p", parent, k.mount)
+								b.Errorf("Lookup returned mount with parent %p, wanted %p", parent, k.mount)
+								return
 							}
 							if point := m.point(); point != k.dentry {
-								b.Fatalf("lookup returned mount with point %p, wanted %p", point, k.dentry)
+								b.Errorf("Lookup returned mount with point %p, wanted %p", point, k.dentry)
+								return
 							}
 						}
 					}()
@@ -264,7 +273,7 @@ func BenchmarkMountTableNegativeLookup(b *testing.B) {
 				k := negkeys[i&(numMounts-1)]
 				m := mt.Lookup(k.mount, k.dentry)
 				if m != nil {
-					b.Fatalf("lookup got %p, wanted nil", m)
+					b.Fatalf("Lookup got %p, wanted nil", m)
 				}
 			}
 		})
@@ -300,7 +309,7 @@ func BenchmarkMountMapNegativeLookup(b *testing.B) {
 				m := ms[k]
 				mu.RUnlock()
 				if m != nil {
-					b.Fatalf("lookup got %p, wanted nil", m)
+					b.Fatalf("Lookup got %p, wanted nil", m)
 				}
 			}
 		})
@@ -333,7 +342,7 @@ func BenchmarkMountSyncMapNegativeLookup(b *testing.B) {
 				k := negkeys[i&(numMounts-1)]
 				m, _ := ms.Load(k)
 				if m != nil {
-					b.Fatalf("lookup got %p, wanted nil", m)
+					b.Fatalf("Lookup got %p, wanted nil", m)
 				}
 			}
 		})

@@ -161,7 +161,7 @@ type TestArray [sizeA]int32
 // +marshal
 type TestArray2 [sizeA * sizeB]int32
 
-// TestArray2 is a newtype on an array with a simple arithmetic expression of
+// TestArray3 is a newtype on an array with a simple arithmetic expression of
 // mixed constants and literals for the array length.
 //
 // +marshal

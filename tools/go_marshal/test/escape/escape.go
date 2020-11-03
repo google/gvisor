@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package escape contains test cases for escape analysis.
 package escape
 
 import (
