@@ -52,46 +52,55 @@ type Vector uintptr
 
 // Exception vectors.
 const (
-	El1SyncInvalid = iota
-	El1IrqInvalid
-	El1FiqInvalid
-	El1ErrorInvalid
+	El1InvSync = iota
+	El1InvIrq
+	El1InvFiq
+	El1InvError
+
 	El1Sync
 	El1Irq
 	El1Fiq
-	El1Error
+	El1Err
+
 	El0Sync
 	El0Irq
 	El0Fiq
-	El0Error
-	El0Sync_invalid
-	El0Irq_invalid
-	El0Fiq_invalid
-	El0Error_invalid
-	El1Sync_da
-	El1Sync_ia
-	El1Sync_sp_pc
-	El1Sync_undef
-	El1Sync_dbg
-	El1Sync_inv
-	El0Sync_svc
-	El0Sync_da
-	El0Sync_ia
-	El0Sync_fpsimd_acc
-	El0Sync_sve_acc
-	El0Sync_sys
-	El0Sync_sp_pc
-	El0Sync_undef
-	El0Sync_dbg
-	El0Sync_inv
+	El0Err
+
+	El0InvSync
+	El0InvIrq
+	El0InvFiq
+	El0InvErr
+
+	El1SyncDa
+	El1SyncIa
+	El1SyncSpPc
+	El1SyncUndef
+	El1SyncDbg
+	El1SyncInv
+
+	El0SyncSVC
+	El0SyncDa
+	El0SyncIa
+	El0SyncFpsimdAcc
+	El0SyncSveAcc
+	El0SyncSys
+	El0SyncSpPc
+	El0SyncUndef
+	El0SyncDbg
+	El0SyncInv
+
+	El0ErrNMI
+	El0ErrBounce
+
 	_NR_INTERRUPTS
 )
 
 // System call vectors.
 const (
-	Syscall                 Vector = El0Sync_svc
-	PageFault               Vector = El0Sync_da
-	VirtualizationException Vector = El0Error
+	Syscall                 Vector = El0SyncSVC
+	PageFault               Vector = El0SyncDa
+	VirtualizationException Vector = El0ErrBounce
 )
 
 // VirtualAddressBits returns the number bits available for virtual addresses.
@@ -340,43 +349,36 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define _KERNEL_FLAGS        0x%02x\n", KernelFlagsSet)
 
 	fmt.Fprintf(w, "\n// Vectors.\n")
-	fmt.Fprintf(w, "#define El1SyncInvalid  0x%02x\n", El1SyncInvalid)
-	fmt.Fprintf(w, "#define El1IrqInvalid 0x%02x\n", El1IrqInvalid)
-	fmt.Fprintf(w, "#define El1FiqInvalid 0x%02x\n", El1FiqInvalid)
-	fmt.Fprintf(w, "#define El1ErrorInvalid 0x%02x\n", El1ErrorInvalid)
 
 	fmt.Fprintf(w, "#define El1Sync 0x%02x\n", El1Sync)
 	fmt.Fprintf(w, "#define El1Irq 0x%02x\n", El1Irq)
 	fmt.Fprintf(w, "#define El1Fiq 0x%02x\n", El1Fiq)
-	fmt.Fprintf(w, "#define El1Error 0x%02x\n", El1Error)
+	fmt.Fprintf(w, "#define El1Err 0x%02x\n", El1Err)
 
 	fmt.Fprintf(w, "#define El0Sync 0x%02x\n", El0Sync)
 	fmt.Fprintf(w, "#define El0Irq 0x%02x\n", El0Irq)
 	fmt.Fprintf(w, "#define El0Fiq 0x%02x\n", El0Fiq)
-	fmt.Fprintf(w, "#define El0Error 0x%02x\n", El0Error)
+	fmt.Fprintf(w, "#define El0Err 0x%02x\n", El0Err)
 
-	fmt.Fprintf(w, "#define El0Sync_invalid 0x%02x\n", El0Sync_invalid)
-	fmt.Fprintf(w, "#define El0Irq_invalid 0x%02x\n", El0Irq_invalid)
-	fmt.Fprintf(w, "#define El0Fiq_invalid 0x%02x\n", El0Fiq_invalid)
-	fmt.Fprintf(w, "#define El0Error_invalid 0x%02x\n", El0Error_invalid)
+	fmt.Fprintf(w, "#define El1SyncDa 0x%02x\n", El1SyncDa)
+	fmt.Fprintf(w, "#define El1SyncIa 0x%02x\n", El1SyncIa)
+	fmt.Fprintf(w, "#define El1SyncSpPc 0x%02x\n", El1SyncSpPc)
+	fmt.Fprintf(w, "#define El1SyncUndef 0x%02x\n", El1SyncUndef)
+	fmt.Fprintf(w, "#define El1SyncDbg 0x%02x\n", El1SyncDbg)
+	fmt.Fprintf(w, "#define El1SyncInv 0x%02x\n", El1SyncInv)
 
-	fmt.Fprintf(w, "#define El1Sync_da 0x%02x\n", El1Sync_da)
-	fmt.Fprintf(w, "#define El1Sync_ia 0x%02x\n", El1Sync_ia)
-	fmt.Fprintf(w, "#define El1Sync_sp_pc 0x%02x\n", El1Sync_sp_pc)
-	fmt.Fprintf(w, "#define El1Sync_undef 0x%02x\n", El1Sync_undef)
-	fmt.Fprintf(w, "#define El1Sync_dbg 0x%02x\n", El1Sync_dbg)
-	fmt.Fprintf(w, "#define El1Sync_inv 0x%02x\n", El1Sync_inv)
+	fmt.Fprintf(w, "#define El0SyncSVC 0x%02x\n", El0SyncSVC)
+	fmt.Fprintf(w, "#define El0SyncDa 0x%02x\n", El0SyncDa)
+	fmt.Fprintf(w, "#define El0SyncIa 0x%02x\n", El0SyncIa)
+	fmt.Fprintf(w, "#define El0SyncFpsimdAcc 0x%02x\n", El0SyncFpsimdAcc)
+	fmt.Fprintf(w, "#define El0SyncSveAcc 0x%02x\n", El0SyncSveAcc)
+	fmt.Fprintf(w, "#define El0SyncSys 0x%02x\n", El0SyncSys)
+	fmt.Fprintf(w, "#define El0SyncSpPc 0x%02x\n", El0SyncSpPc)
+	fmt.Fprintf(w, "#define El0SyncUndef 0x%02x\n", El0SyncUndef)
+	fmt.Fprintf(w, "#define El0SyncDbg 0x%02x\n", El0SyncDbg)
+	fmt.Fprintf(w, "#define El0SyncInv 0x%02x\n", El0SyncInv)
 
-	fmt.Fprintf(w, "#define El0Sync_svc 0x%02x\n", El0Sync_svc)
-	fmt.Fprintf(w, "#define El0Sync_da 0x%02x\n", El0Sync_da)
-	fmt.Fprintf(w, "#define El0Sync_ia 0x%02x\n", El0Sync_ia)
-	fmt.Fprintf(w, "#define El0Sync_fpsimd_acc 0x%02x\n", El0Sync_fpsimd_acc)
-	fmt.Fprintf(w, "#define El0Sync_sve_acc 0x%02x\n", El0Sync_sve_acc)
-	fmt.Fprintf(w, "#define El0Sync_sys 0x%02x\n", El0Sync_sys)
-	fmt.Fprintf(w, "#define El0Sync_sp_pc 0x%02x\n", El0Sync_sp_pc)
-	fmt.Fprintf(w, "#define El0Sync_undef 0x%02x\n", El0Sync_undef)
-	fmt.Fprintf(w, "#define El0Sync_dbg 0x%02x\n", El0Sync_dbg)
-	fmt.Fprintf(w, "#define El0Sync_inv 0x%02x\n", El0Sync_inv)
+	fmt.Fprintf(w, "#define El0ErrNMI 0x%02x\n", El0ErrNMI)
 
 	fmt.Fprintf(w, "#define PageFault 0x%02x\n", PageFault)
 	fmt.Fprintf(w, "#define Syscall 0x%02x\n", Syscall)

@@ -80,11 +80,24 @@ func getHypercallID(addr uintptr) int {
 //
 //go:nosplit
 func bluepillStopGuest(c *vCPU) {
-	if _, _, errno := syscall.RawSyscall(
+	if _, _, errno := syscall.RawSyscall( // escapes: no.
 		syscall.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_VCPU_EVENTS,
-		uintptr(unsafe.Pointer(&vcpuSErr))); errno != 0 {
+		uintptr(unsafe.Pointer(&vcpuSErrBounce))); errno != 0 {
+		throw("sErr injection failed")
+	}
+}
+
+// bluepillSigBus is reponsible for injecting sError to trigger sigbus.
+//
+//go:nosplit
+func bluepillSigBus(c *vCPU) {
+	if _, _, errno := syscall.RawSyscall( // escapes: no.
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_VCPU_EVENTS,
+		uintptr(unsafe.Pointer(&vcpuSErrNMI))); errno != 0 {
 		throw("sErr injection failed")
 	}
 }

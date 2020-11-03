@@ -146,12 +146,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			// MMIO exit we receive EFAULT from the run ioctl. We
 			// always inject an NMI here since we may be in kernel
 			// mode and have interrupts disabled.
-			if _, _, errno := syscall.RawSyscall( // escapes: no.
-				syscall.SYS_IOCTL,
-				uintptr(c.fd),
-				_KVM_NMI, 0); errno != 0 {
-				throw("NMI injection failed")
-			}
+			bluepillSigBus(c)
 			continue // Rerun vCPU.
 		default:
 			throw("run failed")

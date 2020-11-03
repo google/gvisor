@@ -27,15 +27,20 @@ var (
 	// The action for bluepillSignal is changed by sigaction().
 	bluepillSignal = syscall.SIGILL
 
-	// vcpuSErr is the event of system error.
-	vcpuSErr = kvmVcpuEvents{
+	// vcpuSErrBounce is the event of system error for bouncing KVM.
+	vcpuSErrBounce = kvmVcpuEvents{
 		exception: exception{
 			sErrPending: 1,
-			sErrHasEsr:  0,
-			pad:         [6]uint8{0, 0, 0, 0, 0, 0},
-			sErrEsr:     1,
 		},
-		rsvd: [12]uint32{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	}
+
+	// vcpuSErrNMI is the event of system error to trigger sigbus.
+	vcpuSErrNMI = kvmVcpuEvents{
+		exception: exception{
+			sErrPending: 1,
+			sErrHasEsr:  1,
+			sErrEsr:     _ESR_ELx_SERR_NMI,
+		},
 	}
 )
 
