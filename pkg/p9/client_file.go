@@ -43,17 +43,17 @@ func (c *Client) Attach(name string) (File, error) {
 }
 
 // newFile returns a new client file.
-func (c *Client) newFile(fid FID) *clientFile {
-	return &clientFile{
+func (c *Client) newFile(fid FID) *ClientFile {
+	return &ClientFile{
 		client: c,
 		fid:    fid,
 	}
 }
 
-// clientFile is provided to clients.
+// ClientFile is provided to clients.
 //
 // This proxies all of the interfaces found in file.go.
-type clientFile struct {
+type ClientFile struct {
 	DisallowServerCalls
 
 	// client is the originating client.
@@ -67,7 +67,7 @@ type clientFile struct {
 }
 
 // Walk implements File.Walk.
-func (c *clientFile) Walk(names []string) ([]QID, File, error) {
+func (c *ClientFile) Walk(names []string) ([]QID, File, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, nil, syscall.EBADF
 	}
@@ -88,7 +88,7 @@ func (c *clientFile) Walk(names []string) ([]QID, File, error) {
 }
 
 // WalkGetAttr implements File.WalkGetAttr.
-func (c *clientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, Attr, error) {
+func (c *ClientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, Attr, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, nil, AttrMask{}, Attr{}, syscall.EBADF
 	}
@@ -122,7 +122,7 @@ func (c *clientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, At
 }
 
 // StatFS implements File.StatFS.
-func (c *clientFile) StatFS() (FSStat, error) {
+func (c *ClientFile) StatFS() (FSStat, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return FSStat{}, syscall.EBADF
 	}
@@ -136,7 +136,7 @@ func (c *clientFile) StatFS() (FSStat, error) {
 }
 
 // FSync implements File.FSync.
-func (c *clientFile) FSync() error {
+func (c *ClientFile) FSync() error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
@@ -145,7 +145,7 @@ func (c *clientFile) FSync() error {
 }
 
 // GetAttr implements File.GetAttr.
-func (c *clientFile) GetAttr(req AttrMask) (QID, AttrMask, Attr, error) {
+func (c *ClientFile) GetAttr(req AttrMask) (QID, AttrMask, Attr, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return QID{}, AttrMask{}, Attr{}, syscall.EBADF
 	}
@@ -159,7 +159,7 @@ func (c *clientFile) GetAttr(req AttrMask) (QID, AttrMask, Attr, error) {
 }
 
 // SetAttr implements File.SetAttr.
-func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
+func (c *ClientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
@@ -168,7 +168,7 @@ func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 }
 
 // GetXattr implements File.GetXattr.
-func (c *clientFile) GetXattr(name string, size uint64) (string, error) {
+func (c *ClientFile) GetXattr(name string, size uint64) (string, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return "", syscall.EBADF
 	}
@@ -185,7 +185,7 @@ func (c *clientFile) GetXattr(name string, size uint64) (string, error) {
 }
 
 // SetXattr implements File.SetXattr.
-func (c *clientFile) SetXattr(name, value string, flags uint32) error {
+func (c *ClientFile) SetXattr(name, value string, flags uint32) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
@@ -197,7 +197,7 @@ func (c *clientFile) SetXattr(name, value string, flags uint32) error {
 }
 
 // ListXattr implements File.ListXattr.
-func (c *clientFile) ListXattr(size uint64) (map[string]struct{}, error) {
+func (c *ClientFile) ListXattr(size uint64) (map[string]struct{}, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, syscall.EBADF
 	}
@@ -218,7 +218,7 @@ func (c *clientFile) ListXattr(size uint64) (map[string]struct{}, error) {
 }
 
 // RemoveXattr implements File.RemoveXattr.
-func (c *clientFile) RemoveXattr(name string) error {
+func (c *ClientFile) RemoveXattr(name string) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
@@ -230,7 +230,7 @@ func (c *clientFile) RemoveXattr(name string) error {
 }
 
 // Allocate implements File.Allocate.
-func (c *clientFile) Allocate(mode AllocateMode, offset, length uint64) error {
+func (c *ClientFile) Allocate(mode AllocateMode, offset, length uint64) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
@@ -245,7 +245,7 @@ func (c *clientFile) Allocate(mode AllocateMode, offset, length uint64) error {
 //
 // N.B. This method is no longer part of the file interface and should be
 // considered deprecated.
-func (c *clientFile) Remove() error {
+func (c *ClientFile) Remove() error {
 	// Avoid double close.
 	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
 		return syscall.EBADF
@@ -266,7 +266,7 @@ func (c *clientFile) Remove() error {
 }
 
 // Close implements File.Close.
-func (c *clientFile) Close() error {
+func (c *ClientFile) Close() error {
 	// Avoid double close.
 	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
 		return syscall.EBADF
@@ -286,7 +286,7 @@ func (c *clientFile) Close() error {
 }
 
 // SetAttrClose implements File.SetAttrClose.
-func (c *clientFile) SetAttrClose(valid SetAttrMask, attr SetAttr) error {
+func (c *ClientFile) SetAttrClose(valid SetAttrMask, attr SetAttr) error {
 	if !versionSupportsTsetattrclunk(c.client.version) {
 		setAttrErr := c.SetAttr(valid, attr)
 
@@ -319,7 +319,7 @@ func (c *clientFile) SetAttrClose(valid SetAttrMask, attr SetAttr) error {
 }
 
 // Open implements File.Open.
-func (c *clientFile) Open(flags OpenFlags) (*fd.FD, QID, uint32, error) {
+func (c *ClientFile) Open(flags OpenFlags) (*fd.FD, QID, uint32, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, QID{}, 0, syscall.EBADF
 	}
@@ -332,8 +332,44 @@ func (c *clientFile) Open(flags OpenFlags) (*fd.FD, QID, uint32, error) {
 	return rlopen.File, rlopen.QID, rlopen.IoUnit, nil
 }
 
+// OpenFile is equivalent to Open, but returns a new File instead of mutating
+// the receiver.
+func (c *ClientFile) OpenFile(flags OpenFlags) (File, *fd.FD, QID, uint32, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return nil, nil, QID{}, 0, syscall.EBADF
+	}
+
+	if versionSupportsTwalkopencreate(c.client.version) {
+		newFID, ok := c.client.fidPool.Get()
+		if !ok {
+			return nil, nil, QID{}, 0, ErrOutOfFIDs
+		}
+		rwalkopen := Rwalkopen{}
+		if err := c.client.sendRecv(&Twalkopen{
+			FID:    c.fid,
+			NewFID: FID(newFID),
+			Flags:  flags,
+		}, &rwalkopen); err != nil {
+			c.client.fidPool.Put(newFID)
+			return nil, nil, QID{}, 0, err
+		}
+		return c.client.newFile(FID(newFID)), rwalkopen.File, rwalkopen.QID, rwalkopen.IoUnit, nil
+	}
+
+	_, newFile, err := c.Walk(nil)
+	if err != nil {
+		return nil, nil, QID{}, 0, err
+	}
+	fd, qid, ioUnit, err := newFile.Open(flags)
+	if err != nil {
+		newFile.Close()
+		return nil, nil, QID{}, 0, err
+	}
+	return newFile, fd, qid, ioUnit, nil
+}
+
 // Connect implements File.Connect.
-func (c *clientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
+func (c *ClientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, syscall.EBADF
 	}
@@ -398,11 +434,11 @@ func chunk(chunkSize uint32, fn func([]byte, uint64) (int, error), p []byte, off
 }
 
 // ReadAt proxies File.ReadAt.
-func (c *clientFile) ReadAt(p []byte, offset uint64) (int, error) {
+func (c *ClientFile) ReadAt(p []byte, offset uint64) (int, error) {
 	return chunk(c.client.payloadSize, c.readAt, p, offset)
 }
 
-func (c *clientFile) readAt(p []byte, offset uint64) (int, error) {
+func (c *ClientFile) readAt(p []byte, offset uint64) (int, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return 0, syscall.EBADF
 	}
@@ -429,11 +465,11 @@ func (c *clientFile) readAt(p []byte, offset uint64) (int, error) {
 }
 
 // WriteAt proxies File.WriteAt.
-func (c *clientFile) WriteAt(p []byte, offset uint64) (int, error) {
+func (c *ClientFile) WriteAt(p []byte, offset uint64) (int, error) {
 	return chunk(c.client.payloadSize, c.writeAt, p, offset)
 }
 
-func (c *clientFile) writeAt(p []byte, offset uint64) (int, error) {
+func (c *ClientFile) writeAt(p []byte, offset uint64) (int, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return 0, syscall.EBADF
 	}
@@ -503,12 +539,12 @@ func (r *ReadWriterFile) WriteAt(p []byte, offset int64) (int, error) {
 }
 
 // Rename implements File.Rename.
-func (c *clientFile) Rename(dir File, name string) error {
+func (c *ClientFile) Rename(dir File, name string) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
 
-	clientDir, ok := dir.(*clientFile)
+	clientDir, ok := dir.(*ClientFile)
 	if !ok {
 		return syscall.EBADF
 	}
@@ -517,7 +553,7 @@ func (c *clientFile) Rename(dir File, name string) error {
 }
 
 // Create implements File.Create.
-func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMode, uid UID, gid GID) (*fd.FD, File, QID, uint32, error) {
+func (c *ClientFile) Create(name string, openFlags OpenFlags, permissions FileMode, uid UID, gid GID) (*fd.FD, File, QID, uint32, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, nil, QID{}, 0, syscall.EBADF
 	}
@@ -547,8 +583,66 @@ func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMo
 	return rlcreate.File, c, rlcreate.QID, rlcreate.IoUnit, nil
 }
 
+// CreateFile is equivalent to Create, but returns unopened and opened Files
+// representing the created file without mutating the receiver, and also
+// returns metadata for the created file.
+func (c *ClientFile) CreateFile(name string, flags OpenFlags, permissions FileMode, uid UID, gid GID) (File, File, *fd.FD, QID, uint32, AttrMask, Attr, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return nil, nil, nil, QID{}, 0, AttrMask{}, Attr{}, syscall.EBADF
+	}
+
+	if versionSupportsTwalkopencreate(c.client.version) {
+		newFID, ok := c.client.fidPool.Get()
+		if !ok {
+			return nil, nil, nil, QID{}, 0, AttrMask{}, Attr{}, ErrOutOfFIDs
+		}
+		newOpenFID, ok := c.client.fidPool.Get()
+		if !ok {
+			c.client.fidPool.Put(newFID)
+			return nil, nil, nil, QID{}, 0, AttrMask{}, Attr{}, ErrOutOfFIDs
+		}
+		rwalkcreate := Rwalkcreate{}
+		if err := c.client.sendRecv(&Twalkcreate{
+			FID:         c.fid,
+			NewFID:      FID(newFID),
+			NewOpenFID:  FID(newOpenFID),
+			Name:        name,
+			Flags:       flags,
+			Permissions: permissions,
+			UID:         uid,
+			GID:         gid,
+		}, &rwalkcreate); err != nil {
+			c.client.fidPool.Put(newOpenFID)
+			c.client.fidPool.Put(newFID)
+			return nil, nil, nil, QID{}, 0, AttrMask{}, Attr{}, err
+		}
+		return c.client.newFile(FID(newFID)), c.client.newFile(FID(newOpenFID)), rwalkcreate.File, rwalkcreate.QID, rwalkcreate.IoUnit, rwalkcreate.Valid, rwalkcreate.Attr, nil
+	}
+
+	_, tempFile, err := c.Walk(nil)
+	if err != nil {
+		return nil, nil, nil, QID{}, 0, AttrMask{}, Attr{}, err
+	}
+	fd, newOpenFile, qid, ioUnit, err := tempFile.Create(name, flags, permissions, uid, gid)
+	if err != nil {
+		tempFile.Close()
+		return nil, nil, nil, QID{}, 0, AttrMask{}, Attr{}, err
+	}
+	// tempFile invalidated by successful Create, so it doesn't need to be
+	// closed after this point.
+	_, newFile, valid, attr, err := c.WalkGetAttr([]string{name})
+	if err != nil {
+		newOpenFile.Close()
+		if fd != nil {
+			fd.Close()
+		}
+		return nil, nil, nil, QID{}, 0, AttrMask{}, Attr{}, err
+	}
+	return newFile, newOpenFile, fd, qid, ioUnit, valid, attr, nil
+}
+
 // Mkdir implements File.Mkdir.
-func (c *clientFile) Mkdir(name string, permissions FileMode, uid UID, gid GID) (QID, error) {
+func (c *ClientFile) Mkdir(name string, permissions FileMode, uid UID, gid GID) (QID, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return QID{}, syscall.EBADF
 	}
@@ -578,7 +672,7 @@ func (c *clientFile) Mkdir(name string, permissions FileMode, uid UID, gid GID) 
 }
 
 // Symlink implements File.Symlink.
-func (c *clientFile) Symlink(oldname string, newname string, uid UID, gid GID) (QID, error) {
+func (c *ClientFile) Symlink(oldname string, newname string, uid UID, gid GID) (QID, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return QID{}, syscall.EBADF
 	}
@@ -608,12 +702,12 @@ func (c *clientFile) Symlink(oldname string, newname string, uid UID, gid GID) (
 }
 
 // Link implements File.Link.
-func (c *clientFile) Link(target File, newname string) error {
+func (c *ClientFile) Link(target File, newname string) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
 
-	targetFile, ok := target.(*clientFile)
+	targetFile, ok := target.(*ClientFile)
 	if !ok {
 		return syscall.EBADF
 	}
@@ -622,7 +716,7 @@ func (c *clientFile) Link(target File, newname string) error {
 }
 
 // Mknod implements File.Mknod.
-func (c *clientFile) Mknod(name string, mode FileMode, major uint32, minor uint32, uid UID, gid GID) (QID, error) {
+func (c *ClientFile) Mknod(name string, mode FileMode, major uint32, minor uint32, uid UID, gid GID) (QID, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return QID{}, syscall.EBADF
 	}
@@ -654,12 +748,12 @@ func (c *clientFile) Mknod(name string, mode FileMode, major uint32, minor uint3
 }
 
 // RenameAt implements File.RenameAt.
-func (c *clientFile) RenameAt(oldname string, newdir File, newname string) error {
+func (c *ClientFile) RenameAt(oldname string, newdir File, newname string) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
 
-	clientNewDir, ok := newdir.(*clientFile)
+	clientNewDir, ok := newdir.(*ClientFile)
 	if !ok {
 		return syscall.EBADF
 	}
@@ -668,7 +762,7 @@ func (c *clientFile) RenameAt(oldname string, newdir File, newname string) error
 }
 
 // UnlinkAt implements File.UnlinkAt.
-func (c *clientFile) UnlinkAt(name string, flags uint32) error {
+func (c *ClientFile) UnlinkAt(name string, flags uint32) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}
@@ -677,7 +771,7 @@ func (c *clientFile) UnlinkAt(name string, flags uint32) error {
 }
 
 // Readdir implements File.Readdir.
-func (c *clientFile) Readdir(offset uint64, count uint32) ([]Dirent, error) {
+func (c *ClientFile) Readdir(offset uint64, count uint32) ([]Dirent, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, syscall.EBADF
 	}
@@ -691,7 +785,7 @@ func (c *clientFile) Readdir(offset uint64, count uint32) ([]Dirent, error) {
 }
 
 // Readlink implements File.Readlink.
-func (c *clientFile) Readlink() (string, error) {
+func (c *ClientFile) Readlink() (string, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return "", syscall.EBADF
 	}
@@ -705,7 +799,7 @@ func (c *clientFile) Readlink() (string, error) {
 }
 
 // Flush implements File.Flush.
-func (c *clientFile) Flush() error {
+func (c *ClientFile) Flush() error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
 	}

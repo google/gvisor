@@ -307,6 +307,6 @@ func (DisallowClientCalls) SetAttrClose(SetAttrMask, SetAttr) error {
 type DisallowServerCalls struct{}
 
 // Renamed implements File.Renamed.
-func (*clientFile) Renamed(File, string) {
+func (DisallowServerCalls) Renamed(File, string) {
 	panic("Renamed should not be called on the client")
 }

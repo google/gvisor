@@ -515,20 +515,15 @@ var errNotHostFile = errors.New("not a host file")
 func (i *inodeOperations) NonBlockingOpen(ctx context.Context, p fs.PermMask) (*fd.FD, error) {
 	i.fileState.waitForLoad()
 
-	// Get a cloned fid which we will open.
-	_, newFile, err := i.fileState.file.walk(ctx, nil)
-	if err != nil {
-		log.Warningf("Open Walk failed: %v", err)
-		return nil, err
-	}
-	defer newFile.close(ctx)
-
 	flags, err := openFlagsFromPerms(p)
 	if err != nil {
 		log.Warningf("Open flags %s parsing failed: %v", p, err)
 		return nil, err
 	}
-	hostFile, _, _, err := newFile.open(ctx, flags)
+	newFile, hostFile, _, _, err := i.fileState.file.openFile(ctx, flags)
+	if err == nil {
+		newFile.close(ctx)
+	}
 	// If the host file returned is nil and the error is nil,
 	// then this was never a host file to begin with, and should
 	// be treated like a remote file.

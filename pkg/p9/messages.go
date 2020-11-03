@@ -2182,7 +2182,7 @@ type Twalkgetattr struct {
 	Names []string
 }
 
-// decode implements encoder.decode.
+// decode implements encoder.decode.tt
 func (t *Twalkgetattr) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.NewFID = b.ReadFID()
@@ -2552,6 +2552,153 @@ func (r *Rchannel) String() string {
 	return fmt.Sprintf("Rchannel{Offset: %d, Length: %d}", r.Offset, r.Length)
 }
 
+// Twalkopen opens an existing file.
+type Twalkopen struct {
+	// FID is the original FID.
+	FID FID
+
+	// NewFID is the FID for the opened file.
+	NewFID FID
+
+	// Flags are the open flags.
+	Flags OpenFlags
+}
+
+// decode implements encoder.decode.
+func (t *Twalkopen) decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.NewFID = b.ReadFID()
+	t.Flags = b.ReadOpenFlags()
+}
+
+// encode implements encoder.encode.
+func (t *Twalkopen) encode(b *buffer) {
+	b.WriteFID(t.FID)
+	b.WriteFID(t.NewFID)
+	b.WriteOpenFlags(t.Flags)
+}
+
+// Type implements message.Type.
+func (*Twalkopen) Type() MsgType {
+	return MsgTwalkopen
+}
+
+// String implements fmt.Stringer.String.
+func (t *Twalkopen) String() string {
+	return fmt.Sprintf("Twalkopen{FID: %d, NewFID: %d, Flags: %s}", t.FID, t.NewFID, t.Flags)
+}
+
+// Rwalkopen is a response to a Twalkopen.
+type Rwalkopen struct {
+	Rlopen
+}
+
+// Type implements message.Type.
+func (*Rwalkopen) Type() MsgType {
+	return MsgRwalkopen
+}
+
+// String implements fmt.Stringer.String.
+func (r *Rwalkopen) String() string {
+	return fmt.Sprintf("Rwalkopen{QID: %s, IoUnit: %d, File: %v}", r.QID, r.IoUnit, r.File)
+}
+
+// Twalkcreate creates a new file.
+type Twalkcreate struct {
+	// FID is the parent directory's FID.
+	FID FID
+
+	// NewFID is the unopened FID for the new file.
+	NewFID FID
+
+	// NewOpenFID is the opened FID for the new file.
+	NewOpenFID FID
+
+	// Name is the file name to create.
+	Name string
+
+	// Flags are the open flags.
+	Flags OpenFlags
+
+	// Permissions is the set of permission bits.
+	Permissions FileMode
+
+	// UID is the user ID to use for creating the file.
+	UID UID
+
+	// GID is the group ID to use for creating the file.
+	GID GID
+}
+
+// decode implements encoder.decode.
+func (t *Twalkcreate) decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.NewFID = b.ReadFID()
+	t.NewOpenFID = b.ReadFID()
+	t.Name = b.ReadString()
+	t.Flags = b.ReadOpenFlags()
+	t.Permissions = b.ReadFileMode()
+	t.UID = b.ReadUID()
+	t.GID = b.ReadGID()
+}
+
+// encode implements encoder.encode.
+func (t *Twalkcreate) encode(b *buffer) {
+	b.WriteFID(t.FID)
+	b.WriteFID(t.NewFID)
+	b.WriteFID(t.NewOpenFID)
+	b.WriteString(t.Name)
+	b.WriteOpenFlags(t.Flags)
+	b.WriteFileMode(t.Permissions)
+	b.WriteUID(t.UID)
+	b.WriteGID(t.GID)
+}
+
+// Type implements message.Type.
+func (*Twalkcreate) Type() MsgType {
+	return MsgTwalkcreate
+}
+
+// String implements fmt.Stringer.String.
+func (t *Twalkcreate) String() string {
+	return fmt.Sprintf("Twalkcreate{FID: %d, NewFID: %d, NewOpenFID: %d, Name: %s, Flags: %s, Permissions: %#o, UID: %d, GID: %d}", t.FID, t.NewFID, t.NewOpenFID, t.Name, t.Flags, t.Permissions, t.UID, t.GID)
+}
+
+// Rwalkcreate is a response to a Twalkcreate.
+type Rwalkcreate struct {
+	Rlopen
+
+	// Valid indicates which fields in Attr are valid.
+	Valid AttrMask
+
+	// Attr is the new file's metadata.
+	Attr Attr
+}
+
+// decode implements encoder.decode.
+func (r *Rwalkcreate) decode(b *buffer) {
+	r.Rlopen.decode(b)
+	r.Valid.decode(b)
+	r.Attr.decode(b)
+}
+
+// encode implements encoder.encode.
+func (r *Rwalkcreate) encode(b *buffer) {
+	r.Rlopen.encode(b)
+	r.Valid.encode(b)
+	r.Attr.encode(b)
+}
+
+// Type implements message.Type.
+func (*Rwalkcreate) Type() MsgType {
+	return MsgRwalkcreate
+}
+
+// String implements fmt.Stringer.String.
+func (r *Rwalkcreate) String() string {
+	return fmt.Sprintf("Rwalkcreate{QID: %s, IoUnit: %d, File: %v, Valid: %v, Attr: %s}", r.QID, r.IoUnit, r.File, r.Valid, r.Attr)
+}
+
 const maxCacheSize = 3
 
 // msgFactory is used to reduce allocations by caching messages for reuse.
@@ -2719,4 +2866,8 @@ func init() {
 	msgRegistry.register(MsgRsetattrclunk, func() message { return &Rsetattrclunk{} })
 	msgRegistry.register(MsgTchannel, func() message { return &Tchannel{} })
 	msgRegistry.register(MsgRchannel, func() message { return &Rchannel{} })
+	msgRegistry.register(MsgTwalkopen, func() message { return &Twalkopen{} })
+	msgRegistry.register(MsgRwalkopen, func() message { return &Rwalkopen{} })
+	msgRegistry.register(MsgTwalkcreate, func() message { return &Twalkcreate{} })
+	msgRegistry.register(MsgRwalkcreate, func() message { return &Rwalkcreate{} })
 }

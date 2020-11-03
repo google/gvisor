@@ -395,6 +395,10 @@ const (
 	MsgRallocate     MsgType = 139
 	MsgTsetattrclunk MsgType = 140
 	MsgRsetattrclunk MsgType = 141
+	MsgTwalkopen     MsgType = 142
+	MsgRwalkopen     MsgType = 143
+	MsgTwalkcreate   MsgType = 144
+	MsgRwalkcreate   MsgType = 145
 	MsgTchannel      MsgType = 250
 	MsgRchannel      MsgType = 251
 )

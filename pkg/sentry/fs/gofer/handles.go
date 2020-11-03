@@ -65,11 +65,6 @@ func (h *handles) DecRef() {
 }
 
 func newHandles(ctx context.Context, client *p9.Client, file contextFile, flags fs.FileFlags) (*handles, error) {
-	_, newFile, err := file.walk(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	var p9flags p9.OpenFlags
 	switch {
 	case flags.Read && flags.Write:
@@ -85,9 +80,8 @@ func newHandles(ctx context.Context, client *p9.Client, file contextFile, flags 
 		p9flags |= p9.OpenTruncate
 	}
 
-	hostFile, _, _, err := newFile.open(ctx, p9flags)
+	newFile, hostFile, _, _, err := file.openFile(ctx, p9flags)
 	if err != nil {
-		newFile.close(ctx)
 		return nil, err
 	}
 	h := handles{

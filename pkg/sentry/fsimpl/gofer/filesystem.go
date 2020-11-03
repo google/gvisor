@@ -1119,36 +1119,17 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	defer mnt.EndWrite()
 
-	// 9P2000.L's lcreate takes a fid representing the parent directory, and
-	// converts it into an open fid representing the created file, so we need
-	// to duplicate the directory fid first.
-	_, dirfile, err := d.file.walk(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
 	creds := rp.Credentials()
 	name := rp.Component()
 	// We only want the access mode for creating the file.
 	createFlags := p9.OpenFlags(opts.Flags) & p9.OpenFlagsModeMask
-	fdobj, openFile, createQID, _, err := dirfile.create(ctx, name, createFlags, (p9.FileMode)(opts.Mode), (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
+	nonOpenFile, openFile, fdobj, qid, _, attrMask, attr, err := d.file.createFile(ctx, name, createFlags, (p9.FileMode)(opts.Mode), (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
 	if err != nil {
-		dirfile.close(ctx)
-		return nil, err
-	}
-	// Then we need to walk to the file we just created to get a non-open fid
-	// representing it, and to get its metadata. This must use d.file since, as
-	// explained above, dirfile was invalidated by dirfile.Create().
-	_, nonOpenFile, attrMask, attr, err := d.file.walkGetAttrOne(ctx, name)
-	if err != nil {
-		openFile.close(ctx)
-		if fdobj != nil {
-			fdobj.Close()
-		}
 		return nil, err
 	}
 
 	// Construct the new dentry.
-	child, err := d.fs.newDentry(ctx, nonOpenFile, createQID, attrMask, &attr)
+	child, err := d.fs.newDentry(ctx, nonOpenFile, qid, attrMask, &attr)
 	if err != nil {
 		nonOpenFile.close(ctx)
 		openFile.close(ctx)
@@ -1161,18 +1142,18 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	// Incorporate the fid that was opened by lcreate.
 	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD
 	if useRegularFileFD {
+		openFD := int32(fdobj.Release())
 		child.handleMu.Lock()
 		if vfs.MayReadFileWithOpenFlags(opts.Flags) {
 			child.readFile = openFile
 			if fdobj != nil {
-				child.hostFD = int32(fdobj.Release())
+				child.readFD = openFD
+				child.mmapFD = openFD
 			}
-		} else if fdobj != nil {
-			// Can't use fdobj if it's not readable.
-			fdobj.Close()
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
 			child.writeFile = openFile
+			child.writeFD = openFD
 		}
 		child.handleMu.Unlock()
 	}

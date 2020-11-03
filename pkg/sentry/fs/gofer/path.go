@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -109,14 +108,6 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		return nil, syserror.ENAMETOOLONG
 	}
 
-	// Create replaces the directory fid with the newly created/opened
-	// file, so clone this directory so it doesn't change out from under
-	// this node.
-	_, newFile, err := i.fileState.file.walk(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	// Map the FileFlags to p9 OpenFlags.
 	var openFlags p9.OpenFlags
 	switch {
@@ -131,36 +122,12 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	}
 
 	owner := fs.FileOwnerFromContext(ctx)
-	hostFile, err := newFile.create(ctx, name, openFlags, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
+	unopened, opened, hostFile, qid, _, mask, p9attr, err := i.fileState.file.createFile(ctx, name, openFlags, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
 	if err != nil {
-		// Could not create the file.
-		newFile.close(ctx)
 		return nil, err
 	}
 
 	i.touchModificationAndStatusChangeTime(ctx, dir)
-
-	// Get an unopened p9.File for the file we created so that it can be cloned
-	// and re-opened multiple times after creation, while also getting its
-	// attributes. Both are required for inodeOperations.
-	qids, unopened, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
-	if err != nil {
-		newFile.close(ctx)
-		if hostFile != nil {
-			hostFile.Close()
-		}
-		return nil, err
-	}
-	if len(qids) != 1 {
-		log.Warningf("WalkGetAttr(%s) succeeded, but returned %d QIDs (%v), wanted 1", name, len(qids), qids)
-		newFile.close(ctx)
-		if hostFile != nil {
-			hostFile.Close()
-		}
-		unopened.close(ctx)
-		return nil, syserror.EIO
-	}
-	qid := qids[0]
 
 	// Construct the InodeOperations.
 	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, p9attr)
@@ -171,7 +138,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 
 	// Construct the new file, caching the handles if allowed.
 	h := handles{
-		File: newFile,
+		File: opened,
 		Host: hostFile,
 	}
 	h.EnableLeakCheck("gofer.handles")
@@ -321,37 +288,20 @@ func (i *inodeOperations) createInternalFifo(ctx context.Context, dir *fs.Inode,
 
 // Caller must hold Session.endpoint lock.
 func (i *inodeOperations) createEndpointFile(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions, fileType p9.FileMode) (fs.StableAttr, *inodeOperations, error) {
-	_, dirClone, err := i.fileState.file.walk(ctx, nil)
-	if err != nil {
-		return fs.StableAttr{}, nil, err
-	}
-	// We're not going to use dirClone after return.
-	defer dirClone.close(ctx)
-
 	// Create a regular file in the gofer and then mark it as a socket by
 	// adding this inode key in the 'overrides' map.
 	owner := fs.FileOwnerFromContext(ctx)
-	hostFile, err := dirClone.create(ctx, name, p9.ReadWrite, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
+	unopened, opened, hostFile, qid, _, mask, attr, err := i.fileState.file.createFile(ctx, name, p9.ReadWrite, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
 	if err != nil {
 		return fs.StableAttr{}, nil, err
 	}
 	// We're not going to use this file.
-	hostFile.Close()
+	opened.close(ctx)
+	if hostFile != nil {
+		hostFile.Close()
+	}
 
 	i.touchModificationAndStatusChangeTime(ctx, dir)
-
-	// Get the attributes of the file to create inode key.
-	qid, mask, attr, err := getattr(ctx, dirClone)
-	if err != nil {
-		return fs.StableAttr{}, nil, err
-	}
-
-	// Get an unopened p9.File for the file we created so that it can be
-	// cloned and re-opened multiple times after creation.
-	_, unopened, err := i.fileState.file.walk(ctx, []string{name})
-	if err != nil {
-		return fs.StableAttr{}, nil, err
-	}
 
 	// Construct new inode with file type overridden.
 	attr.Mode = changeType(attr.Mode, fileType)

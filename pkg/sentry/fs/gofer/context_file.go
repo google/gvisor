@@ -108,11 +108,11 @@ func (c *contextFile) close(ctx context.Context) error {
 	return err
 }
 
-func (c *contextFile) open(ctx context.Context, mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
+func (c *contextFile) openFile(ctx context.Context, flags p9.OpenFlags) (contextFile, *fd.FD, p9.QID, uint32, error) {
 	ctx.UninterruptibleSleepStart(false)
-	f, q, u, err := c.file.Open(mode)
+	newFile, f, q, u, err := c.file.(*p9.ClientFile).OpenFile(flags)
 	ctx.UninterruptibleSleepFinish(false)
-	return f, q, u, err
+	return contextFile{newFile}, f, q, u, err
 }
 
 func (c *contextFile) readAt(ctx context.Context, p []byte, offset uint64) (int, error) {
@@ -136,11 +136,11 @@ func (c *contextFile) fsync(ctx context.Context) error {
 	return err
 }
 
-func (c *contextFile) create(ctx context.Context, name string, flags p9.OpenFlags, permissions p9.FileMode, uid p9.UID, gid p9.GID) (*fd.FD, error) {
+func (c *contextFile) createFile(ctx context.Context, name string, flags p9.OpenFlags, permissions p9.FileMode, uid p9.UID, gid p9.GID) (contextFile, contextFile, *fd.FD, p9.QID, uint32, p9.AttrMask, p9.Attr, error) {
 	ctx.UninterruptibleSleepStart(false)
-	fd, _, _, _, err := c.file.Create(name, flags, permissions, uid, gid)
+	newFile, newOpenFile, fd, qid, ioUnit, mask, attr, err := c.file.(*p9.ClientFile).CreateFile(name, flags, permissions, uid, gid)
 	ctx.UninterruptibleSleepFinish(false)
-	return fd, err
+	return contextFile{newFile}, contextFile{newOpenFile}, fd, qid, ioUnit, mask, attr, err
 }
 
 func (c *contextFile) mkdir(ctx context.Context, name string, permissions p9.FileMode, uid p9.UID, gid p9.GID) (p9.QID, error) {

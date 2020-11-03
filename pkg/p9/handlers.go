@@ -295,23 +295,32 @@ func (t *Tlopen) handle(cs *connState) message {
 		return newErr(syscall.EBADF)
 	}
 	defer ref.DecRef()
+	qid, ioUnit, osFile, err := doOpen(ref, t.Flags)
+	if err != nil {
+		return newErr(err)
+	}
+	rlopen := &Rlopen{QID: qid, IoUnit: ioUnit}
+	rlopen.SetFilePayload(osFile)
+	return rlopen
+}
 
+func doOpen(ref *fidRef, flags OpenFlags) (QID, uint32, *fd.FD, error) {
 	ref.openedMu.Lock()
 	defer ref.openedMu.Unlock()
 
 	// Has it been opened already?
 	if ref.opened || !CanOpen(ref.mode) {
-		return newErr(syscall.EINVAL)
+		return QID{}, 0, nil, syscall.EINVAL
 	}
 
 	if ref.mode.IsDir() {
 		// Directory must be opened ReadOnly.
-		if t.Flags&OpenFlagsModeMask != ReadOnly {
-			return newErr(syscall.EISDIR)
+		if flags&OpenFlagsModeMask != ReadOnly {
+			return QID{}, 0, nil, syscall.EISDIR
 		}
 		// Directory not truncatable.
-		if t.Flags&OpenTruncate != 0 {
-			return newErr(syscall.EISDIR)
+		if flags&OpenTruncate != 0 {
+			return QID{}, 0, nil, syscall.EISDIR
 		}
 	}
 
@@ -326,19 +335,17 @@ func (t *Tlopen) handle(cs *connState) message {
 			return syscall.EINVAL
 		}
 
-		osFile, qid, ioUnit, err = ref.file.Open(t.Flags)
+		osFile, qid, ioUnit, err = ref.file.Open(flags)
 		return err
 	}); err != nil {
-		return newErr(err)
+		return QID{}, 0, nil, err
 	}
 
 	// Mark file as opened and set open mode.
 	ref.opened = true
-	ref.openFlags = t.Flags
+	ref.openFlags = flags
 
-	rlopen := &Rlopen{QID: qid, IoUnit: ioUnit}
-	rlopen.SetFilePayload(osFile)
-	return rlopen
+	return qid, ioUnit, osFile, nil
 }
 
 func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
@@ -1186,8 +1193,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 
 	// Has it been opened already?
 	if _, opened := ref.OpenFlags(); opened {
-		err = syscall.EBUSY
-		return
+		return nil, nil, AttrMask{}, Attr{}, syscall.EBUSY
 	}
 
 	// Is this an empty list? Handle specially. We don't actually need to
@@ -1421,4 +1427,129 @@ func (t *Tchannel) handle(cs *connState) message {
 		return newErr(syscall.EINVAL)
 	}
 	return rchannel
+}
+
+// handle implements handler.handle.
+func (t *Twalkopen) handle(cs *connState) message {
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(syscall.EBADF)
+	}
+	defer ref.DecRef()
+
+	_, newRef, _, _, err := doWalk(cs, ref, nil /* names */, false /* getattr */)
+	if err != nil {
+		return newErr(err)
+	}
+	defer newRef.DecRef()
+
+	qid, ioUnit, osFile, err := doOpen(newRef, t.Flags)
+	if err != nil {
+		return newErr(err)
+	}
+
+	// Install the new FID.
+	cs.InsertFID(t.NewFID, newRef)
+
+	r := &Rwalkopen{
+		Rlopen: Rlopen{
+			QID:    qid,
+			IoUnit: ioUnit,
+		},
+	}
+	r.SetFilePayload(osFile)
+	return r
+}
+
+// handle implements handler.handle.
+func (t *Twalkcreate) handle(cs *connState) message {
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(syscall.EBADF)
+	}
+	defer ref.DecRef()
+
+	if err := checkSafeName(t.Name); err != nil {
+		return newErr(err)
+	}
+
+	// The file creation and the subsequent re-walk must be atomic (under
+	// safelyWrite) to ensure that the re-walk is to the created file.
+	var (
+		newFile     File
+		newOpenFile File
+		newRef      *fidRef
+		newOpenRef  *fidRef
+		osFile      *fd.FD
+		qid         QID
+		ioUnit      uint32
+		valid       AttrMask
+		attr        Attr
+	)
+	if err := ref.safelyWrite(func() error {
+		// Don't allow creation from non-directories or deleted directories.
+		if ref.isDeleted() || !ref.mode.IsDir() {
+			return syscall.EINVAL
+		}
+
+		// Not allowed on open directories.
+		if _, opened := ref.OpenFlags(); opened {
+			return syscall.EINVAL
+		}
+
+		// Do the create.
+		var err error
+		osFile, newOpenFile, qid, ioUnit, err = ref.file.Create(t.Name, t.Flags, t.Permissions, t.UID, t.GID)
+		if err != nil {
+			return err
+		}
+
+		newOpenRef = &fidRef{
+			server:    cs.server,
+			parent:    ref,
+			file:      newOpenFile,
+			opened:    true,
+			openFlags: t.Flags,
+			mode:      ModeRegular,
+			pathNode:  ref.pathNode.pathNodeFor(t.Name),
+		}
+		ref.IncRef() // held by newOpenRef.parent
+		ref.pathNode.addChild(newOpenRef, t.Name)
+
+		var qidsArr [1]QID
+		_, newFile, valid, attr, err = walkOne(qidsArr[:0], ref.file, []string{t.Name}, true /* getattr */)
+		if err != nil {
+			newOpenRef.DecRef()
+			return err
+		}
+
+		newRef = &fidRef{
+			server:   cs.server,
+			parent:   ref,
+			file:     newFile,
+			mode:     ModeRegular,
+			pathNode: ref.pathNode.pathNodeFor(t.Name),
+		}
+		ref.IncRef() // held by newRef.parent
+		ref.pathNode.addChild(newRef, t.Name)
+
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+
+	// Install the new FIDs.
+	cs.InsertFID(t.NewFID, newRef)
+	cs.InsertFID(t.NewOpenFID, newOpenRef)
+
+	r := &Rwalkcreate{
+		Rlopen: Rlopen{
+			QID:    qid,
+			IoUnit: ioUnit,
+		},
+		Valid: valid,
+		Attr:  attr,
+	}
+	r.SetFilePayload(osFile)
+	return r
 }

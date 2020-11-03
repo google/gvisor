@@ -34,10 +34,6 @@ type handle struct {
 
 // Preconditions: read || write.
 func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (handle, error) {
-	_, newfile, err := file.walk(ctx, nil)
-	if err != nil {
-		return handle{fd: -1}, err
-	}
 	var flags p9.OpenFlags
 	switch {
 	case read && !write:
@@ -50,9 +46,8 @@ func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (hand
 	if trunc {
 		flags |= p9.OpenTruncate
 	}
-	fdobj, _, _, err := newfile.open(ctx, flags)
+	newfile, fdobj, _, _, err := file.openFile(ctx, flags)
 	if err != nil {
-		newfile.close(ctx)
 		return handle{fd: -1}, err
 	}
 	fd := int32(-1)
