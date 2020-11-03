@@ -79,6 +79,18 @@ func bluepillStopGuest(c *vCPU) {
 	c.runData.requestInterruptWindow = 0
 }
 
+// bluepillSigBus is reponsible for injecting NMI to trigger sigbus.
+//
+//go:nosplit
+func bluepillSigBus(c *vCPU) {
+	if _, _, errno := syscall.RawSyscall( // escapes: no.
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_NMI, 0); errno != 0 {
+		throw("NMI injection failed")
+	}
+}
+
 // bluepillReadyStopGuest checks whether the current vCPU is ready for interrupt injection.
 //
 //go:nosplit

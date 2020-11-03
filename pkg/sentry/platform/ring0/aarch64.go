@@ -58,46 +58,55 @@ type Vector uintptr
 
 // Exception vectors.
 const (
-	El1SyncInvalid = iota
-	El1IrqInvalid
-	El1FiqInvalid
-	El1ErrorInvalid
+	El1InvSync = iota
+	El1InvIrq
+	El1InvFiq
+	El1InvError
+
 	El1Sync
 	El1Irq
 	El1Fiq
-	El1Error
+	El1Err
+
 	El0Sync
 	El0Irq
 	El0Fiq
-	El0Error
-	El0Sync_invalid
-	El0Irq_invalid
-	El0Fiq_invalid
-	El0Error_invalid
-	El1Sync_da
-	El1Sync_ia
-	El1Sync_sp_pc
-	El1Sync_undef
-	El1Sync_dbg
-	El1Sync_inv
-	El0Sync_svc
-	El0Sync_da
-	El0Sync_ia
-	El0Sync_fpsimd_acc
-	El0Sync_sve_acc
-	El0Sync_sys
-	El0Sync_sp_pc
-	El0Sync_undef
-	El0Sync_dbg
-	El0Sync_inv
+	El0Err
+
+	El0InvSync
+	El0InvIrq
+	El0InvFiq
+	El0InvErr
+
+	El1SyncDa
+	El1SyncIa
+	El1SyncSpPc
+	El1SyncUndef
+	El1SyncDbg
+	El1SyncInv
+
+	El0SyncSVC
+	El0SyncDa
+	El0SyncIa
+	El0SyncFpsimdAcc
+	El0SyncSveAcc
+	El0SyncSys
+	El0SyncSpPc
+	El0SyncUndef
+	El0SyncDbg
+	El0SyncInv
+
+	El0ErrNMI
+	El0ErrBounce
+
 	_NR_INTERRUPTS
 )
 
 // System call vectors.
 const (
-	Syscall                 Vector = El0Sync_svc
-	PageFault               Vector = El0Sync_da
-	VirtualizationException Vector = El0Error
+	Syscall                 Vector = El0SyncSVC
+	PageFault               Vector = El0SyncDa
+	VirtualizationException Vector = El0ErrBounce
 )
 
 // VirtualAddressBits returns the number bits available for virtual addresses.
