@@ -23,6 +23,9 @@ import (
 //
 // This contains global state, shared by multiple CPUs.
 type Kernel struct {
+	// PageTables are the kernel pagetables; this must be provided.
+	PageTables *pagetables.PageTables
+
 	KernelArchState
 }
 

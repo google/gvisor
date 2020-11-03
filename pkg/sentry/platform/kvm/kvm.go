@@ -158,8 +158,7 @@ func (*KVM) MaxUserAddress() usermem.Addr {
 // NewAddressSpace returns a new pagetable root.
 func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan struct{}, error) {
 	// Allocate page tables and install system mappings.
-	pageTables := pagetables.New(newAllocator())
-	k.machine.mapUpperHalf(pageTables)
+	pageTables := pagetables.NewWithUpper(newAllocator(), k.machine.upperSharedPageTables, ring0.KernelStartAddress)
 
 	// Return the new address space.
 	return &addressSpace{

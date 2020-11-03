@@ -24,14 +24,6 @@ import (
 
 // archPageTables is architecture-specific data.
 type archPageTables struct {
-	// root is the pagetable root for kernel space.
-	root *PTEs
-
-	// rootPhysical is the cached physical address of the root.
-	//
-	// This is saved only to prevent constant translation.
-	rootPhysical uintptr
-
 	asid uint16
 }
 
@@ -46,7 +38,7 @@ func (p *PageTables) TTBR0_EL1(noFlush bool, asid uint16) uint64 {
 //
 //go:nosplit
 func (p *PageTables) TTBR1_EL1(noFlush bool, asid uint16) uint64 {
-	return uint64(p.archPageTables.rootPhysical) | (uint64(asid)&ttbrASIDMask)<<ttbrASIDOffset
+	return uint64(p.upperSharedPageTables.rootPhysical) | (uint64(asid)&ttbrASIDMask)<<ttbrASIDOffset
 }
 
 // Bits in page table entries.

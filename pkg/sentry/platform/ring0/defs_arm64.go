@@ -32,15 +32,8 @@ var (
 	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
 )
 
-// KernelOpts has initialization options for the kernel.
-type KernelOpts struct {
-	// PageTables are the kernel pagetables; this must be provided.
-	PageTables *pagetables.PageTables
-}
-
 // KernelArchState contains architecture-specific state.
 type KernelArchState struct {
-	KernelOpts
 }
 
 // CPUArchState contains CPU-specific arch state.
