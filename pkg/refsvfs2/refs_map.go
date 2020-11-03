@@ -62,7 +62,9 @@ func Register(obj CheckedObject) {
 		}
 		liveObjects[obj] = struct{}{}
 		liveObjectsMu.Unlock()
-		logEvent(obj, "registered")
+		if leakCheckEnabled() && obj.LogRefs() {
+			logEvent(obj, "registered")
+		}
 	}
 }
 
@@ -75,31 +77,40 @@ func Unregister(obj CheckedObject) {
 			panic(fmt.Sprintf("Expected to find entry in leak checking map for reference %p", obj))
 		}
 		delete(liveObjects, obj)
-		logEvent(obj, "unregistered")
+		if leakCheckEnabled() && obj.LogRefs() {
+			logEvent(obj, "unregistered")
+		}
 	}
 }
 
 // LogIncRef logs a reference increment.
 func LogIncRef(obj CheckedObject, refs int64) {
-	logEvent(obj, fmt.Sprintf("IncRef to %d", refs))
+	if leakCheckEnabled() && obj.LogRefs() {
+		logEvent(obj, fmt.Sprintf("IncRef to %d", refs))
+	}
 }
 
 // LogTryIncRef logs a successful TryIncRef call.
 func LogTryIncRef(obj CheckedObject, refs int64) {
-	logEvent(obj, fmt.Sprintf("TryIncRef to %d", refs))
+	if leakCheckEnabled() && obj.LogRefs() {
+		logEvent(obj, fmt.Sprintf("TryIncRef to %d", refs))
+	}
 }
 
 // LogDecRef logs a reference decrement.
 func LogDecRef(obj CheckedObject, refs int64) {
-	logEvent(obj, fmt.Sprintf("DecRef to %d", refs))
+	if leakCheckEnabled() && obj.LogRefs() {
+		logEvent(obj, fmt.Sprintf("DecRef to %d", refs))
+	}
 }
 
 // logEvent logs a message for the given reference-counted object.
+//
+// obj.LogRefs() should be checked before calling logEvent, in order to avoid
+// calling any text processing needed to evaluate msg.
 func logEvent(obj CheckedObject, msg string) {
-	if obj.LogRefs() {
-		log.Infof("[%s %p] %s:", obj.RefType(), obj, msg)
-		log.Infof(refs_vfs1.FormatStack(refs_vfs1.RecordStack()))
-	}
+	log.Infof("[%s %p] %s:", obj.RefType(), obj, msg)
+	log.Infof(refs_vfs1.FormatStack(refs_vfs1.RecordStack()))
 }
 
 // DoLeakCheck iterates through the live object map and logs a message for each
