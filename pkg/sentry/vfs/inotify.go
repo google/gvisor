@@ -65,7 +65,7 @@ type Inotify struct {
 
 	// queue is used to notify interested parties when the inotify instance
 	// becomes readable or writable.
-	queue waiter.Queue `state:"nosave"`
+	queue waiter.Queue
 
 	// evMu *only* protects the events list. We need a separate lock while
 	// queuing events: using mu may violate lock ordering, since at that point
