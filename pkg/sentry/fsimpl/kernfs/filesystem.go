@@ -207,24 +207,23 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 // Preconditions:
 // * Filesystem.mu must be locked for at least reading.
 // * isDir(parentInode) == true.
-func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parent *Dentry) (string, error) {
-	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
-		return "", err
+func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string, parent *Dentry) error {
+	if err := parent.inode.CheckPermissions(ctx, creds, vfs.MayWrite|vfs.MayExec); err != nil {
+		return err
 	}
-	pc := rp.Component()
-	if pc == "." || pc == ".." {
-		return "", syserror.EEXIST
+	if name == "." || name == ".." {
+		return syserror.EEXIST
 	}
-	if len(pc) > linux.NAME_MAX {
-		return "", syserror.ENAMETOOLONG
+	if len(name) > linux.NAME_MAX {
+		return syserror.ENAMETOOLONG
 	}
-	if _, ok := parent.children[pc]; ok {
-		return "", syserror.EEXIST
+	if _, ok := parent.children[name]; ok {
+		return syserror.EEXIST
 	}
 	if parent.VFSDentry().IsDead() {
-		return "", syserror.ENOENT
+		return syserror.ENOENT
 	}
-	return pc, nil
+	return nil
 }
 
 // checkDeleteLocked checks that the file represented by vfsd may be deleted.
@@ -352,8 +351,8 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
-	pc, err := checkCreateLocked(ctx, rp, parent)
-	if err != nil {
+	pc := rp.Component()
+	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
 	}
 	if rp.Mount() != vd.Mount() {
@@ -394,8 +393,8 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
-	pc, err := checkCreateLocked(ctx, rp, parent)
-	if err != nil {
+	pc := rp.Component()
+	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
@@ -430,8 +429,8 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
-	pc, err := checkCreateLocked(ctx, rp, parent)
-	if err != nil {
+	pc := rp.Component()
+	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
@@ -657,8 +656,8 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	// Can we create the dst dentry?
 	var dst *Dentry
-	pc, err := checkCreateLocked(ctx, rp, dstDir)
-	switch err {
+	pc := rp.Component()
+	switch err := checkCreateLocked(ctx, rp.Credentials(), pc, dstDir); err {
 	case nil:
 		// Ok, continue with rename as replacement.
 	case syserror.EEXIST:
@@ -822,8 +821,8 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 
-	pc, err := checkCreateLocked(ctx, rp, parent)
-	if err != nil {
+	pc := rp.Component()
+	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
