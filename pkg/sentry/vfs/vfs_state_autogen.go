@@ -879,6 +879,7 @@ func (i *Inotify) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
 		"id",
+		"queue",
 		"events",
 		"scratch",
 		"nextWatchMinusOne",
@@ -895,10 +896,11 @@ func (i *Inotify) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &i.NoLockFD)
 	stateSinkObject.Save(4, &i.id)
-	stateSinkObject.Save(5, &i.events)
-	stateSinkObject.Save(6, &i.scratch)
-	stateSinkObject.Save(7, &i.nextWatchMinusOne)
-	stateSinkObject.Save(8, &i.watches)
+	stateSinkObject.Save(5, &i.queue)
+	stateSinkObject.Save(6, &i.events)
+	stateSinkObject.Save(7, &i.scratch)
+	stateSinkObject.Save(8, &i.nextWatchMinusOne)
+	stateSinkObject.Save(9, &i.watches)
 }
 
 func (i *Inotify) afterLoad() {}
@@ -909,10 +911,11 @@ func (i *Inotify) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &i.NoLockFD)
 	stateSourceObject.Load(4, &i.id)
-	stateSourceObject.Load(5, &i.events)
-	stateSourceObject.Load(6, &i.scratch)
-	stateSourceObject.Load(7, &i.nextWatchMinusOne)
-	stateSourceObject.Load(8, &i.watches)
+	stateSourceObject.Load(5, &i.queue)
+	stateSourceObject.Load(6, &i.events)
+	stateSourceObject.Load(7, &i.scratch)
+	stateSourceObject.Load(8, &i.nextWatchMinusOne)
+	stateSourceObject.Load(9, &i.watches)
 }
 
 func (w *Watches) StateTypeName() string {
