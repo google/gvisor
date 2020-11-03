@@ -32,7 +32,7 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC) != 0 {
 		return 0, syserror.EINVAL
 	}
-	r, w := pipe.NewConnectedPipe(t, pipe.DefaultPipeSize, usermem.PageSize)
+	r, w := pipe.NewConnectedPipe(t, pipe.DefaultPipeSize)
 
 	r.SetFlags(linuxToFlags(flags).Settable())
 	defer r.DecRef(t)

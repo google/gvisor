@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // maxFilenameLen is the maximum length of a filename. This is dictated by 9P's
@@ -305,7 +304,7 @@ func (i *inodeOperations) createInternalFifo(ctx context.Context, dir *fs.Inode,
 	}
 
 	// First create a pipe.
-	p := pipe.NewPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize)
+	p := pipe.NewPipe(true /* isNamed */, pipe.DefaultPipeSize)
 
 	// Wrap the fileOps with our Fifo.
 	iops := &fifo{

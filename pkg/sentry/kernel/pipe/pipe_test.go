@@ -26,7 +26,7 @@ import (
 
 func TestPipeRW(t *testing.T) {
 	ctx := contexttest.Context(t)
-	r, w := NewConnectedPipe(ctx, 65536, 4096)
+	r, w := NewConnectedPipe(ctx, 65536)
 	defer r.DecRef(ctx)
 	defer w.DecRef(ctx)
 
@@ -46,7 +46,7 @@ func TestPipeRW(t *testing.T) {
 
 func TestPipeReadBlock(t *testing.T) {
 	ctx := contexttest.Context(t)
-	r, w := NewConnectedPipe(ctx, 65536, 4096)
+	r, w := NewConnectedPipe(ctx, 65536)
 	defer r.DecRef(ctx)
 	defer w.DecRef(ctx)
 
@@ -61,7 +61,7 @@ func TestPipeWriteBlock(t *testing.T) {
 	const capacity = MinimumPipeSize
 
 	ctx := contexttest.Context(t)
-	r, w := NewConnectedPipe(ctx, capacity, atomicIOBytes)
+	r, w := NewConnectedPipe(ctx, capacity)
 	defer r.DecRef(ctx)
 	defer w.DecRef(ctx)
 
@@ -76,7 +76,7 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 	const atomicIOBytes = 2
 
 	ctx := contexttest.Context(t)
-	r, w := NewConnectedPipe(ctx, atomicIOBytes, atomicIOBytes)
+	r, w := NewConnectedPipe(ctx, atomicIOBytes)
 	defer r.DecRef(ctx)
 	defer w.DecRef(ctx)
 
