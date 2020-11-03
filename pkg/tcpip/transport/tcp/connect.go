@@ -496,7 +496,9 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 		}
 
 		// Wait for notification.
+		h.ep.mu.Unlock()
 		index, _ = s.Fetch(true /* block */)
+		h.ep.mu.Lock()
 	}
 }
 
