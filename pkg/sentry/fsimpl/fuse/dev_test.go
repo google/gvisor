@@ -315,7 +315,7 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 		readPayload.MarshalUnsafe(outBuf[outHdrLen:])
 		outIOseq := usermem.BytesIOSequence(outBuf)
 
-		n, err = fd.Write(s.Ctx, outIOseq, vfs.WriteOptions{})
+		_, err = fd.Write(s.Ctx, outIOseq, vfs.WriteOptions{})
 		if err != nil {
 			t.Fatalf("Write failed :%v", err)
 		}

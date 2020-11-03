@@ -53,40 +53,40 @@ func randomFilename() (string, error) {
 func TestConnectFailure(t *testing.T) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	if _, err := Connect(name, false); err == nil {
-		t.Fatalf("connect was successful, expected err")
+		t.Fatalf("Connect was successful, expected err")
 	}
 }
 
 func TestBindFailure(t *testing.T) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	ss, err := BindAndListen(name, false)
 	if err != nil {
-		t.Fatalf("first bind failed, got err %v expected nil", err)
+		t.Fatalf("First bind failed, got err %v expected nil", err)
 	}
 	defer ss.Close()
 
 	if _, err = BindAndListen(name, false); err == nil {
-		t.Fatalf("second bind succeeded, expected non-nil err")
+		t.Fatalf("Second bind succeeded, expected non-nil err")
 	}
 }
 
 func TestMultipleAccept(t *testing.T) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	ss, err := BindAndListen(name, false)
 	if err != nil {
-		t.Fatalf("first bind failed, got err %v expected nil", err)
+		t.Fatalf("First bind failed, got err %v expected nil", err)
 	}
 	defer ss.Close()
 
@@ -99,7 +99,8 @@ func TestMultipleAccept(t *testing.T) {
 			defer wg.Done()
 			s, err := Connect(name, false)
 			if err != nil {
-				t.Fatalf("connect failed, got err %v expected nil", err)
+				t.Errorf("Connect failed, got err %v expected nil", err)
+				return
 			}
 			s.Close()
 		}()
@@ -109,7 +110,7 @@ func TestMultipleAccept(t *testing.T) {
 	for i := 0; i < backlog; i++ {
 		s, err := ss.Accept()
 		if err != nil {
-			t.Errorf("accept failed, got err %v expected nil", err)
+			t.Errorf("Accept failed, got err %v expected nil", err)
 			continue
 		}
 		s.Close()
@@ -119,35 +120,35 @@ func TestMultipleAccept(t *testing.T) {
 func TestServerClose(t *testing.T) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	ss, err := BindAndListen(name, false)
 	if err != nil {
-		t.Fatalf("first bind failed, got err %v expected nil", err)
+		t.Fatalf("First bind failed, got err %v expected nil", err)
 	}
 
 	// Make sure the first close succeeds.
 	if err := ss.Close(); err != nil {
-		t.Fatalf("first close failed, got err %v expected nil", err)
+		t.Fatalf("First close failed, got err %v expected nil", err)
 	}
 
 	// The second one should fail.
 	if err := ss.Close(); err == nil {
-		t.Fatalf("second close succeeded, expected non-nil err")
+		t.Fatalf("Second close succeeded, expected non-nil err")
 	}
 }
 
 func socketPair(t *testing.T, packet bool) (*Socket, *Socket) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	// Bind a server.
 	ss, err := BindAndListen(name, packet)
 	if err != nil {
-		t.Fatalf("error binding, got %v expected nil", err)
+		t.Fatalf("Error binding, got %v expected nil", err)
 	}
 	defer ss.Close()
 
@@ -165,7 +166,7 @@ func socketPair(t *testing.T, packet bool) (*Socket, *Socket) {
 	// Connect the client.
 	client, err := Connect(name, packet)
 	if err != nil {
-		t.Fatalf("error connecting, got %v expected nil", err)
+		t.Fatalf("Error connecting, got %v expected nil", err)
 	}
 
 	// Grab the server handle.
@@ -173,7 +174,7 @@ func socketPair(t *testing.T, packet bool) (*Socket, *Socket) {
 	case server := <-acceptSocket:
 		return server, client
 	case err := <-acceptErr:
-		t.Fatalf("accept error: %v", err)
+		t.Fatalf("Accept error: %v", err)
 	}
 	panic("unreachable")
 }
@@ -186,17 +187,17 @@ func TestSendRecv(t *testing.T) {
 	// Write on the client.
 	w := client.Writer(true)
 	if n, err := w.WriteVec([][]byte{{'a'}}); n != 1 || err != nil {
-		t.Fatalf("for client write, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For client write, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 
 	// Read on the server.
 	b := [][]byte{{'b'}}
 	r := server.Reader(true)
 	if n, err := r.ReadVec(b); n != 1 || err != nil {
-		t.Fatalf("for server read, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For server read, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 	if b[0][0] != 'a' {
-		t.Fatalf("got bad read data, got %c, expected a", b[0][0])
+		t.Fatalf("Got bad read data, got %c, expected a", b[0][0])
 	}
 }
 
@@ -211,17 +212,17 @@ func TestSymmetric(t *testing.T) {
 	// Write on the server.
 	w := server.Writer(true)
 	if n, err := w.WriteVec([][]byte{{'a'}}); n != 1 || err != nil {
-		t.Fatalf("for server write, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For server write, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 
 	// Read on the client.
 	b := [][]byte{{'b'}}
 	r := client.Reader(true)
 	if n, err := r.ReadVec(b); n != 1 || err != nil {
-		t.Fatalf("for client read, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For client read, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 	if b[0][0] != 'a' {
-		t.Fatalf("got bad read data, got %c, expected a", b[0][0])
+		t.Fatalf("Got bad read data, got %c, expected a", b[0][0])
 	}
 }
 
@@ -233,13 +234,13 @@ func TestPacket(t *testing.T) {
 	// Write on the client.
 	w := client.Writer(true)
 	if n, err := w.WriteVec([][]byte{{'a'}}); n != 1 || err != nil {
-		t.Fatalf("for client write, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For client write, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 
 	// Write on the client again.
 	w = client.Writer(true)
 	if n, err := w.WriteVec([][]byte{{'a'}}); n != 1 || err != nil {
-		t.Fatalf("for client write, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For client write, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 
 	// Read on the server.
@@ -249,19 +250,19 @@ func TestPacket(t *testing.T) {
 	b := [][]byte{{'b', 'b'}}
 	r := server.Reader(true)
 	if n, err := r.ReadVec(b); n != 1 || err != nil {
-		t.Fatalf("for server read, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For server read, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 	if b[0][0] != 'a' {
-		t.Fatalf("got bad read data, got %c, expected a", b[0][0])
+		t.Fatalf("Got bad read data, got %c, expected a", b[0][0])
 	}
 
 	// Do it again.
 	r = server.Reader(true)
 	if n, err := r.ReadVec(b); n != 1 || err != nil {
-		t.Fatalf("for server read, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For server read, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 	if b[0][0] != 'a' {
-		t.Fatalf("got bad read data, got %c, expected a", b[0][0])
+		t.Fatalf("Got bad read data, got %c, expected a", b[0][0])
 	}
 }
 
@@ -271,12 +272,12 @@ func TestClose(t *testing.T) {
 
 	// Make sure the first close succeeds.
 	if err := client.Close(); err != nil {
-		t.Fatalf("first close failed, got err %v expected nil", err)
+		t.Fatalf("First close failed, got err %v expected nil", err)
 	}
 
 	// The second one should fail.
 	if err := client.Close(); err == nil {
-		t.Fatalf("second close succeeded, expected non-nil err")
+		t.Fatalf("Second close succeeded, expected non-nil err")
 	}
 }
 
@@ -294,17 +295,17 @@ func TestNonBlockingSend(t *testing.T) {
 				// We're good. That's what we wanted.
 				blockCount++
 			} else {
-				t.Fatalf("for client write, got n=%d err=%v, expected n=1000 err=nil", n, err)
+				t.Fatalf("For client write, got n=%d err=%v, expected n=1000 err=nil", n, err)
 			}
 		}
 	}
 
 	if blockCount == 1000 {
 		// Shouldn't have _always_ blocked.
-		t.Fatalf("socket always blocked!")
+		t.Fatalf("Socket always blocked!")
 	} else if blockCount == 0 {
 		// Should have started blocking eventually.
-		t.Fatalf("socket never blocked!")
+		t.Fatalf("Socket never blocked!")
 	}
 }
 
@@ -319,25 +320,25 @@ func TestNonBlockingRecv(t *testing.T) {
 	// Expected to block immediately.
 	_, err := r.ReadVec(b)
 	if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
-		t.Fatalf("read didn't block, got err %v expected blocking err", err)
+		t.Fatalf("Read didn't block, got err %v expected blocking err", err)
 	}
 
 	// Put some data in the pipe.
 	w := server.Writer(false)
 	if n, err := w.WriteVec(b); n != 1 || err != nil {
-		t.Fatalf("write failed with n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("Write failed with n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 
 	// Expect it not to block.
 	if n, err := r.ReadVec(b); n != 1 || err != nil {
-		t.Fatalf("read failed with n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("Read failed with n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 
 	// Expect it to return a block error again.
 	r = client.Reader(false)
 	_, err = r.ReadVec(b)
 	if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
-		t.Fatalf("read didn't block, got err %v expected blocking err", err)
+		t.Fatalf("Read didn't block, got err %v expected blocking err", err)
 	}
 }
 
@@ -349,17 +350,17 @@ func TestRecvVectors(t *testing.T) {
 	// Write on the client.
 	w := client.Writer(true)
 	if n, err := w.WriteVec([][]byte{{'a', 'b'}}); n != 2 || err != nil {
-		t.Fatalf("for client write, got n=%d err=%v, expected n=2 err=nil", n, err)
+		t.Fatalf("For client write, got n=%d err=%v, expected n=2 err=nil", n, err)
 	}
 
 	// Read on the server.
 	b := [][]byte{{'c'}, {'c'}}
 	r := server.Reader(true)
 	if n, err := r.ReadVec(b); n != 2 || err != nil {
-		t.Fatalf("for server read, got n=%d err=%v, expected n=2 err=nil", n, err)
+		t.Fatalf("For server read, got n=%d err=%v, expected n=2 err=nil", n, err)
 	}
 	if b[0][0] != 'a' || b[1][0] != 'b' {
-		t.Fatalf("got bad read data, got %c,%c, expected a,b", b[0][0], b[1][0])
+		t.Fatalf("Got bad read data, got %c,%c, expected a,b", b[0][0], b[1][0])
 	}
 }
 
@@ -371,17 +372,17 @@ func TestSendVectors(t *testing.T) {
 	// Write on the client.
 	w := client.Writer(true)
 	if n, err := w.WriteVec([][]byte{{'a'}, {'b'}}); n != 2 || err != nil {
-		t.Fatalf("for client write, got n=%d err=%v, expected n=2 err=nil", n, err)
+		t.Fatalf("For client write, got n=%d err=%v, expected n=2 err=nil", n, err)
 	}
 
 	// Read on the server.
 	b := [][]byte{{'c', 'c'}}
 	r := server.Reader(true)
 	if n, err := r.ReadVec(b); n != 2 || err != nil {
-		t.Fatalf("for server read, got n=%d err=%v, expected n=2 err=nil", n, err)
+		t.Fatalf("For server read, got n=%d err=%v, expected n=2 err=nil", n, err)
 	}
 	if b[0][0] != 'a' || b[0][1] != 'b' {
-		t.Fatalf("got bad read data, got %c,%c, expected a,b", b[0][0], b[0][1])
+		t.Fatalf("Got bad read data, got %c,%c, expected a,b", b[0][0], b[0][1])
 	}
 }
 
@@ -394,23 +395,23 @@ func TestSendFDsNotEnabled(t *testing.T) {
 	w := server.Writer(true)
 	w.PackFDs(0, 1, 2)
 	if n, err := w.WriteVec([][]byte{{'a'}}); n != 1 || err != nil {
-		t.Fatalf("for server write, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For server write, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 
 	// Read on the client, without enabling FDs.
 	b := [][]byte{{'b'}}
 	r := client.Reader(true)
 	if n, err := r.ReadVec(b); n != 1 || err != nil {
-		t.Fatalf("for client read, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For client read, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 	if b[0][0] != 'a' {
-		t.Fatalf("got bad read data, got %c, expected a", b[0][0])
+		t.Fatalf("Got bad read data, got %c, expected a", b[0][0])
 	}
 
 	// Make sure the FDs are not received.
 	fds, err := r.ExtractFDs()
 	if len(fds) != 0 || err != nil {
-		t.Fatalf("got fds=%v err=%v, expected len(fds)=0 err=nil", fds, err)
+		t.Fatalf("Got fds=%v err=%v, expected len(fds)=0 err=nil", fds, err)
 	}
 }
 
@@ -418,7 +419,7 @@ func sendFDs(t *testing.T, s *Socket, fds []int) {
 	w := s.Writer(true)
 	w.PackFDs(fds...)
 	if n, err := w.WriteVec([][]byte{{'a'}}); n != 1 || err != nil {
-		t.Fatalf("for write, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For write, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 }
 
@@ -428,7 +429,7 @@ func recvFDs(t *testing.T, s *Socket, enableSize int, origFDs []int) {
 	// Count the number of FDs.
 	preEntries, err := ioutil.ReadDir("/proc/self/fd")
 	if err != nil {
-		t.Fatalf("can't readdir, got err %v expected nil", err)
+		t.Fatalf("Can't readdir, got err %v expected nil", err)
 	}
 
 	// Read on the client.
@@ -438,31 +439,31 @@ func recvFDs(t *testing.T, s *Socket, enableSize int, origFDs []int) {
 		r.EnableFDs(enableSize)
 	}
 	if n, err := r.ReadVec(b); n != 1 || err != nil {
-		t.Fatalf("for client read, got n=%d err=%v, expected n=1 err=nil", n, err)
+		t.Fatalf("For client read, got n=%d err=%v, expected n=1 err=nil", n, err)
 	}
 	if b[0][0] != 'a' {
-		t.Fatalf("got bad read data, got %c, expected a", b[0][0])
+		t.Fatalf("Got bad read data, got %c, expected a", b[0][0])
 	}
 
 	// Count the new number of FDs.
 	postEntries, err := ioutil.ReadDir("/proc/self/fd")
 	if err != nil {
-		t.Fatalf("can't readdir, got err %v expected nil", err)
+		t.Fatalf("Can't readdir, got err %v expected nil", err)
 	}
 	if len(preEntries)+expected != len(postEntries) {
-		t.Errorf("process fd count isn't right, expected %d got %d", len(preEntries)+expected, len(postEntries))
+		t.Errorf("Process fd count isn't right, expected %d got %d", len(preEntries)+expected, len(postEntries))
 	}
 
 	// Make sure the FDs are there.
 	fds, err := r.ExtractFDs()
 	if len(fds) != expected || err != nil {
-		t.Fatalf("got fds=%v err=%v, expected len(fds)=%d err=nil", fds, err, expected)
+		t.Fatalf("Got fds=%v err=%v, expected len(fds)=%d err=nil", fds, err, expected)
 	}
 
 	// Make sure they are different from the originals.
 	for i := 0; i < len(fds); i++ {
 		if fds[i] == origFDs[i] {
-			t.Errorf("got original fd for index %d, expected different", i)
+			t.Errorf("Got original fd for index %d, expected different", i)
 		}
 	}
 
@@ -480,10 +481,10 @@ func recvFDs(t *testing.T, s *Socket, enableSize int, origFDs []int) {
 	// Make sure the count is back to normal.
 	finalEntries, err := ioutil.ReadDir("/proc/self/fd")
 	if err != nil {
-		t.Fatalf("can't readdir, got err %v expected nil", err)
+		t.Fatalf("Can't readdir, got err %v expected nil", err)
 	}
 	if len(finalEntries) != len(preEntries) {
-		t.Errorf("process fd count isn't right, expected %d got %d", len(preEntries), len(finalEntries))
+		t.Errorf("Process fd count isn't right, expected %d got %d", len(preEntries), len(finalEntries))
 	}
 }
 
@@ -567,7 +568,7 @@ func TestGetPeerCred(t *testing.T) {
 	}
 
 	if got, err := client.GetPeerCred(); err != nil || !reflect.DeepEqual(got, want) {
-		t.Errorf("got GetPeerCred() = %v, %v, want = %+v, %+v", got, err, want, nil)
+		t.Errorf("GetPeerCred() = %v, %v, want = %+v, %+v", got, err, want, nil)
 	}
 }
 
@@ -594,53 +595,53 @@ func TestGetPeerCredFailure(t *testing.T) {
 
 	want := "bad file descriptor"
 	if _, err := s.GetPeerCred(); err == nil || err.Error() != want {
-		t.Errorf("got s.GetPeerCred() = %v, want = %s", err, want)
+		t.Errorf("s.GetPeerCred() = %v, want = %s", err, want)
 	}
 }
 
 func TestAcceptClosed(t *testing.T) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	ss, err := BindAndListen(name, false)
 	if err != nil {
-		t.Fatalf("bind failed, got err %v expected nil", err)
+		t.Fatalf("Bind failed, got err %v expected nil", err)
 	}
 
 	if err := ss.Close(); err != nil {
-		t.Fatalf("close failed, got err %v expected nil", err)
+		t.Fatalf("Close failed, got err %v expected nil", err)
 	}
 
 	if _, err := ss.Accept(); err == nil {
-		t.Errorf("accept on closed SocketServer, got err %v, want != nil", err)
+		t.Errorf("Accept on closed SocketServer, got err %v, want != nil", err)
 	}
 }
 
 func TestCloseAfterAcceptStart(t *testing.T) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	ss, err := BindAndListen(name, false)
 	if err != nil {
-		t.Fatalf("bind failed, got err %v expected nil", err)
+		t.Fatalf("Bind failed, got err %v expected nil", err)
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		time.Sleep(50 * time.Millisecond)
 		if err := ss.Close(); err != nil {
-			t.Fatalf("close failed, got err %v expected nil", err)
+			t.Errorf("Close failed, got err %v expected nil", err)
 		}
-		wg.Done()
 	}()
 
 	if _, err := ss.Accept(); err == nil {
-		t.Errorf("accept on closed SocketServer, got err %v, want != nil", err)
+		t.Errorf("Accept on closed SocketServer, got err %v, want != nil", err)
 	}
 
 	wg.Wait()
@@ -649,28 +650,28 @@ func TestCloseAfterAcceptStart(t *testing.T) {
 func TestReleaseAfterAcceptStart(t *testing.T) {
 	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("unable to generate file, got err %v expected nil", err)
+		t.Fatalf("Unable to generate file, got err %v expected nil", err)
 	}
 
 	ss, err := BindAndListen(name, false)
 	if err != nil {
-		t.Fatalf("bind failed, got err %v expected nil", err)
+		t.Fatalf("Bind failed, got err %v expected nil", err)
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		time.Sleep(50 * time.Millisecond)
 		fd, err := ss.Release()
 		if err != nil {
-			t.Fatalf("Release failed, got err %v expected nil", err)
+			t.Errorf("Release failed, got err %v expected nil", err)
 		}
 		syscall.Close(fd)
-		wg.Done()
 	}()
 
 	if _, err := ss.Accept(); err == nil {
-		t.Errorf("accept on closed SocketServer, got err %v, want != nil", err)
+		t.Errorf("Accept on closed SocketServer, got err %v, want != nil", err)
 	}
 
 	wg.Wait()
@@ -688,7 +689,7 @@ func TestControlMessage(t *testing.T) {
 		cm.PackFDs(want...)
 		got, err := cm.ExtractFDs()
 		if err != nil || !reflect.DeepEqual(got, want) {
-			t.Errorf("got cm.ExtractFDs() = %v, %v, want = %v, %v", got, err, want, nil)
+			t.Errorf("cm.ExtractFDs() = %v, %v, want = %v, %v", got, err, want, nil)
 		}
 	}
 }
@@ -705,11 +706,13 @@ func benchmarkSendRecv(b *testing.B, packet bool) {
 		for i := 0; i < b.N; i++ {
 			n, err := server.Read(buf)
 			if n != 1 || err != nil {
-				b.Fatalf("server.Read: got (%d, %v), wanted (1, nil)", n, err)
+				b.Errorf("server.Read: got (%d, %v), wanted (1, nil)", n, err)
+				return
 			}
 			n, err = server.Write(buf)
 			if n != 1 || err != nil {
-				b.Fatalf("server.Write: got (%d, %v), wanted (1, nil)", n, err)
+				b.Errorf("server.Write: got (%d, %v), wanted (1, nil)", n, err)
+				return
 			}
 		}
 	}()

@@ -48,7 +48,7 @@ func updateImportIdent(orig string, imports mapValue, id *ast.Ident, used map[st
 	// Create a new entry in the used map.
 	path := imports[importName]
 	if path == "" {
-		return fmt.Errorf("Unknown path to package '%s', used in '%s'", importName, orig)
+		return fmt.Errorf("unknown path to package '%s', used in '%s'", importName, orig)
 	}
 
 	m = &importedPackage{
@@ -72,7 +72,7 @@ func convertExpression(s string, imports mapValue, used map[string]*importedPack
 	// Parse the expression in the input string.
 	expr, err := parser.ParseExpr(s)
 	if err != nil {
-		return "", fmt.Errorf("Unable to parse \"%s\": %v", s, err)
+		return "", fmt.Errorf("unable to parse \"%s\": %v", s, err)
 	}
 
 	// Go through the AST and update references.

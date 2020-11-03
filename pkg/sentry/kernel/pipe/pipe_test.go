@@ -116,7 +116,8 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 				}
 			}
 			if err != nil {
-				t.Fatalf("Readv: got unexpected error %v", err)
+				t.Errorf("Readv: got unexpected error %v", err)
+				return
 			}
 		}
 	}()

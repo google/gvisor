@@ -29,7 +29,7 @@ import (
 
 var registration sync.Once
 
-// This is the set of flags used to populate Config.
+// RegisterFlags registers flags used to populate Config.
 func RegisterFlags() {
 	registration.Do(func() {
 		// Although these flags are not part of the OCI spec, they are used by
