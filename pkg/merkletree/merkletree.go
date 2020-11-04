@@ -147,6 +147,7 @@ func (layout Layout) blockOffset(level int, index int64) int64 {
 // meatadata.
 type VerityDescriptor struct {
 	Name     string
+	FileSize int64
 	Mode     uint32
 	UID      uint32
 	GID      uint32
@@ -154,7 +155,7 @@ type VerityDescriptor struct {
 }
 
 func (d *VerityDescriptor) String() string {
-	return fmt.Sprintf("Name: %s, Mode: %d, UID: %d, GID: %d, RootHash: %v", d.Name, d.Mode, d.UID, d.GID, d.RootHash)
+	return fmt.Sprintf("Name: %s, Size: %d, Mode: %d, UID: %d, GID: %d, RootHash: %v", d.Name, d.FileSize, d.Mode, d.UID, d.GID, d.RootHash)
 }
 
 // verify generates a hash from d, and compares it with expected.
@@ -289,6 +290,7 @@ func Generate(params *GenerateParams) ([]byte, error) {
 	}
 	descriptor := VerityDescriptor{
 		Name:     params.Name,
+		FileSize: params.Size,
 		Mode:     params.Mode,
 		UID:      params.UID,
 		GID:      params.GID,
@@ -342,6 +344,7 @@ func verifyMetadata(params *VerifyParams, layout *Layout) error {
 	}
 	descriptor := VerityDescriptor{
 		Name:     params.Name,
+		FileSize: params.Size,
 		Mode:     params.Mode,
 		UID:      params.UID,
 		GID:      params.GID,
@@ -401,10 +404,11 @@ func Verify(params *VerifyParams) (int64, error) {
 			}
 		}
 		descriptor := VerityDescriptor{
-			Name: params.Name,
-			Mode: params.Mode,
-			UID:  params.UID,
-			GID:  params.GID,
+			Name:     params.Name,
+			FileSize: params.Size,
+			Mode:     params.Mode,
+			UID:      params.UID,
+			GID:      params.GID,
 		}
 		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.HashAlgorithms, params.Expected); err != nil {
 			return 0, err
