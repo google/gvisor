@@ -147,6 +147,14 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 func (f *Fragmentation) Process(
 	id FragmentID, first, last uint16, more bool, proto uint8, vv buffer.VectorisedView, releaseCB func(bool)) (
 	buffer.VectorisedView, uint8, bool, error) {
+	callbackIsOwned := false
+	if releaseCB != nil {
+		defer func() {
+			if !callbackIsOwned {
+				releaseCB(false /* timedOut */)
+			}
+		}()
+	}
 	if first > last {
 		return buffer.VectorisedView{}, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
 	}
@@ -180,9 +188,8 @@ func (f *Fragmentation) Process(
 		}
 	}
 	if releaseCB != nil {
-		if !r.setCallback(releaseCB) {
-			// We got a duplicate callback. Release it immediately.
-			releaseCB(false /* timedOut */)
+		if r.setCallback(releaseCB) {
+			callbackIsOwned = true
 		}
 	}
 	f.mu.Unlock()

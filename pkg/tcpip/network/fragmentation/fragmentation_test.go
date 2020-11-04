@@ -508,46 +508,130 @@ func TestReleaseCallback(t *testing.T) {
 	cb1 := func(timedOut bool) { result = 1; callbackReasonIsTimeout = timedOut }
 	cb2 := func(timedOut bool) { result = 2; callbackReasonIsTimeout = timedOut }
 
+	type processParam struct {
+		first     uint16
+		last      uint16
+		more      bool
+		vv        buffer.VectorisedView
+		releaseCB func(bool)
+	}
+
 	tests := []struct {
 		name                        string
-		callbacks                   []func(bool)
+		params                      []processParam
 		timeout                     bool
+		wantError                   bool
 		wantResult                  int
 		wantCallbackReasonIsTimeout bool
 	}{
 		{
-			name:                        "callback runs on release",
-			callbacks:                   []func(bool){cb1},
+			name: "callback runs on release",
+			params: []processParam{
+				{
+					first:     0,
+					last:      0,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: cb1,
+				},
+			},
 			timeout:                     false,
+			wantError:                   false,
 			wantResult:                  1,
 			wantCallbackReasonIsTimeout: false,
 		},
 		{
-			name:                        "first callback is nil",
-			callbacks:                   []func(bool){nil, cb2},
+			name: "first callback is nil",
+			params: []processParam{
+				{
+					first:     0,
+					last:      0,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: nil,
+				},
+				{
+					first:     1,
+					last:      1,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: cb2,
+				},
+			},
 			timeout:                     false,
+			wantError:                   false,
 			wantResult:                  2,
 			wantCallbackReasonIsTimeout: false,
 		},
 		{
-			name:                        "two callbacks - first one is set",
-			callbacks:                   []func(bool){cb1, cb2},
+			name: "two callbacks - first one is set",
+			params: []processParam{
+				{
+					first:     0,
+					last:      0,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: cb1,
+				},
+				{
+					first:     1,
+					last:      1,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: cb2,
+				},
+			},
 			timeout:                     false,
+			wantError:                   false,
 			wantResult:                  1,
 			wantCallbackReasonIsTimeout: false,
 		},
 		{
-			name:                        "callback runs on timeout",
-			callbacks:                   []func(bool){cb1},
+			name: "callback runs on timeout",
+			params: []processParam{
+				{
+					first:     0,
+					last:      0,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: cb1,
+				},
+			},
 			timeout:                     true,
+			wantError:                   false,
 			wantResult:                  1,
 			wantCallbackReasonIsTimeout: true,
 		},
 		{
-			name:                        "no callbacks",
-			callbacks:                   []func(bool){nil},
+			name: "no callbacks",
+			params: []processParam{
+				{
+					first:     0,
+					last:      0,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: nil,
+				},
+			},
 			timeout:                     false,
+			wantError:                   false,
 			wantResult:                  0,
+			wantCallbackReasonIsTimeout: false,
+		},
+		{
+			name: "invalid args - first is greater than last",
+			params: []processParam{
+				{
+					first:     1,
+					last:      0,
+					more:      true,
+					vv:        vv(1, "0"),
+					releaseCB: cb1,
+				},
+			},
+			timeout:                     false,
+			wantError:                   true,
+			wantResult:                  1,
 			wantCallbackReasonIsTimeout: false,
 		},
 	}
@@ -561,19 +645,22 @@ func TestReleaseCallback(t *testing.T) {
 
 			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{})
 
-			for i, cb := range test.callbacks {
-				_, _, _, err := f.Process(id, uint16(i), uint16(i), true, proto, vv(1, "0"), cb)
+			for _, p := range test.params {
+				_, _, _, err := f.Process(id, p.first, p.last, p.more, proto, p.vv, p.releaseCB)
 				if err != nil {
-					t.Errorf("f.Process error = %s", err)
+					if !test.wantError {
+						t.Errorf("f.Process error = %s", err)
+					}
+					break
 				}
 			}
-
-			r, ok := f.reassemblers[id]
-			if !ok {
-				t.Fatalf("Reassemberr not found")
+			if !test.wantError {
+				r, ok := f.reassemblers[id]
+				if !ok {
+					t.Fatalf("Reassemberr not found")
+				}
+				f.release(r, test.timeout)
 			}
-			f.release(r, test.timeout)
-
 			if result != test.wantResult {
 				t.Errorf("got result = %d, want = %d", result, test.wantResult)
 			}
