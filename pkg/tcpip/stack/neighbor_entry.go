@@ -17,17 +17,10 @@ package stack
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-)
-
-const (
-	// immediateDuration is a duration of zero for scheduling work that needs to
-	// be done immediately but asynchronously to avoid deadlock.
-	immediateDuration time.Duration = 0
 )
 
 // NeighborEntry describes a neighboring device in the local network.
@@ -192,12 +185,17 @@ func (e *neighborEntry) dispatchRemoveEventLocked() {
 	}
 }
 
-// setStateLocked transitions the entry to the specified state immediately.
+// setStateLockedNonAtomic transitions the entry to the specified state
+// immediately.
 //
 // Follows the logic defined in RFC 4861 section 7.3.3.
 //
+// This function is non-atomic: the mutex is temporarily unlocked while sending
+// probes in the Probe state. DO NOT assume the entry is the same after
+// transitioning to Probe.
+//
 // e.mu MUST be locked.
-func (e *neighborEntry) setStateLocked(next NeighborState) {
+func (e *neighborEntry) setStateLockedNonAtomic(next NeighborState) {
 	// Cancel the previously scheduled action, if there is one. Entries in
 	// Unknown, Stale, or Static state do not have scheduled actions.
 	if timer := e.job; timer != nil {
@@ -215,15 +213,21 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 
 	case Reachable:
 		e.job = e.nic.stack.newJob(&e.mu, func() {
-			e.setStateLocked(Stale)
+			e.setStateLockedNonAtomic(Stale)
 			e.dispatchChangeEventLocked()
 		})
 		e.job.Schedule(e.nudState.ReachableTime())
 
 	case Delay:
 		e.job = e.nic.stack.newJob(&e.mu, func() {
-			e.setStateLocked(Probe)
+			// We cannot guarantee the transition to Probe is atomic; another
+			// state transition could occur under our nose. The changed event
+			// needs to be dispatched manually before the transition to Probe.
+			e.neigh.State = Probe
+			e.neigh.UpdatedAtNanos = e.nic.stack.clock.NowNanoseconds()
 			e.dispatchChangeEventLocked()
+
+			e.setStateLockedNonAtomic(Probe)
 		})
 		e.job.Schedule(config.DelayFirstProbeTime)
 
@@ -234,13 +238,26 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		sendUnicastProbe = func() {
 			if retryCounter == config.MaxUnicastProbes {
 				e.dispatchRemoveEventLocked()
-				e.setStateLocked(Failed)
+				e.setStateLockedNonAtomic(Failed)
 				return
 			}
 
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, "" /* localAddr */, e.neigh.LinkAddr, e.nic); err != nil {
+			linkRes := e.linkRes
+			neigh := e.neigh
+			nic := e.nic
+			e.mu.Unlock()
+			err := linkRes.LinkAddressRequest(neigh.Addr, "" /* localAddr */, neigh.LinkAddr, nic)
+			e.mu.Lock()
+
+			// A state transition could have occurred while the entry was
+			// unlocked while sending the probe.
+			if e.neigh.State != Probe {
+				return
+			}
+
+			if err != nil {
 				e.dispatchRemoveEventLocked()
-				e.setStateLocked(Failed)
+				e.setStateLockedNonAtomic(Failed)
 				return
 			}
 
@@ -249,12 +266,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 			e.job.Schedule(config.RetransmitTimer)
 		}
 
-		// Send a probe in another gorountine to free this thread of execution
-		// for finishing the state transition. This is necessary to avoid
-		// deadlock where sending and processing probes are done synchronously,
-		// such as loopback and integration tests.
-		e.job = e.nic.stack.newJob(&e.mu, sendUnicastProbe)
-		e.job.Schedule(immediateDuration)
+		sendUnicastProbe()
 
 	case Failed:
 		e.notifyWakersLocked()
@@ -271,11 +283,15 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 	}
 }
 
-// handlePacketQueuedLocked advances the state machine according to a packet
-// being queued for outgoing transmission.
+// handlePacketQueuedLockedNonAtomic advances the state machine according to a
+// packet being queued for outgoing transmission.
+//
+// This function is non-atomic: the mutex is temporarily unlocked while sending
+// probes in the Incomplete state. After calling this function on an entry in
+// the Unknown state, DO NOT assume the entry is the same.
 //
 // Follows the logic defined in RFC 4861 section 7.3.3.
-func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
+func (e *neighborEntry) handlePacketQueuedLockedNonAtomic(localAddr tcpip.Address) {
 	switch e.neigh.State {
 	case Unknown:
 		e.neigh.State = Incomplete
@@ -311,7 +327,20 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 				// error message, and then delivering it (locally) through the generic
 				// error-handling routines.' - RFC 4861 section 2.1
 				e.dispatchRemoveEventLocked()
-				e.setStateLocked(Failed)
+				e.setStateLockedNonAtomic(Failed)
+				return
+			}
+
+			linkRes := e.linkRes
+			addr := e.neigh.Addr
+			nic := e.nic
+			e.mu.Unlock()
+			err := linkRes.LinkAddressRequest(addr, localAddr, "" /* remoteLinkAddr */, nic)
+			e.mu.Lock()
+
+			// A state transition could have occurred while the entry was
+			// unlocked for sending the probe.
+			if e.neigh.State != Incomplete {
 				return
 			}
 
@@ -322,12 +351,12 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 			//  address SHOULD be placed in the IP Source Address of the outgoing
 			//  solicitation.
 			//
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, localAddr, "", e.nic); err != nil {
+			if err != nil {
 				// There is no need to log the error here; the NUD implementation may
 				// assume a working link. A valid link should be the responsibility of
 				// the NIC/stack.LinkEndpoint.
 				e.dispatchRemoveEventLocked()
-				e.setStateLocked(Failed)
+				e.setStateLockedNonAtomic(Failed)
 				return
 			}
 
@@ -336,15 +365,10 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 			e.job.Schedule(config.RetransmitTimer)
 		}
 
-		// Send a probe in another gorountine to free this thread of execution
-		// for finishing the state transition. This is necessary to avoid
-		// deadlock where sending and processing probes are done synchronously,
-		// such as loopback and integration tests.
-		e.job = e.nic.stack.newJob(&e.mu, sendMulticastProbe)
-		e.job.Schedule(immediateDuration)
+		sendMulticastProbe()
 
 	case Stale:
-		e.setStateLocked(Delay)
+		e.setStateLockedNonAtomic(Delay)
 		e.dispatchChangeEventLocked()
 
 	case Incomplete, Reachable, Delay, Probe, Static, Failed:
@@ -367,14 +391,14 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 	switch e.neigh.State {
 	case Unknown, Incomplete, Failed:
 		e.neigh.LinkAddr = remoteLinkAddr
-		e.setStateLocked(Stale)
+		e.setStateLockedNonAtomic(Stale)
 		e.notifyWakersLocked()
 		e.dispatchAddEventLocked()
 
 	case Reachable, Delay, Probe:
 		if e.neigh.LinkAddr != remoteLinkAddr {
 			e.neigh.LinkAddr = remoteLinkAddr
-			e.setStateLocked(Stale)
+			e.setStateLockedNonAtomic(Stale)
 			e.dispatchChangeEventLocked()
 		}
 
@@ -415,9 +439,9 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 
 		e.neigh.LinkAddr = linkAddr
 		if flags.Solicited {
-			e.setStateLocked(Reachable)
+			e.setStateLockedNonAtomic(Reachable)
 		} else {
-			e.setStateLocked(Stale)
+			e.setStateLockedNonAtomic(Stale)
 		}
 		e.dispatchChangeEventLocked()
 		e.isRouter = flags.IsRouter
@@ -432,7 +456,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		if isLinkAddrDifferent {
 			if !flags.Override {
 				if e.neigh.State == Reachable {
-					e.setStateLocked(Stale)
+					e.setStateLockedNonAtomic(Stale)
 					e.dispatchChangeEventLocked()
 				}
 				break
@@ -442,7 +466,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 
 			if !flags.Solicited {
 				if e.neigh.State != Stale {
-					e.setStateLocked(Stale)
+					e.setStateLockedNonAtomic(Stale)
 					e.dispatchChangeEventLocked()
 				} else {
 					// Notify the LinkAddr change, even though NUD state hasn't changed.
@@ -455,7 +479,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		if flags.Solicited && (flags.Override || !isLinkAddrDifferent) {
 			wasReachable := e.neigh.State == Reachable
 			// Set state to Reachable again to refresh timers.
-			e.setStateLocked(Reachable)
+			e.setStateLockedNonAtomic(Reachable)
 			e.notifyWakersLocked()
 			if !wasReachable {
 				e.dispatchChangeEventLocked()
@@ -499,7 +523,7 @@ func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
 	case Reachable, Stale, Delay, Probe:
 		wasReachable := e.neigh.State == Reachable
 		// Set state to Reachable again to refresh timers.
-		e.setStateLocked(Reachable)
+		e.setStateLockedNonAtomic(Reachable)
 		if !wasReachable {
 			e.dispatchChangeEventLocked()
 		}

@@ -26,7 +26,7 @@ const neighborCacheSize = 512 // max entries per interface
 
 // neighborCache maps IP addresses to link addresses. It uses the Least
 // Recently Used (LRU) eviction strategy to implement a bounded cache for
-// dynmically acquired entries. It contains the state machine and configuration
+// dynamically acquired entries. It contains the state machine and configuration
 // for running Neighbor Unreachability Detection (NUD).
 //
 // There are two types of entries in the neighbor cache:
@@ -93,7 +93,7 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address, linkRes LinkA
 		n.dynamic.count--
 
 		e.dispatchRemoveEventLocked()
-		e.setStateLocked(Unknown)
+		e.setStateLockedNonAtomic(Unknown)
 		e.notifyWakersLocked()
 		e.mu.Unlock()
 	}
@@ -134,7 +134,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 
 	switch s := entry.neigh.State; s {
 	case Stale:
-		entry.handlePacketQueuedLocked(localAddr)
+		entry.handlePacketQueuedLockedNonAtomic(localAddr)
 		fallthrough
 	case Reachable, Static, Delay, Probe:
 		// As per RFC 4861 section 7.3.3:
@@ -146,16 +146,20 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 	case Unknown, Incomplete:
 		entry.addWakerLocked(w)
 
-		if entry.done == nil {
+		// Keep a copy of the channel locally in case a state transition occurs
+		// while sending the first probe, which would nil entry.done.
+		ch := entry.done
+		if ch == nil {
 			// Address resolution needs to be initiated.
 			if linkRes == nil {
 				return entry.neigh, nil, tcpip.ErrNoLinkAddress
 			}
-			entry.done = make(chan struct{})
+			ch = make(chan struct{})
+			entry.done = ch
 		}
 
-		entry.handlePacketQueuedLocked(localAddr)
-		return entry.neigh, entry.done, tcpip.ErrWouldBlock
+		entry.handlePacketQueuedLockedNonAtomic(localAddr)
+		return entry.neigh, ch, tcpip.ErrWouldBlock
 	case Failed:
 		return entry.neigh, nil, tcpip.ErrNoLinkAddress
 	default:
@@ -217,7 +221,7 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 		// Notify that resolution has been interrupted, just in case the entry was
 		// in the Incomplete or Probe state.
 		entry.dispatchRemoveEventLocked()
-		entry.setStateLocked(Unknown)
+		entry.setStateLockedNonAtomic(Unknown)
 		entry.notifyWakersLocked()
 		entry.mu.Unlock()
 	}
@@ -234,7 +238,7 @@ func (n *neighborCache) removeEntryLocked(entry *neighborEntry) {
 	if entry.neigh.State != Failed {
 		entry.dispatchRemoveEventLocked()
 	}
-	entry.setStateLocked(Unknown)
+	entry.setStateLockedNonAtomic(Unknown)
 	entry.notifyWakersLocked()
 
 	delete(n.cache, entry.neigh.Addr)
@@ -266,7 +270,7 @@ func (n *neighborCache) clear() {
 	for _, entry := range n.cache {
 		entry.mu.Lock()
 		entry.dispatchRemoveEventLocked()
-		entry.setStateLocked(Unknown)
+		entry.setStateLockedNonAtomic(Unknown)
 		entry.notifyWakersLocked()
 		entry.mu.Unlock()
 	}
