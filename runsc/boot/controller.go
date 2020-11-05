@@ -196,7 +196,7 @@ type containerManager struct {
 
 // StartRoot will start the root container process.
 func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
-	log.Debugf("containerManager.StartRoot %q", *cid)
+	log.Debugf("containerManager.StartRoot, cid: %s", *cid)
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
@@ -207,13 +207,13 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 
 // Processes retrieves information about processes running in the sandbox.
 func (cm *containerManager) Processes(cid *string, out *[]*control.Process) error {
-	log.Debugf("containerManager.Processes: %q", *cid)
+	log.Debugf("containerManager.Processes, cid: %s", *cid)
 	return control.Processes(cm.l.k, *cid, out)
 }
 
 // Create creates a container within a sandbox.
 func (cm *containerManager) Create(cid *string, _ *struct{}) error {
-	log.Debugf("containerManager.Create: %q", *cid)
+	log.Debugf("containerManager.Create, cid: %s", *cid)
 	return cm.l.createContainer(*cid)
 }
 
@@ -237,12 +237,11 @@ type StartArgs struct {
 
 // Start runs a created container within a sandbox.
 func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Start: %+v", args)
-
 	// Validate arguments.
 	if args == nil {
 		return errors.New("start missing arguments")
 	}
+	log.Debugf("containerManager.Start, cid: %s, args: %+v", args.CID, args)
 	if args.Spec == nil {
 		return errors.New("start arguments missing spec")
 	}
@@ -269,27 +268,27 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		}
 	}()
 	if err := cm.l.startContainer(args.Spec, args.Conf, args.CID, fds); err != nil {
-		log.Debugf("containerManager.Start failed %q: %+v: %v", args.CID, args, err)
+		log.Debugf("containerManager.Start failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
-	log.Debugf("Container %q started", args.CID)
+	log.Debugf("Container started, cid: %s", args.CID)
 	return nil
 }
 
 // Destroy stops a container if it is still running and cleans up its
 // filesystem.
 func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
-	log.Debugf("containerManager.destroy %q", *cid)
+	log.Debugf("containerManager.destroy, cid: %s", *cid)
 	return cm.l.destroyContainer(*cid)
 }
 
 // ExecuteAsync starts running a command on a created or running sandbox. It
 // returns the PID of the new process.
 func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) error {
-	log.Debugf("containerManager.ExecuteAsync: %+v", args)
+	log.Debugf("containerManager.ExecuteAsync, cid: %s, args: %+v", args.ContainerID, args)
 	tgid, err := cm.l.executeAsync(args)
 	if err != nil {
-		log.Debugf("containerManager.ExecuteAsync failed: %+v: %v", args, err)
+		log.Debugf("containerManager.ExecuteAsync failed, cid: %s, args: %+v, err: %v", args.ContainerID, args, err)
 		return err
 	}
 	*pid = int32(tgid)
@@ -453,9 +452,9 @@ func (cm *containerManager) Resume(_, _ *struct{}) error {
 
 // Wait waits for the init process in the given container.
 func (cm *containerManager) Wait(cid *string, waitStatus *uint32) error {
-	log.Debugf("containerManager.Wait")
+	log.Debugf("containerManager.Wait, cid: %s", *cid)
 	err := cm.l.waitContainer(*cid, waitStatus)
-	log.Debugf("containerManager.Wait returned, waitStatus: %v: %v", waitStatus, err)
+	log.Debugf("containerManager.Wait returned, cid: %s, waitStatus: %#x, err: %v", *cid, *waitStatus, err)
 	return err
 }
 
@@ -470,8 +469,10 @@ type WaitPIDArgs struct {
 
 // WaitPID waits for the process with PID 'pid' in the sandbox.
 func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error {
-	log.Debugf("containerManager.Wait")
-	return cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, waitStatus)
+	log.Debugf("containerManager.Wait, cid: %s, pid: %d", args.CID, args.PID)
+	err := cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, waitStatus)
+	log.Debugf("containerManager.Wait, cid: %s, pid: %d, waitStatus: %#x, err: %v", args.CID, args.PID, *waitStatus, err)
+	return err
 }
 
 // SignalDeliveryMode enumerates different signal delivery modes.
@@ -528,6 +529,6 @@ type SignalArgs struct {
 // indicated process, to all processes in the container, or to the foreground
 // process group.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Signal %+v", args)
+	log.Debugf("containerManager.Signal: cid: %s, PID: %d, signal: %d, mode: %v", args.CID, args.PID, args.Signo, args.Mode)
 	return cm.l.signal(args.CID, args.PID, args.Signo, args.Mode)
 }

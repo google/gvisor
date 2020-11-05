@@ -66,6 +66,10 @@ type Sandbox struct {
 	// Cgroup has the cgroup configuration for the sandbox.
 	Cgroup *cgroup.Cgroup `json:"cgroup"`
 
+	// OriginalOOMScoreAdj stores the value of oom_score_adj when the sandbox
+	// started, before it may be modified.
+	OriginalOOMScoreAdj int `json:"originalOomScoreAdj"`
+
 	// child is set if a sandbox process is a child of the current process.
 	//
 	// This field isn't saved to json, because only a creator of sandbox
@@ -739,6 +743,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		}
 		return err
 	}
+	s.OriginalOOMScoreAdj, err = specutils.GetOOMScoreAdj(cmd.Process.Pid)
+	if err != nil {
+		return err
+	}
+
 	s.child = true
 	s.Pid = cmd.Process.Pid
 	log.Infof("Sandbox started, PID: %d", s.Pid)
@@ -1133,11 +1142,11 @@ func (s *Sandbox) DestroyContainer(cid string) error {
 
 func (s *Sandbox) destroyContainer(cid string) error {
 	if s.IsRootContainer(cid) {
-		log.Debugf("Destroying root container %q by destroying sandbox", cid)
+		log.Debugf("Destroying root container by destroying sandbox, cid: %s", cid)
 		return s.destroy()
 	}
 
-	log.Debugf("Destroying container %q in sandbox %q", cid, s.ID)
+	log.Debugf("Destroying container, cid: %s, sandbox: %s", cid, s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err

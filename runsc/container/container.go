@@ -159,9 +159,9 @@ func loadSandbox(rootDir, id string) ([]*Container, error) {
 // container to which id unambiguously refers to. Returns ErrNotExist if
 // container doesn't exist.
 func Load(rootDir, partialID string) (*Container, error) {
-	log.Debugf("Load container %q %q", rootDir, partialID)
+	log.Debugf("Load container, rootDir: %q, partial cid: %s", rootDir, partialID)
 	if err := validateID(partialID); err != nil {
-		return nil, fmt.Errorf("validating id: %v", err)
+		return nil, fmt.Errorf("invalid container id: %v", err)
 	}
 
 	id, err := findContainerID(rootDir, partialID)
@@ -184,22 +184,31 @@ func Load(rootDir, partialID string) (*Container, error) {
 		}
 		return nil, fmt.Errorf("reading container metadata file %q: %v", state.statePath(), err)
 	}
+	return c, nil
+}
 
-	// If the status is "Running" or "Created", check that the sandbox
-	// process still exists, and set it to Stopped if it does not.
+// LoadAndCheck is similar to Load(), but also checks if the container is still
+// running to get an error earlier to the caller.
+func LoadAndCheck(rootDir, partialID string) (*Container, error) {
+	c, err := Load(rootDir, partialID)
+	if err != nil {
+		// Preserve error so that callers can distinguish 'not found' errors.
+		return nil, err
+	}
+
+	// If the status is "Running" or "Created", check that the sandbox/container
+	// is still running, setting it to Stopped if not.
 	//
 	// This is inherently racy.
-	if c.Status == Running || c.Status == Created {
-		// Check if the sandbox process is still running.
+	switch c.Status {
+	case Created:
 		if !c.isSandboxRunning() {
 			// Sandbox no longer exists, so this container definitely does not exist.
 			c.changeStatus(Stopped)
-		} else if c.Status == Running {
-			// Container state should reflect the actual state of the application, so
-			// we don't consider gofer process here.
-			if err := c.SignalContainer(syscall.Signal(0), false); err != nil {
-				c.changeStatus(Stopped)
-			}
+		}
+	case Running:
+		if err := c.SignalContainer(syscall.Signal(0), false); err != nil {
+			c.changeStatus(Stopped)
 		}
 	}
 
@@ -271,7 +280,7 @@ type Args struct {
 // indicates that an existing Sandbox should be used. The caller must call
 // Destroy() on the container.
 func New(conf *config.Config, args Args) (*Container, error) {
-	log.Debugf("Create container %q in root dir: %s", args.ID, conf.RootDir)
+	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
 	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
@@ -310,7 +319,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	// indicate the ID of the sandbox, which is the same as the ID of the
 	// init container in the sandbox.
 	if isRoot(args.Spec) {
-		log.Debugf("Creating new sandbox for container %q", args.ID)
+		log.Debugf("Creating new sandbox for container, cid: %s", args.ID)
 
 		if args.Spec.Linux == nil {
 			args.Spec.Linux = &specs.Linux{}
@@ -380,10 +389,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if !ok {
 			return nil, fmt.Errorf("no sandbox ID found when creating container")
 		}
-		log.Debugf("Creating new container %q in sandbox %q", c.ID, sbid)
+		log.Debugf("Creating new container, cid: %s, sandbox: %s", c.ID, sbid)
 
 		// Find the sandbox associated with this ID.
-		sb, err := Load(conf.RootDir, sbid)
+		sb, err := LoadAndCheck(conf.RootDir, sbid)
 		if err != nil {
 			return nil, err
 		}
@@ -413,7 +422,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 
 // Start starts running the containerized process inside the sandbox.
 func (c *Container) Start(conf *config.Config) error {
-	log.Debugf("Start container %q", c.ID)
+	log.Debugf("Start container, cid: %s", c.ID)
 
 	if err := c.Saver.lock(); err != nil {
 		return err
@@ -476,7 +485,7 @@ func (c *Container) Start(conf *config.Config) error {
 	unlock.Clean()
 
 	// Adjust the oom_score_adj for sandbox. This must be done after saveLocked().
-	if err := adjustSandboxOOMScoreAdj(c.Sandbox, c.Saver.RootDir, false); err != nil {
+	if err := adjustSandboxOOMScoreAdj(c.Sandbox, c.Spec, c.Saver.RootDir, false); err != nil {
 		return err
 	}
 
@@ -488,7 +497,7 @@ func (c *Container) Start(conf *config.Config) error {
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
 func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile string) error {
-	log.Debugf("Restore container %q", c.ID)
+	log.Debugf("Restore container, cid: %s", c.ID)
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
@@ -515,7 +524,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile s
 
 // Run is a helper that calls Create + Start + Wait.
 func Run(conf *config.Config, args Args) (syscall.WaitStatus, error) {
-	log.Debugf("Run container %q in root dir: %s", args.ID, conf.RootDir)
+	log.Debugf("Run container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
 	c, err := New(conf, args)
 	if err != nil {
 		return 0, fmt.Errorf("creating container: %v", err)
@@ -547,7 +556,7 @@ func Run(conf *config.Config, args Args) (syscall.WaitStatus, error) {
 // Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
 func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
-	log.Debugf("Execute in container %q, args: %+v", c.ID, args)
+	log.Debugf("Execute in container, cid: %s, args: %+v", c.ID, args)
 	if err := c.requireStatus("execute in", Created, Running); err != nil {
 		return 0, err
 	}
@@ -557,7 +566,7 @@ func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
 
 // Event returns events for the container.
 func (c *Container) Event() (*boot.Event, error) {
-	log.Debugf("Getting events for container %q", c.ID)
+	log.Debugf("Getting events for container, cid: %s", c.ID)
 	if err := c.requireStatus("get events for", Created, Running, Paused); err != nil {
 		return nil, err
 	}
@@ -577,14 +586,14 @@ func (c *Container) SandboxPid() int {
 // Call to wait on a stopped container is needed to retrieve the exit status
 // and wait returns immediately.
 func (c *Container) Wait() (syscall.WaitStatus, error) {
-	log.Debugf("Wait on container %q", c.ID)
+	log.Debugf("Wait on container, cid: %s", c.ID)
 	return c.Sandbox.Wait(c.ID)
 }
 
 // WaitRootPID waits for process 'pid' in the sandbox's PID namespace and
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
-	log.Debugf("Wait on PID %d in sandbox %q", pid, c.Sandbox.ID)
+	log.Debugf("Wait on process %d in sandbox, cid: %s", pid, c.Sandbox.ID)
 	if !c.isSandboxRunning() {
 		return 0, fmt.Errorf("sandbox is not running")
 	}
@@ -594,7 +603,7 @@ func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 // WaitPID waits for process 'pid' in the container's PID namespace and returns
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
-	log.Debugf("Wait on PID %d in container %q", pid, c.ID)
+	log.Debugf("Wait on process %d in container, cid: %s", pid, c.ID)
 	if !c.isSandboxRunning() {
 		return 0, fmt.Errorf("sandbox is not running")
 	}
@@ -606,7 +615,7 @@ func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
 // SignalContainer returns an error if the container is already stopped.
 // TODO(b/113680494): Distinguish different error types.
 func (c *Container) SignalContainer(sig syscall.Signal, all bool) error {
-	log.Debugf("Signal container %q: %v", c.ID, sig)
+	log.Debugf("Signal container, cid: %s, signal: %v (%d)", c.ID, sig, sig)
 	// Signaling container in Stopped state is allowed. When all=false,
 	// an error will be returned anyway; when all=true, this allows
 	// sending signal to other processes inside the container even
@@ -623,7 +632,7 @@ func (c *Container) SignalContainer(sig syscall.Signal, all bool) error {
 
 // SignalProcess sends sig to a specific process in the container.
 func (c *Container) SignalProcess(sig syscall.Signal, pid int32) error {
-	log.Debugf("Signal process %d in container %q: %v", pid, c.ID, sig)
+	log.Debugf("Signal process %d in container, cid: %s, signal: %v (%d)", pid, c.ID, sig, sig)
 	if err := c.requireStatus("signal a process inside", Running); err != nil {
 		return err
 	}
@@ -637,15 +646,15 @@ func (c *Container) SignalProcess(sig syscall.Signal, pid int32) error {
 // container process inside the sandbox. It returns a function that will stop
 // forwarding signals.
 func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
-	log.Debugf("Forwarding all signals to container %q PID %d fgProcess=%t", c.ID, pid, fgProcess)
+	log.Debugf("Forwarding all signals to container, cid: %s, PIDPID: %d, fgProcess: %t", c.ID, pid, fgProcess)
 	stop := sighandling.StartSignalForwarding(func(sig linux.Signal) {
-		log.Debugf("Forwarding signal %d to container %q PID %d fgProcess=%t", sig, c.ID, pid, fgProcess)
+		log.Debugf("Forwarding signal %d to container, cid: %s, PID: %d, fgProcess: %t", sig, c.ID, pid, fgProcess)
 		if err := c.Sandbox.SignalProcess(c.ID, pid, syscall.Signal(sig), fgProcess); err != nil {
 			log.Warningf("error forwarding signal %d to container %q: %v", sig, c.ID, err)
 		}
 	})
 	return func() {
-		log.Debugf("Done forwarding signals to container %q PID %d fgProcess=%t", c.ID, pid, fgProcess)
+		log.Debugf("Done forwarding signals to container, cid: %s, PID: %d, fgProcess: %t", c.ID, pid, fgProcess)
 		stop()
 	}
 }
@@ -653,7 +662,7 @@ func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 // Checkpoint sends the checkpoint call to the container.
 // The statefile will be written to f, the file at the specified image-path.
 func (c *Container) Checkpoint(f *os.File) error {
-	log.Debugf("Checkpoint container %q", c.ID)
+	log.Debugf("Checkpoint container, cid: %s", c.ID)
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
@@ -663,7 +672,7 @@ func (c *Container) Checkpoint(f *os.File) error {
 // Pause suspends the container and its kernel.
 // The call only succeeds if the container's status is created or running.
 func (c *Container) Pause() error {
-	log.Debugf("Pausing container %q", c.ID)
+	log.Debugf("Pausing container, cid: %s", c.ID)
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
@@ -674,7 +683,7 @@ func (c *Container) Pause() error {
 	}
 
 	if err := c.Sandbox.Pause(c.ID); err != nil {
-		return fmt.Errorf("pausing container: %v", err)
+		return fmt.Errorf("pausing container %q: %v", c.ID, err)
 	}
 	c.changeStatus(Paused)
 	return c.saveLocked()
@@ -683,7 +692,7 @@ func (c *Container) Pause() error {
 // Resume unpauses the container and its kernel.
 // The call only succeeds if the container's status is paused.
 func (c *Container) Resume() error {
-	log.Debugf("Resuming container %q", c.ID)
+	log.Debugf("Resuming container, cid: %s", c.ID)
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
@@ -722,7 +731,7 @@ func (c *Container) Processes() ([]*control.Process, error) {
 // Destroy stops all processes and frees all resources associated with the
 // container.
 func (c *Container) Destroy() error {
-	log.Debugf("Destroy container %q", c.ID)
+	log.Debugf("Destroy container, cid: %s", c.ID)
 
 	if err := c.Saver.lock(); err != nil {
 		return err
@@ -759,14 +768,12 @@ func (c *Container) Destroy() error {
 	c.changeStatus(Stopped)
 
 	// Adjust oom_score_adj for the sandbox. This must be done after the container
-	// is stopped and the directory at c.Root is removed. Adjustment can be
-	// skipped if the root container is exiting, because it brings down the entire
-	// sandbox.
+	// is stopped and the directory at c.Root is removed.
 	//
 	// Use 'sb' to tell whether it has been executed before because Destroy must
 	// be idempotent.
-	if sb != nil && !isRoot(c.Spec) {
-		if err := adjustSandboxOOMScoreAdj(sb, c.Saver.RootDir, true); err != nil {
+	if sb != nil {
+		if err := adjustSandboxOOMScoreAdj(sb, c.Spec, c.Saver.RootDir, true); err != nil {
 			errs = append(errs, err.Error())
 		}
 	}
@@ -795,7 +802,7 @@ func (c *Container) Destroy() error {
 //
 // Precondition: container must be locked with container.lock().
 func (c *Container) saveLocked() error {
-	log.Debugf("Save container %q", c.ID)
+	log.Debugf("Save container, cid: %s", c.ID)
 	if err := c.Saver.saveLocked(c); err != nil {
 		return fmt.Errorf("saving container metadata: %v", err)
 	}
@@ -809,7 +816,7 @@ func (c *Container) stop() error {
 	var cgroup *cgroup.Cgroup
 
 	if c.Sandbox != nil {
-		log.Debugf("Destroying container %q", c.ID)
+		log.Debugf("Destroying container, cid: %s", c.ID)
 		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
 			return fmt.Errorf("destroying container %q: %v", c.ID, err)
 		}
@@ -823,7 +830,7 @@ func (c *Container) stop() error {
 
 	// Try killing gofer if it does not exit with container.
 	if c.GoferPid != 0 {
-		log.Debugf("Killing gofer for container %q, PID: %d", c.ID, c.GoferPid)
+		log.Debugf("Killing gofer for container, cid: %s, PID: %d", c.ID, c.GoferPid)
 		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
 			// The gofer may already be stopped, log the error.
 			log.Warningf("Error sending signal %d to gofer %d: %v", syscall.SIGKILL, c.GoferPid, err)
@@ -1096,7 +1103,13 @@ func (c *Container) adjustGoferOOMScoreAdj() error {
 // TODO(gvisor.dev/issue/238): This call could race with other containers being
 // created at the same time and end up setting the wrong oom_score_adj to the
 // sandbox. Use rpc client to synchronize.
-func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, rootDir string, destroy bool) error {
+func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir string, destroy bool) error {
+	// Adjustment can be skipped if the root container is exiting, because it
+	// brings down the entire sandbox.
+	if isRoot(spec) && destroy {
+		return nil
+	}
+
 	containers, err := loadSandbox(rootDir, s.ID)
 	if err != nil {
 		return fmt.Errorf("loading sandbox containers: %v", err)
@@ -1110,53 +1123,34 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, rootDir string, destroy bool) 
 	// Get the lowest score for all containers.
 	var lowScore int
 	scoreFound := false
-	if len(containers) == 1 && specutils.SpecContainerType(containers[0].Spec) == specutils.ContainerTypeUnspecified {
-		// This is a single-container sandbox. Set the oom_score_adj to
-		// the value specified in the OCI bundle.
-		if containers[0].Spec.Process.OOMScoreAdj != nil {
-			scoreFound = true
-			lowScore = *containers[0].Spec.Process.OOMScoreAdj
+	for _, container := range containers {
+		// Special multi-container support for CRI. Ignore the root container when
+		// calculating oom_score_adj for the sandbox because it is the
+		// infrastructure (pause) container and always has a very low oom_score_adj.
+		//
+		// We will use OOMScoreAdj in the single-container case where the
+		// containerd container-type annotation is not present.
+		if specutils.SpecContainerType(container.Spec) == specutils.ContainerTypeSandbox {
+			continue
 		}
-	} else {
-		for _, container := range containers {
-			// Special multi-container support for CRI. Ignore the root
-			// container when calculating oom_score_adj for the sandbox because
-			// it is the infrastructure (pause) container and always has a very
-			// low oom_score_adj.
-			//
-			// We will use OOMScoreAdj in the single-container case where the
-			// containerd container-type annotation is not present.
-			if specutils.SpecContainerType(container.Spec) == specutils.ContainerTypeSandbox {
-				continue
-			}
 
-			if container.Spec.Process.OOMScoreAdj != nil && (!scoreFound || *container.Spec.Process.OOMScoreAdj < lowScore) {
-				scoreFound = true
-				lowScore = *container.Spec.Process.OOMScoreAdj
-			}
+		if container.Spec.Process.OOMScoreAdj != nil && (!scoreFound || *container.Spec.Process.OOMScoreAdj < lowScore) {
+			scoreFound = true
+			lowScore = *container.Spec.Process.OOMScoreAdj
 		}
 	}
 
 	// If the container is destroyed and remaining containers have no
-	// oomScoreAdj specified then we must revert to the oom_score_adj of the
-	// parent process.
+	// oomScoreAdj specified then we must revert to the original oom_score_adj
+	// saved with the root container.
 	if !scoreFound && destroy {
-		ppid, err := specutils.GetParentPid(s.Pid)
-		if err != nil {
-			return fmt.Errorf("getting parent pid of sandbox pid %d: %v", s.Pid, err)
-		}
-		pScore, err := specutils.GetOOMScoreAdj(ppid)
-		if err != nil {
-			return fmt.Errorf("getting oom_score_adj of parent %d: %v", ppid, err)
-		}
-
+		lowScore = containers[0].Sandbox.OriginalOOMScoreAdj
 		scoreFound = true
-		lowScore = pScore
 	}
 
-	// Only set oom_score_adj if one of the containers has oom_score_adj set
-	// in the OCI bundle. If not, we need to inherit the parent process's
-	// oom_score_adj.
+	// Only set oom_score_adj if one of the containers has oom_score_adj set. If
+	// not, oom_score_adj is inherited from the parent process.
+	//
 	// See: https://github.com/opencontainers/runtime-spec/blob/master/config.md#linux-process
 	if !scoreFound {
 		return nil
