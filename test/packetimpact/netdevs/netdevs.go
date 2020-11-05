@@ -40,7 +40,7 @@ var (
 	deviceLine = regexp.MustCompile(`^\s*(\d+): (\w+)`)
 	linkLine   = regexp.MustCompile(`^\s*link/\w+ ([0-9a-fA-F:]+)`)
 	inetLine   = regexp.MustCompile(`^\s*inet ([0-9./]+)`)
-	inet6Line  = regexp.MustCompile(`^\s*inet6 ([0-9a-fA-Z:/]+)`)
+	inet6Line  = regexp.MustCompile(`^\s*inet6 ([0-9a-fA-F:/]+)`)
 )
 
 // ParseDevices parses the output from `ip addr show` into a map from device
