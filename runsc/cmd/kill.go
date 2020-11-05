@@ -69,7 +69,7 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Fatalf("it is invalid to specify both --all and --pid")
 	}
 
-	c, err := container.Load(conf.RootDir, id)
+	c, err := container.LoadAndCheck(conf.RootDir, id)
 	if err != nil {
 		Fatalf("loading container: %v", err)
 	}

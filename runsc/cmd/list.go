@@ -79,7 +79,7 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Collect the containers.
 	var containers []*container.Container
 	for _, id := range ids {
-		c, err := container.Load(conf.RootDir, id)
+		c, err := container.LoadAndCheck(conf.RootDir, id)
 		if err != nil {
 			Fatalf("loading container %q: %v", id, err)
 		}

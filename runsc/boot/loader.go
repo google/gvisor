@@ -888,7 +888,7 @@ func (l *Loader) destroyContainer(cid string) error {
 		}
 	}
 
-	log.Debugf("Container destroyed %q", cid)
+	log.Debugf("Container destroyed, cid: %s", cid)
 	return nil
 }
 
