@@ -106,7 +106,7 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 			} else if _, err := p.route.Resolve(nil); err != nil {
 				p.route.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {
-				p.route.nic.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
+				p.route.outgoingNIC.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
 			}
 			p.route.Release()
 		}

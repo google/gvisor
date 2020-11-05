@@ -10,6 +10,7 @@ go_test(
         "link_resolution_test.go",
         "loopback_test.go",
         "multicast_broadcast_test.go",
+        "route_test.go",
     ],
     deps = [
         "//pkg/tcpip",

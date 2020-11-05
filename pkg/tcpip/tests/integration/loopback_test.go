@@ -204,7 +204,7 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 				},
 			})
 
-			wq := waiter.Queue{}
+			var wq waiter.Queue
 			rep, err := s.NewEndpoint(udp.ProtocolNumber, test.addAddress.Protocol, &wq)
 			if err != nil {
 				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.addAddress.Protocol, err)

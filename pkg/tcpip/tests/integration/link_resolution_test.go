@@ -32,32 +32,36 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-var (
-	host1NICLinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
-	host2NICLinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
+const (
+	linkAddr1 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
+	linkAddr2 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x07")
+	linkAddr3 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x08")
+	linkAddr4 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
+)
 
-	host1IPv4Addr = tcpip.ProtocolAddress{
+var (
+	ipv4Addr1 = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
 			Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
 			PrefixLen: 24,
 		},
 	}
-	host2IPv4Addr = tcpip.ProtocolAddress{
+	ipv4Addr2 = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
 			Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
 			PrefixLen: 8,
 		},
 	}
-	host1IPv6Addr = tcpip.ProtocolAddress{
+	ipv6Addr1 = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
 			Address:   tcpip.Address(net.ParseIP("a::1").To16()),
 			PrefixLen: 64,
 		},
 	}
-	host2IPv6Addr = tcpip.ProtocolAddress{
+	ipv6Addr2 = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
 			Address:   tcpip.Address(net.ParseIP("a::2").To16()),
@@ -89,7 +93,7 @@ func TestPing(t *testing.T) {
 			name:       "IPv4 Ping",
 			transProto: icmp.ProtocolNumber4,
 			netProto:   ipv4.ProtocolNumber,
-			remoteAddr: host2IPv4Addr.AddressWithPrefix.Address,
+			remoteAddr: ipv4Addr2.AddressWithPrefix.Address,
 			icmpBuf: func(t *testing.T) buffer.View {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv4(make([]byte, header.ICMPv4MinimumSize+len(data)))
@@ -104,7 +108,7 @@ func TestPing(t *testing.T) {
 			name:       "IPv6 Ping",
 			transProto: icmp.ProtocolNumber6,
 			netProto:   ipv6.ProtocolNumber,
-			remoteAddr: host2IPv6Addr.AddressWithPrefix.Address,
+			remoteAddr: ipv6Addr2.AddressWithPrefix.Address,
 			icmpBuf: func(t *testing.T) buffer.View {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv6(make([]byte, header.ICMPv6MinimumSize+len(data)))
@@ -127,7 +131,7 @@ func TestPing(t *testing.T) {
 			host1Stack := stack.New(stackOpts)
 			host2Stack := stack.New(stackOpts)
 
-			host1NIC, host2NIC := pipe.New(host1NICLinkAddr, host2NICLinkAddr)
+			host1NIC, host2NIC := pipe.New(linkAddr1, linkAddr2)
 
 			if err := host1Stack.CreateNIC(host1NICID, ethernet.New(host1NIC)); err != nil {
 				t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
@@ -143,36 +147,36 @@ func TestPing(t *testing.T) {
 				t.Fatalf("host2Stack.AddAddress(%d, %d, %s): %s", host2NICID, arp.ProtocolNumber, arp.ProtocolAddress, err)
 			}
 
-			if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv4Addr); err != nil {
-				t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv4Addr, err)
+			if err := host1Stack.AddProtocolAddress(host1NICID, ipv4Addr1); err != nil {
+				t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, ipv4Addr1, err)
 			}
-			if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv4Addr); err != nil {
-				t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv4Addr, err)
+			if err := host2Stack.AddProtocolAddress(host2NICID, ipv4Addr2); err != nil {
+				t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, ipv4Addr2, err)
 			}
-			if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv6Addr); err != nil {
-				t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv6Addr, err)
+			if err := host1Stack.AddProtocolAddress(host1NICID, ipv6Addr1); err != nil {
+				t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, ipv6Addr1, err)
 			}
-			if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv6Addr); err != nil {
-				t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv6Addr, err)
+			if err := host2Stack.AddProtocolAddress(host2NICID, ipv6Addr2); err != nil {
+				t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, ipv6Addr2, err)
 			}
 
 			host1Stack.SetRouteTable([]tcpip.Route{
 				tcpip.Route{
-					Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
+					Destination: ipv4Addr1.AddressWithPrefix.Subnet(),
 					NIC:         host1NICID,
 				},
 				tcpip.Route{
-					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+					Destination: ipv6Addr1.AddressWithPrefix.Subnet(),
 					NIC:         host1NICID,
 				},
 			})
 			host2Stack.SetRouteTable([]tcpip.Route{
 				tcpip.Route{
-					Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
+					Destination: ipv4Addr2.AddressWithPrefix.Subnet(),
 					NIC:         host2NICID,
 				},
 				tcpip.Route{
-					Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
+					Destination: ipv6Addr2.AddressWithPrefix.Subnet(),
 					NIC:         host2NICID,
 				},
 			})

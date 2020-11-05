@@ -646,7 +646,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (e *endpoint) HandlePacket(route *stack.Route, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full or if this is an unassociated
@@ -671,14 +671,16 @@ func (e *endpoint) HandlePacket(route *stack.Route, pkt *stack.PacketBuffer) {
 		return
 	}
 
+	remoteAddr := pkt.Network().SourceAddress()
+
 	if e.bound {
 		// If bound to a NIC, only accept data for that NIC.
-		if e.BindNICID != 0 && e.BindNICID != route.NICID() {
+		if e.BindNICID != 0 && e.BindNICID != pkt.NICID {
 			e.rcvMu.Unlock()
 			return
 		}
 		// If bound to an address, only accept data for that address.
-		if e.BindAddr != "" && e.BindAddr != route.RemoteAddress {
+		if e.BindAddr != "" && e.BindAddr != remoteAddr {
 			e.rcvMu.Unlock()
 			return
 		}
@@ -686,7 +688,7 @@ func (e *endpoint) HandlePacket(route *stack.Route, pkt *stack.PacketBuffer) {
 
 	// If connected, only accept packets from the remote address we
 	// connected to.
-	if e.connected && e.route.RemoteAddress != route.RemoteAddress {
+	if e.connected && e.route.RemoteAddress != remoteAddr {
 		e.rcvMu.Unlock()
 		return
 	}
@@ -696,8 +698,8 @@ func (e *endpoint) HandlePacket(route *stack.Route, pkt *stack.PacketBuffer) {
 	// Push new packet into receive list and increment the buffer size.
 	packet := &rawPacket{
 		senderAddr: tcpip.FullAddress{
-			NIC:  route.NICID(),
-			Addr: route.RemoteAddress,
+			NIC:  pkt.NICID,
+			Addr: remoteAddr,
 		},
 	}
 
