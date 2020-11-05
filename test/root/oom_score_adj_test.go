@@ -40,11 +40,7 @@ var (
 // TestOOMScoreAdjSingle tests that oom_score_adj is set properly in a
 // single container sandbox.
 func TestOOMScoreAdjSingle(t *testing.T) {
-	ppid, err := specutils.GetParentPid(os.Getpid())
-	if err != nil {
-		t.Fatalf("getting parent pid: %v", err)
-	}
-	parentOOMScoreAdj, err := specutils.GetOOMScoreAdj(ppid)
+	parentOOMScoreAdj, err := specutils.GetOOMScoreAdj(os.Getppid())
 	if err != nil {
 		t.Fatalf("getting parent oom_score_adj: %v", err)
 	}
@@ -122,11 +118,7 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 // TestOOMScoreAdjMulti tests that oom_score_adj is set properly in a
 // multi-container sandbox.
 func TestOOMScoreAdjMulti(t *testing.T) {
-	ppid, err := specutils.GetParentPid(os.Getpid())
-	if err != nil {
-		t.Fatalf("getting parent pid: %v", err)
-	}
-	parentOOMScoreAdj, err := specutils.GetOOMScoreAdj(ppid)
+	parentOOMScoreAdj, err := specutils.GetOOMScoreAdj(os.Getppid())
 	if err != nil {
 		t.Fatalf("getting parent oom_score_adj: %v", err)
 	}

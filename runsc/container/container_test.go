@@ -364,7 +364,7 @@ func TestLifecycle(t *testing.T) {
 			defer c.Destroy()
 
 			// Load the container from disk and check the status.
-			c, err = Load(rootDir, args.ID)
+			c, err = LoadAndCheck(rootDir, args.ID)
 			if err != nil {
 				t.Fatalf("error loading container: %v", err)
 			}
@@ -387,7 +387,7 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Load the container from disk and check the status.
-			c, err = Load(rootDir, args.ID)
+			c, err = LoadAndCheck(rootDir, args.ID)
 			if err != nil {
 				t.Fatalf("error loading container: %v", err)
 			}
@@ -428,7 +428,7 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Load the container from disk and check the status.
-			c, err = Load(rootDir, args.ID)
+			c, err = LoadAndCheck(rootDir, args.ID)
 			if err != nil {
 				t.Fatalf("error loading container: %v", err)
 			}
@@ -451,7 +451,7 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Loading the container by id should fail.
-			if _, err = Load(rootDir, args.ID); err == nil {
+			if _, err = LoadAndCheck(rootDir, args.ID); err == nil {
 				t.Errorf("expected loading destroyed container to fail, but it did not")
 			}
 		})
@@ -1738,7 +1738,7 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 		cids[2]: cids[2],
 	}
 	for shortid, longid := range unambiguous {
-		if _, err := Load(rootDir, shortid); err != nil {
+		if _, err := LoadAndCheck(rootDir, shortid); err != nil {
 			t.Errorf("%q should resolve to %q: %v", shortid, longid, err)
 		}
 	}
@@ -1749,7 +1749,7 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 		"ba",
 	}
 	for _, shortid := range ambiguous {
-		if s, err := Load(rootDir, shortid); err == nil {
+		if s, err := LoadAndCheck(rootDir, shortid); err == nil {
 			t.Errorf("%q should be ambiguous, but resolved to %q", shortid, s.ID)
 		}
 	}
@@ -2007,7 +2007,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 
 		// Container is not thread safe, so load another instance to run in
 		// concurrently.
-		startCont, err := Load(rootDir, args.ID)
+		startCont, err := LoadAndCheck(rootDir, args.ID)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}

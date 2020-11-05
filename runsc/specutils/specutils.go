@@ -481,35 +481,6 @@ func GetOOMScoreAdj(pid int) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(string(data)))
 }
 
-// GetParentPid gets the parent process ID of the specified PID.
-func GetParentPid(pid int) (int, error) {
-	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return 0, err
-	}
-
-	var cpid string
-	var name string
-	var state string
-	var ppid int
-	// Parse after the binary name.
-	_, err = fmt.Sscanf(string(data),
-		"%v %v %v %d",
-		// cpid is ignored.
-		&cpid,
-		// name is ignored.
-		&name,
-		// state is ignored.
-		&state,
-		&ppid)
-
-	if err != nil {
-		return 0, err
-	}
-
-	return ppid, nil
-}
-
 // EnvVar looks for a varible value in the env slice assuming the following
 // format: "NAME=VALUE".
 func EnvVar(env []string, name string) (string, bool) {

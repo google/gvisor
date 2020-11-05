@@ -91,7 +91,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			return subcommands.ExitUsageError
 		}
 		var err error
-		c, err = container.Load(conf.RootDir, f.Arg(0))
+		c, err = container.LoadAndCheck(conf.RootDir, f.Arg(0))
 		if err != nil {
 			return Errorf("loading container %q: %v", f.Arg(0), err)
 		}
@@ -106,7 +106,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			return Errorf("listing containers: %v", err)
 		}
 		for _, id := range ids {
-			candidate, err := container.Load(conf.RootDir, id)
+			candidate, err := container.LoadAndCheck(conf.RootDir, id)
 			if err != nil {
 				return Errorf("loading container %q: %v", id, err)
 			}
