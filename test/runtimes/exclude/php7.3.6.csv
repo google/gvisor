@@ -8,6 +8,7 @@ ext/mbstring/tests/bug77165.phpt,,
 ext/mbstring/tests/bug77454.phpt,,
 ext/mbstring/tests/mb_convert_encoding_leak.phpt,,
 ext/mbstring/tests/mb_strrpos_encoding_3rd_param.phpt,,
+ext/pcre/tests/cache_limit.phpt,,Broken test - Flaky
 ext/session/tests/session_module_name_variation4.phpt,,Flaky
 ext/session/tests/session_set_save_handler_class_018.phpt,,
 ext/session/tests/session_set_save_handler_iface_003.phpt,,
