@@ -49,12 +49,11 @@ var (
 	parseCmd     = flag.NewFlagSet(parseString, flag.ContinueOnError)
 	file         = parseCmd.String("file", "", "file to parse for benchmarks")
 	name         = parseCmd.String("suite_name", "", "name of the benchmark suite")
-	clNumber     = parseCmd.String("cl", "", "changelist number of this run")
-	gitCommit    = parseCmd.String("git_commit", "", "git commit sha for this run")
 	parseProject = parseCmd.String("project", "", "GCP project to send benchmarks.")
 	parseDataset = parseCmd.String("dataset", "", "dataset to send benchmarks data.")
 	parseTable   = parseCmd.String("table", "", "table to send benchmarks data.")
 	official     = parseCmd.Bool("official", false, "mark input data as official.")
+	runtime      = parseCmd.String("runtime", "", "runtime used to run the benchmark")
 )
 
 // initBenchmarks initializes a dataset/table in a BigQuery project.
@@ -67,23 +66,29 @@ func initBenchmarks(ctx context.Context) error {
 func parseBenchmarks(ctx context.Context) error {
 	data, err := ioutil.ReadFile(*file)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %v", err)
+		return fmt.Errorf("failed to read file %s: %v", *file, err)
 	}
 	suite, err := parsers.ParseOutput(string(data), *name, *official)
 	if err != nil {
 		return fmt.Errorf("failed parse data: %v", err)
 	}
+	if len(suite.Benchmarks) < 1 {
+		fmt.Fprintf(os.Stderr, "Failed to find benchmarks for file: %s", *file)
+		return nil
+	}
+
 	extraConditions := []*bq.Condition{
 		{
-			Name:  "change_list",
-			Value: *clNumber,
+			Name:  "runtime",
+			Value: *runtime,
 		},
 		{
-			Name:  "commit",
-			Value: *gitCommit,
+			Name:  "version",
+			Value: version,
 		},
 	}
 
+	suite.Official = *official
 	suite.Conditions = append(suite.Conditions, extraConditions...)
 	return bq.SendBenchmarks(ctx, suite, *parseProject, *parseDataset, *parseTable, nil)
 }
@@ -94,26 +99,27 @@ func main() {
 	// the "init" command
 	case len(os.Args) >= 2 && os.Args[1] == initString:
 		if err := initCmd.Parse(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "failed parse flags: %v", err)
+			fmt.Fprintf(os.Stderr, "failed parse flags: %v\n", err)
 			os.Exit(1)
 		}
 		if err := initBenchmarks(ctx); err != nil {
-			failure := "failed to initialize project: %s dataset: %s table: %s: %v"
+			failure := "failed to initialize project: %s dataset: %s table: %s: %v\n"
 			fmt.Fprintf(os.Stderr, failure, *parseProject, *parseDataset, *parseTable, err)
 			os.Exit(1)
 		}
 	// the "parse" command.
 	case len(os.Args) >= 2 && os.Args[1] == parseString:
 		if err := parseCmd.Parse(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "failed parse flags: %v", err)
+			fmt.Fprintf(os.Stderr, "failed parse flags: %v\n", err)
 			os.Exit(1)
 		}
 		if err := parseBenchmarks(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed parse benchmarks: %v", err)
+			fmt.Fprintf(os.Stderr, "failed parse benchmarks: %v\n", err)
 			os.Exit(1)
 		}
 	default:
 		printUsage()
+		os.Exit(1)
 	}
 }
 

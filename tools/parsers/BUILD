@@ -31,8 +31,12 @@ go_library(
 go_binary(
     name = "parser",
     testonly = 1,
-    srcs = ["parser_main.go"],
+    srcs = [
+        "parser_main.go",
+        "version.go",
+    ],
     nogo = False,
+    x_defs = {"main.version": "{STABLE_VERSION}"},
     deps = [
         ":parsers",
         "//runsc/flag",

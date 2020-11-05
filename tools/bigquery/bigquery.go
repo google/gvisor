@@ -105,7 +105,7 @@ func (bm *Benchmark) AddMetric(metricName, unit string, sample float64) {
 }
 
 // NewBenchmark initializes a new benchmark.
-func NewBenchmark(name string, iters int, official bool) *Benchmark {
+func NewBenchmark(name string, iters int) *Benchmark {
 	return &Benchmark{
 		Name:   name,
 		Metric: make([]*Metric, 0),
@@ -113,12 +113,13 @@ func NewBenchmark(name string, iters int, official bool) *Benchmark {
 }
 
 // NewSuite initializes a new Suite.
-func NewSuite(name string) *Suite {
+func NewSuite(name string, official bool) *Suite {
 	return &Suite{
 		Name:       name,
 		Timestamp:  time.Now().UTC(),
 		Benchmarks: make([]*Benchmark, 0),
 		Conditions: make([]*Condition, 0),
+		Official:   official,
 	}
 }
 

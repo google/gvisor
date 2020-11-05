@@ -94,7 +94,7 @@ func TestParseLine(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseLine(tc.data, false)
+			got, err := parseLine(tc.data)
 			if err != nil {
 				t.Fatalf("parseLine failed with: %v", err)
 			}

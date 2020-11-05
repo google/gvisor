@@ -30,10 +30,10 @@ import (
 // ParseOutput expects golang benchmark output and returns a struct formatted
 // for BigQuery.
 func ParseOutput(output string, name string, official bool) (*bigquery.Suite, error) {
-	suite := bigquery.NewSuite(name)
+	suite := bigquery.NewSuite(name, official)
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
-		bm, err := parseLine(line, official)
+		bm, err := parseLine(line)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse line '%s': %v", line, err)
 		}
@@ -60,7 +60,7 @@ func ParseOutput(output string, name string, official bool) (*bigquery.Suite, er
 //		{Name: requests_per_second, Unit: QPS, Sample: 140 }
 //  }
 //}
-func parseLine(line string, official bool) (*bigquery.Benchmark, error) {
+func parseLine(line string) (*bigquery.Benchmark, error) {
 	fields := strings.Fields(line)
 
 	// Check if this line is a Benchmark line. Otherwise ignore the line.
@@ -78,7 +78,7 @@ func parseLine(line string, official bool) (*bigquery.Benchmark, error) {
 		return nil, fmt.Errorf("parse name/params: %v", err)
 	}
 
-	bm := bigquery.NewBenchmark(name, iters, official)
+	bm := bigquery.NewBenchmark(name, iters)
 	for _, p := range params {
 		bm.AddCondition(p.Name, p.Value)
 	}
