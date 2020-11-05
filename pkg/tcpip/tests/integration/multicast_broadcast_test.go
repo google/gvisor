@@ -409,7 +409,7 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 				t.Fatalf("got unexpected address length = %d bytes", l)
 			}
 
-			wq := waiter.Queue{}
+			var wq waiter.Queue
 			ep, err := s.NewEndpoint(udp.ProtocolNumber, netproto, &wq)
 			if err != nil {
 				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, netproto, err)
@@ -446,8 +446,6 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 		localPort         = 9000
 		loopbackBroadcast = tcpip.Address("\x7f\xff\xff\xff")
 	)
-
-	data := tcpip.SlicePayload([]byte{1, 2, 3, 4})
 
 	tests := []struct {
 		name          string
@@ -492,16 +490,22 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 				},
 			})
 
+			type endpointAndWaiter struct {
+				ep tcpip.Endpoint
+				ch chan struct{}
+			}
+			var eps []endpointAndWaiter
 			// We create endpoints that bind to both the wildcard address and the
 			// broadcast address to make sure both of these types of "broadcast
 			// interested" endpoints receive broadcast packets.
-			wq := waiter.Queue{}
-			var eps []tcpip.Endpoint
 			for _, bindWildcard := range []bool{false, true} {
 				// Create multiple endpoints for each type of "broadcast interested"
 				// endpoint so we can test that all endpoints receive the broadcast
 				// packet.
 				for i := 0; i < 2; i++ {
+					var wq waiter.Queue
+					we, ch := waiter.NewChannelEntry(nil)
+					wq.EventRegister(&we, waiter.EventIn)
 					ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
 					if err != nil {
 						t.Fatalf("(eps[%d]) NewEndpoint(%d, %d, _): %s", len(eps), udp.ProtocolNumber, ipv4.ProtocolNumber, err)
@@ -528,7 +532,7 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 						}
 					}
 
-					eps = append(eps, ep)
+					eps = append(eps, endpointAndWaiter{ep: ep, ch: ch})
 				}
 			}
 
@@ -539,14 +543,18 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 						Port: localPort,
 					},
 				}
-				if n, _, err := wep.Write(data, writeOpts); err != nil {
+				data := tcpip.SlicePayload([]byte{byte(i), 2, 3, 4})
+				if n, _, err := wep.ep.Write(data, writeOpts); err != nil {
 					t.Fatalf("eps[%d].Write(_, _): %s", i, err)
 				} else if want := int64(len(data)); n != want {
 					t.Fatalf("got eps[%d].Write(_, _) = (%d, nil, nil), want = (%d, nil, nil)", i, n, want)
 				}
 
 				for j, rep := range eps {
-					if gotPayload, _, err := rep.Read(nil); err != nil {
+					// Wait for the endpoint to become readable.
+					<-rep.ch
+
+					if gotPayload, _, err := rep.ep.Read(nil); err != nil {
 						t.Errorf("(eps[%d] write) eps[%d].Read(nil): %s", i, j, err)
 					} else if diff := cmp.Diff(buffer.View(data), gotPayload); diff != "" {
 						t.Errorf("(eps[%d] write) got UDP payload from eps[%d] mismatch (-want +got):\n%s", i, j, diff)

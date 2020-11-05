@@ -33,11 +33,6 @@ import (
 
 func TestForwarding(t *testing.T) {
 	const (
-		host1NICLinkAddr   = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
-		routerNIC1LinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x07")
-		routerNIC2LinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x08")
-		host2NICLinkAddr   = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
-
 		host1NICID   = 1
 		routerNICID1 = 2
 		routerNICID2 = 3
@@ -166,6 +161,38 @@ func TestForwarding(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "IPv4 host2 server with routerNIC1 client",
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, host2Stack, udp.ProtocolNumber, ipv4.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, routerStack, udp.ProtocolNumber, ipv4.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:         ep1,
+					serverAddr:       host2IPv4Addr.AddressWithPrefix.Address,
+					serverReadableCH: ep1WECH,
+
+					clientEP:         ep2,
+					clientAddr:       routerNIC1IPv4Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+				}
+			},
+		},
+		{
+			name: "IPv6 routerNIC2 server with host1 client",
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, routerStack, udp.ProtocolNumber, ipv6.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host1Stack, udp.ProtocolNumber, ipv6.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:         ep1,
+					serverAddr:       routerNIC2IPv6Addr.AddressWithPrefix.Address,
+					serverReadableCH: ep1WECH,
+
+					clientEP:         ep2,
+					clientAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+				}
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -179,8 +206,8 @@ func TestForwarding(t *testing.T) {
 			routerStack := stack.New(stackOpts)
 			host2Stack := stack.New(stackOpts)
 
-			host1NIC, routerNIC1 := pipe.New(host1NICLinkAddr, routerNIC1LinkAddr)
-			routerNIC2, host2NIC := pipe.New(routerNIC2LinkAddr, host2NICLinkAddr)
+			host1NIC, routerNIC1 := pipe.New(linkAddr1, linkAddr2)
+			routerNIC2, host2NIC := pipe.New(linkAddr3, linkAddr4)
 
 			if err := host1Stack.CreateNIC(host1NICID, ethernet.New(host1NIC)); err != nil {
 				t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
@@ -321,12 +348,8 @@ func TestForwarding(t *testing.T) {
 				if err == tcpip.ErrNoLinkAddress {
 					// Wait for link resolution to complete.
 					<-ch
-
 					n, _, err = ep.Write(dataPayload, wOpts)
-				} else if err != nil {
-					t.Fatalf("ep.Write(_, _): %s", err)
 				}
-
 				if err != nil {
 					t.Fatalf("ep.Write(_, _): %s", err)
 				}
@@ -343,7 +366,6 @@ func TestForwarding(t *testing.T) {
 
 				// Wait for the endpoint to be readable.
 				<-ch
-
 				var addr tcpip.FullAddress
 				v, _, err := ep.Read(&addr)
 				if err != nil {

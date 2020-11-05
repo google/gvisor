@@ -573,6 +573,13 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 						t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, nicAddr, err)
 					}
 
+					s.SetRouteTable([]tcpip.Route{
+						tcpip.Route{
+							Destination: header.IPv6EmptySubnet,
+							NIC:         1,
+						},
+					})
+
 					ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + test.nsOpts.Length()
 					hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
 					pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
@@ -993,7 +1000,8 @@ func TestNDPValidation(t *testing.T) {
 				if n := copy(ip[header.IPv6MinimumSize:], extensions); n != len(extensions) {
 					t.Fatalf("expected to write %d bytes of extensions, but wrote %d", len(extensions), n)
 				}
-				ep.HandlePacket(r, pkt)
+				r.PopulatePacketInfo(pkt)
+				ep.HandlePacket(pkt)
 			}
 
 			var tllData [header.NDPLinkLayerAddressSize]byte

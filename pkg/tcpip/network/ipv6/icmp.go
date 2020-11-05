@@ -124,8 +124,8 @@ func getTargetLinkAddr(it header.NDPOptionIterator) (tcpip.LinkAddress, bool) {
 	})
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragmentHeader bool) {
-	stats := r.Stats().ICMP
+func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
+	stats := e.protocol.stack.Stats().ICMP
 	sent := stats.V6PacketsSent
 	received := stats.V6PacketsReceived
 	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
@@ -138,13 +138,15 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 	}
 	h := header.ICMPv6(v)
 	iph := header.IPv6(pkt.NetworkHeader().View())
+	srcAddr := iph.SourceAddress()
+	dstAddr := iph.DestinationAddress()
 
 	// Validate ICMPv6 checksum before processing the packet.
 	//
 	// This copy is used as extra payload during the checksum calculation.
 	payload := pkt.Data.Clone(nil)
 	payload.TrimFront(len(h))
-	if got, want := h.Checksum(), header.ICMPv6Checksum(h, iph.SourceAddress(), iph.DestinationAddress(), payload); got != want {
+	if got, want := h.Checksum(), header.ICMPv6Checksum(h, srcAddr, dstAddr, payload); got != want {
 		received.Invalid.Increment()
 		return
 	}
@@ -224,7 +226,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			// we know we are also performing DAD on it). In this case we let the
 			// stack know so it can handle such a scenario and do nothing further with
 			// the NS.
-			if r.RemoteAddress == header.IPv6Any {
+			if srcAddr == header.IPv6Any {
 				// We would get an error if the address no longer exists or the address
 				// is no longer tentative (DAD resolved between the call to
 				// hasTentativeAddr and this point). Both of these are valid scenarios:
@@ -251,7 +253,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// section 5.4.3.
 
 		// Is the NS targeting us?
-		if r.Stack().CheckLocalAddress(e.nic.ID(), ProtocolNumber, targetAddr) == 0 {
+		if e.protocol.stack.CheckLocalAddress(e.nic.ID(), ProtocolNumber, targetAddr) == 0 {
 			return
 		}
 
@@ -277,9 +279,9 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// Otherwise, on link layers that have addresses this option MUST be
 		// included in multicast solicitations and SHOULD be included in unicast
 		// solicitations.
-		unspecifiedSource := r.RemoteAddress == header.IPv6Any
+		unspecifiedSource := srcAddr == header.IPv6Any
 		if len(sourceLinkAddr) == 0 {
-			if header.IsV6MulticastAddress(r.LocalAddress) && !unspecifiedSource {
+			if header.IsV6MulticastAddress(dstAddr) && !unspecifiedSource {
 				received.Invalid.Increment()
 				return
 			}
@@ -287,9 +289,9 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			received.Invalid.Increment()
 			return
 		} else if e.nud != nil {
-			e.nud.HandleProbe(r.RemoteAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
+			e.nud.HandleProbe(srcAddr, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		} else {
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), r.RemoteAddress, sourceLinkAddr)
+			e.linkAddrCache.AddLinkAddress(e.nic.ID(), srcAddr, sourceLinkAddr)
 		}
 
 		// As per RFC 4861 section 7.1.1:
@@ -298,7 +300,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		//    ...
 		//    - If the IP source address is the unspecified address, the IP
 		//      destination address is a solicited-node multicast address.
-		if unspecifiedSource && !header.IsSolicitedNodeAddr(r.LocalAddress) {
+		if unspecifiedSource && !header.IsSolicitedNodeAddr(dstAddr) {
 			received.Invalid.Increment()
 			return
 		}
@@ -308,7 +310,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		//   If the source of the solicitation is the unspecified address, the node
 		//   MUST [...] and multicast the advertisement to the all-nodes address.
 		//
-		remoteAddr := r.RemoteAddress
+		remoteAddr := srcAddr
 		if unspecifiedSource {
 			remoteAddr = header.IPv6AllNodesMulticastAddress
 		}
@@ -465,12 +467,12 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 
 		// As per RFC 4291 section 2.7, multicast addresses must not be used as
 		// source addresses in IPv6 packets.
-		localAddr := r.LocalAddress
-		if header.IsV6MulticastAddress(r.LocalAddress) {
+		localAddr := dstAddr
+		if header.IsV6MulticastAddress(dstAddr) {
 			localAddr = ""
 		}
 
-		r, err := r.Stack().FindRoute(e.nic.ID(), localAddr, r.RemoteAddress, ProtocolNumber, false /* multicastLoop */)
+		r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, srcAddr, ProtocolNumber, false /* multicastLoop */)
 		if err != nil {
 			// If we cannot find a route to the destination, silently drop the packet.
 			return
@@ -486,7 +488,11 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		copy(packet, icmpHdr)
 		packet.SetType(header.ICMPv6EchoReply)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, pkt.Data))
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, replyPkt); err != nil {
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+			Protocol: header.ICMPv6ProtocolNumber,
+			TTL:      r.DefaultTTL(),
+			TOS:      stack.DefaultTOS,
+		}, replyPkt); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -498,7 +504,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			received.Invalid.Increment()
 			return
 		}
-		e.dispatcher.DeliverTransportPacket(r, header.ICMPv6ProtocolNumber, pkt)
+		e.dispatcher.DeliverTransportPacket(header.ICMPv6ProtocolNumber, pkt)
 
 	case header.ICMPv6TimeExceeded:
 		received.TimeExceeded.Increment()
@@ -519,7 +525,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			return
 		}
 
-		stack := r.Stack()
+		stack := e.protocol.stack
 
 		// Is the networking stack operating as a router?
 		if !stack.Forwarding(ProtocolNumber) {
@@ -550,7 +556,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			// As per RFC 4861 section 4.1, the Source Link-Layer Address Option MUST
 			// NOT be included when the source IP address is the unspecified address.
 			// Otherwise, it SHOULD be included on link layers that have addresses.
-			if r.RemoteAddress == header.IPv6Any {
+			if srcAddr == header.IPv6Any {
 				received.Invalid.Increment()
 				return
 			}
@@ -558,7 +564,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			if e.nud != nil {
 				// A RS with a specified source IP address modifies the NUD state
 				// machine in the same way a reachability probe would.
-				e.nud.HandleProbe(r.RemoteAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
+				e.nud.HandleProbe(srcAddr, ProtocolNumber, sourceLinkAddr, e.protocol)
 			}
 		}
 
@@ -575,7 +581,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			return
 		}
 
-		routerAddr := iph.SourceAddress()
+		routerAddr := srcAddr
 
 		// Is the IP Source Address a link-local address?
 		if !header.IsV6LinkLocalAddress(routerAddr) {
@@ -608,7 +614,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// If the RA has the source link layer option, update the link address
 		// cache with the link address for the advertised router.
 		if len(sourceLinkAddr) != 0 && e.nud != nil {
-			e.nud.HandleProbe(routerAddr, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
+			e.nud.HandleProbe(routerAddr, ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 
 		e.mu.Lock()
@@ -753,7 +759,11 @@ func (*icmpReasonReassemblyTimeout) isICMPReason() {}
 
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
-func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+	origIPHdr := header.IPv6(pkt.NetworkHeader().View())
+	origIPHdrSrc := origIPHdr.SourceAddress()
+	origIPHdrDst := origIPHdr.DestinationAddress()
+
 	// Only send ICMP error if the address is not a multicast v6
 	// address and the source is not the unspecified address.
 	//
@@ -780,7 +790,7 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 		allowResponseToMulticast = reason.respondToMulticast
 	}
 
-	if (!allowResponseToMulticast && header.IsV6MulticastAddress(r.LocalAddress)) || r.RemoteAddress == header.IPv6Any {
+	if (!allowResponseToMulticast && header.IsV6MulticastAddress(origIPHdrDst)) || origIPHdrSrc == header.IPv6Any {
 		return nil
 	}
 
@@ -788,14 +798,11 @@ func (p *protocol) returnError(r *stack.Route, reason icmpReason, pkt *stack.Pac
 	// a route to it - the remote may be blocked via routing rules. We must always
 	// consult our routing table and find a route to the remote before sending any
 	// packet.
-	route, err := p.stack.FindRoute(r.NICID(), r.LocalAddress, r.RemoteAddress, ProtocolNumber, false /* multicastLoop */)
+	route, err := p.stack.FindRoute(pkt.NICID, origIPHdrDst, origIPHdrSrc, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
 	defer route.Release()
-	// From this point on, the incoming route should no longer be used; route
-	// must be used to send the ICMP error.
-	r = nil
 
 	stats := p.stack.Stats().ICMP
 	sent := stats.V6PacketsSent

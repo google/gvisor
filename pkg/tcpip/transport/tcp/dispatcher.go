@@ -172,10 +172,11 @@ func (d *dispatcher) wait() {
 	d.wg.Wait()
 }
 
-func (d *dispatcher) queuePacket(r *stack.Route, stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	ep := stackEP.(*endpoint)
-	s := newSegment(r, id, pkt)
-	if !s.parse() {
+
+	s := newIncomingSegment(id, pkt)
+	if !s.parse(pkt.RXTransportChecksumValidated) {
 		ep.stack.Stats().MalformedRcvdPackets.Increment()
 		ep.stack.Stats().TCP.InvalidSegmentsReceived.Increment()
 		ep.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
