@@ -112,7 +112,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	waitStatus := args[1].(*syscall.WaitStatus)
 
-	c, err := container.Load(conf.RootDir, id)
+	c, err := container.LoadAndCheck(conf.RootDir, id)
 	if err != nil {
 		Fatalf("loading sandbox: %v", err)
 	}
