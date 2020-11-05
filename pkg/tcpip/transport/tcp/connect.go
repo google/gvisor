@@ -1370,7 +1370,9 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	drained := e.drainDone != nil
 	if drained {
 		close(e.drainDone)
+		e.mu.Unlock()
 		<-e.undrain
+		e.mu.Lock()
 	}
 
 	// Set up the functions that will be called when the main protocol loop
