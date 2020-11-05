@@ -249,6 +249,61 @@ containerd-tests: containerd-test-1.3.4
 containerd-tests: containerd-test-1.4.0-beta.0
 
 ##
+## Benchmarks.
+##
+## Targets to run benchmarks. See //test/benchmarks for details.
+##
+##   common arguments:
+##     RUNTIME_ARGS - arguments to runsc placed in /etc/docker/daemon.json
+##       e.g. "--platform=ptrace"
+##     BENCHMARKS_PROJECT - BigQuery project to which to send data.
+##     BENCHMARKS_DATASET - BigQuery dataset to which to send data.
+##     BENCHMARKS_TABLE - BigQuery table to which to send data.
+##     BENCHMARKS_SUITE - name of the benchmark suite. See //tools/bigquery/bigquery.go.
+##     BENCHMARKS_UPLOAD - if true, upload benchmark data from the run.
+##     BENCHMARKS_OFFICIAL - marks the data as official.
+##     BENCHMARKS_PLATFORMS - platforms to run benchmarks (e.g. ptrace kvm).
+##
+RUNTIME_ARGS := --net-raw --platform=ptrace
+BENCHMARKS_PROJECT := gvisor-benchmarks
+BENCHMARKS_DATASET := kokoro
+BENCHMARKS_TABLE := benchmarks
+BENCHMARKS_SUITE := start
+BENCHMARKS_UPLOAD := false
+BENCHMARKS_OFFICIAL := false
+BENCHMARKS_PLATFORMS := ptrace
+
+init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
+## (see //tools/bigquery/bigquery.go). If the table alread exists, this is a noop.
+	$(call submake, run TARGETS=//tools/parsers:parser ARGS="init --project=$(BENCHMARKS_PROJECT) \
+	--dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE)")
+.PHONY: init-benchmark-table
+
+benchmark-platforms: ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
+	$(call submake, run-benchmark RUNTIME="runc")
+	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS),\
+	$(call submake,benchmark-platform RUNTIME="$(PLATFORM)" RUNTIME_ARGS="--platform=$(PLATFORM) --net-raw --vfs2") && \
+	$(call submake,benchmark-platform RUNTIME="$(PLATFORM)_vfs1" RUNTIME_ARGS="--platform=$(PLATFORM) --net-raw"))
+.PHONY: benchmark-platforms
+
+benchmark-platform: ## Installs a runtime with the given platform args.
+	@$(call submake,install-test-runtime ARGS="$(RUNTIME_ARGS)")
+	@$(call submake, run-benchmark)
+.PHONY: benchmark-platform
+
+run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
+	$(eval T := $(shell mktemp /tmp/logs.$(RUNTIME).XXXXXX))
+	$(call submake,sudo TARGETS="$(TARGETS)" ARGS="--runtime=$(RUNTIME) $(ARGS)" | tee $(T))
+	@if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
+		@$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --file=$(T) \
+		--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
+		--project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
+		--table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
+	fi;
+	rm -rf $T
+.PHONY: run-benchmark
+
+##
 ## Website & documentation helpers.
 ##
 ##   The website is built from repository documentation and wrappers, using
