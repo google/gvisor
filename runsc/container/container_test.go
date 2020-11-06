@@ -1976,11 +1976,11 @@ func doDestroyNotStartedTest(t *testing.T, vfs2 bool) {
 
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
-	doDestroyNotStartedTest(t, false)
+	doDestroyStartingTest(t, false)
 }
 
 func TestDestroyStartedVFS2(t *testing.T) {
-	doDestroyNotStartedTest(t, true)
+	doDestroyStartingTest(t, true)
 }
 
 func doDestroyStartingTest(t *testing.T, vfs2 bool) {
