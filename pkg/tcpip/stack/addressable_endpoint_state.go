@@ -272,6 +272,9 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		addrState = &addressState{
 			addressableEndpointState: a,
 			addr:                     addr,
+			// Cache the subnet in addrState to avoid calls to addr.Subnet() as that
+			// results in allocations on every call.
+			subnet: addr.Subnet(),
 		}
 		a.mu.endpoints[addr.Address] = addrState
 		addrState.mu.Lock()
@@ -666,7 +669,7 @@ var _ AddressEndpoint = (*addressState)(nil)
 type addressState struct {
 	addressableEndpointState *AddressableEndpointState
 	addr                     tcpip.AddressWithPrefix
-
+	subnet                   tcpip.Subnet
 	// Lock ordering (from outer to inner lock ordering):
 	//
 	// AddressableEndpointState.mu
@@ -684,6 +687,11 @@ type addressState struct {
 // AddressWithPrefix implements AddressEndpoint.
 func (a *addressState) AddressWithPrefix() tcpip.AddressWithPrefix {
 	return a.addr
+}
+
+// Subnet implements AddressEndpoint.
+func (a *addressState) Subnet() tcpip.Subnet {
+	return a.subnet
 }
 
 // GetKind implements AddressEndpoint.

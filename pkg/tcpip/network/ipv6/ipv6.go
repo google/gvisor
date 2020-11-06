@@ -166,7 +166,7 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address) *tcpip.Error {
 		return err
 	}
 
-	prefix := addressEndpoint.AddressWithPrefix().Subnet()
+	prefix := addressEndpoint.Subnet()
 
 	switch t := addressEndpoint.ConfigType(); t {
 	case stack.AddressConfigStatic:
