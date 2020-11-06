@@ -53,8 +53,8 @@ func (e *endpoint) beforeSave() {
 	switch {
 	case epState == StateInitial || epState == StateBound:
 	case epState.connected() || epState.handshake():
-		if e.route.Capabilities()&stack.CapabilitySaveRestore == 0 {
-			if e.route.Capabilities()&stack.CapabilityDisconnectOk == 0 {
+		if !e.route.HasSaveRestoreCapability() {
+			if !e.route.HasDisconncetOkCapability() {
 				panic(tcpip.ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%d, remote %v:%d", e.ID.LocalAddress, e.ID.LocalPort, e.ID.RemoteAddress, e.ID.RemotePort)})
 			}
 			e.resetConnectionLocked(tcpip.ErrConnectionAborted)

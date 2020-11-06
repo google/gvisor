@@ -30,6 +30,8 @@ import (
 // The canonical way of using it is to pass the Forwarder.HandlePacket function
 // to stack.SetTransportProtocolHandler.
 type Forwarder struct {
+	stack *stack.Stack
+
 	maxInFlight int
 	handler     func(*ForwarderRequest)
 
@@ -48,6 +50,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 		rcvWnd = DefaultReceiveBufferSize
 	}
 	return &Forwarder{
+		stack:       s,
 		maxInFlight: maxInFlight,
 		handler:     handler,
 		inFlight:    make(map[stack.TransportEndpointID]struct{}),
@@ -61,12 +64,12 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	s := newSegment(r, id, pkt)
+func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+	s := newIncomingSegment(id, pkt)
 	defer s.decRef()
 
 	// We only care about well-formed SYN packets.
-	if !s.parse() || !s.csumValid || s.flags != header.TCPFlagSyn {
+	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid || s.flags != header.TCPFlagSyn {
 		return false
 	}
 
@@ -128,9 +131,8 @@ func (r *ForwarderRequest) Complete(sendReset bool) {
 	delete(r.forwarder.inFlight, r.segment.id)
 	r.forwarder.mu.Unlock()
 
-	// If the caller requested, send a reset.
 	if sendReset {
-		replyWithReset(r.segment, stack.DefaultTOS, r.segment.route.DefaultTTL())
+		replyWithReset(r.forwarder.stack, r.segment, stack.DefaultTOS, 0 /* ttl */)
 	}
 
 	// Release all resources.
