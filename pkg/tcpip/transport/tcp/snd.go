@@ -1285,6 +1285,10 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 // steps 2 and 3.
 func (s *sender) walkSACK(rcvdSeg *segment) {
+	if len(rcvdSeg.parsedOptions.SACKBlocks) == 0 {
+		return
+	}
+
 	// Sort the SACK blocks. The first block is the most recent unacked
 	// block. The following blocks can be in arbitrary order.
 	sackBlocks := make([]header.SACKBlock, len(rcvdSeg.parsedOptions.SACKBlocks))
