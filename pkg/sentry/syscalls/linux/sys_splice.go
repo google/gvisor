@@ -41,6 +41,7 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		inCh  chan struct{}
 		outCh chan struct{}
 	)
+
 	for opts.Length > 0 {
 		n, err = fs.Splice(t, outFile, inFile, opts)
 		opts.Length -= n
@@ -61,23 +62,28 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 				inW, _ := waiter.NewChannelEntry(inCh)
 				inFile.EventRegister(&inW, EventMaskRead)
 				defer inFile.EventUnregister(&inW)
-				continue // Need to refresh readiness.
+				// Need to refresh readiness.
+				continue
 			}
 			if err = t.Block(inCh); err != nil {
 				break
 			}
 		}
-		if outFile.Readiness(EventMaskWrite) == 0 {
-			if outCh == nil {
-				outCh = make(chan struct{}, 1)
-				outW, _ := waiter.NewChannelEntry(outCh)
-				outFile.EventRegister(&outW, EventMaskWrite)
-				defer outFile.EventUnregister(&outW)
-				continue // Need to refresh readiness.
-			}
-			if err = t.Block(outCh); err != nil {
-				break
-			}
+		// Don't bother checking readiness of the outFile, because it's not a
+		// guarantee that it won't return EWOULDBLOCK. Both pipes and eventfds
+		// can be "ready" but will reject writes of certain sizes with
+		// EWOULDBLOCK.
+		if outCh == nil {
+			outCh = make(chan struct{}, 1)
+			outW, _ := waiter.NewChannelEntry(outCh)
+			outFile.EventRegister(&outW, EventMaskWrite)
+			defer outFile.EventUnregister(&outW)
+			// We might be ready to write now. Try again before
+			// blocking.
+			continue
+		}
+		if err = t.Block(outCh); err != nil {
+			break
 		}
 	}
 
