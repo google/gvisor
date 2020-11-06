@@ -156,12 +156,24 @@ syscall-tests: ## Run all system call tests.
 	@$(call submake,test TARGETS="test/syscalls/...")
 
 %-runtime-tests: load-runtimes_%
+ifeq ($(PARTITION),)
+	@$(eval PARTITION := 1)
+endif
+ifeq ($(TOTAL_PARTITIONS),)
+	@$(eval TOTAL_PARTITIONS := 1)
+endif
 	@$(call submake,install-test-runtime)
-	@$(call submake,test-runtime OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
+	@$(call submake,test-runtime OPTIONS="--test_timeout=10800 --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)" TARGETS="//test/runtimes:$*")
 
 %-runtime-tests_vfs2: load-runtimes_%
+ifeq ($(PARTITION),)
+	@$(eval PARTITION := 1)
+endif
+ifeq ($(TOTAL_PARTITIONS),)
+	@$(eval TOTAL_PARTITIONS := 1)
+endif
 	@$(call submake,install-test-runtime RUNTIME="vfs2" ARGS="--vfs2")
-	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
+	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_timeout=10800 --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)" TARGETS="//test/runtimes:$*")
 
 do-tests: runsc
 	@$(call submake,run TARGETS="//runsc" ARGS="--rootless do true")
