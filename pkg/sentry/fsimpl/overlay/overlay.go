@@ -696,6 +696,13 @@ func (d *dentry) topLayer() vfs.VirtualDentry {
 	return vd
 }
 
+func (d *dentry) topLookupLayer() lookupLayer {
+	if d.upperVD.Ok() {
+		return lookupLayerUpper
+	}
+	return lookupLayerLower
+}
+
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
 }
