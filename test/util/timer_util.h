@@ -33,6 +33,11 @@
 namespace gvisor {
 namespace testing {
 
+// From Linux's include/uapi/asm-generic/siginfo.h.
+#ifndef sigev_notify_thread_id
+#define sigev_notify_thread_id _sigev_un._tid
+#endif
+
 // Returns the current time.
 absl::Time Now(clockid_t id);
 

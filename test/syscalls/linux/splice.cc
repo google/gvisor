@@ -26,9 +26,11 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -770,6 +772,59 @@ TEST(SpliceTest, FromPipeToDevZero) {
       SyscallSucceedsWithValue(kPageSize));
   EXPECT_THAT(splice(rfd.get(), nullptr, zero.get(), nullptr, 1, 0),
               SyscallSucceedsWithValue(0));
+}
+
+static volatile int signaled = 0;
+void SigUsr1Handler(int sig, siginfo_t* info, void* context) { signaled = 1; }
+
+TEST(SpliceTest, ToPipeWithSmallCapacityDoesNotSpin_NoRandomSave) {
+  // Writes to a pipe that are less than PIPE_BUF must be atomic. This test
+  // creates a pipe with only 128 bytes of capacity (< PIPE_BUF) and checks that
+  // splicing to the pipe does not spin. See b/170743336.
+
+  // Create a file with one page of data.
+  std::vector<char> buf(kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), absl::string_view(buf.data(), buf.size()),
+      TempPath::kDefaultFileMode));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+
+  // Create a pipe with size 4096, and fill all but 128 bytes of it.
+  int p[2];
+  ASSERT_THAT(pipe(p), SyscallSucceeds());
+  ASSERT_THAT(fcntl(p[1], F_SETPIPE_SZ, kPageSize), SyscallSucceeds());
+  const int kWriteSize = kPageSize - 128;
+  std::vector<char> writeBuf(kWriteSize);
+  RandomizeBuffer(writeBuf.data(), writeBuf.size());
+  ASSERT_THAT(write(p[1], writeBuf.data(), writeBuf.size()),
+              SyscallSucceedsWithValue(kWriteSize));
+
+  // Set up signal handler.
+  struct sigaction sa = {};
+  sa.sa_sigaction = SigUsr1Handler;
+  sa.sa_flags = SA_SIGINFO;
+  const auto cleanup_sigact =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
+
+  // Send SIGUSR1 to this thread in 1 second.
+  struct sigevent sev = {};
+  sev.sigev_notify = SIGEV_THREAD_ID;
+  sev.sigev_signo = SIGUSR1;
+  sev.sigev_notify_thread_id = gettid();
+  auto timer = ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
+  struct itimerspec its = {};
+  its.it_value = absl::ToTimespec(absl::Seconds(1));
+  DisableSave ds;  // Asserting an EINTR.
+  ASSERT_NO_ERRNO(timer.Set(0, its));
+
+  // Now splice the file to the pipe. This should block, but not spin, and
+  // should return EINTR because it is interrupted by the signal.
+  EXPECT_THAT(splice(fd.get(), nullptr, p[1], nullptr, kPageSize, 0),
+              SyscallFailsWithErrno(EINTR));
+
+  // Alarm should have been handled.
+  EXPECT_EQ(signaled, 1);
 }
 
 }  // namespace

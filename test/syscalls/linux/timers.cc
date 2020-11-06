@@ -322,11 +322,6 @@ TEST(IntervalTimerTest, PeriodicGroupDirectedSignal) {
   EXPECT_GE(counted_signals.load(), kCycles);
 }
 
-// From Linux's include/uapi/asm-generic/siginfo.h.
-#ifndef sigev_notify_thread_id
-#define sigev_notify_thread_id _sigev_un._tid
-#endif
-
 TEST(IntervalTimerTest, PeriodicThreadDirectedSignal) {
   constexpr int kSigno = SIGUSR1;
   constexpr int kSigvalue = 42;
