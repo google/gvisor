@@ -27,6 +27,18 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
+    name = "ipv4_ip_icmp",
+    srcs = ["ipv4_ip_icmp_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
     name = "udp_discard_mcast_source_addr",
     srcs = ["udp_discard_mcast_source_addr_test.go"],
     deps = [

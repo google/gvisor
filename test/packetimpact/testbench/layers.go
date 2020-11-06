@@ -423,7 +423,21 @@ func Address(v tcpip.Address) *tcpip.Address {
 // continues parsing further encapsulations.
 func parseIPv4(b []byte) (Layer, layerParser) {
 	h := header.IPv4(b)
-	options := h.Options()
+	// Because we are a test program we are sometimes asked to receive bad
+	// packets. Try let the user know why we exploded. This really represents an
+	// error on the part of the sender. We can not do this to ourselves unlike
+	// what is described in the next comment.
+	if got, want := len(h), header.IPv4MinimumSize; got < want {
+		panic(fmt.Sprintf("Impossible IPv4 packet length, got = %d, want = %d", got, want))
+	}
+	// Because we are a test program we are sometimes asked to send bad values of
+	// HeaderLenngth, so when we are asked to parse our own output, we can not
+	// trust what is there to be safe. And yet we are still asked to parse these
+	// packets. Do the best we can to avoid a panic.
+	options := header.IPv4Options{}
+	if h.HeaderLength() > header.IPv4MinimumSize {
+		options = h.Options()
+	}
 	tos, _ := h.TOS()
 	ipv4 := IPv4{
 		IHL:            Uint8(h.HeaderLength()),
@@ -951,6 +965,7 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 	if l.Type != nil {
 		h.SetType(*l.Type)
 	}
+
 	if l.Code != nil {
 		h.SetCode(*l.Code)
 	}

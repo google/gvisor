@@ -360,6 +360,7 @@ func TestIPv4Sanity(t *testing.T) {
 		nicID          = 1
 		randomSequence = 123
 		randomIdent    = 42
+		maxPacketSize  = ipv4.MaxTotalSize
 		// In some cases Linux sets the error pointer to the start of the option
 		// (offset 0) instead of the actual wrong value, which is the length byte
 		// (offset 1). For compatibility we must do the same. Use this constant
@@ -375,6 +376,13 @@ func TestIPv4Sanity(t *testing.T) {
 		remoteIPv4Addr = tcpip.Address(net.ParseIP("10.0.0.1").To4())
 	)
 
+	type icmpNeeded uint8
+	const (
+		icmpNone     icmpNeeded = iota
+		icmpOptional            // RFC says "may"
+		icmpRequired
+	)
+
 	tests := []struct {
 		name                string
 		headerLength        uint8 // value of 0 means "use correct size"
@@ -383,22 +391,22 @@ func TestIPv4Sanity(t *testing.T) {
 		transportProtocol   uint8
 		TTL                 uint8
 		options             header.IPv4Options
-		replyOptions        header.IPv4Options // reply should look like this
+		replyOptions        header.IPv4Options // Reply should look like this.
 		shouldFail          bool
-		expectErrorICMP     bool
+		expectErrorICMP     icmpNeeded
 		ICMPType            header.ICMPv4Type
 		ICMPCode            header.ICMPv4Code
 		paramProblemPointer uint8
 	}{
 		{
 			name:              "valid no options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 		},
 		{
 			name:              "bad header checksum",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			badHeaderChecksum: true,
@@ -417,19 +425,19 @@ func TestIPv4Sanity(t *testing.T) {
 		//      received with TTL less than 2.
 		{
 			name:              "zero TTL",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               0,
 		},
 		{
 			name:              "one TTL",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               1,
 		},
 		{
 			name:              "End options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{0, 0, 0, 0},
@@ -437,7 +445,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "NOP options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{1, 1, 1, 1},
@@ -445,7 +453,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "NOP and End options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{1, 1, 0, 0},
@@ -454,7 +462,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			name:              "bad header length",
 			headerLength:      header.IPv4MinimumSize - 1,
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			shouldFail:        true,
@@ -482,17 +490,17 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad protocol",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: 99,
 			TTL:               ttl,
 			shouldFail:        true,
-			expectErrorICMP:   true,
+			expectErrorICMP:   icmpRequired,
 			ICMPType:          header.ICMPv4DstUnreachable,
 			ICMPCode:          header.ICMPv4ProtoUnreachable,
 		},
 		{
 			name:              "timestamp option overflow",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -508,7 +516,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "timestamp option overflow full",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -518,7 +526,7 @@ func TestIPv4Sanity(t *testing.T) {
 				1, 2, 3, 4,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + 3,
@@ -526,17 +534,17 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "unknown option",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{10, 4, 9, 0},
-			//                        ^^
+			//                                    ^^
 			// The unknown option should be stripped out of the reply.
 			replyOptions: header.IPv4Options{},
 		},
 		{
 			name:              "bad option - no length",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -544,14 +552,14 @@ func TestIPv4Sanity(t *testing.T) {
 				//        ^-start of timestamp.. but no length..
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + 3,
 		},
 		{
 			name:              "bad option - length 0",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -560,14 +568,14 @@ func TestIPv4Sanity(t *testing.T) {
 				1, 2, 3, 4,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + pointerOffsetForInvalidLength,
 		},
 		{
 			name:              "bad option - length 1",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -576,14 +584,14 @@ func TestIPv4Sanity(t *testing.T) {
 				1, 2, 3, 4,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + pointerOffsetForInvalidLength,
 		},
 		{
 			name:              "bad option - length big",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -594,7 +602,7 @@ func TestIPv4Sanity(t *testing.T) {
 				1, 2, 3, 4,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + pointerOffsetForInvalidLength,
@@ -604,7 +612,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// The ICMP pointer returned is 22 for Linux but the
 			// error is actually in spot 21.
 			name:              "bad option - length bad",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			// Timestamps are in multiples of 4 or 8 but never 7.
@@ -616,14 +624,14 @@ func TestIPv4Sanity(t *testing.T) {
 				1, 2, 3, 0,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpOptional,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + header.IPv4OptTSPointerOffset,
 		},
 		{
 			name:              "multiple type 0 with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -646,7 +654,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// The timestamp area is full so add to the overflow count.
 			name:              "multiple type 1 timestamps",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -669,7 +677,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "multiple type 1 timestamps with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -694,7 +702,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Timestamp pointer uses one based counting so 0 is invalid.
 			name:              "timestamp pointer invalid",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -703,7 +711,7 @@ func TestIPv4Sanity(t *testing.T) {
 				0, 0, 0, 0,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + 2,
@@ -712,7 +720,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// Timestamp pointer cannot be less than 5. It must point past the header
 			// which is 4 bytes. (1 based counting)
 			name:              "timestamp pointer too small by 1",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -721,14 +729,14 @@ func TestIPv4Sanity(t *testing.T) {
 				0, 0, 0, 0,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + header.IPv4OptTSPointerOffset,
 		},
 		{
 			name:              "valid timestamp pointer",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -744,7 +752,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Needs 8 bytes for a type 1 timestamp but there are only 4 free.
 			name:              "bad timer element alignment",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -756,7 +764,7 @@ func TestIPv4Sanity(t *testing.T) {
 				0, 0, 0, 0,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + header.IPv4OptTSPointerOffset,
@@ -764,7 +772,7 @@ func TestIPv4Sanity(t *testing.T) {
 		// End of option list with illegal option after it, which should be ignored.
 		{
 			name:              "end of options list",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -784,7 +792,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Timestamp with a size much too small.
 			name:              "timestamp truncated",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -792,14 +800,14 @@ func TestIPv4Sanity(t *testing.T) {
 				//  ^ Smallest possible is 8. Linux points at the 68.
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpOptional,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + pointerOffsetForInvalidLength,
 		},
 		{
 			name:              "single record route with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -815,7 +823,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "multiple record route with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -839,7 +847,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "single record route with no room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -856,7 +864,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Unlike timestamp, this should just succeed.
 			name:              "multiple record route with no room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -881,7 +889,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Pointer uses one based counting so 0 is invalid.
 			name:              "record route pointer zero",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -890,7 +898,7 @@ func TestIPv4Sanity(t *testing.T) {
 				0,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + header.IPv4OptRRPointerOffset,
@@ -899,7 +907,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// Pointer must be 4 or more as it must point past the 3 byte header
 			// using 1 based counting. 3 should fail.
 			name:              "record route pointer too small by 1",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -908,7 +916,7 @@ func TestIPv4Sanity(t *testing.T) {
 				0,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + header.IPv4OptRRPointerOffset,
@@ -918,7 +926,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// using 1 based counting. Check 4 passes. (Duplicates "single
 			// record route with room")
 			name:              "valid record route pointer",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -936,7 +944,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// Confirm Linux bug for bug compatibility.
 			// Linux returns slot 22 but the error is in slot 21.
 			name:              "multiple record route with not enough room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -947,14 +955,14 @@ func TestIPv4Sanity(t *testing.T) {
 				0,
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpRequired,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + header.IPv4OptRRPointerOffset,
 		},
 		{
 			name:              "duplicate record route",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    maxPacketSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -965,7 +973,7 @@ func TestIPv4Sanity(t *testing.T) {
 				0, 0, // pad
 			},
 			shouldFail:          true,
-			expectErrorICMP:     true,
+			expectErrorICMP:     icmpOptional,
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + 7,
@@ -985,7 +993,7 @@ func TestIPv4Sanity(t *testing.T) {
 			clock.Advance(time.Millisecond * randomTimeOffset)
 
 			// We expect at most a single packet in response to our ICMP Echo Request.
-			e := channel.New(1, ipv4.MaxTotalSize, "")
+			e := channel.New(1, maxPacketSize, "")
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -1058,7 +1066,7 @@ func TestIPv4Sanity(t *testing.T) {
 			reply, ok := e.Read()
 			if !ok {
 				if test.shouldFail {
-					if test.expectErrorICMP {
+					if test.expectErrorICMP == icmpRequired {
 						t.Fatalf("ICMP error response (type %d, code %d) missing", test.ICMPType, test.ICMPCode)
 					}
 					return // Expected silent failure.
@@ -1068,7 +1076,7 @@ func TestIPv4Sanity(t *testing.T) {
 
 			// We didn't expect a packet. Register our surprise but carry on to
 			// provide more information about what we got.
-			if test.shouldFail && !test.expectErrorICMP {
+			if test.shouldFail && test.expectErrorICMP == icmpNone {
 				t.Error("unexpected packet response")
 			}
 
@@ -1105,7 +1113,7 @@ func TestIPv4Sanity(t *testing.T) {
 				if !test.shouldFail {
 					t.Fatalf("got Parameter Problem with pointer %d, wanted Echo Reply", replyICMPHeader.Pointer())
 				}
-				if !test.expectErrorICMP {
+				if test.expectErrorICMP == icmpNone {
 					t.Fatalf("got Parameter Problem with pointer %d, wanted no response", replyICMPHeader.Pointer())
 				}
 				checker.IPv4(t, replyIPHeader,
@@ -1124,7 +1132,7 @@ func TestIPv4Sanity(t *testing.T) {
 					t.Fatalf("got ICMP error packet type %d, code %d, wanted Echo Reply",
 						header.ICMPv4DstUnreachable, replyICMPHeader.Code())
 				}
-				if !test.expectErrorICMP {
+				if test.expectErrorICMP == icmpNone {
 					t.Fatalf("got ICMP error packet type %d, code %d, wanted no response",
 						header.ICMPv4DstUnreachable, replyICMPHeader.Code())
 				}
@@ -1140,7 +1148,7 @@ func TestIPv4Sanity(t *testing.T) {
 				return
 			case header.ICMPv4EchoReply:
 				if test.shouldFail {
-					if !test.expectErrorICMP {
+					if test.expectErrorICMP == icmpNone {
 						t.Error("got Echo Reply packet, want no response")
 					} else {
 						t.Errorf("got Echo Reply, want ICMP error type %d, code %d", test.ICMPType, test.ICMPCode)

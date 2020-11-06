@@ -284,11 +284,11 @@ func (b IPv4) DestinationAddress() tcpip.Address {
 	return tcpip.Address(b[dstAddr : dstAddr+IPv4AddressSize])
 }
 
-// padIPv4OptionsLength returns the total length for IPv4 options of length l
+// PadIPv4OptionsLength returns the total length for IPv4 options of length l
 // after applying padding according to RFC 791:
 //    The internet header padding is used to ensure that the internet
 //    header ends on a 32 bit boundary.
-func padIPv4OptionsLength(length uint8) uint8 {
+func PadIPv4OptionsLength(length uint8) uint8 {
 	return (length + IPv4IHLStride - 1) & ^uint8(IPv4IHLStride-1)
 }
 
@@ -981,7 +981,7 @@ func (s IPv4OptionsSerializer) Length() uint8 {
 			total += 1 + withPayload.length()
 		}
 	}
-	return padIPv4OptionsLength(total)
+	return PadIPv4OptionsLength(total)
 }
 
 // Serialize serializes the provided list of IPV4 options into b.
@@ -1017,7 +1017,7 @@ func (s IPv4OptionsSerializer) Serialize(b []byte) uint8 {
 	//
 	//  The internet header padding is used to ensure that the internet
 	//  header ends on a 32 bit boundary. The padding is zero.
-	padded := padIPv4OptionsLength(total)
+	padded := PadIPv4OptionsLength(total)
 	b = b[:padded-total]
 	for i := range b {
 		b[i] = 0
