@@ -25,9 +25,11 @@
 #include "absl/time/time.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -627,6 +629,57 @@ TEST(SendFileTest, SendFileToPipe) {
   // Send with twice the size of the file, which should hit EOF.
   EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, kDataSize * 2),
               SyscallSucceedsWithValue(kDataSize));
+}
+
+static volatile int signaled = 0;
+void SigUsr1Handler(int sig, siginfo_t* info, void* context) { signaled = 1; }
+
+TEST(SendFileTest, ToEventFDDoesNotSpin_NoRandomSave) {
+  FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
+
+  // Write the maximum value of an eventfd to a file.
+  const uint64_t kMaxEventfdValue = 0xfffffffffffffffe;
+  const auto tempfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const auto tempfd = ASSERT_NO_ERRNO_AND_VALUE(Open(tempfile.path(), O_RDWR));
+  ASSERT_THAT(
+      pwrite(tempfd.get(), &kMaxEventfdValue, sizeof(kMaxEventfdValue), 0),
+      SyscallSucceedsWithValue(sizeof(kMaxEventfdValue)));
+
+  // Set the eventfd's value to 1.
+  const uint64_t kOne = 1;
+  ASSERT_THAT(write(efd.get(), &kOne, sizeof(kOne)),
+              SyscallSucceedsWithValue(sizeof(kOne)));
+
+  // Set up signal handler.
+  struct sigaction sa = {};
+  sa.sa_sigaction = SigUsr1Handler;
+  sa.sa_flags = SA_SIGINFO;
+  const auto cleanup_sigact =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
+
+  // Send SIGUSR1 to this thread in 1 second.
+  struct sigevent sev = {};
+  sev.sigev_notify = SIGEV_THREAD_ID;
+  sev.sigev_signo = SIGUSR1;
+  sev.sigev_notify_thread_id = gettid();
+  auto timer = ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
+  struct itimerspec its = {};
+  its.it_value = absl::ToTimespec(absl::Seconds(1));
+  DisableSave ds;  // Asserting an EINTR.
+  ASSERT_NO_ERRNO(timer.Set(0, its));
+
+  // Sendfile from tempfd to the eventfd. Since the eventfd is not already at
+  // its maximum value, the eventfd is "ready for writing"; however, since the
+  // eventfd's existing value plus the new value would exceed the maximum, the
+  // write should internally fail with EWOULDBLOCK. In this case, sendfile()
+  // should block instead of spinning, and eventually be interrupted by our
+  // timer. See b/172075629.
+  EXPECT_THAT(
+      sendfile(efd.get(), tempfd.get(), nullptr, sizeof(kMaxEventfdValue)),
+      SyscallFailsWithErrno(EINTR));
+
+  // Signal should have been handled.
+  EXPECT_EQ(signaled, 1);
 }
 
 }  // namespace
