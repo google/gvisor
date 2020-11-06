@@ -554,6 +554,11 @@ func (s *segment) StateFields() []string {
 		"refCnt",
 		"ep",
 		"qFlags",
+		"srcAddr",
+		"dstAddr",
+		"netProto",
+		"nicID",
+		"remoteLinkAddr",
 		"data",
 		"hdr",
 		"viewToDeliver",
@@ -578,29 +583,34 @@ func (s *segment) beforeSave() {}
 func (s *segment) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var dataValue buffer.VectorisedView = s.saveData()
-	stateSinkObject.SaveValue(4, dataValue)
+	stateSinkObject.SaveValue(9, dataValue)
 	var optionsValue []byte = s.saveOptions()
-	stateSinkObject.SaveValue(14, optionsValue)
+	stateSinkObject.SaveValue(19, optionsValue)
 	var rcvdTimeValue unixTime = s.saveRcvdTime()
-	stateSinkObject.SaveValue(16, rcvdTimeValue)
+	stateSinkObject.SaveValue(21, rcvdTimeValue)
 	var xmitTimeValue unixTime = s.saveXmitTime()
-	stateSinkObject.SaveValue(17, xmitTimeValue)
+	stateSinkObject.SaveValue(22, xmitTimeValue)
 	stateSinkObject.Save(0, &s.segmentEntry)
 	stateSinkObject.Save(1, &s.refCnt)
 	stateSinkObject.Save(2, &s.ep)
 	stateSinkObject.Save(3, &s.qFlags)
-	stateSinkObject.Save(5, &s.hdr)
-	stateSinkObject.Save(6, &s.viewToDeliver)
-	stateSinkObject.Save(7, &s.sequenceNumber)
-	stateSinkObject.Save(8, &s.ackNumber)
-	stateSinkObject.Save(9, &s.flags)
-	stateSinkObject.Save(10, &s.window)
-	stateSinkObject.Save(11, &s.csum)
-	stateSinkObject.Save(12, &s.csumValid)
-	stateSinkObject.Save(13, &s.parsedOptions)
-	stateSinkObject.Save(15, &s.hasNewSACKInfo)
-	stateSinkObject.Save(18, &s.xmitCount)
-	stateSinkObject.Save(19, &s.acked)
+	stateSinkObject.Save(4, &s.srcAddr)
+	stateSinkObject.Save(5, &s.dstAddr)
+	stateSinkObject.Save(6, &s.netProto)
+	stateSinkObject.Save(7, &s.nicID)
+	stateSinkObject.Save(8, &s.remoteLinkAddr)
+	stateSinkObject.Save(10, &s.hdr)
+	stateSinkObject.Save(11, &s.viewToDeliver)
+	stateSinkObject.Save(12, &s.sequenceNumber)
+	stateSinkObject.Save(13, &s.ackNumber)
+	stateSinkObject.Save(14, &s.flags)
+	stateSinkObject.Save(15, &s.window)
+	stateSinkObject.Save(16, &s.csum)
+	stateSinkObject.Save(17, &s.csumValid)
+	stateSinkObject.Save(18, &s.parsedOptions)
+	stateSinkObject.Save(20, &s.hasNewSACKInfo)
+	stateSinkObject.Save(23, &s.xmitCount)
+	stateSinkObject.Save(24, &s.acked)
 }
 
 func (s *segment) afterLoad() {}
@@ -610,22 +620,27 @@ func (s *segment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.refCnt)
 	stateSourceObject.Load(2, &s.ep)
 	stateSourceObject.Load(3, &s.qFlags)
-	stateSourceObject.Load(5, &s.hdr)
-	stateSourceObject.Load(6, &s.viewToDeliver)
-	stateSourceObject.Load(7, &s.sequenceNumber)
-	stateSourceObject.Load(8, &s.ackNumber)
-	stateSourceObject.Load(9, &s.flags)
-	stateSourceObject.Load(10, &s.window)
-	stateSourceObject.Load(11, &s.csum)
-	stateSourceObject.Load(12, &s.csumValid)
-	stateSourceObject.Load(13, &s.parsedOptions)
-	stateSourceObject.Load(15, &s.hasNewSACKInfo)
-	stateSourceObject.Load(18, &s.xmitCount)
-	stateSourceObject.Load(19, &s.acked)
-	stateSourceObject.LoadValue(4, new(buffer.VectorisedView), func(y interface{}) { s.loadData(y.(buffer.VectorisedView)) })
-	stateSourceObject.LoadValue(14, new([]byte), func(y interface{}) { s.loadOptions(y.([]byte)) })
-	stateSourceObject.LoadValue(16, new(unixTime), func(y interface{}) { s.loadRcvdTime(y.(unixTime)) })
-	stateSourceObject.LoadValue(17, new(unixTime), func(y interface{}) { s.loadXmitTime(y.(unixTime)) })
+	stateSourceObject.Load(4, &s.srcAddr)
+	stateSourceObject.Load(5, &s.dstAddr)
+	stateSourceObject.Load(6, &s.netProto)
+	stateSourceObject.Load(7, &s.nicID)
+	stateSourceObject.Load(8, &s.remoteLinkAddr)
+	stateSourceObject.Load(10, &s.hdr)
+	stateSourceObject.Load(11, &s.viewToDeliver)
+	stateSourceObject.Load(12, &s.sequenceNumber)
+	stateSourceObject.Load(13, &s.ackNumber)
+	stateSourceObject.Load(14, &s.flags)
+	stateSourceObject.Load(15, &s.window)
+	stateSourceObject.Load(16, &s.csum)
+	stateSourceObject.Load(17, &s.csumValid)
+	stateSourceObject.Load(18, &s.parsedOptions)
+	stateSourceObject.Load(20, &s.hasNewSACKInfo)
+	stateSourceObject.Load(23, &s.xmitCount)
+	stateSourceObject.Load(24, &s.acked)
+	stateSourceObject.LoadValue(9, new(buffer.VectorisedView), func(y interface{}) { s.loadData(y.(buffer.VectorisedView)) })
+	stateSourceObject.LoadValue(19, new([]byte), func(y interface{}) { s.loadOptions(y.([]byte)) })
+	stateSourceObject.LoadValue(21, new(unixTime), func(y interface{}) { s.loadRcvdTime(y.(unixTime)) })
+	stateSourceObject.LoadValue(22, new(unixTime), func(y interface{}) { s.loadXmitTime(y.(unixTime)) })
 }
 
 func (q *segmentQueue) StateTypeName() string {

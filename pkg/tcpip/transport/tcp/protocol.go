@@ -187,8 +187,8 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 // to a specific processing queue. Each queue is serviced by its own processor
 // goroutine which is responsible for dequeuing and doing full TCP dispatch of
 // the packet.
-func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
-	p.dispatcher.queuePacket(r, ep, id, pkt)
+func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+	p.dispatcher.queuePacket(ep, id, pkt)
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
@@ -198,24 +198,32 @@ func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id st
 // a reset is sent in response to any incoming segment except another reset. In
 // particular, SYNs addressed to a non-existent connection are rejected by this
 // means."
-
-func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
-	s := newSegment(r, id, pkt)
+func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
+	s := newIncomingSegment(id, pkt)
 	defer s.decRef()
 
-	if !s.parse() || !s.csumValid {
+	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid {
 		return stack.UnknownDestinationPacketMalformed
 	}
 
 	if !s.flagIsSet(header.TCPFlagRst) {
-		replyWithReset(s, stack.DefaultTOS, s.route.DefaultTTL())
+		replyWithReset(p.stack, s, stack.DefaultTOS, 0)
 	}
 
 	return stack.UnknownDestinationPacketHandled
 }
 
 // replyWithReset replies to the given segment with a reset segment.
-func replyWithReset(s *segment, tos, ttl uint8) {
+//
+// If the passed TTL is 0, then the route's default TTL will be used.
+func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) *tcpip.Error {
+	route, err := stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
+	if err != nil {
+		return err
+	}
+	defer route.Release()
+	route.ResolveWith(s.remoteLinkAddr)
+
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)
 	ack := seqnum.Value(0)
@@ -237,7 +245,12 @@ func replyWithReset(s *segment, tos, ttl uint8) {
 		flags |= header.TCPFlagAck
 		ack = s.sequenceNumber.Add(s.logicalLen())
 	}
-	sendTCP(&s.route, tcpFields{
+
+	if ttl == 0 {
+		ttl = route.DefaultTTL()
+	}
+
+	return sendTCP(&route, tcpFields{
 		id:     s.id,
 		ttl:    ttl,
 		tos:    tos,
