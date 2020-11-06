@@ -102,7 +102,6 @@ func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	// Initialize the IP header.
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
-		IHL:         header.IPv4MinimumSize,
 		TOS:         0x80,
 		TotalLength: uint16(len(buf)),
 		TTL:         65,

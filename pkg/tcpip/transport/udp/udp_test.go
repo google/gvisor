@@ -490,7 +490,6 @@ func (c *testContext) buildV4Packet(payload []byte, h *header4Tuple) buffer.View
 	// Initialize the IP header.
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
-		IHL:         header.IPv4MinimumSize,
 		TOS:         testTOS,
 		TotalLength: uint16(len(buf)),
 		TTL:         65,

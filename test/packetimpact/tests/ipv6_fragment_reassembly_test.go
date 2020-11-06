@@ -117,7 +117,6 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 					&testbench.Ether{},
 					&testbench.IPv6{},
 					&testbench.IPv6FragmentExtHdr{},
-					&testbench.ICMPv6{},
 				}, time.Second)
 				if err != nil {
 					// Either an unexpected frame was received, or none at all.
@@ -129,7 +128,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 				if !test.expectReply {
 					t.Fatalf("unexpected reply received:\n%s", incomingFrame)
 				}
-				ipPayload, err := incomingFrame[3 /* ICMPv6 */].ToBytes()
+				ipPayload, err := incomingFrame[3 /* Fragmented payload */].ToBytes()
 				if err != nil {
 					t.Fatalf("failed to parse ICMPv6 header: incomingPacket[3].ToBytes() = (_, %s)", err)
 				}

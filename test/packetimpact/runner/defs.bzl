@@ -164,6 +164,9 @@ ALL_TESTS = [
         name = "ipv4_id_uniqueness",
     ),
     PacketimpactTestInfo(
+        name = "ipv4_ip_icmp",
+    ),
+    PacketimpactTestInfo(
         name = "udp_discard_mcast_source_addr",
     ),
     PacketimpactTestInfo(

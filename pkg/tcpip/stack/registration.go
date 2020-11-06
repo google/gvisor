@@ -263,6 +263,13 @@ const (
 	PacketLoop
 )
 
+// NetOptions is an interface that allows us to pass network protocol specific
+// options through the Stack layer code.
+type NetOptions interface {
+	IsNetOptions() bool
+	Size() int
+}
+
 // NetworkHeaderParams are the header parameters given as input by the
 // transport endpoint to the network.
 type NetworkHeaderParams struct {
@@ -274,6 +281,10 @@ type NetworkHeaderParams struct {
 
 	// TOS refers to TypeOfService or TrafficClass field of the IP-header.
 	TOS uint8
+
+	// Options is a set of options to add to a network header (or nil).
+	// It will be protocol specific opaque information from higher layers.
+	Options NetOptions
 }
 
 // GroupAddressableEndpoint is an endpoint that supports group addressing.
