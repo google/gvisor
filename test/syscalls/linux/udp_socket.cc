@@ -1887,6 +1887,22 @@ TEST_P(UdpSocketTest, GetSocketDetachFilter) {
       SyscallFailsWithErrno(ENOPROTOOPT));
 }
 
+TEST_P(UdpSocketTest, SendToZeroPort) {
+  char buf[8];
+  struct sockaddr_storage addr = InetLoopbackAddr();
+
+  // Sending to an invalid port should fail.
+  SetPort(&addr, 0);
+  EXPECT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0,
+                     reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+              SyscallFailsWithErrno(EINVAL));
+
+  SetPort(&addr, 1234);
+  EXPECT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0,
+                     reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
                          ::testing::Values(AddressFamily::kIpv4,
                                            AddressFamily::kIpv6,
