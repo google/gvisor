@@ -487,6 +487,11 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			nicID = e.BindNICID
 		}
 
+		if to.Port == 0 {
+			// Port 0 is an invalid port to send to.
+			return 0, nil, tcpip.ErrInvalidEndpointState
+		}
+
 		dst, netProto, err := e.checkV4MappedLocked(*to)
 		if err != nil {
 			return 0, nil, err
