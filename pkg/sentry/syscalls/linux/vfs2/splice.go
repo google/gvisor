@@ -480,18 +480,17 @@ func (dw *dualWaiter) waitForBoth(t *kernel.Task) error {
 
 // waitForOut waits for dw.outfile to be read.
 func (dw *dualWaiter) waitForOut(t *kernel.Task) error {
-	if dw.outFile.Readiness(eventMaskWrite)&eventMaskWrite == 0 {
-		if dw.outCh == nil {
-			dw.outW, dw.outCh = waiter.NewChannelEntry(nil)
-			dw.outFile.EventRegister(&dw.outW, eventMaskWrite)
-			// We might be ready now. Try again before blocking.
-			return nil
-		}
-		if err := t.Block(dw.outCh); err != nil {
-			return err
-		}
+	// Don't bother checking readiness of the outFile, because it's not a
+	// guarantee that it won't return EWOULDBLOCK. Both pipes and eventfds
+	// can be "ready" but will reject writes of certain sizes with
+	// EWOULDBLOCK. See b/172075629, b/170743336.
+	if dw.outCh == nil {
+		dw.outW, dw.outCh = waiter.NewChannelEntry(nil)
+		dw.outFile.EventRegister(&dw.outW, eventMaskWrite)
+		// We might be ready to write now. Try again before blocking.
+		return nil
 	}
-	return nil
+	return t.Block(dw.outCh)
 }
 
 // destroy cleans up resources help by dw. No more calls to wait* can occur
