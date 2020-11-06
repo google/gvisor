@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -39,6 +40,10 @@ type fragmentInfo struct {
 }
 
 func TestIPv6FragmentReassembly(t *testing.T) {
+	if err = dockerutil.IPv6Enabled(); err != nil {
+		t.Skipf("Skipping due to disabled IPv6: %v", err)
+	}
+
 	const fragmentID = 42
 	icmpv6ProtoNum := header.IPv6ExtensionHeaderIdentifier(header.ICMPv6ProtocolNumber)
 

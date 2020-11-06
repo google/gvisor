@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -65,6 +66,10 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 }
 
 func TestDiscardsUDPPacketsWithMcastSourceAddressV6(t *testing.T) {
+	if err = dockerutil.IPv6Enabled(); err != nil {
+		t.Skipf("Skipping due to disabled IPv6: %v", err)
+	}
+
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv6))

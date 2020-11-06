@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -89,6 +90,10 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 // an ICMP destination unreachable message is sent in response to the inital
 // SYN.
 func TestTCPSynSentUnreachable6(t *testing.T) {
+	if err = dockerutil.IPv6Enabled(); err != nil {
+		t.Skipf("Skipping due to disabled IPv6: %v", err)
+	}
+
 	// Create the DUT and connection.
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()

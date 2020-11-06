@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -31,6 +32,10 @@ func init() {
 // TestICMPv6ParamProblemTest sends a packet with a bad next header. The DUT
 // should respond with an ICMPv6 Parameter Problem message.
 func TestICMPv6ParamProblemTest(t *testing.T) {
+	if err = dockerutil.IPv6Enabled(); err != nil {
+		t.Skipf("Skipping due to disabled IPv6: %v", err)
+	}
+
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})

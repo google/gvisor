@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -47,6 +48,10 @@ func optionTypeFromAction(action header.IPv6OptionUnknownAction) byte {
 }
 
 func TestIPv6UnknownOptionAction(t *testing.T) {
+	if err = dockerutil.IPv6Enabled(); err != nil {
+		t.Skipf("Skipping due to disabled IPv6: %v", err)
+	}
+
 	for _, tt := range []struct {
 		description  string
 		mkExtHdr     func(optType byte) testbench.Layer

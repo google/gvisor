@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -51,6 +52,9 @@ func TestUDP(t *testing.T) {
 				addr = testbench.RemoteIPv4
 			} else {
 				addr = testbench.RemoteIPv6
+				if err = dockerutil.IPv6Enabled(); err != nil {
+					t.Skipf("Skipping due to disabled IPv6: %v", err)
+				}
 			}
 			boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(addr))
 			defer dut.Close(t, boundFD)

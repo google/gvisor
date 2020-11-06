@@ -214,9 +214,7 @@ kvm-tests: load-basic-images
 	@$(call submake,test-runtime RUNTIME="kvm" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: kvm-tests
 
-iptables-tests: load-iptables
-	@sudo modprobe iptable_filter
-	@sudo modprobe ip6table_filter
+iptables-tests: load-iptables config-docker-net
 	@$(call submake,test-runtime RUNTIME="runc" TARGETS="//test/iptables:iptables_test")
 	@$(call submake,install-runtime RUNTIME="iptables" ARGS="--net-raw")
 	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
@@ -224,9 +222,7 @@ iptables-tests: load-iptables
 
 # Run the iptables tests with runsc only. Useful for developing to skip runc
 # testing.
-iptables-runsc-tests: load-iptables
-	@sudo modprobe iptable_filter
-	@sudo modprobe ip6table_filter
+iptables-runsc-tests: load-iptables config-docker-net
 	@$(call submake,install-runtime RUNTIME="iptables" ARGS="--net-raw")
 	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
 .PHONY: iptables-runsc-tests
@@ -236,12 +232,16 @@ packetdrill-tests: load-packetdrill
 	@$(call submake,test-runtime RUNTIME="packetdrill" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetdrill, tests(//...))')")
 .PHONY: packetdrill-tests
 
-packetimpact-tests: load-packetimpact
-	@sudo modprobe iptable_filter
-	@sudo modprobe ip6table_filter
+packetimpact-tests: load-packetimpact config-docker-net
 	@$(call submake,install-runtime RUNTIME="packetimpact")
 	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
 .PHONY: packetimpact-tests
+
+# Ensure that iptables and ip6tables are enabled.
+config-docker-net:
+	@sudo modprobe iptable_filter
+	@sudo modprobe ip6table_filter
+.PHONY: config-docker-net
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu

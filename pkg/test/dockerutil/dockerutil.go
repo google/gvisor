@@ -121,16 +121,32 @@ func UsingVFS2() (bool, error) {
 	return false, nil
 }
 
-func runtimeMap() (map[string]interface{}, error) {
-	// Read the configuration data; the file must exist.
-	configBytes, err := ioutil.ReadFile(*config)
+// IPv6Enabled returns an error if Docker IPv6 is not enabled in the config.
+func IPv6Enabled() error {
+	config, err := configMap()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// Unmarshal the configuration.
-	c := make(map[string]interface{})
-	if err := json.Unmarshal(configBytes, &c); err != nil {
+	// We don't do any complex validation - just check basic values and
+	// assume Docker will complain if the CIDR value is bad.
+	for _, field := range []string{"experimental", "ipv6", "fixed-cidr-v6"} {
+		val, ok := config[field]
+		if !ok {
+			return fmt.Errorf("docker configuration must set field %q", field)
+		}
+
+		if val, ok := val.(bool); ok && !val {
+			return fmt.Errorf("docker configuration must enable field %q", field)
+		}
+	}
+
+	return nil
+}
+
+func runtimeMap() (map[string]interface{}, error) {
+	c, err := configMap()
+	if err != nil {
 		return nil, err
 	}
 
@@ -155,6 +171,21 @@ func runtimeMap() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("unexpected format: %v", r)
 	}
 	return rs, nil
+}
+
+func configMap() (map[string]interface{}, error) {
+	// Read the configuration data; the file must exist.
+	configBytes, err := ioutil.ReadFile(*config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal the configuration.
+	config := make(map[string]interface{})
+	if err := json.Unmarshal(configBytes, &config); err != nil {
+		return nil, err
+	}
+	return config, nil
 }
 
 // Save exports a container image to the given Writer.

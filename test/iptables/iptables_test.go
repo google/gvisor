@@ -17,8 +17,11 @@ package iptables
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"log"
 	"net"
+	"os"
 	"reflect"
 	"sync"
 	"testing"
@@ -26,6 +29,8 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
+
+var ipv6Enabled = true
 
 // singleTest runs a TestCase. Each test follows a pattern:
 // - Create a container.
@@ -43,6 +48,9 @@ func singleTest(t *testing.T, test TestCase) {
 			subtest = "IPv6"
 		}
 		t.Run(subtest, func(t *testing.T) {
+			if tc && !ipv6Enabled {
+				t.Skip()
+			}
 			iptablesTest(t, test, tc)
 		})
 	}
@@ -419,4 +427,13 @@ func TestNATPreOriginalDst(t *testing.T) {
 
 func TestNATOutOriginalDst(t *testing.T) {
 	singleTest(t, NATOutOriginalDst{})
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if err := dockerutil.IPv6Enabled(); err != nil {
+		log.Printf("Skipping IPv6 tests: %v", err)
+		ipv6Enabled = false
+	}
+	os.Exit(m.Run())
 }
