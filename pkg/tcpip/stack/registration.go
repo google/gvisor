@@ -340,6 +340,9 @@ type AssignableAddressEndpoint interface {
 	// AddressWithPrefix returns the endpoint's address.
 	AddressWithPrefix() tcpip.AddressWithPrefix
 
+	// Subnet returns the subnet of the endpoint's address.
+	Subnet() tcpip.Subnet
+
 	// IsAssigned returns whether or not the endpoint is considered bound
 	// to its NetworkEndpoint.
 	IsAssigned(allowExpired bool) bool

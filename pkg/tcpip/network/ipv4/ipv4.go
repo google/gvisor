@@ -692,7 +692,7 @@ func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp boo
 
 	loopback := e.nic.IsLoopback()
 	addressEndpoint := e.mu.addressableEndpointState.ReadOnly().AddrOrMatching(localAddr, allowTemp, func(addressEndpoint stack.AddressEndpoint) bool {
-		subnet := addressEndpoint.AddressWithPrefix().Subnet()
+		subnet := addressEndpoint.Subnet()
 		// IPv4 has a notion of a subnet broadcast address and considers the
 		// loopback interface bound to an address's whole subnet (on linux).
 		return subnet.IsBroadcast(localAddr) || (loopback && subnet.Contains(localAddr))
