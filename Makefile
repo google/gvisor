@@ -291,7 +291,7 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
 	--dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE)")
 .PHONY: init-benchmark-table
 
-benchmark-platforms: ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
+benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
 	$(call submake, run-benchmark RUNTIME="runc")
 	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS),\
 	$(call submake,benchmark-platform RUNTIME="$(PLATFORM)" RUNTIME_ARGS="--platform=$(PLATFORM) --net-raw --vfs2") && \
