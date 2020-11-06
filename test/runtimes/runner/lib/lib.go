@@ -34,7 +34,12 @@ import (
 // RunTests is a helper that is called by main. It exists so that we can run
 // defered functions before exiting. It returns an exit code that should be
 // passed to os.Exit.
-func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Duration) int {
+func RunTests(lang, image, excludeFile string, partitionNum, totalPartitions, batchSize int, timeout time.Duration) int {
+	if partitionNum <= 0 || totalPartitions <= 0 || partitionNum > totalPartitions {
+		fmt.Fprintf(os.Stderr, "invalid partition %d of %d", partitionNum, totalPartitions)
+		return 1
+	}
+
 	// Get tests to exclude..
 	excludes, err := getExcludes(excludeFile)
 	if err != nil {
@@ -55,7 +60,7 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 	// Get a slice of tests to run. This will also start a single Docker
 	// container that will be used to run each test. The final test will
 	// stop the Docker container.
-	tests, err := getTests(ctx, d, lang, image, batchSize, timeout, excludes)
+	tests, err := getTests(ctx, d, lang, image, partitionNum, totalPartitions, batchSize, timeout, excludes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return 1
@@ -66,7 +71,7 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 }
 
 // getTests executes all tests as table tests.
-func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeout time.Duration, excludes map[string]struct{}) ([]testing.InternalTest, error) {
+func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, partitionNum, totalPartitions, batchSize int, timeout time.Duration, excludes map[string]struct{}) ([]testing.InternalTest, error) {
 	// Start the container.
 	opts := dockerutil.RunOpts{
 		Image: fmt.Sprintf("runtimes/%s", image),
@@ -86,6 +91,14 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	// shard.
 	tests := strings.Fields(list)
 	sort.Strings(tests)
+
+	partitionSize := len(tests) / totalPartitions
+	if partitionNum == totalPartitions {
+		tests = tests[(partitionNum-1)*partitionSize:]
+	} else {
+		tests = tests[(partitionNum-1)*partitionSize : partitionNum*partitionSize]
+	}
+
 	indices, err := testutil.TestIndicesForShard(len(tests))
 	if err != nil {
 		return nil, fmt.Errorf("TestsForShard() failed: %v", err)
@@ -116,8 +129,15 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 					err    error
 				)
 
+				state, err := d.Status(ctx)
+				if err != nil {
+					t.Fatalf("Could not find container status: %v", err)
+				}
+				if !state.Running {
+					t.Fatalf("container is not running: state = %s", state.Status)
+				}
+
 				go func() {
-					fmt.Printf("RUNNING the following in a batch\n%s\n", strings.Join(tcs, "\n"))
 					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","))
 					close(done)
 				}()
@@ -125,12 +145,12 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 				select {
 				case <-done:
 					if err == nil {
-						fmt.Printf("PASS: (%v)\n\n", time.Since(now))
+						fmt.Printf("PASS: (%v) %d tests passed\n", time.Since(now), len(tcs))
 						return
 					}
-					t.Errorf("FAIL: (%v):\n%s\n", time.Since(now), output)
+					t.Errorf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
 				case <-time.After(timeout):
-					t.Errorf("TIMEOUT: (%v):\n%s\n", time.Since(now), output)
+					t.Errorf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
 				}
 			},
 		})
