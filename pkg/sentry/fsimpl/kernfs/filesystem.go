@@ -264,7 +264,7 @@ func (fs *Filesystem) Release(ctx context.Context) {
 //
 // Precondition: Filesystem.mu is held.
 func (d *Dentry) releaseKeptDentriesLocked(ctx context.Context) {
-	if d.inode.Keep() {
+	if d.inode.Keep() && d != d.fs.root {
 		d.decRefLocked(ctx)
 	}
 
