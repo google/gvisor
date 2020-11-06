@@ -409,7 +409,7 @@ func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) er
 		if dirent.Name == "." || dirent.Name == ".." {
 			continue
 		}
-		child, err := d.fs.getChildLocked(ctx, d, dirent.Name, ds)
+		child, _, err := d.fs.getChildLocked(ctx, d, dirent.Name, ds)
 		if err != nil {
 			return err
 		}
