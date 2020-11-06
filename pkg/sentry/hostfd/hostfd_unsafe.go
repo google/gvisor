@@ -20,6 +20,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 )
 
@@ -44,6 +45,10 @@ func Preadv2(fd int32, dsts safemem.BlockSeq, offset int64, flags uint32) (uint6
 		}
 	} else {
 		iovs := safemem.IovecsFromBlockSeq(dsts)
+		if len(iovs) > maxIov {
+			log.Debugf("hostfd.Preadv2: truncating from %d iovecs to %d", len(iovs), maxIov)
+			iovs = iovs[:maxIov]
+		}
 		n, _, e = syscall.Syscall6(unix.SYS_PREADV2, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)), uintptr(offset), 0 /* pos_h */, uintptr(flags))
 	}
 	if e != 0 {
@@ -76,6 +81,10 @@ func Pwritev2(fd int32, srcs safemem.BlockSeq, offset int64, flags uint32) (uint
 		}
 	} else {
 		iovs := safemem.IovecsFromBlockSeq(srcs)
+		if len(iovs) > maxIov {
+			log.Debugf("hostfd.Preadv2: truncating from %d iovecs to %d", len(iovs), maxIov)
+			iovs = iovs[:maxIov]
+		}
 		n, _, e = syscall.Syscall6(unix.SYS_PWRITEV2, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)), uintptr(offset), 0 /* pos_h */, uintptr(flags))
 	}
 	if e != 0 {
