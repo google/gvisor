@@ -440,7 +440,7 @@ func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
 		return true
 	}
 
-	subnet := r.localAddressEndpoint.AddressWithPrefix().Subnet()
+	subnet := r.localAddressEndpoint.Subnet()
 	return subnet.IsBroadcast(addr)
 }
 
