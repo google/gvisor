@@ -587,7 +587,12 @@ func (c *Container) SandboxPid() int {
 // and wait returns immediately.
 func (c *Container) Wait() (syscall.WaitStatus, error) {
 	log.Debugf("Wait on container, cid: %s", c.ID)
-	return c.Sandbox.Wait(c.ID)
+	ws, err := c.Sandbox.Wait(c.ID)
+	if err == nil {
+		// Wait succeeded, container is not running anymore.
+		c.changeStatus(Stopped)
+	}
+	return ws, err
 }
 
 // WaitRootPID waits for process 'pid' in the sandbox's PID namespace and

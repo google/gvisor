@@ -15,6 +15,7 @@
 package container
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -1764,5 +1765,74 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+func TestMultiContainerEvent(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	// Setup the containers.
+	sleep := []string{"/bin/sleep", "100"}
+	quick := []string{"/bin/true"}
+	podSpec, ids := createSpecs(sleep, sleep, quick)
+	containers, cleanup, err := startContainers(conf, podSpec, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	for _, cont := range containers {
+		t.Logf("Running containerd %s", cont.ID)
+	}
+
+	// Wait for last container to stabilize the process count that is checked
+	// further below.
+	if ws, err := containers[2].Wait(); err != nil || ws != 0 {
+		t.Fatalf("Container.Wait, status: %v, err: %v", ws, err)
+	}
+
+	// Check events for running containers.
+	for _, cont := range containers[:2] {
+		evt, err := cont.Event()
+		if err != nil {
+			t.Errorf("Container.Events(): %v", err)
+		}
+		if want := "stats"; evt.Type != want {
+			t.Errorf("Wrong event type, want: %s, got :%s", want, evt.Type)
+		}
+		if cont.ID != evt.ID {
+			t.Errorf("Wrong container ID, want: %s, got :%s", cont.ID, evt.ID)
+		}
+		// Event.Data is an interface, so it comes from the wire was
+		// map[string]string. Marshal and unmarshall again to the correc type.
+		data, err := json.Marshal(evt.Data)
+		if err != nil {
+			t.Fatalf("invalid event data: %v", err)
+		}
+		var stats boot.Stats
+		if err := json.Unmarshal(data, &stats); err != nil {
+			t.Fatalf("invalid event data: %v", err)
+		}
+		// One process per remaining container.
+		if want := uint64(2); stats.Pids.Current != want {
+			t.Errorf("Wrong number of PIDs, want: %d, got :%d", want, stats.Pids.Current)
+		}
+	}
+
+	// Check that stop and destroyed containers return error.
+	if err := containers[1].Destroy(); err != nil {
+		t.Fatalf("container.Destroy: %v", err)
+	}
+	for _, cont := range containers[1:] {
+		_, err := cont.Event()
+		if err == nil {
+			t.Errorf("Container.Events() should have failed, cid:%s, state: %v", cont.ID, cont.Status)
+		}
 	}
 }
