@@ -371,9 +371,6 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if len(name) > maxFilenameLen {
 		return syserror.ENAMETOOLONG
 	}
-	if !dir && rp.MustBeDir() {
-		return syserror.ENOENT
-	}
 	if parent.isDeleted() {
 		return syserror.ENOENT
 	}
@@ -387,6 +384,9 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if parent.isSynthetic() {
 		if child := parent.children[name]; child != nil {
 			return syserror.EEXIST
+		}
+		if !dir && rp.MustBeDir() {
+			return syserror.ENOENT
 		}
 		if createInSyntheticDir == nil {
 			return syserror.EPERM
@@ -407,6 +407,9 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if child := parent.children[name]; child != nil && child.isSynthetic() {
 			return syserror.EEXIST
 		}
+		if !dir && rp.MustBeDir() {
+			return syserror.ENOENT
+		}
 		// The existence of a non-synthetic dentry at name would be inconclusive
 		// because the file it represents may have been deleted from the remote
 		// filesystem, so we would need to make an RPC to revalidate the dentry.
@@ -426,6 +429,9 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	if child := parent.children[name]; child != nil {
 		return syserror.EEXIST
+	}
+	if !dir && rp.MustBeDir() {
+		return syserror.ENOENT
 	}
 	// No cached dentry exists; however, there might still be an existing file
 	// at name. As above, we attempt the file creation RPC anyway.
