@@ -355,6 +355,9 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
 	}
+	if rp.MustBeDir() {
+		return syserror.ENOENT
+	}
 	if rp.Mount() != vd.Mount() {
 		return syserror.EXDEV
 	}
@@ -432,6 +435,9 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	pc := rp.Component()
 	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
+	}
+	if rp.MustBeDir() {
+		return syserror.ENOENT
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
@@ -824,6 +830,9 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	pc := rp.Component()
 	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
+	}
+	if rp.MustBeDir() {
+		return syserror.ENOENT
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
