@@ -13,7 +13,7 @@ go_library(
 
 go_test(
     name = "base_test",
-    size = "large",
+    size = "enormous",
     srcs = [
         "size_test.go",
         "startup_test.go",
