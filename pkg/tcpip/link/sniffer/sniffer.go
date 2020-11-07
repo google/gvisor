@@ -205,7 +205,12 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 	//
 	// We don't clone the original packet buffer so that the new packet buffer
 	// does not have any of its headers set.
-	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views())})
+	//
+	// We trim the link headers from the cloned buffer as the sniffer doesn't
+	// handle link headers.
+	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+	vv.TrimFront(len(pkt.LinkHeader().View()))
+	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
 	switch protocol {
 	case header.IPv4ProtocolNumber:
 		if ok := parse.IPv4(pkt); !ok {
