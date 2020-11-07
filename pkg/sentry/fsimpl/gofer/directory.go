@@ -98,7 +98,9 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		uid:       uint32(opts.kuid),
 		gid:       uint32(opts.kgid),
 		blockSize: usermem.PageSize, // arbitrary
-		hostFD:    -1,
+		readFD:    -1,
+		writeFD:   -1,
+		mmapFD:    -1,
 		nlink:     uint32(2),
 	}
 	refsvfs2.Register(child)
