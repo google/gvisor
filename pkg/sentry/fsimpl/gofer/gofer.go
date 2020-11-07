@@ -548,11 +548,16 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.cache.DropAll(mf)
 		d.dirty.RemoveAll()
 		d.dataMu.Unlock()
-		// Close the host fd if one exists.
-		if d.hostFD >= 0 {
-			syscall.Close(int(d.hostFD))
-			d.hostFD = -1
+		// Close host FDs if they exist.
+		if d.readFD >= 0 {
+			syscall.Close(int(d.readFD))
 		}
+		if d.writeFD >= 0 && d.readFD != d.writeFD {
+			syscall.Close(int(d.writeFD))
+		}
+		d.readFD = -1
+		d.writeFD = -1
+		d.mmapFD = -1
 		d.handleMu.Unlock()
 	}
 	// There can't be any specialFileFDs still using fs, since each such
@@ -726,15 +731,17 @@ type dentry struct {
 
 	// - If this dentry represents a regular file or directory, readFile is the
 	// p9.File used for reads by all regularFileFDs/directoryFDs representing
-	// this dentry.
+	// this dentry, and readFD (if not -1) is a host FD equivalent to readFile
+	// used as a faster alternative.
 	//
 	// - If this dentry represents a regular file, writeFile is the p9.File
-	// used for writes by all regularFileFDs representing this dentry.
+	// used for writes by all regularFileFDs representing this dentry, and
+	// writeFD (if not -1) is a host FD equivalent to writeFile used as a
+	// faster alternative.
 	//
-	// - If this dentry represents a regular file, hostFD is the host FD used
-	// for memory mappings and I/O (when applicable) in preference to readFile
-	// and writeFile. hostFD is always readable; if !writeFile.isNil(), it must
-	// also be writable. If hostFD is -1, no such host FD is available.
+	// - If this dentry represents a regular file, mmapFD is the host FD used
+	// for memory mappings. If mmapFD is -1, no such FD is available, and the
+	// internal page cache implementation is used for memory mappings instead.
 	//
 	// These fields are protected by handleMu.
 	//
@@ -742,10 +749,17 @@ type dentry struct {
 	// either p9.File transitions from closed (isNil() == true) to open
 	// (isNil() == false), it may be mutated with handleMu locked, but cannot
 	// be closed until the dentry is destroyed.
+	//
+	// readFD and writeFD may or may not be the same file descriptor. mmapFD is
+	// always either -1 or equal to readFD; if !writeFile.isNil() (the file has
+	// been opened for writing), it is additionally either -1 or equal to
+	// writeFD.
 	handleMu  sync.RWMutex `state:"nosave"`
 	readFile  p9file       `state:"nosave"`
 	writeFile p9file       `state:"nosave"`
-	hostFD    int32        `state:"nosave"`
+	readFD    int32        `state:"nosave"`
+	writeFD   int32        `state:"nosave"`
+	mmapFD    int32        `state:"nosave"`
 
 	dataMu sync.RWMutex `state:"nosave"`
 
@@ -829,7 +843,9 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		uid:       uint32(fs.opts.dfltuid),
 		gid:       uint32(fs.opts.dfltgid),
 		blockSize: usermem.PageSize,
-		hostFD:    -1,
+		readFD:    -1,
+		writeFD:   -1,
+		mmapFD:    -1,
 	}
 	d.pf.dentry = d
 	if mask.UID {
@@ -1469,10 +1485,15 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	}
 	d.readFile = p9file{}
 	d.writeFile = p9file{}
-	if d.hostFD >= 0 {
-		syscall.Close(int(d.hostFD))
-		d.hostFD = -1
+	if d.readFD >= 0 {
+		syscall.Close(int(d.readFD))
 	}
+	if d.writeFD >= 0 && d.readFD != d.writeFD {
+		syscall.Close(int(d.writeFD))
+	}
+	d.readFD = -1
+	d.writeFD = -1
+	d.mmapFD = -1
 	d.handleMu.Unlock()
 
 	if !d.file.isNil() {
@@ -1584,7 +1605,8 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 		d.handleMu.RUnlock()
 	}
 
-	fdToClose := int32(-1)
+	var fdsToCloseArr [2]int32
+	fdsToClose := fdsToCloseArr[:0]
 	invalidateTranslations := false
 	d.handleMu.Lock()
 	if (read && d.readFile.isNil()) || (write && d.writeFile.isNil()) || trunc {
@@ -1615,56 +1637,88 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			return err
 		}
 
-		if d.hostFD < 0 && h.fd >= 0 && openReadable && (d.writeFile.isNil() || openWritable) {
-			// We have no existing FD, and the new FD meets the requirements
-			// for d.hostFD, so start using it.
-			d.hostFD = h.fd
-		} else if d.hostFD >= 0 && d.writeFile.isNil() && openWritable {
-			// We have an existing read-only FD, but the file has just been
-			// opened for writing, so we need to start supporting writable memory
-			// mappings. This may race with callers of d.pf.FD() using the existing
-			// FD, so in most cases we need to delay closing the old FD until after
-			// invalidating memmap.Translations that might have observed it.
-			if !openReadable || h.fd < 0 {
-				// We don't have a read/write FD, so we have no FD that can be
-				// used to create writable memory mappings. Switch to using the
-				// internal page cache.
-				invalidateTranslations = true
-				fdToClose = d.hostFD
-				d.hostFD = -1
-			} else if d.fs.opts.overlayfsStaleRead {
-				// We do have a read/write FD, but it may not be coherent with
-				// the existing read-only FD, so we must switch to mappings of
-				// the new FD in both the application and sentry.
-				if err := d.pf.hostFileMapper.RegenerateMappings(int(h.fd)); err != nil {
-					d.handleMu.Unlock()
-					ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to replace sentry mappings of old FD with mappings of new FD: %v", err)
-					h.close(ctx)
-					return err
+		// Update d.readFD and d.writeFD.
+		if h.fd >= 0 {
+			if openReadable && openWritable && (d.readFD < 0 || d.writeFD < 0 || d.readFD != d.writeFD) {
+				// Replace existing FDs with this one.
+				if d.readFD >= 0 {
+					// We already have a readable FD that may be in use by
+					// concurrent callers of d.pf.FD().
+					if d.fs.opts.overlayfsStaleRead {
+						// If overlayfsStaleRead is in effect, then the new FD
+						// may not be coherent with the existing one, so we
+						// have no choice but to switch to mappings of the new
+						// FD in both the application and sentry.
+						if err := d.pf.hostFileMapper.RegenerateMappings(int(h.fd)); err != nil {
+							d.handleMu.Unlock()
+							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to replace sentry mappings of old FD with mappings of new FD: %v", err)
+							h.close(ctx)
+							return err
+						}
+						fdsToClose = append(fdsToClose, d.readFD)
+						invalidateTranslations = true
+						d.readFD = h.fd
+					} else {
+						// Otherwise, we want to avoid invalidating existing
+						// memmap.Translations (which is expensive); instead, use
+						// dup3 to make the old file descriptor refer to the new
+						// file description, then close the new file descriptor
+						// (which is no longer needed). Racing callers of d.pf.FD()
+						// may use the old or new file description, but this
+						// doesn't matter since they refer to the same file, and
+						// any racing mappings must be read-only.
+						if err := syscall.Dup3(int(h.fd), int(d.readFD), syscall.O_CLOEXEC); err != nil {
+							oldFD := d.readFD
+							d.handleMu.Unlock()
+							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
+							h.close(ctx)
+							return err
+						}
+						fdsToClose = append(fdsToClose, h.fd)
+						h.fd = d.readFD
+					}
+				} else {
+					d.readFD = h.fd
 				}
-				invalidateTranslations = true
-				fdToClose = d.hostFD
-				d.hostFD = h.fd
+				if d.writeFD != h.fd && d.writeFD >= 0 {
+					fdsToClose = append(fdsToClose, d.writeFD)
+				}
+				d.writeFD = h.fd
+				d.mmapFD = h.fd
+			} else if openReadable && d.readFD < 0 {
+				d.readFD = h.fd
+				// If the file has not been opened for writing, the new FD may
+				// be used for read-only memory mappings. If the file was
+				// previously opened for reading (without an FD), then existing
+				// translations of the file may use the internal page cache;
+				// invalidate those mappings.
+				if d.writeFile.isNil() {
+					invalidateTranslations = !d.readFile.isNil()
+					d.mmapFD = h.fd
+				}
+			} else if openWritable && d.writeFD < 0 {
+				d.writeFD = h.fd
+				if d.readFD >= 0 {
+					// We have an existing read-only FD, but the file has just
+					// been opened for writing, so we need to start supporting
+					// writable memory mappings. However, the new FD is not
+					// readable, so we have no FD that can be used to create
+					// writable memory mappings. Switch to using the internal
+					// page cache.
+					invalidateTranslations = true
+					d.mmapFD = -1
+				}
 			} else {
-				// We do have a read/write FD. To avoid invalidating existing
-				// memmap.Translations (which is expensive), use dup3 to make
-				// the old file descriptor refer to the new file description,
-				// then close the new file descriptor (which is no longer
-				// needed). Racing callers of d.pf.FD() may use the old or new
-				// file description, but this doesn't matter since they refer
-				// to the same file, and any racing mappings must be read-only.
-				if err := syscall.Dup3(int(h.fd), int(d.hostFD), syscall.O_CLOEXEC); err != nil {
-					oldHostFD := d.hostFD
-					d.handleMu.Unlock()
-					ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldHostFD, err)
-					h.close(ctx)
-					return err
-				}
-				fdToClose = h.fd
+				// The new FD is not useful.
+				fdsToClose = append(fdsToClose, h.fd)
 			}
-		} else {
-			// h.fd is not useful.
-			fdToClose = h.fd
+		} else if openWritable && d.writeFD < 0 && d.mmapFD >= 0 {
+			// We have an existing read-only FD, but the file has just been
+			// opened for writing, so we need to start supporting writable
+			// memory mappings. However, we have no writable host FD. Switch to
+			// using the internal page cache.
+			invalidateTranslations = true
+			d.mmapFD = -1
 		}
 
 		// Switch to new fids.
@@ -1698,8 +1752,8 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 		d.mappings.InvalidateAll(memmap.InvalidateOpts{})
 		d.mapsMu.Unlock()
 	}
-	if fdToClose >= 0 {
-		syscall.Close(int(fdToClose))
+	for _, fd := range fdsToClose {
+		syscall.Close(int(fd))
 	}
 
 	return nil
@@ -1709,7 +1763,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 func (d *dentry) readHandleLocked() handle {
 	return handle{
 		file: d.readFile,
-		fd:   d.hostFD,
+		fd:   d.readFD,
 	}
 }
 
@@ -1717,7 +1771,7 @@ func (d *dentry) readHandleLocked() handle {
 func (d *dentry) writeHandleLocked() handle {
 	return handle{
 		file: d.writeFile,
-		fd:   d.hostFD,
+		fd:   d.writeFD,
 	}
 }
 
@@ -1730,15 +1784,23 @@ func (d *dentry) syncRemoteFile(ctx context.Context) error {
 // Preconditions: d.handleMu must be locked.
 func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
 	// If we have a host FD, fsyncing it is likely to be faster than an fsync
-	// RPC.
-	if d.hostFD >= 0 {
+	// RPC. Prefer syncing write handles over read handles, since some remote
+	// filesystem implementations may not sync changes made through write
+	// handles otherwise.
+	if d.writeFD >= 0 {
 		ctx.UninterruptibleSleepStart(false)
-		err := syscall.Fsync(int(d.hostFD))
+		err := syscall.Fsync(int(d.writeFD))
 		ctx.UninterruptibleSleepFinish(false)
 		return err
 	}
 	if !d.writeFile.isNil() {
 		return d.writeFile.fsync(ctx)
+	}
+	if d.readFD >= 0 {
+		ctx.UninterruptibleSleepStart(false)
+		err := syscall.Fsync(int(d.readFD))
+		ctx.UninterruptibleSleepFinish(false)
+		return err
 	}
 	if !d.readFile.isNil() {
 		return d.readFile.fsync(ctx)

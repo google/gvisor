@@ -139,7 +139,9 @@ func (d *dentry) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (d *dentry) afterLoad() {
-	d.hostFD = -1
+	d.readFD = -1
+	d.writeFD = -1
+	d.mmapFD = -1
 	if atomic.LoadInt64(&d.refs) != -1 {
 		refsvfs2.Register(d)
 	}
