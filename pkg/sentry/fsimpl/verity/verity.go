@@ -380,7 +380,9 @@ func (fs *filesystem) newDentry() *dentry {
 // IncRef implements vfs.DentryImpl.IncRef.
 func (d *dentry) IncRef() {
 	r := atomic.AddInt64(&d.refs, 1)
-	refsvfs2.LogIncRef(d, r)
+	if d.LogRefs() {
+		refsvfs2.LogIncRef(d, r)
+	}
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
@@ -391,7 +393,9 @@ func (d *dentry) TryIncRef() bool {
 			return false
 		}
 		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
-			refsvfs2.LogTryIncRef(d, r+1)
+			if d.LogRefs() {
+				refsvfs2.LogTryIncRef(d, r+1)
+			}
 			return true
 		}
 	}
@@ -400,7 +404,9 @@ func (d *dentry) TryIncRef() bool {
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
 	r := atomic.AddInt64(&d.refs, -1)
-	refsvfs2.LogDecRef(d, r)
+	if d.LogRefs() {
+		refsvfs2.LogDecRef(d, r)
+	}
 	if r == 0 {
 		d.fs.renameMu.Lock()
 		d.checkDropLocked(ctx)
@@ -412,7 +418,9 @@ func (d *dentry) DecRef(ctx context.Context) {
 
 func (d *dentry) decRefLocked(ctx context.Context) {
 	r := atomic.AddInt64(&d.refs, -1)
-	refsvfs2.LogDecRef(d, r)
+	if d.LogRefs() {
+		refsvfs2.LogDecRef(d, r)
+	}
 	if r == 0 {
 		d.checkDropLocked(ctx)
 	} else if r < 0 {

@@ -110,7 +110,7 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	}
 	root.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|0555)
 	root.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	root.EnableLeakCheck()
+	root.InitRefs()
 
 	var rootD kernfs.Dentry
 	rootD.InitRoot(&fs.Filesystem, root)

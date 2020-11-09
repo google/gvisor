@@ -109,7 +109,7 @@ func (fs *filesystem) newReadonlyDir(ctx context.Context, creds *auth.Credential
 	dir := &readonlyDir{}
 	dir.attrs.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	dir.EnableLeakCheck()
+	dir.InitRefs()
 	dir.IncLinks(dir.OrderedChildren.Populate(contents))
 	return dir
 }
@@ -147,7 +147,7 @@ func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode 
 	dir.fs = fs
 	dir.attrs.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
-	dir.EnableLeakCheck()
+	dir.InitRefs()
 
 	dir.IncLinks(dir.OrderedChildren.Populate(contents))
 	return dir

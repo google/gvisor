@@ -91,7 +91,7 @@ func (fs *filesystem) newTaskInode(task *kernel.Task, pidns *kernel.PIDNamespace
 	taskInode := &taskInode{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
 	taskInode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
-	taskInode.EnableLeakCheck()
+	taskInode.InitRefs()
 
 	inode := &taskOwnedInode{Inode: taskInode, owner: task}
 
