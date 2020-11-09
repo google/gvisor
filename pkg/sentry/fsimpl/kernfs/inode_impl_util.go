@@ -660,7 +660,7 @@ var _ Inode = (*StaticDirectory)(nil)
 func NewStaticDir(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]Inode, fdOpts GenericDirectoryFDOptions) Inode {
 	inode := &StaticDirectory{}
 	inode.Init(ctx, creds, devMajor, devMinor, ino, perm, fdOpts)
-	inode.EnableLeakCheck()
+	inode.InitRefs()
 
 	inode.OrderedChildren.Init(OrderedChildrenOptions{})
 	links := inode.OrderedChildren.Populate(children)

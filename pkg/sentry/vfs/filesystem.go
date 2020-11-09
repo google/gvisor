@@ -48,7 +48,7 @@ type Filesystem struct {
 
 // Init must be called before first use of fs.
 func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, fsType FilesystemType, impl FilesystemImpl) {
-	fs.EnableLeakCheck()
+	fs.InitRefs()
 	fs.vfs = vfsObj
 	fs.fsType = fsType
 	fs.impl = impl

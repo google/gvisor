@@ -84,6 +84,8 @@ type ConnectedEndpoint struct {
 // init performs initialization required for creating new ConnectedEndpoints and
 // for restoring them.
 func (c *ConnectedEndpoint) init() *syserr.Error {
+	c.InitRefs()
+
 	family, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_DOMAIN)
 	if err != nil {
 		return syserr.FromError(err)
@@ -132,7 +134,6 @@ func NewConnectedEndpoint(ctx context.Context, hostFD int, addr string, saveable
 
 	// ConnectedEndpointRefs start off with a single reference. We need two.
 	e.IncRef()
-	e.EnableLeakCheck()
 	return &e, nil
 }
 
@@ -376,8 +377,7 @@ func NewSCMEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr s
 		return nil, err
 	}
 
-	// ConnectedEndpointRefs start off with a single reference. We need two.
+	// e starts off with a single reference. We need two.
 	e.IncRef()
-	e.EnableLeakCheck()
 	return &e, nil
 }

@@ -63,7 +63,7 @@ func newFSContext(root, cwd *fs.Dirent, umask uint) *FSContext {
 		cwd:   cwd,
 		umask: umask,
 	}
-	f.EnableLeakCheck()
+	f.InitRefs()
 	return &f
 }
 
@@ -76,7 +76,7 @@ func NewFSContextVFS2(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
 		cwdVFS2:  cwd,
 		umask:    umask,
 	}
-	f.EnableLeakCheck()
+	f.InitRefs()
 	return &f
 }
 
@@ -137,7 +137,7 @@ func (f *FSContext) Fork() *FSContext {
 		rootVFS2: f.rootVFS2,
 		umask:    f.umask,
 	}
-	ctx.EnableLeakCheck()
+	ctx.InitRefs()
 	return ctx
 }
 

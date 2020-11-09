@@ -44,7 +44,7 @@ type SpecialMappable struct {
 // Preconditions: fr.Length() != 0.
 func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *SpecialMappable {
 	m := SpecialMappable{mfp: mfp, fr: fr, name: name}
-	m.EnableLeakCheck()
+	m.InitRefs()
 	return &m
 }
 

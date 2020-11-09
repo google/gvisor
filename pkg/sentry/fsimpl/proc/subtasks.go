@@ -60,7 +60,7 @@ func (fs *filesystem) newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace,
 	// Note: credentials are overridden by taskOwnedInode.
 	subInode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	subInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	subInode.EnableLeakCheck()
+	subInode.InitRefs()
 
 	inode := &taskOwnedInode{Inode: subInode, owner: task}
 	return inode

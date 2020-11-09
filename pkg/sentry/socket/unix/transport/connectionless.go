@@ -42,7 +42,7 @@ var (
 func NewConnectionless(ctx context.Context) Endpoint {
 	ep := &connectionlessEndpoint{baseEndpoint{Queue: &waiter.Queue{}}}
 	q := queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: initialLimit}
-	q.EnableLeakCheck()
+	q.InitRefs()
 	ep.receiver = &queueReceiver{readQueue: &q}
 	return ep
 }

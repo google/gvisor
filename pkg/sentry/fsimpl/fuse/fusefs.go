@@ -219,16 +219,12 @@ func newFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOpt
 	}
 
 	fuseFD := device.Impl().(*DeviceFD)
-
 	fs := &filesystem{
 		devMinor: devMinor,
 		opts:     opts,
 		conn:     conn,
 	}
-
-	fs.VFSFilesystem().IncRef()
 	fuseFD.fs = fs
-
 	return fs, nil
 }
 
@@ -288,7 +284,7 @@ func (fs *filesystem) newRoot(ctx context.Context, creds *auth.Credentials, mode
 	i := &inode{fs: fs, nodeID: 1}
 	i.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	i.EnableLeakCheck()
+	i.InitRefs()
 
 	var d kernfs.Dentry
 	d.InitRoot(&fs.Filesystem, i)
@@ -301,7 +297,7 @@ func (fs *filesystem) newInode(ctx context.Context, nodeID uint64, attr linux.FU
 	i.InodeAttrs.Init(ctx, &creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
 	atomic.StoreUint64(&i.size, attr.Size)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	i.EnableLeakCheck()
+	i.InitRefs()
 	return i
 }
 

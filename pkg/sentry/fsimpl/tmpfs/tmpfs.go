@@ -402,7 +402,7 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 	i.mtime = now
 	// i.nlink initialized by caller
 	i.impl = impl
-	i.refs.EnableLeakCheck()
+	i.refs.InitRefs()
 }
 
 // incLinksLocked increments i's link count.

@@ -72,6 +72,7 @@ func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveReque
 	if err != nil {
 		return nil, nil, err
 	}
+	fs.VFSFilesystem().Init(vfsObj, nil, fs)
 
 	return fs.conn, &fuseDev.vfsfd, nil
 }

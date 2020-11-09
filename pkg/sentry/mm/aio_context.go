@@ -252,7 +252,7 @@ func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
 		return nil, err
 	}
 	m := aioMappable{mfp: mfp, fr: fr}
-	m.EnableLeakCheck()
+	m.InitRefs()
 	return &m, nil
 }
 
