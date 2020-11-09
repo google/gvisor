@@ -157,7 +157,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 			name:     name,
 			isTap:    prefix == "tap",
 		}
-		endpoint.EnableLeakCheck()
+		endpoint.InitRefs()
 		endpoint.Endpoint.LinkEPCapabilities = linkCaps
 		if endpoint.name == "" {
 			endpoint.name = fmt.Sprintf("%s%d", prefix, id)

@@ -160,7 +160,7 @@ func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode 
 	d := &dir{}
 	d.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	d.EnableLeakCheck()
+	d.InitRefs()
 	d.IncLinks(d.OrderedChildren.Populate(contents))
 	return d
 }

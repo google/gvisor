@@ -80,7 +80,7 @@ func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint3
 			stype: stype,
 		},
 	}
-	sock.EnableLeakCheck()
+	sock.InitRefs()
 	sock.LockFD.Init(locks)
 	vfsfd := &sock.vfsfd
 	if err := vfsfd.Init(sock, flags, mnt, d, &vfs.FileDescriptionOptions{

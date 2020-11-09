@@ -43,7 +43,7 @@ func (f *FDTable) initNoLeakCheck() {
 // init initializes the table with leak checking.
 func (f *FDTable) init() {
 	f.initNoLeakCheck()
-	f.EnableLeakCheck()
+	f.InitRefs()
 }
 
 // get gets a file entry.

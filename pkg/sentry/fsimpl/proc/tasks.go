@@ -83,7 +83,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 		cgroupControllers: cgroupControllers,
 	}
 	inode.InodeAttrs.Init(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
-	inode.EnableLeakCheck()
+	inode.InitRefs()
 
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	links := inode.OrderedChildren.Populate(contents)

@@ -295,7 +295,7 @@ func (tg *ThreadGroup) createSession() error {
 		id:     SessionID(id),
 		leader: tg,
 	}
-	s.EnableLeakCheck()
+	s.InitRefs()
 
 	// Create a new ProcessGroup, belonging to that Session.
 	// This also has a single reference (assigned below).
@@ -309,7 +309,7 @@ func (tg *ThreadGroup) createSession() error {
 		session:    s,
 		ancestors:  0,
 	}
-	pg.refs.EnableLeakCheck()
+	pg.refs.InitRefs()
 
 	// Tie them and return the result.
 	s.processGroups.PushBack(pg)
@@ -395,7 +395,7 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 		originator: tg,
 		session:    tg.processGroup.session,
 	}
-	pg.refs.EnableLeakCheck()
+	pg.refs.InitRefs()
 
 	if tg.leader.parent != nil && tg.leader.parent.tg.processGroup.session == pg.session {
 		pg.ancestors++

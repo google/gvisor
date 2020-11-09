@@ -169,7 +169,7 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 		Owner:       creds.UserNamespace,
 		mountpoints: make(map[*Dentry]uint32),
 	}
-	mntns.EnableLeakCheck()
+	mntns.InitRefs()
 	mntns.root = newMount(vfs, fs, root, mntns, opts)
 	return mntns, nil
 }
@@ -477,7 +477,9 @@ func (mnt *Mount) tryIncMountedRef() bool {
 			return false
 		}
 		if atomic.CompareAndSwapInt64(&mnt.refs, r, r+1) {
-			refsvfs2.LogTryIncRef(mnt, r+1)
+			if mnt.LogRefs() {
+				refsvfs2.LogTryIncRef(mnt, r+1)
+			}
 			return true
 		}
 	}
@@ -488,12 +490,17 @@ func (mnt *Mount) IncRef() {
 	// In general, negative values for mnt.refs are valid because the MSB is
 	// the eager-unmount bit.
 	r := atomic.AddInt64(&mnt.refs, 1)
-	refsvfs2.LogIncRef(mnt, r)
+	if mnt.LogRefs() {
+		refsvfs2.LogIncRef(mnt, r)
+	}
 }
 
 // DecRef decrements mnt's reference count.
 func (mnt *Mount) DecRef(ctx context.Context) {
 	r := atomic.AddInt64(&mnt.refs, -1)
+	if mnt.LogRefs() {
+		refsvfs2.LogDecRef(mnt, r)
+	}
 	if r&^math.MinInt64 == 0 { // mask out MSB
 		refsvfs2.Unregister(mnt)
 		mnt.destroy(ctx)

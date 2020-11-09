@@ -41,7 +41,7 @@ func NewIPCNamespace(userNS *auth.UserNamespace) *IPCNamespace {
 		semaphores: semaphore.NewRegistry(userNS),
 		shms:       shm.NewRegistry(userNS),
 	}
-	ns.EnableLeakCheck()
+	ns.InitRefs()
 	return ns
 }
 
