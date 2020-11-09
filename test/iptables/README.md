@@ -2,8 +2,38 @@
 
 iptables tests are run via `make iptables-tests`.
 
-iptables requires raw socket support, so you must add the `--net-raw=true` flag
-to `/etc/docker/daemon.json` in order to use it.
+iptables require some extra Docker configuration to work. Enable IPv6 in
+`/etc/docker/daemon.json` (make sure to restart Docker if you change this file):
+
+```json
+{
+    "experimental": true,
+    "fixed-cidr-v6": "2001:db8:1::/64",
+    "ipv6": true,
+    // Runtimes and other Docker config...
+}
+```
+
+And if you're running manually (i.e. not using the `make` target), you'll need
+to:
+
+*   Enable iptables via `modprobe iptables_filter && modprobe ip6table_filter`.
+*   Enable `--net-raw` in your chosen runtime in `/etc/docker/daemon.json` (make
+    sure to restart Docker if you change this file).
+
+The resulting runtime should look something like this:
+
+```json
+"runsc": {
+    "path": "/tmp/iptables/runsc",
+    "runtimeArgs": [
+        "--debug-log",
+        "/tmp/iptables/logs/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%",
+        "--net-raw"
+    ]
+},
+// ...
+```
 
 ## Test Structure
 
