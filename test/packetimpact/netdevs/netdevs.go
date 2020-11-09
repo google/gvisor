@@ -43,14 +43,10 @@ var (
 	inet6Line  = regexp.MustCompile(`^\s*inet6 ([0-9a-fA-F:/]+)`)
 )
 
-// ParseDevices parses the output from `ip addr show` into a map from device
-// name to information about the device.
-//
-// Note: if multiple IPv6 addresses are assigned to a device, the last address
-// displayed by `ip addr show` will be used. This is fine for packetimpact
-// because we will always only have at most one IPv6 address assigned to each
-// device.
-func ParseDevices(cmdOutput string) (map[string]DeviceInfo, error) {
+// ParseDevicesWithRegex will parse the output with the given regexps to produce
+// a map from device name to device information. It is assumed that deviceLine
+// contains both a name and an ID.
+func ParseDevicesWithRegex(cmdOutput string, deviceLine, linkLine, inetLine, inet6Line *regexp.Regexp) (map[string]DeviceInfo, error) {
 	var currentDevice string
 	var currentInfo DeviceInfo
 	deviceInfos := make(map[string]DeviceInfo)
@@ -91,6 +87,17 @@ func ParseDevices(cmdOutput string) (map[string]DeviceInfo, error) {
 		deviceInfos[currentDevice] = currentInfo
 	}
 	return deviceInfos, nil
+}
+
+// ParseDevices parses the output from `ip addr show` into a map from device
+// name to information about the device.
+//
+// Note: if multiple IPv6 addresses are assigned to a device, the last address
+// displayed by `ip addr show` will be used. This is fine for packetimpact
+// because we will always only have at most one IPv6 address assigned to each
+// device.
+func ParseDevices(cmdOutput string) (map[string]DeviceInfo, error) {
+	return ParseDevicesWithRegex(cmdOutput, deviceLine, linkLine, inetLine, inet6Line)
 }
 
 // MACToIP converts the MAC address to an IPv6 link local address as described
