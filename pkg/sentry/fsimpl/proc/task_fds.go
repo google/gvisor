@@ -128,7 +128,7 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) kernfs.Inode {
 		},
 	}
 	inode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
-	inode.EnableLeakCheck()
+	inode.InitRefs()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
 }
@@ -265,7 +265,7 @@ func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) kernfs.Inode {
 		},
 	}
 	inode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
-	inode.EnableLeakCheck()
+	inode.InitRefs()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
 }

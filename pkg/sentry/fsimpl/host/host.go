@@ -126,8 +126,8 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 		isTTY:    isTTY,
 		savable:  savable,
 	}
+	i.InitRefs()
 	i.CachedMappable.Init(hostFD)
-	i.EnableLeakCheck()
 
 	// If the hostFD can return EWOULDBLOCK when set to non-blocking, do so and
 	// handle blocking behavior in the sentry.

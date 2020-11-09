@@ -20,9 +20,6 @@ var ProcessGroupobj *ProcessGroup
 // Refs implements refs.RefCounter. It keeps a reference count using atomic
 // operations and calls the destructor when the count reaches zero.
 //
-// Note that the number of references is actually refCount + 1 so that a default
-// zero-value Refs object contains one reference.
-//
 // +stateify savable
 type ProcessGroupRefs struct {
 	// refCount is composed of two fields:
@@ -33,6 +30,13 @@ type ProcessGroupRefs struct {
 	// loop. See IncRef, DecRef and TryIncRef for details of how these fields are
 	// used.
 	refCount int64
+}
+
+// InitRefs initializes r with one reference and, if enabled, activates leak
+// checking.
+func (r *ProcessGroupRefs) InitRefs() {
+	atomic.StoreInt64(&r.refCount, 1)
+	refsvfs2.Register(r)
 }
 
 // RefType implements refsvfs2.CheckedObject.RefType.
@@ -58,8 +62,7 @@ func (r *ProcessGroupRefs) EnableLeakCheck() {
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
 func (r *ProcessGroupRefs) ReadRefs() int64 {
-
-	return atomic.LoadInt64(&r.refCount) + 1
+	return atomic.LoadInt64(&r.refCount)
 }
 
 // IncRef implements refs.RefCounter.IncRef.
@@ -67,8 +70,10 @@ func (r *ProcessGroupRefs) ReadRefs() int64 {
 //go:nosplit
 func (r *ProcessGroupRefs) IncRef() {
 	v := atomic.AddInt64(&r.refCount, 1)
-	refsvfs2.LogIncRef(r, v+1)
-	if v <= 0 {
+	if ProcessGroupenableLogging {
+		refsvfs2.LogIncRef(r, v)
+	}
+	if v <= 1 {
 		panic(fmt.Sprintf("Incrementing non-positive count %p on %s", r, r.RefType()))
 	}
 }
@@ -82,14 +87,16 @@ func (r *ProcessGroupRefs) IncRef() {
 //go:nosplit
 func (r *ProcessGroupRefs) TryIncRef() bool {
 	const speculativeRef = 1 << 32
-	if v := atomic.AddInt64(&r.refCount, speculativeRef); int32(v) < 0 {
+	if v := atomic.AddInt64(&r.refCount, speculativeRef); int32(v) == 0 {
 
 		atomic.AddInt64(&r.refCount, -speculativeRef)
 		return false
 	}
 
 	v := atomic.AddInt64(&r.refCount, -speculativeRef+1)
-	refsvfs2.LogTryIncRef(r, v+1)
+	if ProcessGroupenableLogging {
+		refsvfs2.LogTryIncRef(r, v)
+	}
 	return true
 }
 
@@ -107,12 +114,14 @@ func (r *ProcessGroupRefs) TryIncRef() bool {
 //go:nosplit
 func (r *ProcessGroupRefs) DecRef(destroy func()) {
 	v := atomic.AddInt64(&r.refCount, -1)
-	refsvfs2.LogDecRef(r, v+1)
+	if ProcessGroupenableLogging {
+		refsvfs2.LogDecRef(r, v+1)
+	}
 	switch {
-	case v < -1:
+	case v < 0:
 		panic(fmt.Sprintf("Decrementing non-positive ref count %p, owned by %s", r, r.RefType()))
 
-	case v == -1:
+	case v == 0:
 		refsvfs2.Unregister(r)
 
 		if destroy != nil {
