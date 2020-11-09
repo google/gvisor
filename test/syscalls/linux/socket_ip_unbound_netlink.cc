@@ -92,7 +92,7 @@ TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
   auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   EXPECT_THAT(connect(sock->get(), reinterpret_cast<sockaddr*>(&addr.addr),
                       addr.addr_len),
-              SyscallFailsWithErrno(EADDRNOTAVAIL));
+              SyscallFailsWithErrno(ENETUNREACH));
 }
 
 INSTANTIATE_TEST_SUITE_P(IPUnboundSockets, IPv4UnboundSocketTest,
