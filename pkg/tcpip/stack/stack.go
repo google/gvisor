@@ -1418,7 +1418,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	if needRoute {
 		return Route{}, tcpip.ErrNoRoute
 	}
-	if isLoopback {
+	if header.IsV6LoopbackAddress(remoteAddr) {
 		return Route{}, tcpip.ErrBadLocalAddress
 	}
 	return Route{}, tcpip.ErrNetworkUnreachable
