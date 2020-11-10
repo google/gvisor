@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package fs
+package bazel_test
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -23,6 +24,8 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
+
+var h harness.Harness
 
 // Note: CleanCache versions of this test require running with root permissions.
 func BenchmarkBuildABSL(b *testing.B) {
@@ -137,4 +140,10 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 			}
 		})
 	}
+}
+
+// TestMain is the main method for package fs.
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }

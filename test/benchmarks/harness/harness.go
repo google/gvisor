@@ -17,8 +17,14 @@ package harness
 
 import (
 	"flag"
+	"fmt"
+	"os"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+)
+
+var (
+	help = flag.Bool("help", false, "print this usage message")
 )
 
 // Harness is a handle for managing state in benchmark runs.
@@ -27,7 +33,15 @@ type Harness struct {
 
 // Init performs any harness initilialization before runs.
 func (h *Harness) Init() error {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s -- --test.bench=<regex>\n", os.Args[0])
+		flag.PrintDefaults()
+	}
 	flag.Parse()
+	if flag.NFlag() == 0 || *help {
+		flag.Usage()
+		os.Exit(0)
+	}
 	dockerutil.EnsureSupportedDockerVersion()
 	return nil
 }
