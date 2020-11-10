@@ -105,11 +105,13 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 
 			var bytesReceived int
 			reassembledPayload := make([]byte, test.ipPayloadLen)
+			// We are sending a packet fragmented into smaller parts but the
+			// response may also be large enough to require fragmentation.
+			// Therefore we only look for payload for an IPv4 packet not ICMP.
 			for {
 				incomingFrame, err := conn.ExpectFrame(t, testbench.Layers{
 					&testbench.Ether{},
 					&testbench.IPv4{},
-					&testbench.ICMPv4{},
 				}, time.Second)
 				if err != nil {
 					// Either an unexpected frame was received, or none at all.
@@ -121,9 +123,10 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 				if !test.expectReply {
 					t.Fatalf("unexpected reply received:\n%s", incomingFrame)
 				}
-				ipPayload, err := incomingFrame[2 /* ICMPv4 */].ToBytes()
+				// We only asked for Ethernet and IPv4 so the rest should be payload.
+				ipPayload, err := incomingFrame[2 /* Payload */].ToBytes()
 				if err != nil {
-					t.Fatalf("failed to parse ICMPv4 header: incomingPacket[2].ToBytes() = (_, %s)", err)
+					t.Fatalf("failed to parse payload: incomingPacket[2].ToBytes() = (_, %s)", err)
 				}
 				offset := *incomingFrame[1 /* IPv4 */].(*testbench.IPv4).FragmentOffset
 				if copied := copy(reassembledPayload[offset:], ipPayload); copied != len(ipPayload) {

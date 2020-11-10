@@ -402,6 +402,10 @@ func parseIPv4(b []byte) (Layer, layerParser) {
 		DstAddr:        Address(h.DestinationAddress()),
 	}
 	var nextParser layerParser
+	// If it is a fragment, don't treat it as having a transport protocol.
+	if h.FragmentOffset() != 0 || h.More() {
+		return &ipv4, parsePayload
+	}
 	switch h.TransportProtocol() {
 	case header.TCPProtocolNumber:
 		nextParser = parseTCP
@@ -709,12 +713,17 @@ func parseIPv6FragmentExtHdr(b []byte) (Layer, layerParser) {
 	nextHeader := b[0]
 	var extHdr header.IPv6FragmentExtHdr
 	copy(extHdr[:], b[2:])
-	return &IPv6FragmentExtHdr{
+	fragLayer := IPv6FragmentExtHdr{
 		NextHeader:     IPv6ExtHdrIdent(header.IPv6ExtensionHeaderIdentifier(nextHeader)),
 		FragmentOffset: Uint16(extHdr.FragmentOffset()),
 		MoreFragments:  Bool(extHdr.More()),
 		Identification: Uint32(extHdr.ID()),
-	}, nextIPv6PayloadParser(nextHeader)
+	}
+	// If it is a fragment, we can't interpret it.
+	if extHdr.FragmentOffset() != 0 || extHdr.More() {
+		return &fragLayer, parsePayload
+	}
+	return &fragLayer, nextIPv6PayloadParser(nextHeader)
 }
 
 func (l *IPv6HopByHopOptionsExtHdr) length() int {
@@ -861,6 +870,22 @@ func (l *ICMPv6) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
 
+// ICMPv4 can construct and match an ICMPv4 encapsulation.
+type ICMPv4 struct {
+	LayerBase
+	Type     *header.ICMPv4Type
+	Code     *header.ICMPv4Code
+	Checksum *uint16
+	Ident    *uint16 // Only in Echo Request/Reply.
+	Sequence *uint16 // Only in Echo Request/Reply.
+	Pointer  *uint8  // Only in Parameter Problem.
+	Payload  []byte
+}
+
+func (l *ICMPv4) String() string {
+	return stringLayer(l)
+}
+
 // ICMPv4Type is a helper routine that allocates a new header.ICMPv4Type value
 // to store t and returns a pointer to it.
 func ICMPv4Type(t header.ICMPv4Type) *header.ICMPv4Type {
@@ -871,21 +896,6 @@ func ICMPv4Type(t header.ICMPv4Type) *header.ICMPv4Type {
 // to store t and returns a pointer to it.
 func ICMPv4Code(t header.ICMPv4Code) *header.ICMPv4Code {
 	return &t
-}
-
-// ICMPv4 can construct and match an ICMPv4 encapsulation.
-type ICMPv4 struct {
-	LayerBase
-	Type     *header.ICMPv4Type
-	Code     *header.ICMPv4Code
-	Checksum *uint16
-	Ident    *uint16
-	Sequence *uint16
-	Payload  []byte
-}
-
-func (l *ICMPv4) String() string {
-	return stringLayer(l)
 }
 
 // ToBytes implements Layer.ToBytes.
@@ -901,11 +911,19 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 	if copied := copy(h.Payload(), l.Payload); copied != len(l.Payload) {
 		panic(fmt.Sprintf("wrong number of bytes copied into h.Payload(): got = %d, want = %d", len(h.Payload()), len(l.Payload)))
 	}
-	if l.Ident != nil {
-		h.SetIdent(*l.Ident)
-	}
-	if l.Sequence != nil {
-		h.SetSequence(*l.Sequence)
+	typ := h.Type()
+	switch typ {
+	case header.ICMPv4EchoReply, header.ICMPv4Echo:
+		if l.Ident != nil {
+			h.SetIdent(*l.Ident)
+		}
+		if l.Sequence != nil {
+			h.SetSequence(*l.Sequence)
+		}
+	case header.ICMPv4ParamProblem:
+		if l.Pointer != nil {
+			h.SetPointer(*l.Pointer)
+		}
 	}
 
 	// The checksum must be handled last because the ICMPv4 header fields are
@@ -932,13 +950,20 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 // parser for the encapsulated payload.
 func parseICMPv4(b []byte) (Layer, layerParser) {
 	h := header.ICMPv4(b)
+
+	msgType := h.Type()
 	icmpv4 := ICMPv4{
-		Type:     ICMPv4Type(h.Type()),
+		Type:     ICMPv4Type(msgType),
 		Code:     ICMPv4Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
-		Ident:    Uint16(h.Ident()),
-		Sequence: Uint16(h.Sequence()),
 		Payload:  h.Payload(),
+	}
+	switch msgType {
+	case header.ICMPv4EchoReply, header.ICMPv4Echo:
+		icmpv4.Ident = Uint16(h.Ident())
+		icmpv4.Sequence = Uint16(h.Sequence())
+	case header.ICMPv4ParamProblem:
+		icmpv4.Pointer = Uint8(h.Pointer())
 	}
 	return &icmpv4, nil
 }
