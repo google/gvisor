@@ -276,14 +276,15 @@ containerd-tests: containerd-test-1.4.0-beta.0
 ##     BENCHMARKS_OFFICIAL - marks the data as official.
 ##     BENCHMARKS_PLATFORMS - platforms to run benchmarks (e.g. ptrace kvm).
 ##
-RUNTIME_ARGS := --net-raw --platform=ptrace
-BENCHMARKS_PROJECT := gvisor-benchmarks
-BENCHMARKS_DATASET := kokoro
-BENCHMARKS_TABLE := benchmarks
-BENCHMARKS_SUITE := start
-BENCHMARKS_UPLOAD := false
-BENCHMARKS_OFFICIAL := false
+BENCHMARKS_PROJECT   := gvisor-benchmarks
+BENCHMARKS_DATASET   := kokoro
+BENCHMARKS_TABLE     := benchmarks
+BENCHMARKS_SUITE     := start
+BENCHMARKS_UPLOAD    := false
+BENCHMARKS_OFFICIAL  := false
 BENCHMARKS_PLATFORMS := ptrace
+BENCHMARKS_TARGETS   := //test/benchmarks/base:base_test
+BENCHMARKS_ARGS      := -test.bench=.
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
 ## (see //tools/bigquery/bigquery.go). If the table alread exists, this is a noop.
@@ -293,26 +294,26 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
 
 benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
 	$(call submake, run-benchmark RUNTIME="runc")
-	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS),\
-	$(call submake,benchmark-platform RUNTIME="$(PLATFORM)" RUNTIME_ARGS="--platform=$(PLATFORM) --net-raw --vfs2") && \
-	$(call submake,benchmark-platform RUNTIME="$(PLATFORM)_vfs1" RUNTIME_ARGS="--platform=$(PLATFORM) --net-raw"))
+	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
+		$(call submake,install-runtime RUNTIME="$(PLATFORM)" ARGS="--platform=$(PLATFORM) --vfs2") && \
+		$(call submake,run-benchmark RUNTIME="$(PLATFORM)") && \
+		$(call submake,install-runtime RUNTIME="$(PLATFORM)_vfs1" ARGS="--platform=$(PLATFORM)") && \
+		$(call submake,run-benchmark RUNTIME="$(PLATFORM)_vfs1") && \
+	) \
+	true
 .PHONY: benchmark-platforms
 
-benchmark-platform: ## Installs a runtime with the given platform args.
-	@$(call submake,install-test-runtime ARGS="$(RUNTIME_ARGS)")
-	@$(call submake, run-benchmark)
-.PHONY: benchmark-platform
-
 run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
-	$(eval T := $(shell mktemp /tmp/logs.$(RUNTIME).XXXXXX))
-	$(call submake,sudo TARGETS="$(TARGETS)" ARGS="--runtime=$(RUNTIME) $(ARGS)" | tee $(T))
-	@if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
-		@$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --file=$(T) \
+	@T=$$(mktemp logs.$(RUNTIME).XXXXXX); \
+	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS) | tee $$T"); \
+	rc=$$?; \
+	if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
+		$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --file=$$T \
 		--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
 		--project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
 		--table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
-	fi;
-	rm -rf $T
+	fi; \
+	rm -rf $$T; exit $$rc
 .PHONY: run-benchmark
 
 ##
@@ -427,13 +428,13 @@ dev: ## Installs a set of local runtimes. Requires sudo.
 	@sudo systemctl restart docker
 .PHONY: dev
 
-refresh: ## Refreshes the runtime binary (for development only). Must have called 'dev' or 'install-test-runtime' first.
+refresh: ## Refreshes the runtime binary (for development only). Must have called 'dev' or 'install-runtime' first.
 	@mkdir -p "$(RUNTIME_DIR)"
 	@$(call submake,copy TARGETS=runsc DESTINATION="$(RUNTIME_BIN)")
 .PHONY: refresh
 
-install-test-runtime: ## Installs the runtime for testing. Requires sudo.
-	@$(call submake,refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME --debug --strace --log-packets $(ARGS)")
+install-runtime: ## Installs the runtime for testing. Requires sudo.
+	@$(call submake,refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME $(ARGS)")
 	@$(call submake,configure RUNTIME_NAME=runsc)
 	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)")
 	@sudo systemctl restart docker
@@ -441,9 +442,13 @@ install-test-runtime: ## Installs the runtime for testing. Requires sudo.
 		sudo chmod 0755 /etc/docker && \
 		sudo chmod 0644 /etc/docker/daemon.json; \
 	fi
+.PHONY: install-runtime
+
+install-test-runtime: ## Installs the runtime for testing with default args. Requires sudo.
+	@$(call submake,install-runtime ARGS="--debug --strace --log-packets $(ARGS)")
 .PHONY: install-test-runtime
 
-configure: ## Configures a single runtime. Requires sudo. Typically called from dev or install-test-runtime.
+configure: ## Configures a single runtime. Requires sudo. Typically called from dev or install-runtime.
 	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME_NAME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)
 	@echo -e "$(INFO) Installed runtime \"$(RUNTIME)\" @ $(RUNTIME_BIN)"
 	@echo -e "$(INFO) Logs are in: $(RUNTIME_LOG_DIR)"
