@@ -12,20 +12,87 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package base holds base performance benchmarks.
+// Package base holds utility methods common to the base tests.
 package base
 
 import (
-	"os"
+	"context"
+	"net"
 	"testing"
+	"time"
 
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
 
-var testHarness harness.Harness
+// ServerArgs wraps args for startServers and runServerWorkload.
+type ServerArgs struct {
+	Machine harness.Machine
+	Port    int
+	RunOpts dockerutil.RunOpts
+	Cmd     []string
+}
 
-// TestMain is the main method for package network.
-func TestMain(m *testing.M) {
-	testHarness.Init()
-	os.Exit(m.Run())
+// StartServers starts b.N containers defined by 'runOpts' and 'cmd' and uses
+// 'machine' to check that each is up.
+func StartServers(ctx context.Context, b *testing.B, args ServerArgs) []*dockerutil.Container {
+	b.Helper()
+	servers := make([]*dockerutil.Container, 0, b.N)
+
+	// Create N servers and wait until each of them is serving.
+	for i := 0; i < b.N; i++ {
+		server := args.Machine.GetContainer(ctx, b)
+		servers = append(servers, server)
+		if err := server.Spawn(ctx, args.RunOpts, args.Cmd...); err != nil {
+			CleanUpContainers(ctx, servers)
+			b.Fatalf("failed to spawn node instance: %v", err)
+		}
+
+		// Get the container IP.
+		servingIP, err := server.FindIP(ctx, false)
+		if err != nil {
+			CleanUpContainers(ctx, servers)
+			b.Fatalf("failed to get ip from server: %v", err)
+		}
+
+		// Wait until the server is up.
+		if err := harness.WaitUntilServing(ctx, args.Machine, servingIP, args.Port); err != nil {
+			CleanUpContainers(ctx, servers)
+			b.Fatalf("failed to wait for serving")
+		}
+	}
+	return servers
+}
+
+// CleanUpContainers cleans up a slice of containers.
+func CleanUpContainers(ctx context.Context, containers []*dockerutil.Container) {
+	for _, c := range containers {
+		if c != nil {
+			c.CleanUp(ctx)
+		}
+	}
+}
+
+// RedisInstance returns a Redis container and its reachable IP.
+func RedisInstance(ctx context.Context, b *testing.B, machine harness.Machine) (*dockerutil.Container, net.IP) {
+	b.Helper()
+	// Spawn a redis instance for the app to use.
+	redis := machine.GetNativeContainer(ctx, b)
+	if err := redis.Spawn(ctx, dockerutil.RunOpts{
+		Image: "benchmarks/redis",
+	}); err != nil {
+		redis.CleanUp(ctx)
+		b.Fatalf("failed to spwan redis instance: %v", err)
+	}
+
+	if out, err := redis.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
+		redis.CleanUp(ctx)
+		b.Fatalf("failed to start redis server: %v %s", err, out)
+	}
+	redisIP, err := redis.FindIP(ctx, false)
+	if err != nil {
+		redis.CleanUp(ctx)
+		b.Fatalf("failed to get IP from redis instance: %v", err)
+	}
+	return redis, redisIP
 }

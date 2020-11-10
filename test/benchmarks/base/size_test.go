@@ -12,17 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package base
+package size_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/test/benchmarks/base"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
+
+var testHarness harness.Harness
 
 // BenchmarkSizeEmpty creates N empty containers and reads memory usage from
 // /proc/meminfo.
@@ -53,11 +57,11 @@ func BenchmarkSizeEmpty(b *testing.B) {
 		if err := container.Spawn(ctx, dockerutil.RunOpts{
 			Image: "benchmarks/alpine",
 		}, "sh", "-c", "echo Hello && sleep 1000"); err != nil {
-			cleanUpContainers(ctx, containers)
+			base.CleanUpContainers(ctx, containers)
 			b.Fatalf("failed to run container: %v", err)
 		}
 		if _, err := container.WaitForOutputSubmatch(ctx, "Hello", 5*time.Second); err != nil {
-			cleanUpContainers(ctx, containers)
+			base.CleanUpContainers(ctx, containers)
 			b.Fatalf("failed to read container output: %v", err)
 		}
 	}
@@ -67,7 +71,7 @@ func BenchmarkSizeEmpty(b *testing.B) {
 
 	// Check available memory after containers are up.
 	after, err := machine.RunCommand(cmd, args...)
-	cleanUpContainers(ctx, containers)
+	base.CleanUpContainers(ctx, containers)
 	if err != nil {
 		b.Fatalf("failed to get meminfo: %v", err)
 	}
@@ -100,14 +104,14 @@ func BenchmarkSizeNginx(b *testing.B) {
 		Image: "benchmarks/nginx",
 	}
 	const port = 80
-	servers := startServers(ctx, b,
-		serverArgs{
-			machine: machine,
-			port:    port,
-			runOpts: runOpts,
-			cmd:     []string{"nginx", "-c", "/etc/nginx/nginx_gofer.conf"},
+	servers := base.StartServers(ctx, b,
+		base.ServerArgs{
+			Machine: machine,
+			Port:    port,
+			RunOpts: runOpts,
+			Cmd:     []string{"nginx", "-c", "/etc/nginx/nginx_gofer.conf"},
 		})
-	defer cleanUpContainers(ctx, servers)
+	defer base.CleanUpContainers(ctx, servers)
 
 	// DropCaches after servers are created.
 	harness.DropCaches(machine)
@@ -130,7 +134,7 @@ func BenchmarkSizeNode(b *testing.B) {
 
 	// Make a redis instance for Node to connect.
 	ctx := context.Background()
-	redis, redisIP := redisInstance(ctx, b, machine)
+	redis, redisIP := base.RedisInstance(ctx, b, machine)
 	defer redis.CleanUp(ctx)
 
 	// DropCaches after redis is created.
@@ -152,14 +156,14 @@ func BenchmarkSizeNode(b *testing.B) {
 	}
 	nodeCmd := []string{"node", "index.js", redisIP.String()}
 	const port = 8080
-	servers := startServers(ctx, b,
-		serverArgs{
-			machine: machine,
-			port:    port,
-			runOpts: runOpts,
-			cmd:     nodeCmd,
+	servers := base.StartServers(ctx, b,
+		base.ServerArgs{
+			Machine: machine,
+			Port:    port,
+			RunOpts: runOpts,
+			Cmd:     nodeCmd,
 		})
-	defer cleanUpContainers(ctx, servers)
+	defer base.CleanUpContainers(ctx, servers)
 
 	// DropCaches after servers are created.
 	harness.DropCaches(machine)
@@ -172,50 +176,8 @@ func BenchmarkSizeNode(b *testing.B) {
 	meminfo.Report(b, before, after)
 }
 
-// serverArgs wraps args for startServers and runServerWorkload.
-type serverArgs struct {
-	machine harness.Machine
-	port    int
-	runOpts dockerutil.RunOpts
-	cmd     []string
-}
-
-// startServers starts b.N containers defined by 'runOpts' and 'cmd' and uses
-// 'machine' to check that each is up.
-func startServers(ctx context.Context, b *testing.B, args serverArgs) []*dockerutil.Container {
-	b.Helper()
-	servers := make([]*dockerutil.Container, 0, b.N)
-
-	// Create N servers and wait until each of them is serving.
-	for i := 0; i < b.N; i++ {
-		server := args.machine.GetContainer(ctx, b)
-		servers = append(servers, server)
-		if err := server.Spawn(ctx, args.runOpts, args.cmd...); err != nil {
-			cleanUpContainers(ctx, servers)
-			b.Fatalf("failed to spawn node instance: %v", err)
-		}
-
-		// Get the container IP.
-		servingIP, err := server.FindIP(ctx, false)
-		if err != nil {
-			cleanUpContainers(ctx, servers)
-			b.Fatalf("failed to get ip from server: %v", err)
-		}
-
-		// Wait until the server is up.
-		if err := harness.WaitUntilServing(ctx, args.machine, servingIP, args.port); err != nil {
-			cleanUpContainers(ctx, servers)
-			b.Fatalf("failed to wait for serving")
-		}
-	}
-	return servers
-}
-
-// cleanUpContainers cleans up a slice of containers.
-func cleanUpContainers(ctx context.Context, containers []*dockerutil.Container) {
-	for _, c := range containers {
-		if c != nil {
-			c.CleanUp(ctx)
-		}
-	}
+// TestMain is the main method for package network.
+func TestMain(m *testing.M) {
+	testHarness.Init()
+	os.Exit(m.Run())
 }

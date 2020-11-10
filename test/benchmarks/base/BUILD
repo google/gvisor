@@ -8,23 +8,41 @@ go_library(
     srcs = [
         "base.go",
     ],
-    deps = ["//test/benchmarks/harness"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/harness",
+    ],
 )
 
 go_test(
-    name = "base_test",
+    name = "startup_test",
     size = "enormous",
-    srcs = [
-        "size_test.go",
-        "startup_test.go",
-        "sysbench_test.go",
+    srcs = ["startup_test.go"],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/base",
+        "//test/benchmarks/harness",
     ],
-    library = ":base",
-    tags = [
-        # Requires docker and runsc to be configured before test runs.
-        "manual",
-        "local",
+)
+
+go_test(
+    name = "size_test",
+    size = "enormous",
+    srcs = ["size_test.go"],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/base",
+        "//test/benchmarks/harness",
+        "//test/benchmarks/tools",
     ],
+)
+
+go_test(
+    name = "sysbench_test",
+    size = "enormous",
+    srcs = ["sysbench_test.go"],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",

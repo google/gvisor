@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package base
+package sysbench_test
 
 import (
 	"context"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
+
+var testHarness harness.Harness
 
 type testCase struct {
 	name string

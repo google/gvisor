@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package fs
+package fio_test
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
+
+var h harness.Harness
 
 // BenchmarkFio runs fio on the runtime under test. There are 4 basic test
 // cases each run on a tmpfs mount and a bind mount. Fio requires root so that
@@ -178,4 +181,10 @@ func makeMount(machine harness.Machine, mountType mount.Type, target string) (mo
 	default:
 		return mount.Mount{}, func() {}, fmt.Errorf("illegal mount time not supported: %v", mountType)
 	}
+}
+
+// TestMain is the main method for package fs.
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }
