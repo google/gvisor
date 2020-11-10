@@ -304,16 +304,15 @@ benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all 
 .PHONY: benchmark-platforms
 
 run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
-	@T=$$(mktemp logs.$(RUNTIME).XXXXXX); \
-	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS) | tee $$T"); \
-	rc=$$?; \
+	@set -xeuo pipefail; T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
+	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS)") | tee $$T; \
 	if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
 		$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --file=$$T \
-		--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
-		--project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
-		--table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
+			--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
+			--project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
+			--table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
 	fi; \
-	rm -rf $$T; exit $$rc
+	rm -rf $$T
 .PHONY: run-benchmark
 
 ##
@@ -369,8 +368,8 @@ RELEASE_NOTES   :=
 GPG_TEST_OPTIONS := $(shell if gpg --pinentry-mode loopback --version >/dev/null 2>&1; then echo --pinentry-mode loopback; fi)
 $(RELEASE_KEY):
 	@echo "WARNING: Generating a key for testing ($@); don't use this."
-	T=$$(mktemp /tmp/keyring.XXXXXX); \
-	C=$$(mktemp /tmp/config.XXXXXX); \
+	T=$$(mktemp --tmpdir keyring.XXXXXX); \
+	C=$$(mktemp --tmpdir config.XXXXXX); \
 	echo Key-Type: DSA >> $$C && \
 	echo Key-Length: 1024 >> $$C && \
 	echo Name-Real: Test >> $$C && \
@@ -383,7 +382,7 @@ $(RELEASE_KEY):
 
 release: $(RELEASE_KEY) ## Builds a release.
 	@mkdir -p $(RELEASE_ROOT)
-	@T=$$(mktemp -d /tmp/release.XXXXXX); \
+	@T=$$(mktemp -d --tmpdir release.XXXXXX); \
 	  $(call submake,copy TARGETS="//runsc:runsc" DESTINATION=$$T) && \
 	  $(call submake,copy TARGETS="//shim/v1:gvisor-containerd-shim" DESTINATION=$$T) && \
 	  $(call submake,copy TARGETS="//shim/v2:containerd-shim-runsc-v1" DESTINATION=$$T) && \
