@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -45,4 +46,12 @@ func DropCaches(machine Machine) error {
 		return fmt.Errorf("failed to drop caches: %v logs: %s", err, out)
 	}
 	return nil
+}
+
+// DebugLog prints debug messages if the debug flag is set.
+func DebugLog(b *testing.B, msg string, args ...interface{}) {
+	b.Helper()
+	if *debug {
+		b.Logf(msg, args...)
+	}
 }

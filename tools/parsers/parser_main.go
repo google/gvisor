@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 
 	"gvisor.dev/gvisor/runsc/flag"
@@ -54,6 +55,7 @@ var (
 	parseTable   = parseCmd.String("table", "", "table to send benchmarks data.")
 	official     = parseCmd.Bool("official", false, "mark input data as official.")
 	runtime      = parseCmd.String("runtime", "", "runtime used to run the benchmark")
+	debug        = parseCmd.Bool("debug", false, "print debug logs")
 )
 
 // initBenchmarks initializes a dataset/table in a BigQuery project.
@@ -64,14 +66,17 @@ func initBenchmarks(ctx context.Context) error {
 // parseBenchmarks parses the given file into the BigQuery schema,
 // adds some custom data for the commit, and sends the data to BigQuery.
 func parseBenchmarks(ctx context.Context) error {
+	debugLog("Reading file: %s", *file)
 	data, err := ioutil.ReadFile(*file)
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %v", *file, err)
 	}
+	debugLog("Parsing output: %s", string(data))
 	suite, err := parsers.ParseOutput(string(data), *name, *official)
 	if err != nil {
 		return fmt.Errorf("failed parse data: %v", err)
 	}
+	debugLog("Parsed benchmarks: %d", len(suite.Benchmarks))
 	if len(suite.Benchmarks) < 1 {
 		fmt.Fprintf(os.Stderr, "Failed to find benchmarks for file: %s", *file)
 		return nil
@@ -90,6 +95,7 @@ func parseBenchmarks(ctx context.Context) error {
 
 	suite.Official = *official
 	suite.Conditions = append(suite.Conditions, extraConditions...)
+	debugLog("Sending benchmarks")
 	return bq.SendBenchmarks(ctx, suite, *parseProject, *parseDataset, *parseTable, nil)
 }
 
@@ -99,22 +105,22 @@ func main() {
 	// the "init" command
 	case len(os.Args) >= 2 && os.Args[1] == initString:
 		if err := initCmd.Parse(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "failed parse flags: %v\n", err)
+			log.Fatalf("Failed parse flags: %v\n", err)
 			os.Exit(1)
 		}
 		if err := initBenchmarks(ctx); err != nil {
 			failure := "failed to initialize project: %s dataset: %s table: %s: %v\n"
-			fmt.Fprintf(os.Stderr, failure, *parseProject, *parseDataset, *parseTable, err)
+			log.Fatalf(failure, *parseProject, *parseDataset, *parseTable, err)
 			os.Exit(1)
 		}
 	// the "parse" command.
 	case len(os.Args) >= 2 && os.Args[1] == parseString:
 		if err := parseCmd.Parse(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "failed parse flags: %v\n", err)
+			log.Fatalf("Failed parse flags: %v\n", err)
 			os.Exit(1)
 		}
 		if err := parseBenchmarks(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed parse benchmarks: %v\n", err)
+			log.Fatalf("Failed parse benchmarks: %v\n", err)
 			os.Exit(1)
 		}
 	default:
@@ -131,5 +137,11 @@ Available commands:
   %s     %s
   %s     %s
 `
-	fmt.Fprintf(os.Stderr, usage, initCmd.Name(), initDescription, parseCmd.Name(), parseDescription)
+	log.Printf(usage, initCmd.Name(), initDescription, parseCmd.Name(), parseDescription)
+}
+
+func debugLog(msg string, args ...interface{}) {
+	if *debug {
+		log.Printf(msg, args...)
+	}
 }

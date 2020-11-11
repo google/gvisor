@@ -24,7 +24,8 @@ import (
 )
 
 var (
-	help = flag.Bool("help", false, "print this usage message")
+	help  = flag.Bool("help", false, "print this usage message")
+	debug = flag.Bool("debug", false, "turns on debug messages for individual benchmarks")
 )
 
 // Harness is a handle for managing state in benchmark runs.
