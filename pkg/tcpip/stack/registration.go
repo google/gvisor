@@ -138,7 +138,7 @@ type PacketEndpoint interface {
 	HandlePacket(nicID tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
-// UnknownDestinationPacketDisposition enumerates the possible return vaues from
+// UnknownDestinationPacketDisposition enumerates the possible return values from
 // HandleUnknownDestinationPacket().
 type UnknownDestinationPacketDisposition int
 
@@ -263,6 +263,15 @@ const (
 	PacketLoop
 )
 
+// NetOptions is an interface that allows us to pass network protocol specific
+// options through the Stack layer code.
+type NetOptions interface {
+	// AllocationSize returns the amount of memory that must be allocated to
+	// hold the options given that the value must be rounded up to the next
+	// multiple of 4 bytes.
+	AllocationSize() int
+}
+
 // NetworkHeaderParams are the header parameters given as input by the
 // transport endpoint to the network.
 type NetworkHeaderParams struct {
@@ -274,6 +283,10 @@ type NetworkHeaderParams struct {
 
 	// TOS refers to TypeOfService or TrafficClass field of the IP-header.
 	TOS uint8
+
+	// Options is a set of options to add to a network header (or nil).
+	// It will be protocol specific opaque information from higher layers.
+	Options NetOptions
 }
 
 // GroupAddressableEndpoint is an endpoint that supports group addressing.
@@ -281,7 +294,7 @@ type NetworkHeaderParams struct {
 // An endpoint is considered to support group addressing when one or more
 // endpoints may associate themselves with the same identifier (group address).
 type GroupAddressableEndpoint interface {
-	// JoinGroup joins the spcified group.
+	// JoinGroup joins the specified group.
 	//
 	// Returns true if the group was newly joined.
 	JoinGroup(group tcpip.Address) (bool, *tcpip.Error)
@@ -378,7 +391,7 @@ type AddressEndpoint interface {
 	SetDeprecated(bool)
 }
 
-// AddressKind is the kind of of an address.
+// AddressKind is the kind of an address.
 //
 // See the values of AddressKind for more details.
 type AddressKind int

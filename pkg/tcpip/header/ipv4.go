@@ -56,12 +56,9 @@ const (
 )
 
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
-// fields of a packet that needs to be encoded.
+// fields of a packet that needs to be encoded. The IHL field is not here as
+// it is totally defined by the size of the options.
 type IPv4Fields struct {
-	// IHL is the "internet header length" field of an IPv4 packet. The value
-	// is in bytes.
-	IHL uint8
-
 	// TOS is the "type of service" field of an IPv4 packet.
 	TOS uint8
 
@@ -91,6 +88,9 @@ type IPv4Fields struct {
 
 	// DstAddr is the "destination ip address" of an IPv4 packet.
 	DstAddr tcpip.Address
+
+	// Options is between 0 and 40 bytes or nil if empty.
+	Options IPv4Options
 }
 
 // IPv4 is an IPv4 header.
@@ -118,7 +118,7 @@ const (
 	// Linux limits this to 65,515 octets (the max IP datagram size - the IPv4
 	// header size). But RFC 791 section 3.2 discusses the design of the IPv4
 	// fragment "allows 2**13 = 8192 fragments of 8 octets each for a total of
-	// 65,536 octets. Note that this is consistent with the the datagram total
+	// 65,536 octets. Note that this is consistent with the datagram total
 	// length field (of course, the header is counted in the total length and not
 	// in the fragments)."
 	IPv4MaximumPayloadSize = 65536
@@ -275,10 +275,22 @@ func (b IPv4) DestinationAddress() tcpip.Address {
 // IPv4Options is a buffer that holds all the raw IP options.
 type IPv4Options []byte
 
-// Options returns a buffer holding the options.
+// AllocationSize implements stack.NetOptions.
+// It reports the size to allocate for the Options. RFC 791 page 23 (end of
+// section 3.1) says of the padding at the end of the options:
+//    The internet header padding is used to ensure that the internet
+//    header ends on a 32 bit boundary.
+func (o IPv4Options) AllocationSize() int {
+	return (len(o) + IPv4IHLStride - 1) & ^(IPv4IHLStride - 1)
+}
+
+// Options returns a buffer holding the options or nil.
 func (b IPv4) Options() IPv4Options {
 	hdrLen := b.HeaderLength()
-	return IPv4Options(b[options:hdrLen:hdrLen])
+	if hdrLen > IPv4MinimumSize {
+		return IPv4Options(b[options:hdrLen:hdrLen])
+	}
+	return nil
 }
 
 // TransportProtocol implements Network.TransportProtocol.
@@ -351,7 +363,22 @@ func (b IPv4) CalculateChecksum() uint16 {
 
 // Encode encodes all the fields of the IPv4 header.
 func (b IPv4) Encode(i *IPv4Fields) {
-	b.SetHeaderLength(i.IHL)
+	// The size of the options defines the size of the whole header and thus the
+	// IHL field. Options are rare and this is a heavily used function so it is
+	// worth a bit of optimisation here to keep the copy out of the fast path.
+	hdrLen := IPv4MinimumSize
+	if len(i.Options) != 0 {
+		// AllocationSize is always >= len(i.Options).
+		aLen := i.Options.AllocationSize()
+		hdrLen += aLen
+		if hdrLen > len(b) {
+			panic(fmt.Sprintf("encode received %d bytes, wanted >= %d", len(b), hdrLen))
+		}
+		if aLen != copy(b[options:], i.Options) {
+			_ = copy(b[options+len(i.Options):options+aLen], []byte{0, 0, 0, 0})
+		}
+	}
+	b.SetHeaderLength(uint8(hdrLen))
 	b[tos] = i.TOS
 	b.SetTotalLength(i.TotalLength)
 	binary.BigEndian.PutUint16(b[id:], i.ID)

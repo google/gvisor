@@ -199,14 +199,28 @@ func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 }
 
 func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams) {
-	ip := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+	hdrLen := header.IPv4MinimumSize
+	var opts header.IPv4Options
+	if params.Options != nil {
+		var ok bool
+		if opts, ok = params.Options.(header.IPv4Options); !ok {
+			panic(fmt.Sprintf("want IPv4Options, got %T", params.Options))
+		}
+		hdrLen += opts.AllocationSize()
+		if hdrLen > header.IPv4MaximumHeaderSize {
+			// Since we have no way to report an error we must either panic or create
+			// a packet which is different to what was requested. Choose panic as this
+			// would be a programming error that should be caught in testing.
+			panic(fmt.Sprintf("IPv4 Options %d bytes, Max %d", params.Options.AllocationSize(), header.IPv4MaximumOptionsSize))
+		}
+	}
+	ip := header.IPv4(pkt.NetworkHeader().Push(hdrLen))
 	length := uint16(pkt.Size())
 	// RFC 6864 section 4.3 mandates uniqueness of ID values for non-atomic
 	// datagrams. Since the DF bit is never being set here, all datagrams
 	// are non-atomic and need an ID.
 	id := atomic.AddUint32(&e.protocol.ids[hashRoute(r, params.Protocol, e.protocol.hashIV)%buckets], 1)
 	ip.Encode(&header.IPv4Fields{
-		IHL:         header.IPv4MinimumSize,
 		TotalLength: length,
 		ID:          uint16(id),
 		TTL:         params.TTL,
@@ -214,6 +228,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params s
 		Protocol:    uint8(params.Protocol),
 		SrcAddr:     r.LocalAddress,
 		DstAddr:     r.RemoteAddress,
+		Options:     opts,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
 	pkt.NetworkProtocolNumber = ProtocolNumber
