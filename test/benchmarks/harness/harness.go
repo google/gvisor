@@ -19,13 +19,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 var (
-	help  = flag.Bool("help", false, "print this usage message")
-	debug = flag.Bool("debug", false, "turns on debug messages for individual benchmarks")
+	help    = flag.Bool("help", false, "print this usage message")
+	debug   = flag.Bool("debug", false, "turns on debug messages for individual benchmarks")
+	restart = flag.Bool("restart", false, "restarts docker on machine cleanup")
 )
 
 // Harness is a handle for managing state in benchmark runs.
@@ -50,4 +53,14 @@ func (h *Harness) Init() error {
 // GetMachine returns this run's implementation of machine.
 func (h *Harness) GetMachine() (Machine, error) {
 	return &localMachine{}, nil
+}
+
+// RestartDocker restarts the machine's docker instance.
+func (h *Harness) RestartDocker(b *testing.B) {
+	if *restart {
+		if err := exec.Command("systemctl", []string{"restart", "docker"}...).Run(); err != nil {
+			b.Logf("sysctl: %v", err)
+		}
+	}
+
 }

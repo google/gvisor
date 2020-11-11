@@ -37,7 +37,7 @@ func BenchmarkStartupEmpty(b *testing.B) {
 
 	ctx := context.Background()
 	for i := 0; i < b.N; i++ {
-		harness.DebugLog(b, "Running container: %d", i)
+		b.Logf("Running container: %d", i)
 		container := machine.GetContainer(ctx, b)
 		defer container.CleanUp(ctx)
 		if _, err := container.Run(ctx, dockerutil.RunOpts{
@@ -45,7 +45,7 @@ func BenchmarkStartupEmpty(b *testing.B) {
 		}, "true"); err != nil {
 			b.Fatalf("failed to run container: %v", err)
 		}
-		harness.DebugLog(b, "Ran container: %d", i)
+		b.Logf("Ran container: %d", i)
 	}
 }
 
@@ -99,6 +99,7 @@ func BenchmarkStartupNode(b *testing.B) {
 			RunOpts: runOpts,
 			Cmd:     cmd,
 		})
+	b.Logf("finished startup node")
 }
 
 // runServerWorkload runs a server workload defined by 'runOpts' and 'cmd'.
@@ -106,27 +107,29 @@ func BenchmarkStartupNode(b *testing.B) {
 func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		harness.DebugLog(b, "Running iteration: %d", i)
+		b.Logf("Running iteration: %d", i)
 		if err := func() error {
 			server := args.Machine.GetContainer(ctx, b)
 			defer func() {
 				b.StopTimer()
+				b.Logf("Cleanup started")
 				// Cleanup servers as we run so that we can go indefinitely.
 				server.CleanUp(ctx)
+				b.Logf("Cleanup complete")
 				b.StartTimer()
 			}()
-			harness.DebugLog(b, "Spawning container: %s", args.RunOpts.Image)
+			b.Logf("Spawning container: %s", args.RunOpts.Image)
 			if err := server.Spawn(ctx, args.RunOpts, args.Cmd...); err != nil {
 				return fmt.Errorf("failed to spawn node instance: %v", err)
 			}
 
-			harness.DebugLog(b, "Finding Container IP")
+			b.Logf("Finding Container IP")
 			servingIP, err := server.FindIP(ctx, false)
 			if err != nil {
 				return fmt.Errorf("failed to get ip from server: %v", err)
 			}
 
-			harness.DebugLog(b, "Waiting for container to start.")
+			b.Logf("Waiting for container to start.")
 			// Wait until the Client sees the server as up.
 			if err := harness.WaitUntilServing(ctx, args.Machine, servingIP, args.Port); err != nil {
 				return fmt.Errorf("failed to wait for serving: %v", err)
@@ -135,8 +138,9 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 		}(); err != nil {
 			b.Fatal(err)
 		}
-		harness.DebugLog(b, "Ran iteration: %d", i)
+		b.Logf("Iteration: %d", i)
 	}
+	b.Logf("Returning from workload")
 }
 
 // TestMain is the main method for package network.

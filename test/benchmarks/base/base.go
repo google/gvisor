@@ -78,6 +78,7 @@ func RedisInstance(ctx context.Context, b *testing.B, machine harness.Machine) (
 	b.Helper()
 	// Spawn a redis instance for the app to use.
 	redis := machine.GetNativeContainer(ctx, b)
+	redis.Name = "redis_" + redis.Name
 	if err := redis.Spawn(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/redis",
 	}); err != nil {

@@ -78,7 +78,7 @@ func parseBenchmarks(ctx context.Context) error {
 	}
 	debugLog("Parsed benchmarks: %d", len(suite.Benchmarks))
 	if len(suite.Benchmarks) < 1 {
-		fmt.Fprintf(os.Stderr, "Failed to find benchmarks for file: %s", *file)
+		log.Printf("Failed to find benchmarks for file: %s", *file)
 		return nil
 	}
 
