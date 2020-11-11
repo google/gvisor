@@ -1464,8 +1464,12 @@ type ICMPStats struct {
 // IPStats collects IP-specific stats (both v4 and v6).
 type IPStats struct {
 	// PacketsReceived is the total number of IP packets received from the
-	// link layer in nic.DeliverNetworkPacket.
+	// link layer.
 	PacketsReceived *StatCounter
+
+	// DisabledPacketsReceived is the total number of IP packets received from the
+	// link layer when disabled.
+	DisabledPacketsReceived *StatCounter
 
 	// InvalidDestinationAddressesReceived is the total number of IP packets
 	// received with an unknown or invalid destination address.

@@ -112,7 +112,15 @@ func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
 func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	// Increment the received packet count in the protocol descriptor.
 	netHdr := pkt.NetworkHeader().View()
-	f.proto.packetCount[int(netHdr[dstAddrOffset])%len(f.proto.packetCount)]++
+
+	dst := tcpip.Address(netHdr[dstAddrOffset:][:1])
+	addressEndpoint := f.AcquireAssignedAddress(dst, f.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
+	if addressEndpoint == nil {
+		return
+	}
+	addressEndpoint.DecRef()
+
+	f.proto.packetCount[int(dst[0])%len(f.proto.packetCount)]++
 
 	// Handle control packets.
 	if netHdr[protocolNumberOffset] == uint8(fakeControlProtocol) {
@@ -159,9 +167,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 	hdr[protocolNumberOffset] = byte(params.Protocol)
 
 	if r.Loop&stack.PacketLoop != 0 {
-		pkt := pkt.Clone()
-		r.PopulatePacketInfo(pkt)
-		f.HandlePacket(pkt)
+		f.HandlePacket(pkt.Clone())
 	}
 	if r.Loop&stack.PacketOut == 0 {
 		return nil
@@ -2211,88 +2217,6 @@ func TestNICStats(t *testing.T) {
 
 	if got, want := s.NICInfo()[1].Stats.Tx.Bytes.Value(), uint64(len(payload)+fakeNetHeaderLen); got != want {
 		t.Errorf("got Tx.Bytes.Value() = %d, want = %d", got, want)
-	}
-}
-
-func TestNICForwarding(t *testing.T) {
-	const nicID1 = 1
-	const nicID2 = 2
-	const dstAddr = tcpip.Address("\x03")
-
-	tests := []struct {
-		name      string
-		headerLen uint16
-	}{
-		{
-			name: "Zero header length",
-		},
-		{
-			name:      "Non-zero header length",
-			headerLen: 16,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
-			})
-			s.SetForwarding(fakeNetNumber, true)
-
-			ep1 := channel.New(10, defaultMTU, "")
-			if err := s.CreateNIC(nicID1, ep1); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
-			}
-			if err := s.AddAddress(nicID1, fakeNetNumber, "\x01"); err != nil {
-				t.Fatalf("AddAddress(%d, %d, 0x01): %s", nicID1, fakeNetNumber, err)
-			}
-
-			ep2 := channelLinkWithHeaderLength{
-				Endpoint:     channel.New(10, defaultMTU, ""),
-				headerLength: test.headerLen,
-			}
-			if err := s.CreateNIC(nicID2, &ep2); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
-			}
-			if err := s.AddAddress(nicID2, fakeNetNumber, "\x02"); err != nil {
-				t.Fatalf("AddAddress(%d, %d, 0x02): %s", nicID2, fakeNetNumber, err)
-			}
-
-			// Route all packets to dstAddr to NIC 2.
-			{
-				subnet, err := tcpip.NewSubnet(dstAddr, "\xff")
-				if err != nil {
-					t.Fatal(err)
-				}
-				s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: nicID2}})
-			}
-
-			// Send a packet to dstAddr.
-			buf := buffer.NewView(30)
-			buf[dstAddrOffset] = dstAddr[0]
-			ep1.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: buf.ToVectorisedView(),
-			}))
-
-			pkt, ok := ep2.Read()
-			if !ok {
-				t.Fatal("packet not forwarded")
-			}
-
-			// Test that the link's MaxHeaderLength is honoured.
-			if capacity, want := pkt.Pkt.AvailableHeaderBytes(), int(test.headerLen); capacity != want {
-				t.Errorf("got LinkHeader.AvailableLength() = %d, want = %d", capacity, want)
-			}
-
-			// Test that forwarding increments Tx stats correctly.
-			if got, want := s.NICInfo()[nicID2].Stats.Tx.Packets.Value(), uint64(1); got != want {
-				t.Errorf("got Tx.Packets.Value() = %d, want = %d", got, want)
-			}
-
-			if got, want := s.NICInfo()[nicID2].Stats.Tx.Bytes.Value(), uint64(len(buf)); got != want {
-				t.Errorf("got Tx.Bytes.Value() = %d, want = %d", got, want)
-			}
-		})
 	}
 }
 
