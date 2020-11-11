@@ -63,7 +63,7 @@ func TestGiveUpConnect(t *testing.T) {
 
 	// Register for notification, then start connection attempt.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&waitEntry, waiter.EventHUp)
+	wq.EventRegister(&waitEntry, waiter.EventOut)
 	defer wq.EventUnregister(&waitEntry)
 
 	if err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
@@ -1448,7 +1448,7 @@ func TestSynSent(t *testing.T) {
 
 			// Start connection attempt.
 			waitEntry, ch := waiter.NewChannelEntry(nil)
-			c.WQ.EventRegister(&waitEntry, waiter.EventHUp)
+			c.WQ.EventRegister(&waitEntry, waiter.EventOut)
 			defer c.WQ.EventUnregister(&waitEntry)
 
 			addr := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}

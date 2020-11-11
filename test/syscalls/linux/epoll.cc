@@ -39,6 +39,11 @@ namespace {
 constexpr int kFDsPerEpoll = 3;
 constexpr uint64_t kMagicConstant = 0x0102030405060708;
 
+uint64_t ms_elapsed(const struct timespec* begin, const struct timespec* end) {
+  return (end->tv_sec - begin->tv_sec) * 1000 +
+         (end->tv_nsec - begin->tv_nsec) / 1000000;
+}
+
 TEST(EpollTest, AllWritable) {
   auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
   std::vector<FileDescriptor> eventfds;
@@ -141,7 +146,7 @@ TEST(EpollTest, Timeout_NoRandomSave) {
 
   // Check the lower bound on the timeout.  Checking for an upper bound is
   // fragile because Linux can overrun the timeout due to scheduling delays.
-  EXPECT_GT(ms_elapsed(begin, end), kTimeoutMs - 1);
+  EXPECT_GT(ms_elapsed(&begin, &end), kTimeoutMs - 1);
 }
 
 void* writer(void* arg) {

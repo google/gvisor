@@ -60,48 +60,6 @@ PosixErrorOr<sockaddr_storage> InetLoopbackAddr(int family) {
   return addr;
 }
 
-static void FillSocketBuffers(int sender, int receiver) {
-  // Set the FD to O_NONBLOCK.
-  int opts;
-  int orig_opts;
-  ASSERT_THAT(opts = fcntl(sender, F_GETFL), SyscallSucceeds());
-  orig_opts = opts;
-  opts |= O_NONBLOCK;
-  ASSERT_THAT(fcntl(sender, F_SETFL, opts), SyscallSucceeds());
-
-  // Set TCP_NODELAY, which will cause linux to fill the receive buffer from the
-  // send buffer as quickly as possibly. This way we can fill up both buffers
-  // faster.
-  constexpr int tcp_nodelay_flag = 1;
-  ASSERT_THAT(setsockopt(sender, IPPROTO_TCP, TCP_NODELAY, &tcp_nodelay_flag,
-                         sizeof(tcp_nodelay_flag)),
-              SyscallSucceeds());
-
-  // Set a 256KB send/receive buffer.
-  int buf_sz = 1 << 18;
-  EXPECT_THAT(
-      setsockopt(receiver, SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
-      SyscallSucceedsWithValue(0));
-  EXPECT_THAT(
-      setsockopt(sender, SOL_SOCKET, SO_SNDBUF, &buf_sz, sizeof(buf_sz)),
-      SyscallSucceedsWithValue(0));
-
-  // Create a large buffer that will be used for sending.
-  std::vector<char> buf(1 << 16);
-
-  // Write until we receive an error.
-  while (RetryEINTR(send)(sender, buf.data(), buf.size(), 0) != -1) {
-    // Sleep to give linux a chance to move data from the send buffer to the
-    // receive buffer.
-    usleep(10000);  // 10ms.
-  }
-  // The last error should have been EWOULDBLOCK.
-  ASSERT_EQ(errno, EWOULDBLOCK);
-
-  // Restore the fcntl opts
-  ASSERT_THAT(fcntl(sender, F_SETFL, orig_opts), SyscallSucceeds());
-}
-
 // Fixture for tests parameterized by the address family to use (AF_INET and
 // AF_INET6) when creating sockets.
 class TcpSocketTest : public ::testing::TestWithParam<int> {
@@ -117,10 +75,10 @@ class TcpSocketTest : public ::testing::TestWithParam<int> {
   int listener_ = -1;
 
   // Socket connected via connect().
-  int first_fd = -1;
+  int s_ = -1;
 
   // Socket connected via accept().
-  int second_fd = -1;
+  int t_ = -1;
 
   // Initial size of the send buffer.
   int sendbuf_size_ = -1;
@@ -130,7 +88,7 @@ void TcpSocketTest::SetUp() {
   ASSERT_THAT(listener_ = socket(GetParam(), SOCK_STREAM, IPPROTO_TCP),
               SyscallSucceeds());
 
-  ASSERT_THAT(first_fd = socket(GetParam(), SOCK_STREAM, IPPROTO_TCP),
+  ASSERT_THAT(s_ = socket(GetParam(), SOCK_STREAM, IPPROTO_TCP),
               SyscallSucceeds());
 
   // Initialize address to the loopback one.
@@ -151,28 +109,27 @@ void TcpSocketTest::SetUp() {
                           &addrlen),
               SyscallSucceeds());
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  first_fd, reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s_, reinterpret_cast<struct sockaddr*>(&addr),
+                                  addrlen),
               SyscallSucceeds());
 
   // Get the initial send buffer size.
   socklen_t optlen = sizeof(sendbuf_size_);
-  ASSERT_THAT(
-      getsockopt(first_fd, SOL_SOCKET, SO_SNDBUF, &sendbuf_size_, &optlen),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &sendbuf_size_, &optlen),
+              SyscallSucceeds());
 
   // Accept the connection.
-  ASSERT_THAT(second_fd = RetryEINTR(accept)(listener_, nullptr, nullptr),
+  ASSERT_THAT(t_ = RetryEINTR(accept)(listener_, nullptr, nullptr),
               SyscallSucceeds());
 }
 
 void TcpSocketTest::TearDown() {
   EXPECT_THAT(close(listener_), SyscallSucceeds());
-  if (first_fd >= 0) {
-    EXPECT_THAT(close(first_fd), SyscallSucceeds());
+  if (s_ >= 0) {
+    EXPECT_THAT(close(s_), SyscallSucceeds());
   }
-  if (second_fd >= 0) {
-    EXPECT_THAT(close(second_fd), SyscallSucceeds());
+  if (t_ >= 0) {
+    EXPECT_THAT(close(t_), SyscallSucceeds());
   }
 }
 
@@ -181,48 +138,48 @@ TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  ASSERT_THAT(connect(first_fd, reinterpret_cast<const struct sockaddr*>(&addr),
-                      addrlen),
-              SyscallFailsWithErrno(EISCONN));
-  ASSERT_THAT(connect(second_fd,
-                      reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
-              SyscallFailsWithErrno(EISCONN));
+  ASSERT_THAT(
+      connect(s_, reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+      SyscallFailsWithErrno(EISCONN));
+  ASSERT_THAT(
+      connect(t_, reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+      SyscallFailsWithErrno(EISCONN));
 }
 
 TEST_P(TcpSocketTest, ShutdownWriteInTimeWait) {
-  EXPECT_THAT(shutdown(second_fd, SHUT_WR), SyscallSucceeds());
-  EXPECT_THAT(shutdown(first_fd, SHUT_RDWR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(s_, SHUT_RDWR), SyscallSucceeds());
   absl::SleepFor(absl::Seconds(1));  // Wait to enter TIME_WAIT.
-  EXPECT_THAT(shutdown(second_fd, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
 }
 
 TEST_P(TcpSocketTest, ShutdownWriteInFinWait1) {
-  EXPECT_THAT(shutdown(second_fd, SHUT_WR), SyscallSucceeds());
-  EXPECT_THAT(shutdown(second_fd, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
   absl::SleepFor(absl::Seconds(1));  // Wait to enter FIN-WAIT2.
-  EXPECT_THAT(shutdown(second_fd, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
 }
 
 TEST_P(TcpSocketTest, DataCoalesced) {
   char buf[10];
 
   // Write in two steps.
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, sizeof(buf) / 2),
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf) / 2),
               SyscallSucceedsWithValue(sizeof(buf) / 2));
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, sizeof(buf) / 2),
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf) / 2),
               SyscallSucceedsWithValue(sizeof(buf) / 2));
 
   // Allow stack to process both packets.
   absl::SleepFor(absl::Seconds(1));
 
   // Read in one shot.
-  EXPECT_THAT(RetryEINTR(recv)(second_fd, buf, sizeof(buf), 0),
+  EXPECT_THAT(RetryEINTR(recv)(t_, buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 TEST_P(TcpSocketTest, SenderAddressIgnored) {
   char buf[3];
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, sizeof(buf)),
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   struct sockaddr_storage addr;
@@ -230,7 +187,7 @@ TEST_P(TcpSocketTest, SenderAddressIgnored) {
   memset(&addr, 0, sizeof(addr));
 
   ASSERT_THAT(
-      RetryEINTR(recvfrom)(second_fd, buf, sizeof(buf), 0,
+      RetryEINTR(recvfrom)(t_, buf, sizeof(buf), 0,
                            reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
       SyscallSucceedsWithValue(3));
 
@@ -243,7 +200,7 @@ TEST_P(TcpSocketTest, SenderAddressIgnored) {
 
 TEST_P(TcpSocketTest, SenderAddressIgnoredOnPeek) {
   char buf[3];
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, sizeof(buf)),
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   struct sockaddr_storage addr;
@@ -251,7 +208,7 @@ TEST_P(TcpSocketTest, SenderAddressIgnoredOnPeek) {
   memset(&addr, 0, sizeof(addr));
 
   ASSERT_THAT(
-      RetryEINTR(recvfrom)(second_fd, buf, sizeof(buf), MSG_PEEK,
+      RetryEINTR(recvfrom)(t_, buf, sizeof(buf), MSG_PEEK,
                            reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
       SyscallSucceedsWithValue(3));
 
@@ -269,7 +226,7 @@ TEST_P(TcpSocketTest, SendtoAddressIgnored) {
 
   char data = '\0';
   EXPECT_THAT(
-      RetryEINTR(sendto)(first_fd, &data, sizeof(data), 0,
+      RetryEINTR(sendto)(s_, &data, sizeof(data), 0,
                          reinterpret_cast<sockaddr*>(&addr), sizeof(addr)),
       SyscallSucceedsWithValue(1));
 }
@@ -287,10 +244,9 @@ TEST_P(TcpSocketTest, WritevZeroIovec) {
   vecs[1].iov_base = buf + 1;
   vecs[1].iov_len = 0;
 
-  EXPECT_THAT(RetryEINTR(writev)(first_fd, vecs, 2),
-              SyscallSucceedsWithValue(1));
+  EXPECT_THAT(RetryEINTR(writev)(s_, vecs, 2), SyscallSucceedsWithValue(1));
 
-  EXPECT_THAT(RetryEINTR(recv)(second_fd, recv_buf, 1, 0),
+  EXPECT_THAT(RetryEINTR(recv)(t_, recv_buf, 1, 0),
               SyscallSucceedsWithValue(1));
   EXPECT_EQ(memcmp(recv_buf, buf, 1), 0);
 }
@@ -298,9 +254,9 @@ TEST_P(TcpSocketTest, WritevZeroIovec) {
 TEST_P(TcpSocketTest, ZeroWriteAllowed) {
   char buf[3];
   // Send a zero length packet.
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, 0), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, 0), SyscallSucceedsWithValue(0));
   // Verify that there is no packet available.
-  EXPECT_THAT(RetryEINTR(recv)(second_fd, buf, sizeof(buf), MSG_DONTWAIT),
+  EXPECT_THAT(RetryEINTR(recv)(t_, buf, sizeof(buf), MSG_DONTWAIT),
               SyscallFailsWithErrno(EAGAIN));
 }
 
@@ -310,9 +266,9 @@ TEST_P(TcpSocketTest, ZeroWriteAllowed) {
 TEST_P(TcpSocketTest, NonblockingLargeWrite) {
   // Set the FD to O_NONBLOCK.
   int opts;
-  ASSERT_THAT(opts = fcntl(first_fd, F_GETFL), SyscallSucceeds());
+  ASSERT_THAT(opts = fcntl(s_, F_GETFL), SyscallSucceeds());
   opts |= O_NONBLOCK;
-  ASSERT_THAT(fcntl(first_fd, F_SETFL, opts), SyscallSucceeds());
+  ASSERT_THAT(fcntl(s_, F_SETFL, opts), SyscallSucceeds());
 
   // Allocate a buffer three times the size of the send buffer. We do this with
   // a vector to avoid allocating on the stack.
@@ -321,8 +277,7 @@ TEST_P(TcpSocketTest, NonblockingLargeWrite) {
 
   // Try to write the whole thing.
   int n;
-  ASSERT_THAT(n = RetryEINTR(write)(first_fd, buf.data(), size),
-              SyscallSucceeds());
+  ASSERT_THAT(n = RetryEINTR(write)(s_, buf.data(), size), SyscallSucceeds());
 
   // We should have written something, but not the whole thing.
   EXPECT_GT(n, 0);
@@ -341,12 +296,12 @@ TEST_P(TcpSocketTest, BlockingLargeWrite_NoRandomSave) {
   int read_bytes = 0;
   ScopedThread t([this, &read_bytes]() {
     // Avoid interrupting the blocking write in main thread.
-    const DisableSave disable_save;
+    const DisableSave ds;
 
     // Take ownership of the FD so that we close it on failure. This will
     // unblock the blocking write below.
-    FileDescriptor fd(second_fd);
-    second_fd = -1;
+    FileDescriptor fd(t_);
+    t_ = -1;
 
     char readbuf[2500] = {};
     int n = -1;
@@ -359,12 +314,12 @@ TEST_P(TcpSocketTest, BlockingLargeWrite_NoRandomSave) {
 
   // Try to write the whole thing.
   int n;
-  ASSERT_THAT(n = WriteFd(first_fd, writebuf.data(), size), SyscallSucceeds());
+  ASSERT_THAT(n = WriteFd(s_, writebuf.data(), size), SyscallSucceeds());
 
   // We should have written the whole thing.
   EXPECT_EQ(n, size);
-  EXPECT_THAT(close(first_fd), SyscallSucceedsWithValue(0));
-  first_fd = -1;
+  EXPECT_THAT(close(s_), SyscallSucceedsWithValue(0));
+  s_ = -1;
   t.Join();
 
   // We should have read the whole thing.
@@ -382,7 +337,7 @@ TEST_P(TcpSocketTest, LargeSendDontWait) {
   // Try to write the whole thing with MSG_DONTWAIT flag, which can
   // return a partial write.
   int n;
-  ASSERT_THAT(n = RetryEINTR(send)(first_fd, buf.data(), size, MSG_DONTWAIT),
+  ASSERT_THAT(n = RetryEINTR(send)(s_, buf.data(), size, MSG_DONTWAIT),
               SyscallSucceeds());
 
   // We should have written something, but not the whole thing.
@@ -395,9 +350,9 @@ TEST_P(TcpSocketTest, LargeSendDontWait) {
 TEST_P(TcpSocketTest, NonblockingLargeSend) {
   // Set the FD to O_NONBLOCK.
   int opts;
-  ASSERT_THAT(opts = fcntl(first_fd, F_GETFL), SyscallSucceeds());
+  ASSERT_THAT(opts = fcntl(s_, F_GETFL), SyscallSucceeds());
   opts |= O_NONBLOCK;
-  ASSERT_THAT(fcntl(first_fd, F_SETFL, opts), SyscallSucceeds());
+  ASSERT_THAT(fcntl(s_, F_SETFL, opts), SyscallSucceeds());
 
   // Allocate a buffer three times the size of the send buffer. We do this on
   // with a vector to avoid allocating on the stack.
@@ -406,8 +361,7 @@ TEST_P(TcpSocketTest, NonblockingLargeSend) {
 
   // Try to write the whole thing.
   int n;
-  ASSERT_THAT(n = RetryEINTR(send)(first_fd, buf.data(), size, 0),
-              SyscallSucceeds());
+  ASSERT_THAT(n = RetryEINTR(send)(s_, buf.data(), size, 0), SyscallSucceeds());
 
   // We should have written something, but not the whole thing.
   EXPECT_GT(n, 0);
@@ -425,12 +379,12 @@ TEST_P(TcpSocketTest, BlockingLargeSend_NoRandomSave) {
   int read_bytes = 0;
   ScopedThread t([this, &read_bytes]() {
     // Avoid interrupting the blocking write in main thread.
-    const DisableSave disable_save;
+    const DisableSave ds;
 
     // Take ownership of the FD so that we close it on failure. This will
     // unblock the blocking write below.
-    FileDescriptor fd(second_fd);
-    second_fd = -1;
+    FileDescriptor fd(t_);
+    t_ = -1;
 
     char readbuf[2500] = {};
     int n = -1;
@@ -443,13 +397,12 @@ TEST_P(TcpSocketTest, BlockingLargeSend_NoRandomSave) {
 
   // Try to send the whole thing.
   int n;
-  ASSERT_THAT(n = SendFd(first_fd, writebuf.data(), size, 0),
-              SyscallSucceeds());
+  ASSERT_THAT(n = SendFd(s_, writebuf.data(), size, 0), SyscallSucceeds());
 
   // We should have written the whole thing.
   EXPECT_EQ(n, size);
-  EXPECT_THAT(close(first_fd), SyscallSucceedsWithValue(0));
-  first_fd = -1;
+  EXPECT_THAT(close(s_), SyscallSucceedsWithValue(0));
+  s_ = -1;
   t.Join();
 
   // We should have read the whole thing.
@@ -458,89 +411,54 @@ TEST_P(TcpSocketTest, BlockingLargeSend_NoRandomSave) {
 
 // Test that polling on a socket with a full send buffer will block.
 TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
-  FillSocketBuffers(first_fd, second_fd);
+  // Set the FD to O_NONBLOCK.
+  int opts;
+  ASSERT_THAT(opts = fcntl(s_, F_GETFL), SyscallSucceeds());
+  opts |= O_NONBLOCK;
+  ASSERT_THAT(fcntl(s_, F_SETFL, opts), SyscallSucceeds());
+
+  // Set TCP_NODELAY, which will cause linux to fill the receive buffer from the
+  // send buffer as quickly as possibly. This way we can fill up both buffers
+  // faster.
+  constexpr int tcp_nodelay_flag = 1;
+  ASSERT_THAT(setsockopt(s_, IPPROTO_TCP, TCP_NODELAY, &tcp_nodelay_flag,
+                         sizeof(tcp_nodelay_flag)),
+              SyscallSucceeds());
+
+  // Set a 256KB send/receive buffer.
+  int buf_sz = 1 << 18;
+  EXPECT_THAT(setsockopt(t_, SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &buf_sz, sizeof(buf_sz)),
+              SyscallSucceedsWithValue(0));
+
+  // Create a large buffer that will be used for sending.
+  std::vector<char> buf(1 << 16);
+
+  // Write until we receive an error.
+  while (RetryEINTR(send)(s_, buf.data(), buf.size(), 0) != -1) {
+    // Sleep to give linux a chance to move data from the send buffer to the
+    // receive buffer.
+    usleep(10000);  // 10ms.
+  }
+  // The last error should have been EWOULDBLOCK.
+  ASSERT_EQ(errno, EWOULDBLOCK);
+
   // Now polling on the FD with a timeout should return 0 corresponding to no
   // FDs ready.
-  struct pollfd poll_fd = {first_fd, POLLOUT, 0};
+  struct pollfd poll_fd = {s_, POLLOUT, 0};
   EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10), SyscallSucceedsWithValue(0));
-}
-
-TEST_P(TcpSocketTest, ClosedWriteBlockingSocket) {
-  FillSocketBuffers(first_fd, second_fd);
-  constexpr int timeout = 2;
-  struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
-  EXPECT_THAT(setsockopt(first_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
-              SyscallSucceeds());
-
-  struct timespec begin;
-  struct timespec end;
-  const DisableSave disable_save;  // Timing-related.
-  EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &begin), SyscallSucceeds());
-
-  ScopedThread send_thread([this]() {
-    char send_byte;
-    // Expect the send() to be blocked until receive timeout.
-    ASSERT_THAT(RetryEINTR(send)(first_fd, &send_byte, sizeof(send_byte), 0),
-                SyscallFailsWithErrno(EAGAIN));
-  });
-
-  // Wait for the thread to be blocked on write.
-  absl::SleepFor(absl::Milliseconds(50));
-  // Socket close does not have any effect on a blocked write.
-  ASSERT_THAT(close(first_fd), SyscallSucceeds());
-  // Indicate to the cleanup routine that we are already closed.
-  first_fd = -1;
-
-  send_thread.Join();
-
-  EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &end), SyscallSucceeds());
-  // Check the lower bound on the timeout.  Checking for an upper bound is
-  // fragile because Linux can overrun the timeout due to scheduling delays.
-  EXPECT_GT(ms_elapsed(begin, end), timeout * 1000 - 1);
-}
-
-TEST_P(TcpSocketTest, ClosedReadBlockingSocket) {
-  constexpr int timeout = 10;
-  struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
-  EXPECT_THAT(setsockopt(first_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
-              SyscallSucceeds());
-
-  struct timespec begin;
-  struct timespec end;
-  const DisableSave disable_save;  // Timing-related.
-  EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &begin), SyscallSucceeds());
-
-  ScopedThread read_thread([this]() {
-    char read_byte;
-    // Expect the read() to be blocked until receive timeout.
-    ASSERT_THAT(read(first_fd, &read_byte, sizeof(read_byte)),
-                SyscallFailsWithErrno(EAGAIN));
-  });
-
-  // Wait for the thread to be blocked on read.
-  absl::SleepFor(absl::Milliseconds(50));
-  // Socket close does not have any effect on a blocked read.
-  ASSERT_THAT(close(first_fd), SyscallSucceeds());
-  // Indicate to the cleanup routine that we are already closed.
-  first_fd = -1;
-
-  read_thread.Join();
-
-  EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &end), SyscallSucceeds());
-  // Check the lower bound on the timeout.  Checking for an upper bound is
-  // fragile because Linux can overrun the timeout due to scheduling delays.
-  EXPECT_GT(ms_elapsed(begin, end), timeout * 1000 - 1);
 }
 
 TEST_P(TcpSocketTest, MsgTrunc) {
   char sent_data[512];
   RandomizeBuffer(sent_data, sizeof(sent_data));
-  ASSERT_THAT(RetryEINTR(send)(first_fd, sent_data, sizeof(sent_data), 0),
+  ASSERT_THAT(RetryEINTR(send)(s_, sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
   char received_data[sizeof(sent_data)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(second_fd, received_data,
-                               sizeof(received_data) / 2, MSG_TRUNC),
-              SyscallSucceedsWithValue(sizeof(sent_data) / 2));
+  ASSERT_THAT(
+      RetryEINTR(recv)(t_, received_data, sizeof(received_data) / 2, MSG_TRUNC),
+      SyscallSucceedsWithValue(sizeof(sent_data) / 2));
 
   // Check that we didn't get anything.
   char zeros[sizeof(received_data)] = {};
@@ -552,13 +470,12 @@ TEST_P(TcpSocketTest, MsgTrunc) {
 TEST_P(TcpSocketTest, MsgTruncWithCtrunc) {
   char sent_data[512];
   RandomizeBuffer(sent_data, sizeof(sent_data));
-  ASSERT_THAT(RetryEINTR(send)(first_fd, sent_data, sizeof(sent_data), 0),
+  ASSERT_THAT(RetryEINTR(send)(s_, sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
   char received_data[sizeof(sent_data)] = {};
-  ASSERT_THAT(
-      RetryEINTR(recv)(second_fd, received_data, sizeof(received_data) / 2,
-                       MSG_TRUNC | MSG_CTRUNC),
-      SyscallSucceedsWithValue(sizeof(sent_data) / 2));
+  ASSERT_THAT(RetryEINTR(recv)(t_, received_data, sizeof(received_data) / 2,
+                               MSG_TRUNC | MSG_CTRUNC),
+              SyscallSucceedsWithValue(sizeof(sent_data) / 2));
 
   // Check that we didn't get anything.
   char zeros[sizeof(received_data)] = {};
@@ -570,11 +487,11 @@ TEST_P(TcpSocketTest, MsgTruncWithCtrunc) {
 TEST_P(TcpSocketTest, MsgTruncWithCtruncOnly) {
   char sent_data[512];
   RandomizeBuffer(sent_data, sizeof(sent_data));
-  ASSERT_THAT(RetryEINTR(send)(first_fd, sent_data, sizeof(sent_data), 0),
+  ASSERT_THAT(RetryEINTR(send)(s_, sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
   char received_data[sizeof(sent_data)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(second_fd, received_data,
-                               sizeof(received_data) / 2, MSG_CTRUNC),
+  ASSERT_THAT(RetryEINTR(recv)(t_, received_data, sizeof(received_data) / 2,
+                               MSG_CTRUNC),
               SyscallSucceedsWithValue(sizeof(sent_data) / 2));
 
   // Since MSG_CTRUNC here had no affect, it should not behave like MSG_TRUNC.
@@ -584,12 +501,12 @@ TEST_P(TcpSocketTest, MsgTruncWithCtruncOnly) {
 TEST_P(TcpSocketTest, MsgTruncLargeSize) {
   char sent_data[512];
   RandomizeBuffer(sent_data, sizeof(sent_data));
-  ASSERT_THAT(RetryEINTR(send)(first_fd, sent_data, sizeof(sent_data), 0),
+  ASSERT_THAT(RetryEINTR(send)(s_, sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
   char received_data[sizeof(sent_data) * 2] = {};
-  ASSERT_THAT(RetryEINTR(recv)(second_fd, received_data, sizeof(received_data),
-                               MSG_TRUNC),
-              SyscallSucceedsWithValue(sizeof(sent_data)));
+  ASSERT_THAT(
+      RetryEINTR(recv)(t_, received_data, sizeof(received_data), MSG_TRUNC),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
 
   // Check that we didn't get anything.
   char zeros[sizeof(received_data)] = {};
@@ -599,11 +516,11 @@ TEST_P(TcpSocketTest, MsgTruncLargeSize) {
 TEST_P(TcpSocketTest, MsgTruncPeek) {
   char sent_data[512];
   RandomizeBuffer(sent_data, sizeof(sent_data));
-  ASSERT_THAT(RetryEINTR(send)(first_fd, sent_data, sizeof(sent_data), 0),
+  ASSERT_THAT(RetryEINTR(send)(s_, sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
   char received_data[sizeof(sent_data)] = {};
-  ASSERT_THAT(RetryEINTR(recv)(second_fd, received_data,
-                               sizeof(received_data) / 2, MSG_TRUNC | MSG_PEEK),
+  ASSERT_THAT(RetryEINTR(recv)(t_, received_data, sizeof(received_data) / 2,
+                               MSG_TRUNC | MSG_PEEK),
               SyscallSucceedsWithValue(sizeof(sent_data) / 2));
 
   // Check that we didn't get anything.
@@ -611,38 +528,37 @@ TEST_P(TcpSocketTest, MsgTruncPeek) {
   EXPECT_EQ(0, memcmp(zeros, received_data, sizeof(received_data)));
 
   // Check that we can still get all of the data.
-  ASSERT_THAT(
-      RetryEINTR(recv)(second_fd, received_data, sizeof(received_data), 0),
-      SyscallSucceedsWithValue(sizeof(sent_data)));
+  ASSERT_THAT(RetryEINTR(recv)(t_, received_data, sizeof(received_data), 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 }
 
 TEST_P(TcpSocketTest, NoDelayDefault) {
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(first_fd, IPPROTO_TCP, TCP_NODELAY, &get, &get_len),
+  EXPECT_THAT(getsockopt(s_, IPPROTO_TCP, TCP_NODELAY, &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kSockOptOff);
 }
 
 TEST_P(TcpSocketTest, SetNoDelay) {
-  ASSERT_THAT(setsockopt(first_fd, IPPROTO_TCP, TCP_NODELAY, &kSockOptOn,
-                         sizeof(kSockOptOn)),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      setsockopt(s_, IPPROTO_TCP, TCP_NODELAY, &kSockOptOn, sizeof(kSockOptOn)),
+      SyscallSucceeds());
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(first_fd, IPPROTO_TCP, TCP_NODELAY, &get, &get_len),
+  EXPECT_THAT(getsockopt(s_, IPPROTO_TCP, TCP_NODELAY, &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kSockOptOn);
 
-  ASSERT_THAT(setsockopt(first_fd, IPPROTO_TCP, TCP_NODELAY, &kSockOptOff,
+  ASSERT_THAT(setsockopt(s_, IPPROTO_TCP, TCP_NODELAY, &kSockOptOff,
                          sizeof(kSockOptOff)),
               SyscallSucceeds());
 
-  EXPECT_THAT(getsockopt(first_fd, IPPROTO_TCP, TCP_NODELAY, &get, &get_len),
+  EXPECT_THAT(getsockopt(s_, IPPROTO_TCP, TCP_NODELAY, &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kSockOptOff);
@@ -654,33 +570,33 @@ TEST_P(TcpSocketTest, SetNoDelay) {
 
 TEST_P(TcpSocketTest, TcpInqSetSockOpt) {
   char buf[1024];
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, sizeof(buf)),
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // TCP_INQ is disabled by default.
   int val = -1;
   socklen_t slen = sizeof(val);
-  EXPECT_THAT(getsockopt(second_fd, SOL_TCP, TCP_INQ, &val, &slen),
+  EXPECT_THAT(getsockopt(t_, SOL_TCP, TCP_INQ, &val, &slen),
               SyscallSucceedsWithValue(0));
   ASSERT_EQ(val, 0);
 
   // Try to set TCP_INQ.
   val = 1;
-  EXPECT_THAT(setsockopt(second_fd, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
               SyscallSucceedsWithValue(0));
   val = -1;
   slen = sizeof(val);
-  EXPECT_THAT(getsockopt(second_fd, SOL_TCP, TCP_INQ, &val, &slen),
+  EXPECT_THAT(getsockopt(t_, SOL_TCP, TCP_INQ, &val, &slen),
               SyscallSucceedsWithValue(0));
   ASSERT_EQ(val, 1);
 
   // Try to unset TCP_INQ.
   val = 0;
-  EXPECT_THAT(setsockopt(second_fd, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
               SyscallSucceedsWithValue(0));
   val = -1;
   slen = sizeof(val);
-  EXPECT_THAT(getsockopt(second_fd, SOL_TCP, TCP_INQ, &val, &slen),
+  EXPECT_THAT(getsockopt(t_, SOL_TCP, TCP_INQ, &val, &slen),
               SyscallSucceedsWithValue(0));
   ASSERT_EQ(val, 0);
 }
@@ -691,18 +607,18 @@ TEST_P(TcpSocketTest, TcpInq) {
   int size = sizeof(buf);
   int kChunk = sizeof(buf) / 4;
   for (int i = 0; i < size; i += kChunk) {
-    ASSERT_THAT(RetryEINTR(write)(first_fd, buf, kChunk),
+    ASSERT_THAT(RetryEINTR(write)(s_, buf, kChunk),
                 SyscallSucceedsWithValue(kChunk));
   }
 
   int val = 1;
   kChunk = sizeof(buf) / 2;
-  EXPECT_THAT(setsockopt(second_fd, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
               SyscallSucceedsWithValue(0));
 
   // Wait when all data will be in the received queue.
   while (true) {
-    ASSERT_THAT(ioctl(second_fd, TIOCINQ, &size), SyscallSucceeds());
+    ASSERT_THAT(ioctl(t_, TIOCINQ, &size), SyscallSucceeds());
     if (size == sizeof(buf)) {
       break;
     }
@@ -721,7 +637,7 @@ TEST_P(TcpSocketTest, TcpInq) {
     iov.iov_len = kChunk;
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
-    ASSERT_THAT(RetryEINTR(recvmsg)(second_fd, &msg, 0),
+    ASSERT_THAT(RetryEINTR(recvmsg)(t_, &msg, 0),
                 SyscallSucceedsWithValue(kChunk));
     size -= kChunk;
 
@@ -740,35 +656,32 @@ TEST_P(TcpSocketTest, TcpInq) {
 TEST_P(TcpSocketTest, Tiocinq) {
   char buf[1024];
   size_t size = sizeof(buf);
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, size),
-              SyscallSucceedsWithValue(size));
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, size), SyscallSucceedsWithValue(size));
 
   uint32_t seed = time(nullptr);
   const size_t max_chunk = size / 10;
   while (size > 0) {
     size_t chunk = (rand_r(&seed) % max_chunk) + 1;
-    ssize_t read =
-        RetryEINTR(recvfrom)(second_fd, buf, chunk, 0, nullptr, nullptr);
+    ssize_t read = RetryEINTR(recvfrom)(t_, buf, chunk, 0, nullptr, nullptr);
     ASSERT_THAT(read, SyscallSucceeds());
     size -= read;
 
     int inq = 0;
-    ASSERT_THAT(ioctl(second_fd, TIOCINQ, &inq), SyscallSucceeds());
+    ASSERT_THAT(ioctl(t_, TIOCINQ, &inq), SyscallSucceeds());
     ASSERT_EQ(inq, size);
   }
 }
 
 TEST_P(TcpSocketTest, TcpSCMPriority) {
   char buf[1024];
-  ASSERT_THAT(RetryEINTR(write)(first_fd, buf, sizeof(buf)),
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   int val = 1;
-  EXPECT_THAT(setsockopt(second_fd, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
               SyscallSucceedsWithValue(0));
-  EXPECT_THAT(
-      setsockopt(second_fd, SOL_SOCKET, SO_TIMESTAMP, &val, sizeof(val)),
-      SyscallSucceedsWithValue(0));
+  EXPECT_THAT(setsockopt(t_, SOL_SOCKET, SO_TIMESTAMP, &val, sizeof(val)),
+              SyscallSucceedsWithValue(0));
 
   struct msghdr msg = {};
   std::vector<char> control(
@@ -781,7 +694,7 @@ TEST_P(TcpSocketTest, TcpSCMPriority) {
   iov.iov_len = sizeof(buf);
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
-  ASSERT_THAT(RetryEINTR(recvmsg)(second_fd, &msg, 0),
+  ASSERT_THAT(RetryEINTR(recvmsg)(t_, &msg, 0),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
@@ -808,24 +721,24 @@ TEST_P(TcpSocketTest, TcpSCMPriority) {
 }
 
 TEST_P(TcpSocketTest, TimeWaitPollHUP) {
-  shutdown(first_fd, SHUT_RDWR);
+  shutdown(s_, SHUT_RDWR);
   ScopedThread t([&]() {
     constexpr int kTimeout = 10000;
     constexpr int16_t want_events = POLLHUP;
     struct pollfd pfd = {
-        .fd = first_fd,
+        .fd = s_,
         .events = want_events,
     };
     ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
   });
-  shutdown(second_fd, SHUT_RDWR);
+  shutdown(t_, SHUT_RDWR);
   t.Join();
-  // At this point first_fd should be in TIME-WAIT and polling for POLLHUP
-  // should return with 1 FD.
+  // At this point s_ should be in TIME-WAIT and polling for POLLHUP should
+  // return with 1 FD.
   constexpr int kTimeout = 10000;
   constexpr int16_t want_events = POLLHUP;
   struct pollfd pfd = {
-      .fd = first_fd,
+      .fd = s_,
       .events = want_events,
   };
   ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
@@ -890,36 +803,31 @@ TEST_P(SimpleTcpSocketTest, GetPeerNameUnconnected) {
 TEST_P(TcpSocketTest, FullBuffer) {
   // Set both FDs to be blocking.
   int flags = 0;
-  ASSERT_THAT(flags = fcntl(first_fd, F_GETFL), SyscallSucceeds());
-  EXPECT_THAT(fcntl(first_fd, F_SETFL, flags & ~O_NONBLOCK), SyscallSucceeds());
+  ASSERT_THAT(flags = fcntl(s_, F_GETFL), SyscallSucceeds());
+  EXPECT_THAT(fcntl(s_, F_SETFL, flags & ~O_NONBLOCK), SyscallSucceeds());
   flags = 0;
-  ASSERT_THAT(flags = fcntl(second_fd, F_GETFL), SyscallSucceeds());
-  EXPECT_THAT(fcntl(second_fd, F_SETFL, flags & ~O_NONBLOCK),
-              SyscallSucceeds());
+  ASSERT_THAT(flags = fcntl(t_, F_GETFL), SyscallSucceeds());
+  EXPECT_THAT(fcntl(t_, F_SETFL, flags & ~O_NONBLOCK), SyscallSucceeds());
 
   // 2500 was chosen as a small value that can be set on Linux.
   int set_snd = 2500;
-  EXPECT_THAT(
-      setsockopt(first_fd, SOL_SOCKET, SO_SNDBUF, &set_snd, sizeof(set_snd)),
-      SyscallSucceedsWithValue(0));
+  EXPECT_THAT(setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &set_snd, sizeof(set_snd)),
+              SyscallSucceedsWithValue(0));
   int get_snd = -1;
   socklen_t get_snd_len = sizeof(get_snd);
-  EXPECT_THAT(
-      getsockopt(first_fd, SOL_SOCKET, SO_SNDBUF, &get_snd, &get_snd_len),
-      SyscallSucceedsWithValue(0));
+  EXPECT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &get_snd, &get_snd_len),
+              SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_snd_len, sizeof(get_snd));
   EXPECT_GT(get_snd, 0);
 
   // 2500 was chosen as a small value that can be set on Linux and gVisor.
   int set_rcv = 2500;
-  EXPECT_THAT(
-      setsockopt(second_fd, SOL_SOCKET, SO_RCVBUF, &set_rcv, sizeof(set_rcv)),
-      SyscallSucceedsWithValue(0));
+  EXPECT_THAT(setsockopt(t_, SOL_SOCKET, SO_RCVBUF, &set_rcv, sizeof(set_rcv)),
+              SyscallSucceedsWithValue(0));
   int get_rcv = -1;
   socklen_t get_rcv_len = sizeof(get_rcv);
-  EXPECT_THAT(
-      getsockopt(second_fd, SOL_SOCKET, SO_RCVBUF, &get_rcv, &get_rcv_len),
-      SyscallSucceedsWithValue(0));
+  EXPECT_THAT(getsockopt(t_, SOL_SOCKET, SO_RCVBUF, &get_rcv, &get_rcv_len),
+              SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_rcv_len, sizeof(get_rcv));
   EXPECT_GE(get_rcv, 2500);
 
@@ -936,30 +844,28 @@ TEST_P(TcpSocketTest, FullBuffer) {
   }
   ScopedThread t([this, &iovecs]() {
     int result = -1;
-    EXPECT_THAT(
-        result = RetryEINTR(writev)(first_fd, iovecs.data(), iovecs.size()),
-        SyscallSucceeds());
+    EXPECT_THAT(result = RetryEINTR(writev)(s_, iovecs.data(), iovecs.size()),
+                SyscallSucceeds());
     EXPECT_GT(result, 1);
     EXPECT_LT(result, sizeof(data) * iovecs.size());
   });
 
   char recv = 0;
-  EXPECT_THAT(RetryEINTR(read)(second_fd, &recv, 1),
-              SyscallSucceedsWithValue(1));
-  EXPECT_THAT(close(second_fd), SyscallSucceedsWithValue(0));
-  second_fd = -1;
+  EXPECT_THAT(RetryEINTR(read)(t_, &recv, 1), SyscallSucceedsWithValue(1));
+  EXPECT_THAT(close(t_), SyscallSucceedsWithValue(0));
+  t_ = -1;
 }
 
 TEST_P(TcpSocketTest, PollAfterShutdown) {
   ScopedThread client_thread([this]() {
-    EXPECT_THAT(shutdown(first_fd, SHUT_WR), SyscallSucceedsWithValue(0));
-    struct pollfd poll_fd = {first_fd, POLLIN | POLLERR | POLLHUP, 0};
+    EXPECT_THAT(shutdown(s_, SHUT_WR), SyscallSucceedsWithValue(0));
+    struct pollfd poll_fd = {s_, POLLIN | POLLERR | POLLHUP, 0};
     EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
                 SyscallSucceedsWithValue(1));
   });
 
-  EXPECT_THAT(shutdown(second_fd, SHUT_WR), SyscallSucceedsWithValue(0));
-  struct pollfd poll_fd = {second_fd, POLLIN | POLLERR | POLLHUP, 0};
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceedsWithValue(0));
+  struct pollfd poll_fd = {t_, POLLIN | POLLERR | POLLHUP, 0};
   EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
               SyscallSucceedsWithValue(1));
 }
@@ -1024,7 +930,7 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv_NoRandomSave) {
   int read_bytes = 0;
   ScopedThread t([&s, &read_bytes]() {
     // Too many syscalls.
-    const DisableSave disable_save;
+    const DisableSave ds;
 
     char readbuf[2500] = {};
     int n = -1;
@@ -1833,12 +1739,12 @@ TEST_P(TcpSocketTest, GetSocketAcceptConnListener) {
 TEST_P(TcpSocketTest, GetSocketAcceptConnNonListener) {
   int got = -1;
   socklen_t length = sizeof(got);
-  ASSERT_THAT(getsockopt(first_fd, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
               SyscallSucceeds());
   ASSERT_EQ(length, sizeof(got));
   EXPECT_EQ(got, 0);
 
-  ASSERT_THAT(getsockopt(second_fd, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
+  ASSERT_THAT(getsockopt(t_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
               SyscallSucceeds());
   ASSERT_EQ(length, sizeof(got));
   EXPECT_EQ(got, 0);

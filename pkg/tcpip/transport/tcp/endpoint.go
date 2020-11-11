@@ -1069,7 +1069,9 @@ func (e *endpoint) Close() {
 	e.closeNoShutdownLocked()
 }
 
-// closeNoShutdown closes the endpoint without doing a full shutdown.
+// closeNoShutdown closes the endpoint without doing a full shutdown. This is
+// used when a connection needs to be aborted with a RST and we want to skip
+// a full 4 way TCP shutdown.
 func (e *endpoint) closeNoShutdownLocked() {
 	// For listening sockets, we always release ports inline so that they
 	// are immediately available for reuse after Close() is called. If also
@@ -1096,7 +1098,6 @@ func (e *endpoint) closeNoShutdownLocked() {
 		return
 	}
 
-	eventMask := waiter.EventIn | waiter.EventOut
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
 	if e.workerRunning {
@@ -1108,12 +1109,8 @@ func (e *endpoint) closeNoShutdownLocked() {
 	} else {
 		e.transitionToStateCloseLocked()
 		// Notify that the endpoint is closed.
-		eventMask |= waiter.EventHUp
+		e.waiterQueue.Notify(waiter.EventHUp)
 	}
-
-	// The TCP closing state-machine would eventually notify EventHUp, but we
-	// notify EventIn|EventOut immediately to unblock any blocked waiters.
-	e.waiterQueue.Notify(eventMask)
 }
 
 // closePendingAcceptableConnections closes all connections that have completed
