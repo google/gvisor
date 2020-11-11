@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package testbench has utilities to send and receive packets and also command
-// the DUT to run POSIX functions.
 package testbench
 
 import (
@@ -74,7 +72,7 @@ func pickPort(domain, typ int) (fd int, port uint16, err error) {
 	}
 	sa, err = unix.Getsockname(fd)
 	if err != nil {
-		return -1, 0, fmt.Errorf("Getsocketname(%d): %w", fd, err)
+		return -1, 0, fmt.Errorf("fail in Getsocketname(%d): %w", fd, err)
 	}
 	port, err = portFromSockaddr(sa)
 	if err != nil {
@@ -102,9 +100,9 @@ type layerState interface {
 	// as it was sent is available.
 	sent(sent Layer) error
 
-	// received updates the layerState based on a Layer that is receieved. The
+	// received updates the layerState based on a Layer that is received. The
 	// input is a Layer with all prev and next pointers populated so that the
-	// entire frame as it was receieved is available.
+	// entire frame as it was received is available.
 	received(received Layer) error
 
 	// close frees associated resources held by the LayerState.
@@ -475,12 +473,12 @@ func (conn *Connection) Close(t *testing.T) {
 	}
 }
 
-// CreateFrame builds a frame for the connection with defaults overriden
+// CreateFrame builds a frame for the connection with defaults overridden
 // from the innermost layer out, and additionalLayers added after it.
 //
 // Note that overrideLayers can have a length that is less than the number
 // of layers in this connection, and in such cases the innermost layers are
-// overriden first. As an example, valid values of overrideLayers for a TCP-
+// overridden first. As an example, valid values of overrideLayers for a TCP-
 // over-IPv4-over-Ethernet connection are: nil, [TCP], [IPv4, TCP], and
 // [Ethernet, IPv4, TCP].
 func (conn *Connection) CreateFrame(t *testing.T, overrideLayers Layers, additionalLayers ...Layer) Layers {
@@ -711,7 +709,7 @@ func (conn *TCPIPv4) ConnectWithOptions(t *testing.T, options []byte) {
 }
 
 // ExpectData is a convenient method that expects a Layer and the Layer after
-// it. If it doens't arrive in time, it returns nil.
+// it. If it doesn't arrive in time, it returns nil.
 func (conn *TCPIPv4) ExpectData(t *testing.T, tcp *TCP, payload *Payload, timeout time.Duration) (Layers, error) {
 	t.Helper()
 
@@ -1046,7 +1044,7 @@ func (conn *UDPIPv4) Expect(t *testing.T, udp UDP, timeout time.Duration) (*UDP,
 }
 
 // ExpectData is a convenient method that expects a Layer and the Layer after
-// it. If it doens't arrive in time, it returns nil.
+// it. If it doesn't arrive in time, it returns nil.
 func (conn *UDPIPv4) ExpectData(t *testing.T, udp UDP, payload Payload, timeout time.Duration) (Layers, error) {
 	t.Helper()
 
@@ -1174,7 +1172,7 @@ func (conn *UDPIPv6) Expect(t *testing.T, udp UDP, timeout time.Duration) (*UDP,
 }
 
 // ExpectData is a convenient method that expects a Layer and the Layer after
-// it. If it doens't arrive in time, it returns nil.
+// it. If it doesn't arrive in time, it returns nil.
 func (conn *UDPIPv6) ExpectData(t *testing.T, udp UDP, payload Payload, timeout time.Duration) (Layers, error) {
 	t.Helper()
 
@@ -1234,13 +1232,14 @@ func NewTCPIPv6(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv6 {
 	}
 }
 
+// SrcPort returns the source port from the given Connection.
 func (conn *TCPIPv6) SrcPort() uint16 {
 	state := conn.layerStates[2].(*tcpState)
 	return *state.out.SrcPort
 }
 
 // ExpectData is a convenient method that expects a Layer and the Layer after
-// it. If it doens't arrive in time, it returns nil.
+// it. If it doesn't arrive in time, it returns nil.
 func (conn *TCPIPv6) ExpectData(t *testing.T, tcp *TCP, payload *Payload, timeout time.Duration) (Layers, error) {
 	t.Helper()
 

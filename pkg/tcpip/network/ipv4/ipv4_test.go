@@ -127,8 +127,8 @@ func TestIPv4Sanity(t *testing.T) {
 		maxTotalLength      uint16
 		transportProtocol   uint8
 		TTL                 uint8
-		options             []byte
-		replyOptions        []byte // if succeeds, reply should look like this
+		options             header.IPv4Options
+		replyOptions        header.IPv4Options // reply should look like this
 		shouldFail          bool
 		expectErrorICMP     bool
 		ICMPType            header.ICMPv4Type
@@ -177,24 +177,24 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options:           []byte{0, 0, 0, 0},
-			replyOptions:      []byte{0, 0, 0, 0},
+			options:           header.IPv4Options{0, 0, 0, 0},
+			replyOptions:      header.IPv4Options{0, 0, 0, 0},
 		},
 		{
 			name:              "NOP options",
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options:           []byte{1, 1, 1, 1},
-			replyOptions:      []byte{1, 1, 1, 1},
+			options:           header.IPv4Options{1, 1, 1, 1},
+			replyOptions:      header.IPv4Options{1, 1, 1, 1},
 		},
 		{
 			name:              "NOP and End options",
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options:           []byte{1, 1, 0, 0},
-			replyOptions:      []byte{1, 1, 0, 0},
+			options:           header.IPv4Options{1, 1, 0, 0},
+			replyOptions:      header.IPv4Options{1, 1, 0, 0},
 		},
 		{
 			name:              "bad header length",
@@ -240,12 +240,12 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 12, 13, 0x11,
 				192, 168, 1, 12,
 				1, 2, 3, 4,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				68, 12, 13, 0x21,
 				192, 168, 1, 12,
 				1, 2, 3, 4,
@@ -256,7 +256,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 12, 13, 0xF1,
 				//            ^   Counter full (15/0xF)
 				192, 168, 1, 12,
@@ -267,24 +267,24 @@ func TestIPv4Sanity(t *testing.T) {
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + 3,
-			replyOptions:        []byte{},
+			replyOptions:        header.IPv4Options{},
 		},
 		{
 			name:              "unknown option",
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options:           []byte{10, 4, 9, 0},
+			options:           header.IPv4Options{10, 4, 9, 0},
 			//                        ^^
 			// The unknown option should be stripped out of the reply.
-			replyOptions: []byte{},
+			replyOptions: header.IPv4Options{},
 		},
 		{
 			name:              "bad option - length 0",
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 0, 9, 0,
 				//  ^
 				1, 2, 3, 4,
@@ -296,7 +296,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 9, 9, 0,
 				//  ^
 				// There are only 8 bytes allocated to options so 9 bytes of timestamp
@@ -315,7 +315,7 @@ func TestIPv4Sanity(t *testing.T) {
 			TTL:               ttl,
 			// Timestamps are in multiples of 4 or 8 but never 7.
 			// The option space should be padded out.
-			options: []byte{
+			options: header.IPv4Options{
 				68, 7, 5, 0,
 				//  ^  ^ Linux points here which is wrong.
 				//  | Not a multiple of 4
@@ -332,7 +332,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 24, 21, 0x00,
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -340,7 +340,7 @@ func TestIPv4Sanity(t *testing.T) {
 				13, 14, 15, 16,
 				0, 0, 0, 0,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				68, 24, 25, 0x00,
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -355,7 +355,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 20, 21, 0x11,
 				//            ^
 				192, 168, 1, 12,
@@ -364,7 +364,7 @@ func TestIPv4Sanity(t *testing.T) {
 				5, 6, 7, 8,
 			},
 			// Overflow count is the top nibble of the 4th byte.
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				68, 20, 21, 0x21,
 				//            ^
 				192, 168, 1, 12,
@@ -378,7 +378,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 28, 21, 0x01,
 				192, 168, 1, 12,
 				1, 2, 3, 4,
@@ -387,7 +387,7 @@ func TestIPv4Sanity(t *testing.T) {
 				0, 0, 0, 0,
 				0, 0, 0, 0,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				68, 28, 29, 0x01,
 				192, 168, 1, 12,
 				1, 2, 3, 4,
@@ -403,7 +403,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 20, 17, 0x01,
 				//  ^^  ^^   20 byte area, next free spot at 17.
 				192, 168, 1, 12,
@@ -423,13 +423,13 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				68, 12, 13, 0x11,
 				192, 168, 1, 12,
 				1, 2, 3, 4,
 				0, 10, 3, 99,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				68, 12, 13, 0x21,
 				192, 168, 1, 12,
 				1, 2, 3, 4,
@@ -442,7 +442,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options:           []byte{68, 1, 0, 0},
+			options:           header.IPv4Options{68, 1, 0, 0},
 			//                            ^ Smallest possible is 8.
 			shouldFail: true,
 		},
@@ -451,12 +451,12 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				7, 7, 4, //  3 byte header
 				0, 0, 0, 0,
 				0,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				7, 7, 8, // 3 byte header
 				192, 168, 1, 58, // New IP Address.
 				0, // padding to multiple of 4 bytes.
@@ -467,7 +467,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				7, 23, 20, //  3 byte header
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -476,7 +476,7 @@ func TestIPv4Sanity(t *testing.T) {
 				0, 0, 0, 0,
 				0,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				7, 23, 24,
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -491,12 +491,12 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				7, 7, 8, // 3 byte header
 				1, 2, 3, 4,
 				0,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				7, 7, 8, // 3 byte header
 				1, 2, 3, 4,
 				0, // padding to multiple of 4 bytes.
@@ -508,7 +508,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				7, 23, 24, // 3 byte header
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -517,7 +517,7 @@ func TestIPv4Sanity(t *testing.T) {
 				17, 18, 19, 20,
 				0,
 			},
-			replyOptions: []byte{
+			replyOptions: header.IPv4Options{
 				7, 23, 24,
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -534,7 +534,7 @@ func TestIPv4Sanity(t *testing.T) {
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				7, 8, 8, // 3 byte header
 				// ^  ^ Linux points here. We must too.
 				// | Not enough room. 1 byte free, need 4.
@@ -546,14 +546,14 @@ func TestIPv4Sanity(t *testing.T) {
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + 2,
-			replyOptions:        []byte{},
+			replyOptions:        header.IPv4Options{},
 		},
 		{
 			name:              "duplicate record route",
 			maxTotalLength:    ipv4.MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
-			options: []byte{
+			options: header.IPv4Options{
 				7, 7, 8, // 3 byte header
 				1, 2, 3, 4,
 				7, 7, 8, // 3 byte header
@@ -565,7 +565,7 @@ func TestIPv4Sanity(t *testing.T) {
 			ICMPType:            header.ICMPv4ParamProblem,
 			ICMPCode:            header.ICMPv4UnusedCode,
 			paramProblemPointer: header.IPv4MinimumSize + 7,
-			replyOptions:        []byte{},
+			replyOptions:        header.IPv4Options{},
 		},
 	}
 
@@ -599,12 +599,7 @@ func TestIPv4Sanity(t *testing.T) {
 				},
 			})
 
-			// Round up the header size to the next multiple of 4 as RFC 791, page 11
-			// says: "Internet Header Length is the length of the internet header
-			// in 32 bit words..." and on page 23: "The internet header padding is
-			// used to ensure that the internet header ends on a 32 bit boundary."
-			ipHeaderLength := ((header.IPv4MinimumSize + len(test.options)) + header.IPv4IHLStride - 1) & ^(header.IPv4IHLStride - 1)
-
+			ipHeaderLength := header.IPv4MinimumSize + test.options.AllocationSize()
 			if ipHeaderLength > header.IPv4MaximumHeaderSize {
 				t.Fatalf("too many bytes in options: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
 			}
@@ -624,17 +619,13 @@ func TestIPv4Sanity(t *testing.T) {
 				totalLen = test.maxTotalLength
 			}
 			ip.Encode(&header.IPv4Fields{
-				IHL:         uint8(ipHeaderLength),
 				TotalLength: totalLen,
 				Protocol:    test.transportProtocol,
 				TTL:         test.TTL,
 				SrcAddr:     remoteIPv4Addr,
 				DstAddr:     ipv4Addr.Address,
+				Options:     test.options,
 			})
-			if n := copy(ip.Options(), test.options); n != len(test.options) {
-				t.Fatalf("options larger than available space: copied %d/%d bytes", n, len(test.options))
-			}
-			// Override the correct value if the test case specified one.
 			if test.headerLength != 0 {
 				ip.SetHeaderLength(test.headerLength)
 			}
@@ -1160,9 +1151,11 @@ func TestInvalidFragments(t *testing.T) {
 	}
 
 	type fragmentData struct {
-		ipv4fields   header.IPv4Fields
+		ipv4fields header.IPv4Fields
+		// 0 means insert the correct IHL. Non 0 means override the correct IHL.
+		overrideIHL  int // For 0 use 1 as it is an int and will be divided by 4.
 		payload      []byte
-		autoChecksum bool // if true, the Checksum field will be overwritten.
+		autoChecksum bool // If true, the Checksum field will be overwritten.
 	}
 
 	tests := []struct {
@@ -1176,7 +1169,6 @@ func TestInvalidFragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            0,
 						TOS:            tos,
 						TotalLength:    0,
 						ID:             ident,
@@ -1187,6 +1179,7 @@ func TestInvalidFragments(t *testing.T) {
 						SrcAddr:        addr1,
 						DstAddr:        addr2,
 					},
+					overrideIHL:  1, // See note above.
 					payload:      payloadGen(12),
 					autoChecksum: true,
 				},
@@ -1199,7 +1192,6 @@ func TestInvalidFragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            0,
 						TOS:            tos,
 						TotalLength:    0,
 						ID:             ident,
@@ -1210,6 +1202,7 @@ func TestInvalidFragments(t *testing.T) {
 						SrcAddr:        addr1,
 						DstAddr:        addr2,
 					},
+					overrideIHL:  1, // See note above.
 					payload:      payloadGen(12),
 					autoChecksum: true,
 				},
@@ -1224,7 +1217,6 @@ func TestInvalidFragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 17,
 						ID:             ident,
@@ -1249,7 +1241,6 @@ func TestInvalidFragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 16,
 						ID:             ident,
@@ -1272,7 +1263,6 @@ func TestInvalidFragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize - 12,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 28,
 						ID:             ident,
@@ -1284,11 +1274,11 @@ func TestInvalidFragments(t *testing.T) {
 						DstAddr:        addr2,
 					},
 					payload:      payloadGen(28),
+					overrideIHL:  header.IPv4MinimumSize - 12,
 					autoChecksum: true,
 				},
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize - 12,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize - 12,
 						ID:             ident,
@@ -1300,6 +1290,7 @@ func TestInvalidFragments(t *testing.T) {
 						DstAddr:        addr2,
 					},
 					payload:      payloadGen(28),
+					overrideIHL:  header.IPv4MinimumSize - 12,
 					autoChecksum: true,
 				},
 			},
@@ -1311,7 +1302,6 @@ func TestInvalidFragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize + 4,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 28,
 						ID:             ident,
@@ -1323,11 +1313,11 @@ func TestInvalidFragments(t *testing.T) {
 						DstAddr:        addr2,
 					},
 					payload:      payloadGen(28),
+					overrideIHL:  header.IPv4MinimumSize + 4,
 					autoChecksum: true,
 				},
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize + 4,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 4,
 						ID:             ident,
@@ -1339,6 +1329,7 @@ func TestInvalidFragments(t *testing.T) {
 						DstAddr:        addr2,
 					},
 					payload:      payloadGen(28),
+					overrideIHL:  header.IPv4MinimumSize + 4,
 					autoChecksum: true,
 				},
 			},
@@ -1350,7 +1341,6 @@ func TestInvalidFragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 8,
 						ID:             ident,
@@ -1366,7 +1356,6 @@ func TestInvalidFragments(t *testing.T) {
 				},
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 8,
 						ID:             ident,
@@ -1382,7 +1371,6 @@ func TestInvalidFragments(t *testing.T) {
 				},
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 8,
 						ID:             ident,
@@ -1423,6 +1411,11 @@ func TestInvalidFragments(t *testing.T) {
 
 				ip := header.IPv4(hdr.Prepend(pktSize))
 				ip.Encode(&f.ipv4fields)
+				// Encode sets this up correctly. If we want a different value for
+				// testing then we need to overwrite the good value.
+				if f.overrideIHL != 0 {
+					ip.SetHeaderLength(uint8(f.overrideIHL))
+				}
 				copy(ip[header.IPv4MinimumSize:], f.payload)
 
 				if f.autoChecksum {
@@ -1474,7 +1467,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 16,
 						ID:             ident,
@@ -1495,7 +1487,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 16,
 						ID:             ident,
@@ -1510,7 +1501,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				},
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 16,
 						ID:             ident,
@@ -1531,7 +1521,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    uint16(header.IPv4MinimumSize + len(data) - 16),
 						ID:             ident,
@@ -1552,7 +1541,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 8,
 						ID:             ident,
@@ -1567,7 +1555,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				},
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    uint16(header.IPv4MinimumSize + len(data) - 16),
 						ID:             ident,
@@ -1588,7 +1575,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    uint16(header.IPv4MinimumSize + len(data) - 16),
 						ID:             ident,
@@ -1603,7 +1589,6 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				},
 				{
 					ipv4fields: header.IPv4Fields{
-						IHL:            header.IPv4MinimumSize,
 						TOS:            tos,
 						TotalLength:    header.IPv4MinimumSize + 8,
 						ID:             ident,
@@ -2104,7 +2089,6 @@ func TestReceiveFragments(t *testing.T) {
 				// Serialize IPv4 fixed header.
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
-					IHL:            header.IPv4MinimumSize,
 					TotalLength:    header.IPv4MinimumSize + uint16(len(frag.payload)),
 					ID:             frag.id,
 					Flags:          frag.flags,
@@ -2370,7 +2354,6 @@ func TestPacketQueing(t *testing.T) {
 				u.SetChecksum(^u.CalculateChecksum(sum))
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
-					IHL:         header.IPv4MinimumSize,
 					TotalLength: header.IPv4MinimumSize + header.UDPMinimumSize,
 					TTL:         ipv4.DefaultTTL,
 					Protocol:    uint8(udp.ProtocolNumber),
@@ -2414,7 +2397,6 @@ func TestPacketQueing(t *testing.T) {
 				pkt.SetChecksum(^header.Checksum(pkt, 0))
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
-					IHL:         header.IPv4MinimumSize,
 					TotalLength: uint16(totalLen),
 					Protocol:    uint8(icmp.ProtocolNumber4),
 					TTL:         ipv4.DefaultTTL,

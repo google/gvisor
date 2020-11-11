@@ -73,7 +73,6 @@ func TestPingMulticastBroadcast(t *testing.T) {
 		pkt.SetChecksum(^header.Checksum(pkt, 0))
 		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 		ip.Encode(&header.IPv4Fields{
-			IHL:         header.IPv4MinimumSize,
 			TotalLength: uint16(totalLen),
 			Protocol:    uint8(icmp.ProtocolNumber4),
 			TTL:         ttl,
@@ -244,7 +243,6 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 
 		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 		ip.Encode(&header.IPv4Fields{
-			IHL:         header.IPv4MinimumSize,
 			TotalLength: uint16(totalLen),
 			Protocol:    uint8(udp.ProtocolNumber),
 			TTL:         ttl,

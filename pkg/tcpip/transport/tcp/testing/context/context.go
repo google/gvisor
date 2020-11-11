@@ -395,7 +395,6 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, 
 
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
-		IHL:         header.IPv4MinimumSize,
 		TotalLength: uint16(len(buf)),
 		TTL:         65,
 		Protocol:    uint8(header.ICMPv4ProtocolNumber),
@@ -437,7 +436,6 @@ func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcp
 	// Initialize the IP header.
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
-		IHL:         header.IPv4MinimumSize,
 		TotalLength: uint16(len(buf)),
 		TTL:         65,
 		Protocol:    uint8(tcp.ProtocolNumber),
