@@ -283,7 +283,7 @@ BENCHMARKS_SUITE     := start
 BENCHMARKS_UPLOAD    := false
 BENCHMARKS_OFFICIAL  := false
 BENCHMARKS_PLATFORMS := ptrace
-BENCHMARKS_TARGETS   := //test/benchmarks/base:base_test
+BENCHMARKS_TARGETS   := //test/benchmarks/base:startup_test
 BENCHMARKS_ARGS      := -test.bench=.
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
@@ -304,10 +304,10 @@ benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all 
 .PHONY: benchmark-platforms
 
 run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
-	@set -xeuo pipefail; T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
-	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS)") | tee $$T; \
+	@set -xeuo pipefail; 	T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
+	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS)" | tee $$T); \
 	if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
-		$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --file=$$T \
+		$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --debug --file=$$T \
 			--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
 			--project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
 			--table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
