@@ -1,6 +1,6 @@
 """Defines a rule for syscall test targets."""
 
-load("//tools:defs.bzl", "default_platform", "loopback", "platforms")
+load("//tools:defs.bzl", "default_platform", "platforms")
 
 def _runner_test_impl(ctx):
     # Generate a runner binary.
@@ -100,6 +100,7 @@ def _syscall_test(
 
     # Disable off-host networking.
     tags.append("requires-net:loopback")
+    tags.append("requires-net:ipv4")
     tags.append("block-network")
 
     # gotsan makes sense only if tests are running in gVisor.
@@ -125,7 +126,6 @@ def _syscall_test(
         name = name,
         test = test,
         runner_args = runner_args,
-        data = [loopback],
         size = size,
         tags = tags,
         shard_count = shard_count,

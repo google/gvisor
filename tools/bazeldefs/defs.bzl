@@ -5,7 +5,6 @@ load("@bazel_skylib//:bzl_library.bzl", _bzl_library = "bzl_library")
 
 build_test = _build_test
 bzl_library = _bzl_library
-loopback = "//tools/bazeldefs:loopback"
 rbe_platform = native.platform
 rbe_toolchain = native.toolchain
 
