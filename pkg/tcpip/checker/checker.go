@@ -197,7 +197,7 @@ func IPPayload(payload []byte) NetworkChecker {
 }
 
 // IPv4Options returns a checker that checks the options in an IPv4 packet.
-func IPv4Options(want []byte) NetworkChecker {
+func IPv4Options(want header.IPv4Options) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
 
@@ -205,7 +205,7 @@ func IPv4Options(want []byte) NetworkChecker {
 		if !ok {
 			t.Fatalf("unexpected network header passed to checker, got = %T, want = header.IPv4", h[0])
 		}
-		options := []byte(ip.Options())
+		options := ip.Options()
 		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
 		if len(want) == 0 && len(options) == 0 {
 			return

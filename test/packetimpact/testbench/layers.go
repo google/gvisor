@@ -286,6 +286,7 @@ type IPv4 struct {
 	Checksum       *uint16
 	SrcAddr        *tcpip.Address
 	DstAddr        *tcpip.Address
+	Options        *header.IPv4Options
 }
 
 func (l *IPv4) String() string {
@@ -294,10 +295,22 @@ func (l *IPv4) String() string {
 
 // ToBytes implements Layer.ToBytes.
 func (l *IPv4) ToBytes() ([]byte, error) {
-	b := make([]byte, header.IPv4MinimumSize)
+	// An IPv4 header is variable length depending on the size of the Options.
+	hdrLen := header.IPv4MinimumSize
+	if l.Options != nil {
+		hdrLen += l.Options.AllocationSize()
+		if hdrLen > header.IPv4MaximumHeaderSize {
+			// While ToBytes can be called on packets that were received as well
+			// as packets locally generated, it is physically impossible for a
+			// received packet to overflow this value so any such failure must
+			// be the result of a local programming error and not remotely
+			// triggered. A panic is therefore appropriate.
+			panic(fmt.Sprintf("IPv4 Options %d bytes, Max %d", len(*l.Options), header.IPv4MaximumOptionsSize))
+		}
+	}
+	b := make([]byte, hdrLen)
 	h := header.IPv4(b)
 	fields := &header.IPv4Fields{
-		IHL:            20,
 		TOS:            0,
 		TotalLength:    0,
 		ID:             0,
@@ -308,6 +321,11 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 		Checksum:       0,
 		SrcAddr:        tcpip.Address(""),
 		DstAddr:        tcpip.Address(""),
+		Options:        nil,
+	}
+	// Leave an empty options slice as nil.
+	if hdrLen > header.IPv4MinimumSize {
+		fields.Options = *l.Options
 	}
 	if l.TOS != nil {
 		fields.TOS = *l.TOS
@@ -362,6 +380,11 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 	if l.Checksum == nil {
 		h.SetChecksum(^h.CalculateChecksum())
 	}
+	// Encode cannot set this incorrectly so we need to overwrite what it wrote
+	// in order to test handling of a bad IHL value.
+	if l.IHL != nil {
+		h.SetHeaderLength(*l.IHL)
+	}
 	return h, nil
 }
 
@@ -377,8 +400,8 @@ func Uint8(v uint8) *uint8 {
 	return &v
 }
 
-// Address is a helper routine that allocates a new tcpip.Address value to store
-// v and returns a pointer to it.
+// Address is a helper routine that allocates a new tcpip.Address value to
+// store v and returns a pointer to it.
 func Address(v tcpip.Address) *tcpip.Address {
 	return &v
 }
@@ -387,6 +410,13 @@ func Address(v tcpip.Address) *tcpip.Address {
 // continues parsing further encapsulations.
 func parseIPv4(b []byte) (Layer, layerParser) {
 	h := header.IPv4(b)
+	hdrLen := h.HeaderLength()
+	// Even if there are no options, we set an empty options field instead of nil
+	// so that the decision to compare is up to the caller of that comparison.
+	var options header.IPv4Options
+	if hdrLen > header.IPv4MinimumSize {
+		options = append(options, h.Options()...)
+	}
 	tos, _ := h.TOS()
 	ipv4 := IPv4{
 		IHL:            Uint8(h.HeaderLength()),
@@ -400,6 +430,7 @@ func parseIPv4(b []byte) (Layer, layerParser) {
 		Checksum:       Uint16(h.Checksum()),
 		SrcAddr:        Address(h.SourceAddress()),
 		DstAddr:        Address(h.DestinationAddress()),
+		Options:        &options,
 	}
 	var nextParser layerParser
 	// If it is a fragment, don't treat it as having a transport protocol.
