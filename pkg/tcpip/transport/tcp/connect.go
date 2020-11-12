@@ -467,15 +467,28 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
 	defer s.Done()
 
+	// Use a channel to keep the result of address resolution.
+	var doneCh chan tcpip.LinkAddress
+
 	// Initial action is to resolve route.
 	index := wakerForResolution
 	for {
 		switch index {
 		case wakerForResolution:
-			if _, err := h.ep.route.Resolve(resolutionWaker); err != tcpip.ErrWouldBlock {
-				if err == tcpip.ErrNoLinkAddress {
-					h.ep.stats.SendErrors.NoLinkAddr.Increment()
-				} else if err != nil {
+			if doneCh != nil {
+				if linkAddr, ok := <-doneCh; ok {
+					h.ep.route.ResolveWith(linkAddr)
+					return nil
+				}
+				h.ep.stats.SendErrors.NoLinkAddr.Increment()
+				return tcpip.ErrNoLinkAddress
+			}
+
+			// Buffer the done channel to save the result of the address
+			// resolution in case resolution succeeds.
+			doneCh = make(chan tcpip.LinkAddress, 1)
+			if err := h.ep.route.Resolve(doneCh, resolutionWaker); err != tcpip.ErrWouldBlock {
+				if err != nil {
 					h.ep.stats.SendErrors.NoRoute.Increment()
 				}
 				// Either success (err == nil) or failure.

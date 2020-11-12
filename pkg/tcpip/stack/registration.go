@@ -816,16 +816,21 @@ type LinkAddressCache interface {
 	// AddLinkAddress adds a link address to the cache.
 	AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
 
-	// GetLinkAddress looks up the cache to translate address to link address (e.g. IP -> MAC).
-	// If the LinkEndpoint requests address resolution and there is a LinkAddressResolver
-	// registered with the network protocol, the cache attempts to resolve the address
-	// and returns ErrWouldBlock. Waker is notified when address resolution is
-	// complete (success or not).
+	// GetLinkAddress looks up the cache for translating address to link address
+	// (e.g. IP -> MAC).
 	//
-	// If address resolution is required, ErrNoLinkAddress and a notification channel is
-	// returned for the top level caller to block. Channel is closed once address resolution
-	// is complete (success or not).
-	GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
+	// Returns a link address for the remote address, if readily available.
+	//
+	// Returns ErrWouldBlock if the link address is not readily available,
+	// triggering address resolution asynchronously. If doneCh is provided, the
+	// channel will receive a link address if address resolution is successful,
+	// otherwise it will be closed. If waker is provided, it will be notified
+	// when address resolution is complete, regardless of success or failure.
+	//
+	// If specified, the local address must be an address local to the interface
+	// the neighbor cache belongs to. The local address is the source address of
+	// a packet prompting NUD/link address resolution.
+	GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, doneCh chan<- tcpip.LinkAddress, w *sleep.Waker) (tcpip.LinkAddress, *tcpip.Error)
 
 	// RemoveWaker removes a waker that has been added in GetLinkAddress().
 	RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)

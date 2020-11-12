@@ -41,7 +41,7 @@ type packetsPendingLinkResolution struct {
 	sync.Mutex
 
 	// The packets to send once the resolver completes.
-	packets map[<-chan struct{}][]pendingPacket
+	packets map[tcpip.Address][]pendingPacket
 
 	// FIFO of channels used to cancel the oldest goroutine waiting for
 	// link-address resolution.
@@ -51,14 +51,14 @@ type packetsPendingLinkResolution struct {
 func (f *packetsPendingLinkResolution) init() {
 	f.Lock()
 	defer f.Unlock()
-	f.packets = make(map[<-chan struct{}][]pendingPacket)
+	f.packets = make(map[tcpip.Address][]pendingPacket)
 }
 
-func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, proto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+func (f *packetsPendingLinkResolution) enqueue(doneCh <-chan tcpip.LinkAddress, r *Route, proto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	f.Lock()
 	defer f.Unlock()
 
-	packets, ok := f.packets[ch]
+	packets, ok := f.packets[r.RemoteAddress]
 	if len(packets) == maxPendingPacketsPerResolution {
 		p := packets[0]
 		packets[0] = pendingPacket{}
@@ -71,7 +71,7 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 		panic(fmt.Sprintf("max pending packets for resolution reached; got %d packets, max = %d", l, maxPendingPacketsPerResolution))
 	}
 
-	f.packets[ch] = append(packets, pendingPacket{
+	f.packets[r.RemoteAddress] = append(packets, pendingPacket{
 		route: r,
 		proto: proto,
 		pkt:   pkt,
@@ -85,15 +85,19 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 	cancel := f.newCancelChannelLocked()
 	go func() {
 		cancelled := false
+		var linkAddr tcpip.LinkAddress
 		select {
-		case <-ch:
+		case addr, ok := <-doneCh:
+			if ok {
+				linkAddr = addr
+			}
 		case <-cancel:
 			cancelled = true
 		}
 
 		f.Lock()
-		packets, ok := f.packets[ch]
-		delete(f.packets, ch)
+		packets, ok := f.packets[r.RemoteAddress]
+		delete(f.packets, r.RemoteAddress)
 		f.Unlock()
 
 		if !ok {
@@ -103,9 +107,8 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 		for _, p := range packets {
 			if cancelled {
 				p.route.Stats().IP.OutgoingPacketErrors.Increment()
-			} else if _, err := p.route.Resolve(nil); err != nil {
-				p.route.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {
+				p.route.ResolveWith(linkAddr)
 				p.route.outgoingNIC.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
 			}
 			p.route.Release()

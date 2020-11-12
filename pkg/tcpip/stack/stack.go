@@ -1517,18 +1517,18 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr t
 }
 
 // GetLinkAddress implements LinkAddressCache.GetLinkAddress.
-func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, doneCh chan<- tcpip.LinkAddress, waker *sleep.Waker) (tcpip.LinkAddress, *tcpip.Error) {
 	s.mu.RLock()
 	nic := s.nics[nicID]
 	if nic == nil {
 		s.mu.RUnlock()
-		return "", nil, tcpip.ErrUnknownNICID
+		return "", tcpip.ErrUnknownNICID
 	}
 	s.mu.RUnlock()
 
 	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 	linkRes := s.linkAddrResolvers[protocol]
-	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic, waker)
+	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic, doneCh, waker)
 }
 
 // Neighbors returns all IP to MAC address associations.

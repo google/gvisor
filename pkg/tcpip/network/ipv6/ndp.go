@@ -758,17 +758,19 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.Add
 
 	// Route should resolve immediately since snmc is a multicast address so a
 	// remote link address can be calculated without a resolution process.
-	if c, err := r.Resolve(nil); err != nil {
-		// Do not consider the NIC being unknown or disabled as a fatal error.
-		// Since this method is required to be called when the IPv6 endpoint is not
-		// locked, the NIC could have been disabled or removed by another goroutine.
-		if err == tcpip.ErrUnknownNICID || err != tcpip.ErrInvalidEndpointState {
+	if err := r.Resolve(nil, nil); err != nil {
+		switch err {
+		case tcpip.ErrUnknownNICID:
+			// Do not consider the NIC being unknown as a fatal error. Since
+			// this method is required to be called when the IPv6 endpoint is
+			// not locked, the NIC could have been disabled or removed by
+			// another goroutine.
 			return err
+		case tcpip.ErrWouldBlock:
+			panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.ep.nic.ID()))
+		default:
+			panic(fmt.Sprintf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.ep.nic.ID(), err))
 		}
-
-		panic(fmt.Sprintf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.ep.nic.ID(), err))
-	} else if c != nil {
-		panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.ep.nic.ID()))
 	}
 
 	icmpData := header.ICMPv6(buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize))
@@ -1914,18 +1916,19 @@ func (ndp *ndpState) startSolicitingRouters() {
 		// Route should resolve immediately since
 		// header.IPv6AllRoutersMulticastAddress is a multicast address so a
 		// remote link address can be calculated without a resolution process.
-		if c, err := r.Resolve(nil); err != nil {
-			// Do not consider the NIC being unknown or disabled as a fatal error.
-			// Since this method is required to be called when the IPv6 endpoint is
-			// not locked, the IPv6 endpoint could have been disabled or removed by
-			// another goroutine.
-			if err == tcpip.ErrUnknownNICID || err == tcpip.ErrInvalidEndpointState {
+		if err := r.Resolve(nil, nil); err != nil {
+			switch err {
+			case tcpip.ErrUnknownNICID:
+				// Do not consider the NIC being unknown as a fatal error.
+				// Since this method is required to be called when the IPv6 endpoint is
+				// not locked, the IPv6 endpoint could have been disabled or removed by
+				// another goroutine.
 				return
+			case tcpip.ErrWouldBlock:
+				panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.nic.ID()))
+			default:
+				panic(fmt.Sprintf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.nic.ID(), err))
 			}
-
-			panic(fmt.Sprintf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.nic.ID(), err))
-		} else if c != nil {
-			panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.nic.ID()))
 		}
 
 		// As per RFC 4861 section 4.1, an NDP RS SHOULD include the source

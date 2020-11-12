@@ -15,6 +15,7 @@
 package icmp
 
 import (
+	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -77,6 +78,9 @@ type endpoint struct {
 	stats         tcpip.TransportEndpointStats `state:"nosave"`
 	// linger is used for SO_LINGER socket option.
 	linger tcpip.LingerOption
+	// resCh is used to allow callers to wait on address resolution. It is nil
+	// iff address resolution is not being performed.
+	resCh chan struct{} `state:"nosave"`
 
 	// owner is used to get uid and gid of the packet.
 	owner tcpip.PacketOwner
@@ -133,6 +137,10 @@ func (e *endpoint) Close() {
 	e.rcvMu.Unlock()
 
 	e.route.Release()
+	if e.resCh != nil {
+		close(e.resCh)
+		e.resCh = nil
+	}
 
 	// Update the state.
 	e.state = stateClosed
@@ -270,26 +278,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 	}
 
-	var route *stack.Route
-	if to == nil {
-		route = &e.route
-
-		if route.IsResolutionRequired() {
-			// Promote lock to exclusive if using a shared route,
-			// given that it may need to change in Route.Resolve()
-			// call below.
-			e.mu.RUnlock()
-			defer e.mu.RLock()
-
-			e.mu.Lock()
-			defer e.mu.Unlock()
-
-			// Recheck state after lock was re-acquired.
-			if e.state != stateConnected {
-				return 0, nil, tcpip.ErrInvalidEndpointState
-			}
-		}
-	} else {
+	if to != nil {
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
 		nicID := to.NIC
@@ -313,36 +302,95 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 		defer r.Release()
 
-		route = &r
+		if r.IsResolutionRequired() {
+			waker := &sleep.Waker{}
+			if err := r.Resolve(nil, waker); err != nil {
+				if err == tcpip.ErrWouldBlock {
+					resCh := make(chan struct{})
+					go func() {
+						s := sleep.Sleeper{}
+						defer s.Done()
+
+						s.AddWaker(waker, 0)
+						_, _ = s.Fetch(true /* block */)
+
+						close(resCh)
+					}()
+					return 0, resCh, tcpip.ErrNoLinkAddress
+				}
+				return 0, nil, err
+			}
+		}
+
+		bytesWritten, err := e.send(&r, p)
+		return bytesWritten, nil, err
 	}
 
-	if route.IsResolutionRequired() {
-		if ch, err := route.Resolve(nil); err != nil {
+	if e.route.IsResolutionRequired() {
+		if e.resCh != nil {
+			// Resolution is already in progress.
+			return 0, e.resCh, tcpip.ErrNoLinkAddress
+		}
+
+		// Promote lock to exclusive if using a shared route, given that it
+		// may need to change in Route.Resolve() call below.
+		e.mu.RUnlock()
+		defer e.mu.RLock()
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		// Recheck state after lock was re-acquired.
+		if e.state != stateConnected {
+			return 0, nil, tcpip.ErrInvalidEndpointState
+		}
+
+		waker := &sleep.Waker{}
+		if err := e.route.Resolve(nil, waker); err != nil {
 			if err == tcpip.ErrWouldBlock {
-				return 0, ch, tcpip.ErrNoLinkAddress
+				e.resCh = make(chan struct{})
+				go func() {
+					s := sleep.Sleeper{}
+					defer s.Done()
+
+					s.AddWaker(waker, 0)
+					_, _ = s.Fetch(true /* block */)
+
+					e.mu.Lock()
+					defer e.mu.Unlock()
+
+					close(e.resCh)
+					e.resCh = nil
+				}()
+				return 0, e.resCh, tcpip.ErrNoLinkAddress
 			}
 			return 0, nil, err
 		}
 	}
 
+	bytesWritten, err := e.send(&e.route, p)
+	return bytesWritten, nil, err
+}
+
+func (e *endpoint) send(r *stack.Route, p tcpip.Payloader) (int64, *tcpip.Error) {
 	v, err := p.FullPayload()
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
-		err = send4(route, e.ID.LocalPort, v, e.ttl, e.owner)
+		err = send4(r, e.ID.LocalPort, v, e.ttl, e.owner)
 
 	case header.IPv6ProtocolNumber:
-		err = send6(route, e.ID.LocalPort, v, e.ttl)
+		err = send6(r, e.ID.LocalPort, v, e.ttl)
 	}
 
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
-	return int64(len(v)), nil, nil
+	return int64(len(v)), nil
 }
 
 // Peek only returns data from a single datagram, so do nothing here.
@@ -568,6 +616,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	e.ID = id
 	e.route = r.Clone()
+	e.resCh = nil
 	e.RegisterNICID = nicID
 
 	e.state = stateConnected

@@ -159,6 +159,10 @@ type endpoint struct {
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
+
+	// resCh is used to allow callers to wait on address resolution. It is nil
+	// iff address resolution is not being performed.
+	resCh chan struct{} `state:"nosave"`
 }
 
 // +stateify savable
@@ -456,12 +460,12 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	var route *stack.Route
-	var resolve func(waker *sleep.Waker) (ch <-chan struct{}, err *tcpip.Error)
+	var resolve func(doneCh chan<- tcpip.LinkAddress, waker *sleep.Waker) *tcpip.Error
 	var dstPort uint16
 	if to == nil {
 		route = &e.route
 		dstPort = e.dstPort
-		resolve = func(waker *sleep.Waker) (ch <-chan struct{}, err *tcpip.Error) {
+		resolve = func(doneCh chan<- tcpip.LinkAddress, waker *sleep.Waker) (err *tcpip.Error) {
 			// Promote lock to exclusive if using a shared route, given that it may
 			// need to change in Route.Resolve() call below.
 			e.mu.RUnlock()
@@ -472,7 +476,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 				err = tcpip.ErrInvalidEndpointState
 			}
 			if err == nil && route.IsResolutionRequired() {
-				ch, err = route.Resolve(waker)
+				err = route.Resolve(doneCh, waker)
 			}
 
 			e.mu.Unlock()
@@ -482,7 +486,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			if e.state != StateConnected {
 				err = tcpip.ErrInvalidEndpointState
 			}
-			return ch, err
+			return err
 		}
 	} else {
 		// Reject destination address if it goes through a different
@@ -522,9 +526,32 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	if route.IsResolutionRequired() {
-		if ch, err := resolve(nil); err != nil {
+		waker := &sleep.Waker{}
+		if err := resolve(nil, waker); err != nil {
 			if err == tcpip.ErrWouldBlock {
-				return 0, ch, tcpip.ErrNoLinkAddress
+				e.mu.RUnlock()
+				defer e.mu.RLock()
+
+				e.mu.Lock()
+				defer e.mu.Unlock()
+
+				if e.resCh == nil {
+					e.resCh = make(chan struct{})
+					go func() {
+						s := sleep.Sleeper{}
+						defer s.Done()
+
+						s.AddWaker(waker, 0)
+						_, _ = s.Fetch(true /* block */)
+
+						e.mu.Lock()
+						defer e.mu.Unlock()
+
+						close(e.resCh)
+						e.resCh = nil
+					}()
+				}
+				return 0, e.resCh, tcpip.ErrNoLinkAddress
 			}
 			return 0, nil, err
 		}
