@@ -305,7 +305,8 @@ benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all 
 
 run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
 	@set -xeuo pipefail; 	T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
-	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS)" | tee $$T); \
+	OUT=$$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS)");
+	cat $$OUT > $$T
 	if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
 		$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --debug --file=$$T \
 			--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
