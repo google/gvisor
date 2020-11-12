@@ -478,9 +478,9 @@ func (i *inode) statTo(stat *linux.Statx) {
 	stat.GID = atomic.LoadUint32(&i.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&i.mode))
 	stat.Ino = i.ino
-	stat.Atime = linux.NsecToStatxTimestamp(i.atime)
-	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime)
-	stat.Mtime = linux.NsecToStatxTimestamp(i.mtime)
+	stat.Atime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.atime))
+	stat.Ctime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.ctime))
+	stat.Mtime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.mtime))
 	stat.DevMajor = linux.UNNAMED_MAJOR
 	stat.DevMinor = i.fs.devMinor
 	switch impl := i.impl.(type) {
