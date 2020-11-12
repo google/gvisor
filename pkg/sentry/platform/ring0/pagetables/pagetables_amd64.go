@@ -41,13 +41,13 @@ const (
 	entriesPerPage = 512
 )
 
-// Init initializes a set of PageTables.
+// InitArch does some additional initialization related to the architecture.
 //
 //go:nosplit
-func (p *PageTables) Init(allocator Allocator) {
-	p.Allocator = allocator
-	p.root = p.Allocator.NewPTEs()
-	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
+func (p *PageTables) InitArch(allocator Allocator) {
+	if p.upperSharedPageTables != nil {
+		p.cloneUpperShared()
+	}
 }
 
 func pgdIndex(upperStart uintptr) uintptr {
