@@ -71,6 +71,7 @@ func newExecArgInode(t *kernel.Task, msrc *fs.MountSource, arg execArgType) *fs.
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (i *execArgInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
 	return fs.NewFile(ctx, dirent, flags, &execArgFile{
 		arg: i.arg,
 		t:   i.t,

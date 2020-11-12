@@ -149,6 +149,7 @@ func (s *SeqFile) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.Unstabl
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (s *SeqFile) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
 	return fs.NewFile(ctx, dirent, flags, &seqFileOperations{seqFile: s}), nil
 }
 

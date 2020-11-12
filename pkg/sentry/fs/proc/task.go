@@ -841,6 +841,7 @@ func (c *comm) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (c *comm) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
 	return fs.NewFile(ctx, dirent, flags, &commFile{t: c.t}), nil
 }
 
@@ -898,6 +899,7 @@ func newAuxvec(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (a *auxvec) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
 	return fs.NewFile(ctx, dirent, flags, &auxvecFile{t: a.t}), nil
 }
 
@@ -996,6 +998,8 @@ func (*oomScoreAdj) Truncate(context.Context, *fs.Inode, int64) error {
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (o *oomScoreAdj) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
+	flags.Pwrite = true
 	return fs.NewFile(ctx, dirent, flags, &oomScoreAdjFile{t: o.t}), nil
 }
 
