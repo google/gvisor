@@ -79,6 +79,9 @@ type endpoint struct {
 
 	// owner is used to get uid and gid of the packet.
 	owner tcpip.PacketOwner
+
+	// ops is used to get socket level options.
+	ops tcpip.SocketOptions
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
@@ -852,4 +855,8 @@ func (*endpoint) Wait() {}
 // LastError implements tcpip.Endpoint.LastError.
 func (*endpoint) LastError() *tcpip.Error {
 	return nil
+}
+
+func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
+	return &e.ops
 }

@@ -64,6 +64,7 @@ func (ep *endpoint) StateFields() []string {
 		"boundNIC",
 		"linger",
 		"lastError",
+		"ops",
 	}
 }
 
@@ -86,6 +87,7 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &ep.bound)
 	stateSinkObject.Save(12, &ep.boundNIC)
 	stateSinkObject.Save(13, &ep.linger)
+	stateSinkObject.Save(15, &ep.ops)
 }
 
 func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
@@ -102,6 +104,7 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &ep.bound)
 	stateSourceObject.Load(12, &ep.boundNIC)
 	stateSourceObject.Load(13, &ep.linger)
+	stateSourceObject.Load(15, &ep.ops)
 	stateSourceObject.LoadValue(5, new(int), func(y interface{}) { ep.loadRcvBufSizeMax(y.(int)) })
 	stateSourceObject.LoadValue(14, new(string), func(y interface{}) { ep.loadLastError(y.(string)) })
 	stateSourceObject.AfterLoad(ep.afterLoad)

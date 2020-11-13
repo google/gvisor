@@ -108,7 +108,6 @@ type endpoint struct {
 	multicastLoop  bool
 	portFlags      ports.Flags
 	bindToDevice   tcpip.NICID
-	broadcast      bool
 	noChecksum     bool
 
 	lastErrorMu sync.Mutex   `state:"nosave"`
@@ -157,6 +156,9 @@ type endpoint struct {
 
 	// linger is used for SO_LINGER socket option.
 	linger tcpip.LingerOption
+
+	// ops is used to get socket level options.
+	ops tcpip.SocketOptions
 }
 
 // +stateify savable
@@ -508,7 +510,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		resolve = route.Resolve
 	}
 
-	if !e.broadcast && route.IsOutboundBroadcast() {
+	if !e.ops.GetBroadcast() && route.IsOutboundBroadcast() {
 		return 0, nil, tcpip.ErrBroadcastDisabled
 	}
 
@@ -553,11 +555,6 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 // SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
-	case tcpip.BroadcastOption:
-		e.mu.Lock()
-		e.broadcast = v
-		e.mu.Unlock()
-
 	case tcpip.MulticastLoopOption:
 		e.mu.Lock()
 		e.multicastLoop = v
@@ -614,7 +611,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 
 		e.v6only = v
 	}
-
 	return nil
 }
 
@@ -830,12 +826,6 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
-	case tcpip.BroadcastOption:
-		e.mu.RLock()
-		v := e.broadcast
-		e.mu.RUnlock()
-		return v, nil
-
 	case tcpip.KeepaliveEnabledOption:
 		return false, nil
 
@@ -1524,4 +1514,8 @@ func isBroadcastOrMulticast(a tcpip.Address) bool {
 
 func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
+}
+
+func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
+	return &e.ops
 }
