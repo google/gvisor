@@ -52,28 +52,21 @@ func setup(t *testing.T) *testutil.System {
 // newTestConnection creates a fuse connection that the sentry can communicate with
 // and the FD for the server to communicate with.
 func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveRequests uint64) (*connection, *vfs.FileDescription, error) {
-	vfsObj := &vfs.VirtualFilesystem{}
 	fuseDev := &DeviceFD{}
 
-	if err := vfsObj.Init(system.Ctx); err != nil {
-		return nil, nil, err
-	}
-
-	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
+	vd := system.VFS.NewAnonVirtualDentry("fuse")
 	defer vd.DecRef(system.Ctx)
-	if err := fuseDev.vfsfd.Init(fuseDev, linux.O_RDWR|linux.O_CREAT, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fuseDev.vfsfd.Init(fuseDev, linux.O_RDWR, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, nil, err
 	}
 
 	fsopts := filesystemOptions{
 		maxActiveRequests: maxActiveRequests,
 	}
-	fs, err := newFUSEFilesystem(system.Ctx, 0, &fsopts, &fuseDev.vfsfd)
+	fs, err := newFUSEFilesystem(system.Ctx, system.VFS, &FilesystemType{}, fuseDev, 0, &fsopts)
 	if err != nil {
 		return nil, nil, err
 	}
-	fs.VFSFilesystem().Init(vfsObj, nil, fs)
-
 	return fs.conn, &fuseDev.vfsfd, nil
 }
 

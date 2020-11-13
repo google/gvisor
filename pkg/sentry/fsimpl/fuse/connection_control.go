@@ -198,7 +198,6 @@ func (conn *connection) Abort(ctx context.Context) {
 	if !conn.connected {
 		conn.asyncMu.Unlock()
 		conn.mu.Unlock()
-		conn.fd.mu.Unlock()
 		return
 	}
 

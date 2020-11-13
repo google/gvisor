@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -193,11 +192,12 @@ func (conn *connection) loadInitializedChan(closed bool) {
 	}
 }
 
-// newFUSEConnection creates a FUSE connection to fd.
-func newFUSEConnection(_ context.Context, fd *vfs.FileDescription, opts *filesystemOptions) (*connection, error) {
-	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
-	// mount a FUSE filesystem.
-	fuseFD := fd.Impl().(*DeviceFD)
+// newFUSEConnection creates a FUSE connection to fuseFD.
+func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOptions) (*connection, error) {
+	// Mark the device as ready so it can be used.
+	// FIXME(gvisor.dev/issue/4813): fuseFD's fields are accessed without
+	// synchronization and without checking if fuseFD has already been used to
+	// mount another filesystem.
 
 	// Create the writeBuf for the header to be stored in.
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
