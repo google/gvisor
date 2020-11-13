@@ -374,8 +374,14 @@ func (b IPv4) Encode(i *IPv4Fields) {
 		if hdrLen > len(b) {
 			panic(fmt.Sprintf("encode received %d bytes, wanted >= %d", len(b), hdrLen))
 		}
-		if aLen != copy(b[options:], i.Options) {
-			_ = copy(b[options+len(i.Options):options+aLen], []byte{0, 0, 0, 0})
+		opts := b[options:]
+		// This avoids bounds checks on the next line(s) which would happen even
+		// if there's no work to do.
+		if n := copy(opts, i.Options); n != aLen {
+			padding := opts[n:][:aLen-n]
+			for i := range padding {
+				padding[i] = 0
+			}
 		}
 	}
 	b.SetHeaderLength(uint8(hdrLen))

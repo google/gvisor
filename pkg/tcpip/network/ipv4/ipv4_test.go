@@ -103,6 +103,105 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 }
 
+// TestIPv4Encode checks that ipv4.Encode correctly fills out the requested
+// fields when options are supplied.
+func TestIPv4EncodeOptions(t *testing.T) {
+	tests := []struct {
+		name           string
+		options        header.IPv4Options
+		encodedOptions header.IPv4Options // reply should look like this
+		wantIHL        int
+	}{
+		{
+			name:    "valid no options",
+			wantIHL: header.IPv4MinimumSize,
+		},
+		{
+			name:           "one byte options",
+			options:        header.IPv4Options{1},
+			encodedOptions: header.IPv4Options{1, 0, 0, 0},
+			wantIHL:        header.IPv4MinimumSize + 4,
+		},
+		{
+			name:           "two byte options",
+			options:        header.IPv4Options{1, 1},
+			encodedOptions: header.IPv4Options{1, 1, 0, 0},
+			wantIHL:        header.IPv4MinimumSize + 4,
+		},
+		{
+			name:           "three byte options",
+			options:        header.IPv4Options{1, 1, 1},
+			encodedOptions: header.IPv4Options{1, 1, 1, 0},
+			wantIHL:        header.IPv4MinimumSize + 4,
+		},
+		{
+			name:           "four byte options",
+			options:        header.IPv4Options{1, 1, 1, 1},
+			encodedOptions: header.IPv4Options{1, 1, 1, 1},
+			wantIHL:        header.IPv4MinimumSize + 4,
+		},
+		{
+			name:           "five byte options",
+			options:        header.IPv4Options{1, 1, 1, 1, 1},
+			encodedOptions: header.IPv4Options{1, 1, 1, 1, 1, 0, 0, 0},
+			wantIHL:        header.IPv4MinimumSize + 8,
+		},
+		{
+			name: "thirty nine byte options",
+			options: header.IPv4Options{
+				1, 2, 3, 4, 5, 6, 7, 8,
+				9, 10, 11, 12, 13, 14, 15, 16,
+				17, 18, 19, 20, 21, 22, 23, 24,
+				25, 26, 27, 28, 29, 30, 31, 32,
+				33, 34, 35, 36, 37, 38, 39,
+			},
+			encodedOptions: header.IPv4Options{
+				1, 2, 3, 4, 5, 6, 7, 8,
+				9, 10, 11, 12, 13, 14, 15, 16,
+				17, 18, 19, 20, 21, 22, 23, 24,
+				25, 26, 27, 28, 29, 30, 31, 32,
+				33, 34, 35, 36, 37, 38, 39, 0,
+			},
+			wantIHL: header.IPv4MinimumSize + 40,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			paddedOptionLength := test.options.AllocationSize()
+			ipHeaderLength := header.IPv4MinimumSize + paddedOptionLength
+			if ipHeaderLength > header.IPv4MaximumHeaderSize {
+				t.Fatalf("IP header length too large: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
+			}
+			totalLen := uint16(ipHeaderLength)
+			hdr := buffer.NewPrependable(int(totalLen))
+			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
+			// To check the padding works, poison the last byte of the options space.
+			if paddedOptionLength != len(test.options) {
+				ip.SetHeaderLength(uint8(ipHeaderLength))
+				ip.Options()[paddedOptionLength-1] = 0xff
+				ip.SetHeaderLength(0)
+			}
+			ip.Encode(&header.IPv4Fields{
+				Options: test.options,
+			})
+			options := ip.Options()
+			wantOptions := test.encodedOptions
+			if got, want := int(ip.HeaderLength()), test.wantIHL; got != want {
+				t.Errorf("got IHL of %d, want %d", got, want)
+			}
+
+			// cmp.Diff does not consider nil slices equal to empty slices, but we do.
+			if len(wantOptions) == 0 && len(options) == 0 {
+				return
+			}
+
+			if diff := cmp.Diff(wantOptions, options); diff != "" {
+				t.Errorf("options mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 // TestIPv4Sanity sends IP/ICMP packets with various problems to the stack and
 // checks the response.
 func TestIPv4Sanity(t *testing.T) {
@@ -195,6 +294,14 @@ func TestIPv4Sanity(t *testing.T) {
 			TTL:               ttl,
 			options:           header.IPv4Options{1, 1, 0, 0},
 			replyOptions:      header.IPv4Options{1, 1, 0, 0},
+		},
+		{
+			name:              "Check option padding",
+			maxTotalLength:    ipv4.MaxTotalSize,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options:           header.IPv4Options{1, 1, 1},
+			replyOptions:      header.IPv4Options{1, 1, 1, 0},
 		},
 		{
 			name:              "bad header length",
@@ -599,9 +706,10 @@ func TestIPv4Sanity(t *testing.T) {
 				},
 			})
 
-			ipHeaderLength := header.IPv4MinimumSize + test.options.AllocationSize()
+			paddedOptionLength := test.options.AllocationSize()
+			ipHeaderLength := header.IPv4MinimumSize + paddedOptionLength
 			if ipHeaderLength > header.IPv4MaximumHeaderSize {
-				t.Fatalf("too many bytes in options: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
+				t.Fatalf("IP header length too large: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
 			}
 			totalLen := uint16(ipHeaderLength + header.ICMPv4MinimumSize)
 			hdr := buffer.NewPrependable(int(totalLen))
@@ -618,6 +726,12 @@ func TestIPv4Sanity(t *testing.T) {
 			if test.maxTotalLength < totalLen {
 				totalLen = test.maxTotalLength
 			}
+			// To check the padding works, poison the options space.
+			if paddedOptionLength != len(test.options) {
+				ip.SetHeaderLength(uint8(ipHeaderLength))
+				ip.Options()[paddedOptionLength-1] = 0x01
+			}
+
 			ip.Encode(&header.IPv4Fields{
 				TotalLength: totalLen,
 				Protocol:    test.transportProtocol,
@@ -732,7 +846,7 @@ func TestIPv4Sanity(t *testing.T) {
 				}
 				// If the IP options change size then the packet will change size, so
 				// some IP header fields will need to be adjusted for the checks.
-				sizeChange := len(test.replyOptions) - len(test.options)
+				sizeChange := len(test.replyOptions) - paddedOptionLength
 
 				checker.IPv4(t, replyIPHeader,
 					checker.IPv4HeaderLength(ipHeaderLength+sizeChange),
