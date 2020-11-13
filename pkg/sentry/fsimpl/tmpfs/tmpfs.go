@@ -631,7 +631,8 @@ func (i *inode) direntType() uint8 {
 }
 
 func (i *inode) isDir() bool {
-	return linux.FileMode(i.mode).FileType() == linux.S_IFDIR
+	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
+	return mode.FileType() == linux.S_IFDIR
 }
 
 func (i *inode) touchAtime(mnt *vfs.Mount) {
