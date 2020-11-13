@@ -262,6 +262,9 @@ type commonEndpoint interface {
 
 	// LastError implements tcpip.Endpoint.LastError.
 	LastError() *tcpip.Error
+
+	// SocketOptions implements tcpip.Endpoint.SocketOptions.
+	SocketOptions() *tcpip.SocketOptions
 }
 
 // LINT.IfChange
@@ -1163,13 +1166,8 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.BroadcastOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetBroadcast()))
+		return &v, nil
 
 	case linux.SO_KEEPALIVE:
 		if outLen < sizeOfInt32 {
@@ -1916,7 +1914,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.BroadcastOption, v != 0))
+		ep.SocketOptions().SetBroadcast(v != 0)
+		return nil
 
 	case linux.SO_PASSCRED:
 		if len(optVal) < sizeOfInt32 {

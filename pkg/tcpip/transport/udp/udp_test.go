@@ -364,9 +364,7 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 			c.t.Fatalf("SetSockOptBool failed: %s", err)
 		}
 	} else if flow.isBroadcast() {
-		if err := c.ep.SetSockOptBool(tcpip.BroadcastOption, true); err != nil {
-			c.t.Fatalf("SetSockOptBool failed: %s", err)
-		}
+		c.ep.SocketOptions().SetBroadcast(true)
 	}
 }
 
@@ -2397,17 +2395,13 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				t.Fatalf("got ep.Write(_, _) = (%d, _, %v), want = (_, _, %v)", n, err, expectedErrWithoutBcastOpt)
 			}
 
-			if err := ep.SetSockOptBool(tcpip.BroadcastOption, true); err != nil {
-				t.Fatalf("got SetSockOptBool(BroadcastOption, true): %s", err)
-			}
+			ep.SocketOptions().SetBroadcast(true)
 
 			if n, _, err := ep.Write(data, opts); err != nil {
 				t.Fatalf("got ep.Write(_, _) = (%d, _, %s), want = (_, _, nil)", n, err)
 			}
 
-			if err := ep.SetSockOptBool(tcpip.BroadcastOption, false); err != nil {
-				t.Fatalf("got SetSockOptBool(BroadcastOption, false): %s", err)
-			}
+			ep.SocketOptions().SetBroadcast(false)
 
 			if n, _, err := ep.Write(data, opts); err != expectedErrWithoutBcastOpt {
 				t.Fatalf("got ep.Write(_, _) = (%d, _, %v), want = (_, _, %v)", n, err, expectedErrWithoutBcastOpt)

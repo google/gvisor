@@ -76,38 +76,6 @@ void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
   found_net_interfaces_ = true;
 }
 
-// Verifies that a newly instantiated UDP socket does not have the
-// broadcast socket option enabled.
-TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, UDPBroadcastDefault) {
-  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-
-  int get = -1;
-  socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(
-      getsockopt(socket->get(), SOL_SOCKET, SO_BROADCAST, &get, &get_sz),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get, kSockOptOff);
-  EXPECT_EQ(get_sz, sizeof(get));
-}
-
-// Verifies that a newly instantiated UDP socket returns true after enabling
-// the broadcast socket option.
-TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, SetUDPBroadcast) {
-  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-
-  EXPECT_THAT(setsockopt(socket->get(), SOL_SOCKET, SO_BROADCAST, &kSockOptOn,
-                         sizeof(kSockOptOn)),
-              SyscallSucceedsWithValue(0));
-
-  int get = -1;
-  socklen_t get_sz = sizeof(get);
-  EXPECT_THAT(
-      getsockopt(socket->get(), SOL_SOCKET, SO_BROADCAST, &get, &get_sz),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get, kSockOptOn);
-  EXPECT_EQ(get_sz, sizeof(get));
-}
-
 // Verifies that a broadcast UDP packet will arrive at all UDP sockets with
 // the destination port number.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,

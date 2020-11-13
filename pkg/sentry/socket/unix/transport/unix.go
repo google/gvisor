@@ -205,6 +205,9 @@ type Endpoint interface {
 
 	// LastError implements tcpip.Endpoint.LastError.
 	LastError() *tcpip.Error
+
+	// SocketOptions implements tcpip.Endpoint.SocketOptions.
+	SocketOptions() *tcpip.SocketOptions
 }
 
 // A Credentialer is a socket or endpoint that supports the SO_PASSCRED socket
@@ -757,6 +760,8 @@ type baseEndpoint struct {
 
 	// linger is used for SO_LINGER socket option.
 	linger tcpip.LingerOption
+
+	ops tcpip.SocketOptions
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -865,7 +870,6 @@ func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 
 func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
-	case tcpip.BroadcastOption:
 	case tcpip.PasscredOption:
 		e.setPasscred(v)
 	case tcpip.ReuseAddressOption:
@@ -978,6 +982,11 @@ func (e *baseEndpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 // LastError implements Endpoint.LastError.
 func (*baseEndpoint) LastError() *tcpip.Error {
 	return nil
+}
+
+// SocketOptions implements Endpoint.SocketOptions.
+func (e *baseEndpoint) SocketOptions() *tcpip.SocketOptions {
+	return &e.ops
 }
 
 // Shutdown closes the read and/or write end of the endpoint connection to its
