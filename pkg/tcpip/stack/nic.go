@@ -232,7 +232,8 @@ func (n *NIC) setPromiscuousMode(enable bool) {
 	n.mu.Unlock()
 }
 
-func (n *NIC) isPromiscuousMode() bool {
+// Promiscuous implements NetworkInterface.
+func (n *NIC) Promiscuous() bool {
 	n.mu.RLock()
 	rv := n.mu.promiscuous
 	n.mu.RUnlock()
@@ -564,13 +565,6 @@ func (n *NIC) isInGroup(addr tcpip.Address) bool {
 	return false
 }
 
-func (n *NIC) handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, remotelinkAddr tcpip.LinkAddress, addressEndpoint AssignableAddressEndpoint, pkt *PacketBuffer) {
-	r := makeRoute(protocol, dst, src, n, n, addressEndpoint, false /* handleLocal */, false /* multicastLoop */)
-	defer r.Release()
-	r.PopulatePacketInfo(pkt)
-	n.getNetworkEndpoint(protocol).HandlePacket(pkt)
-}
-
 // DeliverNetworkPacket finds the appropriate network protocol endpoint and
 // hands the packet over for further processing. This function is called when
 // the NIC receives a packet from the link endpoint.
@@ -592,7 +586,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 	n.stats.Rx.Packets.Increment()
 	n.stats.Rx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
 
-	netProto, ok := n.stack.networkProtocols[protocol]
+	networkEndpoint, ok := n.networkEndpoints[protocol]
 	if !ok {
 		n.mu.RUnlock()
 		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
@@ -617,11 +611,8 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		ep.HandlePacket(n.id, local, protocol, p)
 	}
 
-	if netProto.Number() == header.IPv4ProtocolNumber || netProto.Number() == header.IPv6ProtocolNumber {
-		n.stack.stats.IP.PacketsReceived.Increment()
-	}
-
 	// Parse headers.
+	netProto := n.stack.NetworkProtocolInstance(protocol)
 	transProtoNum, hasTransportHdr, ok := netProto.Parse(pkt)
 	if !ok {
 		// The packet is too small to contain a network header.
@@ -636,9 +627,8 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		}
 	}
 
-	src, dst := netProto.ParseAddresses(pkt.NetworkHeader().View())
-
 	if n.stack.handleLocal && !n.IsLoopback() {
+		src, _ := netProto.ParseAddresses(pkt.NetworkHeader().View())
 		if r := n.getAddress(protocol, src); r != nil {
 			r.DecRef()
 
@@ -651,78 +641,7 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		}
 	}
 
-	// Loopback traffic skips the prerouting chain.
-	if !n.IsLoopback() {
-		// iptables filtering.
-		ipt := n.stack.IPTables()
-		address := n.primaryAddress(protocol)
-		if ok := ipt.Check(Prerouting, pkt, nil, nil, address.Address, ""); !ok {
-			// iptables is telling us to drop the packet.
-			n.stack.stats.IP.IPTablesPreroutingDropped.Increment()
-			return
-		}
-	}
-
-	if addressEndpoint := n.getAddress(protocol, dst); addressEndpoint != nil {
-		n.handlePacket(protocol, dst, src, remote, addressEndpoint, pkt)
-		return
-	}
-
-	// This NIC doesn't care about the packet. Find a NIC that cares about the
-	// packet and forward it to the NIC.
-	//
-	// TODO: Should we be forwarding the packet even if promiscuous?
-	if n.stack.Forwarding(protocol) {
-		r, err := n.stack.FindRoute(0, "", dst, protocol, false /* multicastLoop */)
-		if err != nil {
-			n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
-			return
-		}
-
-		// Found a NIC.
-		n := r.localAddressNIC
-		if addressEndpoint := n.getAddressOrCreateTempInner(protocol, dst, false, NeverPrimaryEndpoint); addressEndpoint != nil {
-			if n.isValidForOutgoing(addressEndpoint) {
-				pkt.NICID = n.ID()
-				r.RemoteAddress = src
-				pkt.NetworkPacketInfo = r.networkPacketInfo()
-				n.getNetworkEndpoint(protocol).HandlePacket(pkt)
-				addressEndpoint.DecRef()
-				r.Release()
-				return
-			}
-
-			addressEndpoint.DecRef()
-		}
-
-		// n doesn't have a destination endpoint.
-		// Send the packet out of n.
-		// TODO(gvisor.dev/issue/1085): According to the RFC, we must decrease
-		// the TTL field for ipv4/ipv6.
-
-		// pkt may have set its header and may not have enough headroom for
-		// link-layer header for the other link to prepend. Here we create a new
-		// packet to forward.
-		fwdPkt := NewPacketBuffer(PacketBufferOptions{
-			ReserveHeaderBytes: int(n.LinkEndpoint.MaxHeaderLength()),
-			// We need to do a deep copy of the IP packet because WritePacket (and
-			// friends) take ownership of the packet buffer, but we do not own it.
-			Data: PayloadSince(pkt.NetworkHeader()).ToVectorisedView(),
-		})
-
-		// TODO(b/143425874) Decrease the TTL field in forwarded packets.
-		if err := n.WritePacket(&r, nil, protocol, fwdPkt); err != nil {
-			n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
-		}
-
-		r.Release()
-		return
-	}
-
-	// If a packet socket handled the packet, don't treat it as invalid.
-	if len(packetEPs) == 0 {
-		n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
-	}
+	networkEndpoint.HandlePacket(pkt)
 }
 
 // DeliverOutboundPacket implements NetworkDispatcher.DeliverOutboundPacket.
