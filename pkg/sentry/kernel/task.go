@@ -21,7 +21,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -29,11 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/unimpl"
-	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -62,6 +57,12 @@ import (
 // +stateify savable
 type Task struct {
 	taskNode
+
+	// goid is the task goroutine's ID. goid is owned by the task goroutine,
+	// but since it's used to detect cases where non-task goroutines
+	// incorrectly access state owned by, or exclusive to, the task goroutine,
+	// goid is always accessed using atomic memory operations.
+	goid int64 `state:"nosave"`
 
 	// runState is what the task goroutine is executing if it is not stopped.
 	// If runState is nil, the task goroutine should exit or has exited.
@@ -639,64 +640,6 @@ func (t *Task) FutexWaiter() *futex.Waiter {
 // Kernel returns the Kernel containing t.
 func (t *Task) Kernel() *Kernel {
 	return t.k
-}
-
-// Value implements context.Context.Value.
-//
-// Preconditions: The caller must be running on the task goroutine (as implied
-// by the requirements of context.Context).
-func (t *Task) Value(key interface{}) interface{} {
-	switch key {
-	case CtxCanTrace:
-		return t.CanTrace
-	case CtxKernel:
-		return t.k
-	case CtxPIDNamespace:
-		return t.tg.pidns
-	case CtxUTSNamespace:
-		return t.utsns
-	case CtxIPCNamespace:
-		ipcns := t.IPCNamespace()
-		ipcns.IncRef()
-		return ipcns
-	case CtxTask:
-		return t
-	case auth.CtxCredentials:
-		return t.Credentials()
-	case context.CtxThreadGroupID:
-		return int32(t.ThreadGroup().ID())
-	case fs.CtxRoot:
-		return t.fsContext.RootDirectory()
-	case vfs.CtxRoot:
-		return t.fsContext.RootDirectoryVFS2()
-	case vfs.CtxMountNamespace:
-		t.mountNamespaceVFS2.IncRef()
-		return t.mountNamespaceVFS2
-	case fs.CtxDirentCacheLimiter:
-		return t.k.DirentCacheLimiter
-	case inet.CtxStack:
-		return t.NetworkContext()
-	case ktime.CtxRealtimeClock:
-		return t.k.RealtimeClock()
-	case limits.CtxLimits:
-		return t.tg.limits
-	case pgalloc.CtxMemoryFile:
-		return t.k.mf
-	case pgalloc.CtxMemoryFileProvider:
-		return t.k
-	case platform.CtxPlatform:
-		return t.k
-	case uniqueid.CtxGlobalUniqueID:
-		return t.k.UniqueID()
-	case uniqueid.CtxGlobalUniqueIDProvider:
-		return t.k
-	case uniqueid.CtxInotifyCookie:
-		return t.k.GenerateInotifyCookie()
-	case unimpl.CtxEvents:
-		return t.k
-	default:
-		return nil
-	}
 }
 
 // SetClearTID sets t's cleartid.
