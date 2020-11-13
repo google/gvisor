@@ -206,12 +206,12 @@ func (e *endpoint) addIPHeader(r *stack.Route, pkt *stack.PacketBuffer, params s
 		if opts, ok = params.Options.(header.IPv4Options); !ok {
 			panic(fmt.Sprintf("want IPv4Options, got %T", params.Options))
 		}
-		hdrLen += opts.AllocationSize()
+		hdrLen += opts.SizeWithPadding()
 		if hdrLen > header.IPv4MaximumHeaderSize {
 			// Since we have no way to report an error we must either panic or create
 			// a packet which is different to what was requested. Choose panic as this
 			// would be a programming error that should be caught in testing.
-			panic(fmt.Sprintf("IPv4 Options %d bytes, Max %d", params.Options.AllocationSize(), header.IPv4MaximumOptionsSize))
+			panic(fmt.Sprintf("IPv4 Options %d bytes, Max %d", params.Options.SizeWithPadding(), header.IPv4MaximumOptionsSize))
 		}
 	}
 	ip := header.IPv4(pkt.NetworkHeader().Push(hdrLen))

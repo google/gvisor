@@ -262,10 +262,10 @@ const (
 // NetOptions is an interface that allows us to pass network protocol specific
 // options through the Stack layer code.
 type NetOptions interface {
-	// AllocationSize returns the amount of memory that must be allocated to
+	// SizeWithPadding returns the amount of memory that must be allocated to
 	// hold the options given that the value must be rounded up to the next
 	// multiple of 4 bytes.
-	AllocationSize() int
+	SizeWithPadding() int
 }
 
 // NetworkHeaderParams are the header parameters given as input by the

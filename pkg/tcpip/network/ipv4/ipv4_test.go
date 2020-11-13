@@ -167,7 +167,7 @@ func TestIPv4EncodeOptions(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			paddedOptionLength := test.options.AllocationSize()
+			paddedOptionLength := test.options.SizeWithPadding()
 			ipHeaderLength := header.IPv4MinimumSize + paddedOptionLength
 			if ipHeaderLength > header.IPv4MaximumHeaderSize {
 				t.Fatalf("IP header length too large: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
@@ -706,7 +706,7 @@ func TestIPv4Sanity(t *testing.T) {
 				},
 			})
 
-			paddedOptionLength := test.options.AllocationSize()
+			paddedOptionLength := test.options.SizeWithPadding()
 			ipHeaderLength := header.IPv4MinimumSize + paddedOptionLength
 			if ipHeaderLength > header.IPv4MaximumHeaderSize {
 				t.Fatalf("IP header length too large: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)

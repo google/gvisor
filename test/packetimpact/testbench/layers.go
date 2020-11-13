@@ -298,7 +298,7 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 	// An IPv4 header is variable length depending on the size of the Options.
 	hdrLen := header.IPv4MinimumSize
 	if l.Options != nil {
-		hdrLen += l.Options.AllocationSize()
+		hdrLen += l.Options.SizeWithPadding()
 		if hdrLen > header.IPv4MaximumHeaderSize {
 			// While ToBytes can be called on packets that were received as well
 			// as packets locally generated, it is physically impossible for a
