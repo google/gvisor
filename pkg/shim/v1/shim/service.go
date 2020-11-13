@@ -130,7 +130,6 @@ func (s *Service) Create(ctx context.Context, r *shim.CreateTaskRequest) (_ *shi
 		Stdin:    r.Stdin,
 		Stdout:   r.Stdout,
 		Stderr:   r.Stderr,
-		Options:  r.Options,
 	}
 	defer func() {
 		if err != nil {
@@ -150,7 +149,6 @@ func (s *Service) Create(ctx context.Context, r *shim.CreateTaskRequest) (_ *shi
 		}
 	}
 	process, err := newInit(
-		ctx,
 		s.config.Path,
 		s.config.WorkDir,
 		s.config.RuntimeRoot,
@@ -158,6 +156,7 @@ func (s *Service) Create(ctx context.Context, r *shim.CreateTaskRequest) (_ *shi
 		s.config.RunscConfig,
 		s.platform,
 		config,
+		r.Options,
 	)
 	if err := process.Create(ctx, config); err != nil {
 		return nil, errdefs.ToGRPC(err)
@@ -533,14 +532,14 @@ func getTopic(ctx context.Context, e interface{}) string {
 	return runtime.TaskUnknownTopic
 }
 
-func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, config map[string]string, platform stdio.Platform, r *proc.CreateConfig) (*proc.Init, error) {
-	var options runctypes.CreateOptions
-	if r.Options != nil {
-		v, err := typeurl.UnmarshalAny(r.Options)
+func newInit(path, workDir, runtimeRoot, namespace string, config map[string]string, platform stdio.Platform, r *proc.CreateConfig, options *types.Any) (*proc.Init, error) {
+	var opts runctypes.CreateOptions
+	if options != nil {
+		v, err := typeurl.UnmarshalAny(options)
 		if err != nil {
 			return nil, err
 		}
-		options = *v.(*runctypes.CreateOptions)
+		opts = *v.(*runctypes.CreateOptions)
 	}
 
 	spec, err := utils.ReadSpec(r.Bundle)
@@ -551,7 +550,7 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 		return nil, fmt.Errorf("update volume annotations: %w", err)
 	}
 
-	runsc.FormatLogPath(r.ID, config)
+	runsc.FormatRunscLogPath(r.ID, config)
 	rootfs := filepath.Join(path, "rootfs")
 	runtime := proc.NewRunsc(runtimeRoot, path, namespace, r.Runtime, config)
 	p := proc.New(r.ID, runtime, stdio.Stdio{
@@ -564,8 +563,8 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 	p.Platform = platform
 	p.Rootfs = rootfs
 	p.WorkDir = workDir
-	p.IoUID = int(options.IoUid)
-	p.IoGID = int(options.IoGid)
+	p.IoUID = int(opts.IoUid)
+	p.IoGID = int(opts.IoGid)
 	p.Sandbox = utils.IsSandbox(spec)
 	p.UserLog = utils.UserLogPath(spec)
 	p.Monitor = reaper.Default
