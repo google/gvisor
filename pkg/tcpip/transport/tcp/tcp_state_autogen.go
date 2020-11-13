@@ -408,8 +408,8 @@ func (rc *rackControl) StateTypeName() string {
 
 func (rc *rackControl) StateFields() []string {
 	return []string{
+		"dsackSeen",
 		"endSequence",
-		"dsack",
 		"fack",
 		"minRTT",
 		"rtt",
@@ -424,8 +424,8 @@ func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
 	rc.beforeSave()
 	var xmitTimeValue unixTime = rc.saveXmitTime()
 	stateSinkObject.SaveValue(6, xmitTimeValue)
-	stateSinkObject.Save(0, &rc.endSequence)
-	stateSinkObject.Save(1, &rc.dsack)
+	stateSinkObject.Save(0, &rc.dsackSeen)
+	stateSinkObject.Save(1, &rc.endSequence)
 	stateSinkObject.Save(2, &rc.fack)
 	stateSinkObject.Save(3, &rc.minRTT)
 	stateSinkObject.Save(4, &rc.rtt)
@@ -435,8 +435,8 @@ func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
 func (rc *rackControl) afterLoad() {}
 
 func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &rc.endSequence)
-	stateSourceObject.Load(1, &rc.dsack)
+	stateSourceObject.Load(0, &rc.dsackSeen)
+	stateSourceObject.Load(1, &rc.endSequence)
 	stateSourceObject.Load(2, &rc.fack)
 	stateSourceObject.Load(3, &rc.minRTT)
 	stateSourceObject.Load(4, &rc.rtt)
