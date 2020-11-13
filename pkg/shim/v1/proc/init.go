@@ -397,7 +397,7 @@ func (p *Init) Exec(ctx context.Context, path string, r *ExecConfig) (process.Pr
 }
 
 // exec returns a new exec'd process.
-func (p *Init) exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
+func (p *Init) exec(path string, r *ExecConfig) (process.Process, error) {
 	// process exec request
 	var spec specs.Process
 	if err := json.Unmarshal(r.Spec.Value, &spec); err != nil {

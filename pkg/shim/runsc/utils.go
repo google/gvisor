@@ -36,9 +36,20 @@ func putBuf(b *bytes.Buffer) {
 	bytesBufferPool.Put(b)
 }
 
-// FormatLogPath parses runsc config, and fill in %ID% in the log path.
-func FormatLogPath(id string, config map[string]string) {
+// FormatRunscLogPath parses runsc config, and fill in %ID% in the log path.
+func FormatRunscLogPath(id string, config map[string]string) {
 	if path, ok := config["debug-log"]; ok {
 		config["debug-log"] = strings.Replace(path, "%ID%", id, -1)
 	}
+}
+
+// FormatShimLogPath creates the file path to the log file. It replaces %ID%
+// in the path with the provided "id". It also uses a default log name if the
+// path end with '/'.
+func FormatShimLogPath(path string, id string) string {
+	if strings.HasSuffix(path, "/") {
+		// Default format: <path>/runsc-shim-<ID>.log
+		path += "runsc-shim-%ID%.log"
+	}
+	return strings.Replace(path, "%ID%", id, -1)
 }

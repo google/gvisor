@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package runsc provides an API to interact with runsc command line.
 package runsc
 
 import (
@@ -33,11 +34,31 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// Monitor is the default process monitor to be used by runsc.
-var Monitor runc.ProcessMonitor = runc.Monitor
-
 // DefaultCommand is the default command for Runsc.
 const DefaultCommand = "runsc"
+
+// Monitor is the default process monitor to be used by runsc.
+var Monitor runc.ProcessMonitor = &LogMonitor{Next: runc.Monitor}
+
+// LogMonitor implements the runc.ProcessMonitor interface, logging the command
+// that is getting executed, and then forwarding the call to another
+// implementation.
+type LogMonitor struct {
+	Next runc.ProcessMonitor
+}
+
+// Start implements runc.ProcessMonitor.
+func (l *LogMonitor) Start(cmd *exec.Cmd) (chan runc.Exit, error) {
+	log.L.Debugf("Executing: %s", cmd.Args)
+	return l.Next.Start(cmd)
+}
+
+// Wait implements runc.ProcessMonitor.
+func (l *LogMonitor) Wait(cmd *exec.Cmd, ch chan runc.Exit) (int, error) {
+	status, err := l.Next.Wait(cmd, ch)
+	log.L.Debugf("Command exit code: %d, err: %v", status, err)
+	return status, err
+}
 
 // Runsc is the client to the runsc cli.
 type Runsc struct {
@@ -370,9 +391,10 @@ func (r *Runsc) Stats(context context.Context, id string) (*runc.Stats, error) {
 	}()
 	var e runc.Event
 	if err := json.NewDecoder(rd).Decode(&e); err != nil {
+		log.L.Debugf("Parsing events error: %v", err)
 		return nil, err
 	}
-	log.L.Debugf("Stats returned: %+v", e.Stats)
+	log.L.Debugf("Stats returned, type: %s, stats: %+v", e.Type, e.Stats)
 	if e.Type != "stats" {
 		return nil, fmt.Errorf(`unexpected event type %q, wanted "stats"`, e.Type)
 	}
