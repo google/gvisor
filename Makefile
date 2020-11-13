@@ -162,7 +162,7 @@ endif
 ifeq ($(TOTAL_PARTITIONS),)
 	@$(eval TOTAL_PARTITIONS := 1)
 endif
-	@$(call submake,install-test-runtime)
+	@$(call submake,install-runtime)
 	@$(call submake,test-runtime OPTIONS="--test_timeout=10800 --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)" TARGETS="//test/runtimes:$*")
 
 %-runtime-tests_vfs2: load-runtimes_%
@@ -172,7 +172,7 @@ endif
 ifeq ($(TOTAL_PARTITIONS),)
 	@$(eval TOTAL_PARTITIONS := 1)
 endif
-	@$(call submake,install-test-runtime RUNTIME="vfs2" ARGS="--vfs2")
+	@$(call submake,install-runtime RUNTIME="vfs2" ARGS="--vfs2")
 	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_timeout=10800 --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)" TARGETS="//test/runtimes:$*")
 
 do-tests: runsc
@@ -185,24 +185,24 @@ simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
 docker-tests: load-basic-images
-	@$(call submake,install-test-runtime RUNTIME="vfs1")
+	@$(call submake,install-runtime RUNTIME="vfs1")
 	@$(call submake,test-runtime RUNTIME="vfs1" TARGETS="$(INTEGRATION_TARGETS)")
-	@$(call submake,install-test-runtime RUNTIME="vfs2" ARGS="--vfs2")
+	@$(call submake,install-runtime RUNTIME="vfs2" ARGS="--vfs2")
 	@$(call submake,test-runtime RUNTIME="vfs2" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: docker-tests
 
 overlay-tests: load-basic-images
-	@$(call submake,install-test-runtime RUNTIME="overlay" ARGS="--overlay")
+	@$(call submake,install-runtime RUNTIME="overlay" ARGS="--overlay")
 	@$(call submake,test-runtime RUNTIME="overlay" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: overlay-tests
 
 swgso-tests: load-basic-images
-	@$(call submake,install-test-runtime RUNTIME="swgso" ARGS="--software-gso=true --gso=false")
+	@$(call submake,install-runtime RUNTIME="swgso" ARGS="--software-gso=true --gso=false")
 	@$(call submake,test-runtime RUNTIME="swgso" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: swgso-tests
 
 hostnet-tests: load-basic-images
-	@$(call submake,install-test-runtime RUNTIME="hostnet" ARGS="--network=host")
+	@$(call submake,install-runtime RUNTIME="hostnet" ARGS="--network=host")
 	@$(call submake,test-runtime RUNTIME="hostnet" OPTIONS="--test_arg=-checkpoint=false" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: hostnet-tests
 
@@ -210,7 +210,7 @@ kvm-tests: load-basic-images
 	@(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
 	@if ! [[ -w /dev/kvm ]]; then sudo chmod a+rw /dev/kvm; fi
 	@$(call submake,test TARGETS="//pkg/sentry/platform/kvm:kvm_test")
-	@$(call submake,install-test-runtime RUNTIME="kvm" ARGS="--platform=kvm")
+	@$(call submake,install-runtime RUNTIME="kvm" ARGS="--platform=kvm")
 	@$(call submake,test-runtime RUNTIME="kvm" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: kvm-tests
 
@@ -218,7 +218,7 @@ iptables-tests: load-iptables
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
 	@$(call submake,test-runtime RUNTIME="runc" TARGETS="//test/iptables:iptables_test")
-	@$(call submake,install-test-runtime RUNTIME="iptables" ARGS="--net-raw")
+	@$(call submake,install-runtime RUNTIME="iptables" ARGS="--net-raw")
 	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
 .PHONY: iptables-tests
 
@@ -227,25 +227,25 @@ iptables-tests: load-iptables
 iptables-runsc-tests: load-iptables
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
-	@$(call submake,install-test-runtime RUNTIME="iptables" ARGS="--net-raw")
+	@$(call submake,install-runtime RUNTIME="iptables" ARGS="--net-raw")
 	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
 .PHONY: iptables-runsc-tests
 
 packetdrill-tests: load-packetdrill
-	@$(call submake,install-test-runtime RUNTIME="packetdrill")
+	@$(call submake,install-runtime RUNTIME="packetdrill")
 	@$(call submake,test-runtime RUNTIME="packetdrill" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetdrill, tests(//...))')")
 .PHONY: packetdrill-tests
 
 packetimpact-tests: load-packetimpact
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
-	@$(call submake,install-test-runtime RUNTIME="packetimpact")
+	@$(call submake,install-runtime RUNTIME="packetimpact")
 	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
 .PHONY: packetimpact-tests
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu
-	@$(call submake,install-test-runtime RUNTIME="root")
+	@$(call submake,install-runtime RUNTIME="root")
 	@CONTAINERD_VERSION=$* $(MAKE) sudo TARGETS="tools/installers:containerd"
 	@$(MAKE) sudo TARGETS="tools/installers:shim"
 	@$(MAKE) sudo TARGETS="test/root:root_test" ARGS="--runtime=root -test.v"
@@ -443,9 +443,9 @@ install-runtime: ## Installs the runtime for testing. Requires sudo.
 	fi
 .PHONY: install-runtime
 
-install-test-runtime: ## Installs the runtime for testing with default args. Requires sudo.
+install-debug-runtime: ## Installs the runtime for debugging. Requires sudo.
 	@$(call submake,install-runtime ARGS="--debug --strace --log-packets $(ARGS)")
-.PHONY: install-test-runtime
+.PHONY: install-debug-runtime
 
 configure: ## Configures a single runtime. Requires sudo. Typically called from dev or install-runtime.
 	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME_NAME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)
