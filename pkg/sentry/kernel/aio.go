@@ -15,10 +15,7 @@
 package kernel
 
 import (
-	"time"
-
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 )
 
 // AIOCallback is an function that does asynchronous I/O on behalf of a task.
@@ -26,56 +23,11 @@ type AIOCallback func(context.Context)
 
 // QueueAIO queues an AIOCallback which will be run asynchronously.
 func (t *Task) QueueAIO(cb AIOCallback) {
-	ctx := taskAsyncContext{t: t}
+	ctx := t.AsyncContext()
 	wg := &t.TaskSet().aioGoroutines
 	wg.Add(1)
 	go func() {
 		cb(ctx)
 		wg.Done()
 	}()
-}
-
-type taskAsyncContext struct {
-	context.NoopSleeper
-	t *Task
-}
-
-// Debugf implements log.Logger.Debugf.
-func (ctx taskAsyncContext) Debugf(format string, v ...interface{}) {
-	ctx.t.Debugf(format, v...)
-}
-
-// Infof implements log.Logger.Infof.
-func (ctx taskAsyncContext) Infof(format string, v ...interface{}) {
-	ctx.t.Infof(format, v...)
-}
-
-// Warningf implements log.Logger.Warningf.
-func (ctx taskAsyncContext) Warningf(format string, v ...interface{}) {
-	ctx.t.Warningf(format, v...)
-}
-
-// IsLogging implements log.Logger.IsLogging.
-func (ctx taskAsyncContext) IsLogging(level log.Level) bool {
-	return ctx.t.IsLogging(level)
-}
-
-// Deadline implements context.Context.Deadline.
-func (ctx taskAsyncContext) Deadline() (time.Time, bool) {
-	return ctx.t.Deadline()
-}
-
-// Done implements context.Context.Done.
-func (ctx taskAsyncContext) Done() <-chan struct{} {
-	return ctx.t.Done()
-}
-
-// Err implements context.Context.Err.
-func (ctx taskAsyncContext) Err() error {
-	return ctx.t.Err()
-}
-
-// Value implements context.Context.Value.
-func (ctx taskAsyncContext) Value(key interface{}) interface{} {
-	return ctx.t.Value(key)
 }

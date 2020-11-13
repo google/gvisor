@@ -15,8 +15,6 @@
 package kernel
 
 import (
-	"time"
-
 	"gvisor.dev/gvisor/pkg/context"
 )
 
@@ -96,20 +94,5 @@ func TaskFromContext(ctx context.Context) *Task {
 	if v := ctx.Value(CtxTask); v != nil {
 		return v.(*Task)
 	}
-	return nil
-}
-
-// Deadline implements context.Context.Deadline.
-func (*Task) Deadline() (time.Time, bool) {
-	return time.Time{}, false
-}
-
-// Done implements context.Context.Done.
-func (*Task) Done() <-chan struct{} {
-	return nil
-}
-
-// Err implements context.Context.Err.
-func (*Task) Err() error {
 	return nil
 }
