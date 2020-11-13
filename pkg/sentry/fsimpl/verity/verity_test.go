@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 
@@ -307,6 +308,56 @@ func TestReopenUnmodifiedFileSucceeds(t *testing.T) {
 	}
 }
 
+// TestOpenNonexistentFile ensures that opening a nonexistent file does not
+// trigger verification failure, even if the parent directory is verified.
+func TestOpenNonexistentFile(t *testing.T) {
+	vfsObj, root, ctx, err := newVerityRoot(t, SHA256)
+	if err != nil {
+		t.Fatalf("newVerityRoot: %v", err)
+	}
+
+	filename := "verity-test-file"
+	fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+	if err != nil {
+		t.Fatalf("newFileFD: %v", err)
+	}
+
+	// Enable verity on the file and confirms a normal read succeeds.
+	var args arch.SyscallArguments
+	args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+	if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+		t.Fatalf("Ioctl: %v", err)
+	}
+
+	// Enable verity on the parent directory.
+	parentFD, err := vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
+	if err != nil {
+		t.Fatalf("OpenAt: %v", err)
+	}
+
+	if _, err := parentFD.Ioctl(ctx, nil /* uio */, args); err != nil {
+		t.Fatalf("Ioctl: %v", err)
+	}
+
+	// Ensure open an unexpected file in the parent directory fails with
+	// ENOENT rather than verification failure.
+	if _, err = vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(filename + "abc"),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+		Mode:  linux.ModeRegular,
+	}); err != syserror.ENOENT {
+		t.Errorf("OpenAt unexpected error: %v", err)
+	}
+}
+
 // TestPReadModifiedFileFails ensures that read from a modified verity file
 // fails.
 func TestPReadModifiedFileFails(t *testing.T) {
@@ -439,10 +490,10 @@ func TestModifiedMerkleFails(t *testing.T) {
 		// Flip a random bit in the Merkle tree file.
 		stat, err := lowerMerkleFD.Stat(ctx, vfs.StatOptions{})
 		if err != nil {
-			t.Fatalf("stat: %v", err)
+			t.Errorf("lowerMerkleFD.Stat: %v", err)
 		}
-		merkleSize := int(stat.Size)
-		if err := corruptRandomBit(ctx, lowerMerkleFD, merkleSize); err != nil {
+
+		if err := corruptRandomBit(ctx, lowerMerkleFD, int(stat.Size)); err != nil {
 			t.Fatalf("corruptRandomBit: %v", err)
 		}
 
@@ -510,11 +561,17 @@ func TestModifiedParentMerkleFails(t *testing.T) {
 		// This parent directory contains only one child, so any random
 		// modification in the parent Merkle tree should cause verification
 		// failure when opening the child file.
-		stat, err := parentLowerMerkleFD.Stat(ctx, vfs.StatOptions{})
+		sizeString, err := parentLowerMerkleFD.GetXattr(ctx, &vfs.GetXattrOptions{
+			Name: childrenOffsetXattr,
+			Size: sizeOfStringInt32,
+		})
 		if err != nil {
-			t.Fatalf("stat: %v", err)
+			t.Fatalf("parentLowerMerkleFD.GetXattr: %v", err)
 		}
-		parentMerkleSize := int(stat.Size)
+		parentMerkleSize, err := strconv.Atoi(sizeString)
+		if err != nil {
+			t.Fatalf("Failed convert size to int: %v", err)
+		}
 		if err := corruptRandomBit(ctx, parentLowerMerkleFD, parentMerkleSize); err != nil {
 			t.Fatalf("corruptRandomBit: %v", err)
 		}
@@ -602,123 +659,164 @@ func TestModifiedStatFails(t *testing.T) {
 	}
 }
 
-// TestOpenDeletedOrRenamedFileFails ensures that opening a deleted/renamed
-// verity enabled file or the corresponding Merkle tree file fails with the
-// verify error.
+// TestOpenDeletedFileFails ensures that opening a deleted verity enabled file
+// and/or the corresponding Merkle tree file fails with the verity error.
 func TestOpenDeletedFileFails(t *testing.T) {
 	testCases := []struct {
-		// Tests removing files is remove is true. Otherwise tests
-		// renaming files.
-		remove bool
-		// The original file is removed/renamed if changeFile is true.
+		// The original file is removed if changeFile is true.
 		changeFile bool
-		// The Merkle tree file is removed/renamed if changeMerkleFile
-		// is true.
+		// The Merkle tree file is removed if changeMerkleFile is true.
 		changeMerkleFile bool
 	}{
 		{
-			remove:           true,
 			changeFile:       true,
 			changeMerkleFile: false,
 		},
 		{
-			remove:           true,
 			changeFile:       false,
 			changeMerkleFile: true,
 		},
 		{
-			remove:           false,
+			changeFile:       true,
+			changeMerkleFile: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("changeFile:%t, changeMerkleFile:%t", tc.changeFile, tc.changeMerkleFile), func(t *testing.T) {
+			vfsObj, root, ctx, err := newVerityRoot(t, SHA256)
+			if err != nil {
+				t.Fatalf("newVerityRoot: %v", err)
+			}
+
+			filename := "verity-test-file"
+			fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+			if err != nil {
+				t.Fatalf("newFileFD: %v", err)
+			}
+
+			// Enable verity on the file.
+			var args arch.SyscallArguments
+			args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+			if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+				t.Fatalf("Ioctl: %v", err)
+			}
+
+			rootLowerVD := root.Dentry().Impl().(*dentry).lowerVD
+			if tc.changeFile {
+				if err := vfsObj.UnlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+					Root:  rootLowerVD,
+					Start: rootLowerVD,
+					Path:  fspath.Parse(filename),
+				}); err != nil {
+					t.Fatalf("UnlinkAt: %v", err)
+				}
+			}
+			if tc.changeMerkleFile {
+				if err := vfsObj.UnlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+					Root:  rootLowerVD,
+					Start: rootLowerVD,
+					Path:  fspath.Parse(merklePrefix + filename),
+				}); err != nil {
+					t.Fatalf("UnlinkAt: %v", err)
+				}
+			}
+
+			// Ensure reopening the verity enabled file fails.
+			if _, err = vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(filename),
+			}, &vfs.OpenOptions{
+				Flags: linux.O_RDONLY,
+				Mode:  linux.ModeRegular,
+			}); err != syserror.EIO {
+				t.Errorf("got OpenAt error: %v, expected EIO", err)
+			}
+		})
+	}
+}
+
+// TestOpenRenamedFileFails ensures that opening a renamed verity enabled file
+// and/or the corresponding Merkle tree file fails with the verity error.
+func TestOpenRenamedFileFails(t *testing.T) {
+	testCases := []struct {
+		// The original file is renamed if changeFile is true.
+		changeFile bool
+		// The Merkle tree file is renamed if changeMerkleFile is true.
+		changeMerkleFile bool
+	}{
+		{
 			changeFile:       true,
 			changeMerkleFile: false,
 		},
 		{
-			remove:           false,
+			changeFile:       false,
+			changeMerkleFile: true,
+		},
+		{
 			changeFile:       true,
-			changeMerkleFile: false,
+			changeMerkleFile: true,
 		},
 	}
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("remove:%t", tc.remove), func(t *testing.T) {
-			for _, alg := range hashAlgs {
-				vfsObj, root, ctx, err := newVerityRoot(t, alg)
-				if err != nil {
-					t.Fatalf("newVerityRoot: %v", err)
-				}
+		t.Run(fmt.Sprintf("changeFile:%t, changeMerkleFile:%t", tc.changeFile, tc.changeMerkleFile), func(t *testing.T) {
+			vfsObj, root, ctx, err := newVerityRoot(t, SHA256)
+			if err != nil {
+				t.Fatalf("newVerityRoot: %v", err)
+			}
 
-				filename := "verity-test-file"
-				fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
-				if err != nil {
-					t.Fatalf("newFileFD: %v", err)
-				}
+			filename := "verity-test-file"
+			fd, _, err := newFileFD(ctx, vfsObj, root, filename, 0644)
+			if err != nil {
+				t.Fatalf("newFileFD: %v", err)
+			}
 
-				// Enable verity on the file.
-				var args arch.SyscallArguments
-				args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-				if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-					t.Fatalf("Ioctl: %v", err)
-				}
+			// Enable verity on the file.
+			var args arch.SyscallArguments
+			args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+			if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+				t.Fatalf("Ioctl: %v", err)
+			}
 
-				rootLowerVD := root.Dentry().Impl().(*dentry).lowerVD
-				if tc.remove {
-					if tc.changeFile {
-						if err := vfsObj.UnlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
-							Root:  rootLowerVD,
-							Start: rootLowerVD,
-							Path:  fspath.Parse(filename),
-						}); err != nil {
-							t.Fatalf("UnlinkAt: %v", err)
-						}
-					}
-					if tc.changeMerkleFile {
-						if err := vfsObj.UnlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
-							Root:  rootLowerVD,
-							Start: rootLowerVD,
-							Path:  fspath.Parse(merklePrefix + filename),
-						}); err != nil {
-							t.Fatalf("UnlinkAt: %v", err)
-						}
-					}
-				} else {
-					newFilename := "renamed-test-file"
-					if tc.changeFile {
-						if err := vfsObj.RenameAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
-							Root:  rootLowerVD,
-							Start: rootLowerVD,
-							Path:  fspath.Parse(filename),
-						}, &vfs.PathOperation{
-							Root:  rootLowerVD,
-							Start: rootLowerVD,
-							Path:  fspath.Parse(newFilename),
-						}, &vfs.RenameOptions{}); err != nil {
-							t.Fatalf("RenameAt: %v", err)
-						}
-					}
-					if tc.changeMerkleFile {
-						if err := vfsObj.RenameAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
-							Root:  rootLowerVD,
-							Start: rootLowerVD,
-							Path:  fspath.Parse(merklePrefix + filename),
-						}, &vfs.PathOperation{
-							Root:  rootLowerVD,
-							Start: rootLowerVD,
-							Path:  fspath.Parse(merklePrefix + newFilename),
-						}, &vfs.RenameOptions{}); err != nil {
-							t.Fatalf("UnlinkAt: %v", err)
-						}
-					}
-				}
-
-				// Ensure reopening the verity enabled file fails.
-				if _, err = vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
-					Root:  root,
-					Start: root,
+			rootLowerVD := root.Dentry().Impl().(*dentry).lowerVD
+			newFilename := "renamed-test-file"
+			if tc.changeFile {
+				if err := vfsObj.RenameAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+					Root:  rootLowerVD,
+					Start: rootLowerVD,
 					Path:  fspath.Parse(filename),
-				}, &vfs.OpenOptions{
-					Flags: linux.O_RDONLY,
-					Mode:  linux.ModeRegular,
-				}); err != syserror.EIO {
-					t.Errorf("got OpenAt error: %v, expected EIO", err)
+				}, &vfs.PathOperation{
+					Root:  rootLowerVD,
+					Start: rootLowerVD,
+					Path:  fspath.Parse(newFilename),
+				}, &vfs.RenameOptions{}); err != nil {
+					t.Fatalf("RenameAt: %v", err)
 				}
+			}
+			if tc.changeMerkleFile {
+				if err := vfsObj.RenameAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+					Root:  rootLowerVD,
+					Start: rootLowerVD,
+					Path:  fspath.Parse(merklePrefix + filename),
+				}, &vfs.PathOperation{
+					Root:  rootLowerVD,
+					Start: rootLowerVD,
+					Path:  fspath.Parse(merklePrefix + newFilename),
+				}, &vfs.RenameOptions{}); err != nil {
+					t.Fatalf("UnlinkAt: %v", err)
+				}
+			}
+
+			// Ensure reopening the verity enabled file fails.
+			if _, err = vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(filename),
+			}, &vfs.OpenOptions{
+				Flags: linux.O_RDONLY,
+				Mode:  linux.ModeRegular,
+			}); err != syserror.EIO {
+				t.Errorf("got OpenAt error: %v, expected EIO", err)
 			}
 		})
 	}

@@ -22,6 +22,7 @@
 package verity
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -59,6 +60,15 @@ const (
 	// hashed by the corresponding Merkle tree. For a regular file, this is the
 	// file size. For a directory, this is the size of all its children's hashes.
 	merkleSizeXattr = "user.merkle.size"
+
+	// childrenOffsetXattr is the extended attribute name specifying the
+	// names of the offset of the serialized children names in the Merkle
+	// tree file.
+	childrenOffsetXattr = "user.merkle.childrenOffset"
+
+	// childrenSizeXattr is the extended attribute name specifying the size
+	// of the serialized children names.
+	childrenSizeXattr = "user.merkle.childrenSize"
 
 	// sizeOfStringInt32 is the size for a 32 bit integer stored as string in
 	// extended attributes. The maximum value of a 32 bit integer has 10 digits.
@@ -299,9 +309,70 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	d.uid = stat.UID
 	d.gid = stat.GID
 	d.hash = make([]byte, len(iopts.RootHash))
+	d.childrenNames = make(map[string]struct{})
 
 	if !fs.allowRuntimeEnable {
-		if err := fs.verifyStat(ctx, d, stat); err != nil {
+		// Get children names from the underlying file system.
+		offString, err := vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{
+			Root:  lowerMerkleVD,
+			Start: lowerMerkleVD,
+		}, &vfs.GetXattrOptions{
+			Name: childrenOffsetXattr,
+			Size: sizeOfStringInt32,
+		})
+		if err == syserror.ENOENT || err == syserror.ENODATA {
+			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenOffsetXattr, err))
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+
+		off, err := strconv.Atoi(offString)
+		if err != nil {
+			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", childrenOffsetXattr, err))
+		}
+
+		sizeString, err := vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{
+			Root:  lowerMerkleVD,
+			Start: lowerMerkleVD,
+		}, &vfs.GetXattrOptions{
+			Name: childrenSizeXattr,
+			Size: sizeOfStringInt32,
+		})
+		if err == syserror.ENOENT || err == syserror.ENODATA {
+			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenSizeXattr, err))
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		size, err := strconv.Atoi(sizeString)
+		if err != nil {
+			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", childrenSizeXattr, err))
+		}
+
+		lowerMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
+			Root:  lowerMerkleVD,
+			Start: lowerMerkleVD,
+		}, &vfs.OpenOptions{
+			Flags: linux.O_RDONLY,
+		})
+		if err == syserror.ENOENT {
+			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to open root Merkle file: %v", err))
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+
+		childrenNames := make([]byte, size)
+		if _, err := lowerMerkleFD.PRead(ctx, usermem.BytesIOSequence(childrenNames), int64(off), vfs.ReadOptions{}); err != nil {
+			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to read root children map: %v", err))
+		}
+
+		if err := json.Unmarshal(childrenNames, &d.childrenNames); err != nil {
+			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to deserialize childrenNames: %v", err))
+		}
+
+		if err := fs.verifyStatAndChildren(ctx, d, stat); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -351,6 +422,11 @@ type dentry struct {
 	// dirMu.
 	dirMu    sync.Mutex `state:"nosave"`
 	children map[string]*dentry
+
+	// childrenNames stores the name of all children of the dentry. This is
+	// used by verity to check whether a child is expected. This is only
+	// populated by enableVerity.
+	childrenNames map[string]struct{}
 
 	// lowerVD is the VirtualDentry in the underlying file system.
 	lowerVD vfs.VirtualDentry
@@ -603,7 +679,7 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 		return linux.Statx{}, err
 	}
 	if fd.d.verityEnabled() {
-		if err := fd.d.fs.verifyStat(ctx, fd.d, stat); err != nil {
+		if err := fd.d.fs.verifyStatAndChildren(ctx, fd.d, stat); err != nil {
 			return linux.Statx{}, err
 		}
 	}
@@ -664,6 +740,7 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 	params := &merkletree.GenerateParams{
 		TreeReader: &merkleReader,
 		TreeWriter: &merkleWriter,
+		Children:   fd.d.childrenNames,
 		//TODO(b/156980949): Support passing other hash algorithms.
 		HashAlgorithms: fd.d.fs.alg.toLinuxHashAlg(),
 	}
@@ -716,9 +793,45 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 	return hash, uint64(params.Size), err
 }
 
+// recordChildren writes the names of fd's children into the corresponding
+// Merkle tree file, and saves the offset/size of the map into xattrs.
+//
+// Preconditions: fd.d.isDir() == true
+func (fd *fileDescription) recordChildren(ctx context.Context) error {
+	// Record the children names in the Merkle tree file.
+	childrenNames, err := json.Marshal(fd.d.childrenNames)
+	if err != nil {
+		return err
+	}
+
+	stat, err := fd.merkleWriter.Stat(ctx, vfs.StatOptions{})
+	if err != nil {
+		return err
+	}
+
+	if err := fd.merkleWriter.SetXattr(ctx, &vfs.SetXattrOptions{
+		Name:  childrenOffsetXattr,
+		Value: strconv.Itoa(int(stat.Size)),
+	}); err != nil {
+		return err
+	}
+	if err := fd.merkleWriter.SetXattr(ctx, &vfs.SetXattrOptions{
+		Name:  childrenSizeXattr,
+		Value: strconv.Itoa(len(childrenNames)),
+	}); err != nil {
+		return err
+	}
+
+	if _, err = fd.merkleWriter.Write(ctx, usermem.BytesIOSequence(childrenNames), vfs.WriteOptions{}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // enableVerity enables verity features on fd by generating a Merkle tree file
 // and stores its hash in its parent directory's Merkle tree.
-func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (uintptr, error) {
+func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 	if !fd.d.fs.allowRuntimeEnable {
 		return 0, syserror.EPERM
 	}
@@ -761,6 +874,9 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (ui
 		}); err != nil {
 			return 0, err
 		}
+
+		// Add the current child's name to parent's childrenNames.
+		fd.d.parent.childrenNames[fd.d.name] = struct{}{}
 	}
 
 	// Record the size of the data being hashed for fd.
@@ -770,12 +886,18 @@ func (fd *fileDescription) enableVerity(ctx context.Context, uio usermem.IO) (ui
 	}); err != nil {
 		return 0, err
 	}
+
+	if fd.d.isDir() {
+		if err := fd.recordChildren(ctx); err != nil {
+			return 0, err
+		}
+	}
 	fd.d.hash = append(fd.d.hash, hash...)
 	return 0, nil
 }
 
 // measureVerity returns the hash of fd, saved in verityDigest.
-func (fd *fileDescription) measureVerity(ctx context.Context, uio usermem.IO, verityDigest usermem.Addr) (uintptr, error) {
+func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest usermem.Addr) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		return 0, syserror.EINVAL
@@ -815,7 +937,7 @@ func (fd *fileDescription) measureVerity(ctx context.Context, uio usermem.IO, ve
 	return 0, err
 }
 
-func (fd *fileDescription) verityFlags(ctx context.Context, uio usermem.IO, flags usermem.Addr) (uintptr, error) {
+func (fd *fileDescription) verityFlags(ctx context.Context, flags usermem.Addr) (uintptr, error) {
 	f := int32(0)
 
 	// All enabled files should store a hash. This flag is not settable via
@@ -836,11 +958,11 @@ func (fd *fileDescription) verityFlags(ctx context.Context, uio usermem.IO, flag
 func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch cmd := args[1].Uint(); cmd {
 	case linux.FS_IOC_ENABLE_VERITY:
-		return fd.enableVerity(ctx, uio)
+		return fd.enableVerity(ctx)
 	case linux.FS_IOC_MEASURE_VERITY:
-		return fd.measureVerity(ctx, uio, args[2].Pointer())
+		return fd.measureVerity(ctx, args[2].Pointer())
 	case linux.FS_IOC_GETFLAGS:
-		return fd.verityFlags(ctx, uio, args[2].Pointer())
+		return fd.verityFlags(ctx, args[2].Pointer())
 	default:
 		// TODO(b/169682228): Investigate which ioctl commands should
 		// be allowed.
@@ -902,14 +1024,15 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	}
 
 	n, err := merkletree.Verify(&merkletree.VerifyParams{
-		Out:  dst.Writer(ctx),
-		File: &dataReader,
-		Tree: &merkleReader,
-		Size: int64(size),
-		Name: fd.d.name,
-		Mode: fd.d.mode,
-		UID:  fd.d.uid,
-		GID:  fd.d.gid,
+		Out:      dst.Writer(ctx),
+		File:     &dataReader,
+		Tree:     &merkleReader,
+		Size:     int64(size),
+		Name:     fd.d.name,
+		Mode:     fd.d.mode,
+		UID:      fd.d.uid,
+		GID:      fd.d.gid,
+		Children: fd.d.childrenNames,
 		//TODO(b/156980949): Support passing other hash algorithms.
 		HashAlgorithms:        fd.d.fs.alg.toLinuxHashAlg(),
 		ReadOffset:            offset,
