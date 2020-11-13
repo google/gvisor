@@ -57,16 +57,16 @@ type execArgInode struct {
 var _ fs.InodeOperations = (*execArgInode)(nil)
 
 // newExecArgFile creates a file containing the exec args of the given type.
-func newExecArgInode(t *kernel.Task, msrc *fs.MountSource, arg execArgType) *fs.Inode {
+func newExecArgInode(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, arg execArgType) *fs.Inode {
 	if arg != cmdlineExecArg && arg != environExecArg {
 		panic(fmt.Sprintf("unknown exec arg type %v", arg))
 	}
 	f := &execArgInode{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
 		arg:             arg,
 		t:               t,
 	}
-	return newProcInode(t, f, msrc, fs.SpecialFile, t)
+	return newProcInode(ctx, f, msrc, fs.SpecialFile, t)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

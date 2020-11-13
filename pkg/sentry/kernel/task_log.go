@@ -19,6 +19,7 @@ import (
 	"runtime/trace"
 	"sort"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -215,7 +216,7 @@ func (t *Task) rebuildTraceContext(tid ThreadID) {
 	// arbitrarily large (in general it won't be, especially for cases
 	// where we're collecting a brief profile), so using the TID is a
 	// reasonable compromise in this case.
-	t.traceContext, t.traceTask = trace.NewTask(t, fmt.Sprintf("tid:%d", tid))
+	t.traceContext, t.traceTask = trace.NewTask(context.Background(), fmt.Sprintf("tid:%d", tid))
 }
 
 // traceCloneEvent is called when a new task is spawned.

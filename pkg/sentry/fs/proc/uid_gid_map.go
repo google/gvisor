@@ -58,18 +58,18 @@ type idMapInodeOperations struct {
 var _ fs.InodeOperations = (*idMapInodeOperations)(nil)
 
 // newUIDMap returns a new uid_map file.
-func newUIDMap(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newIDMap(t, msrc, false /* gids */)
+func newUIDMap(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newIDMap(ctx, t, msrc, false /* gids */)
 }
 
 // newGIDMap returns a new gid_map file.
-func newGIDMap(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newIDMap(t, msrc, true /* gids */)
+func newGIDMap(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newIDMap(ctx, t, msrc, true /* gids */)
 }
 
-func newIDMap(t *kernel.Task, msrc *fs.MountSource, gids bool) *fs.Inode {
-	return newProcInode(t, &idMapInodeOperations{
-		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(t, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
+func newIDMap(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, gids bool) *fs.Inode {
+	return newProcInode(ctx, &idMapInodeOperations{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
 		t:                     t,
 		gids:                  gids,
 	}, msrc, fs.SpecialFile, t)
