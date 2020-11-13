@@ -61,6 +61,7 @@ func (e *endpoint) StateFields() []string {
 		"bound",
 		"linger",
 		"owner",
+		"ops",
 	}
 }
 
@@ -82,6 +83,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &e.bound)
 	stateSinkObject.Save(13, &e.linger)
 	stateSinkObject.Save(14, &e.owner)
+	stateSinkObject.Save(15, &e.ops)
 }
 
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
@@ -99,6 +101,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &e.bound)
 	stateSourceObject.Load(13, &e.linger)
 	stateSourceObject.Load(14, &e.owner)
+	stateSourceObject.Load(15, &e.ops)
 	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }

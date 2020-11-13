@@ -6,6 +6,29 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (so *SocketOptions) StateTypeName() string {
+	return "pkg/tcpip.SocketOptions"
+}
+
+func (so *SocketOptions) StateFields() []string {
+	return []string{
+		"broadcastEnabled",
+	}
+}
+
+func (so *SocketOptions) beforeSave() {}
+
+func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
+	so.beforeSave()
+	stateSinkObject.Save(0, &so.broadcastEnabled)
+}
+
+func (so *SocketOptions) afterLoad() {}
+
+func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &so.broadcastEnabled)
+}
+
 func (f *FullAddress) StateTypeName() string {
 	return "pkg/tcpip.FullAddress"
 }
@@ -167,6 +190,7 @@ func (i *IPPacketInfo) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
+	state.Register((*SocketOptions)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))

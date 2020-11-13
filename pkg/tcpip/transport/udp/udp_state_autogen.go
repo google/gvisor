@@ -72,7 +72,6 @@ func (e *endpoint) StateFields() []string {
 		"multicastLoop",
 		"portFlags",
 		"bindToDevice",
-		"broadcast",
 		"noChecksum",
 		"lastError",
 		"boundBindToDevice",
@@ -86,6 +85,7 @@ func (e *endpoint) StateFields() []string {
 		"effectiveNetProtos",
 		"owner",
 		"linger",
+		"ops",
 	}
 }
 
@@ -94,7 +94,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
 	stateSinkObject.SaveValue(5, rcvBufSizeMaxValue)
 	var lastErrorValue string = e.saveLastError()
-	stateSinkObject.SaveValue(22, lastErrorValue)
+	stateSinkObject.SaveValue(21, lastErrorValue)
 	stateSinkObject.Save(0, &e.TransportEndpointInfo)
 	stateSinkObject.Save(1, &e.waiterQueue)
 	stateSinkObject.Save(2, &e.uniqueID)
@@ -114,19 +114,19 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(17, &e.multicastLoop)
 	stateSinkObject.Save(18, &e.portFlags)
 	stateSinkObject.Save(19, &e.bindToDevice)
-	stateSinkObject.Save(20, &e.broadcast)
-	stateSinkObject.Save(21, &e.noChecksum)
-	stateSinkObject.Save(23, &e.boundBindToDevice)
-	stateSinkObject.Save(24, &e.boundPortFlags)
-	stateSinkObject.Save(25, &e.sendTOS)
-	stateSinkObject.Save(26, &e.receiveTOS)
-	stateSinkObject.Save(27, &e.receiveTClass)
-	stateSinkObject.Save(28, &e.receiveIPPacketInfo)
-	stateSinkObject.Save(29, &e.shutdownFlags)
-	stateSinkObject.Save(30, &e.multicastMemberships)
-	stateSinkObject.Save(31, &e.effectiveNetProtos)
-	stateSinkObject.Save(32, &e.owner)
-	stateSinkObject.Save(33, &e.linger)
+	stateSinkObject.Save(20, &e.noChecksum)
+	stateSinkObject.Save(22, &e.boundBindToDevice)
+	stateSinkObject.Save(23, &e.boundPortFlags)
+	stateSinkObject.Save(24, &e.sendTOS)
+	stateSinkObject.Save(25, &e.receiveTOS)
+	stateSinkObject.Save(26, &e.receiveTClass)
+	stateSinkObject.Save(27, &e.receiveIPPacketInfo)
+	stateSinkObject.Save(28, &e.shutdownFlags)
+	stateSinkObject.Save(29, &e.multicastMemberships)
+	stateSinkObject.Save(30, &e.effectiveNetProtos)
+	stateSinkObject.Save(31, &e.owner)
+	stateSinkObject.Save(32, &e.linger)
+	stateSinkObject.Save(33, &e.ops)
 }
 
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
@@ -149,21 +149,21 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(17, &e.multicastLoop)
 	stateSourceObject.Load(18, &e.portFlags)
 	stateSourceObject.Load(19, &e.bindToDevice)
-	stateSourceObject.Load(20, &e.broadcast)
-	stateSourceObject.Load(21, &e.noChecksum)
-	stateSourceObject.Load(23, &e.boundBindToDevice)
-	stateSourceObject.Load(24, &e.boundPortFlags)
-	stateSourceObject.Load(25, &e.sendTOS)
-	stateSourceObject.Load(26, &e.receiveTOS)
-	stateSourceObject.Load(27, &e.receiveTClass)
-	stateSourceObject.Load(28, &e.receiveIPPacketInfo)
-	stateSourceObject.Load(29, &e.shutdownFlags)
-	stateSourceObject.Load(30, &e.multicastMemberships)
-	stateSourceObject.Load(31, &e.effectiveNetProtos)
-	stateSourceObject.Load(32, &e.owner)
-	stateSourceObject.Load(33, &e.linger)
+	stateSourceObject.Load(20, &e.noChecksum)
+	stateSourceObject.Load(22, &e.boundBindToDevice)
+	stateSourceObject.Load(23, &e.boundPortFlags)
+	stateSourceObject.Load(24, &e.sendTOS)
+	stateSourceObject.Load(25, &e.receiveTOS)
+	stateSourceObject.Load(26, &e.receiveTClass)
+	stateSourceObject.Load(27, &e.receiveIPPacketInfo)
+	stateSourceObject.Load(28, &e.shutdownFlags)
+	stateSourceObject.Load(29, &e.multicastMemberships)
+	stateSourceObject.Load(30, &e.effectiveNetProtos)
+	stateSourceObject.Load(31, &e.owner)
+	stateSourceObject.Load(32, &e.linger)
+	stateSourceObject.Load(33, &e.ops)
 	stateSourceObject.LoadValue(5, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
-	stateSourceObject.LoadValue(22, new(string), func(y interface{}) { e.loadLastError(y.(string)) })
+	stateSourceObject.LoadValue(21, new(string), func(y interface{}) { e.loadLastError(y.(string)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
