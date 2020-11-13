@@ -127,7 +127,13 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		log.Warningf("%s.GetFilesystem: couldn't get kernel task from context", fsType.Name())
 		return nil, nil, syserror.EINVAL
 	}
-	fuseFd := kernelTask.GetFileVFS2(int32(deviceDescriptor))
+	fuseFDGeneric := kernelTask.GetFileVFS2(int32(deviceDescriptor))
+	defer fuseFDGeneric.DecRef(ctx)
+	fuseFD, ok := fuseFDGeneric.Impl().(*DeviceFD)
+	if !ok {
+		log.Warningf("%s.GetFilesystem: device FD is %T, not a FUSE device", fsType.Name, fuseFDGeneric)
+		return nil, nil, syserror.EINVAL
+	}
 
 	// Parse and set all the other supported FUSE mount options.
 	// TODO(gVisor.dev/issue/3229): Expand the supported mount options.
@@ -189,18 +195,17 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	// Create a new FUSE filesystem.
-	fs, err := newFUSEFilesystem(ctx, devMinor, &fsopts, fuseFd)
+	fs, err := newFUSEFilesystem(ctx, vfsObj, &fsType, fuseFD, devMinor, &fsopts)
 	if err != nil {
 		log.Warningf("%s.NewFUSEFilesystem: failed with error: %v", fsType.Name(), err)
 		return nil, nil, err
 	}
 
-	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
-
 	// Send a FUSE_INIT request to the FUSE daemon server before returning.
 	// This call is not blocking.
 	if err := fs.conn.InitSend(creds, uint32(kernelTask.ThreadID())); err != nil {
 		log.Warningf("%s.InitSend: failed with error: %v", fsType.Name(), err)
+		fs.VFSFilesystem().DecRef(ctx) // returned by newFUSEFilesystem
 		return nil, nil, err
 	}
 
@@ -211,20 +216,28 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 }
 
 // newFUSEFilesystem creates a new FUSE filesystem.
-func newFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOptions, device *vfs.FileDescription) (*filesystem, error) {
-	conn, err := newFUSEConnection(ctx, device, opts)
+func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsType *FilesystemType, fuseFD *DeviceFD, devMinor uint32, opts *filesystemOptions) (*filesystem, error) {
+	conn, err := newFUSEConnection(ctx, fuseFD, opts)
 	if err != nil {
 		log.Warningf("fuse.NewFUSEFilesystem: NewFUSEConnection failed with error: %v", err)
 		return nil, syserror.EINVAL
 	}
 
-	fuseFD := device.Impl().(*DeviceFD)
 	fs := &filesystem{
 		devMinor: devMinor,
 		opts:     opts,
 		conn:     conn,
 	}
+	fs.VFSFilesystem().Init(vfsObj, fsType, fs)
+
+	// FIXME(gvisor.dev/issue/4813): Doesn't conn or fs need to hold a
+	// reference on fuseFD, since conn uses fuseFD for communication with the
+	// server? Wouldn't doing so create a circular reference?
+	fs.VFSFilesystem().IncRef() // for fuseFD.fs
+	// FIXME(gvisor.dev/issue/4813): fuseFD.fs is accessed without
+	// synchronization.
 	fuseFD.fs = fs
+
 	return fs, nil
 }
 
