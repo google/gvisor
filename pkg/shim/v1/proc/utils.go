@@ -67,24 +67,6 @@ func getLastRuntimeError(r *runsc.Runsc) (string, error) {
 	return errMsg, nil
 }
 
-func copyFile(to, from string) error {
-	ff, err := os.Open(from)
-	if err != nil {
-		return err
-	}
-	defer ff.Close()
-	tt, err := os.Create(to)
-	if err != nil {
-		return err
-	}
-	defer tt.Close()
-
-	p := bufPool.Get().(*[]byte)
-	defer bufPool.Put(p)
-	_, err = io.CopyBuffer(tt, ff, *p)
-	return err
-}
-
 func hasNoIO(r *CreateConfig) bool {
 	return r.Stdin == "" && r.Stdout == "" && r.Stderr == ""
 }
