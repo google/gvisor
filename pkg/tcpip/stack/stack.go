@@ -82,6 +82,7 @@ type TCPRACKState struct {
 	FACK        seqnum.Value
 	RTT         time.Duration
 	Reord       bool
+	DSACKSeen   bool
 }
 
 // TCPEndpointID is the unique 4 tuple that identifies a given endpoint.
