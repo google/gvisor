@@ -114,6 +114,51 @@ func putDentrySlice(ds *[]*dentry) {
 	dentrySlicePool.Put(ds)
 }
 
+// renameMuRUnlockAndCheckCaching calls fs.renameMu.RUnlock(), then calls
+// dentry.checkCachingLocked on all dentries in *dsp with fs.renameMu locked
+// for writing.
+//
+// dsp is a pointer-to-pointer since defer evaluates its arguments immediately,
+// but dentry slices are allocated lazily, and it's much easier to say "defer
+// fs.renameMuRUnlockAndCheckCaching(&ds)" than "defer func() {
+// fs.renameMuRUnlockAndCheckCaching(ds) }()" to work around this.
+func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, dsp **[]*dentry) {
+	fs.renameMu.RUnlock()
+	if *dsp == nil {
+		return
+	}
+	ds := **dsp
+	// Only go through calling dentry.checkCachingLocked() (which requires
+	// re-locking renameMu) if we actually have any dentries with zero refs.
+	checkAny := false
+	for i := range ds {
+		if atomic.LoadInt64(&ds[i].refs) == 0 {
+			checkAny = true
+			break
+		}
+	}
+	if checkAny {
+		fs.renameMu.Lock()
+		for _, d := range ds {
+			d.checkCachingLocked(ctx)
+		}
+		fs.renameMu.Unlock()
+	}
+	putDentrySlice(*dsp)
+}
+
+func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
+	if *ds == nil {
+		fs.renameMu.Unlock()
+		return
+	}
+	for _, d := range **ds {
+		d.checkCachingLocked(ctx)
+	}
+	fs.renameMu.Unlock()
+	putDentrySlice(*ds)
+}
+
 // stepLocked resolves rp.Component() to an existing file, starting from the
 // given directory.
 //
@@ -649,41 +694,6 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		}
 	}
 	return nil
-}
-
-// renameMuRUnlockAndCheckCaching calls fs.renameMu.RUnlock(), then calls
-// dentry.checkCachingLocked on all dentries in *ds with fs.renameMu locked for
-// writing.
-//
-// ds is a pointer-to-pointer since defer evaluates its arguments immediately,
-// but dentry slices are allocated lazily, and it's much easier to say "defer
-// fs.renameMuRUnlockAndCheckCaching(&ds)" than "defer func() {
-// fs.renameMuRUnlockAndCheckCaching(ds) }()" to work around this.
-func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
-	fs.renameMu.RUnlock()
-	if *ds == nil {
-		return
-	}
-	if len(**ds) != 0 {
-		fs.renameMu.Lock()
-		for _, d := range **ds {
-			d.checkCachingLocked(ctx)
-		}
-		fs.renameMu.Unlock()
-	}
-	putDentrySlice(*ds)
-}
-
-func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
-	if *ds == nil {
-		fs.renameMu.Unlock()
-		return
-	}
-	for _, d := range **ds {
-		d.checkCachingLocked(ctx)
-	}
-	fs.renameMu.Unlock()
-	putDentrySlice(*ds)
 }
 
 // AccessAt implements vfs.Filesystem.Impl.AccessAt.
