@@ -119,7 +119,7 @@ type fdDirInode struct {
 
 var _ kernfs.Inode = (*fdDirInode)(nil)
 
-func (fs *filesystem) newFDDirInode(task *kernel.Task) kernfs.Inode {
+func (fs *filesystem) newFDDirInode(ctx context.Context, task *kernel.Task) kernfs.Inode {
 	inode := &fdDirInode{
 		fdDir: fdDir{
 			fs:             fs,
@@ -127,7 +127,7 @@ func (fs *filesystem) newFDDirInode(task *kernel.Task) kernfs.Inode {
 			produceSymlink: true,
 		},
 	}
-	inode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.InitRefs()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
@@ -148,7 +148,7 @@ func (i *fdDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 	if !taskFDExists(ctx, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
-	return i.fs.newFDSymlink(i.task, fd, i.fs.NextIno()), nil
+	return i.fs.newFDSymlink(ctx, i.task, fd, i.fs.NextIno()), nil
 }
 
 // Open implements kernfs.Inode.Open.
@@ -204,12 +204,12 @@ type fdSymlink struct {
 
 var _ kernfs.Inode = (*fdSymlink)(nil)
 
-func (fs *filesystem) newFDSymlink(task *kernel.Task, fd int32, ino uint64) kernfs.Inode {
+func (fs *filesystem) newFDSymlink(ctx context.Context, task *kernel.Task, fd int32, ino uint64) kernfs.Inode {
 	inode := &fdSymlink{
 		task: task,
 		fd:   fd,
 	}
-	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
 
@@ -257,14 +257,14 @@ type fdInfoDirInode struct {
 
 var _ kernfs.Inode = (*fdInfoDirInode)(nil)
 
-func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) kernfs.Inode {
+func (fs *filesystem) newFDInfoDirInode(ctx context.Context, task *kernel.Task) kernfs.Inode {
 	inode := &fdInfoDirInode{
 		fdDir: fdDir{
 			fs:   fs,
 			task: task,
 		},
 	}
-	inode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.InitRefs()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
@@ -284,7 +284,7 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode,
 		task: i.task,
 		fd:   fd,
 	}
-	return i.fs.newTaskOwnedInode(i.task, i.fs.NextIno(), 0444, data), nil
+	return i.fs.newTaskOwnedInode(ctx, i.task, i.fs.NextIno(), 0444, data), nil
 }
 
 // IterDirents implements Inode.IterDirents.

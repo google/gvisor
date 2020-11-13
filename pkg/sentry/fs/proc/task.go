@@ -79,45 +79,45 @@ type taskDir struct {
 var _ fs.InodeOperations = (*taskDir)(nil)
 
 // newTaskDir creates a new proc task entry.
-func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bool) *fs.Inode {
+func (p *proc) newTaskDir(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, isThreadGroup bool) *fs.Inode {
 	contents := map[string]*fs.Inode{
-		"auxv":          newAuxvec(t, msrc),
-		"cmdline":       newExecArgInode(t, msrc, cmdlineExecArg),
-		"comm":          newComm(t, msrc),
-		"cwd":           newCwd(t, msrc),
-		"environ":       newExecArgInode(t, msrc, environExecArg),
-		"exe":           newExe(t, msrc),
-		"fd":            newFdDir(t, msrc),
-		"fdinfo":        newFdInfoDir(t, msrc),
-		"gid_map":       newGIDMap(t, msrc),
-		"io":            newIO(t, msrc, isThreadGroup),
-		"maps":          newMaps(t, msrc),
-		"mem":           newMem(t, msrc),
-		"mountinfo":     seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
-		"mounts":        seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
-		"net":           newNetDir(t, msrc),
-		"ns":            newNamespaceDir(t, msrc),
-		"oom_score":     newOOMScore(t, msrc),
-		"oom_score_adj": newOOMScoreAdj(t, msrc),
-		"smaps":         newSmaps(t, msrc),
-		"stat":          newTaskStat(t, msrc, isThreadGroup, p.pidns),
-		"statm":         newStatm(t, msrc),
-		"status":        newStatus(t, msrc, p.pidns),
-		"uid_map":       newUIDMap(t, msrc),
+		"auxv":          newAuxvec(ctx, t, msrc),
+		"cmdline":       newExecArgInode(ctx, t, msrc, cmdlineExecArg),
+		"comm":          newComm(ctx, t, msrc),
+		"cwd":           newCwd(ctx, t, msrc),
+		"environ":       newExecArgInode(ctx, t, msrc, environExecArg),
+		"exe":           newExe(ctx, t, msrc),
+		"fd":            newFdDir(ctx, t, msrc),
+		"fdinfo":        newFdInfoDir(ctx, t, msrc),
+		"gid_map":       newGIDMap(ctx, t, msrc),
+		"io":            newIO(ctx, t, msrc, isThreadGroup),
+		"maps":          newMaps(ctx, t, msrc),
+		"mem":           newMem(ctx, t, msrc),
+		"mountinfo":     seqfile.NewSeqFileInode(ctx, &mountInfoFile{t: t}, msrc),
+		"mounts":        seqfile.NewSeqFileInode(ctx, &mountsFile{t: t}, msrc),
+		"net":           newNetDir(ctx, t, msrc),
+		"ns":            newNamespaceDir(ctx, t, msrc),
+		"oom_score":     newOOMScore(ctx, msrc),
+		"oom_score_adj": newOOMScoreAdj(ctx, t, msrc),
+		"smaps":         newSmaps(ctx, t, msrc),
+		"stat":          newTaskStat(ctx, t, msrc, isThreadGroup, p.pidns),
+		"statm":         newStatm(ctx, t, msrc),
+		"status":        newStatus(ctx, t, msrc, p.pidns),
+		"uid_map":       newUIDMap(ctx, t, msrc),
 	}
 	if isThreadGroup {
-		contents["task"] = p.newSubtasks(t, msrc)
+		contents["task"] = p.newSubtasks(ctx, t, msrc)
 	}
 	if len(p.cgroupControllers) > 0 {
-		contents["cgroup"] = newCGroupInode(t, msrc, p.cgroupControllers)
+		contents["cgroup"] = newCGroupInode(ctx, msrc, p.cgroupControllers)
 	}
 
 	// N.B. taskOwnedInodeOps enforces dumpability-based ownership.
 	d := &taskDir{
-		Dir: *ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
+		Dir: *ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
 		t:   t,
 	}
-	return newProcInode(t, d, msrc, fs.SpecialDirectory, t)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, t)
 }
 
 // subtasks represents a /proc/TID/task directory.
@@ -132,13 +132,13 @@ type subtasks struct {
 
 var _ fs.InodeOperations = (*subtasks)(nil)
 
-func (p *proc) newSubtasks(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func (p *proc) newSubtasks(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	s := &subtasks{
-		Dir: *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermsFromMode(0555)),
+		Dir: *ramfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0555)),
 		t:   t,
 		p:   p,
 	}
-	return newProcInode(t, s, msrc, fs.SpecialDirectory, t)
+	return newProcInode(ctx, s, msrc, fs.SpecialDirectory, t)
 }
 
 // UnstableAttr returns unstable attributes of the subtasks.
@@ -243,7 +243,7 @@ func (s *subtasks) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dir
 		return nil, syserror.ENOENT
 	}
 
-	td := s.p.newTaskDir(task, dir.MountSource, false)
+	td := s.p.newTaskDir(ctx, task, dir.MountSource, false)
 	return fs.NewDirent(ctx, td, p), nil
 }
 
@@ -256,12 +256,12 @@ type exe struct {
 	t *kernel.Task
 }
 
-func newExe(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newExe(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	exeSymlink := &exe{
-		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, ""),
+		Symlink: *ramfs.NewSymlink(ctx, fs.RootOwner, ""),
 		t:       t,
 	}
-	return newProcInode(t, exeSymlink, msrc, fs.Symlink, t)
+	return newProcInode(ctx, exeSymlink, msrc, fs.Symlink, t)
 }
 
 func (e *exe) executable() (file fsbridge.File, err error) {
@@ -311,12 +311,12 @@ type cwd struct {
 	t *kernel.Task
 }
 
-func newCwd(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newCwd(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	cwdSymlink := &cwd{
-		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, ""),
+		Symlink: *ramfs.NewSymlink(ctx, fs.RootOwner, ""),
 		t:       t,
 	}
-	return newProcInode(t, cwdSymlink, msrc, fs.Symlink, t)
+	return newProcInode(ctx, cwdSymlink, msrc, fs.Symlink, t)
 }
 
 // Readlink implements fs.InodeOperations.
@@ -355,17 +355,17 @@ type namespaceSymlink struct {
 	t *kernel.Task
 }
 
-func newNamespaceSymlink(t *kernel.Task, msrc *fs.MountSource, name string) *fs.Inode {
+func newNamespaceSymlink(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, name string) *fs.Inode {
 	// TODO(rahat): Namespace symlinks should contain the namespace name and the
 	// inode number for the namespace instance, so for example user:[123456]. We
 	// currently fake the inode number by sticking the symlink inode in its
 	// place.
 	target := fmt.Sprintf("%s:[%d]", name, device.ProcDevice.NextIno())
 	n := &namespaceSymlink{
-		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, target),
+		Symlink: *ramfs.NewSymlink(ctx, fs.RootOwner, target),
 		t:       t,
 	}
-	return newProcInode(t, n, msrc, fs.Symlink, t)
+	return newProcInode(ctx, n, msrc, fs.Symlink, t)
 }
 
 // Readlink reads the symlink value.
@@ -390,14 +390,14 @@ func (n *namespaceSymlink) Getlink(ctx context.Context, inode *fs.Inode) (*fs.Di
 	return fs.NewDirent(ctx, newProcInode(ctx, iops, inode.MountSource, fs.RegularFile, nil), n.Symlink.Target), nil
 }
 
-func newNamespaceDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newNamespaceDir(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	contents := map[string]*fs.Inode{
-		"net":  newNamespaceSymlink(t, msrc, "net"),
-		"pid":  newNamespaceSymlink(t, msrc, "pid"),
-		"user": newNamespaceSymlink(t, msrc, "user"),
+		"net":  newNamespaceSymlink(ctx, t, msrc, "net"),
+		"pid":  newNamespaceSymlink(ctx, t, msrc, "pid"),
+		"user": newNamespaceSymlink(ctx, t, msrc, "user"),
 	}
-	d := ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0511))
-	return newProcInode(t, d, msrc, fs.SpecialDirectory, t)
+	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0511))
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, t)
 }
 
 // memData implements fs.Inode for /proc/[pid]/mem.
@@ -428,12 +428,12 @@ type memDataFile struct {
 	t *kernel.Task
 }
 
-func newMem(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newMem(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	inode := &memData{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0400), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0400), linux.PROC_SUPER_MAGIC),
 		t:               t,
 	}
-	return newProcInode(t, inode, msrc, fs.SpecialFile, t)
+	return newProcInode(ctx, inode, msrc, fs.SpecialFile, t)
 }
 
 // Truncate implements fs.InodeOperations.Truncate.
@@ -489,8 +489,8 @@ type mapsData struct {
 	t *kernel.Task
 }
 
-func newMaps(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newProcInode(t, seqfile.NewSeqFile(t, &mapsData{t}), msrc, fs.SpecialFile, t)
+func newMaps(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &mapsData{t}), msrc, fs.SpecialFile, t)
 }
 
 func (md *mapsData) mm() *mm.MemoryManager {
@@ -529,8 +529,8 @@ type smapsData struct {
 	t *kernel.Task
 }
 
-func newSmaps(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newProcInode(t, seqfile.NewSeqFile(t, &smapsData{t}), msrc, fs.SpecialFile, t)
+func newSmaps(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &smapsData{t}), msrc, fs.SpecialFile, t)
 }
 
 func (sd *smapsData) mm() *mm.MemoryManager {
@@ -575,8 +575,8 @@ type taskStatData struct {
 	pidns *kernel.PIDNamespace
 }
 
-func newTaskStat(t *kernel.Task, msrc *fs.MountSource, showSubtasks bool, pidns *kernel.PIDNamespace) *fs.Inode {
-	return newProcInode(t, seqfile.NewSeqFile(t, &taskStatData{t, showSubtasks /* tgstats */, pidns}), msrc, fs.SpecialFile, t)
+func newTaskStat(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, showSubtasks bool, pidns *kernel.PIDNamespace) *fs.Inode {
+	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &taskStatData{t, showSubtasks /* tgstats */, pidns}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate returns whether the generation is old or not.
@@ -660,8 +660,8 @@ type statmData struct {
 	t *kernel.Task
 }
 
-func newStatm(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newProcInode(t, seqfile.NewSeqFile(t, &statmData{t}), msrc, fs.SpecialFile, t)
+func newStatm(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &statmData{t}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
@@ -697,8 +697,8 @@ type statusData struct {
 	pidns *kernel.PIDNamespace
 }
 
-func newStatus(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace) *fs.Inode {
-	return newProcInode(t, seqfile.NewSeqFile(t, &statusData{t, pidns}), msrc, fs.SpecialFile, t)
+func newStatus(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace) *fs.Inode {
+	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &statusData{t, pidns}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
@@ -768,11 +768,11 @@ type ioData struct {
 	ioUsage
 }
 
-func newIO(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bool) *fs.Inode {
+func newIO(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, isThreadGroup bool) *fs.Inode {
 	if isThreadGroup {
-		return newProcInode(t, seqfile.NewSeqFile(t, &ioData{t.ThreadGroup()}), msrc, fs.SpecialFile, t)
+		return newProcInode(ctx, seqfile.NewSeqFile(ctx, &ioData{t.ThreadGroup()}), msrc, fs.SpecialFile, t)
 	}
-	return newProcInode(t, seqfile.NewSeqFile(t, &ioData{t}), msrc, fs.SpecialFile, t)
+	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &ioData{t}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate returns whether the generation is old or not.
@@ -816,12 +816,12 @@ type comm struct {
 }
 
 // newComm returns a new comm file.
-func newComm(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newComm(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	c := &comm{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
 		t:               t,
 	}
-	return newProcInode(t, c, msrc, fs.SpecialFile, t)
+	return newProcInode(ctx, c, msrc, fs.SpecialFile, t)
 }
 
 // Check implements fs.InodeOperations.Check.
@@ -888,12 +888,12 @@ type auxvec struct {
 }
 
 // newAuxvec returns a new auxvec file.
-func newAuxvec(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newAuxvec(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	a := &auxvec{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
 		t:               t,
 	}
-	return newProcInode(t, a, msrc, fs.SpecialFile, t)
+	return newProcInode(ctx, a, msrc, fs.SpecialFile, t)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -949,8 +949,8 @@ func (f *auxvecFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequenc
 
 // newOOMScore returns a oom_score file. It is a stub that always returns 0.
 // TODO(gvisor.dev/issue/1967)
-func newOOMScore(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newStaticProcInode(t, msrc, []byte("0\n"))
+func newOOMScore(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+	return newStaticProcInode(ctx, msrc, []byte("0\n"))
 }
 
 // oomScoreAdj is a file containing the oom_score adjustment for a task.
@@ -979,12 +979,12 @@ type oomScoreAdjFile struct {
 }
 
 // newOOMScoreAdj returns a oom_score_adj file.
-func newOOMScoreAdj(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newOOMScoreAdj(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	i := &oomScoreAdj{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
 		t:               t,
 	}
-	return newProcInode(t, i, msrc, fs.SpecialFile, t)
+	return newProcInode(ctx, i, msrc, fs.SpecialFile, t)
 }
 
 // Truncate implements fs.InodeOperations.Truncate. Truncate is called when

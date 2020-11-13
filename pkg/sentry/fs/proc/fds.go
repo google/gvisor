@@ -95,13 +95,13 @@ var _ fs.InodeOperations = (*fd)(nil)
 // newFd returns a new fd based on an existing file.
 //
 // This inherits one reference to the file.
-func newFd(t *kernel.Task, f *fs.File, msrc *fs.MountSource) *fs.Inode {
+func newFd(ctx context.Context, t *kernel.Task, f *fs.File, msrc *fs.MountSource) *fs.Inode {
 	fd := &fd{
 		// RootOwner overridden by taskOwnedInodeOps.UnstableAttrs().
-		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, ""),
+		Symlink: *ramfs.NewSymlink(ctx, fs.RootOwner, ""),
 		file:    f,
 	}
-	return newProcInode(t, fd, msrc, fs.Symlink, t)
+	return newProcInode(ctx, fd, msrc, fs.Symlink, t)
 }
 
 // GetFile returns the fs.File backing this fd.  The dirent and flags
@@ -153,12 +153,12 @@ type fdDir struct {
 var _ fs.InodeOperations = (*fdDir)(nil)
 
 // newFdDir creates a new fdDir.
-func newFdDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newFdDir(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	f := &fdDir{
-		Dir: *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermissions{User: fs.PermMask{Read: true, Execute: true}}),
+		Dir: *ramfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermissions{User: fs.PermMask{Read: true, Execute: true}}),
 		t:   t,
 	}
-	return newProcInode(t, f, msrc, fs.SpecialDirectory, t)
+	return newProcInode(ctx, f, msrc, fs.SpecialDirectory, t)
 }
 
 // Check implements InodeOperations.Check.
@@ -183,7 +183,7 @@ func (f *fdDir) Check(ctx context.Context, inode *fs.Inode, req fs.PermMask) boo
 // Lookup loads an Inode in /proc/TID/fd into a Dirent.
 func (f *fdDir) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dirent, error) {
 	n, err := walkDescriptors(f.t, p, func(file *fs.File, _ kernel.FDFlags) *fs.Inode {
-		return newFd(f.t, file, dir.MountSource)
+		return newFd(ctx, f.t, file, dir.MountSource)
 	})
 	if err != nil {
 		return nil, err
@@ -237,12 +237,12 @@ type fdInfoDir struct {
 }
 
 // newFdInfoDir creates a new fdInfoDir.
-func newFdInfoDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+func newFdInfoDir(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	fdid := &fdInfoDir{
-		Dir: *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermsFromMode(0500)),
+		Dir: *ramfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0500)),
 		t:   t,
 	}
-	return newProcInode(t, fdid, msrc, fs.SpecialDirectory, t)
+	return newProcInode(ctx, fdid, msrc, fs.SpecialDirectory, t)
 }
 
 // Lookup loads an fd in /proc/TID/fdinfo into a Dirent.
