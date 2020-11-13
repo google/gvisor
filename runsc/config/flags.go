@@ -71,7 +71,7 @@ func RegisterFlags() {
 		flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 		flag.Bool("overlayfs-stale-read", true, "assume root mount is an overlay filesystem")
 		flag.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
-		flag.Bool("vfs2", false, "TEST ONLY; use while VFSv2 is landing. This uses the new experimental VFS layer.")
+		flag.Bool("vfs2", false, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
 		flag.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
 
 		// Flags that control sandbox runtime behavior: network related.
