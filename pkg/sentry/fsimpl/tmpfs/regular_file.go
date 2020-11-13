@@ -565,7 +565,7 @@ func (rw *regularFileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, er
 
 // WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
 //
-// Preconditions: inode.mu must be held.
+// Preconditions: rw.file.inode.mu must be held.
 func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	// Hold dataMu so we can modify size.
 	rw.file.dataMu.Lock()
@@ -657,7 +657,7 @@ exitLoop:
 	// If the write ends beyond the file's previous size, it causes the
 	// file to grow.
 	if rw.off > rw.file.size {
-		rw.file.size = rw.off
+		atomic.StoreUint64(&rw.file.size, rw.off)
 	}
 
 	return done, retErr
