@@ -32,10 +32,10 @@ var errNoSyscalls = syserr.New("no syscall table found", linux.ENOEXEC)
 // Auxmap contains miscellaneous data for the task.
 type Auxmap map[string]interface{}
 
-// TaskContext is the subset of a task's data that is provided by the loader.
+// TaskImage is the subset of a task's data that is provided by the loader.
 //
 // +stateify savable
-type TaskContext struct {
+type TaskImage struct {
 	// Name is the thread name set by the prctl(PR_SET_NAME) system call.
 	Name string
 
@@ -52,48 +52,48 @@ type TaskContext struct {
 	st *SyscallTable `state:".(syscallTableInfo)"`
 }
 
-// release releases all resources held by the TaskContext. release is called by
-// the task when it execs into a new TaskContext or exits.
-func (tc *TaskContext) release() {
+// release releases all resources held by the TaskImage. release is called by
+// the task when it execs into a new TaskImage or exits.
+func (image *TaskImage) release() {
 	// Nil out pointers so that if the task is saved after release, it doesn't
 	// follow the pointers to possibly now-invalid objects.
-	if tc.MemoryManager != nil {
-		tc.MemoryManager.DecUsers(context.Background())
-		tc.MemoryManager = nil
+	if image.MemoryManager != nil {
+		image.MemoryManager.DecUsers(context.Background())
+		image.MemoryManager = nil
 	}
-	tc.fu = nil
+	image.fu = nil
 }
 
-// Fork returns a duplicate of tc. The copied TaskContext always has an
+// Fork returns a duplicate of image. The copied TaskImage always has an
 // independent arch.Context. If shareAddressSpace is true, the copied
-// TaskContext shares an address space with the original; otherwise, the copied
-// TaskContext has an independent address space that is initially a duplicate
+// TaskImage shares an address space with the original; otherwise, the copied
+// TaskImage has an independent address space that is initially a duplicate
 // of the original's.
-func (tc *TaskContext) Fork(ctx context.Context, k *Kernel, shareAddressSpace bool) (*TaskContext, error) {
-	newTC := &TaskContext{
-		Name: tc.Name,
-		Arch: tc.Arch.Fork(),
-		st:   tc.st,
+func (image *TaskImage) Fork(ctx context.Context, k *Kernel, shareAddressSpace bool) (*TaskImage, error) {
+	newImage := &TaskImage{
+		Name: image.Name,
+		Arch: image.Arch.Fork(),
+		st:   image.st,
 	}
 	if shareAddressSpace {
-		newTC.MemoryManager = tc.MemoryManager
-		if newTC.MemoryManager != nil {
-			if !newTC.MemoryManager.IncUsers() {
-				// Shouldn't be possible since tc.MemoryManager should be a
+		newImage.MemoryManager = image.MemoryManager
+		if newImage.MemoryManager != nil {
+			if !newImage.MemoryManager.IncUsers() {
+				// Shouldn't be possible since image.MemoryManager should be a
 				// counted user.
-				panic(fmt.Sprintf("TaskContext.Fork called with userless TaskContext.MemoryManager"))
+				panic(fmt.Sprintf("TaskImage.Fork called with userless TaskImage.MemoryManager"))
 			}
 		}
-		newTC.fu = tc.fu
+		newImage.fu = image.fu
 	} else {
-		newMM, err := tc.MemoryManager.Fork(ctx)
+		newMM, err := image.MemoryManager.Fork(ctx)
 		if err != nil {
 			return nil, err
 		}
-		newTC.MemoryManager = newMM
-		newTC.fu = k.futexes.Fork()
+		newImage.MemoryManager = newMM
+		newImage.fu = k.futexes.Fork()
 	}
-	return newTC, nil
+	return newImage, nil
 }
 
 // Arch returns t's arch.Context.
@@ -101,7 +101,7 @@ func (tc *TaskContext) Fork(ctx context.Context, k *Kernel, shareAddressSpace bo
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) Arch() arch.Context {
-	return t.tc.Arch
+	return t.image.Arch
 }
 
 // MemoryManager returns t's MemoryManager. MemoryManager does not take an
@@ -110,7 +110,7 @@ func (t *Task) Arch() arch.Context {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) MemoryManager() *mm.MemoryManager {
-	return t.tc.MemoryManager
+	return t.image.MemoryManager
 }
 
 // SyscallTable returns t's syscall table.
@@ -118,7 +118,7 @@ func (t *Task) MemoryManager() *mm.MemoryManager {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) SyscallTable() *SyscallTable {
-	return t.tc.st
+	return t.image.st
 }
 
 // Stack returns the userspace stack.
@@ -133,10 +133,10 @@ func (t *Task) Stack() *arch.Stack {
 	}
 }
 
-// LoadTaskImage loads a specified file into a new TaskContext.
+// LoadTaskImage loads a specified file into a new TaskImage.
 //
 // args.MemoryManager does not need to be set by the caller.
-func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskContext, *syserr.Error) {
+func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskImage, *syserr.Error) {
 	// If File is not nil, we should load that instead of resolving Filename.
 	if args.File != nil {
 		args.Filename = args.File.PathnameWithDeleted(ctx)
@@ -163,7 +163,7 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*Task
 	if !m.IncUsers() {
 		panic("Failed to increment users count on new MM")
 	}
-	return &TaskContext{
+	return &TaskImage{
 		Name:          name,
 		Arch:          ac,
 		MemoryManager: m,

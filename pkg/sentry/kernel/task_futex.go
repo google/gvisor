@@ -26,7 +26,7 @@ import (
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) Futex() *futex.Manager {
-	return t.tc.fu
+	return t.image.fu
 }
 
 // SwapUint32 implements futex.Target.SwapUint32.

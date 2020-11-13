@@ -159,7 +159,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		defer wd.DecRef(t)
 	}
 
-	// Load the new TaskContext.
+	// Load the new TaskImage.
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	loadArgs := loader.LoadArgs{
 		Opener:              fsbridge.NewFSLookup(t.MountNamespace(), root, wd),
@@ -173,12 +173,12 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		Features:            t.Arch().FeatureSet(),
 	}
 
-	tc, se := t.Kernel().LoadTaskImage(t, loadArgs)
+	image, se := t.Kernel().LoadTaskImage(t, loadArgs)
 	if se != nil {
 		return 0, nil, se.ToError()
 	}
 
-	ctrl, err := t.Execve(tc)
+	ctrl, err := t.Execve(image)
 	return 0, ctrl, err
 }
 

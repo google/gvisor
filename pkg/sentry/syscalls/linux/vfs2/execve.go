@@ -109,7 +109,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr user
 		executable = fsbridge.NewVFSFile(file)
 	}
 
-	// Load the new TaskContext.
+	// Load the new TaskImage.
 	mntns := t.MountNamespaceVFS2()
 	wd := t.FSContext().WorkingDirectoryVFS2()
 	defer wd.DecRef(t)
@@ -126,11 +126,11 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr user
 		Features:            t.Arch().FeatureSet(),
 	}
 
-	tc, se := t.Kernel().LoadTaskImage(t, loadArgs)
+	image, se := t.Kernel().LoadTaskImage(t, loadArgs)
 	if se != nil {
 		return 0, nil, se.ToError()
 	}
 
-	ctrl, err := t.Execve(tc)
+	ctrl, err := t.Execve(image)
 	return 0, ctrl, err
 }

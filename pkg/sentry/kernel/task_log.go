@@ -237,11 +237,11 @@ func (t *Task) traceExitEvent() {
 }
 
 // traceExecEvent is called when a task calls exec.
-func (t *Task) traceExecEvent(tc *TaskContext) {
+func (t *Task) traceExecEvent(image *TaskImage) {
 	if !trace.IsEnabled() {
 		return
 	}
-	file := tc.MemoryManager.Executable()
+	file := image.MemoryManager.Executable()
 	if file == nil {
 		trace.Logf(t.traceContext, traceCategory, "exec: << unknown >>")
 		return

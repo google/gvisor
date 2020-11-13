@@ -46,10 +46,10 @@ type TaskConfig struct {
 	// SignalMask is the new task's initial signal mask.
 	SignalMask linux.SignalSet
 
-	// TaskContext is the TaskContext of the new task. Ownership of the
-	// TaskContext is transferred to TaskSet.NewTask, whether or not it
+	// TaskImage is the TaskImage of the new task. Ownership of the
+	// TaskImage is transferred to TaskSet.NewTask, whether or not it
 	// succeeds.
-	TaskContext *TaskContext
+	TaskImage *TaskImage
 
 	// FSContext is the FSContext of the new task. A reference must be held on
 	// FSContext, which is transferred to TaskSet.NewTask whether or not it
@@ -105,7 +105,7 @@ type TaskConfig struct {
 func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	t, err := ts.newTask(cfg)
 	if err != nil {
-		cfg.TaskContext.release()
+		cfg.TaskImage.release()
 		cfg.FSContext.DecRef(ctx)
 		cfg.FDTable.DecRef(ctx)
 		cfg.IPCNamespace.DecRef(ctx)
@@ -121,7 +121,7 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 // of cfg if it succeeds.
 func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	tg := cfg.ThreadGroup
-	tc := cfg.TaskContext
+	image := cfg.TaskImage
 	t := &Task{
 		taskNode: taskNode{
 			tg:       tg,
@@ -132,7 +132,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		interruptChan:      make(chan struct{}, 1),
 		signalMask:         cfg.SignalMask,
 		signalStack:        arch.SignalStack{Flags: arch.SignalStackFlagDisable},
-		tc:                 *tc,
+		image:              *image,
 		fsContext:          cfg.FSContext,
 		fdTable:            cfg.FDTable,
 		p:                  cfg.Kernel.Platform.NewContext(),
