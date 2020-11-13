@@ -275,12 +275,12 @@ func (b IPv4) DestinationAddress() tcpip.Address {
 // IPv4Options is a buffer that holds all the raw IP options.
 type IPv4Options []byte
 
-// AllocationSize implements stack.NetOptions.
+// SizeWithPadding implements stack.NetOptions.
 // It reports the size to allocate for the Options. RFC 791 page 23 (end of
 // section 3.1) says of the padding at the end of the options:
 //    The internet header padding is used to ensure that the internet
 //    header ends on a 32 bit boundary.
-func (o IPv4Options) AllocationSize() int {
+func (o IPv4Options) SizeWithPadding() int {
 	return (len(o) + IPv4IHLStride - 1) & ^(IPv4IHLStride - 1)
 }
 
@@ -368,8 +368,8 @@ func (b IPv4) Encode(i *IPv4Fields) {
 	// worth a bit of optimisation here to keep the copy out of the fast path.
 	hdrLen := IPv4MinimumSize
 	if len(i.Options) != 0 {
-		// AllocationSize is always >= len(i.Options).
-		aLen := i.Options.AllocationSize()
+		// SizeWithPadding is always >= len(i.Options).
+		aLen := i.Options.SizeWithPadding()
 		hdrLen += aLen
 		if hdrLen > len(b) {
 			panic(fmt.Sprintf("encode received %d bytes, wanted >= %d", len(b), hdrLen))

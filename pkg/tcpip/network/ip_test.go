@@ -1227,7 +1227,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			nicAddr:      localIPv4Addr,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
-				ipHdrLen := header.IPv4MinimumSize + ipv4Options.AllocationSize()
+				ipHdrLen := header.IPv4MinimumSize + ipv4Options.SizeWithPadding()
 				totalLen := ipHdrLen + len(data)
 				hdr := buffer.NewPrependable(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
@@ -1272,7 +1272,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			nicAddr:      localIPv4Addr,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
-				ip := header.IPv4(make([]byte, header.IPv4MinimumSize+ipv4Options.AllocationSize()))
+				ip := header.IPv4(make([]byte, header.IPv4MinimumSize+ipv4Options.SizeWithPadding()))
 				ip.Encode(&header.IPv4Fields{
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
