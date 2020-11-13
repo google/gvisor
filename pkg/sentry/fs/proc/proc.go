@@ -179,7 +179,7 @@ func (p *proc) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dire
 	}
 
 	// Wrap it in a taskDir.
-	td := p.newTaskDir(otherTask, dir.MountSource, true)
+	td := p.newTaskDir(ctx, otherTask, dir.MountSource, true)
 	return fs.NewDirent(ctx, td, name), nil
 }
 

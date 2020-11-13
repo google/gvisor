@@ -248,9 +248,9 @@ type commInode struct {
 	task *kernel.Task
 }
 
-func (fs *filesystem) newComm(task *kernel.Task, ino uint64, perm linux.FileMode) kernfs.Inode {
+func (fs *filesystem) newComm(ctx context.Context, task *kernel.Task, ino uint64, perm linux.FileMode) kernfs.Inode {
 	inode := &commInode{task: task}
-	inode.DynamicBytesFile.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, &commData{task: task}, perm)
+	inode.DynamicBytesFile.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, &commData{task: task}, perm)
 	return inode
 }
 
@@ -383,10 +383,10 @@ type memInode struct {
 	locks vfs.FileLocks
 }
 
-func (fs *filesystem) newMemInode(task *kernel.Task, ino uint64, perm linux.FileMode) kernfs.Inode {
+func (fs *filesystem) newMemInode(ctx context.Context, task *kernel.Task, ino uint64, perm linux.FileMode) kernfs.Inode {
 	// Note: credentials are overridden by taskOwnedInode.
 	inode := &memInode{task: task}
-	inode.init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm)
+	inode.init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm)
 	return &taskOwnedInode{Inode: inode, owner: task}
 }
 
@@ -812,9 +812,9 @@ type exeSymlink struct {
 
 var _ kernfs.Inode = (*exeSymlink)(nil)
 
-func (fs *filesystem) newExeSymlink(task *kernel.Task, ino uint64) kernfs.Inode {
+func (fs *filesystem) newExeSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
 	inode := &exeSymlink{task: task}
-	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
 
@@ -888,9 +888,9 @@ type cwdSymlink struct {
 
 var _ kernfs.Inode = (*cwdSymlink)(nil)
 
-func (fs *filesystem) newCwdSymlink(task *kernel.Task, ino uint64) kernfs.Inode {
+func (fs *filesystem) newCwdSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
 	inode := &cwdSymlink{task: task}
-	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
 
@@ -999,7 +999,7 @@ type namespaceSymlink struct {
 	task *kernel.Task
 }
 
-func (fs *filesystem) newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) kernfs.Inode {
+func (fs *filesystem) newNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64, ns string) kernfs.Inode {
 	// Namespace symlinks should contain the namespace name and the inode number
 	// for the namespace instance, so for example user:[123456]. We currently fake
 	// the inode number by sticking the symlink inode in its place.
@@ -1007,7 +1007,7 @@ func (fs *filesystem) newNamespaceSymlink(task *kernel.Task, ino uint64, ns stri
 
 	inode := &namespaceSymlink{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
-	inode.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
+	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
 
 	taskInode := &taskOwnedInode{Inode: inode, owner: task}
 	return taskInode
