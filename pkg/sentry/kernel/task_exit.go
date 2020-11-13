@@ -266,7 +266,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.updateRSSLocked()
 	t.tg.pidns.owner.mu.Unlock()
 	t.mu.Lock()
-	t.tc.release()
+	t.image.release()
 	t.mu.Unlock()
 
 	// Releasing the MM unblocks a blocked CLONE_VFORK parent.

@@ -136,7 +136,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 	config := &kernel.TaskConfig{
 		Kernel:                  k,
 		ThreadGroup:             tc,
-		TaskContext:             &kernel.TaskContext{Name: name, MemoryManager: m},
+		TaskImage:               &kernel.TaskImage{Name: name, MemoryManager: m},
 		Credentials:             auth.CredentialsFromContext(ctx),
 		NetworkNamespace:        k.RootNetworkNamespace(),
 		AllowedCPUMask:          sched.NewFullCPUSet(k.ApplicationCores()),

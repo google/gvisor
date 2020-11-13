@@ -83,7 +83,7 @@ type Task struct {
 	// taskWork is exclusive to the task goroutine.
 	taskWork []TaskWorker
 
-	// haveSyscallReturn is true if tc.Arch().Return() represents a value
+	// haveSyscallReturn is true if image.Arch().Return() represents a value
 	// returned by a syscall (or set by ptrace after a syscall).
 	//
 	// haveSyscallReturn is exclusive to the task goroutine.
@@ -257,10 +257,10 @@ type Task struct {
 	// mu protects some of the following fields.
 	mu sync.Mutex `state:"nosave"`
 
-	// tc holds task data provided by the ELF loader.
+	// image holds task data provided by the ELF loader.
 	//
-	// tc is protected by mu, and is owned by the task goroutine.
-	tc TaskContext
+	// image is protected by mu, and is owned by the task goroutine.
+	image TaskImage
 
 	// fsContext is the task's filesystem context.
 	//
@@ -274,7 +274,7 @@ type Task struct {
 
 	// If vforkParent is not nil, it is the task that created this task with
 	// vfork() or clone(CLONE_VFORK), and should have its vforkStop ended when
-	// this TaskContext is released.
+	// this TaskImage is released.
 	//
 	// vforkParent is protected by the TaskSet mutex.
 	vforkParent *Task
@@ -751,12 +751,12 @@ func (t *Task) IsChrooted() bool {
 	return root != realRoot
 }
 
-// TaskContext returns t's TaskContext.
+// TaskImage returns t's TaskImage.
 //
 // Precondition: The caller must be running on the task goroutine, or t.mu must
 // be locked.
-func (t *Task) TaskContext() *TaskContext {
-	return &t.tc
+func (t *Task) TaskImage() *TaskImage {
+	return &t.image
 }
 
 // FSContext returns t's FSContext. FSContext does not take an additional

@@ -106,7 +106,7 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip u
 func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, ip usermem.Addr) uint32 {
 	data := linux.SeccompData{
 		Nr:                 sysno,
-		Arch:               t.tc.st.AuditNumber,
+		Arch:               t.image.st.AuditNumber,
 		InstructionPointer: uint64(ip),
 	}
 	// data.args is []uint64 and args is []arch.SyscallArgument (uintptr), so
