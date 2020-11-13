@@ -16,11 +16,13 @@ package kernel
 
 import (
 	"bytes"
+	"fmt"
 	"runtime"
 	"runtime/trace"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -57,6 +59,8 @@ type taskRunState interface {
 // make it visible in stack dumps. A goroutine for a given task can be identified
 // searching for Task.run()'s argument value.
 func (t *Task) run(threadID uintptr) {
+	atomic.StoreInt64(&t.goid, goid.Get())
+
 	// Construct t.blockingTimer here. We do this here because we can't
 	// reconstruct t.blockingTimer during restore in Task.afterLoad(), because
 	// kernel.timekeeper.SetClocks() hasn't been called yet.
@@ -99,6 +103,9 @@ func (t *Task) run(threadID uintptr) {
 			t.tg.pidns.owner.runningGoroutines.Done()
 			t.p.Release()
 
+			// Deferring this store triggers a false positive in the race
+			// detector (https://github.com/golang/go/issues/42599).
+			atomic.StoreInt64(&t.goid, 0)
 			// Keep argument alive because stack trace for dead variables may not be correct.
 			runtime.KeepAlive(threadID)
 			return
@@ -372,6 +379,14 @@ func (app *runApp) execute(t *Task) taskRunState {
 		t.Warningf("Unexpected SwitchToApp error: %v", err)
 		t.PrepareExit(ExitStatus{Code: ExtractErrno(err, -1)})
 		return (*runExit)(nil)
+	}
+}
+
+// assertTaskGoroutine panics if the caller is not running on t's task
+// goroutine.
+func (t *Task) assertTaskGoroutine() {
+	if got, want := goid.Get(), atomic.LoadInt64(&t.goid); got != want {
+		panic(fmt.Sprintf("running on goroutine %d (task goroutine for kernel.Task %p is %d)", got, t, want))
 	}
 }
 
