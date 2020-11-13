@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"net"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -2817,6 +2818,163 @@ func TestFragmentationErrors(t *testing.T) {
 			}
 			if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != ft.outgoingErrors {
 				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = %d", got, ft.outgoingErrors)
+			}
+		})
+	}
+}
+
+func TestForwarding(t *testing.T) {
+	const (
+		nicID1         = 1
+		nicID2         = 2
+		randomSequence = 123
+		randomIdent    = 42
+	)
+
+	ipv6Addr1 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(net.ParseIP("10::1").To16()),
+		PrefixLen: 64,
+	}
+	ipv6Addr2 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(net.ParseIP("11::1").To16()),
+		PrefixLen: 64,
+	}
+	remoteIPv6Addr1 := tcpip.Address(net.ParseIP("10::2").To16())
+	remoteIPv6Addr2 := tcpip.Address(net.ParseIP("11::2").To16())
+
+	tests := []struct {
+		name            string
+		TTL             uint8
+		expectErrorICMP bool
+	}{
+		{
+			name:            "TTL of zero",
+			TTL:             0,
+			expectErrorICMP: true,
+		},
+		{
+			name:            "TTL of one",
+			TTL:             1,
+			expectErrorICMP: true,
+		},
+		{
+			name:            "TTL of two",
+			TTL:             2,
+			expectErrorICMP: false,
+		},
+		{
+			name:            "TTL of three",
+			TTL:             3,
+			expectErrorICMP: false,
+		},
+		{
+			name:            "Max TTL",
+			TTL:             math.MaxUint8,
+			expectErrorICMP: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+			})
+			// We expect at most a single packet in response to our ICMP Echo Request.
+			e1 := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(nicID1, e1); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+			}
+			ipv6ProtoAddr1 := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: ipv6Addr1}
+			if err := s.AddProtocolAddress(nicID1, ipv6ProtoAddr1); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID1, ipv6ProtoAddr1, err)
+			}
+
+			e2 := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(nicID2, e2); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+			}
+			ipv6ProtoAddr2 := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: ipv6Addr2}
+			if err := s.AddProtocolAddress(nicID2, ipv6ProtoAddr2); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID2, ipv6ProtoAddr2, err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: ipv6Addr1.Subnet(),
+					NIC:         nicID1,
+				},
+				{
+					Destination: ipv6Addr2.Subnet(),
+					NIC:         nicID2,
+				},
+			})
+
+			if err := s.SetForwarding(ProtocolNumber, true); err != nil {
+				t.Fatalf("SetForwarding(%d, true): %s", ProtocolNumber, err)
+			}
+
+			hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6MinimumSize)
+			icmp := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+			icmp.SetIdent(randomIdent)
+			icmp.SetSequence(randomSequence)
+			icmp.SetType(header.ICMPv6EchoRequest)
+			icmp.SetCode(header.ICMPv6UnusedCode)
+			icmp.SetChecksum(0)
+			icmp.SetChecksum(header.ICMPv6Checksum(icmp, remoteIPv6Addr1, remoteIPv6Addr2, buffer.VectorisedView{}))
+			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength: header.ICMPv6MinimumSize,
+				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+				HopLimit:      test.TTL,
+				SrcAddr:       remoteIPv6Addr1,
+				DstAddr:       remoteIPv6Addr2,
+			})
+			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: hdr.View().ToVectorisedView(),
+			})
+			e1.InjectInbound(ProtocolNumber, requestPkt)
+
+			if test.expectErrorICMP {
+				reply, ok := e1.Read()
+				if !ok {
+					t.Fatal("expected ICMP Hop Limit Exceeded packet through incoming NIC")
+				}
+
+				checker.IPv6(t, header.IPv6(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+					checker.SrcAddr(ipv6Addr1.Address),
+					checker.DstAddr(remoteIPv6Addr1),
+					checker.TTL(DefaultTTL),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6TimeExceeded),
+						checker.ICMPv6Code(header.ICMPv6HopLimitExceeded),
+						checker.ICMPv6Payload([]byte(hdr.View())),
+					),
+				)
+
+				if n := e2.Drain(); n != 0 {
+					t.Fatalf("got e2.Drain() = %d, want = 0", n)
+				}
+			} else {
+				reply, ok := e2.Read()
+				if !ok {
+					t.Fatal("expected ICMP Echo Request packet through outgoing NIC")
+				}
+
+				checker.IPv6(t, header.IPv6(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+					checker.SrcAddr(remoteIPv6Addr1),
+					checker.DstAddr(remoteIPv6Addr2),
+					checker.TTL(test.TTL-1),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6EchoRequest),
+						checker.ICMPv6Code(header.ICMPv6UnusedCode),
+						checker.ICMPv6Payload(nil),
+					),
+				)
+
+				if n := e1.Drain(); n != 0 {
+					t.Fatalf("got e1.Drain() = %d, want = 0", n)
+				}
 			}
 		})
 	}

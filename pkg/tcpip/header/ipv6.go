@@ -54,7 +54,7 @@ type IPv6Fields struct {
 	// NextHeader is the "next header" field of an IPv6 packet.
 	NextHeader uint8
 
-	// HopLimit is the "hop limit" field of an IPv6 packet.
+	// HopLimit is the "Hop Limit" field of an IPv6 packet.
 	HopLimit uint8
 
 	// SrcAddr is the "source ip address" of an IPv6 packet.
@@ -171,7 +171,7 @@ func (b IPv6) PayloadLength() uint16 {
 	return binary.BigEndian.Uint16(b[IPv6PayloadLenOffset:])
 }
 
-// HopLimit returns the value of the "hop limit" field of the ipv6 header.
+// HopLimit returns the value of the "Hop Limit" field of the ipv6 header.
 func (b IPv6) HopLimit() uint8 {
 	return b[hopLimit]
 }
@@ -234,6 +234,11 @@ func (b IPv6) SetSourceAddress(addr tcpip.Address) {
 // header.
 func (b IPv6) SetDestinationAddress(addr tcpip.Address) {
 	copy(b[v6DstAddr:][:IPv6AddressSize], addr)
+}
+
+// SetHopLimit sets the value of the "Hop Limit" field.
+func (b IPv6) SetHopLimit(v uint8) {
+	b[hopLimit] = v
 }
 
 // SetNextHeader sets the value of the "next header" field of the ipv6 header.

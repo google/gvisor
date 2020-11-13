@@ -202,6 +202,163 @@ func TestIPv4EncodeOptions(t *testing.T) {
 	}
 }
 
+func TestForwarding(t *testing.T) {
+	const (
+		nicID1         = 1
+		nicID2         = 2
+		randomSequence = 123
+		randomIdent    = 42
+	)
+
+	ipv4Addr1 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(net.ParseIP("10.0.0.1").To4()),
+		PrefixLen: 8,
+	}
+	ipv4Addr2 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(net.ParseIP("11.0.0.1").To4()),
+		PrefixLen: 8,
+	}
+	remoteIPv4Addr1 := tcpip.Address(net.ParseIP("10.0.0.2").To4())
+	remoteIPv4Addr2 := tcpip.Address(net.ParseIP("11.0.0.2").To4())
+
+	tests := []struct {
+		name            string
+		TTL             uint8
+		expectErrorICMP bool
+	}{
+		{
+			name:            "TTL of zero",
+			TTL:             0,
+			expectErrorICMP: true,
+		},
+		{
+			name:            "TTL of one",
+			TTL:             1,
+			expectErrorICMP: false,
+		},
+		{
+			name:            "TTL of two",
+			TTL:             2,
+			expectErrorICMP: false,
+		},
+		{
+			name:            "Max TTL",
+			TTL:             math.MaxUint8,
+			expectErrorICMP: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
+			})
+			// We expect at most a single packet in response to our ICMP Echo Request.
+			e1 := channel.New(1, ipv4.MaxTotalSize, "")
+			if err := s.CreateNIC(nicID1, e1); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+			}
+			ipv4ProtoAddr1 := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: ipv4Addr1}
+			if err := s.AddProtocolAddress(nicID1, ipv4ProtoAddr1); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID1, ipv4ProtoAddr1, err)
+			}
+
+			e2 := channel.New(1, ipv4.MaxTotalSize, "")
+			if err := s.CreateNIC(nicID2, e2); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+			}
+			ipv4ProtoAddr2 := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: ipv4Addr2}
+			if err := s.AddProtocolAddress(nicID2, ipv4ProtoAddr2); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID2, ipv4ProtoAddr2, err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: ipv4Addr1.Subnet(),
+					NIC:         nicID1,
+				},
+				{
+					Destination: ipv4Addr2.Subnet(),
+					NIC:         nicID2,
+				},
+			})
+
+			if err := s.SetForwarding(header.IPv4ProtocolNumber, true); err != nil {
+				t.Fatalf("SetForwarding(%d, true): %s", header.IPv4ProtocolNumber, err)
+			}
+
+			totalLen := uint16(header.IPv4MinimumSize + header.ICMPv4MinimumSize)
+			hdr := buffer.NewPrependable(int(totalLen))
+			icmp := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+			icmp.SetIdent(randomIdent)
+			icmp.SetSequence(randomSequence)
+			icmp.SetType(header.ICMPv4Echo)
+			icmp.SetCode(header.ICMPv4UnusedCode)
+			icmp.SetChecksum(0)
+			icmp.SetChecksum(^header.Checksum(icmp, 0))
+			ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+			ip.Encode(&header.IPv4Fields{
+				TotalLength: totalLen,
+				Protocol:    uint8(header.ICMPv4ProtocolNumber),
+				TTL:         test.TTL,
+				SrcAddr:     remoteIPv4Addr1,
+				DstAddr:     remoteIPv4Addr2,
+			})
+			ip.SetChecksum(0)
+			ip.SetChecksum(^ip.CalculateChecksum())
+			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: hdr.View().ToVectorisedView(),
+			})
+			e1.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
+
+			if test.expectErrorICMP {
+				reply, ok := e1.Read()
+				if !ok {
+					t.Fatal("expected ICMP TTL Exceeded packet through incoming NIC")
+				}
+
+				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+					checker.SrcAddr(ipv4Addr1.Address),
+					checker.DstAddr(remoteIPv4Addr1),
+					checker.TTL(ipv4.DefaultTTL),
+					checker.ICMPv4(
+						checker.ICMPv4Checksum(),
+						checker.ICMPv4Type(header.ICMPv4TimeExceeded),
+						checker.ICMPv4Code(header.ICMPv4TTLExceeded),
+						checker.ICMPv4Payload([]byte(hdr.View())),
+					),
+				)
+
+				if n := e2.Drain(); n != 0 {
+					t.Fatalf("got e2.Drain() = %d, want = 0", n)
+				}
+			} else {
+				reply, ok := e2.Read()
+				if !ok {
+					t.Fatal("expected ICMP Echo packet through outgoing NIC")
+				}
+
+				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+					checker.SrcAddr(remoteIPv4Addr1),
+					checker.DstAddr(remoteIPv4Addr2),
+					checker.TTL(test.TTL-1),
+					checker.ICMPv4(
+						checker.ICMPv4Checksum(),
+						checker.ICMPv4Type(header.ICMPv4Echo),
+						checker.ICMPv4Code(header.ICMPv4UnusedCode),
+						checker.ICMPv4Payload(nil),
+					),
+				)
+
+				if n := e1.Drain(); n != 0 {
+					t.Fatalf("got e1.Drain() = %d, want = 0", n)
+				}
+			}
+		})
+	}
+}
+
 // TestIPv4Sanity sends IP/ICMP packets with various problems to the stack and
 // checks the response.
 func TestIPv4Sanity(t *testing.T) {
