@@ -170,28 +170,6 @@ func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 	return makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop)
 }
 
-// PopulatePacketInfo populates a packet buffer's packet information fields.
-//
-// TODO(gvisor.dev/issue/4688): Remove this once network packets are handled by
-// the network layer.
-func (r *Route) PopulatePacketInfo(pkt *PacketBuffer) {
-	if r.local() {
-		pkt.RXTransportChecksumValidated = true
-	}
-	pkt.NetworkPacketInfo = r.networkPacketInfo()
-}
-
-// networkPacketInfo returns the network packet information of the route.
-//
-// TODO(gvisor.dev/issue/4688): Remove this once network packets are handled by
-// the network layer.
-func (r *Route) networkPacketInfo() NetworkPacketInfo {
-	return NetworkPacketInfo{
-		RemoteAddressBroadcast: r.IsOutboundBroadcast(),
-		LocalAddressBroadcast:  r.isInboundBroadcast(),
-	}
-}
-
 // NICID returns the id of the NIC from which this route originates.
 func (r *Route) NICID() tcpip.NICID {
 	return r.outgoingNIC.ID()

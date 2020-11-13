@@ -65,10 +65,6 @@ const (
 
 // NetworkPacketInfo holds information about a network layer packet.
 type NetworkPacketInfo struct {
-	// RemoteAddressBroadcast is true if the packet's remote address is a
-	// broadcast address.
-	RemoteAddressBroadcast bool
-
 	// LocalAddressBroadcast is true if the packet's local address is a broadcast
 	// address.
 	LocalAddressBroadcast bool
@@ -517,6 +513,9 @@ type NetworkInterface interface {
 
 	// Enabled returns true if the interface is enabled.
 	Enabled() bool
+
+	// Promiscuous returns true if the interface is in promiscuous mode.
+	Promiscuous() bool
 
 	// WritePacketToRemote writes the packet to the given remote link address.
 	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
