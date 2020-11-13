@@ -144,6 +144,10 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
+func (*testInterface) Promiscuous() bool {
+	return false
+}
+
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	r := stack.Route{
 		NetProto:          protocol,
@@ -174,13 +178,8 @@ func TestICMPCounts(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 				UseNeighborCache:   test.useNeighborCache,
 			})
-			{
-				if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
-					t.Fatalf("CreateNIC(_, _) = %s", err)
-				}
-				if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-					t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
-				}
+			if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
+				t.Fatalf("CreateNIC(_, _) = %s", err)
 			}
 			{
 				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
@@ -206,11 +205,12 @@ func TestICMPCounts(t *testing.T) {
 				t.Fatalf("ep.Enable(): %s", err)
 			}
 
-			r, err := s.FindRoute(nicID, lladdr0, lladdr1, ProtocolNumber, false /* multicastLoop */)
-			if err != nil {
-				t.Fatalf("FindRoute(%d, %s, %s, _, false) = (_, %s), want = (_, nil)", nicID, lladdr0, lladdr1, err)
+			addr := lladdr0.WithPrefix()
+			if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+				t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			} else {
+				ep.DecRef()
 			}
-			defer r.Release()
 
 			var tllData [header.NDPLinkLayerAddressSize]byte
 			header.NDPOptions(tllData[:]).Serialize(header.NDPOptionsSerializer{
@@ -279,10 +279,9 @@ func TestICMPCounts(t *testing.T) {
 					PayloadLength: uint16(len(icmp)),
 					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 					HopLimit:      header.NDPHopLimit,
-					SrcAddr:       r.LocalAddress,
-					DstAddr:       r.RemoteAddress,
+					SrcAddr:       lladdr1,
+					DstAddr:       lladdr0,
 				})
-				r.PopulatePacketInfo(pkt)
 				ep.HandlePacket(pkt)
 			}
 
@@ -290,7 +289,7 @@ func TestICMPCounts(t *testing.T) {
 				icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
 				copy(icmp[typ.size:], typ.extraData)
 				icmp.SetType(typ.typ)
-				icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], r.LocalAddress, r.RemoteAddress, buffer.View(typ.extraData).ToVectorisedView()))
+				icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], lladdr0, lladdr1, buffer.View(typ.extraData).ToVectorisedView()))
 				handleIPv6Payload(icmp)
 			}
 
@@ -317,13 +316,8 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 		UseNeighborCache:   true,
 	})
-	{
-		if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
-			t.Fatalf("CreateNIC(_, _) = %s", err)
-		}
-		if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-			t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
-		}
+	if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
+		t.Fatalf("CreateNIC(_, _) = %s", err)
 	}
 	{
 		subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
@@ -349,11 +343,12 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 		t.Fatalf("ep.Enable(): %s", err)
 	}
 
-	r, err := s.FindRoute(nicID, lladdr0, lladdr1, ProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		t.Fatalf("FindRoute(%d, %s, %s, _, false) = (_, %s), want = (_, nil)", nicID, lladdr0, lladdr1, err)
+	addr := lladdr0.WithPrefix()
+	if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+		t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	} else {
+		ep.DecRef()
 	}
-	defer r.Release()
 
 	var tllData [header.NDPLinkLayerAddressSize]byte
 	header.NDPOptions(tllData[:]).Serialize(header.NDPOptionsSerializer{
@@ -422,10 +417,9 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 			PayloadLength: uint16(len(icmp)),
 			NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 			HopLimit:      header.NDPHopLimit,
-			SrcAddr:       r.LocalAddress,
-			DstAddr:       r.RemoteAddress,
+			SrcAddr:       lladdr1,
+			DstAddr:       lladdr0,
 		})
-		r.PopulatePacketInfo(pkt)
 		ep.HandlePacket(pkt)
 	}
 
@@ -433,7 +427,7 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 		icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
 		copy(icmp[typ.size:], typ.extraData)
 		icmp.SetType(typ.typ)
-		icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], r.LocalAddress, r.RemoteAddress, buffer.View(typ.extraData).ToVectorisedView()))
+		icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], lladdr0, lladdr1, buffer.View(typ.extraData).ToVectorisedView()))
 		handleIPv6Payload(icmp)
 	}
 
@@ -1775,17 +1769,15 @@ func TestCallsToNeighborCache(t *testing.T) {
 				t.Fatalf("ep.Enable(): %s", err)
 			}
 
-			r, err := s.FindRoute(nicID, lladdr0, test.source, ProtocolNumber, false /* multicastLoop */)
-			if err != nil {
-				t.Fatalf("FindRoute(%d, %s, %s, _, false) = (_, %s), want = (_, nil)", nicID, lladdr0, lladdr1, err)
+			addr := lladdr0.WithPrefix()
+			if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+				t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			} else {
+				ep.DecRef()
 			}
-			defer r.Release()
-
-			// TODO(gvisor.dev/issue/4517): Remove the need for this manual patch.
-			r.LocalAddress = test.destination
 
 			icmp := test.createPacket()
-			icmp.SetChecksum(header.ICMPv6Checksum(icmp, r.RemoteAddress, r.LocalAddress, buffer.VectorisedView{}))
+			icmp.SetChecksum(header.ICMPv6Checksum(icmp, test.source, test.destination, buffer.VectorisedView{}))
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: header.IPv6MinimumSize,
 				Data:               buffer.View(icmp).ToVectorisedView(),
@@ -1795,10 +1787,9 @@ func TestCallsToNeighborCache(t *testing.T) {
 				PayloadLength: uint16(len(icmp)),
 				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 				HopLimit:      header.NDPHopLimit,
-				SrcAddr:       r.RemoteAddress,
-				DstAddr:       r.LocalAddress,
+				SrcAddr:       test.source,
+				DstAddr:       test.destination,
 			})
-			r.PopulatePacketInfo(pkt)
 			ep.HandlePacket(pkt)
 
 			// Confirm the endpoint calls the correct NUDHandler method.

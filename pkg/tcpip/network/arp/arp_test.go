@@ -439,6 +439,10 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
+func (*testInterface) Promiscuous() bool {
+	return false
+}
+
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	r := stack.Route{
 		NetProto:          protocol,

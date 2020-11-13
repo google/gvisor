@@ -1080,7 +1080,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		flags := NICStateFlags{
 			Up:          true, // Netstack interfaces are always up.
 			Running:     nic.Enabled(),
-			Promiscuous: nic.isPromiscuousMode(),
+			Promiscuous: nic.Promiscuous(),
 			Loopback:    nic.IsLoopback(),
 		}
 		nics[id] = NICInfo{

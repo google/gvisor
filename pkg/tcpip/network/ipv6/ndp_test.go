@@ -45,10 +45,6 @@ func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address, useNeig
 	if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
 		t.Fatalf("CreateNIC(_) = %s", err)
 	}
-	if err := s.AddAddress(1, ProtocolNumber, llladdr); err != nil {
-		t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, llladdr, err)
-	}
-
 	{
 		subnet, err := tcpip.NewSubnet(rlladdr, tcpip.AddressMask(strings.Repeat("\xff", len(rlladdr))))
 		if err != nil {
@@ -72,6 +68,13 @@ func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address, useNeig
 		t.Fatalf("ep.Enable(): %s", err)
 	}
 	t.Cleanup(ep.Close)
+
+	addr := llladdr.WithPrefix()
+	if addressEP, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+		t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	} else {
+		addressEP.DecRef()
+	}
 
 	return s, ep
 }
@@ -961,22 +964,17 @@ func TestNDPValidation(t *testing.T) {
 
 	for _, stackTyp := range stacks {
 		t.Run(stackTyp.name, func(t *testing.T) {
-			setup := func(t *testing.T) (*stack.Stack, stack.NetworkEndpoint, stack.Route) {
+			setup := func(t *testing.T) (*stack.Stack, stack.NetworkEndpoint) {
 				t.Helper()
 
 				// Create a stack with the assigned link-local address lladdr0
 				// and an endpoint to lladdr1.
 				s, ep := setupStackAndEndpoint(t, lladdr0, lladdr1, stackTyp.useNeighborCache)
 
-				r, err := s.FindRoute(1, lladdr0, lladdr1, ProtocolNumber, false /* multicastLoop */)
-				if err != nil {
-					t.Fatalf("FindRoute(_) = _, %s, want = _, nil", err)
-				}
-
-				return s, ep, r
+				return s, ep
 			}
 
-			handleIPv6Payload := func(payload buffer.View, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint, r *stack.Route) {
+			handleIPv6Payload := func(payload buffer.View, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint) {
 				nextHdr := uint8(header.ICMPv6ProtocolNumber)
 				var extensions buffer.View
 				if atomicFragment {
@@ -994,13 +992,12 @@ func TestNDPValidation(t *testing.T) {
 					PayloadLength: uint16(len(payload) + len(extensions)),
 					NextHeader:    nextHdr,
 					HopLimit:      hopLimit,
-					SrcAddr:       r.LocalAddress,
-					DstAddr:       r.RemoteAddress,
+					SrcAddr:       lladdr1,
+					DstAddr:       lladdr0,
 				})
 				if n := copy(ip[header.IPv6MinimumSize:], extensions); n != len(extensions) {
 					t.Fatalf("expected to write %d bytes of extensions, but wrote %d", len(extensions), n)
 				}
-				r.PopulatePacketInfo(pkt)
 				ep.HandlePacket(pkt)
 			}
 
@@ -1114,8 +1111,7 @@ func TestNDPValidation(t *testing.T) {
 					t.Run(name, func(t *testing.T) {
 						for _, test := range subTests {
 							t.Run(test.name, func(t *testing.T) {
-								s, ep, r := setup(t)
-								defer r.Release()
+								s, ep := setup(t)
 
 								if isRouter {
 									// Enabling forwarding makes the stack act as a router.
@@ -1131,7 +1127,7 @@ func TestNDPValidation(t *testing.T) {
 								copy(icmp[typ.size:], typ.extraData)
 								icmp.SetType(typ.typ)
 								icmp.SetCode(test.code)
-								icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], r.LocalAddress, r.RemoteAddress, buffer.View(typ.extraData).ToVectorisedView()))
+								icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], lladdr0, lladdr1, buffer.View(typ.extraData).ToVectorisedView()))
 
 								// Rx count of the NDP message should initially be 0.
 								if got := typStat.Value(); got != 0 {
@@ -1152,7 +1148,7 @@ func TestNDPValidation(t *testing.T) {
 									t.FailNow()
 								}
 
-								handleIPv6Payload(buffer.View(icmp), test.hopLimit, test.atomicFragment, ep, &r)
+								handleIPv6Payload(buffer.View(icmp), test.hopLimit, test.atomicFragment, ep)
 
 								// Rx count of the NDP packet should have increased.
 								if got := typStat.Value(); got != 1 {
