@@ -645,6 +645,18 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 // forwardPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) *tcpip.Error {
 	h := header.IPv6(pkt.NetworkHeader().View())
+	hopLimit := h.HopLimit()
+	if hopLimit <= 1 {
+		// As per RFC 4443 section 3.3,
+		//
+		//   If a router receives a packet with a Hop Limit of zero, or if a
+		//   router decrements a packet's Hop Limit to zero, it MUST discard the
+		//   packet and originate an ICMPv6 Time Exceeded message with Code 0 to
+		//   the source of the packet.  This indicates either a routing loop or
+		//   too small an initial Hop Limit value.
+		return e.protocol.returnError(&icmpReasonHopLimitExceeded{}, pkt)
+	}
+
 	dstAddr := h.DestinationAddress()
 
 	// Check if the destination is owned by the stack.
@@ -663,13 +675,20 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) *tcpip.Error {
 	}
 	defer r.Release()
 
-	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
+	// We need to do a deep copy of the IP packet because
+	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
+	// not own it.
+	newHdr := header.IPv6(stack.PayloadSince(pkt.NetworkHeader()))
+
+	// As per RFC 8200 section 3,
+	//
+	//   Hop Limit           8-bit unsigned integer. Decremented by 1 by
+	//                       each node that forwards the packet.
+	newHdr.SetHopLimit(hopLimit - 1)
+
 	return r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		// We need to do a deep copy of the IP packet because
-		// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
-		// not own it.
-		Data: stack.PayloadSince(pkt.NetworkHeader()).ToVectorisedView(),
+		Data:               buffer.View(newHdr).ToVectorisedView(),
 	}))
 }
 

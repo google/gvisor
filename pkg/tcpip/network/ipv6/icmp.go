@@ -750,6 +750,12 @@ type icmpReasonPortUnreachable struct{}
 
 func (*icmpReasonPortUnreachable) isICMPReason() {}
 
+// icmpReasonHopLimitExceeded is an error where a packet's hop limit exceeded in
+// transit to its final destination, as per RFC 4443 section 3.3.
+type icmpReasonHopLimitExceeded struct{}
+
+func (*icmpReasonHopLimitExceeded) isICMPReason() {}
+
 // icmpReasonReassemblyTimeout is an error where insufficient fragments are
 // received to complete reassembly of a packet within a configured time after
 // the reception of the first-arriving fragment of that packet.
@@ -794,11 +800,27 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 		return nil
 	}
 
+	// If we hit a Hop Limit Exceeded error, then we know we are operating as a
+	// router. As per RFC 4443 section 3.3:
+	//
+	//   If a router receives a packet with a Hop Limit of zero, or if a
+	//   router decrements a packet's Hop Limit to zero, it MUST discard the
+	//   packet and originate an ICMPv6 Time Exceeded message with Code 0 to
+	//   the source of the packet.  This indicates either a routing loop or
+	//   too small an initial Hop Limit value.
+	//
+	// If we are operating as a router, do not use the packet's destination
+	// address as the response's source address as we should not own the
+	// destination address of a packet we are forwarding.
+	localAddr := origIPHdrDst
+	if _, ok := reason.(*icmpReasonHopLimitExceeded); ok {
+		localAddr = ""
+	}
 	// Even if we were able to receive a packet from some remote, we may not have
 	// a route to it - the remote may be blocked via routing rules. We must always
 	// consult our routing table and find a route to the remote before sending any
 	// packet.
-	route, err := p.stack.FindRoute(pkt.NICID, origIPHdrDst, origIPHdrSrc, ProtocolNumber, false /* multicastLoop */)
+	route, err := p.stack.FindRoute(pkt.NICID, localAddr, origIPHdrSrc, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
@@ -810,8 +832,6 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 		sent.RateLimited.Increment()
 		return nil
 	}
-
-	network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
 
 	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {
 		// TODO(gvisor.dev/issues/3810): Sort this out when ICMP headers are stored.
@@ -829,6 +849,8 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 			return nil
 		}
 	}
+
+	network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
 
 	// As per RFC 4443 section 2.4
 	//
@@ -873,6 +895,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 		icmpHdr.SetType(header.ICMPv6DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv6PortUnreachable)
 		counter = sent.DstUnreachable
+	case *icmpReasonHopLimitExceeded:
+		icmpHdr.SetType(header.ICMPv6TimeExceeded)
+		icmpHdr.SetCode(header.ICMPv6HopLimitExceeded)
+		counter = sent.TimeExceeded
 	case *icmpReasonReassemblyTimeout:
 		icmpHdr.SetType(header.ICMPv6TimeExceeded)
 		icmpHdr.SetCode(header.ICMPv6ReassemblyTimeout)
