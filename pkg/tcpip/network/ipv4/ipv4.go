@@ -485,6 +485,16 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 // forwardPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) *tcpip.Error {
 	h := header.IPv4(pkt.NetworkHeader().View())
+	ttl := h.TTL()
+	if ttl == 0 {
+		// As per RFC 792 page 6, Time Exceeded Message,
+		//
+		//  If the gateway processing a datagram finds the time to live field
+		//  is zero it must discard the datagram.  The gateway may also notify
+		//  the source host via the time exceeded message.
+		return e.protocol.returnError(&icmpReasonTTLExceeded{}, pkt)
+	}
+
 	dstAddr := h.DestinationAddress()
 
 	// Check if the destination is owned by the stack.
@@ -503,13 +513,22 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) *tcpip.Error {
 	}
 	defer r.Release()
 
-	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
+	// We need to do a deep copy of the IP packet because
+	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
+	// not own it.
+	newHdr := header.IPv4(stack.PayloadSince(pkt.NetworkHeader()))
+
+	// As per RFC 791 page 30, Time to Live,
+	//
+	//   This field must be decreased at each point that the internet header
+	//   is processed to reflect the time spent processing the datagram.
+	//   Even if no local information is available on the time actually
+	//   spent, the field must be decremented by 1.
+	newHdr.SetTTL(ttl - 1)
+
 	return r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		// We need to do a deep copy of the IP packet because
-		// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
-		// not own it.
-		Data: stack.PayloadSince(pkt.NetworkHeader()).ToVectorisedView(),
+		Data:               buffer.View(newHdr).ToVectorisedView(),
 	}))
 }
 
