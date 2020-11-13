@@ -1352,6 +1352,11 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	}
 	if refs > 0 {
 		if d.cached {
+			// This isn't strictly necessary (fs.cachedDentries is permitted to
+			// contain dentries with non-zero refs, which are skipped by
+			// fs.evictCachedDentryLocked() upon reaching the end of the LRU),
+			// but since we are already holding fs.renameMu for writing we may
+			// as well.
 			d.fs.cachedDentries.Remove(d)
 			d.fs.cachedDentriesLen--
 			d.cached = false
