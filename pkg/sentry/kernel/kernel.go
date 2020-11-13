@@ -1359,6 +1359,13 @@ func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
 // not have meaningful trace data. Rebuilding here ensures that we can do so
 // after tracing has been enabled.
 func (k *Kernel) RebuildTraceContexts() {
+	// We need to pause all task goroutines because Task.rebuildTraceContext()
+	// replaces Task.traceContext and Task.traceTask, which are
+	// task-goroutine-exclusive (i.e. the task goroutine assumes that it can
+	// access them without synchronization) for performance.
+	k.Pause()
+	defer k.Unpause()
+
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	k.tasks.mu.RLock()

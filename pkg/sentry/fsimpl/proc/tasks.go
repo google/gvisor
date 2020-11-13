@@ -118,7 +118,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 		return nil, syserror.ENOENT
 	}
 
-	return i.fs.newTaskInode(task, i.pidns, true, i.cgroupControllers)
+	return i.fs.newTaskInode(ctx, task, i.pidns, true, i.cgroupControllers)
 }
 
 // IterDirents implements kernfs.inodeDirectory.IterDirents.

@@ -50,7 +50,7 @@ type subtasksInode struct {
 
 var _ kernfs.Inode = (*subtasksInode)(nil)
 
-func (fs *filesystem) newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) kernfs.Inode {
+func (fs *filesystem) newSubtasks(ctx context.Context, task *kernel.Task, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) kernfs.Inode {
 	subInode := &subtasksInode{
 		fs:                fs,
 		task:              task,
@@ -58,7 +58,7 @@ func (fs *filesystem) newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace,
 		cgroupControllers: cgroupControllers,
 	}
 	// Note: credentials are overridden by taskOwnedInode.
-	subInode.InodeAttrs.Init(task, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	subInode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	subInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	subInode.InitRefs()
 
@@ -80,7 +80,7 @@ func (i *subtasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, 
 	if subTask.ThreadGroup() != i.task.ThreadGroup() {
 		return nil, syserror.ENOENT
 	}
-	return i.fs.newTaskInode(subTask, i.pidns, false, i.cgroupControllers)
+	return i.fs.newTaskInode(ctx, subTask, i.pidns, false, i.cgroupControllers)
 }
 
 // IterDirents implements kernfs.inodeDirectory.IterDirents.
