@@ -12,22 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package kernel
+#include "textflag.h"
 
-import (
-	"gvisor.dev/gvisor/pkg/context"
-)
-
-// AIOCallback is an function that does asynchronous I/O on behalf of a task.
-type AIOCallback func(context.Context)
-
-// QueueAIO queues an AIOCallback which will be run asynchronously.
-func (t *Task) QueueAIO(cb AIOCallback) {
-	ctx := t.AsyncContext()
-	wg := &t.TaskSet().aioGoroutines
-	wg.Add(1)
-	go func() {
-		cb(ctx)
-		wg.Done()
-	}()
-}
+// func getg() *g
+TEXT ·getg(SB),NOSPLIT,$0-8
+	MOVQ (TLS), R14
+	MOVQ R14, ret+0(FP)
+	RET

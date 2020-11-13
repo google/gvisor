@@ -20,6 +20,7 @@ import (
 	"time"
 
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -32,6 +33,8 @@ import (
 //
 // - An error which is nil if an event is received from C, ETIMEDOUT if the timeout
 // expired, and syserror.ErrInterrupted if t is interrupted.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.Duration) (time.Duration, error) {
 	if !haveTimeout {
 		return timeout, t.block(C, nil)
@@ -112,7 +115,14 @@ func (t *Task) Block(C <-chan struct{}) error {
 
 // block blocks a task on one of many events.
 // N.B. defer is too expensive to be used here.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
+	// This function is very hot; skip this check outside of +race builds.
+	if sync.RaceEnabled {
+		t.assertTaskGoroutine()
+	}
+
 	// Fast path if the request is already done.
 	select {
 	case <-C:
@@ -156,14 +166,15 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 	}
 }
 
-// SleepStart implements amutex.Sleeper.SleepStart.
+// SleepStart implements context.ChannelSleeper.SleepStart.
 func (t *Task) SleepStart() <-chan struct{} {
+	t.assertTaskGoroutine()
 	t.Deactivate()
 	t.accountTaskGoroutineEnter(TaskGoroutineBlockedInterruptible)
 	return t.interruptChan
 }
 
-// SleepFinish implements amutex.Sleeper.SleepFinish.
+// SleepFinish implements context.ChannelSleeper.SleepFinish.
 func (t *Task) SleepFinish(success bool) {
 	if !success {
 		// The interrupted notification is consumed only at the top-level
@@ -183,6 +194,7 @@ func (t *Task) Interrupted() bool {
 
 // UninterruptibleSleepStart implements context.Context.UninterruptibleSleepStart.
 func (t *Task) UninterruptibleSleepStart(deactivate bool) {
+	t.assertTaskGoroutine()
 	if deactivate {
 		t.Deactivate()
 	}
