@@ -21,7 +21,6 @@ package fdchannel
 import (
 	"fmt"
 	"reflect"
-	"sync/atomic"
 	"syscall"
 	"unsafe"
 )
@@ -41,7 +40,7 @@ func NewConnectedSockets() ([2]int, error) {
 //
 // Endpoint is not copyable or movable by value.
 type Endpoint struct {
-	sockfd int32 // accessed using atomic memory operations
+	sockfd int32
 	msghdr syscall.Msghdr
 	cmsg   *syscall.Cmsghdr // followed by sizeofInt32 bytes of data
 }
@@ -54,10 +53,10 @@ func (ep *Endpoint) Init(sockfd int) {
 	// sendmsg+recvmsg for a zero-length datagram is slightly faster than
 	// sendmsg+recvmsg for a single byte over a stream socket.
 	cmsgSlice := make([]byte, syscall.CmsgSpace(sizeofInt32))
-	cmsgReflect := (*reflect.SliceHeader)((unsafe.Pointer)(&cmsgSlice))
+	cmsgReflect := (*reflect.SliceHeader)(unsafe.Pointer(&cmsgSlice))
 	ep.sockfd = int32(sockfd)
-	ep.msghdr.Control = (*byte)((unsafe.Pointer)(cmsgReflect.Data))
-	ep.cmsg = (*syscall.Cmsghdr)((unsafe.Pointer)(cmsgReflect.Data))
+	ep.msghdr.Control = (*byte)(unsafe.Pointer(cmsgReflect.Data))
+	ep.cmsg = (*syscall.Cmsghdr)(unsafe.Pointer(cmsgReflect.Data))
 	// ep.msghdr.Controllen and ep.cmsg.* are mutated by recvmsg(2), so they're
 	// set before calling sendmsg/recvmsg.
 }
@@ -73,12 +72,8 @@ func NewEndpoint(sockfd int) *Endpoint {
 // Destroy releases resources owned by ep. No other Endpoint methods may be
 // called after Destroy.
 func (ep *Endpoint) Destroy() {
-	// These need not use sync/atomic since there must not be any concurrent
-	// calls to Endpoint methods.
-	if ep.sockfd >= 0 {
-		syscall.Close(int(ep.sockfd))
-		ep.sockfd = -1
-	}
+	syscall.Close(int(ep.sockfd))
+	ep.sockfd = -1
 }
 
 // Shutdown causes concurrent and future calls to ep.SendFD(), ep.RecvFD(), and
@@ -88,10 +83,7 @@ func (ep *Endpoint) Destroy() {
 // Shutdown is the only Endpoint method that may be called concurrently with
 // other methods.
 func (ep *Endpoint) Shutdown() {
-	if sockfd := int(atomic.SwapInt32(&ep.sockfd, -1)); sockfd >= 0 {
-		syscall.Shutdown(sockfd, syscall.SHUT_RDWR)
-		syscall.Close(sockfd)
-	}
+	syscall.Shutdown(int(ep.sockfd), syscall.SHUT_RDWR)
 }
 
 // SendFD sends the open file description represented by the given file
@@ -103,7 +95,7 @@ func (ep *Endpoint) SendFD(fd int) error {
 	ep.cmsg.SetLen(cmsgLen)
 	*ep.cmsgData() = int32(fd)
 	ep.msghdr.SetControllen(cmsgLen)
-	_, _, e := syscall.Syscall(syscall.SYS_SENDMSG, uintptr(atomic.LoadInt32(&ep.sockfd)), uintptr((unsafe.Pointer)(&ep.msghdr)), 0)
+	_, _, e := syscall.Syscall(syscall.SYS_SENDMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), 0)
 	if e != 0 {
 		return e
 	}
@@ -113,7 +105,7 @@ func (ep *Endpoint) SendFD(fd int) error {
 // RecvFD receives an open file description from the connected Endpoint and
 // returns a file descriptor representing it, owned by the caller.
 func (ep *Endpoint) RecvFD() (int, error) {
-	return ep.recvFD(0)
+	return ep.recvFD(false)
 }
 
 // RecvFDNonblock receives an open file description from the connected Endpoint
@@ -121,13 +113,18 @@ func (ep *Endpoint) RecvFD() (int, error) {
 // are no pending receivable open file descriptions, RecvFDNonblock returns
 // (<unspecified>, EAGAIN or EWOULDBLOCK).
 func (ep *Endpoint) RecvFDNonblock() (int, error) {
-	return ep.recvFD(syscall.MSG_DONTWAIT)
+	return ep.recvFD(true)
 }
 
-func (ep *Endpoint) recvFD(flags uintptr) (int, error) {
+func (ep *Endpoint) recvFD(nonblock bool) (int, error) {
 	cmsgLen := syscall.CmsgLen(sizeofInt32)
 	ep.msghdr.SetControllen(cmsgLen)
-	_, _, e := syscall.Syscall(syscall.SYS_RECVMSG, uintptr(atomic.LoadInt32(&ep.sockfd)), uintptr((unsafe.Pointer)(&ep.msghdr)), flags|syscall.MSG_TRUNC)
+	var e syscall.Errno
+	if nonblock {
+		_, _, e = syscall.RawSyscall(syscall.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), syscall.MSG_TRUNC|syscall.MSG_DONTWAIT)
+	} else {
+		_, _, e = syscall.Syscall(syscall.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), syscall.MSG_TRUNC)
+	}
 	if e != 0 {
 		return -1, e
 	}
@@ -142,5 +139,5 @@ func (ep *Endpoint) recvFD(flags uintptr) (int, error) {
 
 func (ep *Endpoint) cmsgData() *int32 {
 	// syscall.CmsgLen(0) == syscall.cmsgAlignOf(syscall.SizeofCmsghdr)
-	return (*int32)((unsafe.Pointer)(uintptr((unsafe.Pointer)(ep.cmsg)) + uintptr(syscall.CmsgLen(0))))
+	return (*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(ep.cmsg)) + uintptr(syscall.CmsgLen(0))))
 }
