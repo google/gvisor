@@ -12,63 +12,70 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build race
-
 package goid
 
 import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
 
-func TestInitialGoID(t *testing.T) {
-	const max = 10000
-	if id := goid(); id < 0 || id > max {
-		t.Errorf("got goid = %d, want 0 < goid <= %d", id, max)
-	}
-}
+func TestUniquenessAndConsistency(t *testing.T) {
+	const (
+		numGoroutines = 5000
 
-// TestGoIDSquence verifies that goid returns values which could plausibly be
-// goroutine IDs. If this test breaks or becomes flaky, the structs in
-// goid_unsafe.go may need to be updated.
-func TestGoIDSquence(t *testing.T) {
-	// Goroutine IDs are cached by each P.
-	runtime.GOMAXPROCS(1)
+		// maxID is not an intrinsic property of goroutine IDs; it is only a
+		// property of how the Go runtime currently assigns them. Future
+		// changes to the Go runtime may require that maxID be raised, or that
+		// assertions regarding it be removed entirely.
+		maxID = numGoroutines + 1000
+	)
 
-	// Fill any holes in lower range.
-	for i := 0; i < 50; i++ {
-		var wg sync.WaitGroup
-		wg.Add(1)
+	var (
+		goidsMu   sync.Mutex
+		goids     = make(map[int64]struct{})
+		checkedWG sync.WaitGroup
+		exitCh    = make(chan struct{})
+	)
+	for i := 0; i < numGoroutines; i++ {
+		checkedWG.Add(1)
 		go func() {
-			wg.Done()
-
-			// Leak the goroutine to prevent the ID from being
-			// reused.
-			select {}
+			id := Get()
+			if id > maxID {
+				t.Errorf("observed unexpectedly large goroutine ID %d", id)
+			}
+			goidsMu.Lock()
+			if _, dup := goids[id]; dup {
+				t.Errorf("observed duplicate goroutine ID %d", id)
+			}
+			goids[id] = struct{}{}
+			goidsMu.Unlock()
+			checkedWG.Done()
+			for {
+				if curID := Get(); curID != id {
+					t.Errorf("goroutine ID changed from %d to %d", id, curID)
+					// Don't spam logs by repeating the check; wait quietly for
+					// the test to finish.
+					<-exitCh
+					return
+				}
+				// Check if the test is over.
+				select {
+				case <-exitCh:
+					return
+				default:
+				}
+				// Yield to other goroutines, and possibly migrate to another P.
+				runtime.Gosched()
+			}
 		}()
-		wg.Wait()
 	}
-
-	id := goid()
-	for i := 0; i < 100; i++ {
-		var (
-			newID int64
-			wg    sync.WaitGroup
-		)
-		wg.Add(1)
-		go func() {
-			newID = goid()
-			wg.Done()
-
-			// Leak the goroutine to prevent the ID from being
-			// reused.
-			select {}
-		}()
-		wg.Wait()
-		if max := id + 100; newID <= id || newID > max {
-			t.Errorf("unexpected goroutine ID pattern, got goid = %d, want %d < goid <= %d (previous = %d)", newID, id, max, id)
-		}
-		id = newID
-	}
+	// Wait for all goroutines to perform uniqueness checks.
+	checkedWG.Wait()
+	// Wait for an additional second to allow goroutines to spin checking for
+	// ID consistency.
+	time.Sleep(time.Second)
+	// Request that all goroutines exit.
+	close(exitCh)
 }
