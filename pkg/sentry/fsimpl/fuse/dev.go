@@ -94,7 +94,8 @@ type DeviceFD struct {
 	// unprocessed in-flight requests.
 	fullQueueCh chan struct{} `state:".(int)"`
 
-	// fs is the FUSE filesystem that this FD is being used for.
+	// fs is the FUSE filesystem that this FD is being used for. A reference is
+	// held on fs.
 	fs *filesystem
 }
 
@@ -133,12 +134,6 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
 	if fd.fs == nil {
 		return 0, syserror.EPERM
-	}
-
-	// Return ENODEV if the filesystem is umounted.
-	if fd.fs.umounted {
-		// TODO(gvisor.dev/issue/3525): return ECONNABORTED if aborted via fuse control fs.
-		return 0, syserror.ENODEV
 	}
 
 	// We require that any Read done on this filesystem have a sane minimum
