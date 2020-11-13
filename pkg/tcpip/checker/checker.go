@@ -904,6 +904,12 @@ func ICMPv4Payload(want []byte) TransportChecker {
 			t.Fatalf("unexpected transport header passed to checker, got = %T, want = header.ICMPv4", h)
 		}
 		payload := icmpv4.Payload()
+
+		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
+		if len(want) == 0 && len(payload) == 0 {
+			return
+		}
+
 		if diff := cmp.Diff(want, payload); diff != "" {
 			t.Errorf("ICMP payload mismatch (-want +got):\n%s", diff)
 		}
@@ -994,6 +1000,12 @@ func ICMPv6Payload(want []byte) TransportChecker {
 			t.Fatalf("unexpected transport header passed to checker, got = %T, want = header.ICMPv6", h)
 		}
 		payload := icmpv6.Payload()
+
+		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
+		if len(want) == 0 && len(payload) == 0 {
+			return
+		}
+
 		if diff := cmp.Diff(want, payload); diff != "" {
 			t.Errorf("ICMP payload mismatch (-want +got):\n%s", diff)
 		}

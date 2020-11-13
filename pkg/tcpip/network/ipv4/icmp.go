@@ -290,6 +290,13 @@ type icmpReasonProtoUnreachable struct{}
 
 func (*icmpReasonProtoUnreachable) isICMPReason() {}
 
+// icmpReasonTTLExceeded is an error where a packet's time to live exceeded in
+// transit to its final destination, as per RFC 792 page 6, Time Exceeded
+// Message.
+type icmpReasonTTLExceeded struct{}
+
+func (*icmpReasonTTLExceeded) isICMPReason() {}
+
 // icmpReasonReassemblyTimeout is an error where insufficient fragments are
 // received to complete reassembly of a packet within a configured time after
 // the reception of the first-arriving fragment of that packet.
@@ -342,11 +349,31 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 		return nil
 	}
 
+	// If we hit a TTL Exceeded error, then we know we are operating as a router.
+	// As per RFC 792 page 6, Time Exceeded Message,
+	//
+	//   If the gateway processing a datagram finds the time to live field
+	//   is zero it must discard the datagram.  The gateway may also notify
+	//   the source host via the time exceeded message.
+	//
+	//   ...
+	//
+	//   Code 0 may be received from a gateway. ...
+	//
+	// Note, Code 0 is the TTL exceeded error.
+	//
+	// If we are operating as a router/gateway, don't use the packet's destination
+	// address as the response's source address as we should not not own the
+	// destination address of a packet we are forwarding.
+	localAddr := origIPHdrDst
+	if _, ok := reason.(*icmpReasonTTLExceeded); ok {
+		localAddr = ""
+	}
 	// Even if we were able to receive a packet from some remote, we may not have
 	// a route to it - the remote may be blocked via routing rules. We must always
 	// consult our routing table and find a route to the remote before sending any
 	// packet.
-	route, err := p.stack.FindRoute(pkt.NICID, origIPHdrDst, origIPHdrSrc, ProtocolNumber, false /* multicastLoop */)
+	route, err := p.stack.FindRoute(pkt.NICID, localAddr, origIPHdrSrc, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
@@ -454,6 +481,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4ProtoUnreachable)
 		counter = sent.DstUnreachable
+	case *icmpReasonTTLExceeded:
+		icmpHdr.SetType(header.ICMPv4TimeExceeded)
+		icmpHdr.SetCode(header.ICMPv4TTLExceeded)
+		counter = sent.TimeExceeded
 	case *icmpReasonReassemblyTimeout:
 		icmpHdr.SetType(header.ICMPv4TimeExceeded)
 		icmpHdr.SetCode(header.ICMPv4ReassemblyTimeout)
