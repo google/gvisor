@@ -29,11 +29,11 @@ import (
 //
 // +stateify savable
 type rackControl struct {
+	// dsackSeen indicates if the connection has seen a DSACK.
+	dsackSeen bool
+
 	// endSequence is the ending TCP sequence number of rackControl.seg.
 	endSequence seqnum.Value
-
-	// dsack indicates if the connection has seen a DSACK.
-	dsack bool
 
 	// fack is the highest selectively or cumulatively acknowledged
 	// sequence.
@@ -121,4 +121,9 @@ func (rc *rackControl) detectReorder(seg *segment) {
 	if endSeq.LessThan(rc.fack) && seg.xmitCount == 1 {
 		rc.reorderSeen = true
 	}
+}
+
+// setDSACKSeen updates rack control if duplicate SACK is seen by the connection.
+func (rc *rackControl) setDSACKSeen() {
+	rc.dsackSeen = true
 }

@@ -1182,25 +1182,29 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 // steps 2 and 3.
 func (s *sender) walkSACK(rcvdSeg *segment) {
-	if len(rcvdSeg.parsedOptions.SACKBlocks) == 0 {
+	// Look for DSACK block.
+	idx := 0
+	n := len(rcvdSeg.parsedOptions.SACKBlocks)
+	if s.checkDSACK(rcvdSeg) {
+		s.rc.setDSACKSeen()
+		idx = 1
+		n--
+	}
+
+	if n == 0 {
 		return
 	}
 
 	// Sort the SACK blocks. The first block is the most recent unacked
 	// block. The following blocks can be in arbitrary order.
-	sackBlocks := make([]header.SACKBlock, len(rcvdSeg.parsedOptions.SACKBlocks))
-	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks)
+	sackBlocks := make([]header.SACKBlock, n)
+	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks[idx:])
 	sort.Slice(sackBlocks, func(i, j int) bool {
 		return sackBlocks[j].Start.LessThan(sackBlocks[i].Start)
 	})
 
 	seg := s.writeList.Front()
 	for _, sb := range sackBlocks {
-		// This check excludes DSACK blocks.
-		if sb.Start.LessThanEq(rcvdSeg.ackNumber) || sb.Start.LessThanEq(s.sndUna) || s.sndNxt.LessThan(sb.End) {
-			continue
-		}
-
 		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
 			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
 				s.rc.update(seg, rcvdSeg, s.ep.tsOffset)
@@ -1210,6 +1214,50 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 			seg = seg.Next()
 		}
 	}
+}
+
+// checkDSACK checks if a DSACK is reported and updates it in RACK.
+func (s *sender) checkDSACK(rcvdSeg *segment) bool {
+	n := len(rcvdSeg.parsedOptions.SACKBlocks)
+	if n == 0 {
+		return false
+	}
+
+	sb := rcvdSeg.parsedOptions.SACKBlocks[0]
+	// Check if SACK block is invalid.
+	if sb.End.LessThan(sb.Start) {
+		return false
+	}
+
+	// See: https://tools.ietf.org/html/rfc2883#section-5 DSACK is sent in
+	// at most one SACK block. DSACK is detected in the below two cases:
+	// * If the SACK sequence space is less than this cumulative ACK, it is
+	//   an indication that the segment identified by the SACK block has
+	//   been received more than once by the receiver.
+	// * If the sequence space in the first SACK block is greater than the
+	//   cumulative ACK, then the sender next compares the sequence space
+	//   in the first SACK block with the sequence space in the second SACK
+	//   block, if there is one. This comparison can determine if the first
+	//   SACK block is reporting duplicate data that lies above the
+	//   cumulative ACK.
+	if sb.Start.LessThan(rcvdSeg.ackNumber) {
+		return true
+	}
+
+	if n > 1 {
+		sb1 := rcvdSeg.parsedOptions.SACKBlocks[1]
+		if sb1.End.LessThan(sb1.Start) {
+			return false
+		}
+
+		// If the first SACK block is fully covered by second SACK
+		// block, then the first block is a DSACK block.
+		if sb.End.LessThanEq(sb1.End) && sb1.Start.LessThanEq(sb.Start) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // handleRcvdSegment is called when a segment is received; it is responsible for
