@@ -95,7 +95,7 @@ func (s *createdState) SetExited(status int) {
 }
 
 func (s *createdState) Exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
-	return s.p.exec(ctx, path, r)
+	return s.p.exec(path, r)
 }
 
 type runningState struct {
@@ -137,7 +137,7 @@ func (s *runningState) SetExited(status int) {
 }
 
 func (s *runningState) Exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
-	return s.p.exec(ctx, path, r)
+	return s.p.exec(path, r)
 }
 
 type stoppedState struct {

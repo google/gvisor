@@ -40,7 +40,6 @@ type CreateConfig struct {
 	Stdin    string
 	Stdout   string
 	Stderr   string
-	Options  *types.Any
 }
 
 // ExecConfig holds exec creation configuration.

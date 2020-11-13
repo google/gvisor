@@ -36,7 +36,7 @@ sudo systemctl restart containerd
 > located in the runtime root. By default, this is `/run/containerd/runsc`.
 
 The set of options that can be configured can be found in
-[options.go](https://github.com/google/gvisor/blob/master/pkg/shim/v2/options/options.go).
+[options.go](https://github.com/google/gvisor/blob/master/pkg/shim/v2/options.go).
 
 #### Example: Enable the KVM platform
 
