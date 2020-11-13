@@ -320,7 +320,10 @@ PosixErrorOr<sockaddr_storage> InetLoopbackAddr(int family) {
 // EFAULT. It also verifies that passing a buffer which is made up of 2
 // pages one valid and one guard page succeeds as long as the write is
 // for exactly the size of 1 page.
-TEST_F(PartialBadBufferTest, SendMsgTCP) {
+TEST_F(PartialBadBufferTest, SendMsgTCP_NoRandomSave) {
+  // FIXME(b/171436815): Netstack save/restore is broken.
+  const DisableSave ds;
+
   auto listen_socket =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
 
