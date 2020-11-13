@@ -467,7 +467,7 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
 
 TEST_P(TcpSocketTest, ClosedWriteBlockingSocket) {
   FillSocketBuffers(first_fd, second_fd);
-  constexpr int timeout = 2;
+  constexpr int timeout = 10;
   struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
   EXPECT_THAT(setsockopt(first_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
               SyscallSucceeds());
@@ -485,7 +485,7 @@ TEST_P(TcpSocketTest, ClosedWriteBlockingSocket) {
   });
 
   // Wait for the thread to be blocked on write.
-  absl::SleepFor(absl::Milliseconds(50));
+  absl::SleepFor(absl::Milliseconds(250));
   // Socket close does not have any effect on a blocked write.
   ASSERT_THAT(close(first_fd), SyscallSucceeds());
   // Indicate to the cleanup routine that we are already closed.
@@ -518,7 +518,7 @@ TEST_P(TcpSocketTest, ClosedReadBlockingSocket) {
   });
 
   // Wait for the thread to be blocked on read.
-  absl::SleepFor(absl::Milliseconds(50));
+  absl::SleepFor(absl::Milliseconds(250));
   // Socket close does not have any effect on a blocked read.
   ASSERT_THAT(close(first_fd), SyscallSucceeds());
   // Indicate to the cleanup routine that we are already closed.
