@@ -7,7 +7,6 @@ go_library(
     srcs = ["coverage.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/log",
         "//pkg/sync",
         "//pkg/usermem",
         "@io_bazel_rules_go//go/tools/coverdata",
