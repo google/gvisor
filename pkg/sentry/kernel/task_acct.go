@@ -136,14 +136,14 @@ func (tg *ThreadGroup) IOUsage() *usage.IO {
 func (t *Task) Name() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.tc.Name
+	return t.image.Name
 }
 
 // SetName changes t's name.
 func (t *Task) SetName(name string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.tc.Name = name
+	t.image.Name = name
 	t.Debugf("Set thread name to %q", name)
 }
 

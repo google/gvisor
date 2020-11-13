@@ -1161,7 +1161,7 @@ func (t *Task) StateFields() []string {
 		"syscallRestartBlock",
 		"k",
 		"containerID",
-		"tc",
+		"image",
 		"fsContext",
 		"fdTable",
 		"vforkParent",
@@ -1237,7 +1237,7 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(19, &t.syscallRestartBlock)
 	stateSinkObject.Save(20, &t.k)
 	stateSinkObject.Save(21, &t.containerID)
-	stateSinkObject.Save(22, &t.tc)
+	stateSinkObject.Save(22, &t.image)
 	stateSinkObject.Save(23, &t.fsContext)
 	stateSinkObject.Save(24, &t.fdTable)
 	stateSinkObject.Save(25, &t.vforkParent)
@@ -1300,7 +1300,7 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(19, &t.syscallRestartBlock)
 	stateSourceObject.Load(20, &t.k)
 	stateSourceObject.Load(21, &t.containerID)
-	stateSourceObject.Load(22, &t.tc)
+	stateSourceObject.Load(22, &t.image)
 	stateSourceObject.Load(23, &t.fsContext)
 	stateSourceObject.Load(24, &t.fdTable)
 	stateSourceObject.Load(25, &t.vforkParent)
@@ -1411,42 +1411,6 @@ func (v *vforkStop) afterLoad() {}
 func (v *vforkStop) StateLoad(stateSourceObject state.Source) {
 }
 
-func (tc *TaskContext) StateTypeName() string {
-	return "pkg/sentry/kernel.TaskContext"
-}
-
-func (tc *TaskContext) StateFields() []string {
-	return []string{
-		"Name",
-		"Arch",
-		"MemoryManager",
-		"fu",
-		"st",
-	}
-}
-
-func (tc *TaskContext) beforeSave() {}
-
-func (tc *TaskContext) StateSave(stateSinkObject state.Sink) {
-	tc.beforeSave()
-	var stValue syscallTableInfo = tc.saveSt()
-	stateSinkObject.SaveValue(4, stValue)
-	stateSinkObject.Save(0, &tc.Name)
-	stateSinkObject.Save(1, &tc.Arch)
-	stateSinkObject.Save(2, &tc.MemoryManager)
-	stateSinkObject.Save(3, &tc.fu)
-}
-
-func (tc *TaskContext) afterLoad() {}
-
-func (tc *TaskContext) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &tc.Name)
-	stateSourceObject.Load(1, &tc.Arch)
-	stateSourceObject.Load(2, &tc.MemoryManager)
-	stateSourceObject.Load(3, &tc.fu)
-	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y interface{}) { tc.loadSt(y.(syscallTableInfo)) })
-}
-
 func (e *execStop) StateTypeName() string {
 	return "pkg/sentry/kernel.execStop"
 }
@@ -1472,7 +1436,7 @@ func (r *runSyscallAfterExecStop) StateTypeName() string {
 
 func (r *runSyscallAfterExecStop) StateFields() []string {
 	return []string{
-		"tc",
+		"image",
 	}
 }
 
@@ -1480,13 +1444,13 @@ func (r *runSyscallAfterExecStop) beforeSave() {}
 
 func (r *runSyscallAfterExecStop) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.tc)
+	stateSinkObject.Save(0, &r.image)
 }
 
 func (r *runSyscallAfterExecStop) afterLoad() {}
 
 func (r *runSyscallAfterExecStop) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.tc)
+	stateSourceObject.Load(0, &r.image)
 }
 
 func (es *ExitStatus) StateTypeName() string {
@@ -1570,6 +1534,42 @@ func (r *runExitNotify) StateSave(stateSinkObject state.Sink) {
 func (r *runExitNotify) afterLoad() {}
 
 func (r *runExitNotify) StateLoad(stateSourceObject state.Source) {
+}
+
+func (image *TaskImage) StateTypeName() string {
+	return "pkg/sentry/kernel.TaskImage"
+}
+
+func (image *TaskImage) StateFields() []string {
+	return []string{
+		"Name",
+		"Arch",
+		"MemoryManager",
+		"fu",
+		"st",
+	}
+}
+
+func (image *TaskImage) beforeSave() {}
+
+func (image *TaskImage) StateSave(stateSinkObject state.Sink) {
+	image.beforeSave()
+	var stValue syscallTableInfo = image.saveSt()
+	stateSinkObject.SaveValue(4, stValue)
+	stateSinkObject.Save(0, &image.Name)
+	stateSinkObject.Save(1, &image.Arch)
+	stateSinkObject.Save(2, &image.MemoryManager)
+	stateSinkObject.Save(3, &image.fu)
+}
+
+func (image *TaskImage) afterLoad() {}
+
+func (image *TaskImage) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &image.Name)
+	stateSourceObject.Load(1, &image.Arch)
+	stateSourceObject.Load(2, &image.MemoryManager)
+	stateSourceObject.Load(3, &image.fu)
+	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y interface{}) { image.loadSt(y.(syscallTableInfo)) })
 }
 
 func (l *taskList) StateTypeName() string {
@@ -2344,13 +2344,13 @@ func init() {
 	state.Register((*runSyscallAfterPtraceEventClone)(nil))
 	state.Register((*runSyscallAfterVforkStop)(nil))
 	state.Register((*vforkStop)(nil))
-	state.Register((*TaskContext)(nil))
 	state.Register((*execStop)(nil))
 	state.Register((*runSyscallAfterExecStop)(nil))
 	state.Register((*ExitStatus)(nil))
 	state.Register((*runExit)(nil))
 	state.Register((*runExitMain)(nil))
 	state.Register((*runExitNotify)(nil))
+	state.Register((*TaskImage)(nil))
 	state.Register((*taskList)(nil))
 	state.Register((*taskEntry)(nil))
 	state.Register((*runApp)(nil))

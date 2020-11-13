@@ -317,7 +317,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 			// region. We should be able to easily identify
 			// vsyscalls by having a <fault><syscall> pair.
 			if at.Execute {
-				if sysno, ok := t.tc.st.LookupEmulate(addr); ok {
+				if sysno, ok := t.image.st.LookupEmulate(addr); ok {
 					return t.doVsyscall(addr, sysno)
 				}
 			}
