@@ -78,26 +78,36 @@ func putDentrySlice(ds *[]*dentry) {
 }
 
 // renameMuRUnlockAndCheckDrop calls fs.renameMu.RUnlock(), then calls
-// dentry.checkDropLocked on all dentries in *ds with fs.renameMu locked for
+// dentry.checkDropLocked on all dentries in *dsp with fs.renameMu locked for
 // writing.
 //
-// ds is a pointer-to-pointer since defer evaluates its arguments immediately,
+// dsp is a pointer-to-pointer since defer evaluates its arguments immediately,
 // but dentry slices are allocated lazily, and it's much easier to say "defer
 // fs.renameMuRUnlockAndCheckDrop(&ds)" than "defer func() {
 // fs.renameMuRUnlockAndCheckDrop(ds) }()" to work around this.
-func (fs *filesystem) renameMuRUnlockAndCheckDrop(ctx context.Context, ds **[]*dentry) {
+func (fs *filesystem) renameMuRUnlockAndCheckDrop(ctx context.Context, dsp **[]*dentry) {
 	fs.renameMu.RUnlock()
-	if *ds == nil {
+	if *dsp == nil {
 		return
 	}
-	if len(**ds) != 0 {
+	ds := **dsp
+	// Only go through calling dentry.checkDropLocked() (which requires
+	// re-locking renameMu) if we actually have any dentries with zero refs.
+	checkAny := false
+	for i := range ds {
+		if atomic.LoadInt64(&ds[i].refs) == 0 {
+			checkAny = true
+			break
+		}
+	}
+	if checkAny {
 		fs.renameMu.Lock()
-		for _, d := range **ds {
+		for _, d := range ds {
 			d.checkDropLocked(ctx)
 		}
 		fs.renameMu.Unlock()
 	}
-	putDentrySlice(*ds)
+	putDentrySlice(*dsp)
 }
 
 func (fs *filesystem) renameMuUnlockAndCheckDrop(ctx context.Context, ds **[]*dentry) {
