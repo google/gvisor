@@ -83,6 +83,8 @@ func (*stubLinkEndpoint) WritePacket(*stack.Route, *stack.GSO, tcpip.NetworkProt
 
 func (*stubLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 
+func (*stubLinkEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
+
 type stubDispatcher struct {
 	stack.TransportDispatcher
 }
@@ -198,7 +200,8 @@ func TestICMPCounts(t *testing.T) {
 			if netProto == nil {
 				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 			}
-			ep := netProto.NewEndpoint(&testInterface{}, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{})
+			stats := s.NICInfo()[nicID].Stats.Network
+			ep := netProto.NewEndpoint(&testInterface{}, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{}, &stats)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -301,14 +304,14 @@ func TestICMPCounts(t *testing.T) {
 			// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
 			handleIPv6Payload(header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
 
-			icmpv6Stats := s.Stats().ICMP.V6PacketsReceived
+			icmpv6Stats := ep.Stats().ICMP.V6PacketsReceived
 			visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
 				if got, want := s.Value(), uint64(1); got != want {
 					t.Errorf("got %s = %d, want = %d", name, got, want)
 				}
 			})
 			if t.Failed() {
-				t.Logf("stats:\n%+v", s.Stats())
+				t.Logf("stats:\n%+v", ep.Stats())
 			}
 		})
 	}
@@ -340,7 +343,8 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 	if netProto == nil {
 		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 	}
-	ep := netProto.NewEndpoint(&testInterface{}, nil, &stubNUDHandler{}, &stubDispatcher{})
+	stats := s.NICInfo()[nicID].Stats.Network
+	ep := netProto.NewEndpoint(&testInterface{}, nil, &stubNUDHandler{}, &stubDispatcher{}, &stats)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -443,14 +447,14 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 	// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
 	handleIPv6Payload(header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
 
-	icmpv6Stats := s.Stats().ICMP.V6PacketsReceived
+	icmpv6Stats := ep.Stats().ICMP.V6PacketsReceived
 	visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
 		if got, want := s.Value(), uint64(1); got != want {
 			t.Errorf("got %s = %d, want = %d", name, got, want)
 		}
 	})
 	if t.Failed() {
-		t.Logf("stats:\n%+v", s.Stats())
+		t.Logf("stats:\n%+v", ep.Stats())
 	}
 }
 
@@ -833,7 +837,11 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 							e.InjectInbound(ProtocolNumber, pkt)
 						}
 
-						stats := s.Stats().ICMP.V6PacketsReceived
+						netEP, err := s.GetNetworkEndpoint(1, ProtocolNumber)
+						if err != nil {
+							t.Fatalf("s.GetNetworkEndpoint(1, ProtocolNumber): %s", err)
+						}
+						stats := netEP.Stats().ICMP.V6PacketsReceived
 						invalid := stats.Invalid
 						routerOnly := stats.RouterOnlyPacketsDroppedByHost
 						typStat := typ.statCounter(stats)
@@ -1028,7 +1036,11 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 				e.InjectInbound(ProtocolNumber, pkt)
 			}
 
-			stats := s.Stats().ICMP.V6PacketsReceived
+			netEP, err := s.GetNetworkEndpoint(1, ProtocolNumber)
+			if err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(1, ProtocolNumber): %s", err)
+			}
+			stats := netEP.Stats().ICMP.V6PacketsReceived
 			invalid := stats.Invalid
 			typStat := typ.statCounter(stats)
 
@@ -1207,7 +1219,11 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				e.InjectInbound(ProtocolNumber, pkt)
 			}
 
-			stats := s.Stats().ICMP.V6PacketsReceived
+			netEP, err := s.GetNetworkEndpoint(1, ProtocolNumber)
+			if err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(1, ProtocolNumber): %s", err)
+			}
+			stats := netEP.Stats().ICMP.V6PacketsReceived
 			invalid := stats.Invalid
 			typStat := typ.statCounter(stats)
 
@@ -1770,7 +1786,8 @@ func TestCallsToNeighborCache(t *testing.T) {
 				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 			}
 			nudHandler := &stubNUDHandler{}
-			ep := netProto.NewEndpoint(&testInterface{LinkEndpoint: channel.New(0, header.IPv6MinimumMTU, linkAddr0)}, &stubLinkAddressCache{}, nudHandler, &stubDispatcher{})
+			stats := s.NICInfo()[nicID].Stats.Network
+			ep := netProto.NewEndpoint(&testInterface{LinkEndpoint: channel.New(0, header.IPv6MinimumMTU, linkAddr0)}, &stubLinkAddressCache{}, nudHandler, &stubDispatcher{}, &stats)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {

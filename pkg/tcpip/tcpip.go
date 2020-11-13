@@ -1493,6 +1493,15 @@ type IPStats struct {
 	OptionUnknownReceived *StatCounter
 }
 
+// NetworkStats collects IP and ICMP stats.
+type NetworkStats struct {
+	// IP breaks out IP-specific stats (both v4 and v6).
+	IP IPStats
+
+	// ICMP breaks out ICMP-specific stats (both v4 and v6).
+	ICMP ICMPStats
+}
+
 // TCPStats collects TCP-specific stats.
 type TCPStats struct {
 	// ActiveConnectionOpenings is the number of connections opened
@@ -1636,11 +1645,8 @@ type Stats struct {
 	// DroppedPackets is the number of packets dropped due to full queues.
 	DroppedPackets *StatCounter
 
-	// ICMP breaks out ICMP-specific stats (both v4 and v6).
-	ICMP ICMPStats
-
-	// IP breaks out IP-specific stats (both v4 and v6).
-	IP IPStats
+	// Net breaks out IP and ICMP specific stats.
+	Network NetworkStats
 
 	// TCP breaks out TCP-specific stats.
 	TCP TCPStats

@@ -43,14 +43,16 @@ type reassembler struct {
 	done         bool
 	creationTime int64
 	pkt          *stack.PacketBuffer
+	ep           stack.NetworkEndpoint
 }
 
-func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
+func newReassembler(id FragmentID, clock tcpip.Clock, ep stack.NetworkEndpoint) *reassembler {
 	r := &reassembler{
 		id:           id,
 		holes:        make([]hole, 0, 16),
 		heap:         make(fragHeap, 0, 8),
 		creationTime: clock.NowMonotonic(),
+		ep:           ep,
 	}
 	r.holes = append(r.holes, hole{
 		first:   0,

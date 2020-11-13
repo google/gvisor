@@ -300,7 +300,7 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			break
 		}
 	case *inet.StatSNMPIP:
-		ip := Metrics.IP
+		ip := Metrics.Network.IP
 		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPIP{
 			0,                          // Ip/Forwarding.
@@ -324,12 +324,12 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			0,                               // Support Ip/FragCreates.
 		}
 	case *inet.StatSNMPICMP:
-		in := Metrics.ICMP.V4PacketsReceived.ICMPv4PacketStats
-		out := Metrics.ICMP.V4PacketsSent.ICMPv4PacketStats
+		in := Metrics.Network.ICMP.V4PacketsReceived.ICMPv4PacketStats
+		out := Metrics.Network.ICMP.V4PacketsSent.ICMPv4PacketStats
 		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPICMP{
 			0, // Icmp/InMsgs.
-			Metrics.ICMP.V4PacketsSent.Dropped.Value(), // InErrors.
+			Metrics.Network.ICMP.V4PacketsSent.Dropped.Value(), // InErrors.
 			0,                         // Icmp/InCsumErrors.
 			in.DstUnreachable.Value(), // InDestUnreachs.
 			in.TimeExceeded.Value(),   // InTimeExcds.
@@ -343,18 +343,18 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			in.InfoRequest.Value(),    // InAddrMasks.
 			in.InfoReply.Value(),      // InAddrMaskReps.
 			0,                         // Icmp/OutMsgs.
-			Metrics.ICMP.V4PacketsReceived.Invalid.Value(), // OutErrors.
-			out.DstUnreachable.Value(),                     // OutDestUnreachs.
-			out.TimeExceeded.Value(),                       // OutTimeExcds.
-			out.ParamProblem.Value(),                       // OutParmProbs.
-			out.SrcQuench.Value(),                          // OutSrcQuenchs.
-			out.Redirect.Value(),                           // OutRedirects.
-			out.Echo.Value(),                               // OutEchos.
-			out.EchoReply.Value(),                          // OutEchoReps.
-			out.Timestamp.Value(),                          // OutTimestamps.
-			out.TimestampReply.Value(),                     // OutTimestampReps.
-			out.InfoRequest.Value(),                        // OutAddrMasks.
-			out.InfoReply.Value(),                          // OutAddrMaskReps.
+			Metrics.Network.ICMP.V4PacketsReceived.Invalid.Value(), // OutErrors.
+			out.DstUnreachable.Value(),                             // OutDestUnreachs.
+			out.TimeExceeded.Value(),                               // OutTimeExcds.
+			out.ParamProblem.Value(),                               // OutParmProbs.
+			out.SrcQuench.Value(),                                  // OutSrcQuenchs.
+			out.Redirect.Value(),                                   // OutRedirects.
+			out.Echo.Value(),                                       // OutEchos.
+			out.EchoReply.Value(),                                  // OutEchoReps.
+			out.Timestamp.Value(),                                  // OutTimestamps.
+			out.TimestampReply.Value(),                             // OutTimestampReps.
+			out.InfoRequest.Value(),                                // OutAddrMasks.
+			out.InfoReply.Value(),                                  // OutAddrMaskReps.
 		}
 	case *inet.StatSNMPTCP:
 		tcp := Metrics.TCP

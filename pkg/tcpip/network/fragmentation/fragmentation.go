@@ -147,7 +147,7 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 // to be given here outside of the FragmentID struct because IPv6 should not use
 // the protocol to identify a fragment.
 func (f *Fragmentation) Process(
-	id FragmentID, first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (
+	id FragmentID, first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer, ep stack.NetworkEndpoint) (
 	buffer.VectorisedView, uint8, bool, error) {
 	if first > last {
 		return buffer.VectorisedView{}, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
@@ -169,7 +169,7 @@ func (f *Fragmentation) Process(
 	f.mu.Lock()
 	r, ok := f.reassemblers[id]
 	if !ok {
-		r = newReassembler(id, f.clock)
+		r = newReassembler(id, f.clock, ep)
 		f.reassemblers[id] = r
 		wasEmpty := f.rList.Empty()
 		f.rList.PushFront(r)

@@ -1201,7 +1201,7 @@ func TestFragmentationWritePacket(t *testing.T) {
 	for _, ft := range fragmentationTests {
 		t.Run(ft.description, func(t *testing.T) {
 			ep := testutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
-			r := buildRoute(t, ep)
+			r, stats := buildRoute(t, ep)
 			pkt := testutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
 			source := pkt.Clone()
 			err := r.WritePacket(ft.gso, stack.NetworkHeaderParams{
@@ -1215,11 +1215,11 @@ func TestFragmentationWritePacket(t *testing.T) {
 			if got := len(ep.WrittenPackets); got != len(ft.wantFragments) {
 				t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, len(ft.wantFragments))
 			}
-			if got := int(r.Stats().IP.PacketsSent.Value()); got != len(ft.wantFragments) {
-				t.Errorf("got c.Route.Stats().IP.PacketsSent.Value() = %d, want = %d", got, len(ft.wantFragments))
+			if got := int(stats.IP.PacketsSent.Value()); got != len(ft.wantFragments) {
+				t.Errorf("got stats.IP.PacketsSent.Value() = %d, want = %d", got, len(ft.wantFragments))
 			}
-			if got := r.Stats().IP.OutgoingPacketErrors.Value(); got != 0 {
-				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
+			if got := stats.IP.OutgoingPacketErrors.Value(); got != 0 {
+				t.Errorf("got stats.IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
 			}
 			if err := compareFragments(ep.WrittenPackets, source, ft.mtu, ft.wantFragments, tcp.ProtocolNumber); err != nil {
 				t.Error(err)
@@ -1273,7 +1273,7 @@ func TestFragmentationWritePackets(t *testing.T) {
 					}
 
 					ep := testutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
-					r := buildRoute(t, ep)
+					r, stats := buildRoute(t, ep)
 
 					wantTotalPackets := len(ft.wantFragments) + test.insertBefore + test.insertAfter
 					n, err := r.WritePackets(ft.gso, pkts, stack.NetworkHeaderParams{
@@ -1290,11 +1290,11 @@ func TestFragmentationWritePackets(t *testing.T) {
 					if got := len(ep.WrittenPackets); got != wantTotalPackets {
 						t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, wantTotalPackets)
 					}
-					if got := int(r.Stats().IP.PacketsSent.Value()); got != wantTotalPackets {
-						t.Errorf("got c.Route.Stats().IP.PacketsSent.Value() = %d, want = %d", got, wantTotalPackets)
+					if got := int(stats.IP.PacketsSent.Value()); got != wantTotalPackets {
+						t.Errorf("got stats.IP.PacketsSent.Value() = %d, want = %d", got, wantTotalPackets)
 					}
-					if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != 0 {
-						t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
+					if got := int(stats.IP.OutgoingPacketErrors.Value()); got != 0 {
+						t.Errorf("got stats.IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
 					}
 
 					if wantTotalPackets == 0 {
@@ -1382,7 +1382,8 @@ func TestFragmentationErrors(t *testing.T) {
 		t.Run(ft.description, func(t *testing.T) {
 			pkt := testutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
 			ep := testutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
-			r := buildRoute(t, ep)
+			r, stats := buildRoute(t, ep)
+
 			err := r.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
@@ -1391,11 +1392,11 @@ func TestFragmentationErrors(t *testing.T) {
 			if err != ft.wantError {
 				t.Errorf("got WritePacket(_, _, _) = %s, want = %s", err, ft.wantError)
 			}
-			if got := int(r.Stats().IP.PacketsSent.Value()); got != ft.allowPackets {
-				t.Errorf("got r.Stats().IP.PacketsSent.Value() = %d, want = %d", got, ft.allowPackets)
+			if got := int(stats.IP.PacketsSent.Value()); got != ft.allowPackets {
+				t.Errorf("got stats.IP.PacketsSent.Value() = %d, want = %d", got, ft.allowPackets)
 			}
-			if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != ft.outgoingErrors {
-				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = %d", got, ft.outgoingErrors)
+			if got := int(stats.IP.OutgoingPacketErrors.Value()); got != ft.outgoingErrors {
+				t.Errorf("got stats.IP.OutgoingPacketErrors.Value() = %d, want = %d", got, ft.outgoingErrors)
 			}
 		})
 	}
@@ -1676,6 +1677,12 @@ func TestInvalidFragments(t *testing.T) {
 				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, addr2, err)
 			}
 
+			netEP, err := s.GetNetworkEndpoint(1, header.IPv4ProtocolNumber)
+			if err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(1, header.IPv4ProtocolNumber): %s", err)
+			}
+			stats := netEP.Stats()
+
 			for _, f := range test.fragments {
 				pktSize := header.IPv4MinimumSize + len(f.payload)
 				hdr := buffer.NewPrependable(pktSize)
@@ -1700,11 +1707,11 @@ func TestInvalidFragments(t *testing.T) {
 				}))
 			}
 
-			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), test.wantMalformedIPPackets; got != want {
-				t.Errorf("incorrect Stats.IP.MalformedPacketsReceived, got: %d, want: %d", got, want)
+			if got, want := stats.IP.MalformedPacketsReceived.Value(), test.wantMalformedIPPackets; got != want {
+				t.Errorf("incorrect stats.IP.MalformedPacketsReceived, got: %d, want: %d", got, want)
 			}
-			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), test.wantMalformedFragments; got != want {
-				t.Errorf("incorrect Stats.IP.MalformedFragmentsReceived, got: %d, want: %d", got, want)
+			if got, want := stats.IP.MalformedFragmentsReceived.Value(), test.wantMalformedFragments; got != want {
+				t.Errorf("incorrect stats.IP.MalformedFragmentsReceived, got: %d, want: %d", got, want)
 			}
 		})
 	}
@@ -2499,7 +2506,7 @@ func TestWriteStats(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
 					ep := testutil.NewMockLinkEndpoint(header.IPv4MinimumMTU, tcpip.ErrInvalidEndpointState, test.allowPackets)
-					rt := buildRoute(t, ep)
+					rt, stats := buildRoute(t, ep)
 
 					var pkts stack.PacketBufferList
 					for i := 0; i < nPackets; i++ {
@@ -2515,10 +2522,10 @@ func TestWriteStats(t *testing.T) {
 
 					nWritten, _ := writer.writePackets(&rt, pkts)
 
-					if got := int(rt.Stats().IP.PacketsSent.Value()); got != test.expectSent {
+					if got := int(stats.IP.PacketsSent.Value()); got != test.expectSent {
 						t.Errorf("sent %d packets, but expected to send %d", got, test.expectSent)
 					}
-					if got := int(rt.Stats().IP.IPTablesOutputDropped.Value()); got != test.expectDropped {
+					if got := int(stats.IP.IPTablesOutputDropped.Value()); got != test.expectDropped {
 						t.Errorf("dropped %d packets, but expected to drop %d", got, test.expectDropped)
 					}
 					if nWritten != test.expectWritten {
@@ -2530,7 +2537,7 @@ func TestWriteStats(t *testing.T) {
 	}
 }
 
-func buildRoute(t *testing.T, ep stack.LinkEndpoint) stack.Route {
+func buildRoute(t *testing.T, ep stack.LinkEndpoint) (stack.Route, *tcpip.NetworkStats) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 	})
@@ -2559,7 +2566,13 @@ func buildRoute(t *testing.T, ep stack.LinkEndpoint) stack.Route {
 	if err != nil {
 		t.Fatalf("FindRoute(1, %s, %s, %d, false) = %s", src, dst, ipv4.ProtocolNumber, err)
 	}
-	return rt
+
+	netEP, err := s.GetNetworkEndpoint(1, header.IPv4ProtocolNumber)
+	if err != nil {
+		t.Fatalf("s.GetNetworkEndpoint(1, header.IPv4ProtocolNumber): %s", err)
+	}
+
+	return rt, netEP.Stats()
 }
 
 // limitedMatcher is an iptables matcher that matches after a certain number of

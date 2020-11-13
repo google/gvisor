@@ -125,9 +125,8 @@ func getTargetLinkAddr(it header.NDPOptionIterator) (tcpip.LinkAddress, bool) {
 }
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
-	stats := e.protocol.stack.Stats().ICMP
-	sent := stats.V6PacketsSent
-	received := stats.V6PacketsReceived
+	sent := e.stats.ICMP.V6PacketsSent
+	received := e.stats.ICMP.V6PacketsReceived
 	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
 	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
 	// full explanation.
@@ -686,16 +685,28 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	ns.Options().Serialize(optsSerializer)
 	packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-	stat := p.stack.Stats().ICMP.V6PacketsSent
+	stackStat := p.stack.Stats().Network.ICMP.V6PacketsSent
+	var nicStats *tcpip.NetworkStats
+	if ep, err := p.stack.GetNetworkEndpoint(nic.ID(), header.IPv6ProtocolNumber); err != nil {
+		nicStats = ep.Stats()
+	}
+
 	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.NDPHopLimit,
 	}, pkt); err != nil {
-		stat.Dropped.Increment()
+		stackStat.Dropped.Increment()
+		if nicStats != nil {
+			nicStats.ICMP.V6PacketsSent.Dropped.Increment()
+		}
 		return err
 	}
 
-	stat.NeighborSolicit.Increment()
+	stackStat.NeighborSolicit.Increment()
+	if nicStats != nil {
+		nicStats.ICMP.V6PacketsSent.Dropped.Increment()
+	}
+
 	return nil
 }
 
@@ -765,7 +776,7 @@ func (*icmpReasonReassemblyTimeout) isICMPReason() {}
 
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
-func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, stats *tcpip.NetworkStats) *tcpip.Error {
 	origIPHdr := header.IPv6(pkt.NetworkHeader().View())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
@@ -832,8 +843,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	}
 	defer route.Release()
 
-	stats := p.stack.Stats().ICMP
-	sent := stats.V6PacketsSent
+	sent := stats.ICMP.V6PacketsSent
 	if !p.stack.AllowICMPMessage() {
 		sent.RateLimited.Increment()
 		return nil
@@ -938,6 +948,11 @@ func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
 	//   been received, an ICMP Time Exceeded -- Fragment Reassembly Time Exceeded
 	//   message should be sent to the source of that fragment.
 	if pkt != nil {
-		p.returnError(&icmpReasonReassemblyTimeout{}, pkt)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		ep, ok := p.mu.eps[pkt.NICID]
+		if ok {
+			p.returnError(&icmpReasonReassemblyTimeout{}, pkt, ep.Stats())
+		}
 	}
 }

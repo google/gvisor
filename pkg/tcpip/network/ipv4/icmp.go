@@ -62,21 +62,25 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack
 }
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
-	stats := e.protocol.stack.Stats()
-	received := stats.ICMP.V4PacketsReceived
+	stackStats := e.protocol.stack.Stats()
+	stackReceived := stackStats.Network.ICMP.V4PacketsReceived
+	nicStats := e.stats
+	nicReceived := nicStats.ICMP.V4PacketsReceived
 	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
 	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
 	// full explanation.
 	v, ok := pkt.Data.PullUp(header.ICMPv4MinimumSize)
 	if !ok {
-		received.Invalid.Increment()
+		stackReceived.Invalid.Increment()
+		nicReceived.Invalid.Increment()
 		return
 	}
 	h := header.ICMPv4(v)
 
 	// Only do in-stack processing if the checksum is correct.
 	if header.ChecksumVV(pkt.Data, 0 /* initial */) != 0xffff {
-		received.Invalid.Increment()
+		stackReceived.Invalid.Increment()
+		nicReceived.Invalid.Increment()
 		// It's possible that a raw socket expects to receive this regardless
 		// of checksum errors. If it's an echo request we know it's safe because
 		// we are the only handler, however other types do not cope well with
@@ -116,9 +120,10 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 				errors.Is(err, errIPv4TimestampOptInvalidLength),
 				errors.Is(err, errIPv4TimestampOptInvalidPointer),
 				errors.Is(err, errIPv4TimestampOptOverflow):
-				_ = e.protocol.returnError(&icmpReasonParamProblem{pointer: aux}, pkt)
-				stats.MalformedRcvdPackets.Increment()
-				stats.IP.MalformedPacketsReceived.Increment()
+				_ = e.protocol.returnError(&icmpReasonParamProblem{pointer: aux}, pkt, e.stats)
+				stackStats.MalformedRcvdPackets.Increment()
+				stackStats.Network.IP.MalformedPacketsReceived.Increment()
+				e.stats.IP.MalformedPacketsReceived.Increment()
 			}
 			return
 		}
@@ -128,11 +133,14 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	// TODO(b/112892170): Meaningfully handle all ICMP types.
 	switch h.Type() {
 	case header.ICMPv4Echo:
-		received.Echo.Increment()
+		stackReceived.Echo.Increment()
+		nicReceived.Echo.Increment()
 
-		sent := stats.ICMP.V4PacketsSent
+		stackSent := stackStats.Network.ICMP.V4PacketsSent
+		nicSent := nicStats.ICMP.V4PacketsSent
 		if !e.protocol.stack.AllowICMPMessage() {
-			sent.RateLimited.Increment()
+			stackSent.RateLimited.Increment()
+			nicSent.RateLimited.Increment()
 			return
 		}
 
@@ -213,18 +221,22 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		replyPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 
 		if err := r.WriteHeaderIncludedPacket(replyPkt); err != nil {
-			sent.Dropped.Increment()
+			stackSent.Dropped.Increment()
+			nicSent.Dropped.Increment()
 			return
 		}
-		sent.EchoReply.Increment()
+		stackSent.EchoReply.Increment()
+		nicSent.EchoReply.Increment()
 
 	case header.ICMPv4EchoReply:
-		received.EchoReply.Increment()
+		stackReceived.EchoReply.Increment()
+		nicReceived.EchoReply.Increment()
 
 		e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
 
 	case header.ICMPv4DstUnreachable:
-		received.DstUnreachable.Increment()
+		stackReceived.DstUnreachable.Increment()
+		nicReceived.DstUnreachable.Increment()
 
 		pkt.Data.TrimFront(header.ICMPv4MinimumSize)
 		switch h.Code() {
@@ -243,31 +255,40 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		}
 
 	case header.ICMPv4SrcQuench:
-		received.SrcQuench.Increment()
+		stackReceived.SrcQuench.Increment()
+		nicReceived.SrcQuench.Increment()
 
 	case header.ICMPv4Redirect:
-		received.Redirect.Increment()
+		stackReceived.Redirect.Increment()
+		nicReceived.Redirect.Increment()
 
 	case header.ICMPv4TimeExceeded:
-		received.TimeExceeded.Increment()
+		stackReceived.TimeExceeded.Increment()
+		nicReceived.TimeExceeded.Increment()
 
 	case header.ICMPv4ParamProblem:
-		received.ParamProblem.Increment()
+		stackReceived.ParamProblem.Increment()
+		nicReceived.ParamProblem.Increment()
 
 	case header.ICMPv4Timestamp:
-		received.Timestamp.Increment()
+		stackReceived.Timestamp.Increment()
+		nicReceived.Timestamp.Increment()
 
 	case header.ICMPv4TimestampReply:
-		received.TimestampReply.Increment()
+		stackReceived.TimestampReply.Increment()
+		nicReceived.TimestampReply.Increment()
 
 	case header.ICMPv4InfoRequest:
-		received.InfoRequest.Increment()
+		stackReceived.InfoRequest.Increment()
+		nicReceived.InfoRequest.Increment()
 
 	case header.ICMPv4InfoReply:
-		received.InfoReply.Increment()
+		stackReceived.InfoReply.Increment()
+		nicReceived.InfoReply.Increment()
 
 	default:
-		received.Invalid.Increment()
+		stackReceived.Invalid.Increment()
+		nicReceived.Invalid.Increment()
 	}
 }
 
@@ -317,7 +338,7 @@ func (*icmpReasonParamProblem) isICMPReason() {}
 // the problematic packet. It incorporates as much of that packet as
 // possible as well as any error metadata as is available. returnError
 // expects pkt to hold a valid IPv4 packet as per the wire format.
-func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, stats *tcpip.NetworkStats) *tcpip.Error {
 	origIPHdr := header.IPv4(pkt.NetworkHeader().View())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
@@ -379,9 +400,12 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	}
 	defer route.Release()
 
-	sent := p.stack.Stats().ICMP.V4PacketsSent
+	stackSent := p.stack.Stats().Network.ICMP.V4PacketsSent
+	nicSent := stats.ICMP.V4PacketsSent
+
 	if !p.stack.AllowICMPMessage() {
-		sent.RateLimited.Increment()
+		stackSent.RateLimited.Increment()
+		nicSent.RateLimited.Increment()
 		return nil
 	}
 
@@ -471,29 +495,35 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	icmpPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 
 	icmpHdr := header.ICMPv4(icmpPkt.TransportHeader().Push(header.ICMPv4MinimumSize))
-	var counter *tcpip.StatCounter
+	var stackCounter *tcpip.StatCounter
+	var nicCounter *tcpip.StatCounter
 	switch reason := reason.(type) {
 	case *icmpReasonPortUnreachable:
 		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4PortUnreachable)
-		counter = sent.DstUnreachable
+		stackCounter = stackSent.DstUnreachable
+		nicCounter = nicSent.DstUnreachable
 	case *icmpReasonProtoUnreachable:
 		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4ProtoUnreachable)
-		counter = sent.DstUnreachable
+		stackCounter = stackSent.DstUnreachable
+		nicCounter = nicSent.DstUnreachable
 	case *icmpReasonTTLExceeded:
 		icmpHdr.SetType(header.ICMPv4TimeExceeded)
 		icmpHdr.SetCode(header.ICMPv4TTLExceeded)
-		counter = sent.TimeExceeded
+		stackCounter = stackSent.TimeExceeded
+		nicCounter = nicSent.TimeExceeded
 	case *icmpReasonReassemblyTimeout:
 		icmpHdr.SetType(header.ICMPv4TimeExceeded)
 		icmpHdr.SetCode(header.ICMPv4ReassemblyTimeout)
-		counter = sent.TimeExceeded
+		stackCounter = stackSent.TimeExceeded
+		nicCounter = nicSent.TimeExceeded
 	case *icmpReasonParamProblem:
 		icmpHdr.SetType(header.ICMPv4ParamProblem)
 		icmpHdr.SetCode(header.ICMPv4UnusedCode)
 		icmpHdr.SetPointer(reason.pointer)
-		counter = sent.ParamProblem
+		stackCounter = stackSent.ParamProblem
+		nicCounter = nicSent.ParamProblem
 	default:
 		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
 	}
@@ -508,10 +538,12 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 		},
 		icmpPkt,
 	); err != nil {
-		sent.Dropped.Increment()
+		stackSent.Dropped.Increment()
+		nicSent.Dropped.Increment()
 		return err
 	}
-	counter.Increment()
+	stackCounter.Increment()
+	nicCounter.Increment()
 	return nil
 }
 
@@ -526,6 +558,11 @@ func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
 	//   If fragment zero is not available then no time exceeded need be sent at
 	//   all.
 	if pkt != nil {
-		p.returnError(&icmpReasonReassemblyTimeout{}, pkt)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		ep, ok := p.mu.eps[pkt.NICID]
+		if ok {
+			p.returnError(&icmpReasonReassemblyTimeout{}, pkt, ep.Stats())
+		}
 	}
 }

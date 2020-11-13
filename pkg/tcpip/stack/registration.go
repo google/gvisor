@@ -579,6 +579,9 @@ type NetworkEndpoint interface {
 	// NetworkProtocolNumber returns the tcpip.NetworkProtocolNumber for
 	// this endpoint.
 	NetworkProtocolNumber() tcpip.NetworkProtocolNumber
+
+	// Stats returns the tcpip.NetworkStats for this endpoint.
+	Stats() *tcpip.NetworkStats
 }
 
 // ForwardingNetworkProtocol is a NetworkProtocol that may forward packets.
@@ -611,7 +614,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nic NetworkInterface, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher) NetworkEndpoint
+	NewEndpoint(nic NetworkInterface, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher, stats *tcpip.NetworkStats) NetworkEndpoint
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the

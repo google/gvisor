@@ -60,12 +60,14 @@ type NIC struct {
 	}
 }
 
-// NICStats includes transmitted and received stats.
+// NICStats includes transmitted/received stats and network layer stats.
 type NICStats struct {
 	Tx DirectionStats
 	Rx DirectionStats
 
 	DisabledRx DirectionStats
+
+	Network tcpip.NetworkStats
 }
 
 func makeNICStats() NICStats {
@@ -128,7 +130,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = nil
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic, &nic.stats.Network)
 	}
 
 	nic.LinkEndpoint.Attach(nic)
@@ -672,7 +674,8 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 			// packet like this unless handleLocal is false. Loopback also calls this
 			// function even though the packets didn't come from the physical interface
 			// so don't drop those.
-			n.stack.stats.IP.InvalidSourceAddressesReceived.Increment()
+			n.stack.stats.Network.IP.InvalidSourceAddressesReceived.Increment()
+			n.stats.Network.IP.InvalidSourceAddressesReceived.Increment()
 			return
 		}
 	}

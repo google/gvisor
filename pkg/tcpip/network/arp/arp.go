@@ -109,6 +109,11 @@ func (*endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return ProtocolNumber
 }
 
+// Stats implements stack.NetworkEndpoint.Stats.
+func (e *endpoint) Stats() *tcpip.NetworkStats {
+	return nil
+}
+
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
 func (*endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	return 0, tcpip.ErrNotSupported
@@ -216,7 +221,7 @@ func (*protocol) ParseAddresses(buffer.View) (src, dst tcpip.Address) {
 	return "", ""
 }
 
-func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher, _ *tcpip.NetworkStats) stack.NetworkEndpoint {
 	e := &endpoint{
 		protocol:      p,
 		nic:           nic,

@@ -63,7 +63,8 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 		p := packets[0]
 		packets[0] = pendingPacket{}
 		packets = packets[1:]
-		p.route.Stats().IP.OutgoingPacketErrors.Increment()
+		p.route.Stats().Network.IP.OutgoingPacketErrors.Increment()
+		p.route.outgoingNIC.stats.Network.IP.OutgoingPacketErrors.Increment()
 		p.route.Release()
 	}
 
@@ -102,9 +103,11 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 
 		for _, p := range packets {
 			if cancelled {
-				p.route.Stats().IP.OutgoingPacketErrors.Increment()
+				p.route.Stats().Network.IP.OutgoingPacketErrors.Increment()
+				p.route.outgoingNIC.stats.Network.IP.OutgoingPacketErrors.Increment()
 			} else if _, err := p.route.Resolve(nil); err != nil {
-				p.route.Stats().IP.OutgoingPacketErrors.Increment()
+				p.route.Stats().Network.IP.OutgoingPacketErrors.Increment()
+				p.route.outgoingNIC.stats.Network.IP.OutgoingPacketErrors.Increment()
 			} else {
 				p.route.outgoingNIC.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
 			}
