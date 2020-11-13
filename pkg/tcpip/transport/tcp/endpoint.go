@@ -440,9 +440,6 @@ type endpoint struct {
 	ttl               uint8
 	v6only            bool
 	isConnectNotified bool
-	// TCP should never broadcast but Linux nevertheless supports enabling/
-	// disabling SO_BROADCAST, albeit as a NOOP.
-	broadcast bool
 
 	// portFlags stores the current values of port related flags.
 	portFlags ports.Flags
@@ -685,6 +682,9 @@ type endpoint struct {
 
 	// linger is used for SO_LINGER socket option.
 	linger tcpip.LingerOption
+
+	// ops is used to get socket level options.
+	ops tcpip.SocketOptions
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -1599,11 +1599,6 @@ func (e *endpoint) windowCrossedACKThresholdLocked(deltaBefore int) (crossed boo
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
 
-	case tcpip.BroadcastOption:
-		e.LockUser()
-		e.broadcast = v
-		e.UnlockUser()
-
 	case tcpip.CorkOption:
 		e.LockUser()
 		if !v {
@@ -1950,11 +1945,6 @@ func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
-	case tcpip.BroadcastOption:
-		e.LockUser()
-		v := e.broadcast
-		e.UnlockUser()
-		return v, nil
 
 	case tcpip.CorkOption:
 		return atomic.LoadUint32(&e.cork) != 0, nil
@@ -3129,4 +3119,8 @@ func (e *endpoint) Wait() {
 		}
 		<-notifyCh
 	}
+}
+
+func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
+	return &e.ops
 }
