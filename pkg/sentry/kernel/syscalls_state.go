@@ -30,18 +30,18 @@ type syscallTableInfo struct {
 }
 
 // saveSt saves the SyscallTable.
-func (tc *TaskContext) saveSt() syscallTableInfo {
+func (image *TaskImage) saveSt() syscallTableInfo {
 	return syscallTableInfo{
-		OS:   tc.st.OS,
-		Arch: tc.st.Arch,
+		OS:   image.st.OS,
+		Arch: image.st.Arch,
 	}
 }
 
 // loadSt loads the SyscallTable.
-func (tc *TaskContext) loadSt(sti syscallTableInfo) {
+func (image *TaskImage) loadSt(sti syscallTableInfo) {
 	st, ok := LookupSyscallTable(sti.OS, sti.Arch)
 	if !ok {
 		panic(fmt.Sprintf("syscall table not found for OS %v, Arch %v", sti.OS, sti.Arch))
 	}
-	tc.st = st // Save the table reference.
+	image.st = st // Save the table reference.
 }

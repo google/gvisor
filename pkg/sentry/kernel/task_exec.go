@@ -83,11 +83,12 @@ type execStop struct{}
 func (*execStop) Killable() bool { return true }
 
 // Execve implements the execve(2) syscall by killing all other tasks in its
-// thread group and switching to newTC. Execve always takes ownership of newTC.
+// thread group and switching to newImage. Execve always takes ownership of
+// newImage.
 //
 // Preconditions: The caller must be running Task.doSyscallInvoke on the task
 // goroutine.
-func (t *Task) Execve(newTC *TaskContext) (*SyscallControl, error) {
+func (t *Task) Execve(newImage *TaskImage) (*SyscallControl, error) {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -96,7 +97,7 @@ func (t *Task) Execve(newTC *TaskContext) (*SyscallControl, error) {
 	if t.tg.exiting || t.tg.execing != nil {
 		// We lost to a racing group-exit, kill, or exec from another thread
 		// and should just exit.
-		newTC.release()
+		newImage.release()
 		return nil, syserror.EINTR
 	}
 
@@ -118,7 +119,7 @@ func (t *Task) Execve(newTC *TaskContext) (*SyscallControl, error) {
 		t.beginInternalStopLocked((*execStop)(nil))
 	}
 
-	return &SyscallControl{next: &runSyscallAfterExecStop{newTC}, ignoreReturn: true}, nil
+	return &SyscallControl{next: &runSyscallAfterExecStop{newImage}, ignoreReturn: true}, nil
 }
 
 // The runSyscallAfterExecStop state continues execve(2) after all siblings of
@@ -126,16 +127,16 @@ func (t *Task) Execve(newTC *TaskContext) (*SyscallControl, error) {
 //
 // +stateify savable
 type runSyscallAfterExecStop struct {
-	tc *TaskContext
+	image *TaskImage
 }
 
 func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
-	t.traceExecEvent(r.tc)
+	t.traceExecEvent(r.image)
 	t.tg.pidns.owner.mu.Lock()
 	t.tg.execing = nil
 	if t.killed() {
 		t.tg.pidns.owner.mu.Unlock()
-		r.tc.release()
+		r.image.release()
 		return (*runInterrupt)(nil)
 	}
 	// We are the thread group leader now. Save our old thread ID for
@@ -214,7 +215,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// executables (set-user/group-ID bits and file capabilities). This
 	// allows us to unconditionally enable user dumpability on the new mm.
 	// See fs/exec.c:setup_new_exec.
-	r.tc.MemoryManager.SetDumpability(mm.UserDumpable)
+	r.image.MemoryManager.SetDumpability(mm.UserDumpable)
 
 	// Switch to the new process.
 	t.MemoryManager().Deactivate()
@@ -222,8 +223,8 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// Update credentials to reflect the execve. This should precede switching
 	// MMs to ensure that dumpability has been reset first, if needed.
 	t.updateCredsForExecLocked()
-	t.tc.release()
-	t.tc = *r.tc
+	t.image.release()
+	t.image = *r.image
 	t.mu.Unlock()
 	t.unstopVforkParent()
 	t.p.FullStateChanged()

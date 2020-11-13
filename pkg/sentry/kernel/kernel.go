@@ -632,7 +632,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 	defer k.tasks.mu.RUnlock()
 	for t := range k.tasks.Root.tids {
 		// We can skip locking Task.mu here since the kernel is paused.
-		if mm := t.tc.MemoryManager; mm != nil {
+		if mm := t.image.MemoryManager; mm != nil {
 			if _, ok := invalidated[mm]; !ok {
 				if err := mm.InvalidateUnsavable(ctx); err != nil {
 					return err
@@ -642,7 +642,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 		}
 		// I really wish we just had a sync.Map of all MMs...
 		if r, ok := t.runState.(*runSyscallAfterExecStop); ok {
-			if err := r.tc.MemoryManager.InvalidateUnsavable(ctx); err != nil {
+			if err := r.image.MemoryManager.InvalidateUnsavable(ctx); err != nil {
 				return err
 			}
 		}
@@ -1017,7 +1017,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		Features:            k.featureSet,
 	}
 
-	tc, se := k.LoadTaskImage(ctx, loadArgs)
+	image, se := k.LoadTaskImage(ctx, loadArgs)
 	if se != nil {
 		return nil, 0, errors.New(se.String())
 	}
@@ -1030,7 +1030,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	config := &TaskConfig{
 		Kernel:                  k,
 		ThreadGroup:             tg,
-		TaskContext:             tc,
+		TaskImage:               image,
 		FSContext:               fsContext,
 		FDTable:                 args.FDTable,
 		Credentials:             args.Credentials,
@@ -1046,7 +1046,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	if err != nil {
 		return nil, 0, err
 	}
-	t.traceExecEvent(tc) // Simulate exec for tracing.
+	t.traceExecEvent(image) // Simulate exec for tracing.
 
 	// Success.
 	cu.Release()

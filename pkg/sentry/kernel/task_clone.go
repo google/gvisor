@@ -115,7 +115,7 @@ type CloneOptions struct {
 	ParentTID    usermem.Addr
 
 	// If Vfork is true, place the parent in vforkStop until the cloned task
-	// releases its TaskContext.
+	// releases its TaskImage.
 	Vfork bool
 
 	// If Untraced is true, do not report PTRACE_EVENT_CLONE/FORK/VFORK for
@@ -226,20 +226,20 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		})
 	}
 
-	tc, err := t.tc.Fork(t, t.k, !opts.NewAddressSpace)
+	image, err := t.image.Fork(t, t.k, !opts.NewAddressSpace)
 	if err != nil {
 		return 0, nil, err
 	}
 	cu.Add(func() {
-		tc.release()
+		image.release()
 	})
 	// clone() returns 0 in the child.
-	tc.Arch.SetReturn(0)
+	image.Arch.SetReturn(0)
 	if opts.Stack != 0 {
-		tc.Arch.SetStack(uintptr(opts.Stack))
+		image.Arch.SetStack(uintptr(opts.Stack))
 	}
 	if opts.SetTLS {
-		if !tc.Arch.SetTLS(uintptr(opts.TLS)) {
+		if !image.Arch.SetTLS(uintptr(opts.TLS)) {
 			return 0, nil, syserror.EPERM
 		}
 	}
@@ -288,7 +288,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		Kernel:                  t.k,
 		ThreadGroup:             tg,
 		SignalMask:              t.SignalMask(),
-		TaskContext:             tc,
+		TaskImage:               image,
 		FSContext:               fsContext,
 		FDTable:                 fdTable,
 		Credentials:             creds,
