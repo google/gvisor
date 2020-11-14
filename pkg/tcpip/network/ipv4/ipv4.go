@@ -713,11 +713,11 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		e.handleICMP(pkt)
 		return
 	}
-	if len(h.Options()) != 0 {
+	if opts := h.Options(); len(opts) != 0 {
 		// TODO(gvisor.dev/issue/4586):
 		// When we add forwarding support we should use the verified options
 		// rather than just throwing them away.
-		aux, _, err := e.processIPOptions(pkt, h.Options(), &optionUsageReceive{})
+		aux, _, err := e.processIPOptions(pkt, opts, &optionUsageReceive{})
 		if err != nil {
 			switch {
 			case
