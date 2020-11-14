@@ -89,7 +89,17 @@ type IPv4Fields struct {
 	// DstAddr is the "destination ip address" of an IPv4 packet.
 	DstAddr tcpip.Address
 
-	// Options is between 0 and 40 bytes or nil if empty.
+	// Options must be 40 bytes or less as they must fit along with the
+	// rest of the IPv4 header into the maximum size describable in the
+	// IHL field. RFC 791 section 3.1 says:
+	//    IHL:  4 bits
+	//
+	//    Internet Header Length is the length of the internet header in 32
+	//    bit words, and thus points to the beginning of the data.  Note that
+	//    the minimum value for a correct header is 5.
+	//
+	// That leaves ten 32 bit (4 byte) fields for options. An attempt to encode
+	// more will fail.
 	Options IPv4Options
 }
 
@@ -284,13 +294,10 @@ func (o IPv4Options) SizeWithPadding() int {
 	return (len(o) + IPv4IHLStride - 1) & ^(IPv4IHLStride - 1)
 }
 
-// Options returns a buffer holding the options or nil.
+// Options returns a buffer holding the options.
 func (b IPv4) Options() IPv4Options {
 	hdrLen := b.HeaderLength()
-	if hdrLen > IPv4MinimumSize {
-		return IPv4Options(b[options:hdrLen:hdrLen])
-	}
-	return nil
+	return IPv4Options(b[options:hdrLen:hdrLen])
 }
 
 // TransportProtocol implements Network.TransportProtocol.
