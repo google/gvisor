@@ -410,13 +410,7 @@ func Address(v tcpip.Address) *tcpip.Address {
 // continues parsing further encapsulations.
 func parseIPv4(b []byte) (Layer, layerParser) {
 	h := header.IPv4(b)
-	hdrLen := h.HeaderLength()
-	// Even if there are no options, we set an empty options field instead of nil
-	// so that the decision to compare is up to the caller of that comparison.
-	var options header.IPv4Options
-	if hdrLen > header.IPv4MinimumSize {
-		options = append(options, h.Options()...)
-	}
+	options := h.Options()
 	tos, _ := h.TOS()
 	ipv4 := IPv4{
 		IHL:            Uint8(h.HeaderLength()),

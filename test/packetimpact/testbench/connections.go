@@ -72,7 +72,7 @@ func pickPort(domain, typ int) (fd int, port uint16, err error) {
 	}
 	sa, err = unix.Getsockname(fd)
 	if err != nil {
-		return -1, 0, fmt.Errorf("fail in Getsocketname(%d): %w", fd, err)
+		return -1, 0, fmt.Errorf("unix.Getsocketname(%d): %w", fd, err)
 	}
 	port, err = portFromSockaddr(sa)
 	if err != nil {
