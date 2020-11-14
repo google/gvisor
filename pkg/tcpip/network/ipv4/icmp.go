@@ -90,7 +90,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 
 	iph := header.IPv4(pkt.NetworkHeader().View())
 	var newOptions header.IPv4Options
-	if len(iph) > header.IPv4MinimumSize {
+	if opts := iph.Options(); len(opts) != 0 {
 		// RFC 1122 section 3.2.2.6 (page 43) (and similar for other round trip
 		// type ICMP packets):
 		//    If a Record Route and/or Time Stamp option is received in an
@@ -106,7 +106,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		} else {
 			op = &optionUsageReceive{}
 		}
-		aux, tmp, err := e.processIPOptions(pkt, iph.Options(), op)
+		aux, tmp, err := e.processIPOptions(pkt, opts, op)
 		if err != nil {
 			switch {
 			case
