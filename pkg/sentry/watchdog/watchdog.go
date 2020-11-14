@@ -336,10 +336,8 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 	buf.WriteString(fmt.Sprintf("Sentry detected %d stuck task(s):\n", len(offenders)))
 	for t, o := range offenders {
 		tid := w.k.TaskSet().Root.IDOfTask(t)
-		buf.WriteString(fmt.Sprintf("\tTask tid: %v (%#x), entered RunSys state %v ago.\n", tid, uint64(tid), now.Sub(o.lastUpdateTime)))
+		buf.WriteString(fmt.Sprintf("\tTask tid: %v (goroutine %d), entered RunSys state %v ago.\n", tid, t.GoroutineID(), now.Sub(o.lastUpdateTime)))
 	}
-
-	buf.WriteString("Search for '(*Task).run(0x..., 0x<tid>)' in the stack dump to find the offending goroutine")
 
 	// Force stack dump only if a new task is detected.
 	w.doAction(w.TaskTimeoutAction, newTaskFound, &buf)

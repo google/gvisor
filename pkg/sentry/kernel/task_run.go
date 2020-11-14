@@ -390,6 +390,11 @@ func (t *Task) assertTaskGoroutine() {
 	}
 }
 
+// GoroutineID returns the ID of t's task goroutine.
+func (t *Task) GoroutineID() int64 {
+	return atomic.LoadInt64(&t.goid)
+}
+
 // waitGoroutineStoppedOrExited blocks until t's task goroutine stops or exits.
 func (t *Task) waitGoroutineStoppedOrExited() {
 	t.goroutineStopped.Wait()
