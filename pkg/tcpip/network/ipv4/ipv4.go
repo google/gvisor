@@ -650,29 +650,8 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 			return
 		}
 
-		// Set up a callback in case we need to send a Time Exceeded Message, as per
-		// RFC 792:
-		//
-		//   If a host reassembling a fragmented datagram cannot complete the
-		//   reassembly due to missing fragments within its time limit it discards
-		//   the datagram, and it may send a time exceeded message.
-		//
-		//   If fragment zero is not available then no time exceeded need be sent at
-		//   all.
-		var releaseCB func(bool)
-		if start == 0 {
-			pkt := pkt.Clone()
-			releaseCB = func(timedOut bool) {
-				if timedOut {
-					_ = e.protocol.returnError(&icmpReasonReassemblyTimeout{}, pkt)
-				}
-			}
-		}
-
-		var ready bool
-		var err error
 		proto := h.Protocol()
-		pkt.Data, _, ready, err = e.protocol.fragmentation.Process(
+		data, _, ready, err := e.protocol.fragmentation.Process(
 			// As per RFC 791 section 2.3, the identification value is unique
 			// for a source-destination pair and protocol.
 			fragmentation.FragmentID{
@@ -685,8 +664,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 			start+uint16(pkt.Data.Size())-1,
 			h.More(),
 			proto,
-			pkt.Data,
-			releaseCB,
+			pkt,
 		)
 		if err != nil {
 			stats.IP.MalformedPacketsReceived.Increment()
@@ -696,6 +674,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		if !ready {
 			return
 		}
+		pkt.Data = data
 
 		// The reassembler doesn't take care of fixing up the header, so we need
 		// to do it here.
@@ -863,6 +842,7 @@ func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 
 var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
 var _ stack.NetworkProtocol = (*protocol)(nil)
+var _ fragmentation.TimeoutHandler = (*protocol)(nil)
 
 type protocol struct {
 	stack *stack.Stack
@@ -1027,13 +1007,14 @@ func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 	}
 	hashIV := r[buckets]
 
-	return &protocol{
-		stack:         s,
-		ids:           ids,
-		hashIV:        hashIV,
-		defaultTTL:    DefaultTTL,
-		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
+	p := &protocol{
+		stack:      s,
+		ids:        ids,
+		hashIV:     hashIV,
+		defaultTTL: DefaultTTL,
 	}
+	p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
+	return p
 }
 
 func buildNextFragment(pf *fragmentation.PacketFragmenter, originalIPHeader header.IPv4) (*stack.PacketBuffer, bool) {

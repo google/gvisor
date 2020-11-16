@@ -922,3 +922,16 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	counter.Increment()
 	return nil
 }
+
+// OnReassemblyTimeout implements fragmentation.TimeoutHandler.
+func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
+	// OnReassemblyTimeout sends a Time Exceeded Message as per RFC 2460 Section
+	// 4.5:
+	//
+	//   If the first fragment (i.e., the one with a Fragment Offset of zero) has
+	//   been received, an ICMP Time Exceeded -- Fragment Reassembly Time Exceeded
+	//   message should be sent to the source of that fragment.
+	if pkt != nil {
+		p.returnError(&icmpReasonReassemblyTimeout{}, pkt)
+	}
+}
