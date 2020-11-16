@@ -142,8 +142,8 @@ func (e *endpoint) isEnabled() bool {
 // setEnabled sets the enabled status for the endpoint.
 //
 // Returns true if the enabled status was updated.
-func (e *endpoint) setEnabled(v bool) bool {
-	if v {
+func (e *endpoint) setEnabled(vx bool) bool {
+	if vx {
 		return atomic.SwapUint32(&e.enabled, 1) == 0
 	}
 	return atomic.SwapUint32(&e.enabled, 0) == 1

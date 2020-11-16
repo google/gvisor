@@ -39,7 +39,7 @@ type fragmentInfo struct {
 }
 
 func TestIPv6FragmentReassembly(t *testing.T) {
-	const fragmentID = 42
+	const fragmentID = 43
 	icmpv6ProtoNum := header.IPv6ExtensionHeaderIdentifier(header.ICMPv6ProtocolNumber)
 
 	tests := []struct {

@@ -37,7 +37,7 @@ type fragmentInfo struct {
 }
 
 func TestIPv4FragmentReassembly(t *testing.T) {
-	const fragmentID = 42
+	const fragmentID = 43
 	icmpv4ProtoNum := uint8(header.ICMPv4ProtocolNumber)
 
 	tests := []struct {
