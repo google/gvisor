@@ -109,6 +109,9 @@ traverseExtensions:
 				fragOffset = extHdr.FragmentOffset()
 				fragMore = extHdr.More()
 			}
+			rawPayload := it.AsRawHeader(true /* consume */)
+			extensionsSize = dataClone.Size() - rawPayload.Buf.Size()
+			break traverseExtensions
 
 		case header.IPv6RawPayloadHeader:
 			// We've found the payload after any extensions.
