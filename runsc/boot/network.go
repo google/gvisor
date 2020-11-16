@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/packetsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
-	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -269,11 +268,6 @@ func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkE
 	opts := stack.NICOptions{Name: name}
 	if err := n.Stack.CreateNICWithOptions(id, sniffer.New(ep), opts); err != nil {
 		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
-	}
-
-	// Always start with an arp address for the NIC.
-	if err := n.Stack.AddAddress(id, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-		return fmt.Errorf("AddAddress(%v, %v, %v) failed: %v", id, arp.ProtocolNumber, arp.ProtocolAddress, err)
 	}
 
 	for _, addr := range addrs {

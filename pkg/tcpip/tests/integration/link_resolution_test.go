@@ -140,13 +140,6 @@ func TestPing(t *testing.T) {
 				t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
 			}
 
-			if err := host1Stack.AddAddress(host1NICID, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-				t.Fatalf("host1Stack.AddAddress(%d, %d, %s): %s", host1NICID, arp.ProtocolNumber, arp.ProtocolAddress, err)
-			}
-			if err := host2Stack.AddAddress(host2NICID, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-				t.Fatalf("host2Stack.AddAddress(%d, %d, %s): %s", host2NICID, arp.ProtocolNumber, arp.ProtocolAddress, err)
-			}
-
 			if err := host1Stack.AddProtocolAddress(host1NICID, ipv4Addr1); err != nil {
 				t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, ipv4Addr1, err)
 			}

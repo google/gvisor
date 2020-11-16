@@ -670,8 +670,12 @@ func TestReceive(t *testing.T) {
 				t.Fatalf("ep.Enable(): %s", err)
 			}
 
-			if ep, err := ep.AddAndAcquirePermanentAddress(test.epAddr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", test.epAddr, err)
+			addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+			if !ok {
+				t.Fatalf("expected network endpoint with number = %d to implement stack.AddressableEndpoint", test.protoNum)
+			}
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(test.epAddr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", test.epAddr, err)
 			} else {
 				ep.DecRef()
 			}
@@ -778,9 +782,13 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			nic.testObject.typ = c.expectedTyp
 			nic.testObject.extra = c.expectedExtra
 
+			addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+			if !ok {
+				t.Fatal("expected IPv4 network endpoint to implement stack.AddressableEndpoint")
+			}
 			addr := localIPv4Addr.WithPrefix()
-			if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}
@@ -863,9 +871,13 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
 	}
 
+	addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+	if !ok {
+		t.Fatal("expected IPv4 network endpoint to implement stack.AddressableEndpoint")
+	}
 	addr := localIPv4Addr.WithPrefix()
-	if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
 	} else {
 		ep.DecRef()
 	}
@@ -1038,9 +1050,13 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Set ICMPv6 checksum.
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIPv6Addr, buffer.VectorisedView{}))
 
+			addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+			if !ok {
+				t.Fatal("expected IPv6 network endpoint to implement stack.AddressableEndpoint")
+			}
 			addr := localIPv6Addr.WithPrefix()
-			if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}

@@ -2712,9 +2712,6 @@ func TestPacketQueing(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-				t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, arp.ProtocolNumber, arp.ProtocolAddress, err)
-			}
 			if err := s.AddProtocolAddress(nicID, host1IPv4Addr); err != nil {
 				t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID, host1IPv4Addr, err)
 			}

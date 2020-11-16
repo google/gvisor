@@ -205,9 +205,13 @@ func TestICMPCounts(t *testing.T) {
 				t.Fatalf("ep.Enable(): %s", err)
 			}
 
+			addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+			if !ok {
+				t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
+			}
 			addr := lladdr0.WithPrefix()
-			if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}
@@ -343,9 +347,13 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 		t.Fatalf("ep.Enable(): %s", err)
 	}
 
+	addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+	if !ok {
+		t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
+	}
 	addr := lladdr0.WithPrefix()
-	if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
 	} else {
 		ep.DecRef()
 	}
@@ -1769,9 +1777,13 @@ func TestCallsToNeighborCache(t *testing.T) {
 				t.Fatalf("ep.Enable(): %s", err)
 			}
 
+			addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+			if !ok {
+				t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
+			}
 			addr := lladdr0.WithPrefix()
-			if ep, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}

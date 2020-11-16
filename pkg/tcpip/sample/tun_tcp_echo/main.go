@@ -148,10 +148,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := s.AddAddress(1, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-		log.Fatal(err)
-	}
-
 	subnet, err := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", len(addr))), tcpip.AddressMask(strings.Repeat("\x00", len(addr))))
 	if err != nil {
 		log.Fatal(err)

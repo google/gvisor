@@ -321,16 +321,21 @@ func (n *NIC) setSpoofing(enable bool) {
 // primaryAddress returns an address that can be used to communicate with
 // remoteAddr.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) AssignableAddressEndpoint {
-	n.mu.RLock()
-	spoofing := n.mu.spoofing
-	n.mu.RUnlock()
-
 	ep, ok := n.networkEndpoints[protocol]
 	if !ok {
 		return nil
 	}
 
-	return ep.AcquireOutgoingPrimaryAddress(remoteAddr, spoofing)
+	addressableEndpoint, ok := ep.(AddressableEndpoint)
+	if !ok {
+		return nil
+	}
+
+	n.mu.RLock()
+	spoofing := n.mu.spoofing
+	n.mu.RUnlock()
+
+	return addressableEndpoint.AcquireOutgoingPrimaryAddress(remoteAddr, spoofing)
 }
 
 type getAddressBehaviour int
@@ -389,11 +394,17 @@ func (n *NIC) getAddressOrCreateTemp(protocol tcpip.NetworkProtocolNumber, addre
 // getAddressOrCreateTempInner is like getAddressEpOrCreateTemp except a boolean
 // is passed to indicate whether or not we should generate temporary endpoints.
 func (n *NIC) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, createTemp bool, peb PrimaryEndpointBehavior) AssignableAddressEndpoint {
-	if ep, ok := n.networkEndpoints[protocol]; ok {
-		return ep.AcquireAssignedAddress(address, createTemp, peb)
+	ep, ok := n.networkEndpoints[protocol]
+	if !ok {
+		return nil
 	}
 
-	return nil
+	addressableEndpoint, ok := ep.(AddressableEndpoint)
+	if !ok {
+		return nil
+	}
+
+	return addressableEndpoint.AcquireAssignedAddress(address, createTemp, peb)
 }
 
 // addAddress adds a new address to n, so that it starts accepting packets
@@ -404,7 +415,12 @@ func (n *NIC) addAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpo
 		return tcpip.ErrUnknownProtocol
 	}
 
-	addressEndpoint, err := ep.AddAndAcquirePermanentAddress(protocolAddress.AddressWithPrefix, peb, AddressConfigStatic, false /* deprecated */)
+	addressableEndpoint, ok := ep.(AddressableEndpoint)
+	if !ok {
+		return tcpip.ErrNotSupported
+	}
+
+	addressEndpoint, err := addressableEndpoint.AddAndAcquirePermanentAddress(protocolAddress.AddressWithPrefix, peb, AddressConfigStatic, false /* deprecated */)
 	if err == nil {
 		// We have no need for the address endpoint.
 		addressEndpoint.DecRef()
@@ -417,7 +433,12 @@ func (n *NIC) addAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpo
 func (n *NIC) allPermanentAddresses() []tcpip.ProtocolAddress {
 	var addrs []tcpip.ProtocolAddress
 	for p, ep := range n.networkEndpoints {
-		for _, a := range ep.PermanentAddresses() {
+		addressableEndpoint, ok := ep.(AddressableEndpoint)
+		if !ok {
+			continue
+		}
+
+		for _, a := range addressableEndpoint.PermanentAddresses() {
 			addrs = append(addrs, tcpip.ProtocolAddress{Protocol: p, AddressWithPrefix: a})
 		}
 	}
@@ -428,7 +449,12 @@ func (n *NIC) allPermanentAddresses() []tcpip.ProtocolAddress {
 func (n *NIC) primaryAddresses() []tcpip.ProtocolAddress {
 	var addrs []tcpip.ProtocolAddress
 	for p, ep := range n.networkEndpoints {
-		for _, a := range ep.PrimaryAddresses() {
+		addressableEndpoint, ok := ep.(AddressableEndpoint)
+		if !ok {
+			continue
+		}
+
+		for _, a := range addressableEndpoint.PrimaryAddresses() {
 			addrs = append(addrs, tcpip.ProtocolAddress{Protocol: p, AddressWithPrefix: a})
 		}
 	}
@@ -446,13 +472,23 @@ func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWit
 		return tcpip.AddressWithPrefix{}
 	}
 
-	return ep.MainAddress()
+	addressableEndpoint, ok := ep.(AddressableEndpoint)
+	if !ok {
+		return tcpip.AddressWithPrefix{}
+	}
+
+	return addressableEndpoint.MainAddress()
 }
 
 // removeAddress removes an address from n.
 func (n *NIC) removeAddress(addr tcpip.Address) *tcpip.Error {
 	for _, ep := range n.networkEndpoints {
-		if err := ep.RemovePermanentAddress(addr); err == tcpip.ErrBadLocalAddress {
+		addressableEndpoint, ok := ep.(AddressableEndpoint)
+		if !ok {
+			continue
+		}
+
+		if err := addressableEndpoint.RemovePermanentAddress(addr); err == tcpip.ErrBadLocalAddress {
 			continue
 		} else {
 			return err
