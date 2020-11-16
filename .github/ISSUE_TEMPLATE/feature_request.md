@@ -2,8 +2,7 @@
 name: Feature request
 about: Suggest an idea or improvement
 title: ''
-labels:
-  - 'type: enhancement'
+labels: 'type: enhancement'
 assignees: ''
 ---
 
