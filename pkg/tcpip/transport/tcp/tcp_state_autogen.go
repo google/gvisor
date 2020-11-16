@@ -518,52 +518,6 @@ func (r *renoState) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.s)
 }
 
-func (rr *renoRecovery) StateTypeName() string {
-	return "pkg/tcpip/transport/tcp.renoRecovery"
-}
-
-func (rr *renoRecovery) StateFields() []string {
-	return []string{
-		"s",
-	}
-}
-
-func (rr *renoRecovery) beforeSave() {}
-
-func (rr *renoRecovery) StateSave(stateSinkObject state.Sink) {
-	rr.beforeSave()
-	stateSinkObject.Save(0, &rr.s)
-}
-
-func (rr *renoRecovery) afterLoad() {}
-
-func (rr *renoRecovery) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &rr.s)
-}
-
-func (sr *sackRecovery) StateTypeName() string {
-	return "pkg/tcpip/transport/tcp.sackRecovery"
-}
-
-func (sr *sackRecovery) StateFields() []string {
-	return []string{
-		"s",
-	}
-}
-
-func (sr *sackRecovery) beforeSave() {}
-
-func (sr *sackRecovery) StateSave(stateSinkObject state.Sink) {
-	sr.beforeSave()
-	stateSinkObject.Save(0, &sr.s)
-}
-
-func (sr *sackRecovery) afterLoad() {}
-
-func (sr *sackRecovery) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &sr.s)
-}
-
 func (s *SACKScoreboard) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.SACKScoreboard"
 }
@@ -728,7 +682,6 @@ func (s *sender) StateFields() []string {
 		"lastSendTime",
 		"dupAckCount",
 		"fr",
-		"lr",
 		"sndCwnd",
 		"sndSsthresh",
 		"sndCAAckCount",
@@ -764,69 +717,67 @@ func (s *sender) StateSave(stateSinkObject state.Sink) {
 	var lastSendTimeValue unixTime = s.saveLastSendTime()
 	stateSinkObject.SaveValue(1, lastSendTimeValue)
 	var rttMeasureTimeValue unixTime = s.saveRttMeasureTime()
-	stateSinkObject.SaveValue(13, rttMeasureTimeValue)
+	stateSinkObject.SaveValue(12, rttMeasureTimeValue)
 	var firstRetransmittedSegXmitTimeValue unixTime = s.saveFirstRetransmittedSegXmitTime()
-	stateSinkObject.SaveValue(14, firstRetransmittedSegXmitTimeValue)
+	stateSinkObject.SaveValue(13, firstRetransmittedSegXmitTimeValue)
 	stateSinkObject.Save(0, &s.ep)
 	stateSinkObject.Save(2, &s.dupAckCount)
 	stateSinkObject.Save(3, &s.fr)
-	stateSinkObject.Save(4, &s.lr)
-	stateSinkObject.Save(5, &s.sndCwnd)
-	stateSinkObject.Save(6, &s.sndSsthresh)
-	stateSinkObject.Save(7, &s.sndCAAckCount)
-	stateSinkObject.Save(8, &s.outstanding)
-	stateSinkObject.Save(9, &s.sndWnd)
-	stateSinkObject.Save(10, &s.sndUna)
-	stateSinkObject.Save(11, &s.sndNxt)
-	stateSinkObject.Save(12, &s.rttMeasureSeqNum)
-	stateSinkObject.Save(15, &s.closed)
-	stateSinkObject.Save(16, &s.writeNext)
-	stateSinkObject.Save(17, &s.writeList)
-	stateSinkObject.Save(18, &s.rtt)
-	stateSinkObject.Save(19, &s.rto)
-	stateSinkObject.Save(20, &s.minRTO)
-	stateSinkObject.Save(21, &s.maxRTO)
-	stateSinkObject.Save(22, &s.maxRetries)
-	stateSinkObject.Save(23, &s.maxPayloadSize)
-	stateSinkObject.Save(24, &s.gso)
-	stateSinkObject.Save(25, &s.sndWndScale)
-	stateSinkObject.Save(26, &s.maxSentAck)
-	stateSinkObject.Save(27, &s.state)
-	stateSinkObject.Save(28, &s.cc)
-	stateSinkObject.Save(29, &s.rc)
+	stateSinkObject.Save(4, &s.sndCwnd)
+	stateSinkObject.Save(5, &s.sndSsthresh)
+	stateSinkObject.Save(6, &s.sndCAAckCount)
+	stateSinkObject.Save(7, &s.outstanding)
+	stateSinkObject.Save(8, &s.sndWnd)
+	stateSinkObject.Save(9, &s.sndUna)
+	stateSinkObject.Save(10, &s.sndNxt)
+	stateSinkObject.Save(11, &s.rttMeasureSeqNum)
+	stateSinkObject.Save(14, &s.closed)
+	stateSinkObject.Save(15, &s.writeNext)
+	stateSinkObject.Save(16, &s.writeList)
+	stateSinkObject.Save(17, &s.rtt)
+	stateSinkObject.Save(18, &s.rto)
+	stateSinkObject.Save(19, &s.minRTO)
+	stateSinkObject.Save(20, &s.maxRTO)
+	stateSinkObject.Save(21, &s.maxRetries)
+	stateSinkObject.Save(22, &s.maxPayloadSize)
+	stateSinkObject.Save(23, &s.gso)
+	stateSinkObject.Save(24, &s.sndWndScale)
+	stateSinkObject.Save(25, &s.maxSentAck)
+	stateSinkObject.Save(26, &s.state)
+	stateSinkObject.Save(27, &s.cc)
+	stateSinkObject.Save(28, &s.rc)
 }
 
 func (s *sender) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.ep)
 	stateSourceObject.Load(2, &s.dupAckCount)
 	stateSourceObject.Load(3, &s.fr)
-	stateSourceObject.Load(4, &s.lr)
-	stateSourceObject.Load(5, &s.sndCwnd)
-	stateSourceObject.Load(6, &s.sndSsthresh)
-	stateSourceObject.Load(7, &s.sndCAAckCount)
-	stateSourceObject.Load(8, &s.outstanding)
-	stateSourceObject.Load(9, &s.sndWnd)
-	stateSourceObject.Load(10, &s.sndUna)
-	stateSourceObject.Load(11, &s.sndNxt)
-	stateSourceObject.Load(12, &s.rttMeasureSeqNum)
-	stateSourceObject.Load(15, &s.closed)
-	stateSourceObject.Load(16, &s.writeNext)
-	stateSourceObject.Load(17, &s.writeList)
-	stateSourceObject.Load(18, &s.rtt)
-	stateSourceObject.Load(19, &s.rto)
-	stateSourceObject.Load(20, &s.minRTO)
-	stateSourceObject.Load(21, &s.maxRTO)
-	stateSourceObject.Load(22, &s.maxRetries)
-	stateSourceObject.Load(23, &s.maxPayloadSize)
-	stateSourceObject.Load(24, &s.gso)
-	stateSourceObject.Load(25, &s.sndWndScale)
-	stateSourceObject.Load(26, &s.maxSentAck)
-	stateSourceObject.Load(27, &s.state)
-	stateSourceObject.Load(28, &s.cc)
-	stateSourceObject.Load(29, &s.rc)
+	stateSourceObject.Load(4, &s.sndCwnd)
+	stateSourceObject.Load(5, &s.sndSsthresh)
+	stateSourceObject.Load(6, &s.sndCAAckCount)
+	stateSourceObject.Load(7, &s.outstanding)
+	stateSourceObject.Load(8, &s.sndWnd)
+	stateSourceObject.Load(9, &s.sndUna)
+	stateSourceObject.Load(10, &s.sndNxt)
+	stateSourceObject.Load(11, &s.rttMeasureSeqNum)
+	stateSourceObject.Load(14, &s.closed)
+	stateSourceObject.Load(15, &s.writeNext)
+	stateSourceObject.Load(16, &s.writeList)
+	stateSourceObject.Load(17, &s.rtt)
+	stateSourceObject.Load(18, &s.rto)
+	stateSourceObject.Load(19, &s.minRTO)
+	stateSourceObject.Load(20, &s.maxRTO)
+	stateSourceObject.Load(21, &s.maxRetries)
+	stateSourceObject.Load(22, &s.maxPayloadSize)
+	stateSourceObject.Load(23, &s.gso)
+	stateSourceObject.Load(24, &s.sndWndScale)
+	stateSourceObject.Load(25, &s.maxSentAck)
+	stateSourceObject.Load(26, &s.state)
+	stateSourceObject.Load(27, &s.cc)
+	stateSourceObject.Load(28, &s.rc)
 	stateSourceObject.LoadValue(1, new(unixTime), func(y interface{}) { s.loadLastSendTime(y.(unixTime)) })
-	stateSourceObject.LoadValue(13, new(unixTime), func(y interface{}) { s.loadRttMeasureTime(y.(unixTime)) })
-	stateSourceObject.LoadValue(14, new(unixTime), func(y interface{}) { s.loadFirstRetransmittedSegXmitTime(y.(unixTime)) })
+	stateSourceObject.LoadValue(12, new(unixTime), func(y interface{}) { s.loadRttMeasureTime(y.(unixTime)) })
+	stateSourceObject.LoadValue(13, new(unixTime), func(y interface{}) { s.loadFirstRetransmittedSegXmitTime(y.(unixTime)) })
 	stateSourceObject.AfterLoad(s.afterLoad)
 }
 
@@ -1037,8 +988,6 @@ func init() {
 	state.Register((*rackControl)(nil))
 	state.Register((*receiver)(nil))
 	state.Register((*renoState)(nil))
-	state.Register((*renoRecovery)(nil))
-	state.Register((*sackRecovery)(nil))
 	state.Register((*SACKScoreboard)(nil))
 	state.Register((*segment)(nil))
 	state.Register((*segmentQueue)(nil))
