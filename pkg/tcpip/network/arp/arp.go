@@ -31,17 +31,15 @@ import (
 const (
 	// ProtocolNumber is the ARP protocol number.
 	ProtocolNumber = header.ARPProtocolNumber
-
-	// ProtocolAddress is the address expected by the ARP endpoint.
-	ProtocolAddress = tcpip.Address("arp")
 )
 
-var _ stack.AddressableEndpoint = (*endpoint)(nil)
+// ARP endpoints need to implement stack.NetworkEndpoint because the stack
+// considers the layer above the link-layer a network layer; the only
+// facility provided by the stack to deliver packets to a layer above
+// the link-layer is via stack.NetworkEndpoint.HandlePacket.
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
 
 type endpoint struct {
-	stack.AddressableEndpointState
-
 	protocol *protocol
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
@@ -87,7 +85,7 @@ func (e *endpoint) Disable() {
 }
 
 // DefaultTTL is unused for ARP. It implements stack.NetworkEndpoint.
-func (e *endpoint) DefaultTTL() uint8 {
+func (*endpoint) DefaultTTL() uint8 {
 	return 0
 }
 
@@ -100,25 +98,23 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 	return e.nic.MaxHeaderLength() + header.ARPSize
 }
 
-func (e *endpoint) Close() {
-	e.AddressableEndpointState.Cleanup()
-}
+func (*endpoint) Close() {}
 
-func (e *endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, *stack.PacketBuffer) *tcpip.Error {
+func (*endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, *stack.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
 // NetworkProtocolNumber implements stack.NetworkEndpoint.NetworkProtocolNumber.
-func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
+func (*endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return ProtocolNumber
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, stack.NetworkHeaderParams) (int, *tcpip.Error) {
+func (*endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	return 0, tcpip.ErrNotSupported
 }
 
-func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) *tcpip.Error {
+func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -216,9 +212,8 @@ func (p *protocol) Number() tcpip.NetworkProtocolNumber { return ProtocolNumber 
 func (p *protocol) MinimumPacketSize() int              { return header.ARPSize }
 func (p *protocol) DefaultPrefixLen() int               { return 0 }
 
-func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
-	h := header.ARP(v)
-	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
+func (*protocol) ParseAddresses(buffer.View) (src, dst tcpip.Address) {
+	return "", ""
 }
 
 func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
@@ -228,7 +223,6 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.L
 		linkAddrCache: linkAddrCache,
 		nud:           nud,
 	}
-	e.AddressableEndpointState.Init(e)
 	return e
 }
 
@@ -311,10 +305,6 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 }
 
 // NewProtocol returns an ARP network protocol.
-//
-// Note, to make sure that the ARP endpoint receives ARP packets, the "arp"
-// address must be added to every NIC that should respond to ARP requests. See
-// ProtocolAddress for more details.
 func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 	return &protocol{stack: s}
 }
