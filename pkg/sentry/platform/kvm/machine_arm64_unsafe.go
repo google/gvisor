@@ -226,9 +226,8 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 
 	// Assign PCIDs.
 	if c.PCIDs != nil {
-		var requireFlushPCID bool // Force a flush?
-		switchOpts.UserASID, requireFlushPCID = c.PCIDs.Assign(switchOpts.PageTables)
-		switchOpts.Flush = switchOpts.Flush || requireFlushPCID
+		switchOpts.UserASID, _ = c.PCIDs.Assign(switchOpts.PageTables)
+		switchOpts.Flush = true // Force a flush
 	}
 
 	var vector ring0.Vector
