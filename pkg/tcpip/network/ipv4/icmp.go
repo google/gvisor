@@ -514,3 +514,18 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	counter.Increment()
 	return nil
 }
+
+// OnReassemblyTimeout implements fragmentation.TimeoutHandler.
+func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
+	// OnReassemblyTimeout sends a Time Exceeded Message, as per RFC 792:
+	//
+	//   If a host reassembling a fragmented datagram cannot complete the
+	//   reassembly due to missing fragments within its time limit it discards the
+	//   datagram, and it may send a time exceeded message.
+	//
+	//   If fragment zero is not available then no time exceeded need be sent at
+	//   all.
+	if pkt != nil {
+		p.returnError(&icmpReasonReassemblyTimeout{}, pkt)
+	}
+}
