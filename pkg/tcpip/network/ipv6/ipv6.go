@@ -967,18 +967,6 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 				return
 			}
 
-			// Set up a callback in case we need to send a Time Exceeded Message as
-			// per RFC 2460 Section 4.5.
-			var releaseCB func(bool)
-			if start == 0 {
-				pkt := pkt.Clone()
-				releaseCB = func(timedOut bool) {
-					if timedOut {
-						_ = e.protocol.returnError(&icmpReasonReassemblyTimeout{}, pkt)
-					}
-				}
-			}
-
 			// Note that pkt doesn't have its transport header set after reassembly,
 			// and won't until DeliverNetworkPacket sets it.
 			data, proto, ready, err := e.protocol.fragmentation.Process(
@@ -993,17 +981,17 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 				start+uint16(fragmentPayloadLen)-1,
 				extHdr.More(),
 				uint8(rawPayload.Identifier),
-				rawPayload.Buf,
-				releaseCB,
+				pkt,
 			)
 			if err != nil {
 				stats.IP.MalformedPacketsReceived.Increment()
 				stats.IP.MalformedFragmentsReceived.Increment()
 				return
 			}
-			pkt.Data = data
 
 			if ready {
+				pkt.Data = data
+
 				// We create a new iterator with the reassembled packet because we could
 				// have more extension headers in the reassembled payload, as per RFC
 				// 8200 section 4.5. We also use the NextHeader value from the first
@@ -1414,6 +1402,7 @@ func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 
 var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
 var _ stack.NetworkProtocol = (*protocol)(nil)
+var _ fragmentation.TimeoutHandler = (*protocol)(nil)
 
 type protocol struct {
 	stack *stack.Stack
@@ -1669,10 +1658,9 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 
 	return func(s *stack.Stack) stack.NetworkProtocol {
 		p := &protocol{
-			stack:         s,
-			fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock()),
-			ids:           ids,
-			hashIV:        hashIV,
+			stack:  s,
+			ids:    ids,
+			hashIV: hashIV,
 
 			ndpDisp:              opts.NDPDisp,
 			ndpConfigs:           opts.NDPConfigs,
@@ -1680,6 +1668,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 			tempIIDSeed:          opts.TempIIDSeed,
 			autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 		}
+		p.fragmentation = fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
 		p.mu.eps = make(map[*endpoint]struct{})
 		p.SetDefaultTTL(DefaultTTL)
 		return p
