@@ -258,6 +258,9 @@ ALL_TESTS = [
         name = "ipv6_fragment_reassembly",
     ),
     PacketimpactTestInfo(
+        name = "ipv6_fragment_icmp_error",
+    ),
+    PacketimpactTestInfo(
         name = "udp_send_recv_dgram",
     ),
     PacketimpactTestInfo(
