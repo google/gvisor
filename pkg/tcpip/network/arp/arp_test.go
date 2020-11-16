@@ -200,9 +200,6 @@ func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
 			t.Fatalf("AddAddress for ipv4 failed: %v", err)
 		}
 	}
-	if err := s.AddAddress(nicID, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-		t.Fatalf("AddAddress for arp failed: %v", err)
-	}
 
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv4EmptySubnet,

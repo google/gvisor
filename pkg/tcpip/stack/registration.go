@@ -524,8 +524,6 @@ type NetworkInterface interface {
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
 // of network layer protocols (e.g., ipv4, ipv6).
 type NetworkEndpoint interface {
-	AddressableEndpoint
-
 	// Enable enables the endpoint.
 	//
 	// Must only be called when the stack is in a state that allows the endpoint

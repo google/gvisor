@@ -69,9 +69,13 @@ func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address, useNeig
 	}
 	t.Cleanup(ep.Close)
 
+	addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
+	if !ok {
+		t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
+	}
 	addr := llladdr.WithPrefix()
-	if addressEP, err := ep.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("ep.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	if addressEP, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
+		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
 	} else {
 		addressEP.DecRef()
 	}

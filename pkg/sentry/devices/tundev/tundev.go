@@ -16,8 +16,6 @@
 package tundev
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -28,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/link/tun"
-	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -91,16 +88,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 			return 0, err
 		}
 		flags := usermem.ByteOrder.Uint16(req.Data[:])
-		created, err := fd.device.SetIff(stack.Stack, req.Name(), flags)
-		if err == nil && created {
-			// Always start with an ARP address for interfaces so they can handle ARP
-			// packets.
-			nicID := fd.device.NICID()
-			if err := stack.Stack.AddAddress(nicID, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-				panic(fmt.Sprintf("failed to add ARP address after creating new TUN/TAP interface with ID = %d", nicID))
-			}
-		}
-		return 0, err
+		return 0, fd.device.SetIff(stack.Stack, req.Name(), flags)
 
 	case linux.TUNGETIFF:
 		var req linux.IFReq

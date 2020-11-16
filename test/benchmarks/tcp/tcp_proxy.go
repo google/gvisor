@@ -208,9 +208,6 @@ func newNetstackImpl(mode string) (impl, error) {
 	if err := s.CreateNIC(nicID, fifo.New(ep, runtime.GOMAXPROCS(0), 1000)); err != nil {
 		return nil, fmt.Errorf("error creating NIC %q: %v", *iface, err)
 	}
-	if err := s.AddAddress(nicID, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
-		return nil, fmt.Errorf("error adding ARP address to %q: %v", *iface, err)
-	}
 	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, parsedAddr); err != nil {
 		return nil, fmt.Errorf("error adding IP address to %q: %v", *iface, err)
 	}

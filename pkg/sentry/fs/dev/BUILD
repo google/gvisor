@@ -34,7 +34,6 @@ go_library(
         "//pkg/sentry/socket/netstack",
         "//pkg/syserror",
         "//pkg/tcpip/link/tun",
-        "//pkg/tcpip/network/arp",
         "//pkg/usermem",
         "//pkg/waiter",
     ],
