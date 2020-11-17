@@ -478,28 +478,23 @@ func (r *ReadWriterFile) ReadAt(p []byte, offset int64) (int, error) {
 }
 
 // Write implements part of the io.ReadWriter interface.
+//
+// Note that this may return a short write with a nil error. This violates the
+// contract of io.Writer, but is more consistent with gVisor's pattern of
+// returning errors that correspond to Linux errnos. Since short writes without
+// error are common in Linux, returning a nil error is appropriate.
 func (r *ReadWriterFile) Write(p []byte) (int, error) {
 	n, err := r.File.WriteAt(p, r.Offset)
 	r.Offset += uint64(n)
-	if err != nil {
-		return n, err
-	}
-	if n < len(p) {
-		return n, io.ErrShortWrite
-	}
-	return n, nil
+	return n, err
 }
 
 // WriteAt implements the io.WriteAt interface.
+//
+// Note that this may return a short write with a nil error. This violates the
+// contract of io.WriterAt. See comment on Write for justification.
 func (r *ReadWriterFile) WriteAt(p []byte, offset int64) (int, error) {
-	n, err := r.File.WriteAt(p, uint64(offset))
-	if err != nil {
-		return n, err
-	}
-	if n < len(p) {
-		return n, io.ErrShortWrite
-	}
-	return n, nil
+	return r.File.WriteAt(p, uint64(offset))
 }
 
 // Rename implements File.Rename.
