@@ -89,6 +89,10 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&RemoteDevice, "remote_device", RemoteDevice, "remote device on the DUT")
 	fs.BoolVar(&Native, "native", Native, "whether the test is running natively")
 	fs.Uint64Var(&RemoteInterfaceID, "remote_interface_id", RemoteInterfaceID, "remote interface ID for test packets")
+	flag.Parse()
+	if err := genPseudoFlags(); err != nil {
+		panic(err)
+	}
 }
 
 // genPseudoFlags populates flag-like global config based on real flags.

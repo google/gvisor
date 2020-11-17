@@ -17,7 +17,6 @@ package testbench
 import (
 	"context"
 	"encoding/binary"
-	"flag"
 	"net"
 	"strconv"
 	"syscall"
@@ -40,11 +39,6 @@ type DUT struct {
 // NewDUT creates a new connection with the DUT over gRPC.
 func NewDUT(t *testing.T) DUT {
 	t.Helper()
-
-	flag.Parse()
-	if err := genPseudoFlags(); err != nil {
-		t.Fatal("generating psuedo flags:", err)
-	}
 
 	posixServerAddress := POSIXServerIP + ":" + strconv.Itoa(POSIXServerPort)
 	conn, err := grpc.Dial(posixServerAddress, grpc.WithInsecure(), grpc.WithKeepaliveParams(keepalive.ClientParameters{Timeout: RPCKeepalive}))
