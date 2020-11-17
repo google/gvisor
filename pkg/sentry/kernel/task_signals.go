@@ -619,9 +619,6 @@ func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
 				return
 			}
 		})
-		// We have to re-issue the interrupt consumed by t.interrupted() since
-		// it might have been for a different reason.
-		t.interruptSelf()
 	}
 
 	// Conversely, if the new mask unblocks any signals that were blocked by
@@ -931,10 +928,10 @@ func (t *Task) signalStop(target *Task, code int32, status int32) {
 type runInterrupt struct{}
 
 func (*runInterrupt) execute(t *Task) taskRunState {
-	// Interrupts are de-duplicated (if t is interrupted twice before
-	// t.interrupted() is called, t.interrupted() will only return true once),
-	// so early exits from this function must re-enter the runInterrupt state
-	// to check for more interrupt-signaled conditions.
+	// Interrupts are de-duplicated (t.unsetInterrupted() will undo the effect
+	// of all previous calls to t.interrupted() regardless of how many such
+	// calls there have been), so early exits from this function must re-enter
+	// the runInterrupt state to check for more interrupt-signaled conditions.
 
 	t.tg.signalHandlers.mu.Lock()
 
@@ -1080,6 +1077,7 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		return t.deliverSignal(info, act)
 	}
 
+	t.unsetInterrupted()
 	t.tg.signalHandlers.mu.Unlock()
 	return (*runApp)(nil)
 }
