@@ -24,6 +24,10 @@ func HaltAndResume()
 //go:nosplit
 func HaltEl1SvcAndResume()
 
+// HaltEl1ExceptionAndResume calls Hooks.KernelException and resume.
+//go:nosplit
+func HaltEl1ExceptionAndResume()
+
 // init initializes architecture-specific state.
 func (k *Kernel) init(maxCPUs int) {
 }
