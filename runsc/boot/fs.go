@@ -22,15 +22,6 @@ import (
 	"strings"
 	"syscall"
 
-	// Include filesystem types that OCI spec might mount.
-	_ "gvisor.dev/gvisor/pkg/sentry/fs/dev"
-	_ "gvisor.dev/gvisor/pkg/sentry/fs/host"
-	_ "gvisor.dev/gvisor/pkg/sentry/fs/proc"
-	_ "gvisor.dev/gvisor/pkg/sentry/fs/sys"
-	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
-	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
-
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -48,9 +39,18 @@ import (
 	tmpfsvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
+
+	// Include filesystem types that OCI spec might mount.
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/dev"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/host"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/proc"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/sys"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
 )
 
 const (

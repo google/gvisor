@@ -150,7 +150,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 }
 
 func (ex *Exec) exec(c *container.Container, e *control.ExecArgs, waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
-	// Start the new process and get it pid.
+	// Start the new process and get its pid.
 	pid, err := c.Execute(e)
 	if err != nil {
 		return Errorf("executing processes for container: %v", err)
