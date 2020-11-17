@@ -24,6 +24,7 @@ go_library(
         "//runsc/boot",
         "//runsc/cgroup",
         "//runsc/config",
+        "//runsc/console",
         "//runsc/sandbox",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",

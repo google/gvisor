@@ -480,7 +480,7 @@ func setup(t *testing.T, version string) (*criutil.Crictl, func(), error) {
 	}
 
 	// Wait for containerd to boot.
-	if err := testutil.WaitUntilRead(startupR, "Start streaming server", nil, 10*time.Second); err != nil {
+	if err := testutil.WaitUntilRead(startupR, "Start streaming server", 10*time.Second); err != nil {
 		t.Fatalf("failed to start containerd: %v", err)
 	}
 

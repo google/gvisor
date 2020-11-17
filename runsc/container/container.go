@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -397,7 +398,22 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			return nil, err
 		}
 		c.Sandbox = sb.Sandbox
-		if err := c.Sandbox.CreateContainer(c.ID); err != nil {
+
+		// If the console control socket file is provided, then create a new
+		// pty master/slave pair and send the TTY to the sandbox process.
+		var tty *os.File
+		if c.ConsoleSocket != "" {
+			// Create a new TTY pair and send the master on the provided socket.
+			var err error
+			tty, err = console.NewWithSocket(c.ConsoleSocket)
+			if err != nil {
+				return nil, fmt.Errorf("setting up console with socket %q: %w", c.ConsoleSocket, err)
+			}
+			// tty file is transferred to the sandbox, then it can be closed here.
+			defer tty.Close()
+		}
+
+		if err := c.Sandbox.CreateContainer(c.ID, tty); err != nil {
 			return nil, err
 		}
 	}
@@ -451,11 +467,16 @@ func (c *Container) Start(conf *config.Config) error {
 		// the start (and all their children processes).
 		if err := runInCgroup(c.Sandbox.Cgroup, func() error {
 			// Create the gofer process.
-			ioFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false)
+			goferFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false)
 			if err != nil {
 				return err
 			}
-			defer mountsFile.Close()
+			defer func() {
+				_ = mountsFile.Close()
+				for _, f := range goferFiles {
+					_ = f.Close()
+				}
+			}()
 
 			cleanMounts, err := specutils.ReadMounts(mountsFile)
 			if err != nil {
@@ -463,7 +484,14 @@ func (c *Container) Start(conf *config.Config) error {
 			}
 			c.Spec.Mounts = cleanMounts
 
-			return c.Sandbox.StartContainer(c.Spec, conf, c.ID, ioFiles)
+			// Setup stdios if the container is not using terminal. Otherwise TTY was
+			// already setup in create.
+			var stdios []*os.File
+			if !c.Spec.Process.Terminal {
+				stdios = []*os.File{os.Stdin, os.Stdout, os.Stderr}
+			}
+
+			return c.Sandbox.StartContainer(c.Spec, conf, c.ID, stdios, goferFiles)
 		}); err != nil {
 			return err
 		}

@@ -173,7 +173,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 }
 
 // CreateContainer creates a non-root container inside the sandbox.
-func (s *Sandbox) CreateContainer(cid string) error {
+func (s *Sandbox) CreateContainer(cid string, tty *os.File) error {
 	log.Debugf("Create non-root container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
 	sandboxConn, err := s.sandboxConnect()
 	if err != nil {
@@ -181,7 +181,16 @@ func (s *Sandbox) CreateContainer(cid string) error {
 	}
 	defer sandboxConn.Close()
 
-	if err := sandboxConn.Call(boot.ContainerCreate, &cid, nil); err != nil {
+	var files []*os.File
+	if tty != nil {
+		files = []*os.File{tty}
+	}
+
+	args := boot.CreateArgs{
+		CID:         cid,
+		FilePayload: urpc.FilePayload{Files: files},
+	}
+	if err := sandboxConn.Call(boot.ContainerCreate, &args, nil); err != nil {
 		return fmt.Errorf("creating non-root container %q: %v", cid, err)
 	}
 	return nil
@@ -211,11 +220,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 }
 
 // StartContainer starts running a non-root container inside the sandbox.
-func (s *Sandbox) StartContainer(spec *specs.Spec, conf *config.Config, cid string, goferFiles []*os.File) error {
-	for _, f := range goferFiles {
-		defer f.Close()
-	}
-
+func (s *Sandbox) StartContainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles []*os.File) error {
 	log.Debugf("Start non-root container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
 	sandboxConn, err := s.sandboxConnect()
 	if err != nil {
@@ -223,15 +228,18 @@ func (s *Sandbox) StartContainer(spec *specs.Spec, conf *config.Config, cid stri
 	}
 	defer sandboxConn.Close()
 
-	// The payload must container stdin/stdout/stderr followed by gofer
-	// files.
-	files := append([]*os.File{os.Stdin, os.Stdout, os.Stderr}, goferFiles...)
+	// The payload must contain stdin/stdout/stderr (which may be empty if using
+	// TTY) followed by gofer files.
+	payload := urpc.FilePayload{}
+	payload.Files = append(payload.Files, stdios...)
+	payload.Files = append(payload.Files, goferFiles...)
+
 	// Start running the container.
 	args := boot.StartArgs{
 		Spec:        spec,
 		Conf:        conf,
 		CID:         cid,
-		FilePayload: urpc.FilePayload{Files: files},
+		FilePayload: payload,
 	}
 	if err := sandboxConn.Call(boot.ContainerStart, &args, nil); err != nil {
 		return fmt.Errorf("starting non-root container %v: %v", spec.Process.Args, err)

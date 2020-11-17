@@ -24,8 +24,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// NewWithSocket creates pty master/replica pair, sends the master FD over the given
-// socket, and returns the replica.
+// NewWithSocket creates pty master/replica pair, sends the master FD over the
+// given socket, and returns the replica.
 func NewWithSocket(socketPath string) (*os.File, error) {
 	// Create a new pty master and replica.
 	ptyMaster, ptyReplica, err := pty.Open()

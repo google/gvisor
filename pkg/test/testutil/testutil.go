@@ -36,7 +36,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -417,33 +416,35 @@ func StartReaper() func() {
 
 // WaitUntilRead reads from the given reader until the wanted string is found
 // or until timeout.
-func WaitUntilRead(r io.Reader, want string, split bufio.SplitFunc, timeout time.Duration) error {
+func WaitUntilRead(r io.Reader, want string, timeout time.Duration) error {
 	sc := bufio.NewScanner(r)
-	if split != nil {
-		sc.Split(split)
-	}
 	// done must be accessed atomically. A value greater than 0 indicates
 	// that the read loop can exit.
-	var done uint32
-	doneCh := make(chan struct{})
+	doneCh := make(chan bool)
+	defer close(doneCh)
 	go func() {
 		for sc.Scan() {
 			t := sc.Text()
 			if strings.Contains(t, want) {
-				atomic.StoreUint32(&done, 1)
-				close(doneCh)
-				break
+				doneCh <- true
+				return
 			}
-			if atomic.LoadUint32(&done) > 0 {
-				break
+			select {
+			case <-doneCh:
+				return
+			default:
 			}
 		}
+		doneCh <- false
 	}()
+
 	select {
 	case <-time.After(timeout):
-		atomic.StoreUint32(&done, 1)
 		return fmt.Errorf("timeout waiting to read %q", want)
-	case <-doneCh:
+	case res := <-doneCh:
+		if !res {
+			return fmt.Errorf("reader closed while waiting to read %q", want)
+		}
 		return nil
 	}
 }

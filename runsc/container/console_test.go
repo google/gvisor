@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -27,7 +28,6 @@ import (
 	"github.com/kr/pty"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -38,19 +38,22 @@ import (
 // path is under 108 charactors (the unix socket path length limit),
 // relativizing the path if necessary.
 func socketPath(bundleDir string) (string, error) {
-	path := filepath.Join(bundleDir, "socket")
+	num := rand.Intn(10000)
+	path := filepath.Join(bundleDir, fmt.Sprintf("socket-%4d", num))
+	const maxPathLen = 108
+	if len(path) <= maxPathLen {
+		return path, nil
+	}
+
+	// Path is too large, try to make it smaller.
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("error getting cwd: %v", err)
 	}
-	relPath, err := filepath.Rel(cwd, path)
+	path, err = filepath.Rel(cwd, path)
 	if err != nil {
 		return "", fmt.Errorf("error getting relative path for %q from cwd %q: %v", path, cwd, err)
 	}
-	if len(path) > len(relPath) {
-		path = relPath
-	}
-	const maxPathLen = 108
 	if len(path) > maxPathLen {
 		return "", fmt.Errorf("could not get socket path under length limit %d: %s", maxPathLen, path)
 	}
@@ -159,6 +162,82 @@ func TestConsoleSocket(t *testing.T) {
 	}
 }
 
+// Test that an pty FD is sent over the console socket if one is provided.
+func TestMultiContainerConsoleSocket(t *testing.T) {
+	for name, conf := range configsWithVFS2(t, all...) {
+		t.Run(name, func(t *testing.T) {
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			// Setup the containers.
+			sleep := []string{"sleep", "100"}
+			tru := []string{"true"}
+			testSpecs, ids := createSpecs(sleep, tru)
+			testSpecs[1].Process.Terminal = true
+
+			bundleDir, cleanup, err := testutil.SetupBundleDir(testSpecs[0])
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        ids[0],
+				Spec:      testSpecs[0],
+				BundleDir: bundleDir,
+			}
+			rootCont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer rootCont.Destroy()
+			if err := rootCont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			bundleDir, cleanup, err = testutil.SetupBundleDir(testSpecs[0])
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			sock, err := socketPath(bundleDir)
+			if err != nil {
+				t.Fatalf("error getting socket path: %v", err)
+			}
+			srv, cleanup := createConsoleSocket(t, sock)
+			defer cleanup()
+
+			// Create the container and pass the socket name.
+			args = Args{
+				ID:            ids[1],
+				Spec:          testSpecs[1],
+				BundleDir:     bundleDir,
+				ConsoleSocket: sock,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Make sure we get a console PTY.
+			ptyMaster, err := receiveConsolePTY(srv)
+			if err != nil {
+				t.Fatalf("error receiving console FD: %v", err)
+			}
+			ptyMaster.Close()
+		})
+	}
+}
+
 // Test that job control signals work on a console created with "exec -ti".
 func TestJobControlSignalExec(t *testing.T) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
@@ -221,9 +300,9 @@ func TestJobControlSignalExec(t *testing.T) {
 	// Make sure all the processes are running.
 	expectedPL := []*control.Process{
 		// Root container process.
-		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().Cmd("sleep").Process(),
 		// Bash from exec process.
-		{PID: 2, Cmd: "bash", Threads: []kernel.ThreadID{2}},
+		newProcessBuilder().PID(2).Cmd("bash").Process(),
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Error(err)
@@ -233,7 +312,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	ptyMaster.Write([]byte("sleep 100\n"))
 
 	// Wait for it to start. Sleep's PPID is bash's PID.
-	expectedPL = append(expectedPL, &control.Process{PID: 3, PPID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{3}})
+	expectedPL = append(expectedPL, newProcessBuilder().PID(3).PPID(2).Cmd("sleep").Process())
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Error(err)
 	}
@@ -254,7 +333,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	// Sleep is dead, but it may take more time for bash to notice and
 	// change the foreground process back to itself. We know it is done
 	// when bash writes "Terminated" to the pty.
-	if err := testutil.WaitUntilRead(ptyMaster, "Terminated", nil, 5*time.Second); err != nil {
+	if err := testutil.WaitUntilRead(ptyMaster, "Terminated", 5*time.Second); err != nil {
 		t.Fatalf("bash did not take over pty: %v", err)
 	}
 
@@ -359,7 +438,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 
 	// Wait for bash to start.
 	expectedPL := []*control.Process{
-		{PID: 1, Cmd: "bash", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().PID(1).Cmd("bash").Process(),
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Fatalf("error waiting for processes: %v", err)
@@ -369,7 +448,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	ptyMaster.Write([]byte("sleep 100\n"))
 
 	// Wait for sleep to start.
-	expectedPL = append(expectedPL, &control.Process{PID: 2, PPID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{2}})
+	expectedPL = append(expectedPL, newProcessBuilder().PID(2).PPID(1).Cmd("sleep").Process())
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Fatalf("error waiting for processes: %v", err)
 	}
@@ -393,7 +472,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// Sleep is dead, but it may take more time for bash to notice and
 	// change the foreground process back to itself. We know it is done
 	// when bash writes "Terminated" to the pty.
-	if err := testutil.WaitUntilRead(ptyBuf, "Terminated", nil, 5*time.Second); err != nil {
+	if err := testutil.WaitUntilRead(ptyBuf, "Terminated", 5*time.Second); err != nil {
 		t.Fatalf("bash did not take over pty: %v", err)
 	}
 
@@ -411,6 +490,104 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	}
 	if got, want := ws.Signal(), syscall.SIGKILL; got != want {
 		t.Errorf("ws.Signal() got %v, want %v", got, want)
+	}
+}
+
+// Test that terminal works with root and sub-containers.
+func TestMultiContainerTerminal(t *testing.T) {
+	for name, conf := range configsWithVFS2(t, all...) {
+		t.Run(name, func(t *testing.T) {
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			// Don't let bash execute from profile or rc files, otherwise our PID
+			// counts get messed up.
+			bash := []string{"/bin/bash", "--noprofile", "--norc"}
+			testSpecs, ids := createSpecs(bash, bash)
+
+			type termContainer struct {
+				container *Container
+				master    *os.File
+			}
+			var containers []termContainer
+			for i, spec := range testSpecs {
+				bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+
+				spec.Process.Terminal = true
+				sock, err := socketPath(bundleDir)
+				if err != nil {
+					t.Fatalf("error getting socket path: %v", err)
+				}
+				srv, cleanup := createConsoleSocket(t, sock)
+				defer cleanup()
+
+				// Create the container and pass the socket name.
+				args := Args{
+					ID:            ids[i],
+					Spec:          spec,
+					BundleDir:     bundleDir,
+					ConsoleSocket: sock,
+				}
+				cont, err := New(conf, args)
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+
+				if err := cont.Start(conf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+
+				// Make sure we get a console PTY.
+				ptyMaster, err := receiveConsolePTY(srv)
+				if err != nil {
+					t.Fatalf("error receiving console FD: %v", err)
+				}
+				defer ptyMaster.Close()
+
+				containers = append(containers, termContainer{
+					container: cont,
+					master:    ptyMaster,
+				})
+			}
+
+			for _, tc := range containers {
+				// Bash output as well as sandbox output will be written to the PTY
+				// file. Writes after a certain point will block unless we drain the
+				// PTY, so we must continually copy from it.
+				//
+				// We log the output to stderr for debugabilitly, and also to a buffer,
+				// since we wait on particular output from bash below. We use a custom
+				// blockingBuffer which is thread-safe and also blocks on Read calls,
+				// which makes this a suitable Reader for WaitUntilRead.
+				ptyBuf := newBlockingBuffer()
+				tee := io.TeeReader(tc.master, ptyBuf)
+				go io.Copy(os.Stderr, tee)
+
+				// Wait for bash to start.
+				expectedPL := []*control.Process{
+					newProcessBuilder().Cmd("bash").Process(),
+				}
+				if err := waitForProcessList(tc.container, expectedPL); err != nil {
+					t.Fatalf("error waiting for processes: %v", err)
+				}
+
+				// Execute echo command and check that it was executed correctly. Use
+				// a variable to ensure it's not matching against command echo.
+				tc.master.Write([]byte("echo foo-${PWD}-123\n"))
+				if err := testutil.WaitUntilRead(ptyBuf, "foo-/-123", 5*time.Second); err != nil {
+					t.Fatalf("echo didn't execute: %v", err)
+				}
+			}
+		})
 	}
 }
 
