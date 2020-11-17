@@ -631,6 +631,24 @@ TEST(SendFileTest, SendFileToPipe) {
               SyscallSucceedsWithValue(kDataSize));
 }
 
+TEST(SendFileTest, SendFileToSelf_NoRandomSave) {
+  int rawfd;
+  ASSERT_THAT(rawfd = memfd_create("memfd", 0), SyscallSucceeds());
+  const FileDescriptor fd(rawfd);
+
+  char c = 0x01;
+  ASSERT_THAT(WriteFd(fd.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  // Arbitrarily chosen to make sendfile() take long enough that the sentry
+  // watchdog usually fires unless it's reset by sendfile() between iterations
+  // of the buffered copy. See b/172076632.
+  constexpr size_t kSendfileSize = 0xa00000;
+
+  off_t offset = 0;
+  ASSERT_THAT(sendfile(fd.get(), fd.get(), &offset, kSendfileSize),
+              SyscallSucceedsWithValue(kSendfileSize));
+}
+
 static volatile int signaled = 0;
 void SigUsr1Handler(int sig, siginfo_t* info, void* context) { signaled = 1; }
 
