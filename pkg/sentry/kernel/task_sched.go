@@ -157,6 +157,18 @@ func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
 	t.goschedSeq.EndWrite()
 }
 
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) accountTaskGoroutineRunning() {
+	now := t.k.CPUClockNow()
+	if t.gosched.State != TaskGoroutineRunningSys {
+		panic(fmt.Sprintf("Task goroutine in state %v (expected %v)", t.gosched.State, TaskGoroutineRunningSys))
+	}
+	t.goschedSeq.BeginWrite()
+	t.gosched.SysTicks += now - t.gosched.Timestamp
+	t.gosched.Timestamp = now
+	t.goschedSeq.EndWrite()
+}
+
 // TaskGoroutineSchedInfo returns a copy of t's task goroutine scheduling info.
 // Most clients should use t.CPUStats() instead.
 func (t *Task) TaskGoroutineSchedInfo() TaskGoroutineSchedInfo {
