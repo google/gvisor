@@ -2686,7 +2686,7 @@ func (s *socketOpsCommon) coalescingRead(ctx context.Context, dst usermem.IOSequ
 		// Always do at least one fetchReadView, even if the number of bytes to
 		// read is 0.
 		err = s.fetchReadView()
-		if err != nil {
+		if err != nil || len(s.readView) == 0 {
 			break
 		}
 		if dst.NumBytes() == 0 {
@@ -2709,15 +2709,20 @@ func (s *socketOpsCommon) coalescingRead(ctx context.Context, dst usermem.IOSequ
 		}
 		copied += n
 		s.readView.TrimFront(n)
-		if len(s.readView) == 0 {
-			atomic.StoreUint32(&s.readViewHasData, 0)
-		}
 
 		dst = dst.DropFirst(n)
 		if e != nil {
 			err = syserr.FromError(e)
 			break
 		}
+		// If we are done reading requested data then stop.
+		if dst.NumBytes() == 0 {
+			break
+		}
+	}
+
+	if len(s.readView) == 0 {
+		atomic.StoreUint32(&s.readViewHasData, 0)
 	}
 
 	// If we managed to copy something, we must deliver it.

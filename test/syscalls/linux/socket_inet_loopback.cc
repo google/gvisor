@@ -1185,19 +1185,44 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
       listen_fd.get(), reinterpret_cast<sockaddr*>(&accept_addr), &addrlen));
   ASSERT_EQ(addrlen, listener.addr_len);
 
-  // TODO(gvisor.dev/issue/3812): Remove after SO_ERROR is fixed.
-  if (IsRunningOnGvisor()) {
-    char buf[10];
-    ASSERT_THAT(ReadFd(accept_fd.get(), buf, sizeof(buf)),
-                SyscallFailsWithErrno(ECONNRESET));
-  } else {
+  // Wait for accept_fd to process the RST.
+  const int kTimeout = 10000;
+  struct pollfd pfd = {
+      .fd = accept_fd.get(),
+      .events = POLLIN,
+  };
+  ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(pfd.revents, POLLIN | POLLHUP | POLLERR);
+
+  {
     int err;
     socklen_t optlen = sizeof(err);
     ASSERT_THAT(
         getsockopt(accept_fd.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
         SyscallSucceeds());
-    ASSERT_EQ(err, ECONNRESET);
+    // This should return ECONNRESET as the socket just received a RST packet
+    // from the peer.
     ASSERT_EQ(optlen, sizeof(err));
+    ASSERT_EQ(err, ECONNRESET);
+  }
+  {
+    int err;
+    socklen_t optlen = sizeof(err);
+    ASSERT_THAT(
+        getsockopt(accept_fd.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
+        SyscallSucceeds());
+    // This should return no error as the previous getsockopt call would have
+    // cleared the socket error.
+    ASSERT_EQ(optlen, sizeof(err));
+    ASSERT_EQ(err, 0);
+  }
+  {
+    sockaddr_storage peer_addr;
+    socklen_t addrlen = sizeof(peer_addr);
+    // The socket is not connected anymore and should return ENOTCONN.
+    ASSERT_THAT(getpeername(accept_fd.get(),
+                            reinterpret_cast<sockaddr*>(&peer_addr), &addrlen),
+                SyscallFailsWithErrno(ENOTCONN));
   }
 }
 

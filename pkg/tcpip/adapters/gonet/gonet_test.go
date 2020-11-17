@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -65,7 +66,7 @@ func newLoopbackStack() (*stack.Stack, *tcpip.Error) {
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 
-	if err := s.CreateNIC(NICID, loopback.New()); err != nil {
+	if err := s.CreateNIC(NICID, sniffer.New(loopback.New())); err != nil {
 		return nil, err
 	}
 
