@@ -381,6 +381,8 @@ afterTrailingSymlink:
 		creds := rp.Credentials()
 		child := fs.newDentry(fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode))
 		parentDir.insertChildLocked(child, name)
+		child.IncRef()
+		defer child.DecRef(ctx)
 		unlock()
 		fd, err := child.open(ctx, rp, &opts, true)
 		if err != nil {
