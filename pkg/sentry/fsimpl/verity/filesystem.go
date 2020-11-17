@@ -107,8 +107,10 @@ func (fs *filesystem) renameMuUnlockAndCheckDrop(ctx context.Context, ds **[]*de
 // Dentries which may have a reference count of zero, and which therefore
 // should be dropped once traversal is complete, are appended to ds.
 //
-// Preconditions: fs.renameMu must be locked. d.dirMu must be locked.
-// !rp.Done().
+// Preconditions:
+// * fs.renameMu must be locked.
+// * d.dirMu must be locked.
+// * !rp.Done().
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, error) {
 	if !d.isDir() {
 		return nil, syserror.ENOTDIR
@@ -158,15 +160,19 @@ afterSymlink:
 	return child, nil
 }
 
-// verifyChild verifies the hash of child against the already verified hash of
-// the parent to ensure the child is expected.  verifyChild triggers a sentry
-// panic if unexpected modifications to the file system are detected. In
+// verifyChildLocked verifies the hash of child against the already verified
+// hash of the parent to ensure the child is expected.  verifyChild triggers a
+// sentry panic if unexpected modifications to the file system are detected. In
 // noCrashOnVerificationFailure mode it returns a syserror instead.
-// Preconditions: fs.renameMu must be locked. d.dirMu must be locked.
+//
+// Preconditions:
+// * fs.renameMu must be locked.
+// * d.dirMu must be locked.
+//
 // TODO(b/166474175): Investigate all possible errors returned in this
 // function, and make sure we differentiate all errors that indicate unexpected
 // modifications to the file system from the ones that are not harmful.
-func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *dentry) (*dentry, error) {
+func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, child *dentry) (*dentry, error) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 
 	// Get the path to the child dentry. This is only used to provide path
@@ -268,7 +274,8 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 	// contain the hash of the children in the parent Merkle tree when
 	// Verify returns with success.
 	var buf bytes.Buffer
-	if _, err := merkletree.Verify(&merkletree.VerifyParams{
+	parent.hashMu.RLock()
+	_, err = merkletree.Verify(&merkletree.VerifyParams{
 		Out:      &buf,
 		File:     &fdReader,
 		Tree:     &fdReader,
@@ -284,21 +291,27 @@ func (fs *filesystem) verifyChild(ctx context.Context, parent *dentry, child *de
 		ReadSize:              int64(merkletree.DigestSize(fs.alg.toLinuxHashAlg())),
 		Expected:              parent.hash,
 		DataAndTreeInSameFile: true,
-	}); err != nil && err != io.EOF {
+	})
+	parent.hashMu.RUnlock()
+	if err != nil && err != io.EOF {
 		return nil, alertIntegrityViolation(fmt.Sprintf("Verification for %s failed: %v", childPath, err))
 	}
 
 	// Cache child hash when it's verified the first time.
+	child.hashMu.Lock()
 	if len(child.hash) == 0 {
 		child.hash = buf.Bytes()
 	}
+	child.hashMu.Unlock()
 	return child, nil
 }
 
-// verifyStatAndChildren verifies the stat and children names against the
+// verifyStatAndChildrenLocked verifies the stat and children names against the
 // verified hash. The mode/uid/gid and childrenNames of the file is cached
 // after verified.
-func (fs *filesystem) verifyStatAndChildren(ctx context.Context, d *dentry, stat linux.Statx) error {
+//
+// Preconditions: d.dirMu must be locked.
+func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry, stat linux.Statx) error {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 
 	// Get the path to the child dentry. This is only used to provide path
@@ -390,6 +403,7 @@ func (fs *filesystem) verifyStatAndChildren(ctx context.Context, d *dentry, stat
 	}
 
 	var buf bytes.Buffer
+	d.hashMu.RLock()
 	params := &merkletree.VerifyParams{
 		Out:      &buf,
 		Tree:     &fdReader,
@@ -407,6 +421,7 @@ func (fs *filesystem) verifyStatAndChildren(ctx context.Context, d *dentry, stat
 		Expected:              d.hash,
 		DataAndTreeInSameFile: false,
 	}
+	d.hashMu.RUnlock()
 	if atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR {
 		params.DataAndTreeInSameFile = true
 	}
@@ -421,7 +436,9 @@ func (fs *filesystem) verifyStatAndChildren(ctx context.Context, d *dentry, stat
 	return nil
 }
 
-// Preconditions: fs.renameMu must be locked. d.dirMu must be locked.
+// Preconditions:
+// * fs.renameMu must be locked.
+// * parent.dirMu must be locked.
 func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 	if child, ok := parent.children[name]; ok {
 		// If verity is enabled on child, we should check again whether
@@ -470,7 +487,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 		// be cached before enabled.
 		if fs.allowRuntimeEnable {
 			if parent.verityEnabled() {
-				if _, err := fs.verifyChild(ctx, parent, child); err != nil {
+				if _, err := fs.verifyChildLocked(ctx, parent, child); err != nil {
 					return nil, err
 				}
 			}
@@ -486,7 +503,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 				if err != nil {
 					return nil, err
 				}
-				if err := fs.verifyStatAndChildren(ctx, child, stat); err != nil {
+				if err := fs.verifyStatAndChildrenLocked(ctx, child, stat); err != nil {
 					return nil, err
 				}
 			}
@@ -506,7 +523,9 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 	return child, nil
 }
 
-// Preconditions: fs.renameMu must be locked. parent.dirMu must be locked.
+// Preconditions:
+// * fs.renameMu must be locked.
+// * parent.dirMu must be locked.
 func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry, name string) (*dentry, error) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 
@@ -597,13 +616,13 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	// allowRuntimeEnable mode and the parent directory hasn't been enabled
 	// yet.
 	if parent.verityEnabled() {
-		if _, err := fs.verifyChild(ctx, parent, child); err != nil {
+		if _, err := fs.verifyChildLocked(ctx, parent, child); err != nil {
 			child.destroyLocked(ctx)
 			return nil, err
 		}
 	}
 	if child.verityEnabled() {
-		if err := fs.verifyStatAndChildren(ctx, child, stat); err != nil {
+		if err := fs.verifyStatAndChildrenLocked(ctx, child, stat); err != nil {
 			child.destroyLocked(ctx)
 			return nil, err
 		}
@@ -617,7 +636,9 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 // rp.Start().Impl().(*dentry)). It does not check that the returned directory
 // is searchable by the provider of rp.
 //
-// Preconditions: fs.renameMu must be locked. !rp.Done().
+// Preconditions:
+// * fs.renameMu must be locked.
+// * !rp.Done().
 func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
 	for !rp.Final() {
 		d.dirMu.Lock()
@@ -958,11 +979,13 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if err != nil {
 		return linux.Statx{}, err
 	}
+	d.dirMu.Lock()
 	if d.verityEnabled() {
-		if err := fs.verifyStatAndChildren(ctx, d, stat); err != nil {
+		if err := fs.verifyStatAndChildrenLocked(ctx, d, stat); err != nil {
 			return linux.Statx{}, err
 		}
 	}
+	d.dirMu.Unlock()
 	return stat, nil
 }
 
