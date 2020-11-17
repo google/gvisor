@@ -157,6 +157,11 @@ type execProcess struct {
 
 	// pidnsPath is the pid namespace path in spec
 	pidnsPath string
+
+	// hostTTY is present when creating a sub-container with terminal enabled.
+	// TTY file is passed during container create and must be saved until
+	// container start.
+	hostTTY *fd.FD
 }
 
 func init() {
@@ -588,7 +593,9 @@ func (l *Loader) run() error {
 
 		// Create the root container init task. It will begin running
 		// when the kernel is started.
-		if _, err := l.createContainerProcess(true, l.sandboxID, &l.root, ep); err != nil {
+		var err error
+		_, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(true, l.sandboxID, &l.root)
+		if err != nil {
 			return err
 		}
 
@@ -627,7 +634,7 @@ func (l *Loader) run() error {
 }
 
 // createContainer creates a new container inside the sandbox.
-func (l *Loader) createContainer(cid string) error {
+func (l *Loader) createContainer(cid string, tty *fd.FD) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -635,14 +642,14 @@ func (l *Loader) createContainer(cid string) error {
 	if _, ok := l.processes[eid]; ok {
 		return fmt.Errorf("container %q already exists", cid)
 	}
-	l.processes[eid] = &execProcess{}
+	l.processes[eid] = &execProcess{hostTTY: tty}
 	return nil
 }
 
 // startContainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
-func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid string, files []*fd.FD) error {
+func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs []*fd.FD) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -695,36 +702,41 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 	info := &containerInfo{
 		conf:     conf,
 		spec:     spec,
-		stdioFDs: files[:3],
-		goferFDs: files[3:],
+		goferFDs: goferFDs,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %v", err)
 	}
-	tg, err := l.createContainerProcess(false, cid, info, ep)
+
+	// Use stdios or TTY depending on the spec configuration.
+	if spec.Process.Terminal {
+		if len(stdioFDs) > 0 {
+			return fmt.Errorf("using TTY, stdios not expected: %v", stdioFDs)
+		}
+		if ep.hostTTY == nil {
+			return fmt.Errorf("terminal enabled but no TTY provided. Did you set --console-socket on create?")
+		}
+		info.stdioFDs = []*fd.FD{ep.hostTTY, ep.hostTTY, ep.hostTTY}
+		ep.hostTTY = nil
+	} else {
+		info.stdioFDs = stdioFDs
+	}
+
+	ep.tg, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(false, cid, info)
 	if err != nil {
 		return err
 	}
-
-	// Success!
-	l.k.StartProcess(tg)
-	ep.tg = tg
+	l.k.StartProcess(ep.tg)
 	return nil
 }
 
-func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo, ep *execProcess) (*kernel.ThreadGroup, error) {
-	console := false
-	if root {
-		// Only root container supports terminal for now.
-		console = info.spec.Process.Terminal
-	}
-
+func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
-	fdTable, ttyFile, ttyFileVFS2, err := createFDTable(ctx, console, info.stdioFDs)
+	fdTable, ttyFile, ttyFileVFS2, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs)
 	if err != nil {
-		return nil, fmt.Errorf("importing fds: %v", err)
+		return nil, nil, nil, fmt.Errorf("importing fds: %v", err)
 	}
 	// CreateProcess takes a reference on fdTable if successful. We won't need
 	// ours either way.
@@ -736,11 +748,11 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	mntr := newContainerMounter(info.spec, info.goferFDs, l.k, l.mountHints)
 	if root {
 		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 	}
 	if err := setupContainerFS(ctx, info.conf, mntr, &info.procArgs); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	// Add the HOME environment variable if it is not already set.
@@ -754,29 +766,25 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 			info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	info.procArgs.Envv = envv
 
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
 	if err != nil {
-		return nil, fmt.Errorf("creating process: %v", err)
+		return nil, nil, nil, fmt.Errorf("creating process: %v", err)
 	}
 	// CreateProcess takes a reference on FDTable if successful.
 	info.procArgs.FDTable.DecRef(ctx)
 
 	// Set the foreground process group on the TTY to the global init process
 	// group, since that is what we are about to start running.
-	if root {
-		switch {
-		case ttyFileVFS2 != nil:
-			ep.ttyVFS2 = ttyFileVFS2
-			ttyFileVFS2.InitForegroundProcessGroup(tg.ProcessGroup())
-		case ttyFile != nil:
-			ep.tty = ttyFile
-			ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
-		}
+	switch {
+	case ttyFileVFS2 != nil:
+		ttyFileVFS2.InitForegroundProcessGroup(tg.ProcessGroup())
+	case ttyFile != nil:
+		ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
 	}
 
 	// Install seccomp filters with the new task if there are any.
@@ -784,7 +792,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
 			program, err := seccomp.BuildProgram(info.spec.Linux.Seccomp)
 			if err != nil {
-				return nil, fmt.Errorf("building seccomp program: %v", err)
+				return nil, nil, nil, fmt.Errorf("building seccomp program: %v", err)
 			}
 
 			if log.IsLogging(log.Debug) {
@@ -795,7 +803,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 			task := tg.Leader()
 			// NOTE: It seems Flags are ignored by runc so we ignore them too.
 			if err := task.AppendSyscallFilter(program, true); err != nil {
-				return nil, fmt.Errorf("appending seccomp filters: %v", err)
+				return nil, nil, nil, fmt.Errorf("appending seccomp filters: %v", err)
 			}
 		}
 	} else {
@@ -804,7 +812,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		}
 	}
 
-	return tg, nil
+	return tg, ttyFile, ttyFileVFS2, nil
 }
 
 // startGoferMonitor runs a goroutine to monitor gofer's health. It polls on
