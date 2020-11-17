@@ -370,18 +370,24 @@
 	MOVD R4, CPU_REGISTERS+PTRACE_SP(RSV_REG); \
 	LOAD_KERNEL_STACK(RSV_REG);  // Load the temporary stack.
 
-// EXCEPTION_WITH_ERROR is a common exception handler function.
-#define EXCEPTION_WITH_ERROR(user, vector) \
+// EXCEPTION_EL0 is a common el0 exception handler function.
+#define EXCEPTION_EL0(vector) \
 	WORD $0xd538d092; \	//MRS   TPIDR_EL1, R18
 	WORD $0xd538601a; \	//MRS   FAR_EL1, R26
 	MOVD R26, CPU_FAULT_ADDR(RSV_REG); \
-	MOVD $user, R3; \
+	MOVD $1, R3; \
 	MOVD R3, CPU_ERROR_TYPE(RSV_REG); \	// Set error type to user.
 	MOVD $vector, R3; \
 	MOVD R3, CPU_VECTOR_CODE(RSV_REG); \
 	MRS ESR_EL1, R3; \
 	MOVD R3, CPU_ERROR_CODE(RSV_REG); \
 	B ·kernelExitToEl1(SB);
+
+// EXCEPTION_EL1 is a common el1 exception handler function.
+#define EXCEPTION_EL1(vector) \
+	MOVD $vector, R3; \
+	MOVD R3, 8(RSP); \
+	B ·HaltEl1ExceptionAndResume(SB);
 
 // storeAppASID writes the application's asid value.
 TEXT ·storeAppASID(SB),NOSPLIT,$0-8
@@ -428,6 +434,16 @@ TEXT ·HaltEl1SvcAndResume(SB),NOSPLIT,$0
 	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
 	MOVD R3, 8(RSP)             // First argument (vCPU).
 	CALL ·kernelSyscall(SB)     // Call the trampoline.
+	B ·kernelExitToEl1(SB)      // Resume.
+
+// HaltEl1ExceptionAndResume calls Hooks.KernelException and resume.
+TEXT ·HaltEl1ExceptionAndResume(SB),NOSPLIT,$0-8
+	WORD $0xd538d092            // MRS TPIDR_EL1, R18
+	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
+	MOVD R3, 8(RSP)             // First argument (vCPU).
+	MOVD vector+0(FP), R3
+	MOVD R3, 16(RSP)            // Second argument (vector).
+	CALL ·kernelException(SB)   // Call the trampoline.
 	B ·kernelExitToEl1(SB)      // Resume.
 
 // Shutdown stops the guest.
@@ -592,39 +608,22 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	B el1_invalid
 
 el1_da:
+	EXCEPTION_EL1(El1SyncDa)
 el1_ia:
-	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
-	WORD $0xd538601a     //MRS   FAR_EL1, R26
-
-	MOVD R26, CPU_FAULT_ADDR(RSV_REG)
-
-	MOVD $0, CPU_ERROR_TYPE(RSV_REG)
-
-	MOVD $PageFault, R3
-	MOVD R3, CPU_VECTOR_CODE(RSV_REG)
-
-	B ·HaltAndResume(SB)
-
+	EXCEPTION_EL1(El1SyncIa)
 el1_sp_pc:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL1(El1SyncSpPc)
 el1_undef:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL1(El1SyncUndef)
 el1_svc:
-	MOVD $0, CPU_ERROR_CODE(RSV_REG)
-	MOVD $0, CPU_ERROR_TYPE(RSV_REG)
 	B ·HaltEl1SvcAndResume(SB)
-
 el1_dbg:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL1(El1SyncDbg)
 el1_fpsimd_acc:
 	VFP_ENABLE
 	B ·kernelExitToEl1(SB)  // Resume.
-
 el1_invalid:
-	B ·Shutdown(SB)
+	EXCEPTION_EL1(El1SyncInv)
 
 // El1_irq is the handler for El1_irq.
 TEXT ·El1_irq(SB),NOSPLIT,$0
@@ -680,28 +679,21 @@ el0_svc:
 
 el0_da:
 el0_ia:
-	EXCEPTION_WITH_ERROR(1, PageFault)
-
+	EXCEPTION_EL0(PageFault)
 el0_fpsimd_acc:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL0(El0SyncFpsimdAcc)
 el0_sve_acc:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL0(El0SyncSveAcc)
 el0_fpsimd_exc:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL0(El0SyncFpsimdExc)
 el0_sp_pc:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL0(El0SyncSpPc)
 el0_undef:
-	EXCEPTION_WITH_ERROR(1, El0SyncUndef)
-
+	EXCEPTION_EL0(El0SyncUndef)
 el0_dbg:
-	B ·Shutdown(SB)
-
+	EXCEPTION_EL0(El0SyncDbg)
 el0_invalid:
-	B ·Shutdown(SB)
+	EXCEPTION_EL0(El0SyncInv)
 
 TEXT ·El0_irq(SB),NOSPLIT,$0
 	B ·Shutdown(SB)

@@ -90,6 +90,7 @@ const (
 	El0SyncIa
 	El0SyncFpsimdAcc
 	El0SyncSveAcc
+	El0SyncFpsimdExc
 	El0SyncSys
 	El0SyncSpPc
 	El0SyncUndef
