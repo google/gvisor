@@ -245,17 +245,9 @@ func (d *Dentry) TryIncRef() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *Dentry) DecRef(ctx context.Context) {
-	r := atomic.AddInt64(&d.refs, -1)
-	if d.LogRefs() {
-		refsvfs2.LogDecRef(d, r)
-	}
-	if r == 0 {
-		d.fs.mu.Lock()
-		d.cacheLocked(ctx)
-		d.fs.mu.Unlock()
-	} else if r < 0 {
-		panic("kernfs.Dentry.DecRef() called without holding a reference")
-	}
+	d.fs.mu.Lock()
+	defer d.fs.mu.Unlock()
+	d.decRefLocked(ctx)
 }
 
 func (d *Dentry) decRefLocked(ctx context.Context) {
