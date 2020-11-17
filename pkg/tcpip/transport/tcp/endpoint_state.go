@@ -321,21 +321,21 @@ func (e *endpoint) loadRecentTSTime(unix unixTime) {
 }
 
 // saveHardError is invoked by stateify.
-func (e *EndpointInfo) saveHardError() string {
-	if e.HardError == nil {
+func (e *endpoint) saveHardError() string {
+	if e.hardError == nil {
 		return ""
 	}
 
-	return e.HardError.String()
+	return e.hardError.String()
 }
 
 // loadHardError is invoked by stateify.
-func (e *EndpointInfo) loadHardError(s string) {
+func (e *endpoint) loadHardError(s string) {
 	if s == "" {
 		return
 	}
 
-	e.HardError = tcpip.StringToError(s)
+	e.hardError = tcpip.StringToError(s)
 }
 
 // saveMeasureTime is invoked by stateify.

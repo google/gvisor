@@ -75,9 +75,6 @@ func TestGiveUpConnect(t *testing.T) {
 
 	// Wait for ep to become writable.
 	<-notifyCh
-	if err := ep.LastError(); err != tcpip.ErrAborted {
-		t.Fatalf("got ep.LastError() = %s, want = %s", err, tcpip.ErrAborted)
-	}
 
 	// Call Connect again to retreive the handshake failure status
 	// and stats updates.
@@ -3198,6 +3195,11 @@ loop:
 		case tcpip.ErrWouldBlock:
 			select {
 			case <-ch:
+				// Expect the state to be StateError and subsequent Reads to fail with HardError.
+				if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionReset {
+					t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrConnectionReset)
+				}
+				break loop
 			case <-time.After(1 * time.Second):
 				t.Fatalf("Timed out waiting for reset to arrive")
 			}
@@ -3207,14 +3209,10 @@ loop:
 			t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrConnectionReset)
 		}
 	}
-	// Expect the state to be StateError and subsequent Reads to fail with HardError.
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionReset {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrConnectionReset)
-	}
+
 	if tcp.EndpointState(c.EP.State()) != tcp.StateError {
 		t.Fatalf("got EP state is not StateError")
 	}
-
 	if got := c.Stack().Stats().TCP.EstablishedResets.Value(); got != 1 {
 		t.Errorf("got stats.TCP.EstablishedResets.Value() = %d, want = 1", got)
 	}
