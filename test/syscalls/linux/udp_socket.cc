@@ -374,6 +374,42 @@ TEST_P(UdpSocketTest, BindInUse) {
               SyscallFailsWithErrno(EADDRINUSE));
 }
 
+TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
+  ASSERT_NO_ERRNO(BindLoopback());
+
+  // Discover a free unused port by creating a new UDP socket, binding it
+  // recording the just bound port and closing it. This is not guaranteed as it
+  // can still race with other port UDP sockets trying to bind a port at the
+  // same time.
+  struct sockaddr_storage addr_storage = InetLoopbackAddr();
+  socklen_t addrlen = sizeof(addr_storage);
+  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
+  ASSERT_THAT(bind(s.get(), addr, addrlen), SyscallSucceeds());
+  ASSERT_THAT(getsockname(s.get(), addr, &addrlen), SyscallSucceeds());
+  EXPECT_EQ(addrlen, addrlen_);
+  EXPECT_NE(*Port(&addr_storage), 0);
+  ASSERT_THAT(close(s.release()), SyscallSucceeds());
+
+  // Now connect to the port that we just released. This should generate an
+  // ECONNREFUSED error.
+  ASSERT_THAT(connect(sock_.get(), addr, addrlen_), SyscallSucceeds());
+  char buf[512];
+  RandomizeBuffer(buf, sizeof(buf));
+  // Send from sock_ to an unbound port.
+  ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, addr, addrlen_),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Now verify that we got an ICMP error back of ECONNREFUSED.
+  int err;
+  socklen_t optlen = sizeof(err);
+  ASSERT_THAT(getsockopt(sock_.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
+              SyscallSucceeds());
+  ASSERT_EQ(err, ECONNREFUSED);
+  ASSERT_EQ(optlen, sizeof(err));
+}
+
 TEST_P(UdpSocketTest, ReceiveAfterConnect) {
   ASSERT_NO_ERRNO(BindLoopback());
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());

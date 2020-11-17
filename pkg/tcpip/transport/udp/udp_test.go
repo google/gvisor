@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -54,6 +55,7 @@ const (
 	stackPort       = 1234
 	testAddr        = "\x0a\x00\x00\x02"
 	testPort        = 4096
+	invalidPort     = 8192
 	multicastAddr   = "\xe8\x2b\xd3\xea"
 	multicastV6Addr = "\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 	broadcastAddr   = header.IPv4Broadcast
@@ -295,7 +297,8 @@ func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
 	return newDualTestContextWithOptions(t, mtu, stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4},
+		HandleLocal:        true,
 	})
 }
 
@@ -972,7 +975,7 @@ func testFailingWrite(c *testContext, flow testFlow, wantErr *tcpip.Error) {
 // provided.
 func testWrite(c *testContext, flow testFlow, checkers ...checker.NetworkChecker) uint16 {
 	c.t.Helper()
-	return testWriteInternal(c, flow, true, checkers...)
+	return testWriteAndVerifyInternal(c, flow, true, checkers...)
 }
 
 // testWriteWithoutDestination sends a packet of the given test flow from the
@@ -981,10 +984,10 @@ func testWrite(c *testContext, flow testFlow, checkers ...checker.NetworkChecker
 // checker functions provided.
 func testWriteWithoutDestination(c *testContext, flow testFlow, checkers ...checker.NetworkChecker) uint16 {
 	c.t.Helper()
-	return testWriteInternal(c, flow, false, checkers...)
+	return testWriteAndVerifyInternal(c, flow, false, checkers...)
 }
 
-func testWriteInternal(c *testContext, flow testFlow, setDest bool, checkers ...checker.NetworkChecker) uint16 {
+func testWriteNoVerify(c *testContext, flow testFlow, setDest bool) buffer.View {
 	c.t.Helper()
 	// Take a snapshot of the stats to validate them at the end of the test.
 	epstats := c.ep.Stats().(*tcpip.TransportEndpointStats).Clone()
@@ -1006,6 +1009,12 @@ func testWriteInternal(c *testContext, flow testFlow, setDest bool, checkers ...
 		c.t.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
 	}
 	c.checkEndpointWriteStats(1, epstats, err)
+	return payload
+}
+
+func testWriteAndVerifyInternal(c *testContext, flow testFlow, setDest bool, checkers ...checker.NetworkChecker) uint16 {
+	c.t.Helper()
+	payload := testWriteNoVerify(c, flow, setDest)
 	// Received the packet and check the payload.
 	b := c.getPacketAndVerify(flow, checkers...)
 	var udp header.UDP
@@ -1148,6 +1157,39 @@ func TestV4WriteOnConnected(t *testing.T) {
 	}
 
 	testWriteWithoutDestination(c, unicastV4)
+}
+
+func TestWriteOnConnectedInvalidPort(t *testing.T) {
+	protocols := map[string]tcpip.NetworkProtocolNumber{
+		"ipv4": ipv4.ProtocolNumber,
+		"ipv6": ipv6.ProtocolNumber,
+	}
+	for name, pn := range protocols {
+		t.Run(name, func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpoint(pn)
+			if err := c.ep.Connect(tcpip.FullAddress{Addr: stackAddr, Port: invalidPort}); err != nil {
+				c.t.Fatalf("Connect failed: %s", err)
+			}
+			writeOpts := tcpip.WriteOptions{
+				To: &tcpip.FullAddress{Addr: stackAddr, Port: invalidPort},
+			}
+			payload := buffer.View(newPayload())
+			n, _, err := c.ep.Write(tcpip.SlicePayload(payload), writeOpts)
+			if err != nil {
+				c.t.Fatalf("c.ep.Write(...) = %+s, want nil", err)
+			}
+			if got, want := n, int64(len(payload)); got != want {
+				c.t.Fatalf("c.ep.Write(...) wrote %d bytes, want %d bytes", got, want)
+			}
+
+			if err := c.ep.LastError(); err != tcpip.ErrConnectionRefused {
+				c.t.Fatalf("expected c.ep.LastError() == ErrConnectionRefused, got: %+v", err)
+			}
+		})
+	}
 }
 
 // TestWriteOnBoundToV4Multicast checks that we can send packets out of a socket
