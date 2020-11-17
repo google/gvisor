@@ -53,16 +53,35 @@ type endpoint struct {
 	nested.Endpoint
 	writer     io.Writer
 	maxPCAPLen uint32
+	logPrefix  string
 }
 
 var _ stack.GSOEndpoint = (*endpoint)(nil)
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 var _ stack.NetworkDispatcher = (*endpoint)(nil)
 
+type direction int
+
+const (
+	directionSend = iota
+	directionRecv
+)
+
 // New creates a new sniffer link-layer endpoint. It wraps around another
 // endpoint and logs packets and they traverse the endpoint.
 func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
-	sniffer := &endpoint{}
+	return NewWithPrefix(lower, "")
+}
+
+// NewWithPrefix creates a new sniffer link-layer endpoint. It wraps around
+// another endpoint and logs packets prefixed with logPrefix as they traverse
+// the endpoint.
+//
+// logPrefix is prepended to the log line without any separators.
+// E.g. logPrefix = "NIC:en0/" will produce log lines like
+// "NIC:en0/send udp [...]".
+func NewWithPrefix(lower stack.LinkEndpoint, logPrefix string) stack.LinkEndpoint {
+	sniffer := &endpoint{logPrefix: logPrefix}
 	sniffer.Endpoint.Init(lower, sniffer)
 	return sniffer
 }
@@ -120,7 +139,7 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.dumpPacket("recv", nil, protocol, pkt)
+	e.dumpPacket(directionRecv, nil, protocol, pkt)
 	e.Endpoint.DeliverNetworkPacket(remote, local, protocol, pkt)
 }
 
@@ -129,10 +148,10 @@ func (e *endpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protoc
 	e.Endpoint.DeliverOutboundPacket(remote, local, protocol, pkt)
 }
 
-func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *endpoint) dumpPacket(dir direction, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
 	if writer == nil && atomic.LoadUint32(&LogPackets) == 1 {
-		logPacket(prefix, protocol, pkt, gso)
+		logPacket(e.logPrefix, dir, protocol, pkt, gso)
 	}
 	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
 		totalLength := pkt.Size()
@@ -169,7 +188,7 @@ func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.Netw
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	e.dumpPacket("send", gso, protocol, pkt)
+	e.dumpPacket(directionSend, gso, protocol, pkt)
 	return e.Endpoint.WritePacket(r, gso, protocol, pkt)
 }
 
@@ -178,20 +197,20 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		e.dumpPacket("send", gso, protocol, pkt)
+		e.dumpPacket(directionSend, gso, protocol, pkt)
 	}
 	return e.Endpoint.WritePackets(r, gso, pkts, protocol)
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	e.dumpPacket("send", nil, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	e.dumpPacket(directionSend, nil, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: vv,
 	}))
 	return e.Endpoint.WriteRawPacket(vv)
 }
 
-func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, gso *stack.GSO) {
+func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, gso *stack.GSO) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")
@@ -200,6 +219,16 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 	var id uint32
 	var fragmentOffset uint16
 	var moreFragments bool
+
+	var directionPrefix string
+	switch dir {
+	case directionSend:
+		directionPrefix = "send"
+	case directionRecv:
+		directionPrefix = "recv"
+	default:
+		panic(fmt.Sprintf("unrecognized direction: %d", dir))
+	}
 
 	// Clone the packet buffer to not modify the original.
 	//
@@ -248,15 +277,16 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 
 		arp := header.ARP(pkt.NetworkHeader().View())
 		log.Infof(
-			"%s arp %s (%s) -> %s (%s) valid:%t",
+			"%s%s arp %s (%s) -> %s (%s) valid:%t",
 			prefix,
+			directionPrefix,
 			tcpip.Address(arp.ProtocolAddressSender()), tcpip.LinkAddress(arp.HardwareAddressSender()),
 			tcpip.Address(arp.ProtocolAddressTarget()), tcpip.LinkAddress(arp.HardwareAddressTarget()),
 			arp.IsValid(),
 		)
 		return
 	default:
-		log.Infof("%s unknown network protocol", prefix)
+		log.Infof("%s%s unknown network protocol", prefix, directionPrefix)
 		return
 	}
 
@@ -300,7 +330,7 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 				icmpType = "info reply"
 			}
 		}
-		log.Infof("%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, transName, src, dst, icmpType, size, id, icmp.Code())
+		log.Infof("%s%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, directionPrefix, transName, src, dst, icmpType, size, id, icmp.Code())
 		return
 
 	case header.ICMPv6ProtocolNumber:
@@ -335,7 +365,7 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 		case header.ICMPv6RedirectMsg:
 			icmpType = "redirect message"
 		}
-		log.Infof("%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, transName, src, dst, icmpType, size, id, icmp.Code())
+		log.Infof("%s%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, directionPrefix, transName, src, dst, icmpType, size, id, icmp.Code())
 		return
 
 	case header.UDPProtocolNumber:
@@ -391,7 +421,7 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 		}
 
 	default:
-		log.Infof("%s %s -> %s unknown transport protocol: %d", prefix, src, dst, transProto)
+		log.Infof("%s%s %s -> %s unknown transport protocol: %d", prefix, directionPrefix, src, dst, transProto)
 		return
 	}
 
@@ -399,5 +429,5 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 		details += fmt.Sprintf(" gso: %+v", gso)
 	}
 
-	log.Infof("%s %s %s:%d -> %s:%d len:%d id:%04x %s", prefix, transName, src, srcPort, dst, dstPort, size, id, details)
+	log.Infof("%s%s %s %s:%d -> %s:%d len:%d id:%04x %s", prefix, directionPrefix, transName, src, srcPort, dst, dstPort, size, id, details)
 }
