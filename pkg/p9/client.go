@@ -570,6 +570,8 @@ func (c *Client) Version() uint32 {
 func (c *Client) Close() {
 	// unet.Socket.Shutdown() has no effect if unet.Socket.Close() has already
 	// been called (by c.watch()).
-	c.socket.Shutdown()
+	if err := c.socket.Shutdown(); err != nil {
+		log.Warningf("Socket.Shutdown() failed (FD: %d): %v", c.socket.FD(), err)
+	}
 	c.closedWg.Wait()
 }
