@@ -263,13 +263,6 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return usermem.NoAccess, platform.ErrContextInterrupt
 	case ring0.El0SyncUndef:
 		return c.fault(int32(syscall.SIGILL), info)
-	case ring0.El1SyncUndef:
-		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGILL),
-			Code:  1, // ILL_ILLOPC (illegal opcode).
-		}
-		info.SetAddr(switchOpts.Registers.Pc) // Include address.
-		return usermem.AccessType{}, platform.ErrContextSignal
 	default:
 		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))
 	}
