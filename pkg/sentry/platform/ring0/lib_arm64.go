@@ -53,6 +53,12 @@ func LoadFloatingPoint(*byte)
 // SaveFloatingPoint saves floating point state.
 func SaveFloatingPoint(*byte)
 
+// EnableVFP enables fpsimd.
+func EnableVFP()
+
+// DisableVFP disables fpsimd.
+func DisableVFP()
+
 // Init sets function pointers based on architectural features.
 //
 // This must be called prior to using ring0.
