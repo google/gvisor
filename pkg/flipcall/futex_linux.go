@@ -17,7 +17,6 @@
 package flipcall
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"sync/atomic"
@@ -26,55 +25,26 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-func (ep *Endpoint) futexConnect(req *ctrlHandshakeRequest) (ctrlHandshakeResponse, error) {
-	var resp ctrlHandshakeResponse
-
-	// Write the handshake request.
-	w := ep.NewWriter()
-	if err := json.NewEncoder(w).Encode(req); err != nil {
-		return resp, fmt.Errorf("error writing handshake request: %v", err)
+func (ep *Endpoint) futexSetPeerActive() error {
+	if atomic.CompareAndSwapUint32(ep.connState(), ep.activeState, ep.inactiveState) {
+		return nil
 	}
-	*ep.dataLen() = w.Len()
-
-	// Exchange control with the server.
-	if err := ep.futexSwitchToPeer(); err != nil {
-		return resp, err
+	switch cs := atomic.LoadUint32(ep.connState()); cs {
+	case csShutdown:
+		return ShutdownError{}
+	default:
+		return fmt.Errorf("unexpected connection state before FUTEX_WAKE: %v", cs)
 	}
-	if err := ep.futexSwitchFromPeer(); err != nil {
-		return resp, err
-	}
-
-	// Read the handshake response.
-	respLen := atomic.LoadUint32(ep.dataLen())
-	if respLen > ep.dataCap {
-		return resp, fmt.Errorf("invalid handshake response length %d (maximum %d)", respLen, ep.dataCap)
-	}
-	if err := json.NewDecoder(ep.NewReader(respLen)).Decode(&resp); err != nil {
-		return resp, fmt.Errorf("error reading handshake response: %v", err)
-	}
-
-	return resp, nil
 }
 
-func (ep *Endpoint) futexSwitchToPeer() error {
-	// Update connection state to indicate that the peer should be active.
-	if !atomic.CompareAndSwapUint32(ep.connState(), ep.activeState, ep.inactiveState) {
-		switch cs := atomic.LoadUint32(ep.connState()); cs {
-		case csShutdown:
-			return ShutdownError{}
-		default:
-			return fmt.Errorf("unexpected connection state before FUTEX_WAKE: %v", cs)
-		}
-	}
-
-	// Wake the peer's Endpoint.futexSwitchFromPeer().
+func (ep *Endpoint) futexWakePeer() error {
 	if err := ep.futexWakeConnState(1); err != nil {
 		return fmt.Errorf("failed to FUTEX_WAKE peer Endpoint: %v", err)
 	}
 	return nil
 }
 
-func (ep *Endpoint) futexSwitchFromPeer() error {
+func (ep *Endpoint) futexWaitUntilActive() error {
 	for {
 		switch cs := atomic.LoadUint32(ep.connState()); cs {
 		case ep.activeState:
