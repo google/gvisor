@@ -19,6 +19,18 @@
 // The verity file system is read-only, except for one case: when
 // allowRuntimeEnable is true, additional Merkle files can be generated using
 // the FS_IOC_ENABLE_VERITY ioctl.
+//
+// Lock order:
+//
+// filesystem.renameMu
+//   dentry.dirMu
+//     fileDescription.mu
+//       filesystem.verityMu
+//         dentry.hashMu
+//
+// Locking dentry.dirMu in multiple dentries requires that parent dentries are
+// locked before child dentries, and that filesystem.renameMu is locked to
+// stabilize this relationship.
 package verity
 
 import (
@@ -372,12 +384,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to deserialize childrenNames: %v", err))
 		}
 
-		if err := fs.verifyStatAndChildren(ctx, d, stat); err != nil {
+		if err := fs.verifyStatAndChildrenLocked(ctx, d, stat); err != nil {
 			return nil, nil, err
 		}
 	}
 
+	d.hashMu.Lock()
 	copy(d.hash, iopts.RootHash)
+	d.hashMu.Unlock()
 	d.vfsd.Init(d)
 
 	fs.rootDentry = d
@@ -402,7 +416,8 @@ type dentry struct {
 	fs *filesystem
 
 	// mode, uid, gid and size are the file mode, owner, group, and size of
-	// the file in the underlying file system.
+	// the file in the underlying file system. They are set when a dentry
+	// is initialized, and never modified.
 	mode uint32
 	uid  uint32
 	gid  uint32
@@ -425,18 +440,22 @@ type dentry struct {
 
 	// childrenNames stores the name of all children of the dentry. This is
 	// used by verity to check whether a child is expected. This is only
-	// populated by enableVerity.
+	// populated by enableVerity. childrenNames is also protected by dirMu.
 	childrenNames map[string]struct{}
 
-	// lowerVD is the VirtualDentry in the underlying file system.
+	// lowerVD is the VirtualDentry in the underlying file system. It is
+	// never modified after initialized.
 	lowerVD vfs.VirtualDentry
 
 	// lowerMerkleVD is the VirtualDentry of the corresponding Merkle tree
-	// in the underlying file system.
+	// in the underlying file system. It is never modified after
+	// initialized.
 	lowerMerkleVD vfs.VirtualDentry
 
-	// hash is the calculated hash for the current file or directory.
-	hash []byte
+	// hash is the calculated hash for the current file or directory. hash
+	// is protected by hashMu.
+	hashMu sync.RWMutex `state:"nosave"`
+	hash   []byte
 }
 
 // newDentry creates a new dentry representing the given verity file. The
@@ -519,7 +538,9 @@ func (d *dentry) checkDropLocked(ctx context.Context) {
 
 // destroyLocked destroys the dentry.
 //
-// Preconditions: d.fs.renameMu must be locked for writing. d.refs == 0.
+// Preconditions:
+// * d.fs.renameMu must be locked for writing.
+// * d.refs == 0.
 func (d *dentry) destroyLocked(ctx context.Context) {
 	switch atomic.LoadInt64(&d.refs) {
 	case 0:
@@ -599,6 +620,8 @@ func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) 
 // mode, it returns true if the target has been enabled with
 // ioctl(FS_IOC_ENABLE_VERITY).
 func (d *dentry) verityEnabled() bool {
+	d.hashMu.RLock()
+	defer d.hashMu.RUnlock()
 	return !d.fs.allowRuntimeEnable || len(d.hash) != 0
 }
 
@@ -678,11 +701,13 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 	if err != nil {
 		return linux.Statx{}, err
 	}
+	fd.d.dirMu.Lock()
 	if fd.d.verityEnabled() {
-		if err := fd.d.fs.verifyStatAndChildren(ctx, fd.d, stat); err != nil {
+		if err := fd.d.fs.verifyStatAndChildrenLocked(ctx, fd.d, stat); err != nil {
 			return linux.Statx{}, err
 		}
 	}
+	fd.d.dirMu.Unlock()
 	return stat, nil
 }
 
@@ -718,13 +743,15 @@ func (fd *fileDescription) Seek(ctx context.Context, offset int64, whence int32)
 	return offset, nil
 }
 
-// generateMerkle generates a Merkle tree file for fd. If fd points to a file
-// /foo/bar, a Merkle tree file /foo/.merkle.verity.bar is generated. The hash
-// of the generated Merkle tree and the data size is returned.  If fd points to
-// a regular file, the data is the content of the file. If fd points to a
-// directory, the data is all hahes of its children, written to the Merkle tree
-// file.
-func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, error) {
+// generateMerkleLocked generates a Merkle tree file for fd. If fd points to a
+// file /foo/bar, a Merkle tree file /foo/.merkle.verity.bar is generated. The
+// hash of the generated Merkle tree and the data size is returned.  If fd
+// points to a regular file, the data is the content of the file. If fd points
+// to a directory, the data is all hahes of its children, written to the Merkle
+// tree file.
+//
+// Preconditions: fd.d.fs.verityMu must be locked.
+func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, uint64, error) {
 	fdReader := vfs.FileReadWriteSeeker{
 		FD:  fd.lowerFD,
 		Ctx: ctx,
@@ -793,11 +820,14 @@ func (fd *fileDescription) generateMerkle(ctx context.Context) ([]byte, uint64, 
 	return hash, uint64(params.Size), err
 }
 
-// recordChildren writes the names of fd's children into the corresponding
-// Merkle tree file, and saves the offset/size of the map into xattrs.
+// recordChildrenLocked writes the names of fd's children into the
+// corresponding Merkle tree file, and saves the offset/size of the map into
+// xattrs.
 //
-// Preconditions: fd.d.isDir() == true
-func (fd *fileDescription) recordChildren(ctx context.Context) error {
+// Preconditions:
+// * fd.d.fs.verityMu must be locked.
+// * fd.d.isDir() == true.
+func (fd *fileDescription) recordChildrenLocked(ctx context.Context) error {
 	// Record the children names in the Merkle tree file.
 	childrenNames, err := json.Marshal(fd.d.childrenNames)
 	if err != nil {
@@ -847,7 +877,7 @@ func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 		return 0, alertIntegrityViolation("Unexpected verity fd: missing expected underlying fds")
 	}
 
-	hash, dataSize, err := fd.generateMerkle(ctx)
+	hash, dataSize, err := fd.generateMerkleLocked(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -888,11 +918,13 @@ func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 	}
 
 	if fd.d.isDir() {
-		if err := fd.recordChildren(ctx); err != nil {
+		if err := fd.recordChildrenLocked(ctx); err != nil {
 			return 0, err
 		}
 	}
-	fd.d.hash = append(fd.d.hash, hash...)
+	fd.d.hashMu.Lock()
+	fd.d.hash = hash
+	fd.d.hashMu.Unlock()
 	return 0, nil
 }
 
@@ -903,6 +935,9 @@ func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest userm
 		return 0, syserror.EINVAL
 	}
 	var metadata linux.DigestMetadata
+
+	fd.d.hashMu.RLock()
+	defer fd.d.hashMu.RUnlock()
 
 	// If allowRuntimeEnable is true, an empty fd.d.hash indicates that
 	// verity is not enabled for the file. If allowRuntimeEnable is false,
@@ -940,11 +975,13 @@ func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest userm
 func (fd *fileDescription) verityFlags(ctx context.Context, flags usermem.Addr) (uintptr, error) {
 	f := int32(0)
 
+	fd.d.hashMu.RLock()
 	// All enabled files should store a hash. This flag is not settable via
 	// FS_IOC_SETFLAGS.
 	if len(fd.d.hash) != 0 {
 		f |= linux.FS_VERITY_FL
 	}
+	fd.d.hashMu.RUnlock()
 
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
@@ -1023,6 +1060,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		Ctx: ctx,
 	}
 
+	fd.d.hashMu.RLock()
 	n, err := merkletree.Verify(&merkletree.VerifyParams{
 		Out:      dst.Writer(ctx),
 		File:     &dataReader,
@@ -1040,6 +1078,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		Expected:              fd.d.hash,
 		DataAndTreeInSameFile: false,
 	})
+	fd.d.hashMu.RUnlock()
 	if err != nil {
 		return 0, alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
 	}
