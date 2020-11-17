@@ -84,6 +84,7 @@ const (
 	El0SyncIa
 	El0SyncFpsimdAcc
 	El0SyncSveAcc
+	El0SyncFpsimdExc
 	El0SyncSys
 	El0SyncSpPc
 	El0SyncUndef
@@ -368,6 +369,7 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define El0SyncIa 0x%02x\n", El0SyncIa)
 	fmt.Fprintf(w, "#define El0SyncFpsimdAcc 0x%02x\n", El0SyncFpsimdAcc)
 	fmt.Fprintf(w, "#define El0SyncSveAcc 0x%02x\n", El0SyncSveAcc)
+	fmt.Fprintf(w, "#define El0SyncFpsimdExc 0x%02x\n", El0SyncFpsimdExc)
 	fmt.Fprintf(w, "#define El0SyncSys 0x%02x\n", El0SyncSys)
 	fmt.Fprintf(w, "#define El0SyncSpPc 0x%02x\n", El0SyncSpPc)
 	fmt.Fprintf(w, "#define El0SyncUndef 0x%02x\n", El0SyncUndef)
