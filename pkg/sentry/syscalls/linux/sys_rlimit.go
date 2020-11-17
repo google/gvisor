@@ -90,6 +90,9 @@ var setableLimits = map[limits.LimitType]struct{}{
 	limits.FileSize:      {},
 	limits.MemoryLocked:  {},
 	limits.Stack:         {},
+	// RSS can be set, but it's not enforced because Linux doesn't enforce it
+	// either: "This limit has effect only in Linux 2.4.x, x < 30"
+	limits.Rss: {},
 	// These are not enforced, but we include them here to avoid returning
 	// EPERM, since some apps expect them to succeed.
 	limits.Core:         {},
