@@ -177,19 +177,23 @@ func (t *Task) SleepStart() <-chan struct{} {
 // SleepFinish implements context.ChannelSleeper.SleepFinish.
 func (t *Task) SleepFinish(success bool) {
 	if !success {
-		// The interrupted notification is consumed only at the top-level
-		// (Run). Therefore we attempt to reset the pending notification.
-		// This will also elide our next entry back into the task, so we
-		// will process signals, state changes, etc.
+		// Our caller received from t.interruptChan; we need to re-send to it
+		// to ensure that t.interrupted() is still true.
 		t.interruptSelf()
 	}
 	t.accountTaskGoroutineLeave(TaskGoroutineBlockedInterruptible)
 	t.Activate()
 }
 
-// Interrupted implements amutex.Sleeper.Interrupted
+// Interrupted implements context.ChannelSleeper.Interrupted.
 func (t *Task) Interrupted() bool {
-	return len(t.interruptChan) != 0
+	if t.interrupted() {
+		return true
+	}
+	// Indicate that t's task goroutine is still responsive (i.e. reset the
+	// watchdog timer).
+	t.accountTaskGoroutineRunning()
+	return false
 }
 
 // UninterruptibleSleepStart implements context.Context.UninterruptibleSleepStart.
@@ -210,13 +214,17 @@ func (t *Task) UninterruptibleSleepFinish(activate bool) {
 }
 
 // interrupted returns true if interrupt or interruptSelf has been called at
-// least once since the last call to interrupted.
+// least once since the last call to unsetInterrupted.
 func (t *Task) interrupted() bool {
+	return len(t.interruptChan) != 0
+}
+
+// unsetInterrupted causes interrupted to return false until the next call to
+// interrupt or interruptSelf.
+func (t *Task) unsetInterrupted() {
 	select {
 	case <-t.interruptChan:
-		return true
 	default:
-		return false
 	}
 }
 
@@ -232,9 +240,7 @@ func (t *Task) interrupt() {
 func (t *Task) interruptSelf() {
 	select {
 	case t.interruptChan <- struct{}{}:
-		t.Debugf("Interrupt queued")
 	default:
-		t.Debugf("Dropping duplicate interrupt")
 	}
 	// platform.Context.Interrupt() is unnecessary since a task goroutine
 	// calling interruptSelf() cannot also be blocked in

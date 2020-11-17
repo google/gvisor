@@ -343,8 +343,8 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Copy data.
 	var (
-		n   int64
-		err error
+		total int64
+		err   error
 	)
 	dw := dualWaiter{
 		inFile:  inFile,
@@ -357,13 +357,20 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	// can block.
 	nonBlock := outFile.StatusFlags()&linux.O_NONBLOCK != 0
 	if outIsPipe {
-		for n < count {
-			var spliceN int64
-			spliceN, err = outPipeFD.SpliceFromNonPipe(t, inFile, offset, count)
+		for {
+			var n int64
+			n, err = outPipeFD.SpliceFromNonPipe(t, inFile, offset, count-total)
 			if offset != -1 {
-				offset += spliceN
+				offset += n
 			}
-			n += spliceN
+			total += n
+			if total == count {
+				break
+			}
+			if err == nil && t.Interrupted() {
+				err = syserror.ErrInterrupted
+				break
+			}
 			if err == syserror.ErrWouldBlock && !nonBlock {
 				err = dw.waitForBoth(t)
 			}
@@ -374,7 +381,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	} else {
 		// Read inFile to buffer, then write the contents to outFile.
 		buf := make([]byte, count)
-		for n < count {
+		for {
 			var readN int64
 			if offset != -1 {
 				readN, err = inFile.PRead(t, usermem.BytesIOSequence(buf), offset, vfs.ReadOptions{})
@@ -382,7 +389,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			} else {
 				readN, err = inFile.Read(t, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
 			}
-			n += readN
 
 			// Write all of the bytes that we read. This may need
 			// multiple write calls to complete.
@@ -398,7 +404,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 					// We didn't complete the write. Only report the bytes that were actually
 					// written, and rewind offsets as needed.
 					notWritten := int64(len(wbuf))
-					n -= notWritten
+					readN -= notWritten
 					if offset == -1 {
 						// We modified the offset of the input file itself during the read
 						// operation. Rewind it.
@@ -414,6 +420,16 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 					}
 					break
 				}
+			}
+
+			total += readN
+			buf = buf[readN:]
+			if total == count {
+				break
+			}
+			if err == nil && t.Interrupted() {
+				err = syserror.ErrInterrupted
+				break
 			}
 			if err == syserror.ErrWouldBlock && !nonBlock {
 				err = dw.waitForBoth(t)
@@ -432,7 +448,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 	}
 
-	if n != 0 {
+	if total != 0 {
 		inFile.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 		outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 
@@ -445,7 +461,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
 	// This is used only for debugging purposes.
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "sendfile", inFile)
+	return uintptr(total), nil, slinux.HandleIOErrorVFS2(t, total != 0, err, syserror.ERESTARTSYS, "sendfile", inFile)
 }
 
 // dualWaiter is used to wait on one or both vfs.FileDescriptions. It is not
