@@ -1330,7 +1330,10 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	if s := e.EndpointState(); !s.connected() && s != StateClose && bufUsed == 0 {
 		e.rcvListMu.Unlock()
 		if s == StateError {
-			return buffer.View{}, tcpip.ControlMessages{}, e.hardErrorLocked()
+			if err := e.hardErrorLocked(); err != nil {
+				return buffer.View{}, tcpip.ControlMessages{}, err
+			}
+			return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrClosedForReceive
 		}
 		e.stats.ReadErrors.NotConnected.Increment()
 		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrNotConnected
