@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -93,9 +94,10 @@ func TestInitialLoopbackAddresses(t *testing.T) {
 	}
 }
 
-// TestLoopbackAcceptAllInSubnet tests that a loopback interface considers
-// itself bound to all addresses in the subnet of an assigned address.
-func TestLoopbackAcceptAllInSubnet(t *testing.T) {
+// TestLoopbackAcceptAllInSubnetUDP tests that a loopback interface considers
+// itself bound to all addresses in the subnet of an assigned address and UDP
+// traffic is sent/received correctly.
+func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 	const (
 		nicID     = 1
 		localPort = 80
@@ -107,7 +109,7 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 		Protocol:          header.IPv4ProtocolNumber,
 		AddressWithPrefix: ipv4Addr,
 	}
-	ipv4Bytes := []byte(ipv4Addr.Address)
+	ipv4Bytes := []byte(ipv4ProtocolAddress.AddressWithPrefix.Address)
 	ipv4Bytes[len(ipv4Bytes)-1]++
 	otherIPv4Address := tcpip.Address(ipv4Bytes)
 
@@ -129,7 +131,7 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 		{
 			name:       "IPv4 bind to wildcard and send to assigned address",
 			addAddress: ipv4ProtocolAddress,
-			dstAddr:    ipv4Addr.Address,
+			dstAddr:    ipv4ProtocolAddress.AddressWithPrefix.Address,
 			expectRx:   true,
 		},
 		{
@@ -148,7 +150,7 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 			name:       "IPv4 bind to other subnet-local address and send to assigned address",
 			addAddress: ipv4ProtocolAddress,
 			bindAddr:   otherIPv4Address,
-			dstAddr:    ipv4Addr.Address,
+			dstAddr:    ipv4ProtocolAddress.AddressWithPrefix.Address,
 			expectRx:   false,
 		},
 		{
@@ -161,7 +163,7 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 		{
 			name:       "IPv4 bind to assigned address and send to other subnet-local address",
 			addAddress: ipv4ProtocolAddress,
-			bindAddr:   ipv4Addr.Address,
+			bindAddr:   ipv4ProtocolAddress.AddressWithPrefix.Address,
 			dstAddr:    otherIPv4Address,
 			expectRx:   false,
 		},
@@ -236,12 +238,16 @@ func TestLoopbackAcceptAllInSubnet(t *testing.T) {
 				t.Fatalf("got sep.Write(_, _) = (%d, _, nil), want = (%d, _, nil)", n, want)
 			}
 
-			if gotPayload, _, err := rep.Read(nil); test.expectRx {
+			var addr tcpip.FullAddress
+			if gotPayload, _, err := rep.Read(&addr); test.expectRx {
 				if err != nil {
-					t.Fatalf("reep.Read(nil): %s", err)
+					t.Fatalf("reep.Read(_): %s", err)
 				}
 				if diff := cmp.Diff(buffer.View(data), gotPayload); diff != "" {
 					t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
+				}
+				if addr.Addr != test.addAddress.AddressWithPrefix.Address {
+					t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.addAddress.AddressWithPrefix.Address)
 				}
 			} else {
 				if err != tcpip.ErrWouldBlock {
@@ -310,5 +316,170 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		Data:               data.ToVectorisedView(),
 	})); err != tcpip.ErrInvalidEndpointState {
 		t.Fatalf("got r.WritePacket(nil, %#v, _) = %s, want = %s", params, err, tcpip.ErrInvalidEndpointState)
+	}
+}
+
+// TestLoopbackAcceptAllInSubnetTCP tests that a loopback interface considers
+// itself bound to all addresses in the subnet of an assigned address and TCP
+// traffic is sent/received correctly.
+func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
+	const (
+		nicID     = 1
+		localPort = 80
+	)
+
+	ipv4ProtocolAddress := tcpip.ProtocolAddress{
+		Protocol:          header.IPv4ProtocolNumber,
+		AddressWithPrefix: ipv4Addr,
+	}
+	ipv4ProtocolAddress.AddressWithPrefix.PrefixLen = 8
+	ipv4Bytes := []byte(ipv4ProtocolAddress.AddressWithPrefix.Address)
+	ipv4Bytes[len(ipv4Bytes)-1]++
+	otherIPv4Address := tcpip.Address(ipv4Bytes)
+
+	ipv6ProtocolAddress := tcpip.ProtocolAddress{
+		Protocol:          header.IPv6ProtocolNumber,
+		AddressWithPrefix: ipv6Addr,
+	}
+	ipv6Bytes := []byte(ipv6Addr.Address)
+	ipv6Bytes[len(ipv6Bytes)-1]++
+	otherIPv6Address := tcpip.Address(ipv6Bytes)
+
+	tests := []struct {
+		name         string
+		addAddress   tcpip.ProtocolAddress
+		bindAddr     tcpip.Address
+		dstAddr      tcpip.Address
+		expectAccept bool
+	}{
+		{
+			name:         "IPv4 bind to wildcard and send to assigned address",
+			addAddress:   ipv4ProtocolAddress,
+			dstAddr:      ipv4ProtocolAddress.AddressWithPrefix.Address,
+			expectAccept: true,
+		},
+		{
+			name:         "IPv4 bind to wildcard and send to other subnet-local address",
+			addAddress:   ipv4ProtocolAddress,
+			dstAddr:      otherIPv4Address,
+			expectAccept: true,
+		},
+		{
+			name:         "IPv4 bind to wildcard send to other address",
+			addAddress:   ipv4ProtocolAddress,
+			dstAddr:      remoteIPv4Addr,
+			expectAccept: false,
+		},
+		{
+			name:         "IPv4 bind to other subnet-local address and send to assigned address",
+			addAddress:   ipv4ProtocolAddress,
+			bindAddr:     otherIPv4Address,
+			dstAddr:      ipv4ProtocolAddress.AddressWithPrefix.Address,
+			expectAccept: false,
+		},
+		{
+			name:         "IPv4 bind and send to other subnet-local address",
+			addAddress:   ipv4ProtocolAddress,
+			bindAddr:     otherIPv4Address,
+			dstAddr:      otherIPv4Address,
+			expectAccept: true,
+		},
+		{
+			name:         "IPv4 bind to assigned address and send to other subnet-local address",
+			addAddress:   ipv4ProtocolAddress,
+			bindAddr:     ipv4ProtocolAddress.AddressWithPrefix.Address,
+			dstAddr:      otherIPv4Address,
+			expectAccept: false,
+		},
+
+		{
+			name:         "IPv6 bind and send to assigned address",
+			addAddress:   ipv6ProtocolAddress,
+			bindAddr:     ipv6Addr.Address,
+			dstAddr:      ipv6Addr.Address,
+			expectAccept: true,
+		},
+		{
+			name:         "IPv6 bind to wildcard and send to other subnet-local address",
+			addAddress:   ipv6ProtocolAddress,
+			dstAddr:      otherIPv6Address,
+			expectAccept: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+			})
+			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+			if err := s.AddProtocolAddress(nicID, test.addAddress); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, test.addAddress, err)
+			}
+			s.SetRouteTable([]tcpip.Route{
+				tcpip.Route{
+					Destination: header.IPv4EmptySubnet,
+					NIC:         nicID,
+				},
+				tcpip.Route{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         nicID,
+				},
+			})
+
+			var wq waiter.Queue
+			we, ch := waiter.NewChannelEntry(nil)
+			wq.EventRegister(&we, waiter.EventIn)
+			defer wq.EventUnregister(&we)
+			listeningEndpoint, err := s.NewEndpoint(tcp.ProtocolNumber, test.addAddress.Protocol, &wq)
+			if err != nil {
+				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.addAddress.Protocol, err)
+			}
+			defer listeningEndpoint.Close()
+
+			bindAddr := tcpip.FullAddress{Addr: test.bindAddr, Port: localPort}
+			if err := listeningEndpoint.Bind(bindAddr); err != nil {
+				t.Fatalf("listeningEndpoint.Bind(%#v): %s", bindAddr, err)
+			}
+
+			if err := listeningEndpoint.Listen(1); err != nil {
+				t.Fatalf("listeningEndpoint.Listen(1): %s", err)
+			}
+
+			connectingEndpoint, err := s.NewEndpoint(tcp.ProtocolNumber, test.addAddress.Protocol, &wq)
+			if err != nil {
+				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.addAddress.Protocol, err)
+			}
+			defer connectingEndpoint.Close()
+
+			connectAddr := tcpip.FullAddress{
+				Addr: test.dstAddr,
+				Port: localPort,
+			}
+			if err := connectingEndpoint.Connect(connectAddr); err != tcpip.ErrConnectStarted {
+				t.Fatalf("connectingEndpoint.Connect(%#v): %s", connectAddr, err)
+			}
+
+			if !test.expectAccept {
+				if _, _, err := listeningEndpoint.Accept(nil); err != tcpip.ErrWouldBlock {
+					t.Fatalf("got listeningEndpoint.Accept(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
+				}
+				return
+			}
+
+			// Wait for the listening endpoint to be "readable". That is, wait for a
+			// new connection.
+			<-ch
+			var addr tcpip.FullAddress
+			if _, _, err := listeningEndpoint.Accept(&addr); err != nil {
+				t.Fatalf("listeningEndpoint.Accept(nil): %s", err)
+			}
+			if addr.Addr != test.addAddress.AddressWithPrefix.Address {
+				t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.addAddress.AddressWithPrefix.Address)
+			}
+		})
 	}
 }
