@@ -44,7 +44,6 @@ func (s *socketOpsCommon) StateFields() []string {
 		"bound",
 		"portID",
 		"sendBufferSize",
-		"passcred",
 		"filter",
 	}
 }
@@ -62,8 +61,7 @@ func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &s.bound)
 	stateSinkObject.Save(7, &s.portID)
 	stateSinkObject.Save(8, &s.sendBufferSize)
-	stateSinkObject.Save(9, &s.passcred)
-	stateSinkObject.Save(10, &s.filter)
+	stateSinkObject.Save(9, &s.filter)
 }
 
 func (s *socketOpsCommon) afterLoad() {}
@@ -78,8 +76,7 @@ func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &s.bound)
 	stateSourceObject.Load(7, &s.portID)
 	stateSourceObject.Load(8, &s.sendBufferSize)
-	stateSourceObject.Load(9, &s.passcred)
-	stateSourceObject.Load(10, &s.filter)
+	stateSourceObject.Load(9, &s.filter)
 }
 
 func (k *kernelSCM) StateTypeName() string {

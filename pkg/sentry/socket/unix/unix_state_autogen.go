@@ -87,7 +87,6 @@ func (s *socketOpsCommon) StateFields() []string {
 		"stype",
 		"abstractName",
 		"abstractNamespace",
-		"ops",
 	}
 }
 
@@ -100,7 +99,6 @@ func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.stype)
 	stateSinkObject.Save(3, &s.abstractName)
 	stateSinkObject.Save(4, &s.abstractNamespace)
-	stateSinkObject.Save(5, &s.ops)
 }
 
 func (s *socketOpsCommon) afterLoad() {}
@@ -111,7 +109,6 @@ func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &s.stype)
 	stateSourceObject.Load(3, &s.abstractName)
 	stateSourceObject.Load(4, &s.abstractNamespace)
-	stateSourceObject.Load(5, &s.ops)
 }
 
 func (s *SocketVFS2) StateTypeName() string {

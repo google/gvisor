@@ -721,12 +721,6 @@ const (
 	// whether UDP checksum is disabled for this socket.
 	NoChecksumOption
 
-	// PasscredOption is used by SetSockOptBool/GetSockOptBool to specify
-	// whether SCM_CREDENTIALS socket control messages are enabled.
-	//
-	// Only supported on Unix sockets.
-	PasscredOption
-
 	// QuickAckOption is stubbed out in SetSockOptBool/GetSockOptBool.
 	QuickAckOption
 

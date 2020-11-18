@@ -16,8 +16,6 @@
 package transport
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -203,10 +201,11 @@ type Endpoint interface {
 	// procfs.
 	State() uint32
 
-	// LastError implements tcpip.Endpoint.LastError.
+	// LastError clears and returns the last error reported by the endpoint.
 	LastError() *tcpip.Error
 
-	// SocketOptions implements tcpip.Endpoint.SocketOptions.
+	// SocketOptions returns the structure which contains all the socket
+	// level options.
 	SocketOptions() *tcpip.SocketOptions
 }
 
@@ -740,10 +739,6 @@ func (e *connectedEndpoint) CloseUnread() {
 type baseEndpoint struct {
 	*waiter.Queue
 
-	// passcred specifies whether SCM_CREDENTIALS socket control messages are
-	// enabled on this endpoint. Must be accessed atomically.
-	passcred int32
-
 	// Mutex protects the below fields.
 	sync.Mutex `state:"nosave"`
 
@@ -786,7 +781,7 @@ func (e *baseEndpoint) EventUnregister(we *waiter.Entry) {
 
 // Passcred implements Credentialer.Passcred.
 func (e *baseEndpoint) Passcred() bool {
-	return atomic.LoadInt32(&e.passcred) != 0
+	return e.SocketOptions().GetPassCred()
 }
 
 // ConnectedPasscred implements Credentialer.ConnectedPasscred.
@@ -794,14 +789,6 @@ func (e *baseEndpoint) ConnectedPasscred() bool {
 	e.Lock()
 	defer e.Unlock()
 	return e.connected != nil && e.connected.Passcred()
-}
-
-func (e *baseEndpoint) setPasscred(pc bool) {
-	if pc {
-		atomic.StoreInt32(&e.passcred, 1)
-	} else {
-		atomic.StoreInt32(&e.passcred, 0)
-	}
 }
 
 // Connected implements ConnectingEndpoint.Connected.
@@ -870,8 +857,6 @@ func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 
 func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
-	case tcpip.PasscredOption:
-		e.setPasscred(v)
 	case tcpip.ReuseAddressOption:
 	default:
 		log.Warningf("Unsupported socket option: %d", opt)
@@ -893,9 +878,6 @@ func (e *baseEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error
 	switch opt {
 	case tcpip.KeepaliveEnabledOption, tcpip.AcceptConnOption:
 		return false, nil
-
-	case tcpip.PasscredOption:
-		return e.Passcred(), nil
 
 	default:
 		log.Warningf("Unsupported socket option: %d", opt)

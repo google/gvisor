@@ -1279,6 +1279,7 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 	e.rcvListMu.Unlock()
 }
 
+// SetOwner implements tcpip.Endpoint.SetOwner.
 func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
@@ -1299,6 +1300,7 @@ func (e *endpoint) lastErrorLocked() *tcpip.Error {
 	return err
 }
 
+// LastError implements tcpip.Endpoint.LastError.
 func (e *endpoint) LastError() *tcpip.Error {
 	e.LockUser()
 	defer e.UnlockUser()
@@ -3213,6 +3215,7 @@ func (e *endpoint) Wait() {
 	}
 }
 
+// SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops
 }
