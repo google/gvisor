@@ -1454,16 +1454,12 @@ func TestNoChecksum(t *testing.T) {
 			c.createEndpointForFlow(flow)
 
 			// Disable the checksum generation.
-			if err := c.ep.SetSockOptBool(tcpip.NoChecksumOption, true); err != nil {
-				t.Fatalf("SetSockOptBool failed: %s", err)
-			}
+			c.ep.SocketOptions().SetNoChecksum(true)
 			// This option is effective on IPv4 only.
 			testWrite(c, flow, checker.UDP(checker.NoChecksum(flow.isV4())))
 
 			// Enable the checksum generation.
-			if err := c.ep.SetSockOptBool(tcpip.NoChecksumOption, false); err != nil {
-				t.Fatalf("SetSockOptBool failed: %s", err)
-			}
+			c.ep.SocketOptions().SetNoChecksum(false)
 			testWrite(c, flow, checker.UDP(checker.NoChecksum(false)))
 		})
 	}
