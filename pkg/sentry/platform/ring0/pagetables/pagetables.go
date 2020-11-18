@@ -58,6 +58,15 @@ type PageTables struct {
 	readOnlyShared bool
 }
 
+// Init initializes a set of PageTables.
+//
+//go:nosplit
+func (p *PageTables) Init(allocator Allocator) {
+	p.Allocator = allocator
+	p.root = p.Allocator.NewPTEs()
+	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
+}
+
 // NewWithUpper returns new PageTables.
 //
 // upperSharedPageTables are used for mapping the upper of addresses,
@@ -73,14 +82,17 @@ type PageTables struct {
 func NewWithUpper(a Allocator, upperSharedPageTables *PageTables, upperStart uintptr) *PageTables {
 	p := new(PageTables)
 	p.Init(a)
+
 	if upperSharedPageTables != nil {
 		if !upperSharedPageTables.readOnlyShared {
 			panic("Only read-only shared pagetables can be used as upper")
 		}
 		p.upperSharedPageTables = upperSharedPageTables
 		p.upperStart = upperStart
-		p.cloneUpperShared()
 	}
+
+	p.InitArch(a)
+
 	return p
 }
 
