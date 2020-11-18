@@ -75,6 +75,12 @@ func (s *syslog) Log() []byte {
 		"Checking naughty and nice process list...", // Check it up to twice.
 		"Granting licence to kill(2)...",            // British spelling for British movie.
 		"Letting the watchdogs out...",
+		"Conjuring /dev/null black hole...",
+		"Adversarially training Redcode AI...",
+		"Singleplexing /dev/ptmx...",
+		"Recruiting cron-ies...",
+		"Verifying that no non-zero bytes made their way into /dev/zero...",
+		"Accelerating teletypewriter to 9600 baud...",
 	}
 
 	selectMessage := func() string {
