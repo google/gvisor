@@ -39,22 +39,39 @@ TEST_P(BlockingStreamSocketPairTest, BlockPartialWriteClosed) {
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  int buffer_size;
+  int buffer_size = 8 << 10;  // 8 KiB
   socklen_t length = sizeof(buffer_size);
-  ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF,
-                         &buffer_size, &length),
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF,
+                         &buffer_size, length),
+              SyscallSucceeds());
+
+  ASSERT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVBUF,
+                         &buffer_size, length),
               SyscallSucceeds());
 
   int wfd = sockets->first_fd();
   ScopedThread t([wfd, buffer_size]() {
-    std::vector<char> buf(2 * buffer_size);
-    // Write more than fits in the buffer. Blocks then returns partial write
-    // when the other end is closed. The next call returns EPIPE.
-    //
-    // N.B. writes occur in chunks, so we may see less than buffer_size from
-    // the first call.
-    ASSERT_THAT(write(wfd, buf.data(), buf.size()),
-                SyscallSucceedsWithValue(::testing::Gt(0)));
+    std::vector<char> buf(buffer_size);
+
+    // Temporarily set the fd to nonblocking so that we can fill the
+    // send buffer without actually blocking on a write.
+    int opts;
+    ASSERT_THAT(opts = fcntl(wfd, F_GETFL), SyscallSucceeds());
+    ASSERT_THAT(fcntl(wfd, F_SETFL, opts | O_NONBLOCK), SyscallSucceeds());
+
+    // Write until we receive an error.
+    while (RetryEINTR(send)(wfd, buf.data(), buf.size(), 0) != -1) {
+      // Sleep to give linux a chance to move data from the send buffer to the
+      // receive buffer.
+      usleep(10000);  // 10ms.
+    }
+    // The last error should have been EWOULDBLOCK.
+    ASSERT_EQ(errno, EWOULDBLOCK);
+
+    // Restore the original opts to restore blocking behaviour on the socket.
+    ASSERT_THAT(fcntl(wfd, F_SETFL, opts), SyscallSucceeds());
+
+    // This write should now block as we just got an EWOULDBLOCK above.
     ASSERT_THAT(write(wfd, buf.data(), buf.size()),
                 ::testing::AnyOf(SyscallFailsWithErrno(EPIPE),
                                  SyscallFailsWithErrno(ECONNRESET)));
