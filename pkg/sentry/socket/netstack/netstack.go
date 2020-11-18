@@ -1232,12 +1232,8 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.NoChecksumOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetNoChecksum()))
+		return &v, nil
 
 	case linux.SO_ACCEPTCONN:
 		if outLen < sizeOfInt32 {
@@ -1977,7 +1973,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.NoChecksumOption, v != 0))
+		ep.SocketOptions().SetNoChecksum(v != 0)
+		return nil
 
 	case linux.SO_LINGER:
 		if len(optVal) < linux.SizeOfLinger {

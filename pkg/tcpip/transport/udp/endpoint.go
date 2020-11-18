@@ -108,7 +108,6 @@ type endpoint struct {
 	multicastLoop  bool
 	portFlags      ports.Flags
 	bindToDevice   tcpip.NICID
-	noChecksum     bool
 
 	lastErrorMu sync.Mutex   `state:"nosave"`
 	lastError   *tcpip.Error `state:".(string)"`
@@ -550,7 +549,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	localPort := e.ID.LocalPort
 	sendTOS := e.sendTOS
 	owner := e.owner
-	noChecksum := e.noChecksum
+	noChecksum := e.SocketOptions().GetNoChecksum()
 	lockReleased = true
 	e.mu.RUnlock()
 
@@ -581,11 +580,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	case tcpip.MulticastLoopOption:
 		e.mu.Lock()
 		e.multicastLoop = v
-		e.mu.Unlock()
-
-	case tcpip.NoChecksumOption:
-		e.mu.Lock()
-		e.noChecksum = v
 		e.mu.Unlock()
 
 	case tcpip.ReceiveTOSOption:
@@ -855,12 +849,6 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	case tcpip.MulticastLoopOption:
 		e.mu.RLock()
 		v := e.multicastLoop
-		e.mu.RUnlock()
-		return v, nil
-
-	case tcpip.NoChecksumOption:
-		e.mu.RLock()
-		v := e.noChecksum
 		e.mu.RUnlock()
 		return v, nil
 
