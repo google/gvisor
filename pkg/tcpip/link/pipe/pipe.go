@@ -67,11 +67,6 @@ func (*Endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, 
 	panic("not implemented")
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.
-func (*Endpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {
-	panic("not implemented")
-}
-
 // Attach implements stack.LinkEndpoint.
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher

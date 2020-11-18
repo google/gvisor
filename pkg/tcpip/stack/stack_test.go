@@ -4152,3 +4152,63 @@ func TestFindRouteWithForwarding(t *testing.T) {
 		})
 	}
 }
+
+func TestWritePacketToRemote(t *testing.T) {
+	const nicID = 1
+	const MTU = 1280
+	e := channel.New(1, MTU, linkAddr1)
+	s := stack.New(stack.Options{})
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("CreateNIC(%d) = %s", nicID, err)
+	}
+	tests := []struct {
+		name     string
+		protocol tcpip.NetworkProtocolNumber
+		payload  []byte
+	}{
+		{
+			name:     "SuccessIPv4",
+			protocol: header.IPv4ProtocolNumber,
+			payload:  []byte{1, 2, 3, 4},
+		},
+		{
+			name:     "SuccessIPv6",
+			protocol: header.IPv6ProtocolNumber,
+			payload:  []byte{5, 6, 7, 8},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := s.WritePacketToRemote(nicID, linkAddr2, test.protocol, buffer.View(test.payload).ToVectorisedView()); err != nil {
+				t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s", err)
+			}
+
+			pkt, ok := e.Read()
+			if got, want := ok, true; got != want {
+				t.Fatalf("e.Read() = %t, want %t", got, want)
+			}
+			if got, want := pkt.Proto, test.protocol; got != want {
+				t.Fatalf("pkt.Proto = %d, want %d", got, want)
+			}
+			if got, want := pkt.Route.RemoteLinkAddress, linkAddr2; got != want {
+				t.Fatalf("pkt.Route.RemoteAddress = %s, want %s", got, want)
+			}
+			if diff := cmp.Diff(pkt.Pkt.Data.ToView(), buffer.View(test.payload)); diff != "" {
+				t.Errorf("pkt.Pkt.Data mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	t.Run("InvalidNICID", func(t *testing.T) {
+		if got, want := s.WritePacketToRemote(234, linkAddr2, header.IPv4ProtocolNumber, buffer.View([]byte{1}).ToVectorisedView()), tcpip.ErrUnknownDevice; got != want {
+			t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s, want = %s", got, want)
+		}
+		pkt, ok := e.Read()
+		if got, want := ok, false; got != want {
+			t.Fatalf("e.Read() = %t, %v; want %t", got, pkt, want)
+		}
+	})
+}

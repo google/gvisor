@@ -739,10 +739,6 @@ type LinkEndpoint interface {
 	// endpoint.
 	Capabilities() LinkEndpointCapabilities
 
-	// WriteRawPacket writes a packet directly to the link. The packet
-	// should already have an ethernet header. It takes ownership of vv.
-	WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error
-
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.
 	//

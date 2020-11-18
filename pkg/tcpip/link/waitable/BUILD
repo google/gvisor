@@ -11,7 +11,6 @@ go_library(
     deps = [
         "//pkg/gate",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
@@ -25,7 +24,6 @@ go_test(
     library = ":waitable",
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],

@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -79,11 +78,6 @@ func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcp
 func (e *countedEndpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	e.writeCount += pkts.Len()
 	return pkts.Len(), nil
-}
-
-func (e *countedEndpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {
-	e.writeCount++
-	return nil
 }
 
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.

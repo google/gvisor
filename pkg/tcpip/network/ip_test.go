@@ -193,10 +193,6 @@ func (*testObject) WritePackets(_ *stack.Route, _ *stack.GSO, pkt stack.PacketBu
 	panic("not implemented")
 }
 
-func (*testObject) WriteRawPacket(_ buffer.VectorisedView) *tcpip.Error {
-	return tcpip.ErrNotSupported
-}
-
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
 func (*testObject) ARPHardwareType() header.ARPHardwareType {
 	panic("not implemented")
