@@ -363,7 +363,7 @@ func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
 
-	if fd.fs.umounted {
+	if fd.fs == nil || fd.fs.umounted {
 		ready |= waiter.EventErr
 		return ready & mask
 	}
