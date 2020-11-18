@@ -756,10 +756,12 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 // Wait implements stack.TransportEndpoint.Wait.
 func (*endpoint) Wait() {}
 
+// LastError implements tcpip.Endpoint.LastError.
 func (*endpoint) LastError() *tcpip.Error {
 	return nil
 }
 
+// SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops
 }

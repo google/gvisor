@@ -120,9 +120,6 @@ type socketOpsCommon struct {
 	// fixed buffer but only consume this many bytes.
 	sendBufferSize uint32
 
-	// passcred indicates if this socket wants SCM credentials.
-	passcred bool
-
 	// filter indicates that this socket has a BPF filter "installed".
 	//
 	// TODO(gvisor.dev/issue/1119): We don't actually support filtering,
@@ -201,10 +198,7 @@ func (s *socketOpsCommon) EventUnregister(e *waiter.Entry) {
 
 // Passcred implements transport.Credentialer.Passcred.
 func (s *socketOpsCommon) Passcred() bool {
-	s.mu.Lock()
-	passcred := s.passcred
-	s.mu.Unlock()
-	return passcred
+	return s.ep.SocketOptions().GetPassCred()
 }
 
 // ConnectedPasscred implements transport.Credentialer.ConnectedPasscred.
@@ -419,9 +413,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 			}
 			passcred := usermem.ByteOrder.Uint32(opt)
 
-			s.mu.Lock()
-			s.passcred = passcred != 0
-			s.mu.Unlock()
+			s.ep.SocketOptions().SetPassCred(passcred != 0)
 			return nil
 
 		case linux.SO_ATTACH_FILTER:

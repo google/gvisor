@@ -818,32 +818,38 @@ TEST_P(AllSocketPairTest, GetSockoptProtocol) {
   }
 }
 
-TEST_P(AllSocketPairTest, GetSockoptBroadcast) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-  int opt = -1;
-  socklen_t optlen = sizeof(opt);
-  EXPECT_THAT(
-      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_BROADCAST, &opt, &optlen),
-      SyscallSucceeds());
-  ASSERT_EQ(optlen, sizeof(opt));
-  EXPECT_EQ(opt, 0);
-}
+TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
+  int sock_opts[] = {SO_BROADCAST, SO_PASSCRED};
+  for (int sock_opt : sock_opts) {
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    int enable = -1;
+    socklen_t enableLen = sizeof(enable);
 
-TEST_P(AllSocketPairTest, SetAndGetSocketBroadcastOption) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-  int kSockOptOn = 1;
-  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_BROADCAST,
-                         &kSockOptOn, sizeof(kSockOptOn)),
-              SyscallSucceedsWithValue(0));
+    // Test that the option is initially set to false.
+    ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
+                           &enableLen),
+                SyscallSucceeds());
+    ASSERT_EQ(enableLen, sizeof(enable));
+    EXPECT_EQ(enable, 0) << absl::StrFormat(
+        "getsockopt(fd, SOL_SOCKET, %d, &enable, &enableLen) => enable=%d",
+        sock_opt, enable);
 
-  int got = -1;
-  socklen_t length = sizeof(got);
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_BROADCAST, &got, &length),
-      SyscallSucceedsWithValue(0));
-
-  ASSERT_EQ(length, sizeof(got));
-  EXPECT_EQ(got, kSockOptOn);
+    // Test that setting the option to true is reflected in the subsequent
+    // call to getsockopt(2).
+    enable = 1;
+    ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
+                           sizeof(enable)),
+                SyscallSucceeds());
+    enable = -1;
+    enableLen = sizeof(enable);
+    ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
+                           &enableLen),
+                SyscallSucceeds());
+    ASSERT_EQ(enableLen, sizeof(enable));
+    EXPECT_EQ(enable, 1) << absl::StrFormat(
+        "getsockopt(fd, SOL_SOCKET, %d, &enable, &enableLen) => enable=%d",
+        sock_opt, enable);
+  }
 }
 
 }  // namespace testing

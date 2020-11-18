@@ -115,9 +115,6 @@ type socketOpsCommon struct {
 	// bound, they cannot be modified.
 	abstractName      string
 	abstractNamespace *kernel.AbstractSocketNamespace
-
-	// ops is used to get socket level options.
-	ops tcpip.SocketOptions
 }
 
 func (s *socketOpsCommon) isPacket() bool {
