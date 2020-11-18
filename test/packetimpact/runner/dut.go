@@ -96,7 +96,7 @@ func (l logger) Logf(format string, args ...interface{}) {
 }
 
 // TestWithDUT runs a packetimpact test with the given information.
-func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Container) DUT, containerAddr net.IP) {
+func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Container) DUT) {
 	if testbenchBinary == "" {
 		t.Fatal("--testbench_binary is missing")
 	}
@@ -172,7 +172,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	}
 
 	device := mkDevice(dut)
-	remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev := device.Prepare(ctx, t, runOpts, ctrlNet, testNet, containerAddr)
+	remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev := device.Prepare(ctx, t, runOpts, ctrlNet, testNet)
 
 	// Create the Docker container for the testbench.
 	testbench := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
@@ -285,7 +285,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 type DUT interface {
 	// Prepare prepares the dut, starts posix_server and returns the IPv6, MAC
 	// address, the interface ID, and the interface name for the testNet on DUT.
-	Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network, containerAddr net.IP) (net.IP, net.HardwareAddr, uint32, string)
+	Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string)
 	// Logs retrieves the logs from the dut.
 	Logs(ctx context.Context) (string, error)
 }
@@ -303,7 +303,7 @@ func NewDockerDUT(c *dockerutil.Container) DUT {
 }
 
 // Prepare implements DUT.Prepare.
-func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network, containerAddr net.IP) (net.IP, net.HardwareAddr, uint32, string) {
+func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string) {
 	const containerPosixServerBinary = "/packetimpact/posix_server"
 	dut.c.CopyFiles(&runOpts, "/packetimpact", "test/packetimpact/dut/posix_server")
 
@@ -311,7 +311,7 @@ func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockeru
 		ctx,
 		runOpts,
 		dut.c,
-		containerAddr,
+		DutAddr,
 		[]*dockerutil.Network{ctrlNet, testNet},
 		containerPosixServerBinary,
 		"--ip=0.0.0.0",
@@ -324,7 +324,7 @@ func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockeru
 		t.Fatalf("%s on container %s never listened: %s", containerPosixServerBinary, dut.c.Name, err)
 	}
 
-	dutTestDevice, dutDeviceInfo, err := deviceByIP(ctx, dut.c, AddressInSubnet(containerAddr, *testNet.Subnet))
+	dutTestDevice, dutDeviceInfo, err := deviceByIP(ctx, dut.c, AddressInSubnet(DutAddr, *testNet.Subnet))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockeru
 			t.Fatalf("unable to ip addr add on container %s: %s", dut.c.Name, err)
 		}
 		// Now try again, to make sure that it worked.
-		_, dutDeviceInfo, err = deviceByIP(ctx, dut.c, AddressInSubnet(containerAddr, *testNet.Subnet))
+		_, dutDeviceInfo, err = deviceByIP(ctx, dut.c, AddressInSubnet(DutAddr, *testNet.Subnet))
 		if err != nil {
 			t.Fatal(err)
 		}
