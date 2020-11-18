@@ -24,7 +24,6 @@ package waitable
 import (
 	"gvisor.dev/gvisor/pkg/gate"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -130,17 +129,6 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	n, err := e.lower.WritePackets(r, gso, pkts, protocol)
 	e.writeGate.Leave()
 	return n, err
-}
-
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	if !e.writeGate.Enter() {
-		return nil
-	}
-
-	err := e.lower.WriteRawPacket(vv)
-	e.writeGate.Leave()
-	return err
 }
 
 // WaitWrite prevents new calls to WritePacket from reaching the lower endpoint,

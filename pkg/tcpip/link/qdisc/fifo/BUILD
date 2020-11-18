@@ -13,7 +13,6 @@ go_library(
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],

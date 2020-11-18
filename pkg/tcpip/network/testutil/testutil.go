@@ -85,21 +85,6 @@ func (ep *MockLinkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts st
 	return n, nil
 }
 
-// WriteRawPacket implements LinkEndpoint.WriteRawPacket.
-func (ep *MockLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	if ep.allowPackets == 0 {
-		return ep.err
-	}
-	ep.allowPackets--
-
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: vv,
-	})
-	ep.WrittenPackets = append(ep.WrittenPackets, pkt)
-
-	return nil
-}
-
 // Attach implements LinkEndpoint.Attach.
 func (*MockLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 

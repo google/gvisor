@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -269,21 +268,6 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	}
 
 	return n, nil
-}
-
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	p := PacketInfo{
-		Pkt: stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: vv,
-		}),
-		Proto: 0,
-		GSO:   nil,
-	}
-
-	e.q.Write(p)
-
-	return nil
 }
 
 // Wait implements stack.LinkEndpoint.Wait.

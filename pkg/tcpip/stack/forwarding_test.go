@@ -333,20 +333,6 @@ func (e *fwdTestLinkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBuffer
 	return n, nil
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *fwdTestLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	p := fwdTestPacketInfo{
-		Pkt: NewPacketBuffer(PacketBufferOptions{Data: vv}),
-	}
-
-	select {
-	case e.C <- p:
-	default:
-	}
-
-	return nil
-}
-
 // Wait implements stack.LinkEndpoint.Wait.
 func (*fwdTestLinkEndpoint) Wait() {}
 

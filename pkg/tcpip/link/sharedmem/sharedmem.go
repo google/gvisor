@@ -224,21 +224,6 @@ func (e *endpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.PacketB
 	panic("not implemented")
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	views := vv.Views()
-	// Transmit the packet.
-	e.mu.Lock()
-	ok := e.tx.transmit(views...)
-	e.mu.Unlock()
-
-	if !ok {
-		return tcpip.ErrWouldBlock
-	}
-
-	return nil
-}
-
 // dispatchLoop reads packets from the rx queue in a loop and dispatches them
 // to the network stack.
 func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
