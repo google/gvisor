@@ -65,7 +65,7 @@ rebuild-%: register-cross
 	@if ! [ -f "$(call path,$*)/$(call dockerfile,$*)" ]; then \
 		(echo "ERROR: Dockerfile for $* not found (is it available for $(ARCH)?)." >&2 && exit 1); \
 	fi
-	$(foreach IMAGE,$(FROM),docker pull $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) \
+	$(foreach IMAGE,$(FROM),docker pull -q $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) \
 	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
 		docker build $(DOCKER_PLATFORM_ARGS) \
 			-f "$$T/$(call dockerfile,$*)" \
@@ -77,7 +77,7 @@ rebuild-%: register-cross
 # must be pulled, then it will tag with the latest local target. Note that pull
 # may fail if the remote image is not available.
 pull-%:
-	docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$*)
+	docker pull -q $(DOCKER_PLATFORM_ARGS) $(call remote_image,$*)
 
 # load will either pull the "remote" or build it locally. This is the preferred
 # entrypoint, as it should never fail. The local tag should always be set after

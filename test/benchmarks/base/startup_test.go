@@ -39,7 +39,6 @@ func BenchmarkStartupEmpty(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		harness.DebugLog(b, "Running container: %d", i)
 		container := machine.GetContainer(ctx, b)
-		defer container.CleanUp(ctx)
 		if _, err := container.Run(ctx, dockerutil.RunOpts{
 			Image: "benchmarks/alpine",
 		}, "true"); err != nil {

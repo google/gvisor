@@ -92,17 +92,16 @@ func (c *Container) doExec(ctx context.Context, r ExecOpts, args []string) (Proc
 func (c *Container) execConfig(r ExecOpts, cmd []string) types.ExecConfig {
 	env := append(r.Env, fmt.Sprintf("RUNSC_TEST_NAME=%s", c.Name))
 	return types.ExecConfig{
-		AttachStdin:  r.UseTTY,
+		Tty:          r.UseTTY,
+		AttachStdin:  true,
 		AttachStderr: true,
 		AttachStdout: true,
 		Cmd:          cmd,
 		Privileged:   r.Privileged,
 		WorkingDir:   r.WorkDir,
 		Env:          env,
-		Tty:          r.UseTTY,
 		User:         r.User,
 	}
-
 }
 
 // Process represents a containerized process.

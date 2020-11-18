@@ -322,7 +322,8 @@ func TestJobControl(t *testing.T) {
 
 	// Start the container with an attached PTY.
 	p, err := d.SpawnProcess(ctx, dockerutil.RunOpts{
-		Image: "basic/alpine",
+		Image:  "basic/alpine",
+		UseTTY: true,
 	}, "sh", "-c", "sleep 100 | cat")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)

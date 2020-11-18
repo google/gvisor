@@ -102,6 +102,9 @@ type RunOpts struct {
 
 	// Links is the list of containers to be connected to the container.
 	Links []string
+
+	// UseTTY indicates that a tty should be allocated.
+	UseTTY bool
 }
 
 // MakeContainer sets up the struct for a Docker container.
@@ -163,9 +166,6 @@ func (c *Container) Spawn(ctx context.Context, r RunOpts, args ...string) error 
 // which represents the root process.
 func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string) (Process, error) {
 	config, hostconf, netconf := c.ConfigsFrom(r, args...)
-	config.Tty = true
-	config.OpenStdin = true
-
 	if err := c.CreateFrom(ctx, config, hostconf, netconf); err != nil {
 		return Process{}, err
 	}
@@ -252,6 +252,11 @@ func (c *Container) config(r RunOpts, args []string) *container.Config {
 	env := append(r.Env, fmt.Sprintf("RUNSC_TEST_NAME=%s", c.Name))
 
 	return &container.Config{
+		Tty:          r.UseTTY,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		OpenStdin:    r.UseTTY,
 		Image:        testutil.ImageByName(r.Image),
 		Cmd:          args,
 		ExposedPorts: ports,

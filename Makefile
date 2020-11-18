@@ -16,7 +16,7 @@
 
 # Helpful pretty-printer.
 MAKEBANNER := \033[1;34mmake\033[0m
-submake = echo -e '$(MAKEBANNER) $1' >&2; $(MAKE) $1
+submake = echo -e '$(MAKEBANNER) $1' >&2 && $(MAKE) $1
 
 # Described below.
 OPTIONS :=
@@ -292,27 +292,26 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
 	--dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE)")
 .PHONY: init-benchmark-table
 
-benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
-	$(call submake, run-benchmark RUNTIME="runc")
-	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
-		$(call submake,install-runtime RUNTIME="$(PLATFORM)" ARGS="--platform=$(PLATFORM) --vfs2") && \
-		$(call submake,run-benchmark RUNTIME="$(PLATFORM)") && \
-		$(call submake,install-runtime RUNTIME="$(PLATFORM)_vfs1" ARGS="--platform=$(PLATFORM)") && \
-		$(call submake,run-benchmark RUNTIME="$(PLATFORM)_vfs1") && \
-	) \
-	true
+benchmark-platforms: ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
+	#hostname; sleep 100000
+	#$(call submake, load-benchmarks_alpine)
+	$(call submake,run TARGETS="tools/parsers:parser")
+	-$(call submake,sudo TARGETS="//test/benchmarks/base:startup_test" ARGS="--runtime=runc --test.v --test.benchtime=1x --test.bench=Empty")
+	$(call submake,run TARGETS="tools/parsers:parser")
 .PHONY: benchmark-platforms
 
 run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
-	@set -xeuo pipefail; 	T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
-	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS)" | tee $$T); \
-	if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
-		$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --debug --file=$$T \
+	@T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
+	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS) | tee $$T"); \
+	rc=$$?; \
+	if [[ $$rc -eq 0 ]] && [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
+		$(call submake,run TARGETS="tools/parsers:parser" ARGS="parse --debug --file=$$T \
 			--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
 			--project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
 			--table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
 	fi; \
-	rm -rf $$T
+	rm -rf $$T; \
+	exit $$rc
 .PHONY: run-benchmark
 
 ##

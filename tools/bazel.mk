@@ -39,6 +39,7 @@ DOCKER_SOCKET := /var/run/docker.sock
 DOCKER_CONFIG := /etc/docker/daemon.json
 
 # Bazel flags.
+STARTUP_OPTIONS += --noshutdown_on_low_sys_mem --unlimit_coredumps
 BAZEL := bazel $(STARTUP_OPTIONS)
 OPTIONS += --color=no --curses=no
 
@@ -54,10 +55,6 @@ FULL_DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE):$(BAZEL_CACHE)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(GCLOUD_CONFIG):$(GCLOUD_CONFIG)"
 FULL_DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
 FULL_DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
-FULL_DOCKER_EXEC_OPTIONS += --interactive
-ifeq (true,$(shell [[ -t 0 ]] && echo true))
-FULL_DOCKER_EXEC_OPTIONS += --tty
-endif
 
 # Add basic UID/GID options.
 #
@@ -111,14 +108,14 @@ OPTIONS += --config=$(BAZEL_CONFIG)
 endif
 
 bazel-image: load-default
-	@if docker ps --all | grep $(BUILDER_NAME); then docker rm -f $(BUILDER_NAME); fi
+	if docker ps --all | grep $(BUILDER_NAME); then docker rm -f $(BUILDER_NAME); fi
 	docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) \
 		$(BUILDER_BASE) \
 		sh -c "$(GROUPADD_DOCKER) \
 		       $(USERADD_DOCKER) \
 		       if [[ -e /dev/kvm ]]; then chmod a+rw /dev/kvm; fi"
 	docker commit $(BUILDER_NAME) $(BUILDER_IMAGE)
-	@docker rm -f $(BUILDER_NAME)
+	docker rm -f $(BUILDER_NAME)
 .PHONY: bazel-image
 
 ##
@@ -135,24 +132,25 @@ bazel-image: load-default
 ##     DOCKER_SOCKET      - The Docker socket (default: detected).
 ##
 bazel-server-start: bazel-image ## Starts the bazel server.
-	@mkdir -p $(BAZEL_CACHE)
-	@mkdir -p $(GCLOUD_CONFIG)
-	@if docker ps --all | grep $(DOCKER_NAME); then docker rm -f $(DOCKER_NAME); fi
+	mkdir -p $(BAZEL_CACHE)
+	mkdir -p $(GCLOUD_CONFIG)
+	if docker ps --all | grep $(DOCKER_NAME); then docker rm -f $(DOCKER_NAME); fi
 	# This command runs a bazel server, and the container sticks around
 	# until the bazel server exits. This should ensure that it does not
 	# exit in the middle of running a build, but also it won't stick around
 	# forever. The build commands wrap around an appropriate exec into the
 	# container in order to perform work via the bazel client.
-	docker run -d --rm --name $(DOCKER_NAME) \
+	bazel info server_pid
+	docker run --rm --name $(DOCKER_NAME) \
 		-v "$(CURDIR):$(CURDIR)" \
 		--workdir "$(CURDIR)" \
 		$(FULL_DOCKER_RUN_OPTIONS) \
 		$(BUILDER_IMAGE) \
-		sh -c "tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
+		sh -c "pid=\$(bazel info servier_pid) && tail -f --pid=123 /dev/null && echo \"hello \${pid}\""
 .PHONY: bazel-server-start
 
 bazel-shutdown: ## Shuts down a running bazel server.
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) shutdown; \
+	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) bazel shutdown; \
 	       rc=$$?; docker kill $(DOCKER_NAME) || [[ $$rc -ne 0 ]]
 .PHONY: bazel-shutdown
 
@@ -161,20 +159,32 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 .PHONY: bazel-alias
 
 bazel-server: ## Ensures that the server exists. Used as an internal target.
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) true || $(MAKE) bazel-server-start
+	docker ps
+	docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) true || $(MAKE) bazel-server-start >&2
+	docker ps >&2
 .PHONY: bazel-server
 
-build_cmd = docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c '$(BAZEL) build $(OPTIONS) "$(TARGETS)"'
+# build_cmd builds the given targets in the bazel-server container.
+build_cmd = docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c 'bazel build $(OPTIONS) "$(TARGETS)"'
 
-build_paths = $(build_cmd) 2>&1 \
-		| tee /proc/self/fd/2 \
+# build_paths extracts the built binary from the bazel stderr output.
+#
+# This could be alternately done by parsing the bazel build event stream, but
+# this is a complex schema, and begs the question: what will build the thing
+# that parses the output? Bazel? Do we need a separate bootstrapping build
+# command here? Yikes, let's just stick with the ugly shell pipeline.
+#
+# The last line is used to prevent terminal shenanigans.
+build_paths = command_line=$$( $(build_cmd) 2>&1 \
+		| sudo tee /proc/self/fd/2 \
 		| grep -A1 -E '^Target' \
 		| grep -E '^  ($(subst $(SPACE),|,$(BUILD_ROOTS)))' \
 		| sed "s/ /\n/g" \
 		| strings -n 10 \
 		| awk '{$$1=$$1};1' \
 		| xargs -n 1 -I {} readlink -f "{}" \
-		| xargs -n 1 -I {} sh -c "$(1)"
+		| xargs -n 1 -I {} echo "$(1)" ) && \
+		(set -xeuo pipefail; eval $${command_line})
 
 build: bazel-server
 	@$(call build_cmd)
@@ -184,22 +194,21 @@ copy: bazel-server
 ifeq (,$(DESTINATION))
 	$(error Destination not provided.)
 endif
-	@$(call build_paths,cp -fa {} $(DESTINATION))
+	$(call build_paths,cp -fa {} $(DESTINATION))
 
 run: bazel-server
-	@$(call build_paths,{} $(ARGS))
+	$(call build_paths,{} $(ARGS))
 .PHONY: run
 
 sudo: bazel-server
-	@$(call build_paths,sudo -E {} $(ARGS))
+	$(call build_paths,sudo -E {} $(ARGS))
 .PHONY: sudo
 
 test: OPTIONS += --test_output=errors --keep_going --verbose_failures=true
 test: bazel-server
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) test $(OPTIONS) $(TARGETS)
+	docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) test $(OPTIONS) $(TARGETS)
 .PHONY: test
 
-query:
-	@$(MAKE) bazel-server >&2 # If we need to start, ensure stdout is not polluted.
+query: bazel-server
 	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c '$(BAZEL) query $(OPTIONS) "$(TARGETS)" 2>/dev/null'
 .PHONY: query
