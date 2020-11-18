@@ -202,14 +202,6 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	return e.Endpoint.WritePackets(r, gso, pkts, protocol)
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	e.dumpPacket(directionSend, nil, 0, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: vv,
-	}))
-	return e.Endpoint.WriteRawPacket(vv)
-}
-
 func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, gso *stack.GSO) {
 	// Figure out the network layer info.
 	var transProto uint8

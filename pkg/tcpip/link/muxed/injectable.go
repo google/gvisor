@@ -17,7 +17,6 @@ package muxed
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -103,13 +102,6 @@ func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protoco
 	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
 		return endpoint.WritePacket(r, gso, protocol, pkt)
 	}
-	return tcpip.ErrNoRoute
-}
-
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (m *InjectableEndpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {
-	// WriteRawPacket doesn't get a route or network address, so there's
-	// nowhere to write this.
 	return tcpip.ErrNoRoute
 }
 
