@@ -1535,10 +1535,12 @@ func isBroadcastOrMulticast(a tcpip.Address) bool {
 	return a == header.IPv4Broadcast || header.IsV4MulticastAddress(a) || header.IsV6MulticastAddress(a)
 }
 
+// SetOwner implements tcpip.Endpoint.SetOwner.
 func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
 
+// SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops
 }

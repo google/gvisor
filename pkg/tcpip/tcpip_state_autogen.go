@@ -13,6 +13,7 @@ func (so *SocketOptions) StateTypeName() string {
 func (so *SocketOptions) StateFields() []string {
 	return []string{
 		"broadcastEnabled",
+		"passCredEnabled",
 	}
 }
 
@@ -21,12 +22,14 @@ func (so *SocketOptions) beforeSave() {}
 func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	so.beforeSave()
 	stateSinkObject.Save(0, &so.broadcastEnabled)
+	stateSinkObject.Save(1, &so.passCredEnabled)
 }
 
 func (so *SocketOptions) afterLoad() {}
 
 func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &so.broadcastEnabled)
+	stateSourceObject.Load(1, &so.passCredEnabled)
 }
 
 func (f *FullAddress) StateTypeName() string {

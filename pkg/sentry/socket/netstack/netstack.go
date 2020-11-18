@@ -260,10 +260,12 @@ type commonEndpoint interface {
 	// transport.Endpoint.GetSockOpt.
 	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
 
-	// LastError implements tcpip.Endpoint.LastError.
+	// LastError implements tcpip.Endpoint.LastError and
+	// transport.Endpoint.LastError.
 	LastError() *tcpip.Error
 
-	// SocketOptions implements tcpip.Endpoint.SocketOptions.
+	// SocketOptions implements tcpip.Endpoint.SocketOptions and
+	// transport.Endpoint.SocketOptions.
 	SocketOptions() *tcpip.SocketOptions
 }
 
@@ -1068,13 +1070,8 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.PasscredOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetPassCred()))
+		return &v, nil
 
 	case linux.SO_SNDBUF:
 		if outLen < sizeOfInt32 {
@@ -1923,7 +1920,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.PasscredOption, v != 0))
+		ep.SocketOptions().SetPassCred(v != 0)
+		return nil
 
 	case linux.SO_KEEPALIVE:
 		if len(optVal) < sizeOfInt32 {
