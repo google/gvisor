@@ -1810,49 +1810,20 @@ func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip
 	nic.unregisterPacketEndpoint(netProto, ep)
 }
 
-// WritePacket writes data directly to the specified NIC. It adds an ethernet
-// header based on the arguments.
-func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) *tcpip.Error {
+// WritePacketToRemote writes a payload on the specified NIC using the provided
+// network protocol and remote link address.
+func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) *tcpip.Error {
 	s.mu.Lock()
 	nic, ok := s.nics[nicID]
 	s.mu.Unlock()
 	if !ok {
 		return tcpip.ErrUnknownDevice
 	}
-
-	// Add our own fake ethernet header.
-	ethFields := header.EthernetFields{
-		SrcAddr: nic.LinkEndpoint.LinkAddress(),
-		DstAddr: dst,
-		Type:    netProto,
-	}
-	fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
-	fakeHeader.Encode(&ethFields)
-	vv := buffer.View(fakeHeader).ToVectorisedView()
-	vv.Append(payload)
-
-	if err := nic.LinkEndpoint.WriteRawPacket(vv); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// WriteRawPacket writes data directly to the specified NIC without adding any
-// headers.
-func (s *Stack) WriteRawPacket(nicID tcpip.NICID, payload buffer.VectorisedView) *tcpip.Error {
-	s.mu.Lock()
-	nic, ok := s.nics[nicID]
-	s.mu.Unlock()
-	if !ok {
-		return tcpip.ErrUnknownDevice
-	}
-
-	if err := nic.LinkEndpoint.WriteRawPacket(payload); err != nil {
-		return err
-	}
-
-	return nil
+	pkt := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
+		Data:               payload,
+	})
+	return nic.WritePacketToRemote(remote, nil, netProto, pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the

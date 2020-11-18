@@ -96,23 +96,6 @@ func (e *endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList
 	panic("not implemented")
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: vv,
-	})
-	// There should be an ethernet header at the beginning of vv.
-	hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
-	if !ok {
-		// Reject the packet if it's shorter than an ethernet header.
-		return tcpip.ErrBadAddress
-	}
-	linkHeader := header.Ethernet(hdr)
-	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, linkHeader.Type(), pkt)
-
-	return nil
-}
-
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
 func (*endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareLoopback

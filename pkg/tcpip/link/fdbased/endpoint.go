@@ -558,11 +558,6 @@ func viewsEqual(vs1, vs2 []buffer.View) bool {
 	return len(vs1) == len(vs2) && (len(vs1) == 0 || &vs1[0] == &vs2[0])
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	return rawfile.NonBlockingWrite(e.fds[0], vv.ToView())
-}
-
 // InjectOutobund implements stack.InjectableEndpoint.InjectOutbound.
 func (e *endpoint) InjectOutbound(dest tcpip.Address, packet []byte) *tcpip.Error {
 	return rawfile.NonBlockingWrite(e.fds[0], packet)
