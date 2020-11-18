@@ -118,28 +118,24 @@ var (
 
 // NewConnectioned creates a new unbound connectionedEndpoint.
 func NewConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) Endpoint {
-	return &connectionedEndpoint{
+	return newConnectioned(ctx, stype, uid)
+}
+
+func newConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) *connectionedEndpoint {
+	ep := &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
 		id:           uid.UniqueID(),
 		idGenerator:  uid,
 		stype:        stype,
 	}
+	ep.ops.InitHandler(ep)
+	return ep
 }
 
 // NewPair allocates a new pair of connected unix-domain connectionedEndpoints.
 func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
-	a := &connectionedEndpoint{
-		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
-		id:           uid.UniqueID(),
-		idGenerator:  uid,
-		stype:        stype,
-	}
-	b := &connectionedEndpoint{
-		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
-		id:           uid.UniqueID(),
-		idGenerator:  uid,
-		stype:        stype,
-	}
+	a := newConnectioned(ctx, stype, uid)
+	b := newConnectioned(ctx, stype, uid)
 
 	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: initialLimit}
 	q1.InitRefs()
@@ -171,12 +167,14 @@ func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (E
 // NewExternal creates a new externally backed Endpoint. It behaves like a
 // socketpair.
 func NewExternal(ctx context.Context, stype linux.SockType, uid UniqueIDProvider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
-	return &connectionedEndpoint{
+	ep := &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: queue, receiver: receiver, connected: connected},
 		id:           uid.UniqueID(),
 		idGenerator:  uid,
 		stype:        stype,
 	}
+	ep.ops.InitHandler(ep)
+	return ep
 }
 
 // ID implements ConnectingEndpoint.ID.
@@ -298,6 +296,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		idGenerator: e.idGenerator,
 		stype:       e.stype,
 	}
+	ne.ops.InitHandler(ne)
 
 	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: initialLimit}
 	readQueue.InitRefs()

@@ -58,6 +58,8 @@ type rawPacket struct {
 // +stateify savable
 type endpoint struct {
 	stack.TransportEndpointInfo
+	tcpip.DefaultSocketOptionsHandler
+
 	// The following fields are initialized at creation time and are
 	// immutable.
 	stack       *stack.Stack `state:"manual"`
@@ -116,6 +118,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		associated:    associated,
 		hdrIncluded:   !associated,
 	}
+	e.ops.InitHandler(e)
 
 	// Override with stack defaults.
 	var ss stack.SendBufferSizeOption
