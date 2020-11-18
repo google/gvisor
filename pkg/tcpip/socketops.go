@@ -32,6 +32,10 @@ type SocketOptions struct {
 	// passCredEnabled determines whether SCM_CREDENTIALS socket control messages
 	// are enabled.
 	passCredEnabled uint32
+
+	// noChecksumEnabled determines whether UDP checksum is disabled while
+	// transmitting for this socket.
+	noChecksumEnabled uint32
 }
 
 func storeAtomicBool(addr *uint32, v bool) {
@@ -60,4 +64,14 @@ func (so *SocketOptions) GetPassCred() bool {
 // SetPassCred sets value for SO_PASSCRED option.
 func (so *SocketOptions) SetPassCred(v bool) {
 	storeAtomicBool(&so.passCredEnabled, v)
+}
+
+// GetNoChecksum gets value for SO_NO_CHECK option.
+func (so *SocketOptions) GetNoChecksum() bool {
+	return atomic.LoadUint32(&so.noChecksumEnabled) != 0
+}
+
+// SetNoChecksum sets value for SO_NO_CHECK option.
+func (so *SocketOptions) SetNoChecksum(v bool) {
+	storeAtomicBool(&so.noChecksumEnabled, v)
 }
