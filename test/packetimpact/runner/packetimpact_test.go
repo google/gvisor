@@ -28,5 +28,5 @@ func init() {
 }
 
 func TestOne(t *testing.T) {
-	runner.TestWithDUT(context.Background(), t, runner.NewDockerDUT, runner.DutAddr)
+	runner.TestWithDUT(context.Background(), t, runner.NewDockerDUT)
 }
