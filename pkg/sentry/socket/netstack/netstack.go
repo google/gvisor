@@ -1112,25 +1112,16 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.ReuseAddressOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReuseAddress()))
+		return &v, nil
 
 	case linux.SO_REUSEPORT:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.ReusePortOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReusePort()))
+		return &v, nil
 
 	case linux.SO_BINDTODEVICE:
 		var v tcpip.BindToDeviceOption
@@ -1869,7 +1860,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReuseAddressOption, v != 0))
+		ep.SocketOptions().SetReuseAddress(v != 0)
+		return nil
 
 	case linux.SO_REUSEPORT:
 		if len(optVal) < sizeOfInt32 {
@@ -1877,7 +1869,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReusePortOption, v != 0))
+		ep.SocketOptions().SetReusePort(v != 0)
+		return nil
 
 	case linux.SO_BINDTODEVICE:
 		n := bytes.IndexByte(optVal, 0)

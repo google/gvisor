@@ -12,9 +12,12 @@ func (so *SocketOptions) StateTypeName() string {
 
 func (so *SocketOptions) StateFields() []string {
 	return []string{
+		"handler",
 		"broadcastEnabled",
 		"passCredEnabled",
 		"noChecksumEnabled",
+		"reuseAddressEnabled",
+		"reusePortEnabled",
 	}
 }
 
@@ -22,17 +25,23 @@ func (so *SocketOptions) beforeSave() {}
 
 func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	so.beforeSave()
-	stateSinkObject.Save(0, &so.broadcastEnabled)
-	stateSinkObject.Save(1, &so.passCredEnabled)
-	stateSinkObject.Save(2, &so.noChecksumEnabled)
+	stateSinkObject.Save(0, &so.handler)
+	stateSinkObject.Save(1, &so.broadcastEnabled)
+	stateSinkObject.Save(2, &so.passCredEnabled)
+	stateSinkObject.Save(3, &so.noChecksumEnabled)
+	stateSinkObject.Save(4, &so.reuseAddressEnabled)
+	stateSinkObject.Save(5, &so.reusePortEnabled)
 }
 
 func (so *SocketOptions) afterLoad() {}
 
 func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &so.broadcastEnabled)
-	stateSourceObject.Load(1, &so.passCredEnabled)
-	stateSourceObject.Load(2, &so.noChecksumEnabled)
+	stateSourceObject.Load(0, &so.handler)
+	stateSourceObject.Load(1, &so.broadcastEnabled)
+	stateSourceObject.Load(2, &so.passCredEnabled)
+	stateSourceObject.Load(3, &so.noChecksumEnabled)
+	stateSourceObject.Load(4, &so.reuseAddressEnabled)
+	stateSourceObject.Load(5, &so.reusePortEnabled)
 }
 
 func (f *FullAddress) StateTypeName() string {
