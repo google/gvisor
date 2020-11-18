@@ -31,6 +31,8 @@ go_library(
     name = "sync",
     srcs = [
         "aliases.go",
+        "checklocks_off_unsafe.go",
+        "checklocks_on_unsafe.go",
         "memmove_unsafe.go",
         "mutex_unsafe.go",
         "nocopy.go",
@@ -43,6 +45,9 @@ go_library(
     ],
     marshal = False,
     stateify = False,
+    deps = [
+        "//pkg/goid",
+    ],
 )
 
 go_test(

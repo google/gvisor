@@ -117,7 +117,7 @@ type inodeFileState struct {
 	// loading is acquired when the inodeFileState begins an asynchronous
 	// load. It releases when the load is complete. Callers that require all
 	// state to be available should call waitForLoad() to ensure that.
-	loading sync.Mutex `state:".(struct{})"`
+	loading sync.CrossGoroutineMutex `state:".(struct{})"`
 
 	// savedUAttr is only allocated during S/R. It points to the save-time
 	// unstable attributes and is used to validate restore-time ones.
