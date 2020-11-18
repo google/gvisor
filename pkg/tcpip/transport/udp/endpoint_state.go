@@ -118,7 +118,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		if err != nil {
 			panic(err)
 		}
-	} else if len(e.ID.LocalAddress) != 0 && !isBroadcastOrMulticast(e.ID.LocalAddress) { // stateBound
+	} else if len(e.ID.LocalAddress) != 0 && !e.isBroadcastOrMulticast(e.RegisterNICID, netProto, e.ID.LocalAddress) { // stateBound
 		// A local unicast address is specified, verify that it's valid.
 		if e.stack.CheckLocalAddress(e.RegisterNICID, netProto, e.ID.LocalAddress) == 0 {
 			panic(tcpip.ErrBadLocalAddress)

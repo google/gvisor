@@ -369,7 +369,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 // specified address is a multicast address.
 func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (stack.Route, tcpip.NICID, *tcpip.Error) {
 	localAddr := e.ID.LocalAddress
-	if isBroadcastOrMulticast(localAddr) {
+	if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
 		localAddr = ""
 	}
@@ -1290,7 +1290,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	nicID := addr.NIC
-	if len(addr.Addr) != 0 && !isBroadcastOrMulticast(addr.Addr) {
+	if len(addr.Addr) != 0 && !e.isBroadcastOrMulticast(addr.NIC, netProto, addr.Addr) {
 		// A local unicast address was specified, verify that it's valid.
 		nicID = e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
 		if nicID == 0 {
@@ -1531,8 +1531,8 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 // Wait implements tcpip.Endpoint.Wait.
 func (*endpoint) Wait() {}
 
-func isBroadcastOrMulticast(a tcpip.Address) bool {
-	return a == header.IPv4Broadcast || header.IsV4MulticastAddress(a) || header.IsV6MulticastAddress(a)
+func (e *endpoint) isBroadcastOrMulticast(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+	return addr == header.IPv4Broadcast || header.IsV4MulticastAddress(addr) || header.IsV6MulticastAddress(addr) || e.stack.IsSubnetBroadcast(nicID, netProto, addr)
 }
 
 // SetOwner implements tcpip.Endpoint.SetOwner.
