@@ -71,22 +71,24 @@ type Route struct {
 // ownership of the provided local address.
 //
 // Returns an empty route if validation fails.
-func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *NIC, gateway, remoteAddr tcpip.Address, handleLocal, multicastLoop bool) Route {
-	addrWithPrefix := addressEndpoint.AddressWithPrefix()
+func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *NIC, gateway, localAddr, remoteAddr tcpip.Address, handleLocal, multicastLoop bool) Route {
+	if len(localAddr) == 0 {
+		localAddr = addressEndpoint.AddressWithPrefix().Address
+	}
 
-	if localAddressNIC != outgoingNIC && header.IsV6LinkLocalAddress(addrWithPrefix.Address) {
+	if localAddressNIC != outgoingNIC && header.IsV6LinkLocalAddress(localAddr) {
 		addressEndpoint.DecRef()
 		return Route{}
 	}
 
 	// If no remote address is provided, use the local address.
 	if len(remoteAddr) == 0 {
-		remoteAddr = addrWithPrefix.Address
+		remoteAddr = localAddr
 	}
 
 	r := makeRoute(
 		netProto,
-		addrWithPrefix.Address,
+		localAddr,
 		remoteAddr,
 		outgoingNIC,
 		localAddressNIC,
@@ -99,7 +101,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 	// broadcast it.
 	if len(gateway) > 0 {
 		r.NextHop = gateway
-	} else if subnet := addrWithPrefix.Subnet(); subnet.IsBroadcast(remoteAddr) {
+	} else if subnet := addressEndpoint.Subnet(); subnet.IsBroadcast(remoteAddr) {
 		r.RemoteLinkAddress = header.EthernetBroadcastAddress
 	}
 
@@ -111,6 +113,10 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) Route {
 	if localAddressNIC.stack != outgoingNIC.stack {
 		panic(fmt.Sprintf("cannot create a route with NICs from different stacks"))
+	}
+
+	if len(localAddr) == 0 {
+		localAddr = localAddressEndpoint.AddressWithPrefix().Address
 	}
 
 	loop := PacketOut
