@@ -4191,9 +4191,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.ReuseAddressOption, true); err != nil {
-		t.Fatalf("SetSockOptBool ReuseAddressOption failed: %s", err)
-	}
+	c.EP.SocketOptions().SetReuseAddress(true)
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
@@ -4203,9 +4201,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.ReuseAddressOption, true); err != nil {
-		t.Fatalf("SetSockOptBool ReuseAddressOption failed: %s", err)
-	}
+	c.EP.SocketOptions().SetReuseAddress(true)
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
@@ -4216,9 +4212,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.ReuseAddressOption, true); err != nil {
-		t.Fatalf("SetSockOptBool ReuseAddressOption failed: %s", err)
-	}
+	c.EP.SocketOptions().SetReuseAddress(true)
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
@@ -4231,9 +4225,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.ReuseAddressOption, true); err != nil {
-		t.Fatalf("SetSockOptBool ReuseAddressOption failed: %s", err)
-	}
+	c.EP.SocketOptions().SetReuseAddress(true)
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
@@ -4244,9 +4236,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.ReuseAddressOption, true); err != nil {
-		t.Fatalf("SetSockOptBool ReuseAddressOption failed: %s", err)
-	}
+	c.EP.SocketOptions().SetReuseAddress(true)
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
@@ -4259,9 +4249,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.ReuseAddressOption, true); err != nil {
-		t.Fatalf("SetSockOptBool ReuseAddressOption failed: %s", err)
-	}
+	c.EP.SocketOptions().SetReuseAddress(true)
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}

@@ -38,6 +38,7 @@ const (
 // use it.
 type fakeTransportEndpoint struct {
 	stack.TransportEndpointInfo
+	tcpip.DefaultSocketOptionsHandler
 
 	proto    *fakeTransportProtocol
 	peerAddr tcpip.Address
@@ -45,7 +46,7 @@ type fakeTransportEndpoint struct {
 	uniqueID uint64
 
 	// acceptQueue is non-nil iff bound.
-	acceptQueue []fakeTransportEndpoint
+	acceptQueue []*fakeTransportEndpoint
 
 	// ops is used to set and get socket options.
 	ops tcpip.SocketOptions
@@ -65,7 +66,9 @@ func (f *fakeTransportEndpoint) SocketOptions() *tcpip.SocketOptions {
 	return &f.ops
 }
 func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
-	return &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
+	ep := &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
+	ep.ops.InitHandler(ep)
+	return ep
 }
 
 func (f *fakeTransportEndpoint) Abort() {
@@ -189,7 +192,7 @@ func (f *fakeTransportEndpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *wai
 	if len(f.acceptQueue) == 0 {
 		return nil, nil, nil
 	}
-	a := &f.acceptQueue[0]
+	a := f.acceptQueue[0]
 	f.acceptQueue = f.acceptQueue[1:]
 	return a, nil, nil
 }
@@ -206,7 +209,7 @@ func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress) *tcpip.Error {
 	); err != nil {
 		return err
 	}
-	f.acceptQueue = []fakeTransportEndpoint{}
+	f.acceptQueue = []*fakeTransportEndpoint{}
 	return nil
 }
 
@@ -232,7 +235,7 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 	}
 	route.ResolveWith(pkt.SourceLinkAddress())
 
-	f.acceptQueue = append(f.acceptQueue, fakeTransportEndpoint{
+	ep := &fakeTransportEndpoint{
 		TransportEndpointInfo: stack.TransportEndpointInfo{
 			ID:       f.ID,
 			NetProto: f.NetProto,
@@ -240,7 +243,9 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 		proto:    f.proto,
 		peerAddr: route.RemoteAddress,
 		route:    route,
-	})
+	}
+	ep.ops.InitHandler(ep)
+	f.acceptQueue = append(f.acceptQueue, ep)
 }
 
 func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, stack.ControlType, uint32, *stack.PacketBuffer) {

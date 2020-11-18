@@ -738,6 +738,7 @@ func (e *connectedEndpoint) CloseUnread() {
 // +stateify savable
 type baseEndpoint struct {
 	*waiter.Queue
+	tcpip.DefaultSocketOptionsHandler
 
 	// Mutex protects the below fields.
 	sync.Mutex `state:"nosave"`
@@ -756,6 +757,7 @@ type baseEndpoint struct {
 	// linger is used for SO_LINGER socket option.
 	linger tcpip.LingerOption
 
+	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
 }
 
@@ -856,11 +858,7 @@ func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 }
 
 func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
-	switch opt {
-	case tcpip.ReuseAddressOption:
-	default:
-		log.Warningf("Unsupported socket option: %d", opt)
-	}
+	log.Warningf("Unsupported socket option: %d", opt)
 	return nil
 }
 
