@@ -17,6 +17,7 @@ package p9
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/locks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -28,8 +29,9 @@ import (
 //   opMu
 //     childMu
 //
-//   Two different pathNodes may only be locked if Server.renameMu is held for
-//   write, in which case they can be acquired in any order.
+//   Two different pathNodes may be locked in any order if Server.renameMu is
+//   held for write. Otherwise they must be locked in hierarchy order (parent
+//   before child).
 type pathNode struct {
 	// opMu synchronizes high-level, sematic operations, such as the
 	// simultaneous creation and deletion of a file.
@@ -53,11 +55,17 @@ type pathNode struct {
 }
 
 func newPathNode() *pathNode {
-	return &pathNode{
+	p := &pathNode{
 		childNodes:    make(map[string]*pathNode),
 		childRefs:     make(map[string]map[*fidRef]struct{}),
 		childRefNames: make(map[*fidRef]string),
 	}
+	// Two nodes locked by Tunlinkat. Parent must be locked before child.
+	p.opMu.SetRankRecursive(locks.P9PathNodeOp)
+	// Two nodes locked by renameChildTo. Locked in any order protected by
+	// renameMu for write.
+	p.childMu.SetRankRecursive(locks.P9PathNodeChild)
+	return p
 }
 
 // forEachChildRef calls fn for each child reference.

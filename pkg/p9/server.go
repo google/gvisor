@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
 	"gvisor.dev/gvisor/pkg/flipcall"
+	"gvisor.dev/gvisor/pkg/locks"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -49,10 +50,12 @@ type Server struct {
 
 // NewServer returns a new server.
 func NewServer(attacher Attacher) *Server {
-	return &Server{
+	s := &Server{
 		attacher: attacher,
 		pathTree: newPathNode(),
 	}
+	s.renameMu.SetRank(locks.P9ServerRename)
+	return s
 }
 
 // connState is the state for a single connection.
@@ -134,12 +137,11 @@ type fidRef struct {
 	// The node above will be closed only when refs reaches zero.
 	refs int64
 
-	// openedMu protects opened and openFlags.
-	openedMu sync.Mutex
-
 	// opened indicates whether this has been opened already.
 	//
 	// This is updated in handlers.go.
+	//
+	// opened is protected by pathNode.opMu or renameMu (for write).
 	opened bool
 
 	// mode is the fidRef's mode from the walk. Only the type bits are
@@ -151,6 +153,8 @@ type fidRef struct {
 	// openFlags is the mode used in the open.
 	//
 	// This is updated in handlers.go.
+	//
+	// openFlags is protected by pathNode.opMu or renameMu (for write).
 	openFlags OpenFlags
 
 	// pathNode is the current pathNode for this FID.
@@ -175,13 +179,6 @@ type fidRef struct {
 	// many operations at the API level if they are incompatible with a
 	// file that has already been unlinked.
 	deleted uint32
-}
-
-// OpenFlags returns the flags the file was opened with and true iff the fid was opened previously.
-func (f *fidRef) OpenFlags() (OpenFlags, bool) {
-	f.openedMu.Lock()
-	defer f.openedMu.Unlock()
-	return f.openFlags, f.opened
 }
 
 // IncRef increases the references on a fid.
@@ -644,6 +641,7 @@ func (s *Server) Handle(conn *unet.Socket) error {
 		tags:   make(map[Tag]chan struct{}),
 		conn:   conn,
 	}
+	cs.fidMu.SetRank(locks.P9ConnFID)
 	defer cs.stop()
 
 	// Serve requests from conn in the current goroutine; handleRequests() will

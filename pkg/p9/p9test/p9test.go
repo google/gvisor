@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"gvisor.dev/gvisor/pkg/locks"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -71,6 +72,10 @@ type Mock struct {
 // through to final nodes, we must share maps below, and it's easiest to simply
 // protect against concurrent access globally.
 var globalMu sync.RWMutex
+
+func init() {
+	globalMu.SetRank(locks.P9TestGlobal)
+}
 
 // AddChild adds a new child to the Mock.
 func (m *Mock) AddChild(name string, generator Generator) {
@@ -299,6 +304,7 @@ func NewHarness(t *testing.T) (*Harness, *p9.Client) {
 		mockCtrl: mockCtrl,
 		Attacher: NewMockAttacher(mockCtrl),
 	}
+	h.mu.SetRank(locks.P9TestHarness)
 
 	// Make socket pair.
 	serverSocket, clientSocket, err := unet.SocketPair(false)

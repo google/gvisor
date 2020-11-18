@@ -25,6 +25,7 @@ go_library(
         "//pkg/fd",
         "//pkg/fdchannel",
         "//pkg/flipcall",
+        "//pkg/locks",
         "//pkg/log",
         "//pkg/pool",
         "//pkg/sync",
