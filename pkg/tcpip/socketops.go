@@ -15,31 +15,49 @@
 package tcpip
 
 import (
-	"gvisor.dev/gvisor/pkg/sync"
+	"sync/atomic"
 )
 
-// SocketOptions contains all the variables which store values for socket
+// SocketOptions contains all the variables which store values for SOL_SOCKET
 // level options.
 //
 // +stateify savable
 type SocketOptions struct {
-	// mu protects fields below.
-	mu               sync.Mutex `state:"nosave"`
-	broadcastEnabled bool
+	// These fields are accessed and modified using atomic operations.
+
+	// broadcastEnabled determines whether datagram sockets are allowed to send
+	// packets to a broadcast address.
+	broadcastEnabled uint32
+
+	// passCredEnabled determines whether SCM_CREDENTIALS socket control messages
+	// are enabled.
+	passCredEnabled uint32
+}
+
+func storeAtomicBool(addr *uint32, v bool) {
+	var val uint32
+	if v {
+		val = 1
+	}
+	atomic.StoreUint32(addr, val)
 }
 
 // GetBroadcast gets value for SO_BROADCAST option.
 func (so *SocketOptions) GetBroadcast() bool {
-	so.mu.Lock()
-	defer so.mu.Unlock()
-
-	return so.broadcastEnabled
+	return atomic.LoadUint32(&so.broadcastEnabled) != 0
 }
 
 // SetBroadcast sets value for SO_BROADCAST option.
 func (so *SocketOptions) SetBroadcast(v bool) {
-	so.mu.Lock()
-	defer so.mu.Unlock()
+	storeAtomicBool(&so.broadcastEnabled, v)
+}
 
-	so.broadcastEnabled = v
+// GetPassCred gets value for SO_PASSCRED option.
+func (so *SocketOptions) GetPassCred() bool {
+	return atomic.LoadUint32(&so.passCredEnabled) != 0
+}
+
+// SetPassCred sets value for SO_PASSCRED option.
+func (so *SocketOptions) SetPassCred(v bool) {
+	storeAtomicBool(&so.passCredEnabled, v)
 }
