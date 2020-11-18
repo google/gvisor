@@ -49,6 +49,7 @@ const (
 // +stateify savable
 type endpoint struct {
 	stack.TransportEndpointInfo
+	tcpip.DefaultSocketOptionsHandler
 
 	// The following fields are initialized at creation time and are
 	// immutable.
@@ -85,7 +86,7 @@ type endpoint struct {
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return &endpoint{
+	ep := &endpoint{
 		stack: s,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
 			NetProto:   netProto,
@@ -96,7 +97,9 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		sndBufSize:    32 * 1024,
 		state:         stateInitial,
 		uniqueID:      s.UniqueID(),
-	}, nil
+	}
+	ep.ops.InitHandler(ep)
+	return ep, nil
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.

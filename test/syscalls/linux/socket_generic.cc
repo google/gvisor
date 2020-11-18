@@ -819,7 +819,8 @@ TEST_P(AllSocketPairTest, GetSockoptProtocol) {
 }
 
 TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
-  int sock_opts[] = {SO_BROADCAST, SO_PASSCRED, SO_NO_CHECK};
+  int sock_opts[] = {SO_BROADCAST, SO_PASSCRED, SO_NO_CHECK, SO_REUSEADDR,
+                     SO_REUSEPORT};
   for (int sock_opt : sock_opts) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     int enable = -1;

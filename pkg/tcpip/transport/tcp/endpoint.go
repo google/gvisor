@@ -362,6 +362,7 @@ func (*EndpointInfo) IsEndpointInfo() {}
 // +stateify savable
 type endpoint struct {
 	EndpointInfo
+	tcpip.DefaultSocketOptionsHandler
 
 	// endpointEntry is used to queue endpoints for processing to the
 	// a given tcp processor goroutine.
@@ -884,6 +885,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		windowClamp:   DefaultReceiveBufferSize,
 		maxSynRetries: DefaultSynRetries,
 	}
+	e.ops.InitHandler(e)
 
 	var ss tcpip.TCPSendBufferSizeRangeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
@@ -1627,6 +1629,20 @@ func (e *endpoint) windowCrossedACKThresholdLocked(deltaBefore int) (crossed boo
 	return false, false
 }
 
+// OnReuseAddressSet implements tcpip.SocketOptionsHandler.OnReuseAddressSet.
+func (e *endpoint) OnReuseAddressSet(v bool) {
+	e.LockUser()
+	e.portFlags.TupleOnly = v
+	e.UnlockUser()
+}
+
+// OnReusePortSet implements tcpip.SocketOptionsHandler.OnReusePortSet.
+func (e *endpoint) OnReusePortSet(v bool) {
+	e.LockUser()
+	e.portFlags.LoadBalanced = v
+	e.UnlockUser()
+}
+
 // SetSockOptBool sets a socket option.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
@@ -1665,16 +1681,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 			o = 0
 		}
 		atomic.StoreUint32(&e.slowAck, o)
-
-	case tcpip.ReuseAddressOption:
-		e.LockUser()
-		e.portFlags.TupleOnly = v
-		e.UnlockUser()
-
-	case tcpip.ReusePortOption:
-		e.LockUser()
-		e.portFlags.LoadBalanced = v
-		e.UnlockUser()
 
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
@@ -1993,20 +1999,6 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 
 	case tcpip.QuickAckOption:
 		v := atomic.LoadUint32(&e.slowAck) == 0
-		return v, nil
-
-	case tcpip.ReuseAddressOption:
-		e.LockUser()
-		v := e.portFlags.TupleOnly
-		e.UnlockUser()
-
-		return v, nil
-
-	case tcpip.ReusePortOption:
-		e.LockUser()
-		v := e.portFlags.LoadBalanced
-		e.UnlockUser()
-
 		return v, nil
 
 	case tcpip.V6OnlyOption:

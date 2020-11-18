@@ -77,6 +77,7 @@ func (s EndpointState) String() string {
 // +stateify savable
 type endpoint struct {
 	stack.TransportEndpointInfo
+	tcpip.DefaultSocketOptionsHandler
 
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
@@ -194,6 +195,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		state:                StateInitial,
 		uniqueID:             s.UniqueID(),
 	}
+	e.ops.InitHandler(e)
 
 	// Override with stack defaults.
 	var ss stack.SendBufferSizeOption
@@ -574,6 +576,20 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	return 0, tcpip.ControlMessages{}, nil
 }
 
+// OnReuseAddressSet implements tcpip.SocketOptionsHandler.OnReuseAddressSet.
+func (e *endpoint) OnReuseAddressSet(v bool) {
+	e.mu.Lock()
+	e.portFlags.MostRecent = v
+	e.mu.Unlock()
+}
+
+// OnReusePortSet implements tcpip.SocketOptionsHandler.OnReusePortSet.
+func (e *endpoint) OnReusePortSet(v bool) {
+	e.mu.Lock()
+	e.portFlags.LoadBalanced = v
+	e.mu.Unlock()
+}
+
 // SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
@@ -600,16 +616,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	case tcpip.ReceiveIPPacketInfoOption:
 		e.mu.Lock()
 		e.receiveIPPacketInfo = v
-		e.mu.Unlock()
-
-	case tcpip.ReuseAddressOption:
-		e.mu.Lock()
-		e.portFlags.MostRecent = v
-		e.mu.Unlock()
-
-	case tcpip.ReusePortOption:
-		e.mu.Lock()
-		e.portFlags.LoadBalanced = v
 		e.mu.Unlock()
 
 	case tcpip.V6OnlyOption:
@@ -873,20 +879,6 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		e.mu.RLock()
 		v := e.receiveIPPacketInfo
 		e.mu.RUnlock()
-		return v, nil
-
-	case tcpip.ReuseAddressOption:
-		e.mu.RLock()
-		v := e.portFlags.MostRecent
-		e.mu.RUnlock()
-
-		return v, nil
-
-	case tcpip.ReusePortOption:
-		e.mu.RLock()
-		v := e.portFlags.LoadBalanced
-		e.mu.RUnlock()
-
 		return v, nil
 
 	case tcpip.V6OnlyOption:

@@ -738,14 +738,6 @@ const (
 	// interface index and address.
 	ReceiveIPPacketInfoOption
 
-	// ReuseAddressOption is used by SetSockOptBool/GetSockOptBool to
-	// specify whether Bind() should allow reuse of local address.
-	ReuseAddressOption
-
-	// ReusePortOption is used by SetSockOptBool/GetSockOptBool to permit
-	// multiple sockets to be bound to an identical socket address.
-	ReusePortOption
-
 	// V6OnlyOption is used by SetSockOptBool/GetSockOptBool to specify
 	// whether an IPv6 socket is to be restricted to sending and receiving
 	// IPv6 packets only.

@@ -18,11 +18,36 @@ import (
 	"sync/atomic"
 )
 
+// SocketOptionsHandler holds methods that help define endpoint specific
+// behavior for socket options. These must be implemented by endpoints to get
+// notified when socket level options are set.
+type SocketOptionsHandler interface {
+	// OnReuseAddressSet is invoked when SO_REUSEADDR is set for an endpoint.
+	OnReuseAddressSet(v bool)
+
+	// OnReusePortSet is invoked when SO_REUSEPORT is set for an endpoint.
+	OnReusePortSet(v bool)
+}
+
+// DefaultSocketOptionsHandler is an embeddable type that implements no-op
+// implementations for SocketOptionsHandler methods.
+type DefaultSocketOptionsHandler struct{}
+
+var _ SocketOptionsHandler = (*DefaultSocketOptionsHandler)(nil)
+
+// OnReuseAddressSet implements SocketOptionsHandler.OnReuseAddressSet.
+func (*DefaultSocketOptionsHandler) OnReuseAddressSet(bool) {}
+
+// OnReusePortSet implements SocketOptionsHandler.OnReusePortSet.
+func (*DefaultSocketOptionsHandler) OnReusePortSet(bool) {}
+
 // SocketOptions contains all the variables which store values for SOL_SOCKET
 // level options.
 //
 // +stateify savable
 type SocketOptions struct {
+	handler SocketOptionsHandler
+
 	// These fields are accessed and modified using atomic operations.
 
 	// broadcastEnabled determines whether datagram sockets are allowed to send
@@ -36,6 +61,20 @@ type SocketOptions struct {
 	// noChecksumEnabled determines whether UDP checksum is disabled while
 	// transmitting for this socket.
 	noChecksumEnabled uint32
+
+	// reuseAddressEnabled determines whether Bind() should allow reuse of local
+	// address.
+	reuseAddressEnabled uint32
+
+	// reusePortEnabled determines whether to permit multiple sockets to be bound
+	// to an identical socket address.
+	reusePortEnabled uint32
+}
+
+// InitHandler initializes the handler. This must be called before using the
+// socket options utility.
+func (so *SocketOptions) InitHandler(handler SocketOptionsHandler) {
+	so.handler = handler
 }
 
 func storeAtomicBool(addr *uint32, v bool) {
@@ -74,4 +113,26 @@ func (so *SocketOptions) GetNoChecksum() bool {
 // SetNoChecksum sets value for SO_NO_CHECK option.
 func (so *SocketOptions) SetNoChecksum(v bool) {
 	storeAtomicBool(&so.noChecksumEnabled, v)
+}
+
+// GetReuseAddress gets value for SO_REUSEADDR option.
+func (so *SocketOptions) GetReuseAddress() bool {
+	return atomic.LoadUint32(&so.reuseAddressEnabled) != 0
+}
+
+// SetReuseAddress sets value for SO_REUSEADDR option.
+func (so *SocketOptions) SetReuseAddress(v bool) {
+	storeAtomicBool(&so.reuseAddressEnabled, v)
+	so.handler.OnReuseAddressSet(v)
+}
+
+// GetReusePort gets value for SO_REUSEPORT option.
+func (so *SocketOptions) GetReusePort() bool {
+	return atomic.LoadUint32(&so.reusePortEnabled) != 0
+}
+
+// SetReusePort sets value for SO_REUSEPORT option.
+func (so *SocketOptions) SetReusePort(v bool) {
+	storeAtomicBool(&so.reusePortEnabled, v)
+	so.handler.OnReusePortSet(v)
 }

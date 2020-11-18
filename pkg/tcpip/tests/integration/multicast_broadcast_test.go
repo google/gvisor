@@ -510,10 +510,7 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 					}
 					defer ep.Close()
 
-					if err := ep.SetSockOptBool(tcpip.ReuseAddressOption, true); err != nil {
-						t.Fatalf("eps[%d].SetSockOptBool(tcpip.ReuseAddressOption, true): %s", len(eps), err)
-					}
-
+					ep.SocketOptions().SetReuseAddress(true)
 					ep.SocketOptions().SetBroadcast(true)
 
 					bindAddr := tcpip.FullAddress{Port: localPort}
