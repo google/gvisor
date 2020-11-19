@@ -566,21 +566,6 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		stats.IP.MalformedPacketsReceived.Increment()
 		return
 	}
-	srcAddr := h.SourceAddress()
-	dstAddr := h.DestinationAddress()
-
-	addressEndpoint := e.AcquireAssignedAddress(dstAddr, e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
-	if addressEndpoint == nil {
-		if !e.protocol.Forwarding() {
-			stats.IP.InvalidDestinationAddressesReceived.Increment()
-			return
-		}
-
-		_ = e.forwardPacket(pkt)
-		return
-	}
-	subnet := addressEndpoint.AddressWithPrefix().Subnet()
-	addressEndpoint.DecRef()
 
 	// There has been some confusion regarding verifying checksums. We need
 	// just look for negative 0 (0xffff) as the checksum, as it's not possible to
@@ -608,16 +593,42 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
+	srcAddr := h.SourceAddress()
+	dstAddr := h.DestinationAddress()
+
 	// As per RFC 1122 section 3.2.1.3:
 	//   When a host sends any datagram, the IP source address MUST
 	//   be one of its own IP addresses (but not a broadcast or
 	//   multicast address).
-	if directedBroadcast := subnet.IsBroadcast(srcAddr); directedBroadcast || srcAddr == header.IPv4Broadcast || header.IsV4MulticastAddress(srcAddr) {
+	if srcAddr == header.IPv4Broadcast || header.IsV4MulticastAddress(srcAddr) {
 		stats.IP.InvalidSourceAddressesReceived.Increment()
 		return
 	}
+	// Make sure the source address is not a subnet-local broadcast address.
+	if addressEndpoint := e.AcquireAssignedAddress(srcAddr, false /* createTemp */, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
+		subnet := addressEndpoint.Subnet()
+		addressEndpoint.DecRef()
+		if subnet.IsBroadcast(srcAddr) {
+			stats.IP.InvalidSourceAddressesReceived.Increment()
+			return
+		}
+	}
 
-	pkt.NetworkPacketInfo.LocalAddressBroadcast = subnet.IsBroadcast(dstAddr) || dstAddr == header.IPv4Broadcast
+	// The destination address should be an address we own or a group we joined
+	// for us to receive the packet. Otherwise, attempt to forward the packet.
+	if addressEndpoint := e.AcquireAssignedAddress(dstAddr, e.nic.Promiscuous(), stack.CanBePrimaryEndpoint); addressEndpoint != nil {
+		subnet := addressEndpoint.AddressWithPrefix().Subnet()
+		addressEndpoint.DecRef()
+		pkt.NetworkPacketInfo.LocalAddressBroadcast = subnet.IsBroadcast(dstAddr) || dstAddr == header.IPv4Broadcast
+	} else if !e.IsInGroup(dstAddr) {
+		if !e.protocol.Forwarding() {
+			stats.IP.InvalidDestinationAddressesReceived.Increment()
+			return
+		}
+
+		_ = e.forwardPacket(pkt)
+		return
+	}
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.

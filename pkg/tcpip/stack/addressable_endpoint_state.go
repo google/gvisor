@@ -594,15 +594,6 @@ func (a *AddressableEndpointState) JoinGroup(group tcpip.Address) (bool, *tcpip.
 	defer a.mu.Unlock()
 
 	joins, ok := a.mu.groups[group]
-	if !ok {
-		ep, err := a.addAndAcquireAddressLocked(group.WithPrefix(), NeverPrimaryEndpoint, AddressConfigStatic, false /* deprecated */, true /* permanent */)
-		if err != nil {
-			return false, err
-		}
-		// We have no need for the address endpoint.
-		a.decAddressRefLocked(ep)
-	}
-
 	a.mu.groups[group] = joins + 1
 	return !ok, nil
 }
@@ -618,7 +609,6 @@ func (a *AddressableEndpointState) LeaveGroup(group tcpip.Address) (bool, *tcpip
 	}
 
 	if joins == 1 {
-		a.removeGroupAddressLocked(group)
 		delete(a.mu.groups, group)
 		return true, nil
 	}
@@ -635,23 +625,11 @@ func (a *AddressableEndpointState) IsInGroup(group tcpip.Address) bool {
 	return ok
 }
 
-func (a *AddressableEndpointState) removeGroupAddressLocked(group tcpip.Address) {
-	if err := a.removePermanentAddressLocked(group); err != nil {
-		// removePermanentEndpointLocked would only return an error if group is
-		// not bound to the addressable endpoint, but we know it MUST be assigned
-		// since we have group in our map of groups.
-		panic(fmt.Sprintf("error removing group address = %s: %s", group, err))
-	}
-}
-
 // Cleanup forcefully leaves all groups and removes all permanent addresses.
 func (a *AddressableEndpointState) Cleanup() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	for group := range a.mu.groups {
-		a.removeGroupAddressLocked(group)
-	}
 	a.mu.groups = make(map[tcpip.Address]uint32)
 
 	for _, ep := range a.mu.endpoints {
