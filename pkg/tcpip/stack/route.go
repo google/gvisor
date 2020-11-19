@@ -397,23 +397,6 @@ func (r *Route) Clone() Route {
 	return *r
 }
 
-// MakeLoopedRoute duplicates the given route with special handling for routes
-// used for sending multicast or broadcast packets. In those cases the
-// multicast/broadcast address is the remote address when sending out, but for
-// incoming (looped) packets it becomes the local address. Similarly, the local
-// interface address that was the local address going out becomes the remote
-// address coming in. This is different to unicast routes where local and
-// remote addresses remain the same as they identify location (local vs remote)
-// not direction (source vs destination).
-func (r *Route) MakeLoopedRoute() Route {
-	l := r.Clone()
-	if r.RemoteAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(r.RemoteAddress) || header.IsV6MulticastAddress(r.RemoteAddress) {
-		l.RemoteAddress, l.LocalAddress = l.LocalAddress, l.RemoteAddress
-		l.RemoteLinkAddress = l.LocalLinkAddress
-	}
-	return l
-}
-
 // Stack returns the instance of the Stack that owns this route.
 func (r *Route) Stack() *Stack {
 	return r.outgoingNIC.stack
@@ -433,28 +416,4 @@ func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
 func (r *Route) IsOutboundBroadcast() bool {
 	// Only IPv4 has a notion of broadcast.
 	return r.isV4Broadcast(r.RemoteAddress)
-}
-
-// isInboundBroadcast returns true if the route is for an inbound broadcast
-// packet.
-func (r *Route) isInboundBroadcast() bool {
-	// Only IPv4 has a notion of broadcast.
-	return r.isV4Broadcast(r.LocalAddress)
-}
-
-// ReverseRoute returns new route with given source and destination address.
-func (r *Route) ReverseRoute(src tcpip.Address, dst tcpip.Address) Route {
-	return Route{
-		NetProto:             r.NetProto,
-		LocalAddress:         dst,
-		LocalLinkAddress:     r.RemoteLinkAddress,
-		RemoteAddress:        src,
-		RemoteLinkAddress:    r.LocalLinkAddress,
-		Loop:                 r.Loop,
-		localAddressNIC:      r.localAddressNIC,
-		localAddressEndpoint: r.localAddressEndpoint,
-		outgoingNIC:          r.outgoingNIC,
-		linkCache:            r.linkCache,
-		linkRes:              r.linkRes,
-	}
 }
