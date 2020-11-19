@@ -80,6 +80,7 @@ func validateID(id string) error {
 //   - It calls 'runsc delete'. runc implementation kills --all SIGKILL once
 //     again just to be sure, waits, and then proceeds with remaining teardown.
 //
+// Container is thread-unsafe.
 type Container struct {
 	// ID is the container ID.
 	ID string `json:"id"`
