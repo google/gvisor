@@ -395,12 +395,7 @@ func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (*endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
-	switch opt {
-	case tcpip.AcceptConnOption:
-		return false, nil
-	default:
-		return false, tcpip.ErrNotSupported
-	}
+	return false, tcpip.ErrNotSupported
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.

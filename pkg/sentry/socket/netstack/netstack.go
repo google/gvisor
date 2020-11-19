@@ -1162,13 +1162,8 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.KeepaliveEnabledOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetKeepAlive()))
+		return &v, nil
 
 	case linux.SO_LINGER:
 		if outLen < linux.SizeOfLinger {
@@ -1231,12 +1226,8 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.AcceptConnOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetAcceptConn()))
+		return &v, nil
 
 	default:
 		socket.GetSockOptEmitUnimplementedEvent(t, name)
@@ -1918,7 +1909,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.KeepaliveEnabledOption, v != 0))
+		ep.SocketOptions().SetKeepAlive(v != 0)
+		return nil
 
 	case linux.SO_SNDTIMEO:
 		if len(optVal) < linux.SizeOfTimeval {

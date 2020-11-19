@@ -4984,9 +4984,7 @@ func TestKeepalive(t *testing.T) {
 	if err := c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 5); err != nil {
 		t.Fatalf("c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 5): %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true); err != nil {
-		t.Fatalf("c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true): %s", err)
-	}
+	c.EP.SocketOptions().SetKeepAlive(true)
 
 	// 5 unacked keepalives are sent. ACK each one, and check that the
 	// connection stays alive after 5.
@@ -7236,9 +7234,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 	if err := c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 10); err != nil {
 		t.Fatalf("c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 10): %s", err)
 	}
-	if err := c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true); err != nil {
-		t.Fatalf("c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true): %s", err)
-	}
+	c.EP.SocketOptions().SetKeepAlive(true)
 
 	// Set userTimeout to be the duration to be 1 keepalive
 	// probes. Which means that after the first probe is sent
