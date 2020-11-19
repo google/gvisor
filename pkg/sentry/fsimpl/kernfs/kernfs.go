@@ -286,7 +286,7 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 	refs := atomic.LoadInt64(&d.refs)
 	if refs == -1 {
 		// Dentry has already been destroyed.
-		panic(fmt.Sprintf("cacheLocked called on a dentry which has already been destroyed: %v", d))
+		return
 	}
 	if refs > 0 {
 		if d.cached {
