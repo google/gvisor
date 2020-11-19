@@ -17,13 +17,12 @@ package fs
 import (
 	"math"
 	"sync/atomic"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
@@ -32,28 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-var (
-	// RecordWaitTime controls writing metrics for filesystem reads.
-	// Enabling this comes at a small CPU cost due to performing two
-	// monotonic clock reads per read call.
-	//
-	// Note that this is only performed in the direct read path, and may
-	// not be consistently applied for other forms of reads, such as
-	// splice.
-	RecordWaitTime = false
-
-	reads    = metric.MustCreateNewUint64Metric("/fs/reads", false /* sync */, "Number of file reads.")
-	readWait = metric.MustCreateNewUint64NanosecondsMetric("/fs/read_wait", false /* sync */, "Time waiting on file reads, in nanoseconds.")
-)
-
-// IncrementWait increments the given wait time metric, if enabled.
-func IncrementWait(m *metric.Uint64Metric, start time.Time) {
-	if !RecordWaitTime {
-		return
-	}
-	m.IncrementBy(uint64(time.Since(start)))
-}
 
 // FileMaxOffset is the maximum possible file offset.
 const FileMaxOffset = math.MaxInt64
@@ -257,22 +234,19 @@ func (f *File) Readdir(ctx context.Context, serializer DentrySerializer) error {
 //
 // Returns syserror.ErrInterrupted if reading was interrupted.
 func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error) {
-	var start time.Time
-	if RecordWaitTime {
-		start = time.Now()
-	}
+	start := fsmetric.StartReadWait()
+	defer fsmetric.FinishReadWait(fsmetric.ReadWait, start)
+
 	if !f.mu.Lock(ctx) {
-		IncrementWait(readWait, start)
 		return 0, syserror.ErrInterrupted
 	}
 
-	reads.Increment()
+	fsmetric.Reads.Increment()
 	n, err := f.FileOperations.Read(ctx, f, dst, f.offset)
 	if n > 0 && !f.flags.NonSeekable {
 		atomic.AddInt64(&f.offset, n)
 	}
 	f.mu.Unlock()
-	IncrementWait(readWait, start)
 	return n, err
 }
 
@@ -282,19 +256,16 @@ func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error)
 //
 // Otherwise same as Readv.
 func (f *File) Preadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
-	var start time.Time
-	if RecordWaitTime {
-		start = time.Now()
-	}
+	start := fsmetric.StartReadWait()
+	defer fsmetric.FinishReadWait(fsmetric.ReadWait, start)
+
 	if !f.mu.Lock(ctx) {
-		IncrementWait(readWait, start)
 		return 0, syserror.ErrInterrupted
 	}
 
-	reads.Increment()
+	fsmetric.Reads.Increment()
 	n, err := f.FileOperations.Read(ctx, f, dst, offset)
 	f.mu.Unlock()
-	IncrementWait(readWait, start)
 	return n, err
 }
 
