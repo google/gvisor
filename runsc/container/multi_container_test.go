@@ -301,54 +301,21 @@ func TestMultiContainerWait(t *testing.T) {
 	}
 	defer cleanup()
 
-	// Check via ps that multiple processes are running.
-	expectedPL := []*control.Process{
-		newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
+	// Check that we can wait for the sub-container.
+	c := containers[1]
+	if ws, err := c.Wait(); err != nil {
+		t.Errorf("failed to wait for process %s: %v", c.Spec.Process.Args, err)
+	} else if es := ws.ExitStatus(); es != 0 {
+		t.Errorf("process %s exited with non-zero status %d", c.Spec.Process.Args, es)
 	}
-	if err := waitForProcessList(containers[1], expectedPL); err != nil {
-		t.Errorf("failed to wait for sleep to start: %v", err)
+	if _, err := c.Wait(); err != nil {
+		t.Errorf("wait for stopped container %s shouldn't fail: %v", c.Spec.Process.Args, err)
 	}
-
-	// Wait on the short lived container from multiple goroutines.
-	wg := sync.WaitGroup{}
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func(c *Container) {
-			defer wg.Done()
-			if ws, err := c.Wait(); err != nil {
-				t.Errorf("failed to wait for process %s: %v", c.Spec.Process.Args, err)
-			} else if es := ws.ExitStatus(); es != 0 {
-				t.Errorf("process %s exited with non-zero status %d", c.Spec.Process.Args, es)
-			}
-			if _, err := c.Wait(); err != nil {
-				t.Errorf("wait for stopped container %s shouldn't fail: %v", c.Spec.Process.Args, err)
-			}
-		}(containers[1])
-	}
-
-	// Also wait via PID.
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func(c *Container) {
-			defer wg.Done()
-			const pid = 2
-			if ws, err := c.WaitPID(pid); err != nil {
-				t.Errorf("failed to wait for PID %d: %v", pid, err)
-			} else if es := ws.ExitStatus(); es != 0 {
-				t.Errorf("PID %d exited with non-zero status %d", pid, es)
-			}
-			if _, err := c.WaitPID(pid); err == nil {
-				t.Errorf("wait for stopped PID %d should fail", pid)
-			}
-		}(containers[1])
-	}
-
-	wg.Wait()
 
 	// After Wait returns, ensure that the root container is running and
 	// the child has finished.
-	expectedPL = []*control.Process{
-		newProcessBuilder().Cmd("sleep").Process(),
+	expectedPL := []*control.Process{
+		newProcessBuilder().Cmd("sleep").PID(1).Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
