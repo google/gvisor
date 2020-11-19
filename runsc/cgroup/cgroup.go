@@ -234,7 +234,7 @@ func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
 type Cgroup struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
-	Own     bool              `json:"own"`
+	Own     map[string]bool   `json:"own"`
 }
 
 // New creates a new Cgroup instance if the spec includes a cgroup path.
@@ -251,9 +251,11 @@ func New(spec *specs.Spec) (*Cgroup, error) {
 			return nil, fmt.Errorf("finding current cgroups: %w", err)
 		}
 	}
+	own := make(map[string]bool)
 	return &Cgroup{
 		Name:    spec.Linux.CgroupsPath,
 		Parents: parents,
+		Own:     own,
 	}, nil
 }
 
@@ -261,17 +263,7 @@ func New(spec *specs.Spec) (*Cgroup, error) {
 // already exists, it means that the caller has already provided a
 // pre-configured cgroups, and 'res' is ignored.
 func (c *Cgroup) Install(res *specs.LinuxResources) error {
-	if _, err := os.Stat(c.makePath("memory")); err == nil {
-		// If cgroup has already been created; it has been setup by caller. Don't
-		// make any changes to configuration, just join when sandbox/gofer starts.
-		log.Debugf("Using pre-created cgroup %q", c.Name)
-		return nil
-	}
-
 	log.Debugf("Creating cgroup %q", c.Name)
-
-	// Mark that cgroup resources are owned by me.
-	c.Own = true
 
 	// The Cleanup object cleans up partially created cgroups when an error occurs.
 	// Errors occuring during cleanup itself are ignored.
@@ -280,6 +272,16 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 
 	for key, cfg := range controllers {
 		path := c.makePath(key)
+		if _, err := os.Stat(path); err == nil {
+			// If cgroup has already been created; it has been setup by caller. Don't
+			// make any changes to configuration, just join when sandbox/gofer starts.
+			log.Debugf("Using pre-created cgroup %q", path)
+			continue
+		}
+
+		// Mark that cgroup resources are owned by me.
+		c.Own[key] = true
+
 		if err := os.MkdirAll(path, 0755); err != nil {
 			if cfg.optional && errors.Is(err, syscall.EROFS) {
 				log.Infof("Skipping cgroup %q", key)
@@ -298,12 +300,12 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 // Uninstall removes the settings done in Install(). If cgroup path already
 // existed when Install() was called, Uninstall is a noop.
 func (c *Cgroup) Uninstall() error {
-	if !c.Own {
-		// cgroup is managed by caller, don't touch it.
-		return nil
-	}
 	log.Debugf("Deleting cgroup %q", c.Name)
 	for key := range controllers {
+		if !c.Own[key] {
+			// cgroup is managed by caller, don't touch it.
+			continue
+		}
 		path := c.makePath(key)
 		log.Debugf("Removing cgroup controller for key=%q path=%q", key, path)
 
