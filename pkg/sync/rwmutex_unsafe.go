@@ -32,7 +32,12 @@ func runtimeSemrelease(s *uint32, handoff bool, skipframes int)
 // RWMutex is identical to sync.RWMutex, but adds the DowngradeLock,
 // TryLock and TryRLock methods.
 type RWMutex struct {
-	w           Mutex  // held if there are pending writers
+	// w is held if there are pending writers
+	//
+	// We use CrossGoroutineMutex rather than Mutex because the lock
+	// annotation instrumentation in Mutex will trigger false positives in
+	// the race detector when called inside of RaceDisable.
+	w           CrossGoroutineMutex
 	writerSem   uint32 // semaphore for writers to wait for completing readers
 	readerSem   uint32 // semaphore for readers to wait for completing writers
 	readerCount int32  // number of pending readers
