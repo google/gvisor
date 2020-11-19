@@ -849,9 +849,6 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
-	case tcpip.KeepaliveEnabledOption:
-		return false, nil
-
 	case tcpip.MulticastLoopOption:
 		e.mu.RLock()
 		v := e.multicastLoop
@@ -892,9 +889,6 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		e.mu.RUnlock()
 
 		return v, nil
-
-	case tcpip.AcceptConnOption:
-		return false, nil
 
 	default:
 		return false, tcpip.ErrUnknownProtocolOption

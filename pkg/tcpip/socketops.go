@@ -19,14 +19,23 @@ import (
 )
 
 // SocketOptionsHandler holds methods that help define endpoint specific
-// behavior for socket options. These must be implemented by endpoints to get
-// notified when socket level options are set.
+// behavior for socket options.
+// These must be implemented by endpoints to:
+// - Get notified when socket level options are set.
+// - Provide endpoint specific socket options.
 type SocketOptionsHandler interface {
 	// OnReuseAddressSet is invoked when SO_REUSEADDR is set for an endpoint.
 	OnReuseAddressSet(v bool)
 
 	// OnReusePortSet is invoked when SO_REUSEPORT is set for an endpoint.
 	OnReusePortSet(v bool)
+
+	// OnKeepAliveSet is invoked when SO_KEEPALIVE is set for an endpoint.
+	OnKeepAliveSet(v bool)
+
+	// IsListening is invoked to fetch SO_ACCEPTCONN option value for an
+	// endpoint. It is used to indicate if the socket is a listening socket.
+	IsListening() bool
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -40,6 +49,12 @@ func (*DefaultSocketOptionsHandler) OnReuseAddressSet(bool) {}
 
 // OnReusePortSet implements SocketOptionsHandler.OnReusePortSet.
 func (*DefaultSocketOptionsHandler) OnReusePortSet(bool) {}
+
+// OnKeepAliveSet implements SocketOptionsHandler.OnKeepAliveSet.
+func (*DefaultSocketOptionsHandler) OnKeepAliveSet(bool) {}
+
+// IsListening implements SocketOptionsHandler.IsListening.
+func (*DefaultSocketOptionsHandler) IsListening() bool { return false }
 
 // SocketOptions contains all the variables which store values for SOL_SOCKET
 // level options.
@@ -69,6 +84,10 @@ type SocketOptions struct {
 	// reusePortEnabled determines whether to permit multiple sockets to be bound
 	// to an identical socket address.
 	reusePortEnabled uint32
+
+	// keepAliveEnabled determines whether TCP keepalive is enabled for this
+	// socket.
+	keepAliveEnabled uint32
 }
 
 // InitHandler initializes the handler. This must be called before using the
@@ -135,4 +154,21 @@ func (so *SocketOptions) GetReusePort() bool {
 func (so *SocketOptions) SetReusePort(v bool) {
 	storeAtomicBool(&so.reusePortEnabled, v)
 	so.handler.OnReusePortSet(v)
+}
+
+// GetKeepAlive gets value for SO_KEEPALIVE option.
+func (so *SocketOptions) GetKeepAlive() bool {
+	return atomic.LoadUint32(&so.keepAliveEnabled) != 0
+}
+
+// SetKeepAlive sets value for SO_KEEPALIVE option.
+func (so *SocketOptions) SetKeepAlive(v bool) {
+	storeAtomicBool(&so.keepAliveEnabled, v)
+	so.handler.OnKeepAliveSet(v)
+}
+
+// GetAcceptConn gets value for SO_ACCEPTCONN option.
+func (so *SocketOptions) GetAcceptConn() bool {
+	// This option is completely endpoint dependent and unsettable.
+	return so.handler.IsListening()
 }

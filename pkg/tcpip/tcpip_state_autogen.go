@@ -18,6 +18,7 @@ func (so *SocketOptions) StateFields() []string {
 		"noChecksumEnabled",
 		"reuseAddressEnabled",
 		"reusePortEnabled",
+		"keepAliveEnabled",
 	}
 }
 
@@ -31,6 +32,7 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &so.noChecksumEnabled)
 	stateSinkObject.Save(4, &so.reuseAddressEnabled)
 	stateSinkObject.Save(5, &so.reusePortEnabled)
+	stateSinkObject.Save(6, &so.keepAliveEnabled)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -42,6 +44,7 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &so.noChecksumEnabled)
 	stateSourceObject.Load(4, &so.reuseAddressEnabled)
 	stateSourceObject.Load(5, &so.reusePortEnabled)
+	stateSourceObject.Load(6, &so.keepAliveEnabled)
 }
 
 func (f *FullAddress) StateTypeName() string {
