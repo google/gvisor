@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
@@ -985,14 +986,11 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	switch d.fileType() {
 	case linux.S_IFREG:
 		if !d.fs.opts.regularFilesUseSpecialFileFD {
-			if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, trunc); err != nil {
+			if err := d.ensureSharedHandle(ctx, ats.MayRead(), ats.MayWrite(), trunc); err != nil {
 				return nil, err
 			}
-			fd := &regularFileFD{}
-			fd.LockFD.Init(&d.locks)
-			if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
-				AllowDirectIO: true,
-			}); err != nil {
+			fd, err := newRegularFileFD(mnt, d, opts.Flags)
+			if err != nil {
 				return nil, err
 			}
 			vfd = &fd.vfsfd
@@ -1018,6 +1016,11 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		fd.LockFD.Init(&d.locks)
 		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
+		}
+		if atomic.LoadInt32(&d.readFD) >= 0 {
+			fsmetric.GoferOpensHost.Increment()
+		} else {
+			fsmetric.GoferOpens9P.Increment()
 		}
 		return &fd.vfsfd, nil
 	case linux.S_IFLNK:
@@ -1110,7 +1113,7 @@ retry:
 			return nil, err
 		}
 	}
-	fd, err := newSpecialFileFD(h, mnt, d, &d.locks, opts.Flags)
+	fd, err := newSpecialFileFD(h, mnt, d, opts.Flags)
 	if err != nil {
 		h.close(ctx)
 		return nil, err
@@ -1205,11 +1208,8 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	// Finally, construct a file description representing the created file.
 	var childVFSFD *vfs.FileDescription
 	if useRegularFileFD {
-		fd := &regularFileFD{}
-		fd.LockFD.Init(&child.locks)
-		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &child.vfsd, &vfs.FileDescriptionOptions{
-			AllowDirectIO: true,
-		}); err != nil {
+		fd, err := newRegularFileFD(mnt, child, opts.Flags)
+		if err != nil {
 			return nil, err
 		}
 		childVFSFD = &fd.vfsfd
@@ -1221,7 +1221,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		if fdobj != nil {
 			h.fd = int32(fdobj.Release())
 		}
-		fd, err := newSpecialFileFD(h, mnt, child, &d.locks, opts.Flags)
+		fd, err := newSpecialFileFD(h, mnt, child, opts.Flags)
 		if err != nil {
 			h.close(ctx)
 			return nil, err

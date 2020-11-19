@@ -67,6 +67,7 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsmetric",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",

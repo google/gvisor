@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -583,7 +584,11 @@ func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	if !fd.readable {
 		return 0, syserror.EBADF
 	}
-	return fd.impl.PRead(ctx, dst, offset, opts)
+	start := fsmetric.StartReadWait()
+	n, err := fd.impl.PRead(ctx, dst, offset, opts)
+	fsmetric.Reads.Increment()
+	fsmetric.FinishReadWait(fsmetric.ReadWait, start)
+	return n, err
 }
 
 // Read is similar to PRead, but does not specify an offset.
@@ -591,7 +596,11 @@ func (fd *FileDescription) Read(ctx context.Context, dst usermem.IOSequence, opt
 	if !fd.readable {
 		return 0, syserror.EBADF
 	}
-	return fd.impl.Read(ctx, dst, opts)
+	start := fsmetric.StartReadWait()
+	n, err := fd.impl.Read(ctx, dst, opts)
+	fsmetric.Reads.Increment()
+	fsmetric.FinishReadWait(fsmetric.ReadWait, start)
+	return n, err
 }
 
 // PWrite writes src to the file represented by fd, starting at the given
