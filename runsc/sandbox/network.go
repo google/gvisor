@@ -127,7 +127,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 	// Get all interfaces in the namespace.
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return fmt.Errorf("querying interfaces: %v", err)
+		return fmt.Errorf("querying interfaces: %w", err)
 	}
 
 	isRoot, err := isRootNS()
@@ -148,14 +148,14 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 
 		allAddrs, err := iface.Addrs()
 		if err != nil {
-			return fmt.Errorf("fetching interface addresses for %q: %v", iface.Name, err)
+			return fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
 		}
 
 		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
 			link, err := loopbackLink(iface, allAddrs)
 			if err != nil {
-				return fmt.Errorf("getting loopback link for iface %q: %v", iface.Name, err)
+				return fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
 			args.LoopbackLinks = append(args.LoopbackLinks, link)
 			continue
@@ -209,7 +209,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 		// Get the link for the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)
 		if err != nil {
-			return fmt.Errorf("getting link for interface %q: %v", iface.Name, err)
+			return fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
 		}
 		link.LinkAddress = ifaceLink.Attrs().HardwareAddr
 
@@ -219,7 +219,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 			log.Debugf("Creating Channel %d", i)
 			socketEntry, err := createSocket(iface, ifaceLink, hardwareGSO)
 			if err != nil {
-				return fmt.Errorf("failed to createSocket for %s : %v", iface.Name, err)
+				return fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
 			}
 			if i == 0 {
 				link.GSOMaxSize = socketEntry.gsoMaxSize
@@ -241,11 +241,12 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 		// Collect the addresses for the interface, enable forwarding,
 		// and remove them from the host.
 		for _, addr := range ipAddrs {
-			link.Addresses = append(link.Addresses, addr.IP)
+			prefix, _ := addr.Mask.Size()
+			link.Addresses = append(link.Addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
 
 			// Steal IP address from NIC.
 			if err := removeAddress(ifaceLink, addr.String()); err != nil {
-				return fmt.Errorf("removing address %v from device %q: %v", iface.Name, addr, err)
+				return fmt.Errorf("removing address %v from device %q: %w", addr, iface.Name, err)
 			}
 		}
 
@@ -254,7 +255,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 
 	log.Debugf("Setting up network, config: %+v", args)
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
-		return fmt.Errorf("creating links and routes: %v", err)
+		return fmt.Errorf("creating links and routes: %w", err)
 	}
 	return nil
 }
@@ -339,9 +340,15 @@ func loopbackLink(iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, err
 		if !ok {
 			return boot.LoopbackLink{}, fmt.Errorf("address is not IPNet: %+v", addr)
 		}
+
+		prefix, _ := ipNet.Mask.Size()
+		link.Addresses = append(link.Addresses, boot.IPWithPrefix{
+			Address:   ipNet.IP,
+			PrefixLen: prefix,
+		})
+
 		dst := *ipNet
 		dst.IP = dst.IP.Mask(dst.Mask)
-		link.Addresses = append(link.Addresses, ipNet.IP)
 		link.Routes = append(link.Routes, boot.Route{
 			Destination: dst,
 		})
