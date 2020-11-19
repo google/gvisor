@@ -1118,6 +1118,16 @@ func (s *Stack) AddAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber,
 	return s.AddAddressWithOptions(id, protocol, addr, CanBePrimaryEndpoint)
 }
 
+// AddAddressWithPrefix is the same as AddAddress, but allows you to specify
+// the address prefix.
+func (s *Stack) AddAddressWithPrefix(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.AddressWithPrefix) *tcpip.Error {
+	ap := tcpip.ProtocolAddress{
+		Protocol:          protocol,
+		AddressWithPrefix: addr,
+	}
+	return s.AddProtocolAddressWithOptions(id, ap, CanBePrimaryEndpoint)
+}
+
 // AddProtocolAddress adds a new network-layer protocol address to the
 // specified NIC.
 func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *tcpip.Error {

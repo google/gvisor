@@ -40,9 +40,9 @@ var (
 	// "::1/8" on "lo" interface.
 	DefaultLoopbackLink = LoopbackLink{
 		Name: "lo",
-		Addresses: []net.IP{
-			net.IP("\x7f\x00\x00\x01"),
-			net.IPv6loopback,
+		Addresses: []IPWithPrefix{
+			{Address: net.IP("\x7f\x00\x00\x01"), PrefixLen: 8},
+			{Address: net.IPv6loopback, PrefixLen: 128},
 		},
 		Routes: []Route{
 			{
@@ -82,7 +82,7 @@ type DefaultRoute struct {
 type FDBasedLink struct {
 	Name               string
 	MTU                int
-	Addresses          []net.IP
+	Addresses          []IPWithPrefix
 	Routes             []Route
 	GSOMaxSize         uint32
 	SoftwareGSOEnabled bool
@@ -99,7 +99,7 @@ type FDBasedLink struct {
 // LoopbackLink configures a loopback li nk.
 type LoopbackLink struct {
 	Name      string
-	Addresses []net.IP
+	Addresses []IPWithPrefix
 	Routes    []Route
 }
 
@@ -115,6 +115,19 @@ type CreateLinksAndRoutesArgs struct {
 
 	Defaultv4Gateway DefaultRoute
 	Defaultv6Gateway DefaultRoute
+}
+
+// IPWithPrefix is an address with its subnet prefix length.
+type IPWithPrefix struct {
+	// Address is a network address.
+	Address net.IP
+
+	// PrefixLen is the subnet prefix length.
+	PrefixLen int
+}
+
+func (ip IPWithPrefix) String() string {
+	return fmt.Sprintf("%s/%d", ip.Address, ip.PrefixLen)
 }
 
 // Empty returns true if route hasn't been set.
@@ -264,15 +277,19 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 // createNICWithAddrs creates a NIC in the network stack and adds the given
 // addresses.
-func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkEndpoint, addrs []net.IP) error {
+func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkEndpoint, addrs []IPWithPrefix) error {
 	opts := stack.NICOptions{Name: name}
 	if err := n.Stack.CreateNICWithOptions(id, sniffer.New(ep), opts); err != nil {
 		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
 	}
 
 	for _, addr := range addrs {
-		proto, tcpipAddr := ipToAddressAndProto(addr)
-		if err := n.Stack.AddAddress(id, proto, tcpipAddr); err != nil {
+		proto, tcpipAddr := ipToAddressAndProto(addr.Address)
+		ap := tcpip.AddressWithPrefix{
+			Address:   tcpipAddr,
+			PrefixLen: addr.PrefixLen,
+		}
+		if err := n.Stack.AddAddressWithPrefix(id, proto, ap); err != nil {
 			return fmt.Errorf("AddAddress(%v, %v, %v) failed: %v", id, proto, tcpipAddr, err)
 		}
 	}
