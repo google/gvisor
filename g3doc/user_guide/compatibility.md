@@ -42,6 +42,9 @@ Most common utilities work. Note that:
 
 *   Some tools, such as `tcpdump` and old versions of `ping`, require explicitly
     enabling raw sockets via the unsafe `--net-raw` runsc flag.
+    * In case of tcpdump the following invocations will work
+        * tcpdump -i any
+        * tcpdump -i <device-name> -p  (-p is required to disable promiscuous mode)        
 *   Different Docker images can behave differently. For example, Alpine Linux
     and Ubuntu have different `ip` binaries.
 
@@ -81,7 +84,7 @@ Most common utilities work. Note that:
 | sshd     | Partially working. Job control [in progress](https://gvisor.dev/issue/154). |
 | strace   | Working.                                  |
 | tar      | Working.                                  |
-| tcpdump  | [In progress](https://gvisor.dev/issue/173). |
+| tcpdump  | Partially working, tcpdump promiscuous mode is not supported (See: https://gvisor.dev/issue/173). |
 | top      | Working.                                  |
 | uptime   | Working.                                  |
 | vim      | Working.                                  |
