@@ -22,7 +22,13 @@ func storeAppASID(asid uintptr)
 // LocalFlushTlbAll same as FlushTlbAll, but only applies to the calling CPU.
 func LocalFlushTlbAll()
 
-// FlushTlbAll flush all tlb.
+// FlushTlbByVA invalidates tlb by VA/Last-level/Inner-Shareable.
+func FlushTlbByVA(addr uintptr)
+
+// FlushTlbByASID invalidates tlb by ASID/Inner-Shareable.
+func FlushTlbByASID(asid uintptr)
+
+// FlushTlbAll invalidates all tlb.
 func FlushTlbAll()
 
 // CPACREL1 returns the value of the CPACR_EL1 register.
