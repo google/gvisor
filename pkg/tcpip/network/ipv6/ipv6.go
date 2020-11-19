@@ -737,8 +737,11 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
-	addressEndpoint := e.AcquireAssignedAddress(dstAddr, e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
-	if addressEndpoint == nil {
+	// The destination address should be an address we own or a group we joined
+	// for us to receive the packet. Otherwise, attempt to forward the packet.
+	if addressEndpoint := e.AcquireAssignedAddress(dstAddr, e.nic.Promiscuous(), stack.CanBePrimaryEndpoint); addressEndpoint != nil {
+		addressEndpoint.DecRef()
+	} else if !e.IsInGroup(dstAddr) {
 		if !e.protocol.Forwarding() {
 			stats.IP.InvalidDestinationAddressesReceived.Increment()
 			return
@@ -747,7 +750,6 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		_ = e.forwardPacket(pkt)
 		return
 	}
-	addressEndpoint.DecRef()
 
 	// vv consists of:
 	// - Any IPv6 header bytes after the first 40 (i.e. extensions).

@@ -248,8 +248,6 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "ipv6_unknown_options_action",
-        # TODO(b/159928940): Fix netstack then remove the line below.
-        expect_netstack_failure = True,
     ),
     PacketimpactTestInfo(
         name = "ipv4_fragment_reassembly",

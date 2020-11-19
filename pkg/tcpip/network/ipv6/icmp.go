@@ -796,7 +796,8 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 		allowResponseToMulticast = reason.respondToMulticast
 	}
 
-	if (!allowResponseToMulticast && header.IsV6MulticastAddress(origIPHdrDst)) || origIPHdrSrc == header.IPv6Any {
+	isOrigDstMulticast := header.IsV6MulticastAddress(origIPHdrDst)
+	if (!allowResponseToMulticast && isOrigDstMulticast) || origIPHdrSrc == header.IPv6Any {
 		return nil
 	}
 
@@ -812,8 +813,13 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	// If we are operating as a router, do not use the packet's destination
 	// address as the response's source address as we should not own the
 	// destination address of a packet we are forwarding.
+	//
+	// If the packet was originally destined to a multicast address, then do not
+	// use the packet's destination address as the source for the response ICMP
+	// packet as "multicast addresses must not be used as source addresses in IPv6
+	// packets", as per RFC 4291 section 2.7.
 	localAddr := origIPHdrDst
-	if _, ok := reason.(*icmpReasonHopLimitExceeded); ok {
+	if _, ok := reason.(*icmpReasonHopLimitExceeded); ok || isOrigDstMulticast {
 		localAddr = ""
 	}
 	// Even if we were able to receive a packet from some remote, we may not have

@@ -873,7 +873,13 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				Length:  uint16(udpLength),
 			})
 			copy(u.Payload(), udpPayload)
-			sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, addr1, addr2, uint16(udpLength))
+
+			dstAddr := tcpip.Address(addr2)
+			if test.multicast {
+				dstAddr = header.IPv6AllNodesMulticastAddress
+			}
+
+			sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, addr1, dstAddr, uint16(udpLength))
 			sum = header.Checksum(udpPayload, sum)
 			u.SetChecksum(^u.CalculateChecksum(sum))
 
@@ -884,10 +890,6 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			// Serialize IPv6 fixed header.
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
-			dstAddr := tcpip.Address(addr2)
-			if test.multicast {
-				dstAddr = header.IPv6AllNodesMulticastAddress
-			}
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength: uint16(payloadLength),
 				NextHeader:    ipv6NextHdr,
