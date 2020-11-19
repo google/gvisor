@@ -743,7 +743,9 @@ type dentry struct {
 	// for memory mappings. If mmapFD is -1, no such FD is available, and the
 	// internal page cache implementation is used for memory mappings instead.
 	//
-	// These fields are protected by handleMu.
+	// These fields are protected by handleMu. readFD, writeFD, and mmapFD are
+	// additionally written using atomic memory operations, allowing them to be
+	// read (albeit racily) with atomic.LoadInt32() without locking handleMu.
 	//
 	// readFile and writeFile may or may not represent the same p9.File. Once
 	// either p9.File transitions from closed (isNil() == true) to open
@@ -1668,7 +1670,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 						}
 						fdsToClose = append(fdsToClose, d.readFD)
 						invalidateTranslations = true
-						d.readFD = h.fd
+						atomic.StoreInt32(&d.readFD, h.fd)
 					} else {
 						// Otherwise, we want to avoid invalidating existing
 						// memmap.Translations (which is expensive); instead, use
@@ -1689,15 +1691,15 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 						h.fd = d.readFD
 					}
 				} else {
-					d.readFD = h.fd
+					atomic.StoreInt32(&d.readFD, h.fd)
 				}
 				if d.writeFD != h.fd && d.writeFD >= 0 {
 					fdsToClose = append(fdsToClose, d.writeFD)
 				}
-				d.writeFD = h.fd
-				d.mmapFD = h.fd
+				atomic.StoreInt32(&d.writeFD, h.fd)
+				atomic.StoreInt32(&d.mmapFD, h.fd)
 			} else if openReadable && d.readFD < 0 {
-				d.readFD = h.fd
+				atomic.StoreInt32(&d.readFD, h.fd)
 				// If the file has not been opened for writing, the new FD may
 				// be used for read-only memory mappings. If the file was
 				// previously opened for reading (without an FD), then existing
@@ -1705,10 +1707,10 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 				// invalidate those mappings.
 				if d.writeFile.isNil() {
 					invalidateTranslations = !d.readFile.isNil()
-					d.mmapFD = h.fd
+					atomic.StoreInt32(&d.mmapFD, h.fd)
 				}
 			} else if openWritable && d.writeFD < 0 {
-				d.writeFD = h.fd
+				atomic.StoreInt32(&d.writeFD, h.fd)
 				if d.readFD >= 0 {
 					// We have an existing read-only FD, but the file has just
 					// been opened for writing, so we need to start supporting
@@ -1717,7 +1719,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 					// writable memory mappings. Switch to using the internal
 					// page cache.
 					invalidateTranslations = true
-					d.mmapFD = -1
+					atomic.StoreInt32(&d.mmapFD, -1)
 				}
 			} else {
 				// The new FD is not useful.
@@ -1729,7 +1731,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			// memory mappings. However, we have no writable host FD. Switch to
 			// using the internal page cache.
 			invalidateTranslations = true
-			d.mmapFD = -1
+			atomic.StoreInt32(&d.mmapFD, -1)
 		}
 
 		// Switch to new fids.

@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -46,6 +47,25 @@ type regularFileFD struct {
 	// off is the file offset. off is protected by mu.
 	mu  sync.Mutex `state:"nosave"`
 	off int64
+}
+
+func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32) (*regularFileFD, error) {
+	fd := &regularFileFD{}
+	fd.LockFD.Init(&d.locks)
+	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+		AllowDirectIO: true,
+	}); err != nil {
+		return nil, err
+	}
+	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
+		fsmetric.GoferOpensWX.Increment()
+	}
+	if atomic.LoadInt32(&d.mmapFD) >= 0 {
+		fsmetric.GoferOpensHost.Increment()
+	} else {
+		fsmetric.GoferOpens9P.Increment()
+	}
+	return fd, nil
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -89,6 +109,18 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	start := fsmetric.StartReadWait()
+	d := fd.dentry()
+	defer func() {
+		if atomic.LoadInt32(&d.readFD) >= 0 {
+			fsmetric.GoferReadsHost.Increment()
+			fsmetric.FinishReadWait(fsmetric.GoferReadWaitHost, start)
+		} else {
+			fsmetric.GoferReads9P.Increment()
+			fsmetric.FinishReadWait(fsmetric.GoferReadWait9P, start)
+		}
+	}()
+
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
@@ -102,7 +134,6 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 
 	// Check for reading at EOF before calling into MM (but not under
 	// InteropModeShared, which makes d.size unreliable).
-	d := fd.dentry()
 	if d.cachedMetadataAuthoritative() && uint64(offset) >= atomic.LoadUint64(&d.size) {
 		return 0, io.EOF
 	}
@@ -647,10 +678,7 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 			// Whether or not we have a host FD, we're not allowed to use it.
 			return syserror.ENODEV
 		}
-		d.handleMu.RLock()
-		haveFD := d.mmapFD >= 0
-		d.handleMu.RUnlock()
-		if !haveFD {
+		if atomic.LoadInt32(&d.mmapFD) < 0 {
 			return syserror.ENODEV
 		}
 	default:
@@ -668,10 +696,7 @@ func (d *dentry) mayCachePages() bool {
 	if d.fs.opts.forcePageCache {
 		return true
 	}
-	d.handleMu.RLock()
-	haveFD := d.mmapFD >= 0
-	d.handleMu.RUnlock()
-	return haveFD
+	return atomic.LoadInt32(&d.mmapFD) >= 0
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.

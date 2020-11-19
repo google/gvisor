@@ -21,25 +21,15 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
-)
-
-var (
-	opensWX      = metric.MustCreateNewUint64Metric("/gofer/opened_write_execute_file", true /* sync */, "Number of times a writable+executable file was opened from a gofer.")
-	opens9P      = metric.MustCreateNewUint64Metric("/gofer/opens_9p", false /* sync */, "Number of times a 9P file was opened from a gofer.")
-	opensHost    = metric.MustCreateNewUint64Metric("/gofer/opens_host", false /* sync */, "Number of times a host file was opened from a gofer.")
-	reads9P      = metric.MustCreateNewUint64Metric("/gofer/reads_9p", false /* sync */, "Number of 9P file reads from a gofer.")
-	readWait9P   = metric.MustCreateNewUint64NanosecondsMetric("/gofer/read_wait_9p", false /* sync */, "Time waiting on 9P file reads from a gofer, in nanoseconds.")
-	readsHost    = metric.MustCreateNewUint64Metric("/gofer/reads_host", false /* sync */, "Number of host file reads from a gofer.")
-	readWaitHost = metric.MustCreateNewUint64NanosecondsMetric("/gofer/read_wait_host", false /* sync */, "Time waiting on host file reads from a gofer, in nanoseconds.")
 )
 
 // fileOperations implements fs.FileOperations for a remote file system.
@@ -101,14 +91,14 @@ func NewFile(ctx context.Context, dirent *fs.Dirent, name string, flags fs.FileF
 	}
 	if flags.Write {
 		if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Execute: true}); err == nil {
-			opensWX.Increment()
+			fsmetric.GoferOpensWX.Increment()
 			log.Warningf("Opened a writable executable: %q", name)
 		}
 	}
 	if handles.Host != nil {
-		opensHost.Increment()
+		fsmetric.GoferOpensHost.Increment()
 	} else {
-		opens9P.Increment()
+		fsmetric.GoferOpens9P.Increment()
 	}
 	return fs.NewFile(ctx, dirent, flags, f)
 }
@@ -278,20 +268,17 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 // use this function rather than using a defer in Read() to avoid the performance hit of defer.
 func (f *fileOperations) incrementReadCounters(start time.Time) {
 	if f.handles.Host != nil {
-		readsHost.Increment()
-		fs.IncrementWait(readWaitHost, start)
+		fsmetric.GoferReadsHost.Increment()
+		fsmetric.FinishReadWait(fsmetric.GoferReadWaitHost, start)
 	} else {
-		reads9P.Increment()
-		fs.IncrementWait(readWait9P, start)
+		fsmetric.GoferReads9P.Increment()
+		fsmetric.FinishReadWait(fsmetric.GoferReadWait9P, start)
 	}
 }
 
 // Read implements fs.FileOperations.Read.
 func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
-	var start time.Time
-	if fs.RecordWaitTime {
-		start = time.Now()
-	}
+	start := fsmetric.StartReadWait()
 	if fs.IsDir(file.Dirent.Inode.StableAttr) {
 		// Not all remote file systems enforce this so this client does.
 		f.incrementReadCounters(start)

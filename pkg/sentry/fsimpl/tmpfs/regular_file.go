@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -359,6 +360,10 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	start := fsmetric.StartReadWait()
+	defer fsmetric.FinishReadWait(fsmetric.TmpfsReadWait, start)
+	fsmetric.TmpfsReads.Increment()
+
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
