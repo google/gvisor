@@ -662,6 +662,56 @@ func TestIPv4Sanity(t *testing.T) {
 			},
 		},
 		{
+			// Timestamp pointer uses one based counting so 0 is invalid.
+			name:              "timestamp pointer invalid",
+			maxTotalLength:    ipv4.MaxTotalSize,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options: header.IPv4Options{
+				68, 8, 0, 0x00,
+				//      ^ 0 instead of 5 or more.
+				0, 0, 0, 0,
+			},
+			shouldFail:          true,
+			expectErrorICMP:     true,
+			ICMPType:            header.ICMPv4ParamProblem,
+			ICMPCode:            header.ICMPv4UnusedCode,
+			paramProblemPointer: header.IPv4MinimumSize + 2,
+		},
+		{
+			// Timestamp pointer cannot be less than 5. It must point past the header
+			// which is 4 bytes. (1 based counting)
+			name:              "timestamp pointer too small by 1",
+			maxTotalLength:    ipv4.MaxTotalSize,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options: header.IPv4Options{
+				68, 8, header.IPv4OptionTimestampHdrLength, 0x00,
+				//          ^ header is 4 bytes, so 4 should fail.
+				0, 0, 0, 0,
+			},
+			shouldFail:          true,
+			expectErrorICMP:     true,
+			ICMPType:            header.ICMPv4ParamProblem,
+			ICMPCode:            header.ICMPv4UnusedCode,
+			paramProblemPointer: header.IPv4MinimumSize + 2,
+		},
+		{
+			name:              "valid timestamp pointer",
+			maxTotalLength:    ipv4.MaxTotalSize,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options: header.IPv4Options{
+				68, 8, header.IPv4OptionTimestampHdrLength + 1, 0x00,
+				//          ^ header is 4 bytes, so 5 should succeed.
+				0, 0, 0, 0,
+			},
+			replyOptions: header.IPv4Options{
+				68, 8, 9, 0x00,
+				0x00, 0xad, 0x1c, 0x40, // time we expect from fakeclock
+			},
+		},
+		{
 			// Needs 8 bytes for a type 1 timestamp but there are only 4 free.
 			name:              "bad timer element alignment",
 			maxTotalLength:    ipv4.MaxTotalSize,
@@ -792,7 +842,61 @@ func TestIPv4Sanity(t *testing.T) {
 			},
 		},
 		{
-			// Confirm linux bug for bug compatibility.
+			// Pointer uses one based counting so 0 is invalid.
+			name:              "record route pointer zero",
+			maxTotalLength:    ipv4.MaxTotalSize,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options: header.IPv4Options{
+				7, 8, 0, // 3 byte header
+				0, 0, 0, 0,
+				0,
+			},
+			shouldFail:          true,
+			expectErrorICMP:     true,
+			ICMPType:            header.ICMPv4ParamProblem,
+			ICMPCode:            header.ICMPv4UnusedCode,
+			paramProblemPointer: header.IPv4MinimumSize + 2,
+		},
+		{
+			// Pointer must be 4 or more as it must point past the 3 byte header
+			// using 1 based counting. 3 should fail.
+			name:              "record route pointer too small by 1",
+			maxTotalLength:    ipv4.MaxTotalSize,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options: header.IPv4Options{
+				7, 8, header.IPv4OptionRecordRouteHdrLength, // 3 byte header
+				0, 0, 0, 0,
+				0,
+			},
+			shouldFail:          true,
+			expectErrorICMP:     true,
+			ICMPType:            header.ICMPv4ParamProblem,
+			ICMPCode:            header.ICMPv4UnusedCode,
+			paramProblemPointer: header.IPv4MinimumSize + 2,
+		},
+		{
+			// Pointer must be 4 or more as it must point past the 3 byte header
+			// using 1 based counting. Check 4 passes. (Duplicates "single
+			// record route with room")
+			name:              "valid record route pointer",
+			maxTotalLength:    ipv4.MaxTotalSize,
+			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
+			TTL:               ttl,
+			options: header.IPv4Options{
+				7, 7, header.IPv4OptionRecordRouteHdrLength + 1, // 3 byte header
+				0, 0, 0, 0,
+				0,
+			},
+			replyOptions: header.IPv4Options{
+				7, 7, 8, // 3 byte header
+				192, 168, 1, 58, // New IP Address.
+				0, // padding to multiple of 4 bytes.
+			},
+		},
+		{
+			// Confirm Linux bug for bug compatibility.
 			// Linux returns slot 22 but the error is in slot 21.
 			name:              "multiple record route with not enough room",
 			maxTotalLength:    ipv4.MaxTotalSize,
