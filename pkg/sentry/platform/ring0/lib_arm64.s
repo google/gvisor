@@ -15,6 +15,23 @@
 #include "funcdata.h"
 #include "textflag.h"
 
+#define TLBI_ASID_SHIFT		48
+
+TEXT ·FlushTlbByVA(SB),NOSPLIT,$0-8
+	MOVD addr+0(FP), R1
+	DSB $10                 // dsb(ishst)
+	WORD $0xd50883a1        // tlbi vale1is, x1
+	DSB $11                 // dsb(ish)
+	RET
+
+TEXT ·FlushTlbByASID(SB),NOSPLIT,$0-8
+	MOVD asid+0(FP), R1
+	LSL $TLBI_ASID_SHIFT, R1, R1
+	DSB $10                 // dsb(ishst)
+	WORD $0xd5088341        // tlbi aside1is, x1
+	DSB $11                 // dsb(ish)
+	RET
+
 TEXT ·LocalFlushTlbAll(SB),NOSPLIT,$0
 	DSB $6			// dsb(nshst)
 	WORD $0xd508871f	// __tlbi(vmalle1)
