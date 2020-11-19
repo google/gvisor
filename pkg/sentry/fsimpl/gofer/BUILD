@@ -59,6 +59,7 @@ go_library(
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsimpl/host",
+        "//pkg/sentry/fsmetric",
         "//pkg/sentry/hostfd",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

@@ -18,17 +18,15 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
-
-var opens = metric.MustCreateNewUint64Metric("/fs/opens", false /* sync */, "Number of file opens.")
 
 // Inode is a file system object that can be simultaneously referenced by different
 // components of the VFS (Dirent, fs.File, etc).
@@ -247,7 +245,7 @@ func (i *Inode) GetFile(ctx context.Context, d *Dirent, flags FileFlags) (*File,
 	if i.overlay != nil {
 		return overlayGetFile(ctx, i.overlay, d, flags)
 	}
-	opens.Increment()
+	fsmetric.Opens.Increment()
 	return i.InodeOperations.GetFile(ctx, d, flags)
 }
 

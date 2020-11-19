@@ -18,14 +18,13 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -33,13 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
-)
-
-var (
-	opensRO  = metric.MustCreateNewUint64Metric("/in_memory_file/opens_ro", false /* sync */, "Number of times an in-memory file was opened in read-only mode.")
-	opensW   = metric.MustCreateNewUint64Metric("/in_memory_file/opens_w", false /* sync */, "Number of times an in-memory file was opened in write mode.")
-	reads    = metric.MustCreateNewUint64Metric("/in_memory_file/reads", false /* sync */, "Number of in-memory file reads.")
-	readWait = metric.MustCreateNewUint64NanosecondsMetric("/in_memory_file/read_wait", false /* sync */, "Time waiting on in-memory file reads, in nanoseconds.")
 )
 
 // fileInodeOperations implements fs.InodeOperations for a regular tmpfs file.
@@ -157,9 +149,9 @@ func (*fileInodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldPare
 // GetFile implements fs.InodeOperations.GetFile.
 func (f *fileInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	if flags.Write {
-		opensW.Increment()
+		fsmetric.TmpfsOpensW.Increment()
 	} else if flags.Read {
-		opensRO.Increment()
+		fsmetric.TmpfsOpensRO.Increment()
 	}
 	flags.Pread = true
 	flags.Pwrite = true
@@ -319,14 +311,12 @@ func (*fileInodeOperations) StatFS(context.Context) (fs.Info, error) {
 }
 
 func (f *fileInodeOperations) read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
-	var start time.Time
-	if fs.RecordWaitTime {
-		start = time.Now()
-	}
-	reads.Increment()
+	start := fsmetric.StartReadWait()
+	defer fsmetric.FinishReadWait(fsmetric.TmpfsReadWait, start)
+	fsmetric.TmpfsReads.Increment()
+
 	// Zero length reads for tmpfs are no-ops.
 	if dst.NumBytes() == 0 {
-		fs.IncrementWait(readWait, start)
 		return 0, nil
 	}
 
@@ -343,7 +333,6 @@ func (f *fileInodeOperations) read(ctx context.Context, file *fs.File, dst userm
 	size := f.attr.Size
 	f.dataMu.RUnlock()
 	if offset >= size {
-		fs.IncrementWait(readWait, start)
 		return 0, io.EOF
 	}
 
@@ -354,7 +343,6 @@ func (f *fileInodeOperations) read(ctx context.Context, file *fs.File, dst userm
 		f.attr.AccessTime = ktime.NowFromContext(ctx)
 		f.attrMu.Unlock()
 	}
-	fs.IncrementWait(readWait, start)
 	return n, err
 }
 

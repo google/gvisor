@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -70,7 +71,7 @@ type specialFileFD struct {
 	buf     []byte
 }
 
-func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks, flags uint32) (*specialFileFD, error) {
+func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*specialFileFD, error) {
 	ftype := d.fileType()
 	seekable := ftype == linux.S_IFREG || ftype == linux.S_IFCHR || ftype == linux.S_IFBLK
 	haveQueue := (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK) && h.fd >= 0
@@ -80,7 +81,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks,
 		seekable:      seekable,
 		haveQueue:     haveQueue,
 	}
-	fd.LockFD.Init(locks)
+	fd.LockFD.Init(&d.locks)
 	if haveQueue {
 		if err := fdnotifier.AddFD(h.fd, &fd.queue); err != nil {
 			return nil, err
@@ -98,6 +99,14 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks,
 	d.fs.syncMu.Lock()
 	d.fs.specialFileFDs[fd] = struct{}{}
 	d.fs.syncMu.Unlock()
+	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
+		fsmetric.GoferOpensWX.Increment()
+	}
+	if h.fd >= 0 {
+		fsmetric.GoferOpensHost.Increment()
+	} else {
+		fsmetric.GoferOpens9P.Increment()
+	}
 	return fd, nil
 }
 
@@ -161,6 +170,17 @@ func (fd *specialFileFD) Allocate(ctx context.Context, mode, offset, length uint
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	start := fsmetric.StartReadWait()
+	defer func() {
+		if fd.handle.fd >= 0 {
+			fsmetric.GoferReadsHost.Increment()
+			fsmetric.FinishReadWait(fsmetric.GoferReadWaitHost, start)
+		} else {
+			fsmetric.GoferReads9P.Increment()
+			fsmetric.FinishReadWait(fsmetric.GoferReadWait9P, start)
+		}
+	}()
+
 	if fd.seekable && offset < 0 {
 		return 0, syserror.EINVAL
 	}
