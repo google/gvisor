@@ -319,9 +319,9 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 			copy(h.HardwareAddressSender(), test.senderLinkAddr)
 			copy(h.ProtocolAddressSender(), test.senderAddr)
 			copy(h.ProtocolAddressTarget(), test.targetAddr)
-			c.linkEP.InjectInbound(arp.ProtocolNumber, &stack.PacketBuffer{
+			c.linkEP.InjectInbound(arp.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: v.ToVectorisedView(),
-			})
+			}))
 
 			if !test.isValid {
 				// No packets should be sent after receiving an invalid ARP request.
