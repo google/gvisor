@@ -376,7 +376,6 @@ func (k *keepalive) StateTypeName() string {
 
 func (k *keepalive) StateFields() []string {
 	return []string{
-		"enabled",
 		"idle",
 		"interval",
 		"count",
@@ -388,21 +387,19 @@ func (k *keepalive) beforeSave() {}
 
 func (k *keepalive) StateSave(stateSinkObject state.Sink) {
 	k.beforeSave()
-	stateSinkObject.Save(0, &k.enabled)
-	stateSinkObject.Save(1, &k.idle)
-	stateSinkObject.Save(2, &k.interval)
-	stateSinkObject.Save(3, &k.count)
-	stateSinkObject.Save(4, &k.unacked)
+	stateSinkObject.Save(0, &k.idle)
+	stateSinkObject.Save(1, &k.interval)
+	stateSinkObject.Save(2, &k.count)
+	stateSinkObject.Save(3, &k.unacked)
 }
 
 func (k *keepalive) afterLoad() {}
 
 func (k *keepalive) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &k.enabled)
-	stateSourceObject.Load(1, &k.idle)
-	stateSourceObject.Load(2, &k.interval)
-	stateSourceObject.Load(3, &k.count)
-	stateSourceObject.Load(4, &k.unacked)
+	stateSourceObject.Load(0, &k.idle)
+	stateSourceObject.Load(1, &k.interval)
+	stateSourceObject.Load(2, &k.count)
+	stateSourceObject.Load(3, &k.unacked)
 }
 
 func (rc *rackControl) StateTypeName() string {

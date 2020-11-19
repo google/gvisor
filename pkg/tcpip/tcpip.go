@@ -708,10 +708,6 @@ const (
 	// TCP, it determines if the Nagle algorithm is on or off.
 	DelayOption
 
-	// KeepaliveEnabledOption is used by SetSockOptBool/GetSockOptBool to
-	// specify whether TCP keepalive is enabled for this socket.
-	KeepaliveEnabledOption
-
 	// MulticastLoopOption is used by SetSockOptBool/GetSockOptBool to
 	// specify whether multicast packets sent over a non-loopback interface
 	// will be looped back.
@@ -747,10 +743,6 @@ const (
 	// endpoint that all packets being written have an IP header and the
 	// endpoint should not attach an IP header.
 	IPHdrIncludedOption
-
-	// AcceptConnOption is used by GetSockOptBool to indicate if the
-	// socket is a listening socket.
-	AcceptConnOption
 )
 
 // SockOptInt represents socket options which values have the int type.

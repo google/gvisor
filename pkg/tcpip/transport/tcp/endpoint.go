@@ -851,7 +851,6 @@ func (e *endpoint) recentTimestamp() uint32 {
 // +stateify savable
 type keepalive struct {
 	sync.Mutex `state:"nosave"`
-	enabled    bool
 	idle       time.Duration
 	interval   time.Duration
 	count      int
@@ -1643,6 +1642,11 @@ func (e *endpoint) OnReusePortSet(v bool) {
 	e.UnlockUser()
 }
 
+// OnKeepAliveSet implements tcpip.SocketOptionsHandler.OnKeepAliveSet.
+func (e *endpoint) OnKeepAliveSet(v bool) {
+	e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+}
+
 // SetSockOptBool sets a socket option.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
@@ -1668,12 +1672,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 			// Handle delayed data.
 			e.sndWaker.Assert()
 		}
-
-	case tcpip.KeepaliveEnabledOption:
-		e.keepalive.Lock()
-		e.keepalive.enabled = v
-		e.keepalive.Unlock()
-		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 
 	case tcpip.QuickAckOption:
 		o := uint32(1)
@@ -1980,6 +1978,13 @@ func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
 	return e.rcvBufUsed, nil
 }
 
+// IsListening implements tcpip.SocketOptionsHandler.IsListening.
+func (e *endpoint) IsListening() bool {
+	e.LockUser()
+	defer e.UnlockUser()
+	return e.EndpointState() == StateListen
+}
+
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
@@ -1989,13 +1994,6 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 
 	case tcpip.DelayOption:
 		return atomic.LoadUint32(&e.delay) != 0, nil
-
-	case tcpip.KeepaliveEnabledOption:
-		e.keepalive.Lock()
-		v := e.keepalive.enabled
-		e.keepalive.Unlock()
-
-		return v, nil
 
 	case tcpip.QuickAckOption:
 		v := atomic.LoadUint32(&e.slowAck) == 0
@@ -2015,12 +2013,6 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 
 	case tcpip.MulticastLoopOption:
 		return true, nil
-
-	case tcpip.AcceptConnOption:
-		e.LockUser()
-		defer e.UnlockUser()
-
-		return e.EndpointState() == StateListen, nil
 
 	default:
 		return false, tcpip.ErrUnknownProtocolOption
