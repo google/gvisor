@@ -32,11 +32,11 @@ func TestStructSize(t *testing.T) {
 func TestFieldValues(t *testing.T) {
 	var m Mutex
 	m.Lock()
-	if got := *m.state(); got != mutexLocked {
+	if got := *m.m.state(); got != mutexLocked {
 		t.Errorf("got locked sync.Mutex.state = %d, want = %d", got, mutexLocked)
 	}
 	m.Unlock()
-	if got := *m.state(); got != mutexUnlocked {
+	if got := *m.m.state(); got != mutexUnlocked {
 		t.Errorf("got unlocked sync.Mutex.state = %d, want = %d", got, mutexUnlocked)
 	}
 }

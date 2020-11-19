@@ -422,7 +422,10 @@ type endpoint struct {
 
 	// mu protects all endpoint fields unless documented otherwise. mu must
 	// be acquired before interacting with the endpoint fields.
-	mu          sync.Mutex `state:"nosave"`
+	//
+	// During handshake, mu is locked by the protocol listen goroutine and
+	// released by the handshake completion goroutine.
+	mu          sync.CrossGoroutineMutex `state:"nosave"`
 	ownedByUser uint32
 
 	// state must be read/set using the EndpointState()/setEndpointState()
