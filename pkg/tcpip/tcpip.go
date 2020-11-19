@@ -713,10 +713,6 @@ const (
 	// will be looped back.
 	MulticastLoopOption
 
-	// NoChecksumOption is used by SetSockOptBool/GetSockOptBool to specify
-	// whether UDP checksum is disabled for this socket.
-	NoChecksumOption
-
 	// QuickAckOption is stubbed out in SetSockOptBool/GetSockOptBool.
 	QuickAckOption
 
