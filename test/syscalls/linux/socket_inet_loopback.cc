@@ -2830,5 +2830,28 @@ INSTANTIATE_TEST_SUITE_P(
 
 }  // namespace
 
+// Check that loopback receives connections from any address in the range:
+// 127.0.0.1 to 127.254.255.255. This behavior is exclusive to IPv4.
+TEST_F(SocketInetLoopbackTest, LoopbackAddressRangeConnect) {
+  TestAddress const& listener = V4Any();
+
+  in_addr_t addresses[] = {
+      INADDR_LOOPBACK,
+      INADDR_LOOPBACK + 1,    // 127.0.0.2
+      (in_addr_t)0x7f000101,  // 127.0.1.1
+      (in_addr_t)0x7f010101,  // 127.1.1.1
+      (in_addr_t)0x7ffeffff,  // 127.254.255.255
+  };
+  for (const auto& address : addresses) {
+    TestAddress connector("V4Loopback");
+    connector.addr.ss_family = AF_INET;
+    connector.addr_len = sizeof(sockaddr_in);
+    reinterpret_cast<sockaddr_in*>(&connector.addr)->sin_addr.s_addr =
+        htonl(address);
+
+    tcpSimpleConnectTest(listener, connector, true);
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor
