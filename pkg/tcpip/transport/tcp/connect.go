@@ -1284,7 +1284,7 @@ func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
 	userTimeout := e.userTimeout
 
 	e.keepalive.Lock()
-	if !e.keepalive.enabled || !e.keepalive.timer.checkExpiration() {
+	if !e.SocketOptions().GetKeepAlive() || !e.keepalive.timer.checkExpiration() {
 		e.keepalive.Unlock()
 		return nil
 	}
@@ -1321,7 +1321,7 @@ func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	}
 	// Start the keepalive timer IFF it's enabled and there is no pending
 	// data to send.
-	if !e.keepalive.enabled || e.snd == nil || e.snd.sndUna != e.snd.sndNxt {
+	if !e.SocketOptions().GetKeepAlive() || e.snd == nil || e.snd.sndUna != e.snd.sndNxt {
 		e.keepalive.timer.disable()
 		e.keepalive.Unlock()
 		return
