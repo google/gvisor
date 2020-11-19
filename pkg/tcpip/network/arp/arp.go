@@ -217,6 +217,9 @@ func (*protocol) ParseAddresses(buffer.View) (src, dst tcpip.Address) {
 }
 
 func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
+	if nic == nil {
+		panic("nic can't be nil")
+	}
 	e := &endpoint{
 		protocol:      p,
 		nic:           nic,

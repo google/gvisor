@@ -88,6 +88,9 @@ type endpoint struct {
 
 // NewEndpoint creates a new ipv4 endpoint.
 func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
+	if nic == nil {
+		panic("nic can't be nil")
+	}
 	e := &endpoint{
 		nic:        nic,
 		dispatcher: dispatcher,

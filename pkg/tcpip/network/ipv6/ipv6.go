@@ -1474,6 +1474,9 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 
 // NewEndpoint creates a new ipv6 endpoint.
 func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
+	if nic == nil {
+		panic("nic can't be nil")
+	}
 	e := &endpoint{
 		nic:           nic,
 		linkAddrCache: linkAddrCache,
