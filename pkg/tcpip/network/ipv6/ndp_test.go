@@ -333,9 +333,9 @@ func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testi
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
+			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			})
+			}))
 
 			neighbors, err := s.Neighbors(nicID)
 			if err != nil {
@@ -912,9 +912,9 @@ func TestNeighorAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *test
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
+			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			})
+			}))
 
 			neighbors, err := s.Neighbors(nicID)
 			if err != nil {
