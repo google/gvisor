@@ -157,6 +157,9 @@ const (
 	// IPv4Any is the non-routable IPv4 "any" meta address.
 	IPv4Any tcpip.Address = "\x00\x00\x00\x00"
 
+	// IPv4AllRoutersGroup is a multicast address for all routers.
+	IPv4AllRoutersGroup tcpip.Address = "\xe0\x00\x00\x02"
+
 	// IPv4MinimumProcessableDatagramSize is the minimum size of an IP
 	// packet that every IPv4 capable host must be able to
 	// process/reassemble.
