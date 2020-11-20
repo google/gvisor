@@ -72,6 +72,7 @@ type endpoint struct {
 	nic        stack.NetworkInterface
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
+	igmp       igmpState
 
 	// enabled is set to 1 when the enpoint is enabled and 0 when it is
 	// disabled.
@@ -94,6 +95,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCa
 		protocol:   p,
 	}
 	e.mu.addressableEndpointState.Init(e)
+	e.igmp.init(e)
 	return e
 }
 
@@ -703,6 +705,13 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		e.handleICMP(pkt)
 		return
 	}
+	if p == header.IGMPProtocolNumber {
+		if e.protocol.options.IGMPEnabled {
+			e.igmp.handleIGMP(pkt)
+		}
+		// Nothing further to do with an IGMP packet, even if IGMP is not enabled.
+		return
+	}
 	if opts := h.Options(); len(opts) != 0 {
 		// TODO(gvisor.dev/issue/4586):
 		// When we add forwarding support we should use the verified options
@@ -834,14 +843,26 @@ func (e *endpoint) JoinGroup(addr tcpip.Address) (bool, *tcpip.Error) {
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.mu.addressableEndpointState.JoinGroup(addr)
+
+	joinedGroup, err := e.mu.addressableEndpointState.JoinGroup(addr)
+	if err == nil && joinedGroup && e.protocol.options.IGMPEnabled {
+		_ = e.igmp.joinGroup(addr)
+	}
+
+	return joinedGroup, err
 }
 
 // LeaveGroup implements stack.GroupAddressableEndpoint.
 func (e *endpoint) LeaveGroup(addr tcpip.Address) (bool, *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.mu.addressableEndpointState.LeaveGroup(addr)
+
+	leftGroup, err := e.mu.addressableEndpointState.LeaveGroup(addr)
+	if err == nil && leftGroup && e.protocol.options.IGMPEnabled {
+		e.igmp.leaveGroup(addr)
+	}
+
+	return leftGroup, err
 }
 
 // IsInGroup implements stack.GroupAddressableEndpoint.
@@ -874,6 +895,8 @@ type protocol struct {
 	hashIV uint32
 
 	fragmentation *fragmentation.Fragmentation
+
+	options Options
 }
 
 // Number returns the ipv4 protocol number.
@@ -1007,8 +1030,15 @@ func hashRoute(r *stack.Route, protocol tcpip.TransportProtocolNumber, hashIV ui
 	return hash.Hash3Words(a, b, uint32(protocol), hashIV)
 }
 
-// NewProtocol returns an IPv4 network protocol.
-func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
+// Options holds options to configure a new protocol.
+type Options struct {
+	// IGMPEnabled indicates whether incoming IGMP packets will be handled and if
+	// this endpoint will transmit IGMP packets on IGMP related events.
+	IGMPEnabled bool
+}
+
+// NewProtocolWithOptions returns an IPv4 network protocol.
+func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 	ids := make([]uint32, buckets)
 
 	// Randomly initialize hashIV and the ids.
@@ -1018,14 +1048,22 @@ func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 	}
 	hashIV := r[buckets]
 
-	p := &protocol{
-		stack:      s,
-		ids:        ids,
-		hashIV:     hashIV,
-		defaultTTL: DefaultTTL,
+	return func(s *stack.Stack) stack.NetworkProtocol {
+		p := &protocol{
+			stack:      s,
+			ids:        ids,
+			hashIV:     hashIV,
+			defaultTTL: DefaultTTL,
+			options:    opts,
+		}
+		p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
+		return p
 	}
-	p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
-	return p
+}
+
+// NewProtocol is equivalent to NewProtocolWithOptions with an empty Options.
+func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
+	return NewProtocolWithOptions(Options{})(s)
 }
 
 func buildNextFragment(pf *fragmentation.PacketFragmenter, originalIPHeader header.IPv4) (*stack.PacketBuffer, bool) {
