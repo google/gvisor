@@ -46,9 +46,13 @@ const (
 )
 
 var (
-	// ErrInvalidArgs indicates to the caller that that an invalid argument was
+	// ErrInvalidArgs indicates to the caller that an invalid argument was
 	// provided.
 	ErrInvalidArgs = errors.New("invalid args")
+
+	// ErrFragmentOverlap indicates that, during reassembly, a fragment overlaps
+	// with another one.
+	ErrFragmentOverlap = errors.New("overlapping fragments")
 )
 
 // FragmentID is the identifier for a fragment.

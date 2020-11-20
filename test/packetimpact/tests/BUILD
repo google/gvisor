@@ -298,27 +298,118 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
-    name = "ipv4_fragment_reassembly",
-    srcs = ["ipv4_fragment_reassembly_test.go"],
+    name = "ipv4_reassembly_basic",
+    srcs = ["ip_reassembly/ipv4_reassembly_basic_test.go"],
     deps = [
-        "//pkg/tcpip/buffer",
-        "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
-        "@com_github_google_go_cmp//cmp:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv4",
     ],
 )
 
 packetimpact_testbench(
-    name = "ipv6_fragment_reassembly",
-    srcs = ["ipv6_fragment_reassembly_test.go"],
+    name = "ipv4_reassembly_out_of_order",
+    srcs = [
+        "ip_reassembly/ipv4_reassembly_out_of_order_test.go",
+    ],
     deps = [
-        "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
-        "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
-        "@com_github_google_go_cmp//cmp:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv4",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv4_reassembly_duplicate",
+    srcs = [
+        "ip_reassembly/ipv4_reassembly_duplicate_test.go",
+    ],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv4",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv4_reassembly_subset",
+    srcs = [
+        "ip_reassembly/ipv4_reassembly_subset_test.go",
+    ],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv4",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv4_reassembly_overlap",
+    srcs = [
+        "ip_reassembly/ipv4_reassembly_overlap_test.go",
+    ],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv4",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv6_reassembly_basic",
+    srcs = ["ip_reassembly/ipv6_reassembly_basic_test.go"],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv6",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv6_reassembly_out_of_order",
+    srcs = [
+        "ip_reassembly/ipv6_reassembly_out_of_order_test.go",
+    ],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv6",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv6_reassembly_duplicate",
+    srcs = [
+        "ip_reassembly/ipv6_reassembly_duplicate_test.go",
+    ],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv6",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv6_reassembly_subset",
+    srcs = [
+        "ip_reassembly/ipv6_reassembly_subset_test.go",
+    ],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv6",
+    ],
+)
+
+packetimpact_testbench(
+    name = "ipv6_reassembly_overlap",
+    srcs = [
+        "ip_reassembly/ipv6_reassembly_overlap_test.go",
+    ],
+    deps = [
+        "//test/packetimpact/testbench",
+        "//test/packetimpact/tests/ip_reassembly/common",
+        "//test/packetimpact/tests/ip_reassembly/ipv6",
     ],
 )
 

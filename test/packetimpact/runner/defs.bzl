@@ -256,10 +256,34 @@ ALL_TESTS = [
         name = "ipv6_unknown_options_action",
     ),
     PacketimpactTestInfo(
-        name = "ipv4_fragment_reassembly",
+        name = "ipv4_reassembly_basic",
     ),
     PacketimpactTestInfo(
-        name = "ipv6_fragment_reassembly",
+        name = "ipv4_reassembly_out_of_order",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv4_reassembly_duplicate",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv4_reassembly_overlap",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv4_reassembly_subset",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv6_reassembly_basic",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv6_reassembly_out_of_order",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv6_reassembly_duplicate",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv6_reassembly_overlap",
+    ),
+    PacketimpactTestInfo(
+        name = "ipv6_reassembly_subset",
     ),
     PacketimpactTestInfo(
         name = "ipv6_fragment_icmp_error",
