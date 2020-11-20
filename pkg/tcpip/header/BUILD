@@ -16,6 +16,7 @@ go_library(
         "ipv6.go",
         "ipv6_extension_headers.go",
         "ipv6_fragment.go",
+        "mld.go",
         "ndp_neighbor_advert.go",
         "ndp_neighbor_solicit.go",
         "ndp_options.go",
@@ -58,6 +59,7 @@ go_test(
     srcs = [
         "eth_test.go",
         "ipv6_extension_headers_test.go",
+        "mld_test.go",
         "ndp_test.go",
     ],
     library = ":header",
