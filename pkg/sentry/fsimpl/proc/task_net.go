@@ -208,7 +208,7 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	for _, se := range n.kernel.ListSockets() {
 		s := se.SockVFS2
 		if !s.TryIncRef() {
-			log.Debugf("Couldn't get reference on %v in socket table, racing with destruction?", s)
+			// Racing with socket destruction, this is ok.
 			continue
 		}
 		if family, _, _ := s.Impl().(socket.SocketVFS2).Type(); family != linux.AF_UNIX {
@@ -351,7 +351,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 	for _, se := range k.ListSockets() {
 		s := se.SockVFS2
 		if !s.TryIncRef() {
-			log.Debugf("Couldn't get reference on %v in socket table, racing with destruction?", s)
+			// Racing with socket destruction, this is ok.
 			continue
 		}
 		sops, ok := s.Impl().(socket.SocketVFS2)
@@ -516,7 +516,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	for _, se := range d.kernel.ListSockets() {
 		s := se.SockVFS2
 		if !s.TryIncRef() {
-			log.Debugf("Couldn't get reference on %v in socket table, racing with destruction?", s)
+			// Racing with socket destruction, this is ok.
 			continue
 		}
 		sops, ok := s.Impl().(socket.SocketVFS2)
