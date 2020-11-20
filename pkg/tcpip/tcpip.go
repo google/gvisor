@@ -1434,6 +1434,60 @@ type ICMPStats struct {
 	V6PacketsReceived ICMPv6ReceivedPacketStats
 }
 
+// IGMPPacketStats enumerates counts for all IGMP packet types.
+type IGMPPacketStats struct {
+	// MembershipQuery is the total number of Membership Query messages counted.
+	MembershipQuery *StatCounter
+
+	// V1MembershipReport is the total number of Version 1 Membership Report
+	// messages counted.
+	V1MembershipReport *StatCounter
+
+	// V2MembershipReport is the total number of Version 2 Membership Report
+	// messages counted.
+	V2MembershipReport *StatCounter
+
+	// LeaveGroup is the total number of Leave Group messages counted.
+	LeaveGroup *StatCounter
+}
+
+// IGMPSentPacketStats collects outbound IGMP-specific stats.
+type IGMPSentPacketStats struct {
+	IGMPPacketStats
+
+	// Dropped is the total number of IGMP packets dropped due to link layer
+	// errors.
+	Dropped *StatCounter
+}
+
+// IGMPReceivedPacketStats collects inbound IGMP-specific stats.
+type IGMPReceivedPacketStats struct {
+	IGMPPacketStats
+
+	// Invalid is the total number of IGMP packets received that IGMP could not
+	// parse.
+	Invalid *StatCounter
+
+	// ChecksumErrors is the total number of IGMP packets dropped due to bad
+	// checksums.
+	ChecksumErrors *StatCounter
+
+	// Unrecognized is the total number of unrecognized messages counted, these
+	// are silently ignored for forward-compatibilty.
+	Unrecognized *StatCounter
+}
+
+// IGMPStats colelcts IGMP-specific stats.
+type IGMPStats struct {
+	// IGMPSentPacketStats contains counts of sent packets by IGMP packet type
+	// and a single count of invalid packets received.
+	PacketsSent IGMPSentPacketStats
+
+	// IGMPReceivedPacketStats contains counts of received packets by IGMP packet
+	// type and a single count of invalid packets received.
+	PacketsReceived IGMPReceivedPacketStats
+}
+
 // IPStats collects IP-specific stats (both v4 and v6).
 type IPStats struct {
 	// PacketsReceived is the total number of IP packets received from the
@@ -1638,6 +1692,9 @@ type Stats struct {
 
 	// ICMP breaks out ICMP-specific stats (both v4 and v6).
 	ICMP ICMPStats
+
+	// IGMP breaks out IGMP-specific stats.
+	IGMP IGMPStats
 
 	// IP breaks out IP-specific stats (both v4 and v6).
 	IP IPStats
