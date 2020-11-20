@@ -1227,3 +1227,71 @@ func NDPRSOptions(opts []header.NDPOption) TransportChecker {
 		ndpOptions(t, rs.Options(), opts)
 	}
 }
+
+// IGMP checks the validity and properties of the given IGMP packet. It is
+// expected to be used in conjunction with other IGMP transport checkers for
+// specific properties.
+func IGMP(checkers ...TransportChecker) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
+		last := h[len(h)-1]
+
+		if p := last.TransportProtocol(); p != header.IGMPProtocolNumber {
+			t.Fatalf("Bad protocol, got %d, want %d", p, header.IGMPProtocolNumber)
+		}
+
+		igmp := header.IGMP(last.Payload())
+		for _, f := range checkers {
+			f(t, igmp)
+		}
+		if t.Failed() {
+			t.FailNow()
+		}
+	}
+}
+
+// IGMPType creates a checker that checks the IGMP Type field.
+func IGMPType(want header.IGMPType) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		igmp, ok := h.(header.IGMP)
+		if !ok {
+			t.Fatalf("got transport header = %T, want = header.IGMP", h)
+		}
+		if got := igmp.Type(); got != want {
+			t.Errorf("got igmp.Type() = %d, want = %d", got, want)
+		}
+	}
+}
+
+// IGMPMaxRespTime creates a checker that checks the IGMP Max Resp Time field.
+func IGMPMaxRespTime(want byte) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		igmp, ok := h.(header.IGMP)
+		if !ok {
+			t.Fatalf("got transport header = %T, want = header.IGMP", h)
+		}
+		if got := igmp.MaxRespTime(); got != want {
+			t.Errorf("got igmp.MaxRespTime() = %d, want = %d", got, want)
+		}
+	}
+}
+
+// IGMPGroupAddress creates a checker that checks the IGMP Group Address field.
+func IGMPGroupAddress(want tcpip.Address) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		igmp, ok := h.(header.IGMP)
+		if !ok {
+			t.Fatalf("got transport header = %T, want = header.IGMP", h)
+		}
+		if got := igmp.GroupAddress(); got != want {
+			t.Errorf("got igmp.GroupAddress() = %s, want = %s", got, want)
+		}
+	}
+}

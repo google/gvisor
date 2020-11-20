@@ -6,6 +6,7 @@ go_library(
     name = "ipv4",
     srcs = [
         "icmp.go",
+        "igmp.go",
         "ipv4.go",
     ],
     visibility = ["//visibility:public"],
@@ -24,7 +25,10 @@ go_library(
 go_test(
     name = "ipv4_test",
     size = "small",
-    srcs = ["ipv4_test.go"],
+    srcs = [
+        "igmp_test.go",
+        "ipv4_test.go",
+    ],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

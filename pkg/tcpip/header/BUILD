@@ -11,6 +11,7 @@ go_library(
         "gue.go",
         "icmpv4.go",
         "icmpv6.go",
+        "igmp.go",
         "interfaces.go",
         "ipv4.go",
         "ipv6.go",
@@ -40,6 +41,7 @@ go_test(
     size = "small",
     srcs = [
         "checksum_test.go",
+        "igmp_test.go",
         "ipv6_test.go",
         "ipversion_test.go",
         "tcp_test.go",
