@@ -338,6 +338,7 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 		tid := w.k.TaskSet().Root.IDOfTask(t)
 		buf.WriteString(fmt.Sprintf("\tTask tid: %v (goroutine %d), entered RunSys state %v ago.\n", tid, t.GoroutineID(), now.Sub(o.lastUpdateTime)))
 	}
+	buf.WriteString("Search for 'goroutine <id>' in the stack dump to find the offending goroutine(s)")
 
 	// Force stack dump only if a new task is detected.
 	w.doAction(w.TaskTimeoutAction, newTaskFound, &buf)
