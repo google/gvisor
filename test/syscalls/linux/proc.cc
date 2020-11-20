@@ -2459,7 +2459,7 @@ void CheckDuplicatesRecursively(std::string path) {
       return;
     }
     auto dir_closer = Cleanup([&dir]() { closedir(dir); });
-    std::unordered_set<std::string> children;
+    absl::node_hash_set<std::string> children;
     while (true) {
       // Readdir(3): If the end of the directory stream is reached, NULL is
       // returned and errno is not changed.  If an error occurs, NULL is
