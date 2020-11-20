@@ -292,15 +292,8 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
 	--dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE)")
 .PHONY: init-benchmark-table
 
-benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
-	$(call submake, run-benchmark RUNTIME="runc")
-	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
-		$(call submake,install-runtime RUNTIME="$(PLATFORM)" ARGS="--platform=$(PLATFORM) --vfs2") && \
-		$(call submake,run-benchmark RUNTIME="$(PLATFORM)") && \
-		$(call submake,install-runtime RUNTIME="$(PLATFORM)_vfs1" ARGS="--platform=$(PLATFORM)") && \
-		$(call submake,run-benchmark RUNTIME="$(PLATFORM)_vfs1") && \
-	) \
-	true
+benchmark-platforms: ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
+	export BAZEL_VERSION=3.7.0;	test/benchmarks/script.sh
 .PHONY: benchmark-platforms
 
 run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
