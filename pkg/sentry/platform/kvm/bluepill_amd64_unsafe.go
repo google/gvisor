@@ -91,6 +91,13 @@ func bluepillSigBus(c *vCPU) {
 	}
 }
 
+// bluepillHandleEnosys is reponsible for handling enosys error.
+//
+//go:nosplit
+func bluepillHandleEnosys(c *vCPU) {
+	throw("run failed: ENOSYS")
+}
+
 // bluepillReadyStopGuest checks whether the current vCPU is ready for interrupt injection.
 //
 //go:nosplit
@@ -125,4 +132,11 @@ func bluepillReadyStopGuest(c *vCPU) bool {
 		return false
 	}
 	return true
+}
+
+// bluepillArchHandleExit checks architecture specific exitcode.
+//
+//go:nosplit
+func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
+	c.die(bluepillArchContext(context), "unknown")
 }
