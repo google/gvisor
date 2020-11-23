@@ -89,6 +89,10 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	// Get the container IP.
 	ip, err := d.FindIP(ctx, ipv6)
 	if err != nil {
+		// If ipv6 is not configured, don't fail.
+		if ipv6 && err == dockerutil.ErrNoIP {
+			t.Skipf("No ipv6 address is available.")
+		}
 		t.Fatalf("failed to get container IP: %v", err)
 	}
 

@@ -17,6 +17,7 @@ package dockerutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -351,6 +352,9 @@ func (c *Container) SandboxPid(ctx context.Context) (int, error) {
 	return resp.ContainerJSONBase.State.Pid, nil
 }
 
+// ErrNoIP indicates that no IP address is available.
+var ErrNoIP = errors.New("no IP available")
+
 // FindIP returns the IP address of the container.
 func (c *Container) FindIP(ctx context.Context, ipv6 bool) (net.IP, error) {
 	resp, err := c.client.ContainerInspect(ctx, c.id)
@@ -365,7 +369,7 @@ func (c *Container) FindIP(ctx context.Context, ipv6 bool) (net.IP, error) {
 		ip = net.ParseIP(resp.NetworkSettings.DefaultNetworkSettings.IPAddress)
 	}
 	if ip == nil {
-		return net.IP{}, fmt.Errorf("invalid IP: %q", ip)
+		return net.IP{}, ErrNoIP
 	}
 	return ip, nil
 }
