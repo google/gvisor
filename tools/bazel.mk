@@ -36,11 +36,11 @@ DOCKER_PRIVILEGED := --privileged
 BAZEL_CACHE := $(shell readlink -m ~/.cache/bazel/)
 GCLOUD_CONFIG := $(shell readlink -m ~/.config/gcloud/)
 DOCKER_SOCKET := /var/run/docker.sock
-DOCKER_CONFIG := /etc/docker/daemon.json
+DOCKER_CONFIG := /etc/docker
 
 # Bazel flags.
 BAZEL := bazel $(STARTUP_OPTIONS)
-OPTIONS += --color=no --curses=no
+BASE_OPTIONS := --color=no --curses=no
 
 # Basic options.
 UID := $(shell id -u ${USER})
@@ -72,7 +72,7 @@ endif
 # out of disk space.
 ifneq ($(UID),0)
 USERADD_DOCKER += useradd -l --uid $(UID) --non-unique --no-create-home \
-                    --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) &&
+  --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) &&
 endif
 ifneq ($(GID),0)
 GROUPADD_DOCKER += groupadd --gid $(GID) --non-unique $(USER) &&
@@ -81,8 +81,6 @@ endif
 # Add docker passthrough options.
 ifneq ($(DOCKER_PRIVILEGED),)
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
-# TODO(gvisor.dev/issue/1624): Remove docker config volume. This is required
-# temporarily for checking VFS1 vs VFS2 by some tests.
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_CONFIG):$(DOCKER_CONFIG)"
 FULL_DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
 FULL_DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
@@ -161,20 +159,30 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 .PHONY: bazel-alias
 
 bazel-server: ## Ensures that the server exists. Used as an internal target.
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) true || $(MAKE) bazel-server-start
+	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) true >&2 || $(MAKE) bazel-server-start >&2
 .PHONY: bazel-server
 
-build_cmd = docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c '$(BAZEL) build $(OPTIONS) "$(TARGETS)"'
+# build_cmd builds the given targets in the bazel-server container.
+build_cmd = docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c \
+  '$(BAZEL) build $(BASE_OPTIONS) $(OPTIONS) "$(TARGETS)"'
 
-build_paths = $(build_cmd) 2>&1 \
-		| tee /proc/self/fd/2 \
+# build_paths extracts the built binary from the bazel stderr output.
+#
+# This could be alternately done by parsing the bazel build event stream, but
+# this is a complex schema, and begs the question: what will build the thing
+# that parses the output? Bazel? Do we need a separate bootstrapping build
+# command here? Yikes, let's just stick with the ugly shell pipeline.
+#
+# The last line is used to prevent terminal shenanigans.
+build_paths = command_line=$$( $(build_cmd) 2>&1 \
 		| grep -A1 -E '^Target' \
 		| grep -E '^  ($(subst $(SPACE),|,$(BUILD_ROOTS)))' \
 		| sed "s/ /\n/g" \
 		| strings -n 10 \
 		| awk '{$$1=$$1};1' \
 		| xargs -n 1 -I {} readlink -f "{}" \
-		| xargs -n 1 -I {} sh -c "$(1)"
+		| xargs -n 1 -I {} echo "$(1)" ) && \
+		(set -xeuo pipefail; eval $${command_line})
 
 build: bazel-server
 	@$(call build_cmd)
@@ -194,12 +202,21 @@ sudo: bazel-server
 	@$(call build_paths,sudo -E {} $(ARGS))
 .PHONY: sudo
 
-test: OPTIONS += --test_output=errors --keep_going --verbose_failures=true
 test: bazel-server
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) test $(OPTIONS) $(TARGETS)
+	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) \
+	  $(BAZEL) test $(BASE_OPTIONS) \
+	                --test_output=errors --keep_going --verbose_failures=true \
+	                --build_event_json_file=.build_events.json \
+	                $(OPTIONS) $(TARGETS)
 .PHONY: test
 
-query:
-	@$(MAKE) bazel-server >&2 # If we need to start, ensure stdout is not polluted.
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c '$(BAZEL) query $(OPTIONS) "$(TARGETS)" 2>/dev/null'
+testlogs:
+	@cat .build_events.json | jq -r \
+	  'select(.testSummary?.overallStatus? | tostring | test("(FAILED|FLAKY|TIMEOUT)")) | .testSummary.failed | .[] | .uri' | \
+	  awk -Ffile:// '{print $2;}'
+.PHONY: testlogs
+
+query: bazel-server
+	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c \
+	  '$(BAZEL) query $(BASE_OPTIONS) $(OPTIONS) "$(TARGETS)" 2>/dev/null'
 .PHONY: query

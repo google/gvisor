@@ -1,2 +1,4 @@
 # Generated bazel symlinks.
 /bazel-*
+# Generated build event file.
+/.build_events.json

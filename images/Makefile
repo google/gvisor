@@ -36,13 +36,13 @@ list-all-images:
 
 # Handy wrapper to allow load-all-images, push-all-images, etc.
 %-all-images:
-	@$(MAKE) $(patsubst %,$*-%,$(ALL_IMAGES))
+	@$(MAKE) -s $(patsubst %,$*-%,$(ALL_IMAGES))
 load-all-images:
-	@$(MAKE) $(patsubst %,load-%,$(ALL_IMAGES))
+	@$(MAKE) -s $(patsubst %,load-%,$(ALL_IMAGES))
 
 # Handy wrapper to load specified "groups", e.g. load-basic-images, etc.
 load-%-images:
-	@$(MAKE) $(patsubst %,load-%,$(subst /,_,$(subst ./,,$(shell find ./$* -name Dockerfile -exec dirname {} \;))))
+	@$(MAKE) -s $(patsubst %,load-%,$(subst /,_,$(subst ./,,$(shell find ./$* -name Dockerfile -exec dirname {} \;))))
 
 # tag is a function that returns the tag name, given an image.
 #
@@ -83,7 +83,7 @@ pull-%:
 # entrypoint, as it should never fail. The local tag should always be set after
 # this returns (either by the pull or the build).
 load-%:
-	$(MAKE) pull-$* || $(MAKE) rebuild-$*
+	$(MAKE) -s pull-$* || $(MAKE) -s rebuild-$*
 	docker tag $(call remote_image,$*) $(call local_image,$*)
 
 # push pushes the remote image, after either pulling (to validate that the tag
