@@ -432,6 +432,9 @@ cc_binary(
     testonly = 1,
     srcs = ["chown.cc"],
     linkstatic = 1,
+    # We require additional UIDs for this test, so don't include the bazel
+    # sandbox as standard.
+    tags = ["no-sandbox"],
     deps = [
         "//test/util:capability_util",
         "//test/util:file_descriptor",

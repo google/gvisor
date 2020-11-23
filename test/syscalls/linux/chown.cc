@@ -90,6 +90,7 @@ TEST_P(ChownParamTest, ChownFilePermissionDenied) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
 
   const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0777));
+  EXPECT_THAT(chmod(GetAbsoluteTestTmpdir().c_str(), 0777), SyscallSucceeds());
 
   // Drop privileges and change IDs only in child thread, or else this parent
   // thread won't be able to open some log files after the test ends.
@@ -119,6 +120,7 @@ TEST_P(ChownParamTest, ChownFileSucceedsAsRoot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_SETUID))));
 
   const std::string filename = NewTempAbsPath();
+  EXPECT_THAT(chmod(GetAbsoluteTestTmpdir().c_str(), 0777), SyscallSucceeds());
 
   absl::Notification fileCreated, fileChowned;
   // Change UID only in child thread, or else this parent thread won't be able
