@@ -15,8 +15,16 @@
 # limitations under the License.
 
 # Helpful pretty-printer.
-MAKEBANNER := \033[1;34mmake\033[0m
-submake = echo -e '$(MAKEBANNER) $1' >&2; $(MAKE) $1
+ifeq (0,$(MAKELEVEL))
+OPENLAST := || (rc=$$?; echo '^^^ +++' >&2; exit $$rc)
+else
+OPENLAST :=
+endif
+CMDLINE := $(shell cut -d '' -f2- /proc/$$PPID/cmdline | sed 's|\x00| |g')
+submake = echo '--- make $1' >&2 && \
+  $(MAKE) -s $1 && \
+  echo '--- make $(CMDLINE) (resume)' >&2 \
+  $(OPENLAST)
 
 # Described below.
 OPTIONS :=
@@ -109,6 +117,13 @@ list-images: ## List all available images.
 ##   convenient entrypoints for testing changes. If you're adding a
 ##   new subsystem or workflow, consider adding a new target here.
 ##
+##   Some targets support a PARTITION (1-indexed) and TOTAL_PARTITIONS
+##   environment variables for high-level test sharding. Unlike most
+##   other variables, these are sourced from the environment.
+##
+PARTITION        ?= 1
+TOTAL_PARTITIONS ?= 1
+
 runsc: ## Builds the runsc binary.
 	@$(call submake,build OPTIONS="-c opt" TARGETS="//runsc")
 .PHONY: runsc
@@ -156,12 +171,6 @@ syscall-tests: ## Run all system call tests.
 	@$(call submake,test TARGETS="test/syscalls/...")
 
 %-runtime-tests: load-runtimes_%
-ifeq ($(PARTITION),)
-	@$(eval PARTITION := 1)
-endif
-ifeq ($(TOTAL_PARTITIONS),)
-	@$(eval TOTAL_PARTITIONS := 1)
-endif
 	@$(call submake,install-runtime)
 	@$(call submake,test-runtime OPTIONS="--test_timeout=10800 --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)" TARGETS="//test/runtimes:$*")
 
@@ -233,22 +242,22 @@ iptables-runsc-tests: load-iptables
 
 packetdrill-tests: load-packetdrill
 	@$(call submake,install-runtime RUNTIME="packetdrill")
-	@$(call submake,test-runtime RUNTIME="packetdrill" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetdrill, tests(//...))')")
+	@$(call submake,test-runtime RUNTIME="packetdrill" TARGETS="$(shell $(MAKE) -s query TARGETS='attr(tags, packetdrill, tests(//...))')")
 .PHONY: packetdrill-tests
 
 packetimpact-tests: load-packetimpact
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
 	@$(call submake,install-runtime RUNTIME="packetimpact")
-	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
+	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) -s query TARGETS='attr(tags, packetimpact, tests(//...))')")
 .PHONY: packetimpact-tests
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu
 	@$(call submake,install-runtime RUNTIME="root")
-	@CONTAINERD_VERSION=$* $(MAKE) sudo TARGETS="tools/installers:containerd"
-	@$(MAKE) sudo TARGETS="tools/installers:shim"
-	@$(MAKE) sudo TARGETS="test/root:root_test" ARGS="--runtime=root -test.v"
+	@CONTAINERD_VERSION=$* $(MAKE) -s sudo TARGETS="tools/installers:containerd"
+	@$(MAKE) -s sudo TARGETS="tools/installers:shim"
+	@$(MAKE) -s sudo TARGETS="test/root:root_test" ARGS="--runtime=root -test.v"
 
 # Note that we can't run containerd-test-1.1.8 tests here.
 #
@@ -284,36 +293,37 @@ BENCHMARKS_UPLOAD    := false
 BENCHMARKS_OFFICIAL  := false
 BENCHMARKS_PLATFORMS := ptrace
 BENCHMARKS_TARGETS   := //test/benchmarks/base:startup_test
-BENCHMARKS_ARGS      := -test.bench=.
+BENCHMARKS_ARGS      := -test.bench=. -pprof-cpu -pprof-heap -pprof-heap -pprof-block
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
 ## (see //tools/bigquery/bigquery.go). If the table alread exists, this is a noop.
 	$(call submake, run TARGETS=//tools/parsers:parser ARGS="init --project=$(BENCHMARKS_PROJECT) \
-	--dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE)")
+	  --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE)")
 .PHONY: init-benchmark-table
 
 benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
-	$(call submake, run-benchmark RUNTIME="runc")
 	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
-		$(call submake,install-runtime RUNTIME="$(PLATFORM)" ARGS="--platform=$(PLATFORM) --vfs2") && \
-		$(call submake,run-benchmark RUNTIME="$(PLATFORM)") && \
-		$(call submake,install-runtime RUNTIME="$(PLATFORM)_vfs1" ARGS="--platform=$(PLATFORM)") && \
-		$(call submake,run-benchmark RUNTIME="$(PLATFORM)_vfs1") && \
+	  $(call submake,run-benchmark RUNTIME="$(PLATFORM)" ARGS="--platform=$(PLATFORM) --vfs2") && \
+	  $(call submake,run-benchmark RUNTIME="$(PLATFORM)_vfs1" ARGS="--platform=$(PLATFORM)") && \
 	) \
-	true
+	$(call submake, run-benchmark RUNTIME="runc")
 .PHONY: benchmark-platforms
 
-run-benchmark: ## Runs single benchmark and optionally sends data to BigQuery.
-	@set -xeuo pipefail; 	T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
-	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS)" | tee $$T); \
-	if [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
-		$(call submake,run TARGETS=tools/parsers:parser ARGS="parse --debug --file=$$T \
-			--runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
-			--project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
-			--table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
+run-benchmark: load-benchmarks-images ## Runs single benchmark and optionally sends data to BigQuery.
+	@if [[ "$(RUNTIME)" != "runc" ]]; then $(call submake,install-runtime ARGS="$(ARGS) --profile"); fi
+	@T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
+	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS) | tee $$T"); \
+	rc=$$?; \
+	if [[ $$rc -eq 0 ]] && [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
+	  $(call submake,run TARGETS="tools/parsers:parser" ARGS="parse --debug --file=$$T \
+	    --runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
+	    --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
+	    --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
 	fi; \
-	rm -rf $$T
+	rm -rf $$T; \
+	exit $$rc
 .PHONY: run-benchmark
+.PHONY: load-benchmarks-images
 
 ##
 ## Website & documentation helpers.
@@ -419,7 +429,7 @@ RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 
 dev: ## Installs a set of local runtimes. Requires sudo.
-	@$(call submake,refresh ARGS="--net-raw")
+	@$(call submake,refresh)
 	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)" ARGS="--net-raw")
 	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-d" ARGS="--net-raw --debug --strace --log-packets")
 	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-p" ARGS="--net-raw --profile")
@@ -433,9 +443,8 @@ refresh: ## Refreshes the runtime binary (for development only). Must have calle
 .PHONY: refresh
 
 install-runtime: ## Installs the runtime for testing. Requires sudo.
-	@$(call submake,refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME $(ARGS)")
-	@$(call submake,configure RUNTIME_NAME=runsc)
-	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)")
+	@$(call submake,refresh)
+	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)" ARGS="$(ARGS) --TESTONLY-test-name-env=RUNSC_TEST_NAME")
 	@sudo systemctl restart docker
 	@if [[ -f /etc/docker/daemon.json ]]; then \
 		sudo chmod 0755 /etc/docker && \
