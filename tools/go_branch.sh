@@ -39,7 +39,7 @@ declare tmp_dir
 tmp_dir=$(mktemp -d)
 readonly tmp_dir
 finish() {
-  cd # Leave tmp_dir.
+  cd / # Leave tmp_dir.
   rm -rf "${tmp_dir}"
 }
 trap finish EXIT
