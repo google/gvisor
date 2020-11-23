@@ -2478,6 +2478,10 @@ void CheckDuplicatesRecursively(std::string path) {
             absl::EndsWith(path, "/net")) {
           break;
         }
+        // We may also see permission failures traversing some files.
+        if (errno == EACCES && absl::StartsWith(path, "/proc/")) {
+          break;
+        }
 
         // Otherwise, no errors are allowed.
         ASSERT_EQ(errno, 0) << path;
