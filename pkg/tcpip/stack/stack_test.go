@@ -2407,9 +2407,9 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 			}
 			opts := stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					AutoGenIPv6LinkLocal: test.autoGen,
-					NDPDisp:              &ndpDisp,
-					OpaqueIIDOpts:        test.iidOpts,
+					AutoGenLinkLocal: test.autoGen,
+					NDPDisp:          &ndpDisp,
+					OpaqueIIDOpts:    test.iidOpts,
 				})},
 			}
 
@@ -2502,8 +2502,8 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			opts := stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					AutoGenIPv6LinkLocal: true,
-					OpaqueIIDOpts:        test.opaqueIIDOpts,
+					AutoGenLinkLocal: true,
+					OpaqueIIDOpts:    test.opaqueIIDOpts,
 				})},
 			}
 
@@ -2536,9 +2536,9 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 	ndpConfigs := ipv6.DefaultNDPConfigurations()
 	opts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-			NDPConfigs:           ndpConfigs,
-			AutoGenIPv6LinkLocal: true,
-			NDPDisp:              &ndpDisp,
+			NDPConfigs:       ndpConfigs,
+			AutoGenLinkLocal: true,
+			NDPDisp:          &ndpDisp,
 		})},
 	}
 
