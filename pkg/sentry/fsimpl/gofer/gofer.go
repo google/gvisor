@@ -1353,16 +1353,11 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 		return
 	}
 	if refs > 0 {
-		if d.cached {
-			// This isn't strictly necessary (fs.cachedDentries is permitted to
-			// contain dentries with non-zero refs, which are skipped by
-			// fs.evictCachedDentryLocked() upon reaching the end of the LRU),
-			// but since we are already holding fs.renameMu for writing we may
-			// as well.
-			d.fs.cachedDentries.Remove(d)
-			d.fs.cachedDentriesLen--
-			d.cached = false
-		}
+		// This isn't strictly necessary (fs.cachedDentries is permitted to
+		// contain dentries with non-zero refs, which are skipped by
+		// fs.evictCachedDentryLocked() upon reaching the end of the LRU), but
+		// since we are already holding fs.renameMu for writing we may as well.
+		d.removeFromCacheLocked()
 		return
 	}
 	// Deleted and invalidated dentries with zero references are no longer
@@ -1371,20 +1366,18 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 		if d.isDeleted() {
 			d.watches.HandleDeletion(ctx)
 		}
-		if d.cached {
-			d.fs.cachedDentries.Remove(d)
-			d.fs.cachedDentriesLen--
-			d.cached = false
-		}
+		d.removeFromCacheLocked()
 		d.destroyLocked(ctx)
 		return
 	}
-	// If d still has inotify watches and it is not deleted or invalidated, we
-	// cannot cache it and allow it to be evicted. Otherwise, we will lose its
-	// watches, even if a new dentry is created for the same file in the future.
-	// Note that the size of d.watches cannot concurrently transition from zero
-	// to non-zero, because adding a watch requires holding a reference on d.
+	// If d still has inotify watches and it is not deleted or invalidated, it
+	// can't be evicted. Otherwise, we will lose its watches, even if a new
+	// dentry is created for the same file in the future. Note that the size of
+	// d.watches cannot concurrently transition from zero to non-zero, because
+	// adding a watch requires holding a reference on d.
 	if d.watches.Size() > 0 {
+		// As in the refs > 0 case, this is not strictly necessary.
+		d.removeFromCacheLocked()
 		return
 	}
 
@@ -1415,6 +1408,15 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	}
 }
 
+// Preconditions: d.fs.renameMu must be locked for writing.
+func (d *dentry) removeFromCacheLocked() {
+	if d.cached {
+		d.fs.cachedDentries.Remove(d)
+		d.fs.cachedDentriesLen--
+		d.cached = false
+	}
+}
+
 // Precondition: fs.renameMu must be locked for writing; it may be temporarily
 // unlocked.
 func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
@@ -1428,12 +1430,10 @@ func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 // * fs.cachedDentriesLen != 0.
 func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	victim := fs.cachedDentries.Back()
-	fs.cachedDentries.Remove(victim)
-	fs.cachedDentriesLen--
-	victim.cached = false
-	// victim.refs may have become non-zero from an earlier path resolution
-	// since it was inserted into fs.cachedDentries.
-	if atomic.LoadInt64(&victim.refs) == 0 {
+	victim.removeFromCacheLocked()
+	// victim.refs or victim.watches.Size() may have become non-zero from an
+	// earlier path resolution since it was inserted into fs.cachedDentries.
+	if atomic.LoadInt64(&victim.refs) == 0 && victim.watches.Size() == 0 {
 		if victim.parent != nil {
 			victim.parent.dirMu.Lock()
 			if !victim.vfsd.IsDead() {
