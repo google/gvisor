@@ -91,9 +91,6 @@ var (
 	// noCrashOnVerificationFailure indicates whether the sandbox should panic
 	// whenever verification fails. If true, an error is returned instead of
 	// panicking. This should only be set for tests.
-	//
-	// TODO(b/165661693): Decide whether to panic or return error based on this
-	// flag.
 	noCrashOnVerificationFailure bool
 
 	// verityMu synchronizes concurrent operations that enable verity and perform
