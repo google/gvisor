@@ -347,9 +347,10 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		e.setStateLocked(Delay)
 		e.dispatchChangeEventLocked()
 
-	case Incomplete, Reachable, Delay, Probe, Static, Failed:
+	case Incomplete, Reachable, Delay, Probe, Static:
 		// Do nothing
-
+	case Failed:
+		e.nic.stats.Neighbor.FailedEntryLookups.Increment()
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", e.neigh.State))
 	}

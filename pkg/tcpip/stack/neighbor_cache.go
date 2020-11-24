@@ -24,9 +24,16 @@ import (
 
 const neighborCacheSize = 512 // max entries per interface
 
+// NeighborStats holds metrics for the neighbor table.
+type NeighborStats struct {
+	// FailedEntryLookups counts the number of lookups performed on an entry in
+	// Failed state.
+	FailedEntryLookups *tcpip.StatCounter
+}
+
 // neighborCache maps IP addresses to link addresses. It uses the Least
 // Recently Used (LRU) eviction strategy to implement a bounded cache for
-// dynmically acquired entries. It contains the state machine and configuration
+// dynamically acquired entries. It contains the state machine and configuration
 // for running Neighbor Unreachability Detection (NUD).
 //
 // There are two types of entries in the neighbor cache:
