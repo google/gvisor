@@ -38,11 +38,25 @@ func htons(x uint16) uint16 {
 }
 
 // NewSniffer creates a Sniffer connected to *device.
-func NewSniffer(t *testing.T) (Sniffer, error) {
+func (n *DUTTestNet) NewSniffer(t *testing.T) (Sniffer, error) {
 	t.Helper()
 
+	ifInfo, err := net.InterfaceByName(n.LocalDevName)
+	if err != nil {
+		return Sniffer{}, err
+	}
+
+	var haddr [8]byte
+	copy(haddr[:], ifInfo.HardwareAddr)
+	sa := unix.SockaddrLinklayer{
+		Protocol: htons(unix.ETH_P_ALL),
+		Ifindex:  ifInfo.Index,
+	}
 	snifferFd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
 	if err != nil {
+		return Sniffer{}, err
+	}
+	if err := unix.Bind(snifferFd, &sa); err != nil {
 		return Sniffer{}, err
 	}
 	if err := unix.SetsockoptInt(snifferFd, unix.SOL_SOCKET, unix.SO_RCVBUFFORCE, 1); err != nil {
@@ -136,10 +150,10 @@ type Injector struct {
 }
 
 // NewInjector creates a new injector on *device.
-func NewInjector(t *testing.T) (Injector, error) {
+func (n *DUTTestNet) NewInjector(t *testing.T) (Injector, error) {
 	t.Helper()
 
-	ifInfo, err := net.InterfaceByName(LocalDevice)
+	ifInfo, err := net.InterfaceByName(n.LocalDevName)
 	if err != nil {
 		return Injector{}, err
 	}
@@ -147,7 +161,7 @@ func NewInjector(t *testing.T) (Injector, error) {
 	var haddr [8]byte
 	copy(haddr[:], ifInfo.HardwareAddr)
 	sa := unix.SockaddrLinklayer{
-		Protocol: unix.ETH_P_IP,
+		Protocol: htons(unix.ETH_P_IP),
 		Ifindex:  ifInfo.Index,
 		Halen:    uint8(len(ifInfo.HardwareAddr)),
 		Addr:     haddr,

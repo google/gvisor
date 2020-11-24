@@ -30,7 +30,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 type connectionMode bool
@@ -229,7 +229,6 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 			} {
 				t.Run(fmt.Sprintf("%s/%s/%s", connect, icmpErr, errDetect.name), func(t *testing.T) {
 					dut := testbench.NewDUT(t)
-					defer dut.TearDown()
 
 					remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 					defer dut.Close(t, remoteFD)
@@ -239,7 +238,7 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 					cleanFD, cleanPort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 					defer dut.Close(t, cleanFD)
 
-					conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+					conn := dut.Net.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 					defer conn.Close(t)
 
 					if connect {
@@ -261,7 +260,7 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 						// involved in the generation of the ICMP error. As such,
 						// interactions between it and the the DUT should be independent of
 						// the ICMP error at least at the port level.
-						connClean := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+						connClean := dut.Net.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 						defer connClean.Close(t)
 
 						errDetectConn = &connClean
@@ -283,7 +282,6 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 
 			t.Run(fmt.Sprintf("%s/%s", connect, icmpErr), func(t *testing.T) {
 				dut := testbench.NewDUT(t)
-				defer dut.TearDown()
 
 				remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 				defer dut.Close(t, remoteFD)
@@ -293,7 +291,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				cleanFD, cleanPort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 				defer dut.Close(t, cleanFD)
 
-				conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+				conn := dut.Net.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 				defer conn.Close(t)
 
 				if connect {

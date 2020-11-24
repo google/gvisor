@@ -30,16 +30,15 @@ import (
 var oneSecond = unix.Timeval{Sec: 1, Usec: 0}
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
-	remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv4))
+	remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, dut.Net.RemoteIPv4)
 	defer dut.Close(t, remoteFD)
 	dut.SetSockOptTimeval(t, remoteFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &oneSecond)
-	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+	conn := dut.Net.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
 	for _, mcastAddr := range []net.IP{
@@ -66,11 +65,10 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 
 func TestDiscardsUDPPacketsWithMcastSourceAddressV6(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
-	remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv6))
+	remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, dut.Net.RemoteIPv6)
 	defer dut.Close(t, remoteFD)
 	dut.SetSockOptTimeval(t, remoteFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &oneSecond)
-	conn := testbench.NewUDPIPv6(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+	conn := dut.Net.NewUDPIPv6(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
 	for _, mcastAddr := range []net.IP{

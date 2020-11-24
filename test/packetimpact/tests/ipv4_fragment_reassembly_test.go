@@ -27,7 +27,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 type fragmentInfo struct {
@@ -69,8 +69,7 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			defer dut.TearDown()
-			conn := testbench.NewIPv4Conn(t, testbench.IPv4{}, testbench.IPv4{})
+			conn := dut.Net.NewIPv4Conn(t, testbench.IPv4{}, testbench.IPv4{})
 			defer conn.Close(t)
 
 			data := make([]byte, test.ipPayloadLen)

@@ -26,21 +26,20 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func TestAnyRecvUnicastUDP(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
 	boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 	defer dut.Close(t, boundFD)
-	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+	conn := dut.Net.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
 	payload := testbench.GenerateRandomPayload(t, 1<<10 /* 1 KiB */)
 	conn.SendIP(
 		t,
-		testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(net.ParseIP(testbench.RemoteIPv4).To4()))},
+		testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(dut.Net.RemoteIPv4))},
 		testbench.UDP{},
 		&testbench.Payload{Bytes: payload},
 	)

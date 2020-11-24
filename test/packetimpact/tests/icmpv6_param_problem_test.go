@@ -25,15 +25,14 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // TestICMPv6ParamProblemTest sends a packet with a bad next header. The DUT
 // should respond with an ICMPv6 Parameter Problem message.
 func TestICMPv6ParamProblemTest(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
-	conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+	conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
 	defer conn.Close(t)
 	ipv6 := testbench.IPv6{
 		// 254 is reserved and used for experimentation and testing. This should

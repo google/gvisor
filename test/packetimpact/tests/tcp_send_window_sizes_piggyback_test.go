@@ -16,7 +16,6 @@ package tcp_send_window_sizes_piggyback_test
 
 import (
 	"flag"
-	"fmt"
 	"testing"
 	"time"
 
@@ -26,7 +25,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // TestSendWindowSizesPiggyback tests cases where segment sizes are close to
@@ -58,13 +57,12 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 		// greater than available sender window.
 		{"WindowGreaterThanSegment", segmentSize + 1, sampleData, sampleData, true /* enqueue */},
 	} {
-		t.Run(fmt.Sprintf("%s%d", tt.description, tt.windowSize), func(t *testing.T) {
+		t.Run(tt.description, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			defer dut.TearDown()
 			listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 			defer dut.Close(t, listenFd)
 
-			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort, WindowSize: testbench.Uint16(tt.windowSize)}, testbench.TCP{SrcPort: &remotePort})
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort, WindowSize: testbench.Uint16(tt.windowSize)}, testbench.TCP{SrcPort: &remotePort})
 			defer conn.Close(t)
 
 			conn.Connect(t)

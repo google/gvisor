@@ -25,16 +25,15 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // TestTCPSynRcvdReset tests transition from SYN-RCVD to CLOSED.
 func TestTCPSynRcvdReset(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
 	listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(t, listenFD)
-	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
 	// Expect dut connection to have transitioned to SYN-RCVD state.

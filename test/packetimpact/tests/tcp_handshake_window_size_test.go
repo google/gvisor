@@ -25,17 +25,16 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // TestTCPHandshakeWindowSize tests if the stack is honoring the window size
 // communicated during handshake.
 func TestTCPHandshakeWindowSize(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
 	listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(t, listenFD)
-	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
 	// Start handshake with zero window size.
