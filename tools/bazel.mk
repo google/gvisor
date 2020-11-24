@@ -213,7 +213,7 @@ test: bazel-server
 testlogs:
 	@cat .build_events.json | jq -r \
 	  'select(.testSummary?.overallStatus? | tostring | test("(FAILED|FLAKY|TIMEOUT)")) | .testSummary.failed | .[] | .uri' | \
-	  awk -Ffile:// '{print $2;}'
+	  awk -Ffile:// '{print $$2;}'
 .PHONY: testlogs
 
 query: bazel-server
