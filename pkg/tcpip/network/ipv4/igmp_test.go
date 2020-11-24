@@ -15,7 +15,9 @@
 package ipv4_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -35,9 +37,16 @@ const (
 )
 
 var (
-	// unsolicitedReportIntervalMax is the maximum amount of time the NIC will
-	// wait before sending an unsolicited report after joining a multicast group.
-	unsolicitedReportIntervalMax = ipv4.DecisecondToSecond(ipv4.UnsolicitedReportIntervalMaxTenthSec)
+	// unsolicitedReportIntervalMaxTenthSec is the maximum amount of time the NIC
+	// will wait before sending an unsolicited report after joining a multicast
+	// group, in deciseconds.
+	unsolicitedReportIntervalMaxTenthSec = func() uint8 {
+		const decisecond = time.Second / 10
+		if ipv4.UnsolicitedReportIntervalMax%decisecond != 0 {
+			panic(fmt.Sprintf("UnsolicitedReportIntervalMax of %d is a lossy conversion to deciseconds", ipv4.UnsolicitedReportIntervalMax))
+		}
+		return uint8(ipv4.UnsolicitedReportIntervalMax / decisecond)
+	}()
 )
 
 // validateIgmpPacket checks that a passed PacketInfo is an IPv4 IGMP packet
@@ -51,7 +60,7 @@ func validateIgmpPacket(t *testing.T, p channel.PacketInfo, remoteAddress tcpip.
 		checker.DstAddr(remoteAddress),
 		checker.IGMP(
 			checker.IGMPType(igmpType),
-			checker.IGMPMaxRespTime(maxRespTime),
+			checker.IGMPMaxRespTime(header.DecisecondToDuration(maxRespTime)),
 			checker.IGMPGroupAddress(groupAddress),
 		),
 	)
@@ -134,7 +143,7 @@ func TestIgmpDisabled(t *testing.T) {
 	// Inject a General Membership Query, which is an IGMP Membership Query with
 	// a zeroed Group Address (IPv4Any) to verify that it does not reach the
 	// handler.
-	createAndInjectIGMPPacket(e, header.IGMPMembershipQuery, ipv4.UnsolicitedReportIntervalMaxTenthSec, header.IPv4Any)
+	createAndInjectIGMPPacket(e, header.IGMPMembershipQuery, unsolicitedReportIntervalMaxTenthSec, header.IPv4Any)
 
 	if got := s.Stats().IGMP.PacketsReceived.MembershipQuery.Value(); got != 0 {
 		t.Fatalf("got Membership Queries received = %d, want = 0", got)
@@ -161,7 +170,7 @@ func TestIgmpReceivesIGMPMessages(t *testing.T) {
 		{
 			name:         "General Membership Query",
 			headerType:   header.IGMPMembershipQuery,
-			maxRespTime:  ipv4.UnsolicitedReportIntervalMaxTenthSec,
+			maxRespTime:  unsolicitedReportIntervalMaxTenthSec,
 			groupAddress: header.IPv4Any,
 			statCounter: func(stats tcpip.IGMPReceivedPacketStats) *tcpip.StatCounter {
 				return stats.MembershipQuery
@@ -234,12 +243,12 @@ func TestIgmpJoinGroup(t *testing.T) {
 	}
 
 	// Verify the second Membership Report is sent after a random interval up to
-	// the unsolicitedReportIntervalMax.
+	// the maximum unsolicited report interval.
 	p, ok = e.Read()
 	if ok {
 		t.Fatalf("sent unexpected packet, expected V2MembershipReport only after advancing the clock = %+v", p.Pkt)
 	}
-	clock.Advance(unsolicitedReportIntervalMax)
+	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	p, ok = e.Read()
 	if !ok {
 		t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
@@ -273,13 +282,13 @@ func TestIgmpLeaveGroup(t *testing.T) {
 	}
 
 	// Verify the second Membership Report is sent after a random interval up to
-	// the unsolicitedReportIntervalMax, and is sent to the multicast address
-	// being joined.
+	// the maximum unsolicited report interval, and is sent to the multicast
+	// address being joined.
 	p, ok = e.Read()
 	if ok {
 		t.Fatalf("sent unexpected packet, expected V2MembershipReport only after advancing the clock = %+v", p.Pkt)
 	}
-	clock.Advance(unsolicitedReportIntervalMax)
+	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	p, ok = e.Read()
 	if !ok {
 		t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
@@ -334,7 +343,7 @@ func TestIgmpJoinLeaveGroup(t *testing.T) {
 	// Wait for the standard IGMP Unsolicited Report Interval duration before
 	// verifying that the unsolicited Membership Report was sent after leaving
 	// the group.
-	clock.Advance(unsolicitedReportIntervalMax)
+	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	if got := s.Stats().IGMP.PacketsSent.V2MembershipReport.Value(); got != 1 {
 		t.Fatalf("got V2MembershipReport messages sent = %d, want = 1", got)
 	}
@@ -365,7 +374,7 @@ func TestIgmpMembershipQueryReport(t *testing.T) {
 	if ok {
 		t.Fatalf("sent unexpected packet, expected V2MembershipReport only after advancing the clock = %+v", p.Pkt)
 	}
-	clock.Advance(unsolicitedReportIntervalMax)
+	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	p, ok = e.Read()
 	if !ok {
 		t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
@@ -384,7 +393,7 @@ func TestIgmpMembershipQueryReport(t *testing.T) {
 	if ok {
 		t.Fatalf("sent unexpected packet, expected V2MembershipReport only after advancing the clock = %+v", p.Pkt)
 	}
-	clock.Advance(ipv4.DecisecondToSecond(maxRespTimeDS))
+	clock.Advance(header.DecisecondToDuration(maxRespTimeDS))
 	p, ok = e.Read()
 	if !ok {
 		t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
@@ -428,7 +437,7 @@ func TestIgmpMultipleHosts(t *testing.T) {
 	// Wait to be sure that no Leave Group messages were sent up to the max
 	// unsolicited report interval since it was not the last host to join this
 	// group.
-	clock.Advance(unsolicitedReportIntervalMax)
+	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	if got := s.Stats().IGMP.PacketsSent.LeaveGroup.Value(); got != 0 {
 		t.Fatalf("got LeaveGroup messages sent = %d, want = 0", got)
 	}
@@ -479,7 +488,7 @@ func TestIgmpV1Present(t *testing.T) {
 	if ok {
 		t.Fatalf("sent unexpected packet, expected V1MembershipReport only after advancing the clock = %+v", p.Pkt)
 	}
-	clock.Advance(unsolicitedReportIntervalMax)
+	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	p, ok = e.Read()
 	if !ok {
 		t.Fatal("unable to Read IGMP packet, expected V1MembershipReport")

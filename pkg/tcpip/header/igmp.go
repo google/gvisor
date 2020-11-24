@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -103,7 +104,15 @@ func (b IGMP) SetType(t IGMPType) { b[igmpTypeOffset] = byte(t) }
 // MaxRespTime gets the MaxRespTimeField. This is meaningful only in Membership
 // Query messages, in other cases it is set to 0 by the sender and ignored by
 // the receiver.
-func (b IGMP) MaxRespTime() byte { return b[igmpMaxRespTimeOffset] }
+func (b IGMP) MaxRespTime() time.Duration {
+	// As per RFC 2236 section 2.2,
+	//
+	//  The Max Response Time field is meaningful only in Membership Query
+	//  messages, and specifies the maximum allowed time before sending a
+	//  responding report in units of 1/10 second.  In all other messages, it
+	//  is set to zero by the sender and ignored by receivers.
+	return DecisecondToDuration(b[igmpMaxRespTimeOffset])
+}
 
 // SetMaxRespTime sets the MaxRespTimeField.
 func (b IGMP) SetMaxRespTime(m byte) { b[igmpMaxRespTimeOffset] = m }
@@ -163,4 +172,10 @@ func IGMPCalculateChecksum(h IGMP) uint16 {
 	xsum := ^Checksum(h, 0)
 	h.SetChecksum(existingXsum)
 	return xsum
+}
+
+// DecisecondToDuration converts a value representing deci-seconds to a
+// time.Duration.
+func DecisecondToDuration(ds uint8) time.Duration {
+	return time.Duration(ds) * time.Second / 10
 }

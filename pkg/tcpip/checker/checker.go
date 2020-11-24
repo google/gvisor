@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -1267,7 +1268,7 @@ func IGMPType(want header.IGMPType) TransportChecker {
 }
 
 // IGMPMaxRespTime creates a checker that checks the IGMP Max Resp Time field.
-func IGMPMaxRespTime(want byte) TransportChecker {
+func IGMPMaxRespTime(want time.Duration) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
@@ -1276,7 +1277,7 @@ func IGMPMaxRespTime(want byte) TransportChecker {
 			t.Fatalf("got transport header = %T, want = header.IGMP", h)
 		}
 		if got := igmp.MaxRespTime(); got != want {
-			t.Errorf("got igmp.MaxRespTime() = %d, want = %d", got, want)
+			t.Errorf("got igmp.MaxRespTime() = %s, want = %s", got, want)
 		}
 	}
 }
