@@ -14,6 +14,7 @@
 
 #include "test/syscalls/linux/socket_ip_udp_generic.h"
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -484,6 +485,64 @@ TEST_P(UDPSocketPairTest, GetSocketAcceptConn) {
 
   ASSERT_EQ(length, sizeof(got));
   EXPECT_EQ(got, 0);
+}
+
+TEST_P(UDPSocketPairTest, BindToMulticast) {
+  SKIP_IF(GetParam().type != SOCK_DGRAM);
+  SKIP_IF(GetParam().domain != AF_INET || GetParam().domain != AF_INET6);
+
+  TestAddress multicast_addr("All-nodes Multicast");
+  TestAddress loopback;
+  switch (GetParam().domain) {
+    case AF_INET:
+      multicast_addr.addr.ss_family = AF_INET;
+      multicast_addr.addr_len = sizeof(sockaddr_in);
+      ASSERT_EQ(1,
+                inet_pton(AF_INET, "224.0.0.1",
+                          &(reinterpret_cast<sockaddr_in*>(&multicast_addr.addr)
+                                ->sin_addr.s_addr)));
+      loopback = V4Loopback();
+      break;
+    case AF_INET6:
+      multicast_addr.addr.ss_family = AF_INET6;
+      multicast_addr.addr_len = sizeof(sockaddr_in6);
+      ASSERT_EQ(1,
+                inet_pton(AF_INET6, "ff02::1",
+                          reinterpret_cast<sockaddr_in6*>(&multicast_addr.addr)
+                              ->sin6_addr.s6_addr));
+      loopback = V6Loopback();
+      break;
+  }
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  ASSERT_EQ(bind(sockets->first_fd(),
+                 reinterpret_cast<sockaddr*>(&multicast_addr.addr),
+                 multicast_addr.addr_len),
+            0)
+      << strerror(errno);
+
+  // Bind the sender to the loopback. This is an alternative to
+  // IP_MULTICAST_IF for setting the default send interface.
+  ASSERT_THAT(
+      bind(sockets->second_fd(), reinterpret_cast<sockaddr*>(&loopback.addr),
+           loopback.addr_len),
+      SyscallSucceeds());
+
+  // Send a multicast packet to the receiver.
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sockets->second_fd(), send_buf, sizeof(send_buf), 0,
+                         reinterpret_cast<sockaddr*>(&multicast_addr.addr),
+                         multicast_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RecvTimeout(sockets->first_fd(), recv_buf, sizeof(recv_buf),
+                          1 /*timeout*/),
+              IsPosixErrorOkAndHolds(sizeof(recv_buf)));
+  ASSERT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
 }  // namespace testing

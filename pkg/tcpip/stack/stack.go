@@ -1456,20 +1456,26 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 			return 0
 		}
 
-		addressEndpoint := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint)
-		if addressEndpoint == nil {
-			return 0
+		if addressEndpoint := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint); addressEndpoint != nil {
+			addressEndpoint.DecRef()
+			return nic.id
 		}
 
-		addressEndpoint.DecRef()
+		if joined, err := s.isInGroupRLocked(nic.id, addr); err == nil && joined {
+			return nic.id
+		}
 
-		return nic.id
+		return 0
 	}
 
 	// Go through all the NICs.
 	for _, nic := range s.nics {
 		if addressEndpoint := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint); addressEndpoint != nil {
 			addressEndpoint.DecRef()
+			return nic.id
+		}
+
+		if joined, err := s.isInGroupRLocked(nic.id, addr); err == nil && joined {
 			return nic.id
 		}
 	}
@@ -1918,7 +1924,10 @@ func (s *Stack) LeaveGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NIC
 func (s *Stack) IsInGroup(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.isInGroupRLocked(nicID, multicastAddr)
+}
 
+func (s *Stack) isInGroupRLocked(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool, *tcpip.Error) {
 	if nic, ok := s.nics[nicID]; ok {
 		return nic.isInGroup(multicastAddr), nil
 	}
