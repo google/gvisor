@@ -71,8 +71,8 @@ func TestInitialLoopbackAddresses(t *testing.T) {
 
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocolWithOptions(ipv6.Options{
-			NDPDisp:              &ndpDispatcher{},
-			AutoGenIPv6LinkLocal: true,
+			NDPDisp:          &ndpDispatcher{},
+			AutoGenLinkLocal: true,
 			OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: func(nicID tcpip.NICID, nicName string) string {
 					t.Fatalf("should not attempt to get name for NIC with ID = %d; nicName = %s", nicID, nicName)

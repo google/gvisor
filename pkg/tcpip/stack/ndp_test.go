@@ -2162,8 +2162,8 @@ func TestNoAutoGenTempAddrForLinkLocal(t *testing.T) {
 						NDPConfigs: ipv6.NDPConfigurations{
 							AutoGenTempGlobalAddresses: true,
 						},
-						NDPDisp:              &ndpDisp,
-						AutoGenIPv6LinkLocal: true,
+						NDPDisp:          &ndpDisp,
+						AutoGenLinkLocal: true,
 					})},
 				})
 
@@ -4044,9 +4044,9 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 						ndpConfigs.AutoGenAddressConflictRetries = maxRetries
 						s := stack.New(stack.Options{
 							NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-								AutoGenIPv6LinkLocal: addrType.autoGenLinkLocal,
-								NDPConfigs:           ndpConfigs,
-								NDPDisp:              &ndpDisp,
+								AutoGenLinkLocal: addrType.autoGenLinkLocal,
+								NDPConfigs:       ndpConfigs,
+								NDPDisp:          &ndpDisp,
 								OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 									NICNameFromID: func(_ tcpip.NICID, nicName string) string {
 										return nicName
@@ -4179,9 +4179,9 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					AutoGenIPv6LinkLocal: addrType.autoGenLinkLocal,
-					NDPConfigs:           addrType.ndpConfigs,
-					NDPDisp:              &ndpDisp,
+					AutoGenLinkLocal: addrType.autoGenLinkLocal,
+					NDPConfigs:       addrType.ndpConfigs,
+					NDPDisp:          &ndpDisp,
 				})},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -4708,7 +4708,7 @@ func TestCleanupNDPState(t *testing.T) {
 			}
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					AutoGenIPv6LinkLocal: true,
+					AutoGenLinkLocal: true,
 					NDPConfigs: ipv6.NDPConfigurations{
 						HandleRAs:              true,
 						DiscoverDefaultRouters: true,
