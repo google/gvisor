@@ -89,7 +89,7 @@ func eventDiffOptsWithSort() []cmp.Option {
 // | Stale      | Reachable  | Solicited confirmation w/o address         | Notify wakers   | Changed |
 // | Stale      | Stale      | Override confirmation                      | Update LinkAddr | Changed |
 // | Stale      | Stale      | Probe w/ different address                 | Update LinkAddr | Changed |
-// | Stale      | Delay      | Packet sent                                |                 | Changed |
+// | Stale      | Delay      | Packet queued                              |                 | Changed |
 // | Delay      | Reachable  | Upper-layer confirmation                   |                 | Changed |
 // | Delay      | Reachable  | Solicited override confirmation            | Update LinkAddr | Changed |
 // | Delay      | Reachable  | Solicited confirmation w/o address         | Notify wakers   | Changed |
@@ -101,6 +101,7 @@ func eventDiffOptsWithSort() []cmp.Option {
 // | Probe      | Stale      | Probe or confirmation w/ different address |                 | Changed |
 // | Probe      | Probe      | Retransmit timer expired                   | Send probe      | Changed |
 // | Probe      | Failed     | Max probes sent without reply              | Notify wakers   | Removed |
+// | Failed     | Failed     | Packet queued                              |                 |         |
 // | Failed     |            | Unreachability timer expired               | Delete entry    |         |
 
 type testEntryEventType uint8
@@ -228,6 +229,7 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 			clock:   clock,
 			nudDisp: &disp,
 		},
+		stats: makeNICStats(),
 	}
 	nic.networkEndpoints = map[tcpip.NetworkProtocolNumber]NetworkEndpoint{
 		header.IPv6ProtocolNumber: (&testIPv6Protocol{}).NewEndpoint(&nic, nil, nil, nil),
@@ -3431,6 +3433,146 @@ func TestEntryProbeToFailed(t *testing.T) {
 		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
+}
+
+func TestEntryFailedToFailed(t *testing.T) {
+	c := DefaultNUDConfigurations()
+	c.MaxMulticastProbes = 3
+	c.MaxUnicastProbes = 3
+	e, nudDisp, linkRes, clock := entryTestSetup(c)
+
+	// Verify the cache contains the entry.
+	if _, ok := e.nic.neigh.cache[entryTestAddr1]; !ok {
+		t.Errorf("expected entry %q to exist in the neighbor cache", entryTestAddr1)
+	}
+
+	// TODO(gvisor.dev/issue/4872): Use helper functions to start entry tests in
+	// their expected state.
+	e.mu.Lock()
+	e.handlePacketQueuedLocked(entryTestAddr2)
+	e.mu.Unlock()
+
+	runImmediatelyScheduledJobs(clock)
+	{
+		wantProbes := []entryTestProbeInfo{
+			{
+				RemoteAddress: entryTestAddr1,
+				LocalAddress:  entryTestAddr2,
+			},
+		}
+		linkRes.mu.Lock()
+		diff := cmp.Diff(linkRes.probes, wantProbes)
+		linkRes.probes = nil
+		linkRes.mu.Unlock()
+		if diff != "" {
+			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		}
+	}
+
+	e.mu.Lock()
+	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
+		Solicited: false,
+		Override:  false,
+		IsRouter:  false,
+	})
+	e.handlePacketQueuedLocked(entryTestAddr2)
+	e.mu.Unlock()
+
+	waitFor := c.DelayFirstProbeTime + c.RetransmitTimer*time.Duration(c.MaxUnicastProbes)
+	clock.Advance(waitFor)
+	{
+		wantProbes := []entryTestProbeInfo{
+			{
+				RemoteAddress:     entryTestAddr1,
+				RemoteLinkAddress: entryTestLinkAddr1,
+			},
+			{
+				RemoteAddress:     entryTestAddr1,
+				RemoteLinkAddress: entryTestLinkAddr1,
+			},
+			{
+				RemoteAddress:     entryTestAddr1,
+				RemoteLinkAddress: entryTestLinkAddr1,
+			},
+		}
+		linkRes.mu.Lock()
+		diff := cmp.Diff(linkRes.probes, wantProbes)
+		linkRes.mu.Unlock()
+		if diff != "" {
+			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		}
+	}
+
+	wantEvents := []testEntryEventInfo{
+		{
+			EventType: entryTestAdded,
+			NICID:     entryTestNICID,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
+		},
+		{
+			EventType: entryTestChanged,
+			NICID:     entryTestNICID,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
+		},
+		{
+			EventType: entryTestChanged,
+			NICID:     entryTestNICID,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Delay,
+			},
+		},
+		{
+			EventType: entryTestChanged,
+			NICID:     entryTestNICID,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
+		},
+		{
+			EventType: entryTestRemoved,
+			NICID:     entryTestNICID,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Probe,
+			},
+		},
+	}
+	nudDisp.mu.Lock()
+	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	}
+	nudDisp.mu.Unlock()
+
+	failedLookups := e.nic.stats.Neighbor.FailedEntryLookups
+	if got := failedLookups.Value(); got != 0 {
+		t.Errorf("got Neighbor.FailedEntryLookups = %d, want = 0", got)
+	}
+
+	e.mu.Lock()
+	// Verify queuing a packet to the entry immediately fails.
+	e.handlePacketQueuedLocked(entryTestAddr2)
+	state := e.neigh.State
+	e.mu.Unlock()
+	if state != Failed {
+		t.Errorf("got e.neigh.State = %q, want = %q", state, Failed)
+	}
+
+	if got := failedLookups.Value(); got != 1 {
+		t.Errorf("got Neighbor.FailedEntryLookups = %d, want = 1", got)
+	}
 }
 
 func TestEntryFailedGetsDeleted(t *testing.T) {
