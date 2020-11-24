@@ -35,15 +35,18 @@ const (
 	// See note on igmpState.igmpV1Present for more detail.
 	v1RouterPresentTimeout = 400 * time.Second
 
-	// v1MaxRespTimeTenthSec from RFC 2236 Section 4, Page 5. "The IGMPv1 router
+	// v1MaxRespTime from RFC 2236 Section 4, Page 5. "The IGMPv1 router
 	// will send General Queries with the Max Response Time set to 0. This MUST
 	// be interpreted as a value of 100 (10 seconds)."
-	v1MaxRespTimeTenthSec = 100
+	//
+	// Note that the Max Response Time field is a value in units of deciseconds.
+	v1MaxRespTime = 10 * time.Second
 
-	// UnsolicitedReportIntervalMaxTenthSec from RFC 2236 Section 8.10, Page 19.
-	// As all IGMP delay timers are set to a random value between 0 and the
-	// interval, this is technically a maximum.
-	UnsolicitedReportIntervalMaxTenthSec = 100
+	// UnsolicitedReportIntervalMax is the maximum delay between sending
+	// unsolicited IGMP reports.
+	//
+	// Obtained from RFC 2236 Section 8.10, Page 19.
+	UnsolicitedReportIntervalMax = 10 * time.Second
 )
 
 // igmpState is the per-interface IGMP state.
@@ -185,7 +188,7 @@ func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
 	}
 }
 
-func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxRespTime byte) {
+func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxRespTime time.Duration) {
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 
@@ -196,7 +199,7 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 		igmp.mu.igmpV1Job.Cancel()
 		igmp.mu.igmpV1Job.Schedule(v1RouterPresentTimeout)
 		igmp.mu.igmpV1Present = true
-		maxRespTime = v1MaxRespTimeTenthSec
+		maxRespTime = v1MaxRespTime
 	}
 
 	// IPv4Any is the General Query Address.
@@ -215,7 +218,7 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 // modify IGMP state directly.
 //
 // Precondition: igmp.mu MUST be read locked.
-func (igmp *igmpState) setDelayTimerForAddressRLocked(groupAddress tcpip.Address, info *membershipInfo, maxRespTime byte) {
+func (igmp *igmpState) setDelayTimerForAddressRLocked(groupAddress tcpip.Address, info *membershipInfo, maxRespTime time.Duration) {
 	if info.state == delayingMember {
 		// As per RFC 2236 Section 3, page 3: "If a timer for the group is already
 		// running, it is reset to the random value only if the requested Max
@@ -352,7 +355,7 @@ func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) *tcpip.Error {
 	// it should immediately transmit an unsolicited Version 2 Membership Report
 	// for that group" ... "it is recommended that it be repeated"
 	igmp.sendReportLocked(groupAddress)
-	igmp.setDelayTimerForAddressRLocked(groupAddress, &info, UnsolicitedReportIntervalMaxTenthSec)
+	igmp.setDelayTimerForAddressRLocked(groupAddress, &info, UnsolicitedReportIntervalMax)
 	igmp.mu.memberships[groupAddress] = info
 
 	return nil
@@ -383,16 +386,7 @@ func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) {
 }
 
 // RFC 2236 Section 3, Page 3: The response time is set to a "random value...
-// selected from the range (0, Max Response Time]" where Max Resp Time is given
-// in units of 1/10 of a second.
-func (igmp *igmpState) calculateDelayTimerDuration(maxRespTime byte) time.Duration {
-	maxRespTimeDuration := DecisecondToSecond(maxRespTime)
-	return time.Duration(igmp.ep.protocol.stack.Rand().Int63n(int64(maxRespTimeDuration)))
-}
-
-// DecisecondToSecond converts a byte representing deci-seconds to a Duration
-// type. This helper function exists because the IGMP stack sends and receives
-// Max Response Times in deci-seconds.
-func DecisecondToSecond(ds byte) time.Duration {
-	return time.Duration(ds) * time.Second / 10
+// selected from the range (0, Max Response Time]".
+func (igmp *igmpState) calculateDelayTimerDuration(maxRespTime time.Duration) time.Duration {
+	return time.Duration(igmp.ep.protocol.stack.Rand().Int63n(int64(maxRespTime)))
 }
