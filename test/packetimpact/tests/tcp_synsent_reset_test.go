@@ -16,34 +16,33 @@ package tcp_synsent_reset_test
 
 import (
 	"flag"
-	"net"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // dutSynSentState sets up the dut connection in SYN-SENT state.
-func dutSynSentState(t *testing.T) (*tb.DUT, *tb.TCPIPv4, uint16, uint16) {
+func dutSynSentState(t *testing.T) (*testbench.DUT, *testbench.TCPIPv4, uint16, uint16) {
 	t.Helper()
 
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 
-	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(tb.RemoteIPv4))
+	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, dut.Net.RemoteIPv4)
 	port := uint16(9001)
-	conn := tb.NewTCPIPv4(t, tb.TCP{SrcPort: &port, DstPort: &clientPort}, tb.TCP{SrcPort: &clientPort, DstPort: &port})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{SrcPort: &port, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &port})
 
 	sa := unix.SockaddrInet4{Port: int(port)}
-	copy(sa.Addr[:], net.IP(net.ParseIP(tb.LocalIPv4)).To4())
+	copy(sa.Addr[:], dut.Net.LocalIPv4)
 	// Bring the dut to SYN-SENT state with a non-blocking connect.
 	dut.Connect(t, clientFD, &sa)
-	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)}, nil, time.Second); err != nil {
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN\n")
 	}
 
@@ -52,14 +51,13 @@ func dutSynSentState(t *testing.T) (*tb.DUT, *tb.TCPIPv4, uint16, uint16) {
 
 // TestTCPSynSentReset tests RFC793, p67: SYN-SENT to CLOSED transition.
 func TestTCPSynSentReset(t *testing.T) {
-	dut, conn, _, _ := dutSynSentState(t)
+	_, conn, _, _ := dutSynSentState(t)
 	defer conn.Close(t)
-	defer dut.TearDown()
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
 	// Expect the connection to have closed.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
 	}
 }
@@ -68,23 +66,22 @@ func TestTCPSynSentReset(t *testing.T) {
 // transitions.
 func TestTCPSynSentRcvdReset(t *testing.T) {
 	dut, c, remotePort, clientPort := dutSynSentState(t)
-	defer dut.TearDown()
 	defer c.Close(t)
 
-	conn := tb.NewTCPIPv4(t, tb.TCP{SrcPort: &remotePort, DstPort: &clientPort}, tb.TCP{SrcPort: &clientPort, DstPort: &remotePort})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{SrcPort: &remotePort, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &remotePort})
 	defer conn.Close(t)
 	// Initiate new SYN connection with the same port pair
 	// (simultaneous open case), expect the dut connection to move to
 	// SYN-RCVD state
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)})
-	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK %s\n", err)
 	}
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)})
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
 	}
 }

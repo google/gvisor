@@ -22,19 +22,18 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func TestReorderingWindow(t *testing.T) {
-	dut := tb.NewDUT(t)
-	defer dut.TearDown()
+	dut := testbench.NewDUT(t)
 	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(t, listenFd)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
 	// Enable SACK.
@@ -54,13 +53,13 @@ func TestReorderingWindow(t *testing.T) {
 	acceptFd, _ := dut.Accept(t, listenFd)
 	defer dut.Close(t, acceptFd)
 
-	if tb.Native {
+	if testbench.Native {
 		// Linux has changed its handling of reordering, force the old behavior.
 		dut.SetSockOpt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_CONGESTION, []byte("reno"))
 	}
 
 	pls := dut.GetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_MAXSEG)
-	if !tb.Native {
+	if !testbench.Native {
 		// netstack does not impliment TCP_MAXSEG correctly. Fake it
 		// here. Netstack uses the max SACK size which is 32. The MSS
 		// option is 8 bytes, making the total 36 bytes.
@@ -75,14 +74,14 @@ func TestReorderingWindow(t *testing.T) {
 	for i, sn := 0, seqNum1; i < numPkts; i++ {
 		dut.Send(t, acceptFd, payload, 0)
 
-		gotOne, err := conn.Expect(t, tb.TCP{SeqNum: tb.Uint32(uint32(sn))}, time.Second)
+		gotOne, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(sn))}, time.Second)
 		sn.UpdateForward(seqnum.Size(len(payload)))
 		if err != nil {
-			t.Errorf("Expect #%d: %s", i+1, err)
+			t.Fatalf("Expect #%d: %s", i+1, err)
 			continue
 		}
 		if gotOne == nil {
-			t.Errorf("#%d: expected a packet within a second but got none", i+1)
+			t.Fatalf("#%d: expected a packet within a second but got none", i+1)
 		}
 	}
 
@@ -97,13 +96,13 @@ func TestReorderingWindow(t *testing.T) {
 		seqNum1.Add(seqnum.Size(len(payload))),
 		seqNum1.Add(seqnum.Size(4 * len(payload))),
 	}}, sackBlock[sbOff:])
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), AckNum: tb.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
 
 	// ACK first packet.
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), AckNum: tb.Uint32(uint32(seqNum1) + uint32(len(payload)))})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1) + uint32(len(payload)))})
 
 	// Check for retransmit.
-	gotOne, err := conn.Expect(t, tb.TCP{SeqNum: tb.Uint32(uint32(seqNum1))}, time.Second)
+	gotOne, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(seqNum1))}, time.Second)
 	if err != nil {
 		t.Error("Expect for retransmit:", err)
 	}
@@ -123,29 +122,29 @@ func TestReorderingWindow(t *testing.T) {
 		seqNum1.Add(seqnum.Size(4 * len(payload))),
 	}}, dsackBlock[dsbOff:])
 
-	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), AckNum: tb.Uint32(uint32(seqNum2)), Options: dsackBlock[:dsbOff]})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum2)), Options: dsackBlock[:dsbOff]})
 
 	// Send half of the original window of packets, checking that we
 	// received each.
 	for i, sn := 0, seqNum2; i < numPkts/2; i++ {
 		dut.Send(t, acceptFd, payload, 0)
 
-		gotOne, err := conn.Expect(t, tb.TCP{SeqNum: tb.Uint32(uint32(sn))}, time.Second)
+		gotOne, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(sn))}, time.Second)
 		sn.UpdateForward(seqnum.Size(len(payload)))
 		if err != nil {
-			t.Errorf("Expect #%d: %s", i+1, err)
+			t.Fatalf("Expect #%d: %s", i+1, err)
 			continue
 		}
 		if gotOne == nil {
-			t.Errorf("#%d: expected a packet within a second but got none", i+1)
+			t.Fatalf("#%d: expected a packet within a second but got none", i+1)
 		}
 	}
 
-	if !tb.Native {
+	if !testbench.Native {
 		// The window should now be halved, so we should receive any
 		// more, even if we send them.
 		dut.Send(t, acceptFd, payload, 0)
-		if got, err := conn.Expect(t, tb.TCP{}, 100*time.Millisecond); got != nil || err == nil {
+		if got, err := conn.Expect(t, testbench.TCP{}, 100*time.Millisecond); got != nil || err == nil {
 			t.Fatalf("expected no packets within 100 millisecond, but got one: %s", got)
 		}
 		return
@@ -155,20 +154,20 @@ func TestReorderingWindow(t *testing.T) {
 	for i, sn := 0, seqNum2.Add(seqnum.Size(numPkts/2*len(payload))); i < 2; i++ {
 		dut.Send(t, acceptFd, payload, 0)
 
-		gotOne, err := conn.Expect(t, tb.TCP{SeqNum: tb.Uint32(uint32(sn))}, time.Second)
+		gotOne, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(sn))}, time.Second)
 		sn.UpdateForward(seqnum.Size(len(payload)))
 		if err != nil {
-			t.Errorf("Expect #%d: %s", i+1, err)
+			t.Fatalf("Expect #%d: %s", i+1, err)
 			continue
 		}
 		if gotOne == nil {
-			t.Errorf("#%d: expected a packet within a second but got none", i+1)
+			t.Fatalf("#%d: expected a packet within a second but got none", i+1)
 		}
 	}
 
 	// The window should now be full.
 	dut.Send(t, acceptFd, payload, 0)
-	if got, err := conn.Expect(t, tb.TCP{}, 100*time.Millisecond); got != nil || err == nil {
+	if got, err := conn.Expect(t, testbench.TCP{}, 100*time.Millisecond); got != nil || err == nil {
 		t.Fatalf("expected no packets within 100 millisecond, but got one: %s", got)
 	}
 }

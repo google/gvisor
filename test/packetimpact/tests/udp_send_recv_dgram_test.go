@@ -26,7 +26,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 type udpConn interface {
@@ -38,7 +38,6 @@ type udpConn interface {
 
 func TestUDP(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
 
 	for _, isIPv4 := range []bool{true, false} {
 		ipVersionName := "IPv6"
@@ -46,24 +45,24 @@ func TestUDP(t *testing.T) {
 			ipVersionName = "IPv4"
 		}
 		t.Run(ipVersionName, func(t *testing.T) {
-			var addr string
+			var addr net.IP
 			if isIPv4 {
-				addr = testbench.RemoteIPv4
+				addr = dut.Net.RemoteIPv4
 			} else {
-				addr = testbench.RemoteIPv6
+				addr = dut.Net.RemoteIPv6
 			}
-			boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(addr))
+			boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, addr)
 			defer dut.Close(t, boundFD)
 
 			var conn udpConn
 			var localAddr unix.Sockaddr
 			if isIPv4 {
-				v4Conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+				v4Conn := dut.Net.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 				localAddr = v4Conn.LocalAddr(t)
 				conn = &v4Conn
 			} else {
-				v6Conn := testbench.NewUDPIPv6(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
-				localAddr = v6Conn.LocalAddr(t)
+				v6Conn := dut.Net.NewUDPIPv6(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+				localAddr = v6Conn.LocalAddr(t, dut.Net.RemoteDevID)
 				conn = &v6Conn
 			}
 			defer conn.Close(t)

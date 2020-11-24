@@ -25,7 +25,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func sendPayload(t *testing.T, conn *testbench.TCPIPv4, dut *testbench.DUT, fd int32) {
@@ -64,10 +64,9 @@ func TestTCPUserTimeout(t *testing.T) {
 			t.Run(tt.description+ttf.description, func(t *testing.T) {
 				// Create a socket, listen, TCP handshake, and accept.
 				dut := testbench.NewDUT(t)
-				defer dut.TearDown()
 				listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 				defer dut.Close(t, listenFD)
-				conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+				conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 				defer conn.Close(t)
 				conn.Connect(t)
 				acceptFD, _ := dut.Accept(t, listenFD)

@@ -17,7 +17,6 @@ package tcp_synsent_reset_test
 import (
 	"context"
 	"flag"
-	"net"
 	"syscall"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // TestTCPSynSentUnreachable verifies that TCP connections fail immediately when
@@ -37,17 +36,16 @@ func init() {
 func TestTCPSynSentUnreachable(t *testing.T) {
 	// Create the DUT and connection.
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
-	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv4))
+	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, dut.Net.RemoteIPv4)
 	port := uint16(9001)
-	conn := testbench.NewTCPIPv4(t, testbench.TCP{SrcPort: &port, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &port})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{SrcPort: &port, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &port})
 	defer conn.Close(t)
 
 	// Bring the DUT to SYN-SENT state with a non-blocking connect.
 	ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
 	defer cancel()
 	sa := unix.SockaddrInet4{Port: int(port)}
-	copy(sa.Addr[:], net.IP(net.ParseIP(testbench.LocalIPv4)).To4())
+	copy(sa.Addr[:], dut.Net.LocalIPv4)
 	if _, err := dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != syscall.Errno(unix.EINPROGRESS) {
 		t.Errorf("expected connect to fail with EINPROGRESS, but got %v", err)
 	}
@@ -91,9 +89,8 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 func TestTCPSynSentUnreachable6(t *testing.T) {
 	// Create the DUT and connection.
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
-	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv6))
-	conn := testbench.NewTCPIPv6(t, testbench.TCP{DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort})
+	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, dut.Net.RemoteIPv6)
+	conn := dut.Net.NewTCPIPv6(t, testbench.TCP{DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort})
 	defer conn.Close(t)
 
 	// Bring the DUT to SYN-SENT state with a non-blocking connect.
@@ -101,9 +98,9 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 	defer cancel()
 	sa := unix.SockaddrInet6{
 		Port:   int(conn.SrcPort()),
-		ZoneId: uint32(testbench.RemoteInterfaceID),
+		ZoneId: dut.Net.RemoteDevID,
 	}
-	copy(sa.Addr[:], net.IP(net.ParseIP(testbench.LocalIPv6)).To16())
+	copy(sa.Addr[:], dut.Net.LocalIPv6)
 	if _, err := dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != syscall.Errno(unix.EINPROGRESS) {
 		t.Errorf("expected connect to fail with EINPROGRESS, but got %v", err)
 	}

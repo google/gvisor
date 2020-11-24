@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func recvTCPSegment(t *testing.T, conn *testbench.TCPIPv4, expect *testbench.TCP, expectPayload *testbench.Payload) (uint16, error) {
@@ -67,12 +67,10 @@ func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			defer dut.TearDown()
-
 			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 			defer dut.Close(t, listenFD)
 
-			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 			defer conn.Close(t)
 
 			conn.Connect(t)

@@ -27,12 +27,12 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func createSocket(t *testing.T, dut testbench.DUT) (int32, int32, testbench.TCPIPv4) {
 	listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	conn.Connect(t)
 	acceptFD, _ := dut.Accept(t, listenFD)
 	return acceptFD, listenFD, conn
@@ -41,7 +41,6 @@ func createSocket(t *testing.T, dut testbench.DUT) (int32, int32, testbench.TCPI
 func closeAll(t *testing.T, dut testbench.DUT, listenFD int32, conn testbench.TCPIPv4) {
 	conn.Close(t)
 	dut.Close(t, listenFD)
-	dut.TearDown()
 }
 
 // lingerDuration is the timeout value used with SO_LINGER socket option.
@@ -266,5 +265,4 @@ func TestTCPLingerNonEstablished(t *testing.T) {
 	if diff > lingerDuration {
 		t.Errorf("expected close to return within %s, but returned after %s", lingerDuration, diff)
 	}
-	dut.TearDown()
 }

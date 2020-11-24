@@ -27,7 +27,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func mkHopByHopOptionsExtHdr(optType byte) testbench.Layer {
@@ -141,8 +141,7 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 	} {
 		t.Run(tt.description, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			defer dut.TearDown()
-			ipv6Conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
 			conn := (*testbench.Connection)(&ipv6Conn)
 			defer ipv6Conn.Close(t)
 

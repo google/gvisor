@@ -20,7 +20,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
-	"net"
 	"sync"
 	"syscall"
 	"testing"
@@ -32,7 +31,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // TestQueueReceiveInSynSent tests receive behavior when the TCP state
@@ -50,10 +49,9 @@ func TestQueueReceiveInSynSent(t *testing.T) {
 	} {
 		t.Run(tt.description, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			defer dut.TearDown()
 
-			socket, remotePort := dut.CreateBoundSocket(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv4))
-			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			socket, remotePort := dut.CreateBoundSocket(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, dut.Net.RemoteIPv4)
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 			defer conn.Close(t)
 
 			sampleData := []byte("Sample Data")

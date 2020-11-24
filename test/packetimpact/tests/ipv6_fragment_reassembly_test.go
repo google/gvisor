@@ -17,7 +17,6 @@ package ipv6_fragment_reassembly_test
 import (
 	"flag"
 	"math/rand"
-	"net"
 	"testing"
 	"time"
 
@@ -29,7 +28,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 type fragmentInfo struct {
@@ -72,12 +71,11 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			defer dut.TearDown()
-			conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+			conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
 			defer conn.Close(t)
 
-			lIP := tcpip.Address(net.ParseIP(testbench.LocalIPv6).To16())
-			rIP := tcpip.Address(net.ParseIP(testbench.RemoteIPv6).To16())
+			lIP := tcpip.Address(dut.Net.LocalIPv6)
+			rIP := tcpip.Address(dut.Net.RemoteIPv6)
 
 			data := make([]byte, test.ipPayloadLen)
 			icmp := header.ICMPv6(data[:header.ICMPv6HeaderSize])

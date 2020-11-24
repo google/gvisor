@@ -17,7 +17,6 @@ package testbench
 import (
 	"fmt"
 	"math/rand"
-	"net"
 	"testing"
 	"time"
 
@@ -42,7 +41,7 @@ func portFromSockaddr(sa unix.Sockaddr) (uint16, error) {
 // pickPort makes a new socket and returns the socket FD and port. The domain
 // should be AF_INET or AF_INET6. The caller must close the FD when done with
 // the port if there is no error.
-func pickPort(domain, typ int) (fd int, port uint16, err error) {
+func (n *DUTTestNet) pickPort(domain, typ int) (fd int, port uint16, err error) {
 	fd, err = unix.Socket(domain, typ, 0)
 	if err != nil {
 		return -1, 0, fmt.Errorf("creating socket: %w", err)
@@ -58,11 +57,11 @@ func pickPort(domain, typ int) (fd int, port uint16, err error) {
 	switch domain {
 	case unix.AF_INET:
 		var sa4 unix.SockaddrInet4
-		copy(sa4.Addr[:], net.ParseIP(LocalIPv4).To4())
+		copy(sa4.Addr[:], n.LocalIPv4)
 		sa = &sa4
 	case unix.AF_INET6:
-		sa6 := unix.SockaddrInet6{ZoneId: uint32(LocalInterfaceID)}
-		copy(sa6.Addr[:], net.ParseIP(LocalIPv6).To16())
+		sa6 := unix.SockaddrInet6{ZoneId: n.LocalDevID}
+		copy(sa6.Addr[:], n.LocalIPv6)
 		sa = &sa6
 	default:
 		return -1, 0, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
@@ -117,19 +116,12 @@ type etherState struct {
 var _ layerState = (*etherState)(nil)
 
 // newEtherState creates a new etherState.
-func newEtherState(out, in Ether) (*etherState, error) {
-	lMAC, err := tcpip.ParseMACAddress(LocalMAC)
-	if err != nil {
-		return nil, fmt.Errorf("parsing local MAC: %q: %w", LocalMAC, err)
-	}
-
-	rMAC, err := tcpip.ParseMACAddress(RemoteMAC)
-	if err != nil {
-		return nil, fmt.Errorf("parsing remote MAC: %q: %w", RemoteMAC, err)
-	}
+func (n *DUTTestNet) newEtherState(out, in Ether) (*etherState, error) {
+	lmac := tcpip.LinkAddress(n.LocalMAC)
+	rmac := tcpip.LinkAddress(n.RemoteMAC)
 	s := etherState{
-		out: Ether{SrcAddr: &lMAC, DstAddr: &rMAC},
-		in:  Ether{SrcAddr: &rMAC, DstAddr: &lMAC},
+		out: Ether{SrcAddr: &lmac, DstAddr: &rmac},
+		in:  Ether{SrcAddr: &rmac, DstAddr: &lmac},
 	}
 	if err := s.out.merge(&out); err != nil {
 		return nil, err
@@ -169,9 +161,9 @@ type ipv4State struct {
 var _ layerState = (*ipv4State)(nil)
 
 // newIPv4State creates a new ipv4State.
-func newIPv4State(out, in IPv4) (*ipv4State, error) {
-	lIP := tcpip.Address(net.ParseIP(LocalIPv4).To4())
-	rIP := tcpip.Address(net.ParseIP(RemoteIPv4).To4())
+func (n *DUTTestNet) newIPv4State(out, in IPv4) (*ipv4State, error) {
+	lIP := tcpip.Address(n.LocalIPv4)
+	rIP := tcpip.Address(n.RemoteIPv4)
 	s := ipv4State{
 		out: IPv4{SrcAddr: &lIP, DstAddr: &rIP},
 		in:  IPv4{SrcAddr: &rIP, DstAddr: &lIP},
@@ -214,9 +206,9 @@ type ipv6State struct {
 var _ layerState = (*ipv6State)(nil)
 
 // newIPv6State creates a new ipv6State.
-func newIPv6State(out, in IPv6) (*ipv6State, error) {
-	lIP := tcpip.Address(net.ParseIP(LocalIPv6).To16())
-	rIP := tcpip.Address(net.ParseIP(RemoteIPv6).To16())
+func (n *DUTTestNet) newIPv6State(out, in IPv6) (*ipv6State, error) {
+	lIP := tcpip.Address(n.LocalIPv6)
+	rIP := tcpip.Address(n.RemoteIPv6)
 	s := ipv6State{
 		out: IPv6{SrcAddr: &lIP, DstAddr: &rIP},
 		in:  IPv6{SrcAddr: &rIP, DstAddr: &lIP},
@@ -272,8 +264,8 @@ func SeqNumValue(v seqnum.Value) *seqnum.Value {
 }
 
 // newTCPState creates a new TCPState.
-func newTCPState(domain int, out, in TCP) (*tcpState, error) {
-	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_STREAM)
+func (n *DUTTestNet) newTCPState(domain int, out, in TCP) (*tcpState, error) {
+	portPickerFD, localPort, err := n.pickPort(domain, unix.SOCK_STREAM)
 	if err != nil {
 		return nil, err
 	}
@@ -376,8 +368,8 @@ type udpState struct {
 var _ layerState = (*udpState)(nil)
 
 // newUDPState creates a new udpState.
-func newUDPState(domain int, out, in UDP) (*udpState, error) {
-	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_DGRAM)
+func (n *DUTTestNet) newUDPState(domain int, out, in UDP) (*udpState, error) {
+	portPickerFD, localPort, err := n.pickPort(domain, unix.SOCK_DGRAM)
 	if err != nil {
 		return nil, fmt.Errorf("picking port: %w", err)
 	}
@@ -639,26 +631,26 @@ func (conn *Connection) Drain(t *testing.T) {
 type TCPIPv4 Connection
 
 // NewTCPIPv4 creates a new TCPIPv4 connection with reasonable defaults.
-func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
+func (n *DUTTestNet) NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	t.Helper()
 
-	etherState, err := newEtherState(Ether{}, Ether{})
+	etherState, err := n.newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make etherState: %s", err)
 	}
-	ipv4State, err := newIPv4State(IPv4{}, IPv4{})
+	ipv4State, err := n.newIPv4State(IPv4{}, IPv4{})
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	tcpState, err := newTCPState(unix.AF_INET, outgoingTCP, incomingTCP)
+	tcpState, err := n.newTCPState(unix.AF_INET, outgoingTCP, incomingTCP)
 	if err != nil {
 		t.Fatalf("can't make tcpState: %s", err)
 	}
-	injector, err := NewInjector(t)
+	injector, err := n.NewInjector(t)
 	if err != nil {
 		t.Fatalf("can't make injector: %s", err)
 	}
-	sniffer, err := NewSniffer(t)
+	sniffer, err := n.NewSniffer(t)
 	if err != nil {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
@@ -841,23 +833,23 @@ func (conn *TCPIPv4) Drain(t *testing.T) {
 type IPv4Conn Connection
 
 // NewIPv4Conn creates a new IPv4Conn connection with reasonable defaults.
-func NewIPv4Conn(t *testing.T, outgoingIPv4, incomingIPv4 IPv4) IPv4Conn {
+func (n *DUTTestNet) NewIPv4Conn(t *testing.T, outgoingIPv4, incomingIPv4 IPv4) IPv4Conn {
 	t.Helper()
 
-	etherState, err := newEtherState(Ether{}, Ether{})
+	etherState, err := n.newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make EtherState: %s", err)
 	}
-	ipv4State, err := newIPv4State(outgoingIPv4, incomingIPv4)
+	ipv4State, err := n.newIPv4State(outgoingIPv4, incomingIPv4)
 	if err != nil {
 		t.Fatalf("can't make IPv4State: %s", err)
 	}
 
-	injector, err := NewInjector(t)
+	injector, err := n.NewInjector(t)
 	if err != nil {
 		t.Fatalf("can't make injector: %s", err)
 	}
-	sniffer, err := NewSniffer(t)
+	sniffer, err := n.NewSniffer(t)
 	if err != nil {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
@@ -896,23 +888,23 @@ func (c *IPv4Conn) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration
 type IPv6Conn Connection
 
 // NewIPv6Conn creates a new IPv6Conn connection with reasonable defaults.
-func NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) IPv6Conn {
+func (n *DUTTestNet) NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) IPv6Conn {
 	t.Helper()
 
-	etherState, err := newEtherState(Ether{}, Ether{})
+	etherState, err := n.newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make EtherState: %s", err)
 	}
-	ipv6State, err := newIPv6State(outgoingIPv6, incomingIPv6)
+	ipv6State, err := n.newIPv6State(outgoingIPv6, incomingIPv6)
 	if err != nil {
 		t.Fatalf("can't make IPv6State: %s", err)
 	}
 
-	injector, err := NewInjector(t)
+	injector, err := n.NewInjector(t)
 	if err != nil {
 		t.Fatalf("can't make injector: %s", err)
 	}
-	sniffer, err := NewSniffer(t)
+	sniffer, err := n.NewSniffer(t)
 	if err != nil {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
@@ -951,26 +943,26 @@ func (conn *IPv6Conn) ExpectFrame(t *testing.T, frame Layers, timeout time.Durat
 type UDPIPv4 Connection
 
 // NewUDPIPv4 creates a new UDPIPv4 connection with reasonable defaults.
-func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
+func (n *DUTTestNet) NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 	t.Helper()
 
-	etherState, err := newEtherState(Ether{}, Ether{})
+	etherState, err := n.newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make etherState: %s", err)
 	}
-	ipv4State, err := newIPv4State(IPv4{}, IPv4{})
+	ipv4State, err := n.newIPv4State(IPv4{}, IPv4{})
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	udpState, err := newUDPState(unix.AF_INET, outgoingUDP, incomingUDP)
+	udpState, err := n.newUDPState(unix.AF_INET, outgoingUDP, incomingUDP)
 	if err != nil {
 		t.Fatalf("can't make udpState: %s", err)
 	}
-	injector, err := NewInjector(t)
+	injector, err := n.NewInjector(t)
 	if err != nil {
 		t.Fatalf("can't make injector: %s", err)
 	}
-	sniffer, err := NewSniffer(t)
+	sniffer, err := n.NewSniffer(t)
 	if err != nil {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
@@ -1075,26 +1067,26 @@ func (conn *UDPIPv4) Drain(t *testing.T) {
 type UDPIPv6 Connection
 
 // NewUDPIPv6 creates a new UDPIPv6 connection with reasonable defaults.
-func NewUDPIPv6(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv6 {
+func (n *DUTTestNet) NewUDPIPv6(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv6 {
 	t.Helper()
 
-	etherState, err := newEtherState(Ether{}, Ether{})
+	etherState, err := n.newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make etherState: %s", err)
 	}
-	ipv6State, err := newIPv6State(IPv6{}, IPv6{})
+	ipv6State, err := n.newIPv6State(IPv6{}, IPv6{})
 	if err != nil {
 		t.Fatalf("can't make IPv6State: %s", err)
 	}
-	udpState, err := newUDPState(unix.AF_INET6, outgoingUDP, incomingUDP)
+	udpState, err := n.newUDPState(unix.AF_INET6, outgoingUDP, incomingUDP)
 	if err != nil {
 		t.Fatalf("can't make udpState: %s", err)
 	}
-	injector, err := NewInjector(t)
+	injector, err := n.NewInjector(t)
 	if err != nil {
 		t.Fatalf("can't make injector: %s", err)
 	}
-	sniffer, err := NewSniffer(t)
+	sniffer, err := n.NewSniffer(t)
 	if err != nil {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
@@ -1126,14 +1118,14 @@ func (conn *UDPIPv6) ipv6State(t *testing.T) *ipv6State {
 }
 
 // LocalAddr gets the local socket address of this connection.
-func (conn *UDPIPv6) LocalAddr(t *testing.T) *unix.SockaddrInet6 {
+func (conn *UDPIPv6) LocalAddr(t *testing.T, zoneID uint32) *unix.SockaddrInet6 {
 	t.Helper()
 
 	sa := &unix.SockaddrInet6{
 		Port: int(*conn.udpState(t).out.SrcPort),
 		// Local address is in perspective to the remote host, so it's scoped to the
 		// ID of the remote interface.
-		ZoneId: uint32(RemoteInterfaceID),
+		ZoneId: zoneID,
 	}
 	copy(sa.Addr[:], *conn.ipv6State(t).out.SrcAddr)
 	return sa
@@ -1203,24 +1195,24 @@ func (conn *UDPIPv6) Drain(t *testing.T) {
 type TCPIPv6 Connection
 
 // NewTCPIPv6 creates a new TCPIPv6 connection with reasonable defaults.
-func NewTCPIPv6(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv6 {
-	etherState, err := newEtherState(Ether{}, Ether{})
+func (n *DUTTestNet) NewTCPIPv6(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv6 {
+	etherState, err := n.newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make etherState: %s", err)
 	}
-	ipv6State, err := newIPv6State(IPv6{}, IPv6{})
+	ipv6State, err := n.newIPv6State(IPv6{}, IPv6{})
 	if err != nil {
 		t.Fatalf("can't make ipv6State: %s", err)
 	}
-	tcpState, err := newTCPState(unix.AF_INET6, outgoingTCP, incomingTCP)
+	tcpState, err := n.newTCPState(unix.AF_INET6, outgoingTCP, incomingTCP)
 	if err != nil {
 		t.Fatalf("can't make tcpState: %s", err)
 	}
-	injector, err := NewInjector(t)
+	injector, err := n.NewInjector(t)
 	if err != nil {
 		t.Fatalf("can't make injector: %s", err)
 	}
-	sniffer, err := NewSniffer(t)
+	sniffer, err := n.NewSniffer(t)
 	if err != nil {
 		t.Fatalf("can't make sniffer: %s", err)
 	}

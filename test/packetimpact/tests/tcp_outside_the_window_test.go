@@ -27,7 +27,7 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 // TestTCPOutsideTheWindows tests the behavior of the DUT when packets arrive
@@ -62,10 +62,9 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%s%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			defer dut.TearDown()
 			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 			defer dut.Close(t, listenFD)
-			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 			defer conn.Close(t)
 			conn.Connect(t)
 			acceptFD, _ := dut.Accept(t, listenFD)

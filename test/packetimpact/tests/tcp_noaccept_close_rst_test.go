@@ -25,14 +25,13 @@ import (
 )
 
 func init() {
-	testbench.RegisterFlags(flag.CommandLine)
+	testbench.Initialize(flag.CommandLine)
 }
 
 func TestTcpNoAcceptCloseReset(t *testing.T) {
 	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
 	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	conn.Connect(t)
 	defer conn.Close(t)
 	dut.Close(t, listenFd)
