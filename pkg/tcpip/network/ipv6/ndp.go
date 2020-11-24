@@ -648,7 +648,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 
 		// Consider DAD to have resolved even if no DAD messages were actually
 		// transmitted.
-		if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, true, nil)
 		}
 
@@ -720,7 +720,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 		// integrator know DAD has completed.
 		delete(ndp.dad, addr)
 
-		if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+		if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, dadDone, err)
 		}
 
@@ -823,7 +823,7 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 	delete(ndp.dad, addr)
 
 	// Let the integrator know DAD did not resolve.
-	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, false, nil)
 	}
 }
@@ -846,7 +846,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// Only worry about the DHCPv6 configuration if we have an NDPDispatcher as we
 	// only inform the dispatcher on configuration changes. We do nothing else
 	// with the information.
-	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		var configuration DHCPv6ConfigurationFromNDPRA
 		switch {
 		case ra.ManagedAddrConfFlag():
@@ -903,20 +903,20 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	for opt, done, _ := it.Next(); !done; opt, done, _ = it.Next() {
 		switch opt := opt.(type) {
 		case header.NDPRecursiveDNSServer:
-			if ndp.ep.protocol.ndpDisp == nil {
+			if ndp.ep.protocol.options.NDPDisp == nil {
 				continue
 			}
 
 			addrs, _ := opt.Addresses()
-			ndp.ep.protocol.ndpDisp.OnRecursiveDNSServerOption(ndp.ep.nic.ID(), addrs, opt.Lifetime())
+			ndp.ep.protocol.options.NDPDisp.OnRecursiveDNSServerOption(ndp.ep.nic.ID(), addrs, opt.Lifetime())
 
 		case header.NDPDNSSearchList:
-			if ndp.ep.protocol.ndpDisp == nil {
+			if ndp.ep.protocol.options.NDPDisp == nil {
 				continue
 			}
 
 			domainNames, _ := opt.DomainNames()
-			ndp.ep.protocol.ndpDisp.OnDNSSearchListOption(ndp.ep.nic.ID(), domainNames, opt.Lifetime())
+			ndp.ep.protocol.options.NDPDisp.OnDNSSearchListOption(ndp.ep.nic.ID(), domainNames, opt.Lifetime())
 
 		case header.NDPPrefixInformation:
 			prefix := opt.Subnet()
@@ -964,7 +964,7 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 	delete(ndp.defaultRouters, ip)
 
 	// Let the integrator know a discovered default router is invalidated.
-	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnDefaultRouterInvalidated(ndp.ep.nic.ID(), ip)
 	}
 }
@@ -976,7 +976,7 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
-	ndpDisp := ndp.ep.protocol.ndpDisp
+	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
 		return
 	}
@@ -1006,7 +1006,7 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) {
-	ndpDisp := ndp.ep.protocol.ndpDisp
+	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
 		return
 	}
@@ -1047,7 +1047,7 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	delete(ndp.onLinkPrefixes, prefix)
 
 	// Let the integrator know a discovered on-link prefix is invalidated.
-	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnOnLinkPrefixInvalidated(ndp.ep.nic.ID(), prefix)
 	}
 }
@@ -1225,7 +1225,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, configType stack.AddressConfigType, deprecated bool) stack.AddressEndpoint {
 	// Inform the integrator that we have a new SLAAC address.
-	ndpDisp := ndp.ep.protocol.ndpDisp
+	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
 		return nil
 	}
@@ -1272,7 +1272,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 		}
 
 		dadCounter := state.generationAttempts + state.stableAddr.localGenerationFailures
-		if oIID := ndp.ep.protocol.opaqueIIDOpts; oIID.NICNameFromID != nil {
+		if oIID := ndp.ep.protocol.options.OpaqueIIDOpts; oIID.NICNameFromID != nil {
 			addrBytes = header.AppendOpaqueInterfaceIdentifier(
 				addrBytes[:header.IIDOffsetInIPv6Address],
 				prefix,
@@ -1676,7 +1676,7 @@ func (ndp *ndpState) deprecateSLAACAddress(addressEndpoint stack.AddressEndpoint
 	}
 
 	addressEndpoint.SetDeprecated(true)
-	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressDeprecated(ndp.ep.nic.ID(), addressEndpoint.AddressWithPrefix())
 	}
 }
@@ -1701,7 +1701,7 @@ func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefi
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidatePrefix bool) {
-	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addr)
 	}
 
@@ -1761,7 +1761,7 @@ func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLA
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidateAddr bool) {
-	if ndpDisp := ndp.ep.protocol.ndpDisp; ndpDisp != nil {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addr)
 	}
 
@@ -2005,7 +2005,7 @@ func (ndp *ndpState) stopSolicitingRouters() {
 // initializeTempAddrState initializes state related to temporary SLAAC
 // addresses.
 func (ndp *ndpState) initializeTempAddrState() {
-	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.tempIIDSeed, ndp.ep.nic.ID())
+	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.options.TempIIDSeed, ndp.ep.nic.ID())
 
 	if MaxDesyncFactor != 0 {
 		ndp.temporaryAddressDesyncFactor = time.Duration(rand.Int63n(int64(MaxDesyncFactor)))
