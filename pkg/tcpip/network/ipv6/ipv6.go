@@ -34,7 +34,9 @@ import (
 )
 
 const (
+	// ReassembleTimeout controls how long a fragment will be held.
 	// As per RFC 8200 section 4.5:
+	//
 	//   If insufficient fragments are received to complete reassembly of a packet
 	//   within 60 seconds of the reception of the first-arriving fragment of that
 	//   packet, reassembly of that packet must be abandoned.
@@ -1092,9 +1094,16 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 					//
 					// Which when taken together indicate that an unknown protocol should
 					// be treated as an unrecognized next header value.
+					// The location of the Next Header field is in a different place in
+					// the initial IPv6 header than it is in the extension headers so
+					// treat it specially.
+					prevHdrIDOffset := uint32(header.IPv6NextHeaderOffset)
+					if previousHeaderStart != 0 {
+						prevHdrIDOffset = previousHeaderStart
+					}
 					_ = e.protocol.returnError(&icmpReasonParameterProblem{
 						code:    header.ICMPv6UnknownHeader,
-						pointer: it.ParseOffset(),
+						pointer: prevHdrIDOffset,
 					}, pkt)
 				default:
 					panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
@@ -1102,12 +1111,11 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 			}
 
 		default:
-			_ = e.protocol.returnError(&icmpReasonParameterProblem{
-				code:    header.ICMPv6UnknownHeader,
-				pointer: it.ParseOffset(),
-			}, pkt)
-			stats.UnknownProtocolRcvdPackets.Increment()
-			return
+			// Since the iterator returns IPv6RawPayloadHeader for unknown Extension
+			// Header IDs this should never happen unless we missed a supported type
+			// here.
+			panic(fmt.Sprintf("unrecognized type from it.Next() = %T", extHdr))
+
 		}
 	}
 }

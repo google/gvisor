@@ -47,6 +47,11 @@ const (
 	// IPv6NoNextHeaderIdentifier is the header identifier used to signify the end
 	// of an IPv6 payload, as per RFC 8200 section 4.7.
 	IPv6NoNextHeaderIdentifier IPv6ExtensionHeaderIdentifier = 59
+
+	// IPv6UnknownExtHdrIdentifier is reserved by IANA.
+	// https://www.iana.org/assignments/ipv6-parameters/ipv6-parameters.xhtml#extension-header
+	// "254	Use for experimentation and testing	[RFC3692][RFC4727]"
+	IPv6UnknownExtHdrIdentifier IPv6ExtensionHeaderIdentifier = 254
 )
 
 const (
@@ -452,9 +457,11 @@ func (i *IPv6PayloadIterator) AsRawHeader(consume bool) IPv6RawPayloadHeader {
 		// Since we consume the iterator, we return the payload as is.
 		buf = i.payload
 
-		// Mark i as done.
+		// Mark i as done, but keep track of where we were for error reporting.
 		*i = IPv6PayloadIterator{
 			nextHdrIdentifier: IPv6NoNextHeaderIdentifier,
+			headerOffset:      i.headerOffset,
+			nextOffset:        i.nextOffset,
 		}
 	} else {
 		buf = i.payload.Clone(nil)
