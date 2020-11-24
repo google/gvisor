@@ -51,6 +51,7 @@ const (
 	fragmentExtHdrID    = uint8(header.IPv6FragmentExtHdrIdentifier)
 	destinationExtHdrID = uint8(header.IPv6DestinationOptionsExtHdrIdentifier)
 	noNextHdrID         = uint8(header.IPv6NoNextHeaderIdentifier)
+	unknownHdrID        = uint8(header.IPv6UnknownExtHdrIdentifier)
 
 	extraHeaderReserve = 50
 )
@@ -573,6 +574,33 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			expectICMP:   false,
 		},
 		{
+			name: "unknown next header (first)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 0, 63, 4, 1, 2, 3, 4,
+				}, unknownHdrID
+			},
+			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownHeader,
+			pointer:      header.IPv6NextHeaderOffset,
+		},
+		{
+			name: "unknown next header (not first)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					unknownHdrID, 0,
+					63, 4, 1, 2, 3, 4,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: false,
+			expectICMP:   true,
+			ICMPType:     header.ICMPv6ParamProblem,
+			ICMPCode:     header.ICMPv6UnknownHeader,
+			pointer:      header.IPv6FixedHeaderSize,
+		},
+		{
 			name: "destination with unknown option skippable action",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
 				return []byte{
@@ -753,11 +781,6 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			ICMPType:     header.ICMPv6ParamProblem,
 			ICMPCode:     header.ICMPv6UnknownHeader,
 			pointer:      header.IPv6FixedHeaderSize,
-		},
-		{
-			name:         "No next header",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{}, noNextHdrID },
-			shouldAccept: false,
 		},
 		{
 			name: "hopbyhop (with skippable unknown) - routing - atomic fragment - destination (with skippable unknown)",

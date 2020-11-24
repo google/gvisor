@@ -243,8 +243,6 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "icmpv6_param_problem",
-        # TODO(b/153485026): Fix netstack then remove the line below.
-        expect_netstack_failure = True,
     ),
     PacketimpactTestInfo(
         name = "ipv6_unknown_options_action",
