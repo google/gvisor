@@ -247,6 +247,16 @@ func (a Address) WithPrefix() AddressWithPrefix {
 	}
 }
 
+// Unspecified returns true if the address is unspecified.
+func (a Address) Unspecified() bool {
+	for _, b := range a {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // AddressMask is a bitmask for an address.
 type AddressMask string
 

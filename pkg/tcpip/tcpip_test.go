@@ -226,3 +226,47 @@ func TestAddressWithPrefixSubnet(t *testing.T) {
 		}
 	}
 }
+
+func TestAddressUnspecified(t *testing.T) {
+	tests := []struct {
+		addr        Address
+		unspecified bool
+	}{
+		{
+			addr:        "",
+			unspecified: true,
+		},
+		{
+			addr:        "\x00",
+			unspecified: true,
+		},
+		{
+			addr:        "\x01",
+			unspecified: false,
+		},
+		{
+			addr:        "\x00\x00",
+			unspecified: true,
+		},
+		{
+			addr:        "\x01\x00",
+			unspecified: false,
+		},
+		{
+			addr:        "\x00\x01",
+			unspecified: false,
+		},
+		{
+			addr:        "\x01\x01",
+			unspecified: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("addr=%s", test.addr), func(t *testing.T) {
+			if got := test.addr.Unspecified(); got != test.unspecified {
+				t.Fatalf("got addr.Unspecified() = %t, want = %t", got, test.unspecified)
+			}
+		})
+	}
+}
