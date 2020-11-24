@@ -233,6 +233,8 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 }
 
 // removeEntryLocked removes the specified entry from the neighbor cache.
+//
+// Prerequisite: n.mu and entry.mu MUST be locked.
 func (n *neighborCache) removeEntryLocked(entry *neighborEntry) {
 	if entry.neigh.State != Static {
 		n.dynamic.lru.Remove(entry)

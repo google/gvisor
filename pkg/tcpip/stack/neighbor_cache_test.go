@@ -80,7 +80,7 @@ func entryDiffOptsWithSort() []cmp.Option {
 func newTestNeighborCache(nudDisp NUDDispatcher, config NUDConfigurations, clock tcpip.Clock) *neighborCache {
 	config.resetInvalidFields()
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return &neighborCache{
+	neigh := &neighborCache{
 		nic: &NIC{
 			stack: &Stack{
 				clock:   clock,
@@ -92,6 +92,8 @@ func newTestNeighborCache(nudDisp NUDDispatcher, config NUDConfigurations, clock
 		state: NewNUDState(config, rng),
 		cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
 	}
+	neigh.nic.neigh = neigh
+	return neigh
 }
 
 // testEntryStore contains a set of IP to NeighborEntry mappings.
