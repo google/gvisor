@@ -201,21 +201,6 @@ func TestIPv6FragmentReassemblyTimeout(t *testing.T) {
 			},
 			expectErrorReply: false,
 		},
-		{
-			name:                 "reassembly timeout (two fragments with a gap)",
-			firstPayloadLength:   8,
-			payload:              []byte(data)[:20],
-			secondFragmentOffset: (header.ICMPv6EchoMinimumSize + 16) / 8,
-			sendFrameOrder:       []int{1, 2},
-			replyFilter: icmpFramePattern{
-				typ:  header.ICMPv6TimeExceeded,
-				code: header.ICMPv6ReassemblyTimeout,
-			},
-			expectErrorReply: true,
-			expectICMPReassemblyTimeout: icmpReassemblyTimeoutDetail{
-				payloadFragment: 1,
-			},
-		},
 	}
 
 	for _, test := range tests {
