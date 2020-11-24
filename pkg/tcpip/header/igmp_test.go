@@ -16,6 +16,7 @@ package header_test
 
 import (
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -23,10 +24,11 @@ import (
 
 // TestIGMPHeader tests the functions within header.igmp
 func TestIGMPHeader(t *testing.T) {
+	const maxRespTimeTenthSec = 0xF0
 	b := []byte{
-		0x11,       // IGMP Type, Membership Query
-		0xF0,       // Maximum Response Time
-		0xC0, 0xC0, // Checksum
+		0x11,                // IGMP Type, Membership Query
+		maxRespTimeTenthSec, // Maximum Response Time
+		0xC0, 0xC0,          // Checksum
 		0x01, 0x02, 0x03, 0x04, // Group Address
 	}
 
@@ -36,8 +38,8 @@ func TestIGMPHeader(t *testing.T) {
 		t.Errorf("got igmpHeader.Type() = %x, want = %x", got, want)
 	}
 
-	if got, want := igmpHeader.MaxRespTime(), byte(0xF0); got != want {
-		t.Errorf("got igmpHeader.MaxRespTime() = %x, want = %x", got, want)
+	if got, want := igmpHeader.MaxRespTime(), header.DecisecondToDuration(maxRespTimeTenthSec); got != want {
+		t.Errorf("got igmpHeader.MaxRespTime() = %s, want = %s", got, want)
 	}
 
 	if got, want := igmpHeader.Checksum(), uint16(0xC0C0); got != want {
@@ -59,8 +61,8 @@ func TestIGMPHeader(t *testing.T) {
 
 	respTime := byte(0x02)
 	igmpHeader.SetMaxRespTime(respTime)
-	if got := igmpHeader.MaxRespTime(); got != respTime {
-		t.Errorf("got igmpHeader.MaxRespTime() = %x, want = %x", got, respTime)
+	if got, want := igmpHeader.MaxRespTime(), header.DecisecondToDuration(respTime); got != want {
+		t.Errorf("got igmpHeader.MaxRespTime() = %s, want = %s", got, want)
 	}
 
 	checksum := uint16(0x0102)
@@ -97,5 +99,12 @@ func TestIGMPChecksum(t *testing.T) {
 
 	if got := header.IGMPCalculateChecksum(igmpHeader); got != checksum {
 		t.Errorf("got IGMPCalculateChecksum = %x, want %x", got, checksum)
+	}
+}
+
+func TestDecisecondToDuration(t *testing.T) {
+	const valueInDeciseconds = 5
+	if got, want := header.DecisecondToDuration(valueInDeciseconds), valueInDeciseconds*time.Second/10; got != want {
+		t.Fatalf("got header.DecisecondToDuration(%d) = %s, want = %s", valueInDeciseconds, got, want)
 	}
 }
