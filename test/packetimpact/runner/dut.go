@@ -103,6 +103,88 @@ func (l logger) Logf(format string, args ...interface{}) {
 	}
 }
 
+// dutInfo encapsulates all the essential information to set up testbench
+// container.
+type dutInfo struct {
+	dut              DUT
+	ctrlNet, testNet *dockerutil.Network
+	netInfo          *testbench.DUTTestNet
+}
+
+// setUpDUT will set up one DUT and return information for setting up the
+// container for testbench.
+func setUpDUT(ctx context.Context, t *testing.T, id int, mkDevice func(*dockerutil.Container) DUT) (dutInfo, error) {
+	// Create the networks needed for the test. One control network is needed
+	// for the gRPC control packets and one test network on which to transmit
+	// the test packets.
+	var info dutInfo
+	ctrlNet := dockerutil.NewNetwork(ctx, logger("ctrlNet"))
+	testNet := dockerutil.NewNetwork(ctx, logger("testNet"))
+	for _, dn := range []*dockerutil.Network{ctrlNet, testNet} {
+		for {
+			if err := createDockerNetwork(ctx, dn); err != nil {
+				t.Log("creating docker network:", err)
+				const wait = 100 * time.Millisecond
+				t.Logf("sleeping %s and will try creating docker network again", wait)
+				// This can fail if another docker network claimed the same IP so we
+				// will just try again.
+				time.Sleep(wait)
+				continue
+			}
+			break
+		}
+		dn := dn
+		t.Cleanup(func() {
+			if err := dn.Cleanup(ctx); err != nil {
+				t.Errorf("unable to cleanup container %s: %s", dn.Name, err)
+			}
+		})
+		// Sanity check.
+		if inspect, err := dn.Inspect(ctx); err != nil {
+			return dutInfo{}, fmt.Errorf("failed to inspect network %s: %w", dn.Name, err)
+		} else if inspect.Name != dn.Name {
+			return dutInfo{}, fmt.Errorf("name mismatch for network want: %s got: %s", dn.Name, inspect.Name)
+		}
+	}
+	info.ctrlNet = ctrlNet
+	info.testNet = testNet
+
+	// Create the Docker container for the DUT.
+	var dut DUT
+	if native {
+		dut = mkDevice(dockerutil.MakeNativeContainer(ctx, logger(fmt.Sprintf("dut-%d", id))))
+	} else {
+		dut = mkDevice(dockerutil.MakeContainer(ctx, logger(fmt.Sprintf("dut-%d", id))))
+	}
+	info.dut = dut
+
+	runOpts := dockerutil.RunOpts{
+		Image:  "packetimpact",
+		CapAdd: []string{"NET_ADMIN"},
+	}
+	if _, err := mountTempDirectory(t, &runOpts, "dut-output", testOutputDir); err != nil {
+		return dutInfo{}, err
+	}
+
+	ipv4PrefixLength, _ := testNet.Subnet.Mask.Size()
+	remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev, err := dut.Prepare(ctx, t, runOpts, ctrlNet, testNet)
+	if err != nil {
+		return dutInfo{}, err
+	}
+	info.netInfo = &testbench.DUTTestNet{
+		RemoteMAC:        remoteMAC,
+		RemoteIPv4:       AddressInSubnet(DUTAddr, *testNet.Subnet),
+		RemoteIPv6:       remoteIPv6,
+		RemoteDevID:      dutDeviceID,
+		RemoteDevName:    dutTestNetDev,
+		LocalIPv4:        AddressInSubnet(testbenchAddr, *testNet.Subnet),
+		IPv4PrefixLength: ipv4PrefixLength,
+		POSIXServerIP:    AddressInSubnet(DUTAddr, *ctrlNet.Subnet),
+		POSIXServerPort:  CtrlPort,
+	}
+	return info, nil
+}
+
 // TestWithDUT runs a packetimpact test with the given information.
 func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Container) DUT) {
 	if testbenchBinary == "" {
@@ -110,73 +192,35 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	}
 	dockerutil.EnsureSupportedDockerVersion()
 
+	dutInfoChan := make(chan dutInfo, numDUTs)
+	errChan := make(chan error, numDUTs)
 	var dockerNetworks []*dockerutil.Network
 	var dutTestNets []*testbench.DUTTestNet
 	var duts []DUT
 
+	setUpCtx, cancelSetup := context.WithCancel(ctx)
+	t.Cleanup(cancelSetup)
 	for i := 0; i < numDUTs; i++ {
-		// Create the networks needed for the test. One control network is needed
-		// for the gRPC control packets and one test network on which to transmit
-		// the test packets.
-		ctrlNet := dockerutil.NewNetwork(ctx, logger("ctrlNet"))
-		testNet := dockerutil.NewNetwork(ctx, logger("testNet"))
-		for _, dn := range []*dockerutil.Network{ctrlNet, testNet} {
-			for {
-				if err := createDockerNetwork(ctx, dn); err != nil {
-					t.Log("creating docker network:", err)
-					const wait = 100 * time.Millisecond
-					t.Logf("sleeping %s and will try creating docker network again", wait)
-					// This can fail if another docker network claimed the same IP so we
-					// will just try again.
-					time.Sleep(wait)
-					continue
-				}
-				break
+		go func(i int) {
+			info, err := setUpDUT(setUpCtx, t, i, mkDevice)
+			if err != nil {
+				errChan <- err
+			} else {
+				dutInfoChan <- info
 			}
-			dn := dn
-			t.Cleanup(func() {
-				if err := dn.Cleanup(ctx); err != nil {
-					t.Errorf("unable to cleanup container %s: %s", dn.Name, err)
-				}
-			})
-			// Sanity check.
-			if inspect, err := dn.Inspect(ctx); err != nil {
-				t.Fatalf("failed to inspect network %s: %v", dn.Name, err)
-			} else if inspect.Name != dn.Name {
-				t.Fatalf("name mismatch for network want: %s got: %s", dn.Name, inspect.Name)
-			}
-		}
-		dockerNetworks = append(dockerNetworks, ctrlNet, testNet)
-
-		// Create the Docker container for the DUT.
-		var dut DUT
-		if native {
-			dut = mkDevice(dockerutil.MakeNativeContainer(ctx, logger(fmt.Sprintf("dut-%d", i))))
-		} else {
-			dut = mkDevice(dockerutil.MakeContainer(ctx, logger(fmt.Sprintf("dut-%d", i))))
-		}
-		duts = append(duts, dut)
-
-		runOpts := dockerutil.RunOpts{
-			Image:  "packetimpact",
-			CapAdd: []string{"NET_ADMIN"},
-		}
-		mountTempDirectory(t, &runOpts, "dut-output", testOutputDir)
-
-		remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev := dut.Prepare(ctx, t, runOpts, ctrlNet, testNet)
-		ipv4PrefixLength, _ := testNet.Subnet.Mask.Size()
-		dutTestNets = append(dutTestNets, &testbench.DUTTestNet{
-			RemoteMAC:        remoteMAC,
-			RemoteIPv4:       AddressInSubnet(DUTAddr, *testNet.Subnet),
-			RemoteIPv6:       remoteIPv6,
-			RemoteDevID:      dutDeviceID,
-			RemoteDevName:    dutTestNetDev,
-			LocalIPv4:        AddressInSubnet(testbenchAddr, *testNet.Subnet),
-			IPv4PrefixLength: ipv4PrefixLength,
-			POSIXServerIP:    AddressInSubnet(DUTAddr, *ctrlNet.Subnet),
-			POSIXServerPort:  CtrlPort,
-		})
+		}(i)
 	}
+	for i := 0; i < numDUTs; i++ {
+		select {
+		case info := <-dutInfoChan:
+			dockerNetworks = append(dockerNetworks, info.ctrlNet, info.testNet)
+			dutTestNets = append(dutTestNets, info.netInfo)
+			duts = append(duts, info.dut)
+		case err := <-errChan:
+			t.Fatal(err)
+		}
+	}
+
 	// Create the Docker container for the testbench.
 	testbench := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
 
@@ -186,7 +230,9 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		Image:  "packetimpact",
 		CapAdd: []string{"NET_ADMIN"},
 	}
-	mountTempDirectory(t, &runOpts, "testbench-output", testOutputDir)
+	if _, err := mountTempDirectory(t, &runOpts, "testbench-output", testOutputDir); err != nil {
+		t.Fatal(err)
+	}
 	tbb := path.Base(testbenchBinary)
 	containerTestbenchBinary := filepath.Join("/packetimpact", tbb)
 	testbench.CopyFiles(&runOpts, "/packetimpact", filepath.Join("test/packetimpact/tests", tbb))
@@ -296,7 +342,9 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 type DUT interface {
 	// Prepare prepares the dut, starts posix_server and returns the IPv6, MAC
 	// address, the interface ID, and the interface name for the testNet on DUT.
-	Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string)
+	// The t parameter is supposed to be used for t.Cleanup. Don't use it for
+	// t.Fatal/FailNow functions.
+	Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string, error)
 	// Logs retrieves the logs from the dut.
 	Logs(ctx context.Context) (string, error)
 }
@@ -314,7 +362,7 @@ func NewDockerDUT(c *dockerutil.Container) DUT {
 }
 
 // Prepare implements DUT.Prepare.
-func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string) {
+func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string, error) {
 	const containerPosixServerBinary = "/packetimpact/posix_server"
 	dut.c.CopyFiles(&runOpts, "/packetimpact", "test/packetimpact/dut/posix_server")
 
@@ -328,25 +376,25 @@ func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockeru
 		"--ip=0.0.0.0",
 		fmt.Sprintf("--port=%d", CtrlPort),
 	); err != nil {
-		t.Fatalf("failed to start docker container for DUT: %s", err)
+		return nil, nil, 0, "", fmt.Errorf("failed to start docker container for DUT: %w", err)
 	}
 
 	if _, err := dut.c.WaitForOutput(ctx, "Server listening.*\n", 60*time.Second); err != nil {
-		t.Fatalf("%s on container %s never listened: %s", containerPosixServerBinary, dut.c.Name, err)
+		return nil, nil, 0, "", fmt.Errorf("%s on container %s never listened: %s", containerPosixServerBinary, dut.c.Name, err)
 	}
 
 	dutTestDevice, dutDeviceInfo, err := deviceByIP(ctx, dut.c, AddressInSubnet(DUTAddr, *testNet.Subnet))
 	if err != nil {
-		t.Fatal(err)
+		return nil, nil, 0, "", err
 	}
 
 	remoteIPv6, err := getOrAssignIPv6Addr(ctx, dut.c, dutTestDevice)
 	if err != nil {
-		t.Fatalf("failed to get IPv6 address on %s: %s", dut.c.Name, err)
+		return nil, nil, 0, "", fmt.Errorf("failed to get IPv6 address on %s: %s", dut.c.Name, err)
 	}
 	const testNetDev = "eth2"
 
-	return remoteIPv6, dutDeviceInfo.MAC, dutDeviceInfo.ID, testNetDev
+	return remoteIPv6, dutDeviceInfo.MAC, dutDeviceInfo.ID, testNetDev, nil
 }
 
 // Logs implements DUT.Logs.
@@ -478,11 +526,11 @@ func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerut
 // and then mounts it into the container under the name provided. The temporary
 // directory name is returned. Content in that directory will be copied to
 // TEST_UNDECLARED_OUTPUTS_DIR in cleanup phase.
-func mountTempDirectory(t *testing.T, runOpts *dockerutil.RunOpts, hostDirTemplate, containerDir string) string {
+func mountTempDirectory(t *testing.T, runOpts *dockerutil.RunOpts, hostDirTemplate, containerDir string) (string, error) {
 	t.Helper()
 	tmpDir, err := ioutil.TempDir("", hostDirTemplate)
 	if err != nil {
-		t.Fatalf("failed to create a temp dir: %s", err)
+		return "", fmt.Errorf("failed to create a temp dir: %w", err)
 	}
 	t.Cleanup(func() {
 		if err := exec.Command("/bin/cp", "-r", tmpDir, os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")).Run(); err != nil {
@@ -498,7 +546,7 @@ func mountTempDirectory(t *testing.T, runOpts *dockerutil.RunOpts, hostDirTempla
 		Target:   containerDir,
 		ReadOnly: false,
 	})
-	return tmpDir
+	return tmpDir, nil
 }
 
 // snifferArgs returns the correct command line to run sniffer on the testbench.
