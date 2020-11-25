@@ -96,7 +96,18 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCa
 	}
 	e.mu.addressableEndpointState.Init(e)
 	e.igmp.init(e, p.options.IGMP)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.mu.eps[nic.ID()] = e
+
 	return e
+}
+
+func (p *protocol) forgetEndpoint(e *endpoint, nicID tcpip.NICID) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.mu.eps, nicID)
 }
 
 // Enable implements stack.NetworkEndpoint.
@@ -758,6 +769,8 @@ func (e *endpoint) Close() {
 
 	e.disableLocked()
 	e.mu.addressableEndpointState.Cleanup()
+
+	e.protocol.forgetEndpoint(e, e.nic.ID())
 }
 
 // AddAndAcquirePermanentAddress implements stack.AddressableEndpoint.
@@ -898,6 +911,12 @@ var _ fragmentation.TimeoutHandler = (*protocol)(nil)
 
 type protocol struct {
 	stack *stack.Stack
+
+	mu struct {
+		sync.RWMutex
+
+		eps map[tcpip.NICID]*endpoint
+	}
 
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful.
@@ -1076,6 +1095,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 			options:    opts,
 		}
 		p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
+		p.mu.eps = make(map[tcpip.NICID]*endpoint)
 		return p
 	}
 }
