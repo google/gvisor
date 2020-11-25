@@ -17,15 +17,13 @@
 package testbench
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"math/rand"
 	"net"
-	"os/exec"
 	"testing"
 	"time"
-
-	"gvisor.dev/gvisor/test/packetimpact/netdevs"
 )
 
 var (
@@ -36,25 +34,12 @@ var (
 	// RPCTimeout is the gRPC timeout.
 	RPCTimeout = 100 * time.Millisecond
 
+	// dutTestNetsJSON is the json string that describes all the test networks to
+	// duts available to use.
+	dutTestNetsJSON string
 	// dutTestNets is the pool among which the testbench can choose a DUT to work
 	// with.
 	dutTestNets chan *DUTTestNet
-
-	// TODO(zeling): Remove the following variables once the test runner side is
-	// ready.
-	localDevice       = ""
-	remoteDevice      = ""
-	localIPv4         = ""
-	remoteIPv4        = ""
-	ipv4PrefixLength  = 0
-	localIPv6         = ""
-	remoteIPv6        = ""
-	localInterfaceID  uint32
-	remoteInterfaceID uint64
-	localMAC          = ""
-	remoteMAC         = ""
-	posixServerIP     = ""
-	posixServerPort   = 40000
 )
 
 // DUTTestNet describes the test network setup on dut and how the testbench
@@ -98,19 +83,10 @@ type DUTTestNet struct {
 // exported variables above. It should be called by tests in their init
 // functions.
 func registerFlags(fs *flag.FlagSet) {
-	fs.StringVar(&posixServerIP, "posix_server_ip", posixServerIP, "ip address to listen to for UDP commands")
-	fs.IntVar(&posixServerPort, "posix_server_port", posixServerPort, "port to listen to for UDP commands")
-	fs.StringVar(&localIPv4, "local_ipv4", localIPv4, "local IPv4 address for test packets")
-	fs.StringVar(&remoteIPv4, "remote_ipv4", remoteIPv4, "remote IPv4 address for test packets")
-	fs.StringVar(&remoteIPv6, "remote_ipv6", remoteIPv6, "remote IPv6 address for test packets")
-	fs.StringVar(&remoteMAC, "remote_mac", remoteMAC, "remote mac address for test packets")
-	fs.StringVar(&localDevice, "local_device", localDevice, "local device to inject traffic")
-	fs.StringVar(&remoteDevice, "remote_device", remoteDevice, "remote device on the DUT")
-	fs.Uint64Var(&remoteInterfaceID, "remote_interface_id", remoteInterfaceID, "remote interface ID for test packets")
-
 	fs.BoolVar(&Native, "native", Native, "whether the test is running natively")
 	fs.DurationVar(&RPCTimeout, "rpc_timeout", RPCTimeout, "gRPC timeout")
 	fs.DurationVar(&RPCKeepalive, "rpc_keepalive", RPCKeepalive, "gRPC keepalive")
+	fs.StringVar(&dutTestNetsJSON, "dut_test_nets_json", dutTestNetsJSON, "path to the dut test nets json file")
 }
 
 // Initialize initializes the testbench, it parse the flags and sets up the
@@ -118,61 +94,27 @@ func registerFlags(fs *flag.FlagSet) {
 func Initialize(fs *flag.FlagSet) {
 	registerFlags(fs)
 	flag.Parse()
-	if err := genPseudoFlags(); err != nil {
+	if err := loadDUTTestNets(); err != nil {
 		panic(err)
 	}
-	var dut DUTTestNet
-	var err error
-	dut.LocalMAC, err = net.ParseMAC(localMAC)
-	if err != nil {
-		panic(err)
-	}
-	dut.RemoteMAC, err = net.ParseMAC(remoteMAC)
-	if err != nil {
-		panic(err)
-	}
-	dut.LocalIPv4 = net.ParseIP(localIPv4).To4()
-	dut.LocalIPv6 = net.ParseIP(localIPv6).To16()
-	dut.RemoteIPv4 = net.ParseIP(remoteIPv4).To4()
-	dut.RemoteIPv6 = net.ParseIP(remoteIPv6).To16()
-	dut.LocalDevID = uint32(localInterfaceID)
-	dut.RemoteDevID = uint32(remoteInterfaceID)
-	dut.LocalDevName = localDevice
-	dut.RemoteDevName = remoteDevice
-	dut.POSIXServerIP = net.ParseIP(posixServerIP)
-	dut.POSIXServerPort = uint16(posixServerPort)
-	dut.IPv4PrefixLength = ipv4PrefixLength
-
-	dutTestNets = make(chan *DUTTestNet, 1)
-	dutTestNets <- &dut
 }
 
-// genPseudoFlags populates flag-like global config based on real flags.
-//
-// genPseudoFlags must only be called after flag.Parse.
-func genPseudoFlags() error {
-	out, err := exec.Command("ip", "addr", "show").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("listing devices: %q: %w", string(out), err)
+// loadDUTTestNets loads available DUT test networks from the json file, it
+// must be called after flag.Parse().
+func loadDUTTestNets() error {
+	var parsedTestNets []DUTTestNet
+	if err := json.Unmarshal([]byte(dutTestNetsJSON), &parsedTestNets); err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
-	devs, err := netdevs.ParseDevices(string(out))
-	if err != nil {
-		return fmt.Errorf("parsing devices: %w", err)
+	if got, want := len(parsedTestNets), 1; got < want {
+		return fmt.Errorf("got %d DUTs, the test requires at least %d DUTs", got, want)
 	}
-
-	_, deviceInfo, err := netdevs.FindDeviceByIP(net.ParseIP(localIPv4), devs)
-	if err != nil {
-		return fmt.Errorf("can't find deviceInfo: %w", err)
-	}
-
-	localMAC = deviceInfo.MAC.String()
-	localIPv6 = deviceInfo.IPv6Addr.String()
-	localInterfaceID = deviceInfo.ID
-
-	if deviceInfo.IPv4Net != nil {
-		ipv4PrefixLength, _ = deviceInfo.IPv4Net.Mask.Size()
-	} else {
-		ipv4PrefixLength, _ = net.ParseIP(localIPv4).DefaultMask().Size()
+	// Using a buffered channel as semaphore
+	dutTestNets = make(chan *DUTTestNet, len(parsedTestNets))
+	for i := range parsedTestNets {
+		parsedTestNets[i].LocalIPv4 = parsedTestNets[i].LocalIPv4.To4()
+		parsedTestNets[i].RemoteIPv4 = parsedTestNets[i].RemoteIPv4.To4()
+		dutTestNets <- &parsedTestNets[i]
 	}
 	return nil
 }

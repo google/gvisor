@@ -44,7 +44,7 @@ func TestUDPRecvMcastBcast(t *testing.T) {
 
 		{bound: subnetBcastAddr, to: subnetBcastAddr},
 
-		// FIXME(gvisor.dev/issues/4896):  Previously by the time subnetBcastAddr is
+		// FIXME(gvisor.dev/issue/4896):  Previously by the time subnetBcastAddr is
 		// created, IPv4PrefixLength is still 0 because genPseudoFlags is not called
 		// yet, it was only called in NewDUT, so the test didn't do what the author
 		// original intended to and becomes failing because we process all flags at

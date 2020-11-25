@@ -371,4 +371,5 @@ validate_all_tests()
 [packetimpact_go_test(
     name = t.name,
     expect_netstack_failure = hasattr(t, "expect_netstack_failure"),
+    num_duts = t.num_duts if hasattr(t, "num_duts") else 1,
 ) for t in ALL_TESTS]

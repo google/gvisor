@@ -17,6 +17,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -34,6 +35,7 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/packetimpact/netdevs"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 // stringList implements flag.Value.
@@ -56,9 +58,10 @@ var (
 	tshark          = false
 	extraTestArgs   = stringList{}
 	expectFailure   = false
+	numDUTs         = 1
 
-	// DutAddr is the IP addres for DUT.
-	DutAddr       = net.IPv4(0, 0, 0, 10)
+	// DUTAddr is the IP addres for DUT.
+	DUTAddr       = net.IPv4(0, 0, 0, 10)
 	testbenchAddr = net.IPv4(0, 0, 0, 20)
 )
 
@@ -71,10 +74,15 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&tshark, "tshark", false, "use more verbose tshark in logs instead of tcpdump")
 	fs.Var(&extraTestArgs, "extra_test_arg", "extra arguments to pass to the testbench")
 	fs.BoolVar(&expectFailure, "expect_failure", false, "expect that the test will fail when run")
+	fs.IntVar(&numDUTs, "num_duts", numDUTs, "the number of duts to create")
 }
 
-// CtrlPort is the port that posix_server listens on.
-const CtrlPort = "40000"
+const (
+	// CtrlPort is the port that posix_server listens on.
+	CtrlPort uint16 = 40000
+	// testOutputDir is the directory in each container that holds test output.
+	testOutputDir = "/tmp/testoutput"
+)
 
 // logger implements testutil.Logger.
 //
@@ -102,140 +110,145 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	}
 	dockerutil.EnsureSupportedDockerVersion()
 
-	// Create the networks needed for the test. One control network is needed for
-	// the gRPC control packets and one test network on which to transmit the test
-	// packets.
-	ctrlNet := dockerutil.NewNetwork(ctx, logger("ctrlNet"))
-	testNet := dockerutil.NewNetwork(ctx, logger("testNet"))
-	for _, dn := range []*dockerutil.Network{ctrlNet, testNet} {
-		for {
-			if err := createDockerNetwork(ctx, dn); err != nil {
-				t.Log("creating docker network:", err)
-				const wait = 100 * time.Millisecond
-				t.Logf("sleeping %s and will try creating docker network again", wait)
-				// This can fail if another docker network claimed the same IP so we'll
-				// just try again.
-				time.Sleep(wait)
-				continue
+	var dockerNetworks []*dockerutil.Network
+	var dutTestNets []*testbench.DUTTestNet
+	var duts []DUT
+
+	for i := 0; i < numDUTs; i++ {
+		// Create the networks needed for the test. One control network is needed
+		// for the gRPC control packets and one test network on which to transmit
+		// the test packets.
+		ctrlNet := dockerutil.NewNetwork(ctx, logger("ctrlNet"))
+		testNet := dockerutil.NewNetwork(ctx, logger("testNet"))
+		for _, dn := range []*dockerutil.Network{ctrlNet, testNet} {
+			for {
+				if err := createDockerNetwork(ctx, dn); err != nil {
+					t.Log("creating docker network:", err)
+					const wait = 100 * time.Millisecond
+					t.Logf("sleeping %s and will try creating docker network again", wait)
+					// This can fail if another docker network claimed the same IP so we
+					// will just try again.
+					time.Sleep(wait)
+					continue
+				}
+				break
 			}
-			break
+			dn := dn
+			t.Cleanup(func() {
+				if err := dn.Cleanup(ctx); err != nil {
+					t.Errorf("unable to cleanup container %s: %s", dn.Name, err)
+				}
+			})
+			// Sanity check.
+			if inspect, err := dn.Inspect(ctx); err != nil {
+				t.Fatalf("failed to inspect network %s: %v", dn.Name, err)
+			} else if inspect.Name != dn.Name {
+				t.Fatalf("name mismatch for network want: %s got: %s", dn.Name, inspect.Name)
+			}
 		}
-		dn := dn
-		t.Cleanup(func() {
-			if err := dn.Cleanup(ctx); err != nil {
-				t.Errorf("unable to cleanup container %s: %s", dn.Name, err)
-			}
+		dockerNetworks = append(dockerNetworks, ctrlNet, testNet)
+
+		// Create the Docker container for the DUT.
+		var dut DUT
+		if native {
+			dut = mkDevice(dockerutil.MakeNativeContainer(ctx, logger(fmt.Sprintf("dut-%d", i))))
+		} else {
+			dut = mkDevice(dockerutil.MakeContainer(ctx, logger(fmt.Sprintf("dut-%d", i))))
+		}
+		duts = append(duts, dut)
+
+		runOpts := dockerutil.RunOpts{
+			Image:  "packetimpact",
+			CapAdd: []string{"NET_ADMIN"},
+		}
+		mountTempDirectory(t, &runOpts, "dut-output", testOutputDir)
+
+		remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev := dut.Prepare(ctx, t, runOpts, ctrlNet, testNet)
+		ipv4PrefixLength, _ := testNet.Subnet.Mask.Size()
+		dutTestNets = append(dutTestNets, &testbench.DUTTestNet{
+			RemoteMAC:        remoteMAC,
+			RemoteIPv4:       AddressInSubnet(DUTAddr, *testNet.Subnet),
+			RemoteIPv6:       remoteIPv6,
+			RemoteDevID:      dutDeviceID,
+			RemoteDevName:    dutTestNetDev,
+			LocalIPv4:        AddressInSubnet(testbenchAddr, *testNet.Subnet),
+			IPv4PrefixLength: ipv4PrefixLength,
+			POSIXServerIP:    AddressInSubnet(DUTAddr, *ctrlNet.Subnet),
+			POSIXServerPort:  CtrlPort,
 		})
-		// Sanity check.
-		if inspect, err := dn.Inspect(ctx); err != nil {
-			t.Fatalf("failed to inspect network %s: %v", dn.Name, err)
-		} else if inspect.Name != dn.Name {
-			t.Fatalf("name mismatch for network want: %s got: %s", dn.Name, inspect.Name)
-		}
 	}
-
-	tmpDir, err := ioutil.TempDir("", "container-output")
-	if err != nil {
-		t.Fatal("creating temp dir:", err)
-	}
-	t.Cleanup(func() {
-		if err := exec.Command("/bin/cp", "-r", tmpDir, os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")).Run(); err != nil {
-			t.Errorf("unable to copy container output files: %s", err)
-		}
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Errorf("failed to remove tmpDir %s: %s", tmpDir, err)
-		}
-	})
-
-	const testOutputDir = "/tmp/testoutput"
-
-	// Create the Docker container for the DUT.
-	var dut *dockerutil.Container
-	if native {
-		dut = dockerutil.MakeNativeContainer(ctx, logger("dut"))
-	} else {
-		dut = dockerutil.MakeContainer(ctx, logger("dut"))
-	}
-	t.Cleanup(func() {
-		dut.CleanUp(ctx)
-	})
-
-	runOpts := dockerutil.RunOpts{
-		Image:  "packetimpact",
-		CapAdd: []string{"NET_ADMIN"},
-		Mounts: []mount.Mount{{
-			Type:     mount.TypeBind,
-			Source:   tmpDir,
-			Target:   testOutputDir,
-			ReadOnly: false,
-		}},
-	}
-
-	device := mkDevice(dut)
-	remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev := device.Prepare(ctx, t, runOpts, ctrlNet, testNet)
-
 	// Create the Docker container for the testbench.
 	testbench := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
 
+	const containerDUTTestNetsDir = "/tmp/dut-test-nets"
+	const dutTestNetsFileName = "pool.json"
+	runOpts := dockerutil.RunOpts{
+		Image:  "packetimpact",
+		CapAdd: []string{"NET_ADMIN"},
+	}
+	mountTempDirectory(t, &runOpts, "testbench-output", testOutputDir)
 	tbb := path.Base(testbenchBinary)
 	containerTestbenchBinary := filepath.Join("/packetimpact", tbb)
 	testbench.CopyFiles(&runOpts, "/packetimpact", filepath.Join("test/packetimpact/tests", tbb))
-
-	// snifferNetDev is a network device on the test orchestrator that we will
-	// run sniffer (tcpdump or tshark) on and inject traffic to, not to be
-	// confused with the device on the DUT.
-	const snifferNetDev = "eth2"
-	// Run tcpdump in the test bench unbuffered, without DNS resolution, just on
-	// the interface with the test packets.
-	snifferArgs := []string{
-		"tcpdump",
-		"-S", "-vvv", "-U", "-n",
-		"-i", snifferNetDev,
-		"-w", testOutputDir + "/dump.pcap",
-	}
-	snifferRegex := "tcpdump: listening.*\n"
-	if tshark {
-		// Run tshark in the test bench unbuffered, without DNS resolution, just on
-		// the interface with the test packets.
-		snifferArgs = []string{
-			"tshark", "-V", "-l", "-n", "-i", snifferNetDev,
-			"-o", "tcp.check_checksum:TRUE",
-			"-o", "udp.check_checksum:TRUE",
-		}
-		snifferRegex = "Capturing on.*\n"
-	}
 
 	if err := StartContainer(
 		ctx,
 		runOpts,
 		testbench,
 		testbenchAddr,
-		[]*dockerutil.Network{ctrlNet, testNet},
-		snifferArgs...,
+		dockerNetworks,
+		"tail", "-f", "/dev/null",
 	); err != nil {
-		t.Fatalf("failed to start docker container for testbench sniffer: %s", err)
-	}
-	// Kill so that it will flush output.
-	t.Cleanup(func() {
-		time.Sleep(1 * time.Second)
-		testbench.Exec(ctx, dockerutil.ExecOpts{}, "killall", snifferArgs[0])
-	})
-
-	if _, err := testbench.WaitForOutput(ctx, snifferRegex, 60*time.Second); err != nil {
-		t.Fatalf("sniffer on %s never listened: %s", dut.Name, err)
+		t.Fatalf("cannot start testbench container: %s", err)
 	}
 
-	// When the Linux kernel receives a SYN-ACK for a SYN it didn't send, it
-	// will respond with an RST. In most packetimpact tests, the SYN is sent
-	// by the raw socket and the kernel knows nothing about the connection, this
-	// behavior will break lots of TCP related packetimpact tests. To prevent
-	// this, we can install the following iptables rules. The raw socket that
-	// packetimpact tests use will still be able to see everything.
-	for _, bin := range []string{"iptables", "ip6tables"} {
-		if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, bin, "-A", "INPUT", "-i", snifferNetDev, "-p", "tcp", "-j", "DROP"); err != nil {
-			t.Fatalf("unable to Exec %s on container %s: %s, logs from testbench:\n%s", bin, testbench.Name, err, logs)
+	for i := range dutTestNets {
+		name, info, err := deviceByIP(ctx, testbench, dutTestNets[i].LocalIPv4)
+		if err != nil {
+			t.Fatalf("failed to get the device name associated with %s: %s", dutTestNets[i].LocalIPv4, err)
+		}
+		dutTestNets[i].LocalDevName = name
+		dutTestNets[i].LocalDevID = info.ID
+		dutTestNets[i].LocalMAC = info.MAC
+		localIPv6, err := getOrAssignIPv6Addr(ctx, testbench, name)
+		if err != nil {
+			t.Fatalf("failed to get IPV6 address on %s: %s", testbench.Name, err)
+		}
+		dutTestNets[i].LocalIPv6 = localIPv6
+	}
+	dutTestNetsBytes, err := json.Marshal(dutTestNets)
+	if err != nil {
+		t.Fatalf("failed to marshal %v into json: %s", dutTestNets, err)
+	}
+
+	snifferProg := "tcpdump"
+	if tshark {
+		snifferProg = "tshark"
+	}
+	for _, n := range dutTestNets {
+		_, err := testbench.ExecProcess(ctx, dockerutil.ExecOpts{}, snifferArgs(n.LocalDevName)...)
+		if err != nil {
+			t.Fatalf("failed to start exec a sniffer on %s: %s", n.LocalDevName, err)
+		}
+		// When the Linux kernel receives a SYN-ACK for a SYN it didn't send, it
+		// will respond with an RST. In most packetimpact tests, the SYN is sent
+		// by the raw socket, the kernel knows nothing about the connection, this
+		// behavior will break lots of TCP related packetimpact tests. To prevent
+		// this, we can install the following iptables rules. The raw socket that
+		// packetimpact tests use will still be able to see everything.
+		for _, bin := range []string{"iptables", "ip6tables"} {
+			if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, bin, "-A", "INPUT", "-i", n.LocalDevName, "-p", "tcp", "-j", "DROP"); err != nil {
+				t.Fatalf("unable to Exec %s on container %s: %s, logs from testbench:\n%s", bin, testbench.Name, err, logs)
+			}
 		}
 	}
+
+	t.Cleanup(func() {
+		time.Sleep(1 * time.Second)
+		if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, "killall", snifferProg); err != nil {
+			t.Errorf("failed to kill all sniffers: %s, logs: %s", err, logs)
+		}
+	})
 
 	// FIXME(b/156449515): Some piece of the system has a race. The old
 	// bash script version had a sleep, so we have one too. The race should
@@ -248,31 +261,29 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	testArgs := []string{containerTestbenchBinary}
 	testArgs = append(testArgs, extraTestArgs...)
 	testArgs = append(testArgs,
-		"--posix_server_ip", AddressInSubnet(DutAddr, *ctrlNet.Subnet).String(),
-		"--posix_server_port", CtrlPort,
-		"--remote_ipv4", AddressInSubnet(DutAddr, *testNet.Subnet).String(),
-		"--local_ipv4", AddressInSubnet(testbenchAddr, *testNet.Subnet).String(),
-		"--remote_ipv6", remoteIPv6.String(),
-		"--remote_mac", remoteMAC.String(),
-		"--remote_interface_id", fmt.Sprintf("%d", dutDeviceID),
-		"--local_device", snifferNetDev,
-		"--remote_device", dutTestNetDev,
 		fmt.Sprintf("--native=%t", native),
+		"--dut_test_nets_json", string(dutTestNetsBytes),
 	)
 	testbenchLogs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
 	if (err != nil) != expectFailure {
 		var dutLogs string
-		if logs, err := device.Logs(ctx); err != nil {
-			dutLogs = fmt.Sprintf("failed to fetch DUT logs: %s", err)
-		} else {
-			dutLogs = logs
+		for i, dut := range duts {
+			logs, err := dut.Logs(ctx)
+			if err != nil {
+				logs = fmt.Sprintf("failed to fetch DUT logs: %s", err)
+			}
+			dutLogs = fmt.Sprintf(`%s====== Begin of DUT-%d Logs ======
+
+%s
+
+====== End of DUT-%d Logs ======
+
+`, dutLogs, i, logs, i)
 		}
 
 		t.Errorf(`test error: %v, expect failure: %t
 
-%s
-
-====== Begin of Testbench Logs ======
+%s====== Begin of Testbench Logs ======
 
 %s
 
@@ -311,11 +322,11 @@ func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockeru
 		ctx,
 		runOpts,
 		dut.c,
-		DutAddr,
+		DUTAddr,
 		[]*dockerutil.Network{ctrlNet, testNet},
 		containerPosixServerBinary,
 		"--ip=0.0.0.0",
-		"--port="+CtrlPort,
+		fmt.Sprintf("--port=%d", CtrlPort),
 	); err != nil {
 		t.Fatalf("failed to start docker container for DUT: %s", err)
 	}
@@ -324,28 +335,14 @@ func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockeru
 		t.Fatalf("%s on container %s never listened: %s", containerPosixServerBinary, dut.c.Name, err)
 	}
 
-	dutTestDevice, dutDeviceInfo, err := deviceByIP(ctx, dut.c, AddressInSubnet(DutAddr, *testNet.Subnet))
+	dutTestDevice, dutDeviceInfo, err := deviceByIP(ctx, dut.c, AddressInSubnet(DUTAddr, *testNet.Subnet))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	remoteMAC := dutDeviceInfo.MAC
-	remoteIPv6 := dutDeviceInfo.IPv6Addr
-	// Netstack as DUT doesn't assign IPv6 addresses automatically so do it if
-	// needed.
-	if remoteIPv6 == nil {
-		if _, err := dut.c.Exec(ctx, dockerutil.ExecOpts{}, "ip", "addr", "add", netdevs.MACToIP(remoteMAC).String(), "scope", "link", "dev", dutTestDevice); err != nil {
-			t.Fatalf("unable to ip addr add on container %s: %s", dut.c.Name, err)
-		}
-		// Now try again, to make sure that it worked.
-		_, dutDeviceInfo, err = deviceByIP(ctx, dut.c, AddressInSubnet(DutAddr, *testNet.Subnet))
-		if err != nil {
-			t.Fatal(err)
-		}
-		remoteIPv6 = dutDeviceInfo.IPv6Addr
-		if remoteIPv6 == nil {
-			t.Fatalf("unable to set IPv6 address on container %s", dut.c.Name)
-		}
+	remoteIPv6, err := getOrAssignIPv6Addr(ctx, dut.c, dutTestDevice)
+	if err != nil {
+		t.Fatalf("failed to get IPv6 address on %s: %s", dut.c.Name, err)
 	}
 	const testNetDev = "eth2"
 
@@ -358,11 +355,7 @@ func (dut *DockerDUT) Logs(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(`====== Begin of DUT Logs ======
-
-%s
-
-====== End of DUT Logs ======`, logs), nil
+	return logs, nil
 }
 
 // AddNetworks connects docker network with the container and assigns the specific IP.
@@ -378,8 +371,8 @@ func AddNetworks(ctx context.Context, d *dockerutil.Container, addr net.IP, netw
 }
 
 // AddressInSubnet combines the subnet provided with the address and returns a
-// new address. The return address bits come from the subnet where the mask is 1
-// and from the ip address where the mask is 0.
+// new address. The return address bits come from the subnet where the mask is
+// 1 and from the ip address where the mask is 0.
 func AddressInSubnet(addr net.IP, subnet net.IPNet) net.IP {
 	var octets []byte
 	for i := 0; i < 4; i++ {
@@ -388,21 +381,61 @@ func AddressInSubnet(addr net.IP, subnet net.IPNet) net.IP {
 	return net.IP(octets)
 }
 
-// deviceByIP finds a deviceInfo and device name from an IP address.
-func deviceByIP(ctx context.Context, d *dockerutil.Container, ip net.IP) (string, netdevs.DeviceInfo, error) {
+// devicesInfo will run "ip addr show" on the container and parse the output
+// to a map[string]netdevs.DeviceInfo.
+func devicesInfo(ctx context.Context, d *dockerutil.Container) (map[string]netdevs.DeviceInfo, error) {
 	out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "ip", "addr", "show")
 	if err != nil {
-		return "", netdevs.DeviceInfo{}, fmt.Errorf("listing devices on %s container: %w\n%s", d.Name, err, out)
+		return map[string]netdevs.DeviceInfo{}, fmt.Errorf("listing devices on %s container: %w\n%s", d.Name, err, out)
 	}
 	devs, err := netdevs.ParseDevices(out)
 	if err != nil {
-		return "", netdevs.DeviceInfo{}, fmt.Errorf("parsing devices from %s container: %w\n%s", d.Name, err, out)
+		return map[string]netdevs.DeviceInfo{}, fmt.Errorf("parsing devices from %s container: %w\n%s", d.Name, err, out)
+	}
+	return devs, nil
+}
+
+// deviceByIP finds a deviceInfo and device name from an IP address.
+func deviceByIP(ctx context.Context, d *dockerutil.Container, ip net.IP) (string, netdevs.DeviceInfo, error) {
+	devs, err := devicesInfo(ctx, d)
+	if err != nil {
+		return "", netdevs.DeviceInfo{}, err
 	}
 	testDevice, deviceInfo, err := netdevs.FindDeviceByIP(ip, devs)
 	if err != nil {
 		return "", netdevs.DeviceInfo{}, fmt.Errorf("can't find deviceInfo for container %s: %w", d.Name, err)
 	}
 	return testDevice, deviceInfo, nil
+}
+
+// getOrAssignIPv6Addr will try to get the IPv6 address for the interface; if an
+// address was not assigned, a link-local address based on MAC will be assigned
+// to that interface.
+func getOrAssignIPv6Addr(ctx context.Context, d *dockerutil.Container, iface string) (net.IP, error) {
+	devs, err := devicesInfo(ctx, d)
+	if err != nil {
+		return net.IP{}, err
+	}
+	info := devs[iface]
+	if info.IPv6Addr != nil {
+		return info.IPv6Addr, nil
+	}
+	if info.MAC == nil {
+		return nil, fmt.Errorf("unable to find MAC address of %s", iface)
+	}
+	if logs, err := d.Exec(ctx, dockerutil.ExecOpts{}, "ip", "addr", "add", netdevs.MACToIP(info.MAC).String(), "scope", "link", "dev", iface); err != nil {
+		return net.IP{}, fmt.Errorf("unable to ip addr add on container %s: %w, logs: %s", d.Name, err, logs)
+	}
+	// Now try again, to make sure that it worked.
+	devs, err = devicesInfo(ctx, d)
+	if err != nil {
+		return net.IP{}, err
+	}
+	info = devs[iface]
+	if info.IPv6Addr == nil {
+		return net.IP{}, fmt.Errorf("unable to set IPv6 address on container %s", d.Name)
+	}
+	return info.IPv6Addr, nil
 }
 
 // createDockerNetwork makes a randomly-named network that will start with the
@@ -439,4 +472,52 @@ func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerut
 		return fmt.Errorf("unable to start container %s: %w", c.Name, err)
 	}
 	return nil
+}
+
+// MountTempDirectory creates a temporary directory on host with the template
+// and then mounts it into the container under the name provided. The temporary
+// directory name is returned. Content in that directory will be copied to
+// TEST_UNDECLARED_OUTPUTS_DIR in cleanup phase.
+func mountTempDirectory(t *testing.T, runOpts *dockerutil.RunOpts, hostDirTemplate, containerDir string) string {
+	t.Helper()
+	tmpDir, err := ioutil.TempDir("", hostDirTemplate)
+	if err != nil {
+		t.Fatalf("failed to create a temp dir: %s", err)
+	}
+	t.Cleanup(func() {
+		if err := exec.Command("/bin/cp", "-r", tmpDir, os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")).Run(); err != nil {
+			t.Errorf("unable to copy container output files: %s", err)
+		}
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("failed to remove tmpDir %s: %s", tmpDir, err)
+		}
+	})
+	runOpts.Mounts = append(runOpts.Mounts, mount.Mount{
+		Type:     mount.TypeBind,
+		Source:   tmpDir,
+		Target:   containerDir,
+		ReadOnly: false,
+	})
+	return tmpDir
+}
+
+// snifferArgs returns the correct command line to run sniffer on the testbench.
+func snifferArgs(devName string) []string {
+	if tshark {
+		// Run tshark in the test bench unbuffered, without DNS resolution, just
+		// on the interface with the test packets.
+		return []string{
+			"tshark", "-V", "-l", "-n", "-i", devName,
+			"-o", "tcp.check_checksum:TRUE",
+			"-o", "udp.check_checksum:TRUE",
+		}
+	}
+	// Run tcpdump in the test bench unbuffered, without DNS resolution, just
+	// on the interface with the test packets.
+	return []string{
+		"tcpdump",
+		"-S", "-vvv", "-U", "-n",
+		"-i", devName,
+		"-w", filepath.Join(testOutputDir, fmt.Sprintf("%s.pcap", devName)),
+	}
 }
