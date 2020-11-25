@@ -2464,7 +2464,7 @@ func TestWriteStats(t *testing.T) {
 
 					test.setup(t, rt.Stack())
 
-					nWritten, _ := writer.writePackets(&rt, pkts)
+					nWritten, _ := writer.writePackets(rt, pkts)
 
 					if got := int(rt.Stats().IP.PacketsSent.Value()); got != test.expectSent {
 						t.Errorf("sent %d packets, but expected to send %d", got, test.expectSent)
@@ -2481,7 +2481,7 @@ func TestWriteStats(t *testing.T) {
 	}
 }
 
-func buildRoute(t *testing.T, ep stack.LinkEndpoint) stack.Route {
+func buildRoute(t *testing.T, ep stack.LinkEndpoint) *stack.Route {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 	})

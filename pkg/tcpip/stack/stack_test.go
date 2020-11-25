@@ -407,7 +407,7 @@ func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) *tcpip.Erro
 	return send(r, payload)
 }
 
-func send(r stack.Route, payload buffer.View) *tcpip.Error {
+func send(r *stack.Route, payload buffer.View) *tcpip.Error {
 	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               payload.ToVectorisedView(),
@@ -425,7 +425,7 @@ func testSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.En
 	}
 }
 
-func testSend(t *testing.T, r stack.Route, ep *channel.Endpoint, payload buffer.View) {
+func testSend(t *testing.T, r *stack.Route, ep *channel.Endpoint, payload buffer.View) {
 	t.Helper()
 	ep.Drain()
 	if err := send(r, payload); err != nil {
@@ -436,7 +436,7 @@ func testSend(t *testing.T, r stack.Route, ep *channel.Endpoint, payload buffer.
 	}
 }
 
-func testFailingSend(t *testing.T, r stack.Route, ep *channel.Endpoint, payload buffer.View, wantErr *tcpip.Error) {
+func testFailingSend(t *testing.T, r *stack.Route, ep *channel.Endpoint, payload buffer.View, wantErr *tcpip.Error) {
 	t.Helper()
 	if gotErr := send(r, payload); gotErr != wantErr {
 		t.Errorf("send failed: got = %s, want = %s ", gotErr, wantErr)
@@ -1563,7 +1563,7 @@ func TestSpoofingNoAddress(t *testing.T) {
 	// testSendTo(t, s, remoteAddr, ep, nil)
 }
 
-func verifyRoute(gotRoute, wantRoute stack.Route) error {
+func verifyRoute(gotRoute, wantRoute *stack.Route) error {
 	if gotRoute.LocalAddress != wantRoute.LocalAddress {
 		return fmt.Errorf("bad local address: got %s, want = %s", gotRoute.LocalAddress, wantRoute.LocalAddress)
 	}
@@ -1603,7 +1603,7 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, stack.Route{LocalAddress: header.IPv4Any, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	if err := verifyRoute(r, &stack.Route{LocalAddress: header.IPv4Any, RemoteAddress: header.IPv4Broadcast}); err != nil {
 		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
@@ -1657,7 +1657,7 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	if err := verifyRoute(r, &stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
 		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
@@ -1667,7 +1667,7 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, stack.Route{LocalAddress: nic2Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	if err := verifyRoute(r, &stack.Route{LocalAddress: nic2Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
 		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
@@ -1683,7 +1683,7 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	if err := verifyRoute(r, &stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
 		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
 	}
 }
@@ -3355,7 +3355,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 		nicAddr       tcpip.ProtocolAddress
 		routes        []tcpip.Route
 		remoteAddr    tcpip.Address
-		expectedRoute stack.Route
+		expectedRoute *stack.Route
 	}{
 		// Broadcast to a locally attached subnet populates the broadcast MAC.
 		{
@@ -3371,7 +3371,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				},
 			},
 			remoteAddr: ipv4SubnetBcast,
-			expectedRoute: stack.Route{
+			expectedRoute: &stack.Route{
 				LocalAddress:      ipv4Addr.Address,
 				RemoteAddress:     ipv4SubnetBcast,
 				RemoteLinkAddress: header.EthernetBroadcastAddress,
@@ -3394,7 +3394,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				},
 			},
 			remoteAddr: ipv4Subnet31Bcast,
-			expectedRoute: stack.Route{
+			expectedRoute: &stack.Route{
 				LocalAddress:  ipv4AddrPrefix31.Address,
 				RemoteAddress: ipv4Subnet31Bcast,
 				NetProto:      header.IPv4ProtocolNumber,
@@ -3416,7 +3416,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				},
 			},
 			remoteAddr: ipv4Subnet32Bcast,
-			expectedRoute: stack.Route{
+			expectedRoute: &stack.Route{
 				LocalAddress:  ipv4AddrPrefix32.Address,
 				RemoteAddress: ipv4Subnet32Bcast,
 				NetProto:      header.IPv4ProtocolNumber,
@@ -3437,7 +3437,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				},
 			},
 			remoteAddr: ipv6SubnetBcast,
-			expectedRoute: stack.Route{
+			expectedRoute: &stack.Route{
 				LocalAddress:  ipv6Addr.Address,
 				RemoteAddress: ipv6SubnetBcast,
 				NetProto:      header.IPv6ProtocolNumber,
@@ -3460,7 +3460,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				},
 			},
 			remoteAddr: remNetSubnetBcast,
-			expectedRoute: stack.Route{
+			expectedRoute: &stack.Route{
 				LocalAddress:  ipv4Addr.Address,
 				RemoteAddress: remNetSubnetBcast,
 				NextHop:       ipv4Gateway,
@@ -3485,7 +3485,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				},
 			},
 			remoteAddr: remNetSubnetBcast,
-			expectedRoute: stack.Route{
+			expectedRoute: &stack.Route{
 				LocalAddress:  ipv4Addr.Address,
 				RemoteAddress: remNetSubnetBcast,
 				NextHop:       ipv4Gateway,
@@ -3522,7 +3522,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 
 			if r, err := s.FindRoute(unspecifiedNICID, "" /* localAddr */, test.remoteAddr, netProto, false /* multicastLoop */); err != nil {
 				t.Fatalf("FindRoute(%d, '', %s, %d): %s", unspecifiedNICID, test.remoteAddr, netProto, err)
-			} else if diff := cmp.Diff(r, test.expectedRoute, cmpopts.IgnoreUnexported(r)); diff != "" {
+			} else if diff := cmp.Diff(r, test.expectedRoute, cmpopts.IgnoreUnexported(stack.Route{})); diff != "" {
 				t.Errorf("route mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -4091,10 +4091,12 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			s.SetRouteTable([]tcpip.Route{{Destination: test.netCfg.remoteAddr.WithPrefix().Subnet(), NIC: nicID2}})
 
 			r, err := s.FindRoute(test.addrNIC, test.localAddr, test.netCfg.remoteAddr, test.netCfg.proto, false /* multicastLoop */)
+			if r != nil {
+				defer r.Release()
+			}
 			if err != test.findRouteErr {
 				t.Fatalf("FindRoute(%d, %s, %s, %d, false) = %s, want = %s", test.addrNIC, test.localAddr, test.netCfg.remoteAddr, test.netCfg.proto, err, test.findRouteErr)
 			}
-			defer r.Release()
 
 			if test.findRouteErr != nil {
 				return

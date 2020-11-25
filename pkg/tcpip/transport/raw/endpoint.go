@@ -84,7 +84,7 @@ type endpoint struct {
 	bound         bool
 	// route is the route to a remote network endpoint. It is set via
 	// Connect(), and is valid only when conneted is true.
-	route stack.Route                  `state:"manual"`
+	route *stack.Route                 `state:"manual"`
 	stats tcpip.TransportEndpointStats `state:"nosave"`
 	// linger is used for SO_LINGER socket option.
 	linger tcpip.LingerOption
@@ -173,9 +173,11 @@ func (e *endpoint) Close() {
 		e.rcvList.Remove(e.rcvList.Front())
 	}
 
-	if e.connected {
+	e.connected = false
+
+	if e.route != nil {
 		e.route.Release()
-		e.connected = false
+		e.route = nil
 	}
 
 	e.closed = true
@@ -299,7 +301,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 
 		if e.route.IsResolutionRequired() {
-			savedRoute := &e.route
+			savedRoute := e.route
 			// Promote lock to exclusive if using a shared route,
 			// given that it may need to change in finishWrite.
 			e.mu.RUnlock()
@@ -307,7 +309,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 			// Make sure that the route didn't change during the
 			// time we didn't hold the lock.
-			if !e.connected || savedRoute != &e.route {
+			if !e.connected || savedRoute != e.route {
 				e.mu.Unlock()
 				return 0, nil, tcpip.ErrInvalidEndpointState
 			}
@@ -317,7 +319,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			return n, ch, err
 		}
 
-		n, ch, err := e.finishWrite(payloadBytes, &e.route)
+		n, ch, err := e.finishWrite(payloadBytes, e.route)
 		e.mu.RUnlock()
 		return n, ch, err
 	}
@@ -338,7 +340,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		return 0, nil, err
 	}
 
-	n, ch, err := e.finishWrite(payloadBytes, &route)
+	n, ch, err := e.finishWrite(payloadBytes, route)
 	route.Release()
 	e.mu.RUnlock()
 	return n, ch, err

@@ -267,7 +267,7 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 	if ch, err := r.Resolve(nil); err != nil {
 		if err == tcpip.ErrWouldBlock {
 			r := r.Clone()
-			n.stack.linkResQueue.enqueue(ch, &r, protocol, pkt)
+			n.stack.linkResQueue.enqueue(ch, r, protocol, pkt)
 			return nil
 		}
 		return err

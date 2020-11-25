@@ -250,7 +250,7 @@ func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) *tcpip.Error
 		ttl = route.DefaultTTL()
 	}
 
-	return sendTCP(&route, tcpFields{
+	return sendTCP(route, tcpFields{
 		id:     s.id,
 		ttl:    ttl,
 		tos:    tos,
