@@ -300,7 +300,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	if ttl == 0 {
 		ttl = h.ep.route.DefaultTTL()
 	}
-	h.ep.sendSynTCP(&h.ep.route, tcpFields{
+	h.ep.sendSynTCP(h.ep.route, tcpFields{
 		id:     h.ep.ID,
 		ttl:    ttl,
 		tos:    h.ep.sendTOS,
@@ -361,7 +361,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			SACKPermitted: h.ep.sackPermitted,
 			MSS:           h.ep.amss,
 		}
-		h.ep.sendSynTCP(&h.ep.route, tcpFields{
+		h.ep.sendSynTCP(h.ep.route, tcpFields{
 			id:     h.ep.ID,
 			ttl:    h.ep.ttl,
 			tos:    h.ep.sendTOS,
@@ -547,7 +547,7 @@ func (h *handshake) start() *tcpip.Error {
 	}
 
 	h.sendSYNOpts = synOpts
-	h.ep.sendSynTCP(&h.ep.route, tcpFields{
+	h.ep.sendSynTCP(h.ep.route, tcpFields{
 		id:     h.ep.ID,
 		ttl:    h.ep.ttl,
 		tos:    h.ep.sendTOS,
@@ -596,7 +596,7 @@ func (h *handshake) complete() *tcpip.Error {
 			// the connection with another ACK or data (as ACKs are never
 			// retransmitted on their own).
 			if h.active || !h.acked || h.deferAccept != 0 && time.Since(h.startTime) > h.deferAccept {
-				h.ep.sendSynTCP(&h.ep.route, tcpFields{
+				h.ep.sendSynTCP(h.ep.route, tcpFields{
 					id:     h.ep.ID,
 					ttl:    h.ep.ttl,
 					tos:    h.ep.sendTOS,
@@ -939,7 +939,7 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqn
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
-	err := e.sendTCP(&e.route, tcpFields{
+	err := e.sendTCP(e.route, tcpFields{
 		id:     e.ID,
 		ttl:    e.ttl,
 		tos:    e.sendTOS,

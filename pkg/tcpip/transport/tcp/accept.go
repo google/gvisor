@@ -599,7 +599,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) *tcpip.Er
 				ack:    s.sequenceNumber + 1,
 				rcvWnd: ctx.rcvWnd,
 			}
-			if err := e.sendSynTCP(&route, fields, synOpts); err != nil {
+			if err := e.sendSynTCP(route, fields, synOpts); err != nil {
 				return err
 			}
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
