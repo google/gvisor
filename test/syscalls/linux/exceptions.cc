@@ -23,6 +23,7 @@
 namespace gvisor {
 namespace testing {
 
+#if defined(__x86_64__)
 // Default value for the x87 FPU control word. See Intel SDM Vol 1, Ch 8.1.5
 // "x87 FPU Control Word".
 constexpr uint16_t kX87ControlWordDefault = 0x37f;
@@ -93,6 +94,9 @@ void InIOHelper(int width, int value) {
       },
       ::testing::KilledBySignal(SIGSEGV), "");
 }
+#elif defined(__aarch64__)
+void inline Halt() { asm("hlt #0\r\n"); }
+#endif
 
 TEST(ExceptionTest, Halt) {
   // In order to prevent the regular handler from messing with things (and
@@ -102,9 +106,14 @@ TEST(ExceptionTest, Halt) {
   sa.sa_handler = SIG_DFL;
   auto const cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGSEGV, sa));
 
+#if defined(__x86_64__)
   EXPECT_EXIT(Halt(), ::testing::KilledBySignal(SIGSEGV), "");
+#elif defined(__aarch64__)
+  EXPECT_EXIT(Halt(), ::testing::KilledBySignal(SIGILL), "");
+#endif
 }
 
+#if defined(__x86_64__)
 TEST(ExceptionTest, DivideByZero) {
   // See above.
   struct sigaction sa = {};
@@ -362,6 +371,7 @@ TEST(ExceptionTest, Int3Compact) {
 
   EXPECT_EXIT(Int3Compact(), ::testing::KilledBySignal(SIGTRAP), "");
 }
+#endif
 
 }  // namespace testing
 }  // namespace gvisor
