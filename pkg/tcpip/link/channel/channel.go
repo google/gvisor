@@ -31,7 +31,7 @@ type PacketInfo struct {
 	Pkt   *stack.PacketBuffer
 	Proto tcpip.NetworkProtocolNumber
 	GSO   *stack.GSO
-	Route stack.Route
+	Route *stack.Route
 }
 
 // Notification is the interface for receiving notification from the packet

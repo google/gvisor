@@ -73,7 +73,13 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	// If the endpoint is connected, re-connect.
 	if e.connected {
 		var err *tcpip.Error
-		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.BindAddr, e.route.RemoteAddress, e.NetProto, false)
+		// TODO(gvisor.dev/issue/4906): Properly restore the route with the right
+		// remote address. We used to pass e.remote.RemoteAddress which was
+		// effectively the empty address but since moving e.route to hold a pointer
+		// to a route instead of the route by value, we pass the empty address
+		// directly. Obviously this was always wrong since we should provide the
+		// remote address we were connected to, to properly restore the route.
+		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.BindAddr, "", e.NetProto, false)
 		if err != nil {
 			panic(err)
 		}
