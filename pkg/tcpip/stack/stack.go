@@ -1218,10 +1218,10 @@ func (s *Stack) getAddressEP(nic *NIC, localAddr, remoteAddr tcpip.Address, netP
 // from the specified NIC.
 //
 // Precondition: s.mu must be read locked.
-func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *NIC, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (route Route, ok bool) {
+func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *NIC, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
 	localAddressEndpoint := localAddressNIC.getAddressOrCreateTempInner(netProto, localAddr, false /* createTemp */, NeverPrimaryEndpoint)
 	if localAddressEndpoint == nil {
-		return Route{}, false
+		return nil
 	}
 
 	var outgoingNIC *NIC
@@ -1245,7 +1245,7 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *NIC, localAddr, re
 	// route.
 	if outgoingNIC == nil {
 		localAddressEndpoint.DecRef()
-		return Route{}, false
+		return nil
 	}
 
 	r := makeLocalRoute(
@@ -1259,10 +1259,10 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *NIC, localAddr, re
 
 	if r.IsOutboundBroadcast() {
 		r.Release()
-		return Route{}, false
+		return nil
 	}
 
-	return r, true
+	return r
 }
 
 // findLocalRouteRLocked returns a local route.
@@ -1271,26 +1271,26 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *NIC, localAddr, re
 // is, a local route is a route where packets never have to leave the stack.
 //
 // Precondition: s.mu must be read locked.
-func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (route Route, ok bool) {
+func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
 	if len(localAddr) == 0 {
 		localAddr = remoteAddr
 	}
 
 	if localAddressNICID == 0 {
 		for _, localAddressNIC := range s.nics {
-			if r, ok := s.findLocalRouteFromNICRLocked(localAddressNIC, localAddr, remoteAddr, netProto); ok {
-				return r, true
+			if r := s.findLocalRouteFromNICRLocked(localAddressNIC, localAddr, remoteAddr, netProto); r != nil {
+				return r
 			}
 		}
 
-		return Route{}, false
+		return nil
 	}
 
 	if localAddressNIC, ok := s.nics[localAddressNICID]; ok {
 		return s.findLocalRouteFromNICRLocked(localAddressNIC, localAddr, remoteAddr, netProto)
 	}
 
-	return Route{}, false
+	return nil
 }
 
 // FindRoute creates a route to the given destination address, leaving through
@@ -1304,7 +1304,7 @@ func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, 
 // If no local address is provided, the stack will select a local address. If no
 // remote address is provided, the stack wil use a remote address equal to the
 // local address.
-func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (Route, *tcpip.Error) {
+func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (*Route, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1315,7 +1315,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	needRoute := !(isLocalBroadcast || isMulticast || isLinkLocal || isLoopback)
 
 	if s.handleLocal && !isMulticast && !isLocalBroadcast {
-		if r, ok := s.findLocalRouteRLocked(id, localAddr, remoteAddr, netProto); ok {
+		if r := s.findLocalRouteRLocked(id, localAddr, remoteAddr, netProto); r != nil {
 			return r, nil
 		}
 	}
@@ -1339,9 +1339,9 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		}
 
 		if isLoopback {
-			return Route{}, tcpip.ErrBadLocalAddress
+			return nil, tcpip.ErrBadLocalAddress
 		}
-		return Route{}, tcpip.ErrNetworkUnreachable
+		return nil, tcpip.ErrNetworkUnreachable
 	}
 
 	canForward := s.Forwarding(netProto) && !header.IsV6LinkLocalAddress(localAddr) && !isLinkLocal
@@ -1365,7 +1365,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					gateway = route.Gateway
 				}
 				r := constructAndValidateRoute(netProto, addressEndpoint, nic /* outgoingNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop)
-				if r == (Route{}) {
+				if r == nil {
 					panic(fmt.Sprintf("non-forwarding route validation failed with route table entry = %#v, id = %d, localAddr = %s, remoteAddr = %s", route, id, localAddr, remoteAddr))
 				}
 				return r, nil
@@ -1401,13 +1401,13 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		if id != 0 {
 			if aNIC, ok := s.nics[id]; ok {
 				if addressEndpoint := s.getAddressEP(aNIC, localAddr, remoteAddr, netProto); addressEndpoint != nil {
-					if r := constructAndValidateRoute(netProto, addressEndpoint, aNIC /* localAddressNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop); r != (Route{}) {
+					if r := constructAndValidateRoute(netProto, addressEndpoint, aNIC /* localAddressNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop); r != nil {
 						return r, nil
 					}
 				}
 			}
 
-			return Route{}, tcpip.ErrNoRoute
+			return nil, tcpip.ErrNoRoute
 		}
 
 		if id == 0 {
@@ -1419,7 +1419,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					continue
 				}
 
-				if r := constructAndValidateRoute(netProto, addressEndpoint, aNIC /* localAddressNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop); r != (Route{}) {
+				if r := constructAndValidateRoute(netProto, addressEndpoint, aNIC /* localAddressNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop); r != nil {
 					return r, nil
 				}
 			}
@@ -1427,12 +1427,12 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	}
 
 	if needRoute {
-		return Route{}, tcpip.ErrNoRoute
+		return nil, tcpip.ErrNoRoute
 	}
 	if header.IsV6LoopbackAddress(remoteAddr) {
-		return Route{}, tcpip.ErrBadLocalAddress
+		return nil, tcpip.ErrBadLocalAddress
 	}
-	return Route{}, tcpip.ErrNetworkUnreachable
+	return nil, tcpip.ErrNetworkUnreachable
 }
 
 // CheckNetworkProtocol checks if a given network protocol is enabled in the

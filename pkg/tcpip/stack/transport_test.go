@@ -42,7 +42,7 @@ type fakeTransportEndpoint struct {
 
 	proto    *fakeTransportProtocol
 	peerAddr tcpip.Address
-	route    stack.Route
+	route    *stack.Route
 	uniqueID uint64
 
 	// acceptQueue is non-nil iff bound.

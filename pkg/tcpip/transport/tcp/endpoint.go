@@ -440,7 +440,7 @@ type endpoint struct {
 	isPortReserved    bool `state:"manual"`
 	isRegistered      bool `state:"manual"`
 	boundNICID        tcpip.NICID
-	route             stack.Route `state:"manual"`
+	route             *stack.Route `state:"manual"`
 	ttl               uint8
 	v6only            bool
 	isConnectNotified bool
@@ -705,7 +705,7 @@ func (e *endpoint) UniqueID() uint64 {
 //
 // If userMSS is non-zero and is not greater than the maximum possible MSS for
 // r, it will be used; otherwise, the maximum possible MSS will be used.
-func calculateAdvertisedMSS(userMSS uint16, r stack.Route) uint16 {
+func calculateAdvertisedMSS(userMSS uint16, r *stack.Route) uint16 {
 	// The maximum possible MSS is dependent on the route.
 	// TODO(b/143359391): Respect TCP Min and Max size.
 	maxMSS := uint16(r.MTU() - header.TCPMinimumSize)
@@ -1173,7 +1173,11 @@ func (e *endpoint) cleanupLocked() {
 	e.boundPortFlags = ports.Flags{}
 	e.boundDest = tcpip.FullAddress{}
 
-	e.route.Release()
+	if e.route != nil {
+		e.route.Release()
+		e.route = nil
+	}
+
 	e.stack.CompleteTransportEndpointCleanup(e)
 	tcpip.DeleteDanglingEndpoint(e)
 }

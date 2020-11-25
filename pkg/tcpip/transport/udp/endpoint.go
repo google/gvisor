@@ -99,7 +99,7 @@ type endpoint struct {
 	sndBufSize     int
 	sndBufSizeMax  int
 	state          EndpointState
-	route          stack.Route `state:"manual"`
+	route          *stack.Route `state:"manual"`
 	dstPort        uint16
 	v6only         bool
 	ttl            uint8
@@ -259,7 +259,10 @@ func (e *endpoint) Close() {
 	}
 	e.rcvMu.Unlock()
 
-	e.route.Release()
+	if e.route != nil {
+		e.route.Release()
+		e.route = nil
+	}
 
 	// Update the state.
 	e.state = StateClosed
@@ -368,7 +371,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 // connectRoute establishes a route to the specified interface or the
 // configured multicast interface if no interface is specified and the
 // specified address is a multicast address.
-func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (stack.Route, tcpip.NICID, *tcpip.Error) {
+func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, *tcpip.Error) {
 	localAddr := e.ID.LocalAddress
 	if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
@@ -387,7 +390,7 @@ func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netPr
 	// Find a route to the desired destination.
 	r, err := e.stack.FindRoute(nicID, localAddr, addr.Addr, netProto, e.multicastLoop)
 	if err != nil {
-		return stack.Route{}, 0, err
+		return nil, 0, err
 	}
 	return r, nicID, nil
 }
@@ -459,7 +462,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	var resolve func(waker *sleep.Waker) (ch <-chan struct{}, err *tcpip.Error)
 	var dstPort uint16
 	if to == nil {
-		route = &e.route
+		route = e.route
 		dstPort = e.dstPort
 		resolve = func(waker *sleep.Waker) (ch <-chan struct{}, err *tcpip.Error) {
 			// Promote lock to exclusive if using a shared route, given that it may
@@ -512,7 +515,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 		defer r.Release()
 
-		route = &r
+		route = r
 		dstPort = dst.Port
 		resolve = route.Resolve
 	}
@@ -1083,7 +1086,7 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 	e.ID = id
 	e.boundBindToDevice = btd
 	e.route.Release()
-	e.route = stack.Route{}
+	e.route = nil
 	e.dstPort = 0
 
 	return nil

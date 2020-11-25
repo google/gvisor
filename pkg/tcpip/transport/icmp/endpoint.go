@@ -72,7 +72,7 @@ type endpoint struct {
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
 	state         endpointState
-	route         stack.Route `state:"manual"`
+	route         *stack.Route `state:"manual"`
 	ttl           uint8
 	stats         tcpip.TransportEndpointStats `state:"nosave"`
 	// linger is used for SO_LINGER socket option.
@@ -132,7 +132,10 @@ func (e *endpoint) Close() {
 	}
 	e.rcvMu.Unlock()
 
-	e.route.Release()
+	if e.route != nil {
+		e.route.Release()
+		e.route = nil
+	}
 
 	// Update the state.
 	e.state = stateClosed
@@ -272,7 +275,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	var route *stack.Route
 	if to == nil {
-		route = &e.route
+		route = e.route
 
 		if route.IsResolutionRequired() {
 			// Promote lock to exclusive if using a shared route,
@@ -313,7 +316,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 		defer r.Release()
 
-		route = &r
+		route = r
 	}
 
 	if route.IsResolutionRequired() {

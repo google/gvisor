@@ -155,7 +155,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	// WritePacket caller's do not set the following fields in PacketBuffer
 	// so we populate them here.
 	newRoute := r.Clone()
-	pkt.EgressRoute = &newRoute
+	pkt.EgressRoute = newRoute
 	pkt.GSOOptions = gso
 	pkt.NetworkProtocolNumber = protocol
 	d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
@@ -182,7 +182,7 @@ func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, pkts stack.PacketB
 		// the route here to ensure it doesn't get released while the
 		// packet is still in our queue.
 		newRoute := pkt.EgressRoute.Clone()
-		pkt.EgressRoute = &newRoute
+		pkt.EgressRoute = newRoute
 		if !d.q.enqueue(pkt) {
 			if enqueued > 0 {
 				d.newPacketWaker.Assert()
