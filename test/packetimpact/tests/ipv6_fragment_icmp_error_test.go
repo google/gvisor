@@ -119,6 +119,7 @@ func TestIPv6ICMPEchoRequestFragmentReassembly(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			dut := testbench.NewDUT(t)
 			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
 			conn := (*testbench.Connection)(&ipv6Conn)
@@ -220,6 +221,7 @@ func TestIPv6FragmentReassemblyTimeout(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			dut := testbench.NewDUT(t)
 			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
 			conn := (*testbench.Connection)(&ipv6Conn)
@@ -315,6 +317,7 @@ func TestIPv6FragmentParamProblem(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			dut := testbench.NewDUT(t)
 			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
 			conn := (*testbench.Connection)(&ipv6Conn)

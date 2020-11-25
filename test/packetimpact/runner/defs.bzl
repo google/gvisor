@@ -263,6 +263,7 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "ipv6_fragment_icmp_error",
+        num_duts = 3,
     ),
     PacketimpactTestInfo(
         name = "udp_send_recv_dgram",
