@@ -621,10 +621,7 @@ cc_binary(
 cc_binary(
     name = "exceptions_test",
     testonly = 1,
-    srcs = select_arch(
-        amd64 = ["exceptions.cc"],
-        arm64 = [],
-    ),
+    srcs = ["exceptions.cc"],
     linkstatic = 1,
     deps = [
         gtest,
