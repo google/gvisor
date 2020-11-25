@@ -12,10 +12,11 @@ def _packetimpact_test_impl(ctx):
         # current user, and no other users will be mapped in that namespace.
         # Make sure that everything is readable here.
         "find . -type f -or -type d -exec chmod a+rx {} \\;",
-        "%s %s --testbench_binary %s $@\n" % (
+        "%s %s --testbench_binary %s --num_duts %d $@\n" % (
             test_runner.short_path,
             " ".join(ctx.attr.flags),
             ctx.files.testbench_binary[0].short_path,
+            ctx.attr.num_duts,
         ),
     ])
     ctx.actions.write(bench, bench_content, is_executable = True)
@@ -50,6 +51,10 @@ _packetimpact_test = rule(
         "flags": attr.string_list(
             mandatory = False,
             default = [],
+        ),
+        "num_duts": attr.int(
+            mandatory = False,
+            default = 1,
         ),
     },
     test = True,
@@ -110,24 +115,27 @@ def packetimpact_netstack_test(
         **kwargs
     )
 
-def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False):
+def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1):
     """Add packetimpact tests written in go.
 
     Args:
         name: name of the test
         expect_native_failure: the test must fail natively
         expect_netstack_failure: the test must fail for Netstack
+        num_duts: how many DUTs are needed for the test
     """
     testbench_binary = name + "_test"
     packetimpact_native_test(
         name = name,
         expect_failure = expect_native_failure,
         testbench_binary = testbench_binary,
+        num_duts = num_duts,
     )
     packetimpact_netstack_test(
         name = name,
         expect_failure = expect_netstack_failure,
         testbench_binary = testbench_binary,
+        num_duts = num_duts,
     )
 
 def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
@@ -153,7 +161,7 @@ def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
 
 PacketimpactTestInfo = provider(
     doc = "Provide information for packetimpact tests",
-    fields = ["name", "expect_netstack_failure"],
+    fields = ["name", "expect_netstack_failure", "num_duts"],
 )
 
 ALL_TESTS = [
