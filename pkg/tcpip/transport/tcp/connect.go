@@ -1078,7 +1078,7 @@ func (e *endpoint) transitionToStateCloseLocked() {
 // to any other listening endpoint. We reply with RST if we cannot find one.
 func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.ID, s.nicID)
-	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.EndpointInfo.TransportEndpointInfo.ID.LocalAddress.To4() != "" {
+	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.LocalAddress.To4() != "" {
 		// Dual-stack socket, try IPv4.
 		ep = e.stack.FindTransportEndpoint(header.IPv4ProtocolNumber, e.TransProto, e.ID, s.nicID)
 	}
@@ -1635,7 +1635,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 		}
 		extTW, newSyn := e.rcv.handleTimeWaitSegment(s)
 		if newSyn {
-			info := e.EndpointInfo.TransportEndpointInfo
+			info := e.TransportEndpointInfo
 			newID := info.ID
 			newID.RemoteAddress = ""
 			newID.RemotePort = 0

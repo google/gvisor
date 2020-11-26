@@ -309,18 +309,6 @@ type Stats struct {
 // marker interface.
 func (*Stats) IsEndpointStats() {}
 
-// EndpointInfo holds useful information about a transport endpoint which
-// can be queried by monitoring tools.
-//
-// +stateify savable
-type EndpointInfo struct {
-	stack.TransportEndpointInfo
-}
-
-// IsEndpointInfo is an empty method to implement the tcpip.EndpointInfo
-// marker interface.
-func (*EndpointInfo) IsEndpointInfo() {}
-
 // endpoint represents a TCP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -361,7 +349,7 @@ func (*EndpointInfo) IsEndpointInfo() {}
 //
 // +stateify savable
 type endpoint struct {
-	EndpointInfo
+	stack.TransportEndpointInfo
 	tcpip.DefaultSocketOptionsHandler
 
 	// endpointEntry is used to queue endpoints for processing to the
@@ -442,7 +430,6 @@ type endpoint struct {
 	boundNICID        tcpip.NICID
 	route             *stack.Route `state:"manual"`
 	ttl               uint8
-	v6only            bool
 	isConnectNotified bool
 
 	// h stores a reference to the current handshake state if the endpoint is in
@@ -865,11 +852,9 @@ type keepalive struct {
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
 	e := &endpoint{
 		stack: s,
-		EndpointInfo: EndpointInfo{
-			TransportEndpointInfo: stack.TransportEndpointInfo{
-				NetProto:   netProto,
-				TransProto: header.TCPProtocolNumber,
-			},
+		TransportEndpointInfo: stack.TransportEndpointInfo{
+			NetProto:   netProto,
+			TransProto: header.TCPProtocolNumber,
 		},
 		waiterQueue: waiterQueue,
 		state:       StateInitial,
@@ -888,6 +873,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		maxSynRetries: DefaultSynRetries,
 	}
 	e.ops.InitHandler(e)
+	e.ops.SetMulticastLoop(true)
 
 	var ss tcpip.TCPSendBufferSizeRangeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
@@ -1686,21 +1672,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 			o = 0
 		}
 		atomic.StoreUint32(&e.slowAck, o)
-
-	case tcpip.V6OnlyOption:
-		// We only recognize this option on v6 endpoints.
-		if e.NetProto != header.IPv6ProtocolNumber {
-			return tcpip.ErrInvalidEndpointState
-		}
-
-		// We only allow this to be set when we're in the initial state.
-		if e.EndpointState() != StateInitial {
-			return tcpip.ErrInvalidEndpointState
-		}
-
-		e.LockUser()
-		e.v6only = v
-		e.UnlockUser()
 	}
 
 	return nil
@@ -1985,13 +1956,6 @@ func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
 	return e.rcvBufUsed, nil
 }
 
-// IsListening implements tcpip.SocketOptionsHandler.IsListening.
-func (e *endpoint) IsListening() bool {
-	e.LockUser()
-	defer e.UnlockUser()
-	return e.EndpointState() == StateListen
-}
-
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
@@ -2005,21 +1969,6 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	case tcpip.QuickAckOption:
 		v := atomic.LoadUint32(&e.slowAck) == 0
 		return v, nil
-
-	case tcpip.V6OnlyOption:
-		// We only recognize this option on v6 endpoints.
-		if e.NetProto != header.IPv6ProtocolNumber {
-			return false, tcpip.ErrUnknownProtocolOption
-		}
-
-		e.LockUser()
-		v := e.v6only
-		e.UnlockUser()
-
-		return v, nil
-
-	case tcpip.MulticastLoopOption:
-		return true, nil
 
 	default:
 		return false, tcpip.ErrUnknownProtocolOption
@@ -2182,7 +2131,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 // checkV4MappedLocked determines the effective network protocol and converts
 // addr to its canonical form.
 func (e *endpoint) checkV4MappedLocked(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(addr, e.v6only)
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(addr, e.ops.GetV6Only())
 	if err != nil {
 		return tcpip.FullAddress{}, 0, err
 	}
@@ -2716,7 +2665,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err *tcpip.Error) {
 	// v6only set to false.
 	if netProto == header.IPv6ProtocolNumber {
 		stackHasV4 := e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber)
-		alsoBindToV4 := !e.v6only && addr.Addr == "" && stackHasV4
+		alsoBindToV4 := !e.ops.GetV6Only() && addr.Addr == "" && stackHasV4
 		if alsoBindToV4 {
 			netProtos = append(netProtos, header.IPv4ProtocolNumber)
 		}
@@ -3180,7 +3129,7 @@ func (e *endpoint) State() uint32 {
 func (e *endpoint) Info() tcpip.EndpointInfo {
 	e.LockUser()
 	// Make a copy of the endpoint info.
-	ret := e.EndpointInfo
+	ret := e.TransportEndpointInfo
 	e.UnlockUser()
 	return &ret
 }

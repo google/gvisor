@@ -718,37 +718,8 @@ const (
 	// TCP, it determines if the Nagle algorithm is on or off.
 	DelayOption
 
-	// MulticastLoopOption is used by SetSockOptBool/GetSockOptBool to
-	// specify whether multicast packets sent over a non-loopback interface
-	// will be looped back.
-	MulticastLoopOption
-
 	// QuickAckOption is stubbed out in SetSockOptBool/GetSockOptBool.
 	QuickAckOption
-
-	// ReceiveTClassOption is used by SetSockOptBool/GetSockOptBool to
-	// specify if the IPV6_TCLASS ancillary message is passed with incoming
-	// packets.
-	ReceiveTClassOption
-
-	// ReceiveTOSOption is used by SetSockOptBool/GetSockOptBool to specify
-	// if the TOS ancillary message is passed with incoming packets.
-	ReceiveTOSOption
-
-	// ReceiveIPPacketInfoOption is used by SetSockOptBool/GetSockOptBool to
-	// specify if more inforamtion is provided with incoming packets such as
-	// interface index and address.
-	ReceiveIPPacketInfoOption
-
-	// V6OnlyOption is used by SetSockOptBool/GetSockOptBool to specify
-	// whether an IPv6 socket is to be restricted to sending and receiving
-	// IPv6 packets only.
-	V6OnlyOption
-
-	// IPHdrIncludedOption is used by SetSockOpt to indicate for a raw
-	// endpoint that all packets being written have an IP header and the
-	// endpoint should not attach an IP header.
-	IPHdrIncludedOption
 )
 
 // SockOptInt represents socket options which values have the int type.
