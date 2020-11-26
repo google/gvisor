@@ -592,9 +592,7 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 		c.t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := c.EP.SetSockOptBool(tcpip.V6OnlyOption, v6only); err != nil {
-		c.t.Fatalf("SetSockOpt failed failed: %v", err)
-	}
+	c.EP.SocketOptions().SetV6Only(v6only)
 }
 
 // GetV6Packet reads a single packet from the link layer endpoint of the context

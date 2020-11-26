@@ -4642,13 +4642,9 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 												switch network {
 												case "ipv4":
 												case "ipv6":
-													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
-														t.Fatalf("SetSockOptBool(V6OnlyOption(true)) failed: %s", err)
-													}
+													ep.SocketOptions().SetV6Only(true)
 												case "dual":
-													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, false); err != nil {
-														t.Fatalf("SetSockOptBool(V6OnlyOption(false)) failed: %s", err)
-													}
+													ep.SocketOptions().SetV6Only(false)
 												default:
 													t.Fatalf("unknown network: '%s'", network)
 												}

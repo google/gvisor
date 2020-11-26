@@ -405,14 +405,6 @@ func testV4Accept(t *testing.T, c *context.Context) {
 		}
 	}
 
-	// Make sure we get the same error when calling the original ep and the
-	// new one. This validates that v4-mapped endpoints are still able to
-	// query the V6Only flag, whereas pure v4 endpoints are not.
-	_, expected := c.EP.GetSockOptBool(tcpip.V6OnlyOption)
-	if _, err := nep.GetSockOptBool(tcpip.V6OnlyOption); err != expected {
-		t.Fatalf("GetSockOpt returned unexpected value: got %v, want %v", err, expected)
-	}
-
 	// Check the peer address.
 	addr, err := nep.GetRemoteAddress()
 	if err != nil {
@@ -530,12 +522,12 @@ func TestV6AcceptOnV6(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 	var addr tcpip.FullAddress
-	nep, _, err := c.EP.Accept(&addr)
+	_, _, err := c.EP.Accept(&addr)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
-			nep, _, err = c.EP.Accept(&addr)
+			_, _, err = c.EP.Accept(&addr)
 			if err != nil {
 				t.Fatalf("Accept failed: %v", err)
 			}
@@ -547,12 +539,6 @@ func TestV6AcceptOnV6(t *testing.T) {
 
 	if addr.Addr != context.TestV6Addr {
 		t.Errorf("Unexpected remote address: got %s, want %s", addr.Addr, context.TestV6Addr)
-	}
-
-	// Make sure we can still query the v6 only status of the new endpoint,
-	// that is, that it is in fact a v6 socket.
-	if _, err := nep.GetSockOptBool(tcpip.V6OnlyOption); err != nil {
-		t.Errorf("GetSockOptBool(tcpip.V6OnlyOption) failed: %s", err)
 	}
 }
 
