@@ -8,6 +8,7 @@ go_library(
         "dhcpv6configurationfromndpra_string.go",
         "icmp.go",
         "ipv6.go",
+        "mld.go",
         "ndp.go",
     ],
     visibility = ["//visibility:public"],
@@ -19,6 +20,7 @@ go_library(
         "//pkg/tcpip/header/parse",
         "//pkg/tcpip/network/fragmentation",
         "//pkg/tcpip/network/hash",
+        "//pkg/tcpip/network/ip",
         "//pkg/tcpip/stack",
     ],
 )
@@ -47,5 +49,18 @@ go_test(
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
         "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
+)
+
+go_test(
+    name = "ipv6_x_test",
+    size = "small",
+    srcs = ["mld_test.go"],
+    deps = [
+        ":ipv6",
+        "//pkg/tcpip/checker",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/stack",
     ],
 )

@@ -1013,6 +1013,74 @@ func ICMPv6Payload(want []byte) TransportChecker {
 	}
 }
 
+// MLD creates a checker that checks that the packet contains a valid MLD
+// message for type of mldType, with potentially additional checks specified by
+// checkers.
+//
+// Checkers may assume that a valid ICMPv6 is passed to it containing a valid
+// MLD message as far as the size of the message (minSize) is concerned. The
+// values within the message are up to checkers to validate.
+func MLD(msgType header.ICMPv6Type, minSize int, checkers ...TransportChecker) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
+		// Check normal ICMPv6 first.
+		ICMPv6(
+			ICMPv6Type(msgType),
+			ICMPv6Code(0))(t, h)
+
+		last := h[len(h)-1]
+
+		icmp := header.ICMPv6(last.Payload())
+		if got := len(icmp.MessageBody()); got < minSize {
+			t.Fatalf("ICMPv6 MLD (type = %d) payload size of %d is less than the minimum size of %d", msgType, got, minSize)
+		}
+
+		for _, f := range checkers {
+			f(t, icmp)
+		}
+		if t.Failed() {
+			t.FailNow()
+		}
+	}
+}
+
+// MLDMaxRespDelay creates a checker that checks the Maximum Response Delay
+// field of a MLD message.
+//
+// The returned TransportChecker assumes that a valid ICMPv6 is passed to it
+// containing a valid MLD message as far as the size is concerned.
+func MLDMaxRespDelay(want time.Duration) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		icmp := h.(header.ICMPv6)
+		ns := header.MLD(icmp.MessageBody())
+
+		if got := ns.MaximumResponseDelay(); got != want {
+			t.Errorf("got %T.MaximumResponseDelay() = %s, want = %s", ns, got, want)
+		}
+	}
+}
+
+// MLDMulticastAddress creates a checker that checks the Multicast Address
+// field of a MLD message.
+//
+// The returned TransportChecker assumes that a valid ICMPv6 is passed to it
+// containing a valid MLD message as far as the size is concerned.
+func MLDMulticastAddress(want tcpip.Address) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		icmp := h.(header.ICMPv6)
+		ns := header.MLD(icmp.MessageBody())
+
+		if got := ns.MulticastAddress(); got != want {
+			t.Errorf("got %T.MulticastAddress() = %s, want = %s", ns, got, want)
+		}
+	}
+}
+
 // NDP creates a checker that checks that the packet contains a valid NDP
 // message for type of ty, with potentially additional checks specified by
 // checkers.
@@ -1032,7 +1100,7 @@ func NDP(msgType header.ICMPv6Type, minSize int, checkers ...TransportChecker) N
 		last := h[len(h)-1]
 
 		icmp := header.ICMPv6(last.Payload())
-		if got := len(icmp.NDPPayload()); got < minSize {
+		if got := len(icmp.MessageBody()); got < minSize {
 			t.Fatalf("ICMPv6 NDP (type = %d) payload size of %d is less than the minimum size of %d", msgType, got, minSize)
 		}
 
@@ -1066,7 +1134,7 @@ func NDPNSTargetAddress(want tcpip.Address) TransportChecker {
 		t.Helper()
 
 		icmp := h.(header.ICMPv6)
-		ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+		ns := header.NDPNeighborSolicit(icmp.MessageBody())
 
 		if got := ns.TargetAddress(); got != want {
 			t.Errorf("got %T.TargetAddress() = %s, want = %s", ns, got, want)
@@ -1095,7 +1163,7 @@ func NDPNATargetAddress(want tcpip.Address) TransportChecker {
 		t.Helper()
 
 		icmp := h.(header.ICMPv6)
-		na := header.NDPNeighborAdvert(icmp.NDPPayload())
+		na := header.NDPNeighborAdvert(icmp.MessageBody())
 
 		if got := na.TargetAddress(); got != want {
 			t.Errorf("got %T.TargetAddress() = %s, want = %s", na, got, want)
@@ -1113,7 +1181,7 @@ func NDPNASolicitedFlag(want bool) TransportChecker {
 		t.Helper()
 
 		icmp := h.(header.ICMPv6)
-		na := header.NDPNeighborAdvert(icmp.NDPPayload())
+		na := header.NDPNeighborAdvert(icmp.MessageBody())
 
 		if got := na.SolicitedFlag(); got != want {
 			t.Errorf("got %T.SolicitedFlag = %t, want = %t", na, got, want)
@@ -1184,7 +1252,7 @@ func NDPNAOptions(opts []header.NDPOption) TransportChecker {
 		t.Helper()
 
 		icmp := h.(header.ICMPv6)
-		na := header.NDPNeighborAdvert(icmp.NDPPayload())
+		na := header.NDPNeighborAdvert(icmp.MessageBody())
 		ndpOptions(t, na.Options(), opts)
 	}
 }
@@ -1199,7 +1267,7 @@ func NDPNSOptions(opts []header.NDPOption) TransportChecker {
 		t.Helper()
 
 		icmp := h.(header.ICMPv6)
-		ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+		ns := header.NDPNeighborSolicit(icmp.MessageBody())
 		ndpOptions(t, ns.Options(), opts)
 	}
 }
@@ -1224,7 +1292,7 @@ func NDPRSOptions(opts []header.NDPOption) TransportChecker {
 		t.Helper()
 
 		icmp := h.(header.ICMPv6)
-		rs := header.NDPRouterSolicit(icmp.NDPPayload())
+		rs := header.NDPRouterSolicit(icmp.MessageBody())
 		ndpOptions(t, rs.Options(), opts)
 	}
 }
