@@ -773,7 +773,7 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.Add
 
 	icmpData := header.ICMPv6(buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize))
 	icmpData.SetType(header.ICMPv6NeighborSolicit)
-	ns := header.NDPNeighborSolicit(icmpData.NDPPayload())
+	ns := header.NDPNeighborSolicit(icmpData.MessageBody())
 	ns.SetTargetAddress(addr)
 	icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
@@ -1944,7 +1944,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + int(optsSerializer.Length())
 		icmpData := header.ICMPv6(buffer.NewView(payloadSize))
 		icmpData.SetType(header.ICMPv6RouterSolicit)
-		rs := header.NDPRouterSolicit(icmpData.NDPPayload())
+		rs := header.NDPRouterSolicit(icmpData.MessageBody())
 		rs.Options().Serialize(optsSerializer)
 		icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 

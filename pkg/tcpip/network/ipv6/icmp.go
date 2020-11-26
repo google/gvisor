@@ -163,7 +163,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 	}
 
 	// TODO(b/112892170): Meaningfully handle all ICMP types.
-	switch h.Type() {
+	switch icmpType := h.Type(); icmpType {
 	case header.ICMPv6PacketTooBig:
 		received.PacketTooBig.Increment()
 		hdr, ok := pkt.Data.PullUp(header.ICMPv6PacketTooBigMinimumSize)
@@ -358,7 +358,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		packet := header.ICMPv6(pkt.TransportHeader().Push(neighborAdvertSize))
 		packet.SetType(header.ICMPv6NeighborAdvert)
-		na := header.NDPNeighborAdvert(packet.NDPPayload())
+		na := header.NDPNeighborAdvert(packet.MessageBody())
 
 		// As per RFC 4861 section 7.2.4:
 		//
@@ -644,8 +644,31 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 			return
 		}
 
+	case header.ICMPv6MulticastListenerQuery, header.ICMPv6MulticastListenerReport, header.ICMPv6MulticastListenerDone:
+		var handler func(header.MLD)
+		switch icmpType {
+		case header.ICMPv6MulticastListenerQuery:
+			received.MulticastListenerQuery.Increment()
+			handler = e.mld.handleMulticastListenerQuery
+		case header.ICMPv6MulticastListenerReport:
+			received.MulticastListenerReport.Increment()
+			handler = e.mld.handleMulticastListenerReport
+		case header.ICMPv6MulticastListenerDone:
+			received.MulticastListenerDone.Increment()
+		default:
+			panic(fmt.Sprintf("unrecognized MLD message = %d", icmpType))
+		}
+		if pkt.Data.Size()-header.ICMPv6HeaderSize < header.MLDMinimumSize {
+			received.Invalid.Increment()
+			return
+		}
+
+		if handler != nil {
+			handler(header.MLD(payload.ToView()))
+		}
+
 	default:
-		received.Invalid.Increment()
+		received.Unrecognized.Increment()
 	}
 }
 
@@ -681,7 +704,7 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 	packet := header.ICMPv6(pkt.TransportHeader().Push(neighborSolicitSize))
 	packet.SetType(header.ICMPv6NeighborSolicit)
-	ns := header.NDPNeighborSolicit(packet.NDPPayload())
+	ns := header.NDPNeighborSolicit(packet.MessageBody())
 	ns.SetTargetAddress(targetAddr)
 	ns.Options().Serialize(optsSerializer)
 	packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))

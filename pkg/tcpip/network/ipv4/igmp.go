@@ -51,6 +51,16 @@ const (
 	UnsolicitedReportIntervalMax = 10 * time.Second
 )
 
+// IGMPOptions holds options for IGMP.
+type IGMPOptions struct {
+	// Enabled indicates whether IGMP will be performed.
+	//
+	// When enabled, IGMP may transmit IGMP report and leave messages when
+	// joining and leaving multicast groups respectively, and handle incoming
+	// IGMP packets.
+	Enabled bool
+}
+
 var _ ip.MulticastGroupProtocol = (*igmpState)(nil)
 
 // igmpState is the per-interface IGMP state.
@@ -58,7 +68,8 @@ var _ ip.MulticastGroupProtocol = (*igmpState)(nil)
 // igmpState.init() MUST be called after creating an IGMP state.
 type igmpState struct {
 	// The IPv4 endpoint this igmpState is for.
-	ep *endpoint
+	ep   *endpoint
+	opts IGMPOptions
 
 	// igmpV1Present is for maintaining compatibility with IGMPv1 Routers, from
 	// RFC 2236 Section 4 Page 6: "The IGMPv1 router expects Version 1
@@ -108,10 +119,11 @@ func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 
 // init sets up an igmpState struct, and is required to be called before using
 // a new igmpState.
-func (igmp *igmpState) init(ep *endpoint) {
+func (igmp *igmpState) init(ep *endpoint, opts IGMPOptions) {
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 	igmp.ep = ep
+	igmp.opts = opts
 	igmp.mu.genericMulticastProtocol.Init(ep.protocol.stack.Rand(), ep.protocol.stack.Clock(), igmp, UnsolicitedReportIntervalMax)
 	igmp.igmpV1Present = igmpV1PresentDefault
 	igmp.mu.igmpV1Job = igmp.ep.protocol.stack.NewJob(&igmp.mu, func() {
@@ -189,6 +201,10 @@ func (igmp *igmpState) setV1Present(v bool) {
 }
 
 func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxRespTime time.Duration) {
+	if !igmp.opts.Enabled {
+		return
+	}
+
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 
@@ -206,6 +222,10 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 }
 
 func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
+	if !igmp.opts.Enabled {
+		return
+	}
+
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 	igmp.mu.genericMulticastProtocol.HandleReport(groupAddress)
@@ -226,11 +246,8 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 
 	// TODO(gvisor.dev/issue/4888): We should not use the unspecified address,
 	// rather we should select an appropriate local address.
-	r := stack.Route{
-		LocalAddress:  header.IPv4Any,
-		RemoteAddress: destAddress,
-	}
-	igmp.ep.addIPHeader(&r, pkt, stack.NetworkHeaderParams{
+	localAddr := header.IPv4Any
+	igmp.ep.addIPHeader(localAddr, destAddress, pkt, stack.NetworkHeaderParams{
 		Protocol: header.IGMPProtocolNumber,
 		TTL:      header.IGMPTTL,
 		TOS:      stack.DefaultTOS,
@@ -239,7 +256,7 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 	// TODO(b/162198658): set the ROUTER_ALERT option when sending Host
 	// Membership Reports.
 	sent := igmp.ep.protocol.stack.Stats().IGMP.PacketsSent
-	if err := igmp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv4Address(destAddress), nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+	if err := igmp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv4Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 		sent.Dropped.Increment()
 		return err
 	}
@@ -263,6 +280,26 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 // If the group already exists in the membership map, returns
 // tcpip.ErrDuplicateAddress.
 func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) *tcpip.Error {
+	if !igmp.opts.Enabled {
+		return nil
+	}
+
+	// As per RFC 2236 section 6 page 10,
+	//
+	//   The all-systems group (address 224.0.0.1) is handled as a special
+	//   case. The host starts in Idle Member state for that group on every
+	//   interface, never transitions to another state, and never sends a
+	//   report for that group.
+	//
+	// This is equivalent to not performing IGMP for the all-systems multicast
+	// address. Simply not performing IGMP when the group is added will prevent
+	// any work from being done on the all-systems multicast group when leaving
+	// the group or when query or report messages are received for it since the
+	// MGP state will not know about it.
+	if groupAddress == header.IPv4AllSystems {
+		return nil
+	}
+
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 
@@ -280,6 +317,10 @@ func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) *tcpip.Error {
 // If the group does not exist in the membership map, this function will
 // silently return.
 func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) {
+	if !igmp.opts.Enabled {
+		return
+	}
+
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 	igmp.mu.genericMulticastProtocol.LeaveGroup(groupAddress)

@@ -115,6 +115,12 @@ const (
 	ICMPv6NeighborSolicit ICMPv6Type = 135
 	ICMPv6NeighborAdvert  ICMPv6Type = 136
 	ICMPv6RedirectMsg     ICMPv6Type = 137
+
+	// Multicast Listener Discovery (MLD) messages, see RFC 2710.
+
+	ICMPv6MulticastListenerQuery  ICMPv6Type = 130
+	ICMPv6MulticastListenerReport ICMPv6Type = 131
+	ICMPv6MulticastListenerDone   ICMPv6Type = 132
 )
 
 // IsErrorType returns true if the receiver is an ICMP error type.
@@ -245,10 +251,9 @@ func (b ICMPv6) SetSequence(sequence uint16) {
 	binary.BigEndian.PutUint16(b[icmpv6SequenceOffset:], sequence)
 }
 
-// NDPPayload returns the NDP payload buffer. That is, it returns the ICMPv6
-// packet's message body as defined by RFC 4443 section 2.1; the portion of the
-// ICMPv6 buffer after the first ICMPv6HeaderSize bytes.
-func (b ICMPv6) NDPPayload() []byte {
+// MessageBody returns the message body as defined by RFC 4443 section 2.1; the
+// portion of the ICMPv6 buffer after the first ICMPv6HeaderSize bytes.
+func (b ICMPv6) MessageBody() []byte {
 	return b[ICMPv6HeaderSize:]
 }
 
