@@ -271,6 +271,22 @@ func TestICMPCounts(t *testing.T) {
 					typ:  header.ICMPv6RedirectMsg,
 					size: header.ICMPv6MinimumSize,
 				},
+				{
+					typ:  header.ICMPv6MulticastListenerQuery,
+					size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+				},
+				{
+					typ:  header.ICMPv6MulticastListenerReport,
+					size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+				},
+				{
+					typ:  header.ICMPv6MulticastListenerDone,
+					size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+				},
+				{
+					typ:  255, /* Unrecognized */
+					size: 50,
+				},
 			}
 
 			handleIPv6Payload := func(icmp header.ICMPv6) {
@@ -412,6 +428,22 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 		{
 			typ:  header.ICMPv6RedirectMsg,
 			size: header.ICMPv6MinimumSize,
+		},
+		{
+			typ:  header.ICMPv6MulticastListenerQuery,
+			size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+		},
+		{
+			typ:  header.ICMPv6MulticastListenerReport,
+			size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+		},
+		{
+			typ:  header.ICMPv6MulticastListenerDone,
+			size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+		},
+		{
+			typ:  255, /* Unrecognized */
+			size: 50,
 		},
 	}
 
@@ -1543,7 +1575,7 @@ func TestPacketQueing(t *testing.T) {
 				hdr := buffer.NewPrependable(header.IPv6MinimumSize + naSize)
 				pkt := header.ICMPv6(hdr.Prepend(naSize))
 				pkt.SetType(header.ICMPv6NeighborAdvert)
-				na := header.NDPNeighborAdvert(pkt.NDPPayload())
+				na := header.NDPNeighborAdvert(pkt.MessageBody())
 				na.SetSolicitedFlag(true)
 				na.SetOverrideFlag(true)
 				na.SetTargetAddress(host2IPv6Addr.AddressWithPrefix.Address)
@@ -1592,7 +1624,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
 				icmp := header.ICMPv6(buffer.NewView(nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
-				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
 				return icmp
 			},
@@ -1612,7 +1644,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
 				icmp := header.ICMPv6(buffer.NewView(nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
-				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
 				ns.Options().Serialize(header.NDPOptionsSerializer{
 					header.NDPSourceLinkLayerAddressOption(linkAddr1),
@@ -1629,7 +1661,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
 				icmp := header.ICMPv6(buffer.NewView(nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
-				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
 				return icmp
 			},
@@ -1645,7 +1677,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
 				icmp := header.ICMPv6(buffer.NewView(nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
-				ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
 				ns.Options().Serialize(header.NDPOptionsSerializer{
 					header.NDPSourceLinkLayerAddressOption(linkAddr1),
@@ -1662,7 +1694,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize
 				icmp := header.ICMPv6(buffer.NewView(naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
-				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(true)
 				na.SetOverrideFlag(false)
 				na.SetTargetAddress(lladdr1)
@@ -1683,7 +1715,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
 				icmp := header.ICMPv6(buffer.NewView(naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
-				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(true)
 				na.SetOverrideFlag(false)
 				na.SetTargetAddress(lladdr1)
@@ -1702,7 +1734,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
 				icmp := header.ICMPv6(buffer.NewView(naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
-				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(false)
 				na.SetOverrideFlag(false)
 				na.SetTargetAddress(lladdr1)
@@ -1722,7 +1754,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
 				icmp := header.ICMPv6(buffer.NewView(naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
-				na := header.NDPNeighborAdvert(icmp.NDPPayload())
+				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(false)
 				na.SetOverrideFlag(false)
 				na.SetTargetAddress(lladdr1)

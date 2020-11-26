@@ -7,12 +7,14 @@ go_test(
     size = "small",
     srcs = [
         "ip_test.go",
+        "multicast_group_test.go",
     ],
     deps = [
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/header/parse",
         "//pkg/tcpip/link/channel",

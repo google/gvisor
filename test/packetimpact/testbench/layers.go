@@ -830,7 +830,9 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 	if l.Code != nil {
 		h.SetCode(*l.Code)
 	}
-	copy(h.NDPPayload(), l.Payload)
+	if n := copy(h.MessageBody(), l.Payload); n != len(l.Payload) {
+		panic(fmt.Sprintf("copied %d bytes, expected to copy %d bytes", n, len(l.Payload)))
+	}
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
 	} else {
@@ -876,7 +878,7 @@ func parseICMPv6(b []byte) (Layer, layerParser) {
 		Type:     ICMPv6Type(h.Type()),
 		Code:     ICMPv6Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
-		Payload:  h.NDPPayload(),
+		Payload:  h.MessageBody(),
 	}
 	return &icmpv6, nil
 }

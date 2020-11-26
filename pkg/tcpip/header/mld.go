@@ -23,6 +23,13 @@ import (
 )
 
 const (
+	// MLDMinimumSize is the minimum size for an MLD message.
+	MLDMinimumSize = 20
+
+	// MLDHopLimit is the Hop Limit for all IPv6 packets with an MLD message, as
+	// per RFC 2710 section 3.
+	MLDHopLimit = 1
+
 	// mldMaximumResponseDelayOffset is the offset to the Maximum Response Delay
 	// field within MLD.
 	mldMaximumResponseDelayOffset = 0
