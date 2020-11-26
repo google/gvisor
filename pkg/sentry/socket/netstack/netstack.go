@@ -240,10 +240,6 @@ type commonEndpoint interface {
 	// transport.Endpoint.SetSockOpt.
 	SetSockOpt(tcpip.SettableSocketOption) *tcpip.Error
 
-	// SetSockOptBool implements tcpip.Endpoint.SetSockOptBool and
-	// transport.Endpoint.SetSockOptBool.
-	SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error
-
 	// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt and
 	// transport.Endpoint.SetSockOptInt.
 	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
@@ -251,10 +247,6 @@ type commonEndpoint interface {
 	// GetSockOpt implements tcpip.Endpoint.GetSockOpt and
 	// transport.Endpoint.GetSockOpt.
 	GetSockOpt(tcpip.GettableSocketOption) *tcpip.Error
-
-	// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool and
-	// transport.Endpoint.GetSockOpt.
-	GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error)
 
 	// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt and
 	// transport.Endpoint.GetSockOpt.
@@ -338,9 +330,7 @@ type socketOpsCommon struct {
 // New creates a new endpoint socket.
 func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue *waiter.Queue, endpoint tcpip.Endpoint) (*fs.File, *syserr.Error) {
 	if skType == linux.SOCK_STREAM {
-		if err := endpoint.SetSockOptBool(tcpip.DelayOption, true); err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
+		endpoint.SocketOptions().SetDelayOption(true)
 	}
 
 	dirent := socket.NewDirent(t, netstackDevice)
@@ -1007,7 +997,7 @@ func GetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, family in
 		return getSockOptSocket(t, s, ep, family, skType, name, outLen)
 
 	case linux.SOL_TCP:
-		return getSockOptTCP(t, ep, name, outLen)
+		return getSockOptTCP(t, s, ep, name, outLen)
 
 	case linux.SOL_IPV6:
 		return getSockOptIPv6(t, s, ep, name, outPtr, outLen)
@@ -1241,46 +1231,36 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 }
 
 // getSockOptTCP implements GetSockOpt when level is SOL_TCP.
-func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (marshal.Marshallable, *syserr.Error) {
+func getSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name, outLen int) (marshal.Marshallable, *syserr.Error) {
+	if _, skType, skProto := s.Type(); !isTCPSocket(skType, skProto) {
+		log.Warningf("SOL_TCP options are only supported on TCP sockets: skType, skProto = %v, %d", skType, skProto)
+		return nil, syserr.ErrUnknownProtocolOption
+	}
+
 	switch name {
 	case linux.TCP_NODELAY:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.DelayOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(boolToInt32(!v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(!ep.SocketOptions().GetDelayOption()))
+		return &v, nil
 
 	case linux.TCP_CORK:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.CorkOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetCorkOption()))
+		return &v, nil
 
 	case linux.TCP_QUICKACK:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptBool(tcpip.QuickAckOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(boolToInt32(v))
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetQuickAck()))
+		return &v, nil
 
 	case linux.TCP_MAXSEG:
 		if outLen < sizeOfInt32 {
@@ -1804,7 +1784,7 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 		return setSockOptSocket(t, s, ep, name, optVal)
 
 	case linux.SOL_TCP:
-		return setSockOptTCP(t, ep, name, optVal)
+		return setSockOptTCP(t, s, ep, name, optVal)
 
 	case linux.SOL_IPV6:
 		return setSockOptIPv6(t, s, ep, name, optVal)
@@ -1994,7 +1974,12 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 }
 
 // setSockOptTCP implements SetSockOpt when level is SOL_TCP.
-func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
+func setSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
+	if _, skType, skProto := s.Type(); !isTCPSocket(skType, skProto) {
+		log.Warningf("SOL_TCP options are only supported on TCP sockets: skType, skProto = %v, %d", skType, skProto)
+		return syserr.ErrUnknownProtocolOption
+	}
+
 	switch name {
 	case linux.TCP_NODELAY:
 		if len(optVal) < sizeOfInt32 {
@@ -2002,7 +1987,8 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.DelayOption, v == 0))
+		ep.SocketOptions().SetDelayOption(v == 0)
+		return nil
 
 	case linux.TCP_CORK:
 		if len(optVal) < sizeOfInt32 {
@@ -2010,7 +1996,8 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.CorkOption, v != 0))
+		ep.SocketOptions().SetCorkOption(v != 0)
+		return nil
 
 	case linux.TCP_QUICKACK:
 		if len(optVal) < sizeOfInt32 {
@@ -2018,7 +2005,8 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.QuickAckOption, v != 0))
+		ep.SocketOptions().SetQuickAck(v != 0)
+		return nil
 
 	case linux.TCP_MAXSEG:
 		if len(optVal) < sizeOfInt32 {
