@@ -1373,6 +1373,18 @@ type ICMPv6PacketStats struct {
 	// RedirectMsg is the total number of ICMPv6 redirect message packets
 	// counted.
 	RedirectMsg *StatCounter
+
+	// MulticastListenerQuery is the total number of Multicast Listener Query
+	// messages counted.
+	MulticastListenerQuery *StatCounter
+
+	// MulticastListenerReport is the total number of Multicast Listener Report
+	// messages counted.
+	MulticastListenerReport *StatCounter
+
+	// MulticastListenerDone is the total number of Multicast Listener Done
+	// messages counted.
+	MulticastListenerDone *StatCounter
 }
 
 // ICMPv4SentPacketStats collects outbound ICMPv4-specific stats.
@@ -1413,6 +1425,10 @@ type ICMPv6SentPacketStats struct {
 // ICMPv6ReceivedPacketStats collects inbound ICMPv6-specific stats.
 type ICMPv6ReceivedPacketStats struct {
 	ICMPv6PacketStats
+
+	// Unrecognized is the total number of ICMPv6 packets received that the
+	// transport layer does not know how to parse.
+	Unrecognized *StatCounter
 
 	// Invalid is the total number of ICMPv6 packets received that the
 	// transport layer could not parse.
