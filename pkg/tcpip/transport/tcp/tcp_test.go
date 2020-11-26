@@ -2529,10 +2529,10 @@ func TestSegmentMerging(t *testing.T) {
 		{
 			"cork",
 			func(ep tcpip.Endpoint) {
-				ep.SetSockOptBool(tcpip.CorkOption, true)
+				ep.SocketOptions().SetCorkOption(true)
 			},
 			func(ep tcpip.Endpoint) {
-				ep.SetSockOptBool(tcpip.CorkOption, false)
+				ep.SocketOptions().SetCorkOption(false)
 			},
 		},
 	}
@@ -2624,7 +2624,7 @@ func TestDelay(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	c.EP.SetSockOptBool(tcpip.DelayOption, true)
+	c.EP.SocketOptions().SetDelayOption(true)
 
 	var allData []byte
 	for i, data := range [][]byte{{0}, {1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
@@ -2672,7 +2672,7 @@ func TestUndelay(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	c.EP.SetSockOptBool(tcpip.DelayOption, true)
+	c.EP.SocketOptions().SetDelayOption(true)
 
 	allData := [][]byte{{0}, {1, 2, 3}}
 	for i, data := range allData {
@@ -2705,7 +2705,7 @@ func TestUndelay(t *testing.T) {
 	// Check that we don't get the second packet yet.
 	c.CheckNoPacketTimeout("delayed second packet transmitted", 100*time.Millisecond)
 
-	c.EP.SetSockOptBool(tcpip.DelayOption, false)
+	c.EP.SocketOptions().SetDelayOption(false)
 
 	// Check that data is received.
 	second := c.GetPacket()
@@ -2742,8 +2742,8 @@ func TestMSSNotDelayed(t *testing.T) {
 		fn   func(tcpip.Endpoint)
 	}{
 		{"no-op", func(tcpip.Endpoint) {}},
-		{"delay", func(ep tcpip.Endpoint) { ep.SetSockOptBool(tcpip.DelayOption, true) }},
-		{"cork", func(ep tcpip.Endpoint) { ep.SetSockOptBool(tcpip.CorkOption, true) }},
+		{"delay", func(ep tcpip.Endpoint) { ep.SocketOptions().SetDelayOption(true) }},
+		{"cork", func(ep tcpip.Endpoint) { ep.SocketOptions().SetCorkOption(true) }},
 	}
 
 	for _, test := range tests {
@@ -6374,10 +6374,7 @@ func checkDelayOption(t *testing.T, c *context.Context, wantDelayEnabled tcpip.T
 	if err != nil {
 		t.Fatalf("NewEndPoint(tcp, ipv4, new(waiter.Queue)) failed: %s", err)
 	}
-	gotDelayOption, err := ep.GetSockOptBool(tcpip.DelayOption)
-	if err != nil {
-		t.Fatalf("ep.GetSockOptBool(tcpip.DelayOption) failed: %s", err)
-	}
+	gotDelayOption := ep.SocketOptions().GetDelayOption()
 	if gotDelayOption != wantDelayOption {
 		t.Errorf("ep.GetSockOptBool(tcpip.DelayOption) got: %t, want: %t", gotDelayOption, wantDelayOption)
 	}

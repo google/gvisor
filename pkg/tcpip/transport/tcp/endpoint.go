@@ -497,23 +497,8 @@ type endpoint struct {
 	// delay is a boolean (0 is false) and must be accessed atomically.
 	delay uint32
 
-	// cork holds back segments until full.
-	//
-	// cork is a boolean (0 is false) and must be accessed atomically.
-	cork uint32
-
 	// scoreboard holds TCP SACK Scoreboard information for this endpoint.
 	scoreboard *SACKScoreboard
-
-	// The options below aren't implemented, but we remember the user
-	// settings because applications expect to be able to set/query these
-	// options.
-
-	// slowAck holds the negated state of quick ack. It is stubbed out and
-	// does nothing.
-	//
-	// slowAck is a boolean (0 is false) and must be accessed atomically.
-	slowAck uint32
 
 	// segmentQueue is used to hand received segments to the protocol
 	// goroutine. Segments are queued as long as the queue is not full,
@@ -874,6 +859,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	}
 	e.ops.InitHandler(e)
 	e.ops.SetMulticastLoop(true)
+	e.ops.SetQuickAck(true)
 
 	var ss tcpip.TCPSendBufferSizeRangeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
@@ -897,7 +883,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 
 	var de tcpip.TCPDelayEnabled
 	if err := s.TransportProtocolOption(ProtocolNumber, &de); err == nil && de {
-		e.SetSockOptBool(tcpip.DelayOption, true)
+		e.ops.SetDelayOption(true)
 	}
 
 	var tcpLT tcpip.TCPLingerTimeoutOption
@@ -1640,41 +1626,20 @@ func (e *endpoint) OnKeepAliveSet(v bool) {
 	e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 }
 
-// SetSockOptBool sets a socket option.
-func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
-	switch opt {
-
-	case tcpip.CorkOption:
-		e.LockUser()
-		if !v {
-			atomic.StoreUint32(&e.cork, 0)
-
-			// Handle the corked data.
-			e.sndWaker.Assert()
-		} else {
-			atomic.StoreUint32(&e.cork, 1)
-		}
-		e.UnlockUser()
-
-	case tcpip.DelayOption:
-		if v {
-			atomic.StoreUint32(&e.delay, 1)
-		} else {
-			atomic.StoreUint32(&e.delay, 0)
-
-			// Handle delayed data.
-			e.sndWaker.Assert()
-		}
-
-	case tcpip.QuickAckOption:
-		o := uint32(1)
-		if v {
-			o = 0
-		}
-		atomic.StoreUint32(&e.slowAck, o)
+// OnDelayOptionSet implements tcpip.SocketOptionsHandler.OnDelayOptionSet.
+func (e *endpoint) OnDelayOptionSet(v bool) {
+	if !v {
+		// Handle delayed data.
+		e.sndWaker.Assert()
 	}
+}
 
-	return nil
+// OnCorkOptionSet implements tcpip.SocketOptionsHandler.OnCorkOptionSet.
+func (e *endpoint) OnCorkOptionSet(v bool) {
+	if !v {
+		// Handle the corked data.
+		e.sndWaker.Assert()
+	}
 }
 
 // SetSockOptInt sets a socket option.
@@ -1954,25 +1919,6 @@ func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
 	defer e.rcvListMu.Unlock()
 
 	return e.rcvBufUsed, nil
-}
-
-// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
-func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
-	switch opt {
-
-	case tcpip.CorkOption:
-		return atomic.LoadUint32(&e.cork) != 0, nil
-
-	case tcpip.DelayOption:
-		return atomic.LoadUint32(&e.delay) != 0, nil
-
-	case tcpip.QuickAckOption:
-		v := atomic.LoadUint32(&e.slowAck) == 0
-		return v, nil
-
-	default:
-		return false, tcpip.ErrUnknownProtocolOption
-	}
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.

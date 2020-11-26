@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
@@ -813,7 +812,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			}
 			if !nextTooBig && seg.data.Size() < available {
 				// Segment is not full.
-				if s.outstanding > 0 && atomic.LoadUint32(&s.ep.delay) != 0 {
+				if s.outstanding > 0 && s.ep.ops.GetDelayOption() {
 					// Nagle's algorithm. From Wikipedia:
 					//   Nagle's algorithm works by
 					//   combining a number of small
@@ -832,7 +831,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				// send space and MSS.
 				// TODO(gvisor.dev/issue/2833): Drain the held segments after a
 				// timeout.
-				if seg.data.Size() < s.maxPayloadSize && atomic.LoadUint32(&s.ep.cork) != 0 {
+				if seg.data.Size() < s.maxPayloadSize && s.ep.ops.GetCorkOption() {
 					return false
 				}
 			}
