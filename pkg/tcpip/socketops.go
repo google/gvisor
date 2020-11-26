@@ -19,10 +19,8 @@ import (
 )
 
 // SocketOptionsHandler holds methods that help define endpoint specific
-// behavior for socket options.
-// These must be implemented by endpoints to:
-// - Get notified when socket level options are set.
-// - Provide endpoint specific socket options.
+// behavior for socket level socket options. These must be implemented by
+// endpoints to get notified when socket level options are set.
 type SocketOptionsHandler interface {
 	// OnReuseAddressSet is invoked when SO_REUSEADDR is set for an endpoint.
 	OnReuseAddressSet(v bool)
@@ -32,10 +30,6 @@ type SocketOptionsHandler interface {
 
 	// OnKeepAliveSet is invoked when SO_KEEPALIVE is set for an endpoint.
 	OnKeepAliveSet(v bool)
-
-	// IsListening is invoked to fetch SO_ACCEPTCONN option value for an
-	// endpoint. It is used to indicate if the socket is a listening socket.
-	IsListening() bool
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -53,11 +47,8 @@ func (*DefaultSocketOptionsHandler) OnReusePortSet(bool) {}
 // OnKeepAliveSet implements SocketOptionsHandler.OnKeepAliveSet.
 func (*DefaultSocketOptionsHandler) OnKeepAliveSet(bool) {}
 
-// IsListening implements SocketOptionsHandler.IsListening.
-func (*DefaultSocketOptionsHandler) IsListening() bool { return false }
-
-// SocketOptions contains all the variables which store values for SOL_SOCKET
-// level options.
+// SocketOptions contains all the variables which store values for SOL_SOCKET,
+// SOL_IP and SOL_IPV6 level options.
 //
 // +stateify savable
 type SocketOptions struct {
@@ -88,6 +79,31 @@ type SocketOptions struct {
 	// keepAliveEnabled determines whether TCP keepalive is enabled for this
 	// socket.
 	keepAliveEnabled uint32
+
+	// multicastLoopEnabled determines whether multicast packets sent over a
+	// non-loopback interface will be looped back. Analogous to inet->mc_loop.
+	multicastLoopEnabled uint32
+
+	// receiveTOSEnabled is used to specify if the TOS ancillary message is
+	// passed with incoming packets.
+	receiveTOSEnabled uint32
+
+	// receiveTClassEnabled is used to specify if the IPV6_TCLASS ancillary
+	// message is passed with incoming packets.
+	receiveTClassEnabled uint32
+
+	// receivePacketInfoEnabled is used to specify if more inforamtion is
+	// provided with incoming packets such as interface index and address.
+	receivePacketInfoEnabled uint32
+
+	// hdrIncludeEnabled is used to indicate for a raw endpoint that all packets
+	// being written have an IP header and the endpoint should not attach an IP
+	// header.
+	hdrIncludedEnabled uint32
+
+	// v6OnlyEnabled is used to determine whether an IPv6 socket is to be
+	// restricted to sending and receiving IPv6 packets only.
+	v6OnlyEnabled uint32
 }
 
 // InitHandler initializes the handler. This must be called before using the
@@ -167,8 +183,64 @@ func (so *SocketOptions) SetKeepAlive(v bool) {
 	so.handler.OnKeepAliveSet(v)
 }
 
-// GetAcceptConn gets value for SO_ACCEPTCONN option.
-func (so *SocketOptions) GetAcceptConn() bool {
-	// This option is completely endpoint dependent and unsettable.
-	return so.handler.IsListening()
+// GetMulticastLoop gets value for IP_MULTICAST_LOOP option.
+func (so *SocketOptions) GetMulticastLoop() bool {
+	return atomic.LoadUint32(&so.multicastLoopEnabled) != 0
+}
+
+// SetMulticastLoop sets value for IP_MULTICAST_LOOP option.
+func (so *SocketOptions) SetMulticastLoop(v bool) {
+	storeAtomicBool(&so.multicastLoopEnabled, v)
+}
+
+// GetReceiveTOS gets value for IP_RECVTOS option.
+func (so *SocketOptions) GetReceiveTOS() bool {
+	return atomic.LoadUint32(&so.receiveTOSEnabled) != 0
+}
+
+// SetReceiveTOS sets value for IP_RECVTOS option.
+func (so *SocketOptions) SetReceiveTOS(v bool) {
+	storeAtomicBool(&so.receiveTOSEnabled, v)
+}
+
+// GetReceiveTClass gets value for IPV6_RECVTCLASS option.
+func (so *SocketOptions) GetReceiveTClass() bool {
+	return atomic.LoadUint32(&so.receiveTClassEnabled) != 0
+}
+
+// SetReceiveTClass sets value for IPV6_RECVTCLASS option.
+func (so *SocketOptions) SetReceiveTClass(v bool) {
+	storeAtomicBool(&so.receiveTClassEnabled, v)
+}
+
+// GetReceivePacketInfo gets value for IP_PKTINFO option.
+func (so *SocketOptions) GetReceivePacketInfo() bool {
+	return atomic.LoadUint32(&so.receivePacketInfoEnabled) != 0
+}
+
+// SetReceivePacketInfo sets value for IP_PKTINFO option.
+func (so *SocketOptions) SetReceivePacketInfo(v bool) {
+	storeAtomicBool(&so.receivePacketInfoEnabled, v)
+}
+
+// GetHeaderIncluded gets value for IP_HDRINCL option.
+func (so *SocketOptions) GetHeaderIncluded() bool {
+	return atomic.LoadUint32(&so.hdrIncludedEnabled) != 0
+}
+
+// SetHeaderIncluded sets value for IP_HDRINCL option.
+func (so *SocketOptions) SetHeaderIncluded(v bool) {
+	storeAtomicBool(&so.hdrIncludedEnabled, v)
+}
+
+// GetV6Only gets value for IPV6_V6ONLY option.
+func (so *SocketOptions) GetV6Only() bool {
+	return atomic.LoadUint32(&so.v6OnlyEnabled) != 0
+}
+
+// SetV6Only sets value for IPV6_V6ONLY option.
+//
+// Preconditions: the backing TCP or UDP endpoint must be in initial state.
+func (so *SocketOptions) SetV6Only(v bool) {
+	storeAtomicBool(&so.v6OnlyEnabled, v)
 }

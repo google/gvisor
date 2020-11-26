@@ -213,7 +213,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	route.ResolveWith(s.remoteLinkAddr)
 
 	n := newEndpoint(l.stack, netProto, queue)
-	n.v6only = l.v6Only
+	n.ops.SetV6Only(l.v6Only)
 	n.ID = s.id
 	n.boundNICID = s.nicID
 	n.route = route
@@ -752,7 +752,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) *tcpip.Er
 // its own goroutine and is responsible for handling connection requests.
 func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 	e.mu.Lock()
-	v6Only := e.v6only
+	v6Only := e.ops.GetV6Only()
 	ctx := newListenContext(e.stack, e, rcvWnd, v6Only, e.NetProto)
 
 	defer func() {

@@ -148,6 +148,7 @@ func (e *endpoint) Close() {
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
 func (e *endpoint) ModerateRecvBuf(copied int) {}
 
+// SetOwner implements tcpip.Endpoint.SetOwner.
 func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }

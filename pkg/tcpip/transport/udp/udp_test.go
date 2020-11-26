@@ -363,9 +363,7 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 
 	c.createEndpoint(flow.sockProto())
 	if flow.isV6Only() {
-		if err := c.ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
-			c.t.Fatalf("SetSockOptBool failed: %s", err)
-		}
+		c.ep.SocketOptions().SetV6Only(true)
 	} else if flow.isBroadcast() {
 		c.ep.SocketOptions().SetBroadcast(true)
 	}
@@ -1414,9 +1412,7 @@ func TestReadIPPacketInfo(t *testing.T) {
 				}
 			}
 
-			if err := c.ep.SetSockOptBool(tcpip.ReceiveIPPacketInfoOption, true); err != nil {
-				t.Fatalf("c.ep.SetSockOptBool(tcpip.ReceiveIPPacketInfoOption, true): %s", err)
-			}
+			c.ep.SocketOptions().SetReceivePacketInfo(true)
 
 			testRead(c, test.flow, checker.ReceiveIPPacketInfo(tcpip.IPPacketInfo{
 				NIC:             1,
@@ -1629,13 +1625,15 @@ func TestSetTClass(t *testing.T) {
 }
 
 func TestReceiveTosTClass(t *testing.T) {
+	const RcvTOSOpt = "ReceiveTosOption"
+	const RcvTClassOpt = "ReceiveTClassOption"
+
 	testCases := []struct {
-		name             string
-		getReceiveOption tcpip.SockOptBool
-		tests            []testFlow
+		name  string
+		tests []testFlow
 	}{
-		{"ReceiveTosOption", tcpip.ReceiveTOSOption, []testFlow{unicastV4, broadcast}},
-		{"ReceiveTClassOption", tcpip.ReceiveTClassOption, []testFlow{unicastV4in6, unicastV6, unicastV6Only, broadcastIn6}},
+		{RcvTOSOpt, []testFlow{unicastV4, broadcast}},
+		{RcvTClassOpt, []testFlow{unicastV4in6, unicastV6, unicastV6Only, broadcastIn6}},
 	}
 	for _, testCase := range testCases {
 		for _, flow := range testCase.tests {
@@ -1644,29 +1642,32 @@ func TestReceiveTosTClass(t *testing.T) {
 				defer c.cleanup()
 
 				c.createEndpointForFlow(flow)
-				option := testCase.getReceiveOption
 				name := testCase.name
 
-				// Verify that setting and reading the option works.
-				v, err := c.ep.GetSockOptBool(option)
-				if err != nil {
-					c.t.Errorf("GetSockOptBool(%s) failed: %s", name, err)
+				var optionGetter func() bool
+				var optionSetter func(bool)
+				switch name {
+				case RcvTOSOpt:
+					optionGetter = c.ep.SocketOptions().GetReceiveTOS
+					optionSetter = c.ep.SocketOptions().SetReceiveTOS
+				case RcvTClassOpt:
+					optionGetter = c.ep.SocketOptions().GetReceiveTClass
+					optionSetter = c.ep.SocketOptions().SetReceiveTClass
+				default:
+					t.Fatalf("unkown test variant: %s", name)
 				}
+
+				// Verify that setting and reading the option works.
+				v := optionGetter()
 				// Test for expected default value.
 				if v != false {
 					c.t.Errorf("got GetSockOptBool(%s) = %t, want = %t", name, v, false)
 				}
 
 				want := true
-				if err := c.ep.SetSockOptBool(option, want); err != nil {
-					c.t.Fatalf("SetSockOptBool(%s, %t) failed: %s", name, want, err)
-				}
+				optionSetter(want)
 
-				got, err := c.ep.GetSockOptBool(option)
-				if err != nil {
-					c.t.Errorf("GetSockOptBool(%s) failed: %s", name, err)
-				}
-
+				got := optionGetter()
 				if got != want {
 					c.t.Errorf("got GetSockOptBool(%s) = %t, want = %t", name, got, want)
 				}
@@ -1676,10 +1677,10 @@ func TestReceiveTosTClass(t *testing.T) {
 				if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
 					c.t.Fatalf("Bind failed: %s", err)
 				}
-				switch option {
-				case tcpip.ReceiveTClassOption:
+				switch name {
+				case RcvTClassOpt:
 					testRead(c, flow, checker.ReceiveTClass(testTOS))
-				case tcpip.ReceiveTOSOption:
+				case RcvTOSOpt:
 					testRead(c, flow, checker.ReceiveTOS(testTOS))
 				default:
 					t.Fatalf("unknown test variant: %s", name)
