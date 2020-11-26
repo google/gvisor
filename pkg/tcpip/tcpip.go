@@ -603,20 +603,12 @@ type Endpoint interface {
 	// SetSockOpt sets a socket option.
 	SetSockOpt(opt SettableSocketOption) *Error
 
-	// SetSockOptBool sets a socket option, for simple cases where a value
-	// has the bool type.
-	SetSockOptBool(opt SockOptBool, v bool) *Error
-
 	// SetSockOptInt sets a socket option, for simple cases where a value
 	// has the int type.
 	SetSockOptInt(opt SockOptInt, v int) *Error
 
 	// GetSockOpt gets a socket option.
 	GetSockOpt(opt GettableSocketOption) *Error
-
-	// GetSockOptBool gets a socket option for simple cases where a return
-	// value has the bool type.
-	GetSockOptBool(SockOptBool) (bool, *Error)
 
 	// GetSockOptInt gets a socket option for simple cases where a return
 	// value has the int type.
@@ -703,24 +695,6 @@ type WriteOptions struct {
 	// discarded if available endpoint buffer space is unsufficient.
 	Atomic bool
 }
-
-// SockOptBool represents socket options which values have the bool type.
-type SockOptBool int
-
-const (
-	// CorkOption is used by SetSockOptBool/GetSockOptBool to specify if
-	// data should be held until segments are full by the TCP transport
-	// protocol.
-	CorkOption SockOptBool = iota
-
-	// DelayOption is used by SetSockOptBool/GetSockOptBool to specify if
-	// data should be sent out immediately by the transport protocol. For
-	// TCP, it determines if the Nagle algorithm is on or off.
-	DelayOption
-
-	// QuickAckOption is stubbed out in SetSockOptBool/GetSockOptBool.
-	QuickAckOption
-)
 
 // SockOptInt represents socket options which values have the int type.
 type SockOptInt int
