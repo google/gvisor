@@ -575,11 +575,6 @@ func (e *endpoint) OnReusePortSet(v bool) {
 	e.mu.Unlock()
 }
 
-// SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
-func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
-	return nil
-}
-
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
@@ -787,11 +782,6 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 		e.mu.Unlock()
 	}
 	return nil
-}
-
-// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
-func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
-	return false, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.

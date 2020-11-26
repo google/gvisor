@@ -178,20 +178,12 @@ type Endpoint interface {
 	// SetSockOpt sets a socket option.
 	SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error
 
-	// SetSockOptBool sets a socket option for simple cases when a value has
-	// the int type.
-	SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error
-
 	// SetSockOptInt sets a socket option for simple cases when a value has
 	// the int type.
 	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
 
 	// GetSockOpt gets a socket option.
 	GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error
-
-	// GetSockOptBool gets a socket option for simple cases when a return
-	// value has the int type.
-	GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error)
 
 	// GetSockOptInt gets a socket option for simple cases when a return
 	// value has the int type.
@@ -857,11 +849,6 @@ func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 	return nil
 }
 
-func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
-	log.Warningf("Unsupported socket option: %d", opt)
-	return nil
-}
-
 func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
 	case tcpip.SendBufferSizeOption:
@@ -870,11 +857,6 @@ func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		log.Warningf("Unsupported socket option: %d", opt)
 	}
 	return nil
-}
-
-func (e *baseEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
-	log.Warningf("Unsupported socket option: %d", opt)
-	return false, tcpip.ErrUnknownProtocolOption
 }
 
 func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
