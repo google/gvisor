@@ -19,6 +19,12 @@ func (so *SocketOptions) StateFields() []string {
 		"reuseAddressEnabled",
 		"reusePortEnabled",
 		"keepAliveEnabled",
+		"multicastLoopEnabled",
+		"receiveTOSEnabled",
+		"receiveTClassEnabled",
+		"receivePacketInfoEnabled",
+		"hdrIncludedEnabled",
+		"v6OnlyEnabled",
 	}
 }
 
@@ -33,6 +39,12 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &so.reuseAddressEnabled)
 	stateSinkObject.Save(5, &so.reusePortEnabled)
 	stateSinkObject.Save(6, &so.keepAliveEnabled)
+	stateSinkObject.Save(7, &so.multicastLoopEnabled)
+	stateSinkObject.Save(8, &so.receiveTOSEnabled)
+	stateSinkObject.Save(9, &so.receiveTClassEnabled)
+	stateSinkObject.Save(10, &so.receivePacketInfoEnabled)
+	stateSinkObject.Save(11, &so.hdrIncludedEnabled)
+	stateSinkObject.Save(12, &so.v6OnlyEnabled)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -45,6 +57,12 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &so.reuseAddressEnabled)
 	stateSourceObject.Load(5, &so.reusePortEnabled)
 	stateSourceObject.Load(6, &so.keepAliveEnabled)
+	stateSourceObject.Load(7, &so.multicastLoopEnabled)
+	stateSourceObject.Load(8, &so.receiveTOSEnabled)
+	stateSourceObject.Load(9, &so.receiveTClassEnabled)
+	stateSourceObject.Load(10, &so.receivePacketInfoEnabled)
+	stateSourceObject.Load(11, &so.hdrIncludedEnabled)
+	stateSourceObject.Load(12, &so.v6OnlyEnabled)
 }
 
 func (f *FullAddress) StateTypeName() string {

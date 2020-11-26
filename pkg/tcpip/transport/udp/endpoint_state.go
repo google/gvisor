@@ -114,7 +114,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	var err *tcpip.Error
 	if e.state == StateConnected {
-		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.ID.LocalAddress, e.ID.RemoteAddress, netProto, e.multicastLoop)
+		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.ID.LocalAddress, e.ID.RemoteAddress, netProto, e.ops.GetMulticastLoop())
 		if err != nil {
 			panic(err)
 		}
