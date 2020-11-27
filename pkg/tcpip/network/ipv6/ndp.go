@@ -471,17 +471,8 @@ type ndpState struct {
 	// The default routers discovered through Router Advertisements.
 	defaultRouters map[tcpip.Address]defaultRouterState
 
-	rtrSolicit struct {
-		// The timer used to send the next router solicitation message.
-		timer tcpip.Timer
-
-		// Used to let the Router Solicitation timer know that it has been stopped.
-		//
-		// Must only be read from or written to while protected by the lock of
-		// the IPv6 endpoint this ndpState is associated with. MUST be set when the
-		// timer is set.
-		done *bool
-	}
+	// The job used to send the next router solicitation message.
+	rtrSolicitJob *tcpip.Job
 
 	// The on-link prefixes discovered through Router Advertisements' Prefix
 	// Information option.
@@ -507,7 +498,7 @@ type ndpState struct {
 // to the DAD goroutine that DAD should stop.
 type dadState struct {
 	// The DAD timer to send the next NS message, or resolve the address.
-	timer tcpip.Timer
+	job *tcpip.Job
 
 	// Used to let the DAD timer know that it has been stopped.
 	//
@@ -655,88 +646,62 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 		return nil
 	}
 
-	var done bool
-	var timer tcpip.Timer
+	state := dadState{
+		job: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+			state, ok := ndp.dad[addr]
+			if !ok {
+				panic(fmt.Sprintf("ndpdad: DAD timer fired but missing state for %s on NIC(%d)", addr, ndp.ep.nic.ID()))
+			}
+
+			if addressEndpoint.GetKind() != stack.PermanentTentative {
+				// The endpoint should still be marked as tentative since we are still
+				// performing DAD on it.
+				panic(fmt.Sprintf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.ep.nic.ID()))
+			}
+
+			dadDone := remaining == 0
+
+			var err *tcpip.Error
+			if !dadDone {
+				err = ndp.sendDADPacket(addr, addressEndpoint)
+			}
+
+			if dadDone {
+				// DAD has resolved.
+				addressEndpoint.SetKind(stack.Permanent)
+			} else if err == nil {
+				// DAD is not done and we had no errors when sending the last NDP NS,
+				// schedule the next DAD timer.
+				remaining--
+				state.job.Schedule(ndp.configs.RetransmitTimer)
+				return
+			}
+
+			// At this point we know that either DAD is done or we hit an error
+			// sending the last NDP NS. Either way, clean up addr's DAD state and let
+			// the integrator know DAD has completed.
+			delete(ndp.dad, addr)
+
+			if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
+				ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, dadDone, err)
+			}
+
+			// If DAD resolved for a stable SLAAC address, attempt generation of a
+			// temporary SLAAC address.
+			if dadDone && addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
+				// Reset the generation attempts counter as we are starting the generation
+				// of a new address for the SLAAC prefix.
+				ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */)
+			}
+		}),
+	}
+
 	// We initially start a timer to fire immediately because some of the DAD work
 	// cannot be done while holding the IPv6 endpoint's lock. This is effectively
 	// the same as starting a goroutine but we use a timer that fires immediately
 	// so we can reset it for the next DAD iteration.
-	timer = ndp.ep.protocol.stack.Clock().AfterFunc(0, func() {
-		ndp.ep.mu.Lock()
-		defer ndp.ep.mu.Unlock()
-
-		if done {
-			// If we reach this point, it means that the DAD timer fired after
-			// another goroutine already obtained the IPv6 endpoint lock and stopped
-			// DAD before this function obtained the NIC lock. Simply return here and
-			// do nothing further.
-			return
-		}
-
-		if addressEndpoint.GetKind() != stack.PermanentTentative {
-			// The endpoint should still be marked as tentative since we are still
-			// performing DAD on it.
-			panic(fmt.Sprintf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.ep.nic.ID()))
-		}
-
-		dadDone := remaining == 0
-
-		var err *tcpip.Error
-		if !dadDone {
-			// Use the unspecified address as the source address when performing DAD.
-			addressEndpoint := ndp.ep.acquireAddressOrCreateTempLocked(header.IPv6Any, true /* createTemp */, stack.NeverPrimaryEndpoint)
-
-			// Do not hold the lock when sending packets which may be a long running
-			// task or may block link address resolution. We know this is safe
-			// because immediately after obtaining the lock again, we check if DAD
-			// has been stopped before doing any work with the IPv6 endpoint. Note,
-			// DAD would be stopped if the IPv6 endpoint was disabled or closed, or if
-			// the address was removed.
-			ndp.ep.mu.Unlock()
-			err = ndp.sendDADPacket(addr, addressEndpoint)
-			ndp.ep.mu.Lock()
-			addressEndpoint.DecRef()
-		}
-
-		if done {
-			// If we reach this point, it means that DAD was stopped after we released
-			// the IPv6 endpoint's read lock and before we obtained the write lock.
-			return
-		}
-
-		if dadDone {
-			// DAD has resolved.
-			addressEndpoint.SetKind(stack.Permanent)
-		} else if err == nil {
-			// DAD is not done and we had no errors when sending the last NDP NS,
-			// schedule the next DAD timer.
-			remaining--
-			timer.Reset(ndp.configs.RetransmitTimer)
-			return
-		}
-
-		// At this point we know that either DAD is done or we hit an error sending
-		// the last NDP NS. Either way, clean up addr's DAD state and let the
-		// integrator know DAD has completed.
-		delete(ndp.dad, addr)
-
-		if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
-			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, dadDone, err)
-		}
-
-		// If DAD resolved for a stable SLAAC address, attempt generation of a
-		// temporary SLAAC address.
-		if dadDone && addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
-			// Reset the generation attempts counter as we are starting the generation
-			// of a new address for the SLAAC prefix.
-			ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */)
-		}
-	})
-
-	ndp.dad[addr] = dadState{
-		timer: timer,
-		done:  &done,
-	}
+	state.job.Schedule(0)
+	ndp.dad[addr] = state
 
 	return nil
 }
@@ -745,55 +710,31 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 // addr.
 //
 // addr must be a tentative IPv6 address on ndp's IPv6 endpoint.
-//
-// The IPv6 endpoint that ndp belongs to MUST NOT be locked.
 func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) *tcpip.Error {
 	snmc := header.SolicitedNodeAddr(addr)
 
-	r, err := ndp.ep.protocol.stack.FindRoute(ndp.ep.nic.ID(), header.IPv6Any, snmc, ProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		return err
-	}
-	defer r.Release()
-
-	// Route should resolve immediately since snmc is a multicast address so a
-	// remote link address can be calculated without a resolution process.
-	if c, err := r.Resolve(nil); err != nil {
-		// Do not consider the NIC being unknown or disabled as a fatal error.
-		// Since this method is required to be called when the IPv6 endpoint is not
-		// locked, the NIC could have been disabled or removed by another goroutine.
-		if err == tcpip.ErrUnknownNICID || err != tcpip.ErrInvalidEndpointState {
-			return err
-		}
-
-		panic(fmt.Sprintf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.ep.nic.ID(), err))
-	} else if c != nil {
-		panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.ep.nic.ID()))
-	}
-
-	icmpData := header.ICMPv6(buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize))
-	icmpData.SetType(header.ICMPv6NeighborSolicit)
-	ns := header.NDPNeighborSolicit(icmpData.MessageBody())
+	icmp := header.ICMPv6(buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize))
+	icmp.SetType(header.ICMPv6NeighborSolicit)
+	ns := header.NDPNeighborSolicit(icmp.MessageBody())
 	ns.SetTargetAddress(addr)
-	icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+	icmp.SetChecksum(header.ICMPv6Checksum(icmp, header.IPv6Any, snmc, buffer.VectorisedView{}))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               buffer.View(icmpData).ToVectorisedView(),
+		ReserveHeaderBytes: int(ndp.ep.MaxHeaderLength()),
+		Data:               buffer.View(icmp).ToVectorisedView(),
 	})
 
-	sent := r.Stats().ICMP.V6PacketsSent
-	if err := r.WritePacket(nil,
-		stack.NetworkHeaderParams{
-			Protocol: header.ICMPv6ProtocolNumber,
-			TTL:      header.NDPHopLimit,
-		}, pkt,
-	); err != nil {
+	sent := ndp.ep.protocol.stack.Stats().ICMP.V6PacketsSent
+	ndp.ep.addIPHeader(header.IPv6Any, snmc, pkt, stack.NetworkHeaderParams{
+		Protocol: header.ICMPv6ProtocolNumber,
+		TTL:      header.NDPHopLimit,
+	})
+
+	if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(snmc), nil /* gso */, ProtocolNumber, pkt); err != nil {
 		sent.Dropped.Increment()
 		return err
 	}
 	sent.NeighborSolicit.Increment()
-
 	return nil
 }
 
@@ -812,14 +753,7 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 		return
 	}
 
-	if dad.timer != nil {
-		dad.timer.Stop()
-		dad.timer = nil
-
-		*dad.done = true
-		dad.done = nil
-	}
-
+	dad.job.Cancel()
 	delete(ndp.dad, addr)
 
 	// Let the integrator know DAD did not resolve.
@@ -1859,7 +1793,7 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) startSolicitingRouters() {
-	if ndp.rtrSolicit.timer != nil {
+	if ndp.rtrSolicitJob != nil {
 		// We are already soliciting routers.
 		return
 	}
@@ -1876,56 +1810,14 @@ func (ndp *ndpState) startSolicitingRouters() {
 		delay = time.Duration(rand.Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
 	}
 
-	var done bool
-	ndp.rtrSolicit.done = &done
-	ndp.rtrSolicit.timer = ndp.ep.protocol.stack.Clock().AfterFunc(delay, func() {
-		ndp.ep.mu.Lock()
-		if done {
-			// If we reach this point, it means that the RS timer fired after another
-			// goroutine already obtained the IPv6 endpoint lock and stopped
-			// solicitations. Simply return here and do nothing further.
-			ndp.ep.mu.Unlock()
-			return
-		}
-
+	ndp.rtrSolicitJob = ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
 		// As per RFC 4861 section 4.1, the source of the RS is an address assigned
 		// to the sending interface, or the unspecified address if no address is
 		// assigned to the sending interface.
-		addressEndpoint := ndp.ep.acquireOutgoingPrimaryAddressRLocked(header.IPv6AllRoutersMulticastAddress, false)
-		if addressEndpoint == nil {
-			// Incase this ends up creating a new temporary address, we need to hold
-			// onto the endpoint until a route is obtained. If we decrement the
-			// reference count before obtaing a route, the address's resources would
-			// be released and attempting to obtain a route after would fail. Once a
-			// route is obtainted, it is safe to decrement the reference count since
-			// obtaining a route increments the address's reference count.
-			addressEndpoint = ndp.ep.acquireAddressOrCreateTempLocked(header.IPv6Any, true /* createTemp */, stack.NeverPrimaryEndpoint)
-		}
-		ndp.ep.mu.Unlock()
-
-		localAddr := addressEndpoint.AddressWithPrefix().Address
-		r, err := ndp.ep.protocol.stack.FindRoute(ndp.ep.nic.ID(), localAddr, header.IPv6AllRoutersMulticastAddress, ProtocolNumber, false /* multicastLoop */)
-		addressEndpoint.DecRef()
-		if err != nil {
-			return
-		}
-		defer r.Release()
-
-		// Route should resolve immediately since
-		// header.IPv6AllRoutersMulticastAddress is a multicast address so a
-		// remote link address can be calculated without a resolution process.
-		if c, err := r.Resolve(nil); err != nil {
-			// Do not consider the NIC being unknown or disabled as a fatal error.
-			// Since this method is required to be called when the IPv6 endpoint is
-			// not locked, the IPv6 endpoint could have been disabled or removed by
-			// another goroutine.
-			if err == tcpip.ErrUnknownNICID || err == tcpip.ErrInvalidEndpointState {
-				return
-			}
-
-			panic(fmt.Sprintf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.nic.ID(), err))
-		} else if c != nil {
-			panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.ep.nic.ID()))
+		localAddr := header.IPv6Any
+		if addressEndpoint := ndp.ep.acquireOutgoingPrimaryAddressRLocked(header.IPv6AllRoutersMulticastAddress, false); addressEndpoint != nil {
+			localAddr = addressEndpoint.AddressWithPrefix().Address
+			addressEndpoint.DecRef()
 		}
 
 		// As per RFC 4861 section 4.1, an NDP RS SHOULD include the source
@@ -1936,9 +1828,10 @@ func (ndp *ndpState) startSolicitingRouters() {
 		// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
 		// LinkEndpoint.LinkAddress) before reaching this point.
 		var optsSerializer header.NDPOptionsSerializer
-		if localAddr != header.IPv6Any && header.IsValidUnicastEthernetAddress(r.LocalLinkAddress) {
+		linkAddress := ndp.ep.nic.LinkAddress()
+		if localAddr != header.IPv6Any && header.IsValidUnicastEthernetAddress(linkAddress) {
 			optsSerializer = header.NDPOptionsSerializer{
-				header.NDPSourceLinkLayerAddressOption(r.LocalLinkAddress),
+				header.NDPSourceLinkLayerAddressOption(linkAddress),
 			}
 		}
 		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + int(optsSerializer.Length())
@@ -1946,20 +1839,20 @@ func (ndp *ndpState) startSolicitingRouters() {
 		icmpData.SetType(header.ICMPv6RouterSolicit)
 		rs := header.NDPRouterSolicit(icmpData.MessageBody())
 		rs.Options().Serialize(optsSerializer)
-		icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+		icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, localAddr, header.IPv6AllRoutersMulticastAddress, buffer.VectorisedView{}))
 
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(r.MaxHeaderLength()),
+			ReserveHeaderBytes: int(ndp.ep.MaxHeaderLength()),
 			Data:               buffer.View(icmpData).ToVectorisedView(),
 		})
 
-		sent := r.Stats().ICMP.V6PacketsSent
-		if err := r.WritePacket(nil,
-			stack.NetworkHeaderParams{
-				Protocol: header.ICMPv6ProtocolNumber,
-				TTL:      header.NDPHopLimit,
-			}, pkt,
-		); err != nil {
+		sent := ndp.ep.protocol.stack.Stats().ICMP.V6PacketsSent
+		ndp.ep.addIPHeader(localAddr, header.IPv6AllRoutersMulticastAddress, pkt, stack.NetworkHeaderParams{
+			Protocol: header.ICMPv6ProtocolNumber,
+			TTL:      header.NDPHopLimit,
+		})
+
+		if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 			sent.Dropped.Increment()
 			log.Printf("startSolicitingRouters: error writing NDP router solicit message on NIC(%d); err = %s", ndp.ep.nic.ID(), err)
 			// Don't send any more messages if we had an error.
@@ -1969,21 +1862,12 @@ func (ndp *ndpState) startSolicitingRouters() {
 			remaining--
 		}
 
-		ndp.ep.mu.Lock()
-		if done || remaining == 0 {
-			ndp.rtrSolicit.timer = nil
-			ndp.rtrSolicit.done = nil
-		} else if ndp.rtrSolicit.timer != nil {
-			// Note, we need to explicitly check to make sure that
-			// the timer field is not nil because if it was nil but
-			// we still reached this point, then we know the IPv6 endpoint
-			// was requested to stop soliciting routers so we don't
-			// need to send the next Router Solicitation message.
-			ndp.rtrSolicit.timer.Reset(ndp.configs.RtrSolicitationInterval)
+		if remaining != 0 {
+			ndp.rtrSolicitJob.Schedule(ndp.configs.RtrSolicitationInterval)
 		}
-		ndp.ep.mu.Unlock()
 	})
 
+	ndp.rtrSolicitJob.Schedule(delay)
 }
 
 // stopSolicitingRouters stops soliciting routers. If routers are not currently
@@ -1991,15 +1875,13 @@ func (ndp *ndpState) startSolicitingRouters() {
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) stopSolicitingRouters() {
-	if ndp.rtrSolicit.timer == nil {
+	if ndp.rtrSolicitJob == nil {
 		// Nothing to do.
 		return
 	}
 
-	*ndp.rtrSolicit.done = true
-	ndp.rtrSolicit.timer.Stop()
-	ndp.rtrSolicit.timer = nil
-	ndp.rtrSolicit.done = nil
+	ndp.rtrSolicitJob.Cancel()
+	ndp.rtrSolicitJob = nil
 }
 
 // initializeTempAddrState initializes state related to temporary SLAAC
