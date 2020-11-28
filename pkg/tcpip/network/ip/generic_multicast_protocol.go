@@ -30,13 +30,42 @@ type hostState int
 // The states below are generic across IGMPv2 (RFC 2236 section 6) and MLDv1
 // (RFC 2710 section 5). Even though the states are generic across both IGMPv2
 // and MLDv1, IGMPv2 terminology will be used.
+//
+//     ___send initial report___        _____send or receive report_____
+//    |                         |      |                                |
+//    |                         V      |                                V
+//  +-------+ +-----------+ +------------+ +-------------------+ +--------+
+//  | Non-M | | Pending-M | | Delaying-M | | Queued Delaying-M | | Idle-M |
+//  +-------+ +-----------+ +------------+ +-------------------+ +--------+
+//    |          ^      |       ^      |          ^       |             ^
+//    |          |      |       |      |          |       |             |
+//     ----------        -------        ----------         -------------
+//    fail to send     send inital     fail to send       send or receive
+//   initial report      report       delayed report          report
+//
+// Not shown in the diagram above, but any state may transition into the non
+// member state when a group is left.
 const (
-	// "'Non-Member' state, when the host does not belong to the group on
-	// the interface.  This is the initial state for all memberships on
+	// nonMember is the "'Non-Member' state, when the host does not belong to the
+	// group on the interface. This is the initial state for all memberships on
 	// all network interfaces; it requires no storage in the host."
 	//
 	// 'Non-Listener' is the MLDv1 term used to describe this state.
-	_ hostState = iota
+	//
+	// This state is used to keep track of groups that have been joined locally,
+	// but without advertising the membership to the network.
+	nonMember hostState = iota
+
+	// pendingMember is a newly joined member that is waiting to successfully send
+	// the initial set of reports.
+	//
+	// Hosts will enter this state when sending the initial report fails.
+	//
+	// This is not an RFC defined state; it is an implementation specific state to
+	// track that the initial report needs to be sent.
+	//
+	// MAY NOT transition to the idle member state from this state.
+	pendingMember
 
 	// delayingMember is the "'Delaying Member' state, when the host belongs to
 	// the group on the interface and has a report delay timer running for that
@@ -44,6 +73,16 @@ const (
 	//
 	// 'Delaying Listener' is the MLDv1 term used to describe this state.
 	delayingMember
+
+	// queuedDelayingMember is a delayingMember that failed to send a report after
+	// its delayed report timer fired. Hosts in this state are waiting to attempt
+	// retransmission of the delayed report.
+	//
+	// This is not an RFC defined state; it is an implementation specific state to
+	// track that the delayed report needs to be sent.
+	//
+	// May transition to idle member if a report is received for a group.
+	queuedDelayingMember
 
 	// idleMember is the "Idle Member" state, when the host belongs to the group
 	// on the interface and does not have a report delay timer running for that
@@ -53,10 +92,24 @@ const (
 	idleMember
 )
 
+func (s hostState) isDelayingMember() bool {
+	switch s {
+	case nonMember, pendingMember, idleMember:
+		return false
+	case delayingMember, queuedDelayingMember:
+		return true
+	default:
+		panic(fmt.Sprintf("unrecognized host state = %d", s))
+	}
+}
+
 // multicastGroupState holds the Generic Multicast Protocol state for a
 // multicast group.
 type multicastGroupState struct {
-	// state contains the host's state for the group.
+	// joins is the number of times the group has been joined.
+	joins uint64
+
+	// state holds the host's state for the group.
 	state hostState
 
 	// lastToSendReport is true if we sent the last report for the group. It is
@@ -75,14 +128,58 @@ type multicastGroupState struct {
 	delayedReportJob *tcpip.Job
 }
 
+// GenericMulticastProtocolOptions holds options for the generic multicast
+// protocol.
+type GenericMulticastProtocolOptions struct {
+	// Enabled indicates whether the generic multicast protocol will be
+	// performed.
+	//
+	// When enabled, the protocol may transmit report and leave messages when
+	// joining and leaving multicast groups respectively, and handle incoming
+	// packets.
+	//
+	// When disabled, the protocol will still keep track of locally joined groups,
+	// it just won't transmit and handle packets, or update groups' state.
+	Enabled bool
+
+	// Rand is the source of random numbers.
+	Rand *rand.Rand
+
+	// Clock is the clock used to create timers.
+	Clock tcpip.Clock
+
+	// Protocol is the implementation of the variant of multicast group protocol
+	// in use.
+	Protocol MulticastGroupProtocol
+
+	// MaxUnsolicitedReportDelay is the maximum amount of time to wait between
+	// transmitting unsolicited reports.
+	//
+	// Unsolicited reports are transmitted when a group is newly joined.
+	MaxUnsolicitedReportDelay time.Duration
+
+	// AllNodesAddress is a multicast address that all nodes on a network should
+	// be a member of.
+	//
+	// This address will not have the generic multicast protocol performed on it;
+	// it will be left in the non member/listener state, and packets will never
+	// be sent for it.
+	AllNodesAddress tcpip.Address
+}
+
 // MulticastGroupProtocol is a multicast group protocol whose core state machine
 // can be represented by GenericMulticastProtocolState.
 type MulticastGroupProtocol interface {
 	// SendReport sends a multicast report for the specified group address.
-	SendReport(groupAddress tcpip.Address) *tcpip.Error
+	//
+	// Returns true if the receiver handled the report and the caller does not
+	// need to be queue the report to be re-sent.
+	SendReport(groupAddress tcpip.Address) (bool, *tcpip.Error)
 
 	// SendLeave sends a multicast leave for the specified group address.
-	SendLeave(groupAddress tcpip.Address) *tcpip.Error
+	//
+	// Returns true if the message was successfully sent.
+	SendLeave(groupAddress tcpip.Address) (bool, *tcpip.Error)
 }
 
 // GenericMulticastProtocolState is the per interface generic multicast protocol
@@ -96,13 +193,10 @@ type MulticastGroupProtocol interface {
 // GenericMulticastProtocolState.Init MUST be called before calling any of
 // the methods on GenericMulticastProtocolState.
 type GenericMulticastProtocolState struct {
-	rand                      *rand.Rand
-	clock                     tcpip.Clock
-	protocol                  MulticastGroupProtocol
-	maxUnsolicitedReportDelay time.Duration
+	opts GenericMulticastProtocolOptions
 
 	mu struct {
-		sync.Mutex
+		sync.RWMutex
 
 		// memberships holds group addresses and their associated state.
 		memberships map[tcpip.Address]multicastGroupState
@@ -113,130 +207,146 @@ type GenericMulticastProtocolState struct {
 //
 // maxUnsolicitedReportDelay is the maximum time between sending unsolicited
 // reports after joining a group.
-func (g *GenericMulticastProtocolState) Init(rand *rand.Rand, clock tcpip.Clock, protocol MulticastGroupProtocol, maxUnsolicitedReportDelay time.Duration) {
+func (g *GenericMulticastProtocolState) Init(opts GenericMulticastProtocolOptions) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.rand = rand
-	g.clock = clock
-	g.protocol = protocol
-	g.maxUnsolicitedReportDelay = maxUnsolicitedReportDelay
+	g.opts = opts
 	g.mu.memberships = make(map[tcpip.Address]multicastGroupState)
+}
+
+// MakeAllNonMember transitions all groups to the non-member state.
+//
+// The groups will still be considered joined locally.
+func (g *GenericMulticastProtocolState) MakeAllNonMember() {
+	if !g.opts.Enabled {
+		return
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for groupAddress, info := range g.mu.memberships {
+		g.transitionToNonMemberLocked(groupAddress, &info)
+		g.mu.memberships[groupAddress] = info
+	}
+}
+
+// InitializeGroups initializes each group, as if they were newly joined but
+// without affecting the groups' join count.
+//
+// Must only be called after calling MakeAllNonMember as a group should not be
+// initialized while it is not in the non-member state.
+func (g *GenericMulticastProtocolState) InitializeGroups() {
+	if !g.opts.Enabled {
+		return
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for groupAddress, info := range g.mu.memberships {
+		g.initializeNewMemberLocked(groupAddress, &info)
+		g.mu.memberships[groupAddress] = info
+	}
+}
+
+// SendQueuedReports attempts to send reports for groups that failed to send
+// reports during their last attempt.
+func (g *GenericMulticastProtocolState) SendQueuedReports() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for groupAddress, info := range g.mu.memberships {
+		switch info.state {
+		case nonMember, delayingMember, idleMember:
+		case pendingMember:
+			// pendingMembers failed to send their initial unsolicited report so try
+			// to send the report and queue the extra unsolicited reports.
+			g.maybeSendInitialReport(groupAddress, &info)
+		case queuedDelayingMember:
+			// queuedDelayingMembers failed to send their delayed reports so try to
+			// send the report and transition them to the idle state.
+			g.maybeSendDelayedReport(groupAddress, &info)
+		default:
+			panic(fmt.Sprintf("unrecognized host state = %d", info.state))
+		}
+		g.mu.memberships[groupAddress] = info
+	}
 }
 
 // JoinGroup handles joining a new group.
 //
-// Returns false if the group has already been joined.
-func (g *GenericMulticastProtocolState) JoinGroup(groupAddress tcpip.Address) bool {
+// If dontInitialize is true, the group will be not be initialized and will be
+// left in the non-member state - no packets will be sent for it until it is
+// initialized via InitializeGroups.
+func (g *GenericMulticastProtocolState) JoinGroup(groupAddress tcpip.Address, dontInitialize bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if _, ok := g.mu.memberships[groupAddress]; ok {
+	if info, ok := g.mu.memberships[groupAddress]; ok {
 		// The group has already been joined.
-		return false
+		info.joins++
+		g.mu.memberships[groupAddress] = info
+		return
 	}
 
 	info := multicastGroupState{
-		// There isn't a job scheduled currently, so it's just idle.
-		state: idleMember,
-		// Joining a group immediately sends a report.
-		lastToSendReport: true,
-		delayedReportJob: tcpip.NewJob(g.clock, &g.mu, func() {
+		// Since we just joined the group, its count is 1.
+		joins: 1,
+		// The state will be updated below, if required.
+		state:            nonMember,
+		lastToSendReport: false,
+		delayedReportJob: tcpip.NewJob(g.opts.Clock, &g.mu, func() {
 			info, ok := g.mu.memberships[groupAddress]
 			if !ok {
 				panic(fmt.Sprintf("expected to find group state for group = %s", groupAddress))
 			}
 
-			info.lastToSendReport = g.protocol.SendReport(groupAddress) == nil
-			info.state = idleMember
+			g.maybeSendDelayedReport(groupAddress, &info)
 			g.mu.memberships[groupAddress] = info
 		}),
 	}
 
-	// As per RFC 2236 section 3 page 5 (for IGMPv2),
-	//
-	//   When a host joins a multicast group, it should immediately transmit an
-	//   unsolicited Version 2 Membership Report for that group" ... "it is
-	//   recommended that it be repeated".
-	//
-	// As per RFC 2710 section 4 page 6 (for MLDv1),
-	//
-	//   When a node starts listening to a multicast address on an interface,
-	//   it should immediately transmit an unsolicited Report for that address
-	//   on that interface, in case it is the first listener on the link. To
-	//   cover the possibility of the initial Report being lost or damaged, it
-	//   is recommended that it be repeated once or twice after short delays
-	//   [Unsolicited Report Interval].
-	//
-	// TODO(gvisor.dev/issue/4901): Support a configurable number of initial
-	// unsolicited reports.
-	info.lastToSendReport = g.protocol.SendReport(groupAddress) == nil
-	g.setDelayTimerForAddressRLocked(groupAddress, &info, g.maxUnsolicitedReportDelay)
+	if !dontInitialize && g.opts.Enabled {
+		g.initializeNewMemberLocked(groupAddress, &info)
+	}
+
 	g.mu.memberships[groupAddress] = info
-	return true
+}
+
+// IsLocallyJoined returns true if the group is locally joined.
+func (g *GenericMulticastProtocolState) IsLocallyJoined(groupAddress tcpip.Address) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	_, ok := g.mu.memberships[groupAddress]
+	return ok
 }
 
 // LeaveGroup handles leaving the group.
-func (g *GenericMulticastProtocolState) LeaveGroup(groupAddress tcpip.Address) {
+//
+// Returns false if the group is not currently joined.
+func (g *GenericMulticastProtocolState) LeaveGroup(groupAddress tcpip.Address) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	info, ok := g.mu.memberships[groupAddress]
 	if !ok {
-		return
+		return false
 	}
 
-	info.delayedReportJob.Cancel()
-	delete(g.mu.memberships, groupAddress)
-	if info.lastToSendReport {
-		// Okay to ignore the error here as if packet write failed, the multicast
-		// routers will eventually drop our membership anyways. If the interface is
-		// being disabled or removed, the generic multicast protocol's should be
-		// cleared eventually.
-		//
-		// As per RFC 2236 section 3 page 5 (for IGMPv2),
-		//
-		//   When a router receives a Report, it adds the group being reported to
-		//   the list of multicast group memberships on the network on which it
-		//   received the Report and sets the timer for the membership to the
-		//   [Group Membership Interval]. Repeated Reports refresh the timer. If
-		//   no Reports are received for a particular group before this timer has
-		//   expired, the router assumes that the group has no local members and
-		//   that it need not forward remotely-originated multicasts for that
-		//   group onto the attached network.
-		//
-		// As per RFC 2710 section 4 page 5 (for MLDv1),
-		//
-		//   When a router receives a Report from a link, if the reported address
-		//   is not already present in the router's list of multicast address
-		//   having listeners on that link, the reported address is added to the
-		//   list, its timer is set to [Multicast Listener Interval], and its
-		//   appearance is made known to the router's multicast routing component.
-		//   If a Report is received for a multicast address that is already
-		//   present in the router's list, the timer for that address is reset to
-		//   [Multicast Listener Interval]. If an address's timer expires, it is
-		//   assumed that there are no longer any listeners for that address
-		//   present on the link, so it is deleted from the list and its
-		//   disappearance is made known to the multicast routing component.
-		//
-		// The requirement to send a leave message is also optional (it MAY be
-		// skipped):
-		//
-		// As per RFC 2236 section 6 page 8 (for IGMPv2),
-		//
-		//  "send leave" for the group on the interface. If the interface
-		//   state says the Querier is running IGMPv1, this action SHOULD be
-		//   skipped. If the flag saying we were the last host to report is
-		//   cleared, this action MAY be skipped. The Leave Message is sent to
-		//   the ALL-ROUTERS group (224.0.0.2).
-		//
-		// As per RFC 2710 section 5 page 8 (for MLDv1),
-		//
-		//   "send done" for the address on the interface. If the flag saying
-		//   we were the last node to report is cleared, this action MAY be
-		//   skipped. The Done message is sent to the link-scope all-routers
-		//   address (FF02::2).
-		_ = g.protocol.SendLeave(groupAddress)
+	if info.joins == 0 {
+		panic(fmt.Sprintf("tried to leave group %s with a join count of 0", groupAddress))
 	}
+	info.joins--
+	if info.joins != 0 {
+		// If we still have outstanding joins, then do nothing further.
+		g.mu.memberships[groupAddress] = info
+		return true
+	}
+
+	g.transitionToNonMemberLocked(groupAddress, &info)
+	delete(g.mu.memberships, groupAddress)
+	return true
 }
 
 // HandleQuery handles a query message with the specified maximum response time.
@@ -247,6 +357,10 @@ func (g *GenericMulticastProtocolState) LeaveGroup(groupAddress tcpip.Address) {
 // Report(s) will be scheduled to be sent after a random duration between 0 and
 // the maximum response time.
 func (g *GenericMulticastProtocolState) HandleQuery(groupAddress tcpip.Address, maxResponseTime time.Duration) {
+	if !g.opts.Enabled {
+		return
+	}
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -278,6 +392,10 @@ func (g *GenericMulticastProtocolState) HandleQuery(groupAddress tcpip.Address, 
 // If the report is for a joined group, any active delayed report will be
 // cancelled and the host state for the group transitions to idle.
 func (g *GenericMulticastProtocolState) HandleReport(groupAddress tcpip.Address) {
+	if !g.opts.Enabled {
+		return
+	}
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -293,7 +411,7 @@ func (g *GenericMulticastProtocolState) HandleReport(groupAddress tcpip.Address)
 	//   multicast address while it has a timer running for that same address
 	//   on that interface, it stops its timer and does not send a Report for
 	//   that address, thus suppressing duplicate reports on the link.
-	if info, ok := g.mu.memberships[groupAddress]; ok {
+	if info, ok := g.mu.memberships[groupAddress]; ok && info.state.isDelayingMember() {
 		info.delayedReportJob.Cancel()
 		info.lastToSendReport = false
 		info.state = idleMember
@@ -301,10 +419,204 @@ func (g *GenericMulticastProtocolState) HandleReport(groupAddress tcpip.Address)
 	}
 }
 
+// initializeNewMemberLocked initializes a new group membership.
+//
+// Precondition: g.mu must be locked.
+func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress tcpip.Address, info *multicastGroupState) {
+	if info.state != nonMember {
+		panic(fmt.Sprintf("state for group %s is not non-member; state = %d", groupAddress, info.state))
+	}
+
+	info.state = idleMember
+	info.lastToSendReport = false
+
+	if groupAddress == g.opts.AllNodesAddress {
+		// As per RFC 2236 section 6 page 10 (for IGMPv2),
+		//
+		//   The all-systems group (address 224.0.0.1) is handled as a special
+		//   case. The host starts in Idle Member state for that group on every
+		//   interface, never transitions to another state, and never sends a
+		//   report for that group.
+		//
+		// As per RFC 2710 section 5 page 10 (for MLDv1),
+		//
+		//   The link-scope all-nodes address (FF02::1) is handled as a special
+		//   case. The node starts in Idle Listener state for that address on
+		//   every interface, never transitions to another state, and never sends
+		//   a Report or Done for that address.
+		return
+	}
+
+	g.maybeSendInitialReport(groupAddress, info)
+}
+
+// maybeSendInitialReport attempts to start transmission of the initial set of
+// reports after newly joining a group.
+//
+// Precondition: g.mu must be locked.
+func (g *GenericMulticastProtocolState) maybeSendInitialReport(groupAddress tcpip.Address, info *multicastGroupState) {
+	// As per RFC 2236 section 3 page 5 (for IGMPv2),
+	//
+	//   When a host joins a multicast group, it should immediately transmit an
+	//   unsolicited Version 2 Membership Report for that group" ... "it is
+	//   recommended that it be repeated".
+	//
+	// As per RFC 2710 section 4 page 6 (for MLDv1),
+	//
+	//   When a node starts listening to a multicast address on an interface,
+	//   it should immediately transmit an unsolicited Report for that address
+	//   on that interface, in case it is the first listener on the link. To
+	//   cover the possibility of the initial Report being lost or damaged, it
+	//   is recommended that it be repeated once or twice after short delays
+	//   [Unsolicited Report Interval].
+	//
+	// TODO(gvisor.dev/issue/4901): Support a configurable number of initial
+	// unsolicited reports.
+	sent, err := g.opts.Protocol.SendReport(groupAddress)
+	if err == nil && sent {
+		info.lastToSendReport = true
+		g.setDelayTimerForAddressRLocked(groupAddress, info, g.opts.MaxUnsolicitedReportDelay)
+		return
+	}
+
+	info.state = pendingMember
+}
+
+// maybeSendDelayedReport attempts to send the delayed report.
+//
+// Precondition: g.mu must be locked.
+func (g *GenericMulticastProtocolState) maybeSendDelayedReport(groupAddress tcpip.Address, info *multicastGroupState) {
+	switch info.state {
+	case nonMember, pendingMember, idleMember:
+		panic(fmt.Sprintf("host must be in delaying member or pending delaying member state; state = %d", info.state))
+	case delayingMember, queuedDelayingMember:
+	default:
+		panic(fmt.Sprintf("unrecognized host state = %d", info.state))
+	}
+
+	sent, err := g.opts.Protocol.SendReport(groupAddress)
+	if err == nil && sent {
+		info.lastToSendReport = true
+		info.state = idleMember
+	} else {
+		info.state = queuedDelayingMember
+	}
+}
+
+// maybeSendLeave attempts to send a leave message.
+func (g *GenericMulticastProtocolState) maybeSendLeave(groupAddress tcpip.Address, lastToSendReport bool) {
+	if !g.opts.Enabled || !lastToSendReport {
+		return
+	}
+
+	if groupAddress == g.opts.AllNodesAddress {
+		// As per RFC 2236 section 6 page 10 (for IGMPv2),
+		//
+		//   The all-systems group (address 224.0.0.1) is handled as a special
+		//   case. The host starts in Idle Member state for that group on every
+		//   interface, never transitions to another state, and never sends a
+		//   report for that group.
+		//
+		// As per RFC 2710 section 5 page 10 (for MLDv1),
+		//
+		//   The link-scope all-nodes address (FF02::1) is handled as a special
+		//   case. The node starts in Idle Listener state for that address on
+		//   every interface, never transitions to another state, and never sends
+		//   a Report or Done for that address.
+		return
+	}
+
+	// Okay to ignore the error here as if packet write failed, the multicast
+	// routers will eventually drop our membership anyways. If the interface is
+	// being disabled or removed, the generic multicast protocol's should be
+	// cleared eventually.
+	//
+	// As per RFC 2236 section 3 page 5 (for IGMPv2),
+	//
+	//   When a router receives a Report, it adds the group being reported to
+	//   the list of multicast group memberships on the network on which it
+	//   received the Report and sets the timer for the membership to the
+	//   [Group Membership Interval]. Repeated Reports refresh the timer. If
+	//   no Reports are received for a particular group before this timer has
+	//   expired, the router assumes that the group has no local members and
+	//   that it need not forward remotely-originated multicasts for that
+	//   group onto the attached network.
+	//
+	// As per RFC 2710 section 4 page 5 (for MLDv1),
+	//
+	//   When a router receives a Report from a link, if the reported address
+	//   is not already present in the router's list of multicast address
+	//   having listeners on that link, the reported address is added to the
+	//   list, its timer is set to [Multicast Listener Interval], and its
+	//   appearance is made known to the router's multicast routing component.
+	//   If a Report is received for a multicast address that is already
+	//   present in the router's list, the timer for that address is reset to
+	//   [Multicast Listener Interval]. If an address's timer expires, it is
+	//   assumed that there are no longer any listeners for that address
+	//   present on the link, so it is deleted from the list and its
+	//   disappearance is made known to the multicast routing component.
+	//
+	// The requirement to send a leave message is also optional (it MAY be
+	// skipped):
+	//
+	// As per RFC 2236 section 6 page 8 (for IGMPv2),
+	//
+	//  "send leave" for the group on the interface. If the interface
+	//   state says the Querier is running IGMPv1, this action SHOULD be
+	//   skipped. If the flag saying we were the last host to report is
+	//   cleared, this action MAY be skipped. The Leave Message is sent to
+	//   the ALL-ROUTERS group (224.0.0.2).
+	//
+	// As per RFC 2710 section 5 page 8 (for MLDv1),
+	//
+	//   "send done" for the address on the interface. If the flag saying
+	//   we were the last node to report is cleared, this action MAY be
+	//   skipped. The Done message is sent to the link-scope all-routers
+	//   address (FF02::2).
+	_, _ = g.opts.Protocol.SendLeave(groupAddress)
+}
+
+// transitionToNonMemberLocked transitions the given multicast group the the
+// non-member/listener state.
+//
+// Precondition: e.mu must be locked.
+func (g *GenericMulticastProtocolState) transitionToNonMemberLocked(groupAddress tcpip.Address, info *multicastGroupState) {
+	if info.state == nonMember {
+		return
+	}
+
+	info.delayedReportJob.Cancel()
+	g.maybeSendLeave(groupAddress, info.lastToSendReport)
+	info.lastToSendReport = false
+	info.state = nonMember
+}
+
 // setDelayTimerForAddressRLocked sets timer to send a delay report.
 //
 // Precondition: g.mu MUST be read locked.
 func (g *GenericMulticastProtocolState) setDelayTimerForAddressRLocked(groupAddress tcpip.Address, info *multicastGroupState, maxResponseTime time.Duration) {
+	if info.state == nonMember {
+		return
+	}
+
+	if groupAddress == g.opts.AllNodesAddress {
+		// As per RFC 2236 section 6 page 10 (for IGMPv2),
+		//
+		//   The all-systems group (address 224.0.0.1) is handled as a special
+		//   case. The host starts in Idle Member state for that group on every
+		//   interface, never transitions to another state, and never sends a
+		//   report for that group.
+		//
+		// As per RFC 2710 section 5 page 10 (for MLDv1),
+		//
+		//   The link-scope all-nodes address (FF02::1) is handled as a special
+		//   case. The node starts in Idle Listener state for that address on
+		//   every interface, never transitions to another state, and never sends
+		//   a Report or Done for that address.
+		info.state = idleMember
+		return
+	}
+
 	// As per RFC 2236 section 3 page 3 (for IGMPv2),
 	//
 	//   If a timer for the group is already unning, it is reset to the random
@@ -342,5 +654,5 @@ func (g *GenericMulticastProtocolState) calculateDelayTimerDuration(maxRespTime 
 	if maxRespTime == 0 {
 		return 0
 	}
-	return time.Duration(g.rand.Int63n(int64(maxRespTime)))
+	return time.Duration(g.opts.Rand.Int63n(int64(maxRespTime)))
 }

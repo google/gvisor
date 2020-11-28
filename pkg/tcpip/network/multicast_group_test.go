@@ -34,6 +34,8 @@ import (
 const (
 	linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 
+	ipv4Addr = tcpip.Address("\x0a\x00\x00\x01")
+
 	ipv4MulticastAddr1 = tcpip.Address("\xe0\x00\x00\x03")
 	ipv4MulticastAddr2 = tcpip.Address("\xe0\x00\x00\x04")
 	ipv4MulticastAddr3 = tcpip.Address("\xe0\x00\x00\x05")
@@ -87,6 +89,7 @@ func validateIGMPPacket(t *testing.T, p channel.PacketInfo, remoteAddress tcpip.
 
 	payload := header.IPv4(stack.PayloadSince(p.Pkt.NetworkHeader()))
 	checker.IPv4(t, payload,
+		checker.SrcAddr(ipv4Addr),
 		checker.DstAddr(remoteAddress),
 		// TTL for an IGMP message must be 1 as per RFC 2236 section 2.
 		checker.TTL(1),
@@ -122,6 +125,10 @@ func createStack(t *testing.T, mgpEnabled bool) (*channel.Endpoint, *stack.Stack
 	})
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+
+	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, ipv4Addr); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, ipv4Addr, err)
 	}
 
 	return e, s, clock

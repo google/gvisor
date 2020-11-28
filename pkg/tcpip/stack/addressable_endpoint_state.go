@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-var _ GroupAddressableEndpoint = (*AddressableEndpointState)(nil)
 var _ AddressableEndpoint = (*AddressableEndpointState)(nil)
 
 // AddressableEndpointState is an implementation of an AddressableEndpoint.
@@ -37,10 +36,6 @@ type AddressableEndpointState struct {
 
 		endpoints map[tcpip.Address]*addressState
 		primary   []*addressState
-
-		// groups holds the mapping between group addresses and the number of times
-		// they have been joined.
-		groups map[tcpip.Address]uint32
 	}
 }
 
@@ -53,85 +48,6 @@ func (a *AddressableEndpointState) Init(networkEndpoint NetworkEndpoint) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.mu.endpoints = make(map[tcpip.Address]*addressState)
-	a.mu.groups = make(map[tcpip.Address]uint32)
-}
-
-// ReadOnlyAddressableEndpointState provides read-only access to an
-// AddressableEndpointState.
-type ReadOnlyAddressableEndpointState struct {
-	inner *AddressableEndpointState
-}
-
-// AddrOrMatching returns an endpoint for the passed address that is consisdered
-// bound to the wrapped AddressableEndpointState.
-//
-// If addr is an exact match with an existing address, that address is returned.
-// Otherwise, f is called with each address and the address that f returns true
-// for is returned.
-//
-// Returns nil of no address matches.
-func (m ReadOnlyAddressableEndpointState) AddrOrMatching(addr tcpip.Address, spoofingOrPrimiscuous bool, f func(AddressEndpoint) bool) AddressEndpoint {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
-
-	if ep, ok := m.inner.mu.endpoints[addr]; ok {
-		if ep.IsAssigned(spoofingOrPrimiscuous) && ep.IncRef() {
-			return ep
-		}
-	}
-
-	for _, ep := range m.inner.mu.endpoints {
-		if ep.IsAssigned(spoofingOrPrimiscuous) && f(ep) && ep.IncRef() {
-			return ep
-		}
-	}
-
-	return nil
-}
-
-// Lookup returns the AddressEndpoint for the passed address.
-//
-// Returns nil if the passed address is not associated with the
-// AddressableEndpointState.
-func (m ReadOnlyAddressableEndpointState) Lookup(addr tcpip.Address) AddressEndpoint {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
-
-	ep, ok := m.inner.mu.endpoints[addr]
-	if !ok {
-		return nil
-	}
-	return ep
-}
-
-// ForEach calls f for each address pair.
-//
-// If f returns false, f is no longer be called.
-func (m ReadOnlyAddressableEndpointState) ForEach(f func(AddressEndpoint) bool) {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
-
-	for _, ep := range m.inner.mu.endpoints {
-		if !f(ep) {
-			return
-		}
-	}
-}
-
-// ForEachPrimaryEndpoint calls f for each primary address.
-//
-// If f returns false, f is no longer be called.
-func (m ReadOnlyAddressableEndpointState) ForEachPrimaryEndpoint(f func(AddressEndpoint)) {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
-	for _, ep := range m.inner.mu.primary {
-		f(ep)
-	}
-}
-
-// ReadOnly returns a readonly reference to a.
-func (a *AddressableEndpointState) ReadOnly() ReadOnlyAddressableEndpointState {
-	return ReadOnlyAddressableEndpointState{inner: a}
 }
 
 func (a *AddressableEndpointState) releaseAddressState(addrState *addressState) {
@@ -335,11 +251,6 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 func (a *AddressableEndpointState) RemovePermanentAddress(addr tcpip.Address) *tcpip.Error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	if _, ok := a.mu.groups[addr]; ok {
-		panic(fmt.Sprintf("group address = %s must be removed with LeaveGroup", addr))
-	}
-
 	return a.removePermanentAddressLocked(addr)
 }
 
@@ -471,21 +382,77 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(isValid func(*ad
 	return deprecatedEndpoint
 }
 
-// AcquireAssignedAddress implements AddressableEndpoint.
-func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
+// GetAddress returns the AddressEndpoint for the passed address.
+//
+// GetAddress does not increment the address's reference count or check if the
+// address is considered bound to the endpoint.
+//
+// Returns nil if the passed address is not associated with the endpoint.
+func (a *AddressableEndpointState) GetAddress(addr tcpip.Address) AddressEndpoint {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	ep, ok := a.mu.endpoints[addr]
+	if !ok {
+		return nil
+	}
+	return ep
+}
+
+// ForEachEndpoint calls f for each address.
+//
+// If f returns false, f is no longer be called.
+func (a *AddressableEndpointState) ForEachEndpoint(f func(AddressEndpoint) bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	for _, ep := range a.mu.endpoints {
+		if !f(ep) {
+			return
+		}
+	}
+}
+
+// ForEachPrimaryEndpoint calls f for each primary address.
+//
+// If f returns false, f is no longer be called.
+func (a *AddressableEndpointState) ForEachPrimaryEndpoint(f func(AddressEndpoint)) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	for _, ep := range a.mu.primary {
+		f(ep)
+	}
+}
+
+// AcquireAssignedAddressOrMatching returns an address endpoint that is
+// considered assigned to the addressable endpoint.
+//
+// If the address is an exact match with an existing address, that address is
+// returned. Otherwise, f is called with each address and the address that f
+// returns true for is returned.
+//
+// If there is no matching address, a temporary address will be returned if
+// allowTemp is true.
+//
+// Regardless how the address was obtained, it will be acquired before it is
+// returned.
+func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tcpip.Address, f func(AddressEndpoint) bool, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if addrState, ok := a.mu.endpoints[localAddr]; ok {
-		if !addrState.IsAssigned(allowTemp) {
-			return nil
+	if ep, ok := a.mu.endpoints[localAddr]; ok {
+		if ep.IsAssigned(allowTemp) && ep.IncRef() {
+			return ep
 		}
+	}
 
-		if !addrState.IncRef() {
-			panic(fmt.Sprintf("failed to increase the reference count for address = %s", addrState.addr))
+	if f != nil {
+		for _, ep := range a.mu.endpoints {
+			if ep.IsAssigned(allowTemp) && f(ep) && ep.IncRef() {
+				return ep
+			}
 		}
-
-		return addrState
 	}
 
 	if !allowTemp {
@@ -518,6 +485,11 @@ func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Addres
 		return nil
 	}
 	return ep
+}
+
+// AcquireAssignedAddress implements AddressableEndpoint.
+func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
+	return a.AcquireAssignedAddressOrMatching(localAddr, nil, allowTemp, tempPEB)
 }
 
 // AcquireOutgoingPrimaryAddress implements AddressableEndpoint.
@@ -588,60 +560,10 @@ func (a *AddressableEndpointState) PermanentAddresses() []tcpip.AddressWithPrefi
 	return addrs
 }
 
-// JoinGroup implements GroupAddressableEndpoint.
-func (a *AddressableEndpointState) JoinGroup(group tcpip.Address) (bool, *tcpip.Error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	joins, ok := a.mu.groups[group]
-	a.mu.groups[group] = joins + 1
-	return !ok, nil
-}
-
-// LeaveGroup implements GroupAddressableEndpoint.
-func (a *AddressableEndpointState) LeaveGroup(group tcpip.Address) (bool, *tcpip.Error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	joins, ok := a.mu.groups[group]
-	if !ok {
-		return false, tcpip.ErrBadLocalAddress
-	}
-
-	if joins == 1 {
-		delete(a.mu.groups, group)
-		return true, nil
-	}
-
-	a.mu.groups[group] = joins - 1
-	return false, nil
-}
-
-// IsInGroup implements GroupAddressableEndpoint.
-func (a *AddressableEndpointState) IsInGroup(group tcpip.Address) bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	_, ok := a.mu.groups[group]
-	return ok
-}
-
-// JoinedGroups returns a list of groups the endpoint is a member of.
-func (a *AddressableEndpointState) JoinedGroups() []tcpip.Address {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	groups := make([]tcpip.Address, 0, len(a.mu.groups))
-	for g := range a.mu.groups {
-		groups = append(groups, g)
-	}
-	return groups
-}
-
 // Cleanup forcefully leaves all groups and removes all permanent addresses.
 func (a *AddressableEndpointState) Cleanup() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	a.mu.groups = make(map[tcpip.Address]uint32)
 
 	for _, ep := range a.mu.endpoints {
 		// removePermanentEndpointLocked returns tcpip.ErrBadLocalAddress if ep is

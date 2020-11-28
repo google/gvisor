@@ -172,7 +172,7 @@ func (n *NIC) disable() {
 //
 // n MUST be locked.
 func (n *NIC) disableLocked() {
-	if !n.setEnabled(false) {
+	if !n.Enabled() {
 		return
 	}
 
@@ -183,6 +183,10 @@ func (n *NIC) disableLocked() {
 
 	for _, ep := range n.networkEndpoints {
 		ep.Disable()
+	}
+
+	if !n.setEnabled(false) {
+		panic("should have only done work to disable the NIC if it was enabled")
 	}
 }
 
@@ -563,8 +567,7 @@ func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 		return tcpip.ErrNotSupported
 	}
 
-	_, err := gep.JoinGroup(addr)
-	return err
+	return gep.JoinGroup(addr)
 }
 
 // leaveGroup decrements the count for the given multicast address, and when it
@@ -580,11 +583,7 @@ func (n *NIC) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Addres
 		return tcpip.ErrNotSupported
 	}
 
-	if _, err := gep.LeaveGroup(addr); err != nil {
-		return err
-	}
-
-	return nil
+	return gep.LeaveGroup(addr)
 }
 
 // isInGroup returns true if n has joined the multicast group addr.

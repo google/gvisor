@@ -29,6 +29,7 @@ import (
 
 const (
 	linkAddr      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	addr          = tcpip.Address("\x0a\x00\x00\x01")
 	multicastAddr = tcpip.Address("\xe0\x00\x00\x03")
 	nicID         = 1
 )
@@ -41,6 +42,7 @@ func validateIgmpPacket(t *testing.T, p channel.PacketInfo, remoteAddress tcpip.
 
 	payload := header.IPv4(stack.PayloadSince(p.Pkt.NetworkHeader()))
 	checker.IPv4(t, payload,
+		checker.SrcAddr(addr),
 		checker.DstAddr(remoteAddress),
 		checker.IGMP(
 			checker.IGMPType(igmpType),
@@ -68,7 +70,9 @@ func createStack(t *testing.T, igmpEnabled bool) (*channel.Endpoint, *stack.Stac
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
-
+	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, addr, err)
+	}
 	return e, s, clock
 }
 

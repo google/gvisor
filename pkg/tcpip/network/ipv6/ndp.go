@@ -1242,7 +1242,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 			PrefixLen: validPrefixLenForAutoGen,
 		}
 
-		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Address) {
+		if !ndp.ep.hasPermanentAddress(generatedAddr.Address) {
 			break
 		}
 
@@ -1353,7 +1353,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		}
 
 		generatedAddr = header.GenerateTempIPv6SLAACAddr(ndp.temporaryIIDHistory[:], stableAddr)
-		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Address) {
+		if !ndp.ep.hasPermanentAddress(generatedAddr.Address) {
 			break
 		}
 	}
@@ -1815,7 +1815,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 		// to the sending interface, or the unspecified address if no address is
 		// assigned to the sending interface.
 		localAddr := header.IPv6Any
-		if addressEndpoint := ndp.ep.acquireOutgoingPrimaryAddressRLocked(header.IPv6AllRoutersMulticastAddress, false); addressEndpoint != nil {
+		if addressEndpoint := ndp.ep.acquireOutgoingPrimaryAddress(header.IPv6AllRoutersMulticastAddress, false); addressEndpoint != nil {
 			localAddr = addressEndpoint.AddressWithPrefix().Address
 			addressEndpoint.DecRef()
 		}

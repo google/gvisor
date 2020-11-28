@@ -72,7 +72,6 @@ type endpoint struct {
 	nic        stack.NetworkInterface
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
-	igmp       igmpState
 
 	// enabled is set to 1 when the enpoint is enabled and 0 when it is
 	// disabled.
@@ -80,11 +79,25 @@ type endpoint struct {
 	// Must be accessed using atomic operations.
 	enabled uint32
 
-	mu struct {
-		sync.RWMutex
+	// mu is used to synchronize writes that touch multiple components of the
+	// endpoint (enabled status, address state, multicast group state).
+	//
+	// The exclusive lock must be held when the endpoint needs to update multiple
+	// components atomically. The shared lock should be held when the endpoint
+	// only needs to update a single component or read any component.
+	mu sync.RWMutex
 
-		addressableEndpointState stack.AddressableEndpointState
-	}
+	// addressableEndpointState holds the address state for the endpoint.
+	//
+	// All updates to the address state must be done while holding mu in shared or
+	// exclusive mode. See mu for more details.
+	addressableEndpointState stack.AddressableEndpointState
+
+	// igmp holds the IGMP state for the endpoint.
+	//
+	// All updates to the IGMP state must be done while holding mu in shared or
+	// exclusive mode. See mu for more details.
+	igmp igmpState
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
@@ -94,7 +107,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCa
 		dispatcher: dispatcher,
 		protocol:   p,
 	}
-	e.mu.addressableEndpointState.Init(e)
+	e.addressableEndpointState.Init(e)
 	e.igmp.init(e, p.options.IGMP)
 	return e
 }
@@ -116,7 +129,7 @@ func (e *endpoint) Enable() *tcpip.Error {
 	}
 
 	// Create an endpoint to receive broadcast packets on this interface.
-	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(ipv4BroadcastAddr, stack.NeverPrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */)
+	ep, err := e.addressableEndpointState.AddAndAcquirePermanentAddress(ipv4BroadcastAddr, stack.NeverPrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */)
 	if err != nil {
 		return err
 	}
@@ -127,16 +140,18 @@ func (e *endpoint) Enable() *tcpip.Error {
 	// endpoint may have left groups from the perspective of IGMP when the
 	// endpoint was disabled. Either way, we need to let routers know to
 	// send us multicast traffic.
-	joinedGroups := e.mu.addressableEndpointState.JoinedGroups()
-	for _, group := range joinedGroups {
-		e.igmp.joinGroup(group)
-	}
+	e.igmp.initializeAll()
 
 	// As per RFC 1122 section 3.3.7, all hosts should join the all-hosts
 	// multicast group. Note, the IANA calls the all-hosts multicast group the
 	// all-systems multicast group.
-	_, err = e.joinGroupLocked(header.IPv4AllSystems)
-	return err
+	if err := e.joinGroupSharedLocked(header.IPv4AllSystems); err != nil {
+		// joinGroupSharedLocked only returns an error if the group address is not a
+		// valid IPv4 multicast address.
+		panic(fmt.Sprintf("e.joinGroupSharedLocked(%s): %s", header.IPv4AllSystems, err))
+	}
+
+	return nil
 }
 
 // Enabled implements stack.NetworkEndpoint.
@@ -167,26 +182,30 @@ func (e *endpoint) Disable() {
 	e.disableLocked()
 }
 
+// disableLocked is like Disable but with locking requirements.
+//
+// Precondition: e.mu must be exclusively locked.
 func (e *endpoint) disableLocked() {
-	if !e.setEnabled(false) {
+	if !e.isEnabled() {
 		return
 	}
 
 	// The endpoint may have already left the multicast group.
-	if _, err := e.leaveGroupLocked(header.IPv4AllSystems); err != nil && err != tcpip.ErrBadLocalAddress {
+	if err := e.leaveGroupSharedLocked(header.IPv4AllSystems); err != nil && err != tcpip.ErrBadLocalAddress {
 		panic(fmt.Sprintf("unexpected error when leaving group = %s: %s", header.IPv4AllSystems, err))
 	}
 
 	// Leave groups from the perspective of IGMP so that routers know that
 	// we are no longer interested in the group.
-	joinedGroups := e.mu.addressableEndpointState.JoinedGroups()
-	for _, group := range joinedGroups {
-		e.igmp.leaveGroup(group)
-	}
+	e.igmp.softLeaveAll()
 
 	// The address may have already been removed.
-	if err := e.mu.addressableEndpointState.RemovePermanentAddress(ipv4BroadcastAddr.Address); err != nil && err != tcpip.ErrBadLocalAddress {
+	if err := e.addressableEndpointState.RemovePermanentAddress(ipv4BroadcastAddr.Address); err != nil && err != tcpip.ErrBadLocalAddress {
 		panic(fmt.Sprintf("unexpected error when removing address = %s: %s", ipv4BroadcastAddr.Address, err))
+	}
+
+	if !e.setEnabled(false) {
+		panic("should have only done work to disable the endpoint if it was enabled")
 	}
 }
 
@@ -773,145 +792,103 @@ func (e *endpoint) Close() {
 	defer e.mu.Unlock()
 
 	e.disableLocked()
-	e.mu.addressableEndpointState.Cleanup()
+	e.addressableEndpointState.Cleanup()
 }
 
 // AddAndAcquirePermanentAddress implements stack.AddressableEndpoint.
 func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, *tcpip.Error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, peb, configType, deprecated)
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.addressableEndpointState.AddAndAcquirePermanentAddress(addr, peb, configType, deprecated)
 }
 
 // RemovePermanentAddress implements stack.AddressableEndpoint.
 func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) *tcpip.Error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.mu.addressableEndpointState.RemovePermanentAddress(addr)
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.addressableEndpointState.RemovePermanentAddress(addr)
 }
 
 // MainAddress implements stack.AddressableEndpoint.
 func (e *endpoint) MainAddress() tcpip.AddressWithPrefix {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.MainAddress()
+	return e.addressableEndpointState.MainAddress()
 }
 
 // AcquireAssignedAddress implements stack.AddressableEndpoint.
 func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 
 	loopback := e.nic.IsLoopback()
-	addressEndpoint := e.mu.addressableEndpointState.ReadOnly().AddrOrMatching(localAddr, allowTemp, func(addressEndpoint stack.AddressEndpoint) bool {
+	return e.addressableEndpointState.AcquireAssignedAddressOrMatching(localAddr, func(addressEndpoint stack.AddressEndpoint) bool {
 		subnet := addressEndpoint.Subnet()
 		// IPv4 has a notion of a subnet broadcast address and considers the
 		// loopback interface bound to an address's whole subnet (on linux).
 		return subnet.IsBroadcast(localAddr) || (loopback && subnet.Contains(localAddr))
-	})
-	if addressEndpoint != nil {
-		return addressEndpoint
-	}
-
-	if !allowTemp {
-		return nil
-	}
-
-	addr := localAddr.WithPrefix()
-	addressEndpoint, err := e.mu.addressableEndpointState.AddAndAcquireTemporaryAddress(addr, tempPEB)
-	if err != nil {
-		// AddAddress only returns an error if the address is already assigned,
-		// but we just checked above if the address exists so we expect no error.
-		panic(fmt.Sprintf("e.mu.addressableEndpointState.AddAndAcquireTemporaryAddress(%s, %d): %s", addr, tempPEB, err))
-	}
-	return addressEndpoint
+	}, allowTemp, tempPEB)
 }
 
 // AcquireOutgoingPrimaryAddress implements stack.AddressableEndpoint.
 func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
+	return e.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
 }
 
 // PrimaryAddresses implements stack.AddressableEndpoint.
 func (e *endpoint) PrimaryAddresses() []tcpip.AddressWithPrefix {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.PrimaryAddresses()
+	return e.addressableEndpointState.PrimaryAddresses()
 }
 
 // PermanentAddresses implements stack.AddressableEndpoint.
 func (e *endpoint) PermanentAddresses() []tcpip.AddressWithPrefix {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.PermanentAddresses()
+	return e.addressableEndpointState.PermanentAddresses()
 }
 
 // JoinGroup implements stack.GroupAddressableEndpoint.
-func (e *endpoint) JoinGroup(addr tcpip.Address) (bool, *tcpip.Error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.joinGroupLocked(addr)
+func (e *endpoint) JoinGroup(addr tcpip.Address) *tcpip.Error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.joinGroupSharedLocked(addr)
 }
 
-// joinGroupLocked is like JoinGroup, but with locking requirements.
+// joinGroupSharedLocked is like JoinGroup but with locking requirements.
 //
-// Precondition: e.mu must be locked.
-func (e *endpoint) joinGroupLocked(addr tcpip.Address) (bool, *tcpip.Error) {
+// Precondition: e.mu must be locked in shared or exclusive mode.
+func (e *endpoint) joinGroupSharedLocked(addr tcpip.Address) *tcpip.Error {
 	if !header.IsV4MulticastAddress(addr) {
-		return false, tcpip.ErrBadAddress
-	}
-	// TODO(gvisor.dev/issue/4916): Keep track of join count and IGMP state in a
-	// single type.
-	joined, err := e.mu.addressableEndpointState.JoinGroup(addr)
-	if err != nil || !joined {
-		return joined, err
+		return tcpip.ErrBadAddress
 	}
 
-	// Only join the group from the perspective of IGMP when the endpoint is
-	// enabled.
-	//
-	// If we are not enabled right now, we will join the group from the
-	// perspective of IGMP when the endpoint is enabled.
-	if !e.Enabled() {
-		return true, nil
-	}
-
-	// joinGroup only returns an error if we try to join a group twice, but we
-	// checked above to make sure that the group was newly joined.
-	if err := e.igmp.joinGroup(addr); err != nil {
-		panic(fmt.Sprintf("e.igmp.joinGroup(%s): %s", addr, err))
-	}
-
-	return true, nil
+	e.igmp.joinGroup(addr)
+	return nil
 }
 
 // LeaveGroup implements stack.GroupAddressableEndpoint.
-func (e *endpoint) LeaveGroup(addr tcpip.Address) (bool, *tcpip.Error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.leaveGroupLocked(addr)
+func (e *endpoint) LeaveGroup(addr tcpip.Address) *tcpip.Error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.leaveGroupSharedLocked(addr)
 }
 
-// leaveGroupLocked is like LeaveGroup, but with locking requirements.
+// leaveGroupSharedLocked is like LeaveGroup but with locking requirements.
 //
-// Precondition: e.mu must be locked.
-func (e *endpoint) leaveGroupLocked(addr tcpip.Address) (bool, *tcpip.Error) {
-	left, err := e.mu.addressableEndpointState.LeaveGroup(addr)
-	if err != nil || !left {
-		return left, err
-	}
-
-	e.igmp.leaveGroup(addr)
-	return true, nil
+// Precondition: e.mu must be locked in shared or exclusive mode.
+func (e *endpoint) leaveGroupSharedLocked(addr tcpip.Address) *tcpip.Error {
+	return e.igmp.leaveGroup(addr)
 }
 
 // IsInGroup implements stack.GroupAddressableEndpoint.
 func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.IsInGroup(addr)
+	return e.igmp.isInGroup(addr)
 }
 
 var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
