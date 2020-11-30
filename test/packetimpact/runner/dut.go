@@ -433,6 +433,7 @@ func AddressInSubnet(addr net.IP, subnet net.IPNet) net.IP {
 // to a map[string]netdevs.DeviceInfo.
 func devicesInfo(ctx context.Context, d *dockerutil.Container) (map[string]netdevs.DeviceInfo, error) {
 	out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "ip", "addr", "show")
+	log.Printf("out from %s: %s", d.Name, out)
 	if err != nil {
 		return map[string]netdevs.DeviceInfo{}, fmt.Errorf("listing devices on %s container: %w\n%s", d.Name, err, out)
 	}
