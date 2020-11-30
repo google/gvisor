@@ -54,14 +54,20 @@ func ResolvePath(executable string) string {
 		}
 	}
 
+	// Favor /usr/local/bin, if it exists.
+	localBin := fmt.Sprintf("/usr/local/bin/%s", executable)
+	if _, err := os.Stat(localBin); err == nil {
+		return localBin
+	}
+
 	// Try to find via the path.
-	guess, err := exec.LookPath(executable)
+	guess, _ := exec.LookPath(executable)
 	if err == nil {
 		return guess
 	}
 
-	// Return a default path.
-	return fmt.Sprintf("/usr/local/bin/%s", executable)
+	// Return a bare path; this generates a suitable error.
+	return executable
 }
 
 // NewCrictl returns a Crictl configured with a timeout and an endpoint over
