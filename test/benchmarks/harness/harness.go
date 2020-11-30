@@ -39,7 +39,7 @@ func (h *Harness) Init() error {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if flag.NFlag() == 0 || *help {
+	if *help {
 		flag.Usage()
 		os.Exit(0)
 	}
