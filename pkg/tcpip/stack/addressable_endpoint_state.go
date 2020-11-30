@@ -625,6 +625,17 @@ func (a *AddressableEndpointState) IsInGroup(group tcpip.Address) bool {
 	return ok
 }
 
+// JoinedGroups returns a list of groups the endpoint is a member of.
+func (a *AddressableEndpointState) JoinedGroups() []tcpip.Address {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	groups := make([]tcpip.Address, 0, len(a.mu.groups))
+	for g := range a.mu.groups {
+		groups = append(groups, g)
+	}
+	return groups
+}
+
 // Cleanup forcefully leaves all groups and removes all permanent addresses.
 func (a *AddressableEndpointState) Cleanup() {
 	a.mu.Lock()

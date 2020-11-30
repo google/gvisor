@@ -123,6 +123,15 @@ func (e *endpoint) Enable() *tcpip.Error {
 	// We have no need for the address endpoint.
 	ep.DecRef()
 
+	// Groups may have been joined while the endpoint was disabled, or the
+	// endpoint may have left groups from the perspective of IGMP when the
+	// endpoint was disabled. Either way, we need to let routers know to
+	// send us multicast traffic.
+	joinedGroups := e.mu.addressableEndpointState.JoinedGroups()
+	for _, group := range joinedGroups {
+		e.igmp.joinGroup(group)
+	}
+
 	// As per RFC 1122 section 3.3.7, all hosts should join the all-hosts
 	// multicast group. Note, the IANA calls the all-hosts multicast group the
 	// all-systems multicast group.
@@ -166,6 +175,13 @@ func (e *endpoint) disableLocked() {
 	// The endpoint may have already left the multicast group.
 	if _, err := e.leaveGroupLocked(header.IPv4AllSystems); err != nil && err != tcpip.ErrBadLocalAddress {
 		panic(fmt.Sprintf("unexpected error when leaving group = %s: %s", header.IPv4AllSystems, err))
+	}
+
+	// Leave groups from the perspective of IGMP so that routers know that
+	// we are no longer interested in the group.
+	joinedGroups := e.mu.addressableEndpointState.JoinedGroups()
+	for _, group := range joinedGroups {
+		e.igmp.leaveGroup(group)
 	}
 
 	// The address may have already been removed.
@@ -853,6 +869,15 @@ func (e *endpoint) joinGroupLocked(addr tcpip.Address) (bool, *tcpip.Error) {
 		return joined, err
 	}
 
+	// Only join the group from the perspective of IGMP when the endpoint is
+	// enabled.
+	//
+	// If we are not enabled right now, we will join the group from the
+	// perspective of IGMP when the endpoint is enabled.
+	if !e.Enabled() {
+		return true, nil
+	}
+
 	// joinGroup only returns an error if we try to join a group twice, but we
 	// checked above to make sure that the group was newly joined.
 	if err := e.igmp.joinGroup(addr); err != nil {
@@ -874,15 +899,12 @@ func (e *endpoint) LeaveGroup(addr tcpip.Address) (bool, *tcpip.Error) {
 // Precondition: e.mu must be locked.
 func (e *endpoint) leaveGroupLocked(addr tcpip.Address) (bool, *tcpip.Error) {
 	left, err := e.mu.addressableEndpointState.LeaveGroup(addr)
-	if err != nil {
+	if err != nil || !left {
 		return left, err
 	}
 
-	if left {
-		e.igmp.leaveGroup(addr)
-	}
-
-	return left, nil
+	e.igmp.leaveGroup(addr)
+	return true, nil
 }
 
 // IsInGroup implements stack.GroupAddressableEndpoint.
