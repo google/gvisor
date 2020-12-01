@@ -2424,6 +2424,28 @@ func TestReceiveFragments(t *testing.T) {
 			},
 			expectedPayloads: [][]byte{udpPayload4Addr1ToAddr2},
 		},
+		{
+			name: "Two fragments with MF flag reassembled into a maximum UDP packet",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload4Addr1ToAddr2[:65512],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 65512,
+					payload:        ipv4Payload4Addr1ToAddr2[65512:],
+				},
+			},
+			expectedPayloads: nil,
+		},
 	}
 
 	for _, test := range tests {

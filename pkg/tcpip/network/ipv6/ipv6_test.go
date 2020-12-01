@@ -1007,9 +1007,10 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 		udpPayload2Length = 128
 		// Used to test cases where the fragment blocks are not a multiple of
 		// the fragment block size of 8 (RFC 8200 section 4.5).
-		udpPayload3Length = 127
-		udpPayload4Length = header.IPv6MaximumPayloadSize - header.UDPMinimumSize
-		fragmentExtHdrLen = 8
+		udpPayload3Length     = 127
+		udpPayload4Length     = header.IPv6MaximumPayloadSize - header.UDPMinimumSize
+		udpMaximumSizeMinus15 = header.UDPMaximumSize - 15
+		fragmentExtHdrLen     = 8
 		// Note, not all routing extension headers will be 8 bytes but this test
 		// uses 8 byte routing extension headers for most sub tests.
 		routingExtHdrLen = 8
@@ -1353,14 +1354,14 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 					dstAddr: addr2,
 					nextHdr: fragmentExtHdrID,
 					data: buffer.NewVectorisedView(
-						fragmentExtHdrLen+65520,
+						fragmentExtHdrLen+udpMaximumSizeMinus15,
 						[]buffer.View{
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
 							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
 
-							ipv6Payload4Addr1ToAddr2[:65520],
+							ipv6Payload4Addr1ToAddr2[:udpMaximumSizeMinus15],
 						},
 					),
 				},
@@ -1369,19 +1370,63 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 					dstAddr: addr2,
 					nextHdr: fragmentExtHdrID,
 					data: buffer.NewVectorisedView(
-						fragmentExtHdrLen+len(ipv6Payload4Addr1ToAddr2)-65520,
+						fragmentExtHdrLen+len(ipv6Payload4Addr1ToAddr2)-udpMaximumSizeMinus15,
 						[]buffer.View{
 							// Fragment extension header.
 							//
-							// Fragment offset = 8190, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 255, 240, 0, 0, 0, 1}),
+							// Fragment offset = udpMaximumSizeMinus15/8, More = false, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0,
+								udpMaximumSizeMinus15 >> 8,
+								udpMaximumSizeMinus15 & 0xff,
+								0, 0, 0, 1}),
 
-							ipv6Payload4Addr1ToAddr2[65520:],
+							ipv6Payload4Addr1ToAddr2[udpMaximumSizeMinus15:],
 						},
 					),
 				},
 			},
 			expectedPayloads: [][]byte{udpPayload4Addr1ToAddr2},
+		},
+		{
+			name: "Two fragments with MF flag reassembled into a maximum UDP packet",
+			fragments: []fragmentData{
+				{
+					srcAddr: addr1,
+					dstAddr: addr2,
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+udpMaximumSizeMinus15,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 0, More = true, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+
+							ipv6Payload4Addr1ToAddr2[:udpMaximumSizeMinus15],
+						},
+					),
+				},
+				{
+					srcAddr: addr1,
+					dstAddr: addr2,
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+len(ipv6Payload4Addr1ToAddr2)-udpMaximumSizeMinus15,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = udpMaximumSizeMinus15/8, More = true, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0,
+								udpMaximumSizeMinus15 >> 8,
+								(udpMaximumSizeMinus15 & 0xff) + 1,
+								0, 0, 0, 1}),
+
+							ipv6Payload4Addr1ToAddr2[udpMaximumSizeMinus15:],
+						},
+					),
+				},
+			},
+			expectedPayloads: nil,
 		},
 		{
 			name: "Two fragments with per-fragment routing header with zero segments left",
