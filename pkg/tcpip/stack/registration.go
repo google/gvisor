@@ -291,14 +291,10 @@ type NetworkHeaderParams struct {
 // endpoints may associate themselves with the same identifier (group address).
 type GroupAddressableEndpoint interface {
 	// JoinGroup joins the specified group.
-	//
-	// Returns true if the group was newly joined.
-	JoinGroup(group tcpip.Address) (bool, *tcpip.Error)
+	JoinGroup(group tcpip.Address) *tcpip.Error
 
 	// LeaveGroup attempts to leave the specified group.
-	//
-	// Returns tcpip.ErrBadLocalAddress if the endpoint has not joined the group.
-	LeaveGroup(group tcpip.Address) (bool, *tcpip.Error)
+	LeaveGroup(group tcpip.Address) *tcpip.Error
 
 	// IsInGroup returns true if the endpoint is a member of the specified group.
 	IsInGroup(group tcpip.Address) bool

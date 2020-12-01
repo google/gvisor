@@ -232,10 +232,7 @@ func (e *endpoint) Enable() *tcpip.Error {
 	// endpoint may have left groups from the perspective of MLD when the
 	// endpoint was disabled. Either way, we need to let routers know to
 	// send us multicast traffic.
-	joinedGroups := e.mu.addressableEndpointState.JoinedGroups()
-	for _, group := range joinedGroups {
-		e.mld.joinGroup(group)
-	}
+	e.mld.initializeAll()
 
 	// Join the IPv6 All-Nodes Multicast group if the stack is configured to
 	// use IPv6. This is required to ensure that this node properly receives
@@ -254,8 +251,10 @@ func (e *endpoint) Enable() *tcpip.Error {
 	// (NDP NS) messages may be sent to the All-Nodes multicast group if the
 	// source address of the NDP NS is the unspecified address, as per RFC 4861
 	// section 7.2.4.
-	if _, err := e.joinGroupLocked(header.IPv6AllNodesMulticastAddress); err != nil {
-		return err
+	if err := e.joinGroupLocked(header.IPv6AllNodesMulticastAddress); err != nil {
+		// joinGroupLocked only returns an error if the group address is not a valid
+		// IPv6 multicast address.
+		panic(fmt.Sprintf("e.joinGroupLocked(%s): %s", header.IPv6AllNodesMulticastAddress, err))
 	}
 
 	// Perform DAD on the all the unicast IPv6 endpoints that are in the permanent
@@ -344,16 +343,13 @@ func (e *endpoint) disableLocked() {
 	e.stopDADForPermanentAddressesLocked()
 
 	// The endpoint may have already left the multicast group.
-	if _, err := e.leaveGroupLocked(header.IPv6AllNodesMulticastAddress); err != nil && err != tcpip.ErrBadLocalAddress {
+	if err := e.leaveGroupLocked(header.IPv6AllNodesMulticastAddress); err != nil && err != tcpip.ErrBadLocalAddress {
 		panic(fmt.Sprintf("unexpected error when leaving group = %s: %s", header.IPv6AllNodesMulticastAddress, err))
 	}
 
 	// Leave groups from the perspective of MLD so that routers know that
 	// we are no longer interested in the group.
-	joinedGroups := e.mu.addressableEndpointState.JoinedGroups()
-	for _, group := range joinedGroups {
-		e.mld.leaveGroup(group)
-	}
+	e.mld.softLeaveAll()
 }
 
 // stopDADForPermanentAddressesLocked stops DAD for all permaneent addresses.
@@ -1182,8 +1178,10 @@ func (e *endpoint) addAndAcquirePermanentAddressLocked(addr tcpip.AddressWithPre
 	}
 
 	snmc := header.SolicitedNodeAddr(addr.Address)
-	if _, err := e.joinGroupLocked(snmc); err != nil {
-		return nil, err
+	if err := e.joinGroupLocked(snmc); err != nil {
+		// joinGroupLocked only returns an error if the group address is not a valid
+		// IPv6 multicast address.
+		panic(fmt.Sprintf("e.joinGroupLocked(%s): %s", snmc, err))
 	}
 
 	addressEndpoint.SetKind(stack.PermanentTentative)
@@ -1239,7 +1237,8 @@ func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEn
 	}
 
 	snmc := header.SolicitedNodeAddr(addr.Address)
-	if _, err := e.leaveGroupLocked(snmc); err != nil && err != tcpip.ErrBadLocalAddress {
+	// The endpoint may have already left the multicast group.
+	if err := e.leaveGroupLocked(snmc); err != nil && err != tcpip.ErrBadLocalAddress {
 		return err
 	}
 
@@ -1404,70 +1403,43 @@ func (e *endpoint) PermanentAddresses() []tcpip.AddressWithPrefix {
 }
 
 // JoinGroup implements stack.GroupAddressableEndpoint.
-func (e *endpoint) JoinGroup(addr tcpip.Address) (bool, *tcpip.Error) {
+func (e *endpoint) JoinGroup(addr tcpip.Address) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.joinGroupLocked(addr)
 }
 
-// joinGroupLocked is like JoinGroup, but with locking requirements.
+// joinGroupLocked is like JoinGroup but with locking requirements.
 //
 // Precondition: e.mu must be locked.
-func (e *endpoint) joinGroupLocked(addr tcpip.Address) (bool, *tcpip.Error) {
+func (e *endpoint) joinGroupLocked(addr tcpip.Address) *tcpip.Error {
 	if !header.IsV6MulticastAddress(addr) {
-		return false, tcpip.ErrBadAddress
+		return tcpip.ErrBadAddress
 	}
 
-	// TODO(gvisor.dev/issue/4916): Keep track of join count and MLD state in a
-	// single type.
-	joined, err := e.mu.addressableEndpointState.JoinGroup(addr)
-	if err != nil || !joined {
-		return joined, err
-	}
-
-	// Only join the group from the perspective of IGMP when the endpoint is
-	// enabled.
-	//
-	// If we are not enabled right now, we will join the group from the
-	// perspective of MLD when the endpoint is enabled.
-	if !e.Enabled() {
-		return true, nil
-	}
-
-	// joinGroup only returns an error if we try to join a group twice, but we
-	// checked above to make sure that the group was newly joined.
-	if err := e.mld.joinGroup(addr); err != nil {
-		panic(fmt.Sprintf("e.mld.joinGroup(%s): %s", addr, err))
-	}
-
-	return true, nil
+	e.mld.joinGroup(addr)
+	return nil
 }
 
 // LeaveGroup implements stack.GroupAddressableEndpoint.
-func (e *endpoint) LeaveGroup(addr tcpip.Address) (bool, *tcpip.Error) {
+func (e *endpoint) LeaveGroup(addr tcpip.Address) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.leaveGroupLocked(addr)
 }
 
-// leaveGroupLocked is like LeaveGroup, but with locking requirements.
+// leaveGroupLocked is like LeaveGroup but with locking requirements.
 //
 // Precondition: e.mu must be locked.
-func (e *endpoint) leaveGroupLocked(addr tcpip.Address) (bool, *tcpip.Error) {
-	left, err := e.mu.addressableEndpointState.LeaveGroup(addr)
-	if err != nil || !left {
-		return left, err
-	}
-
-	e.mld.leaveGroup(addr)
-	return true, nil
+func (e *endpoint) leaveGroupLocked(addr tcpip.Address) *tcpip.Error {
+	return e.mld.leaveGroup(addr)
 }
 
 // IsInGroup implements stack.GroupAddressableEndpoint.
 func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.IsInGroup(addr)
+	return e.mld.isInGroup(addr)
 }
 
 var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)

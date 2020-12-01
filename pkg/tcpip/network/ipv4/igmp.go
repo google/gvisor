@@ -124,7 +124,14 @@ func (igmp *igmpState) init(ep *endpoint, opts IGMPOptions) {
 	defer igmp.mu.Unlock()
 	igmp.ep = ep
 	igmp.opts = opts
-	igmp.mu.genericMulticastProtocol.Init(ep.protocol.stack.Rand(), ep.protocol.stack.Clock(), igmp, UnsolicitedReportIntervalMax)
+	igmp.mu.genericMulticastProtocol.Init(ip.GenericMulticastProtocolOptions{
+		Enabled:                   opts.Enabled,
+		Rand:                      ep.protocol.stack.Rand(),
+		Clock:                     ep.protocol.stack.Clock(),
+		Protocol:                  igmp,
+		MaxUnsolicitedReportDelay: UnsolicitedReportIntervalMax,
+		AllNodesAddress:           header.IPv4AllSystems,
+	})
 	igmp.igmpV1Present = igmpV1PresentDefault
 	igmp.mu.igmpV1Job = igmp.ep.protocol.stack.NewJob(&igmp.mu, func() {
 		igmp.setV1Present(false)
@@ -201,17 +208,13 @@ func (igmp *igmpState) setV1Present(v bool) {
 }
 
 func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxRespTime time.Duration) {
-	if !igmp.opts.Enabled {
-		return
-	}
-
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 
 	// As per RFC 2236 Section 6, Page 10: If the maximum response time is zero
 	// then change the state to note that an IGMPv1 router is present and
 	// schedule the query received Job.
-	if maxRespTime == 0 {
+	if maxRespTime == 0 && igmp.opts.Enabled {
 		igmp.mu.igmpV1Job.Cancel()
 		igmp.mu.igmpV1Job.Schedule(v1RouterPresentTimeout)
 		igmp.setV1Present(true)
@@ -222,10 +225,6 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 }
 
 func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
-	if !igmp.opts.Enabled {
-		return
-	}
-
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
 	igmp.mu.genericMulticastProtocol.HandleReport(groupAddress)
@@ -279,49 +278,46 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 //
 // If the group already exists in the membership map, returns
 // tcpip.ErrDuplicateAddress.
-func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) *tcpip.Error {
-	if !igmp.opts.Enabled {
-		return nil
-	}
-
-	// As per RFC 2236 section 6 page 10,
-	//
-	//   The all-systems group (address 224.0.0.1) is handled as a special
-	//   case. The host starts in Idle Member state for that group on every
-	//   interface, never transitions to another state, and never sends a
-	//   report for that group.
-	//
-	// This is equivalent to not performing IGMP for the all-systems multicast
-	// address. Simply not performing IGMP when the group is added will prevent
-	// any work from being done on the all-systems multicast group when leaving
-	// the group or when query or report messages are received for it since the
-	// MGP state will not know about it.
-	if groupAddress == header.IPv4AllSystems {
-		return nil
-	}
-
+func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) {
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
+	igmp.mu.genericMulticastProtocol.JoinGroup(groupAddress, !igmp.ep.Enabled() /* dontInitialize */)
+}
 
-	// JoinGroup returns false if we have already joined the group.
-	if !igmp.mu.genericMulticastProtocol.JoinGroup(groupAddress) {
-		return tcpip.ErrDuplicateAddress
-	}
-	return nil
+// isInGroup returns true if the specified group has been joined locally.
+func (igmp *igmpState) isInGroup(groupAddress tcpip.Address) bool {
+	igmp.mu.Lock()
+	defer igmp.mu.Unlock()
+	return igmp.mu.genericMulticastProtocol.IsLocallyJoined(groupAddress)
 }
 
 // leaveGroup handles removing the group from the membership map, cancels any
 // delay timers associated with that group, and sends the Leave Group message
 // if required.
-//
-// If the group does not exist in the membership map, this function will
-// silently return.
-func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) {
-	if !igmp.opts.Enabled {
-		return
-	}
-
+func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) *tcpip.Error {
 	igmp.mu.Lock()
 	defer igmp.mu.Unlock()
-	igmp.mu.genericMulticastProtocol.LeaveGroup(groupAddress)
+
+	// LeaveGroup returns false only if the group was not joined.
+	if igmp.mu.genericMulticastProtocol.LeaveGroup(groupAddress) {
+		return nil
+	}
+
+	return tcpip.ErrBadLocalAddress
+}
+
+// softLeaveAll leaves all groups from the perspective of IGMP, but remains
+// joined locally.
+func (igmp *igmpState) softLeaveAll() {
+	igmp.mu.Lock()
+	defer igmp.mu.Unlock()
+	igmp.mu.genericMulticastProtocol.MakeAllNonMember()
+}
+
+// initializeAll attemps to initialize the IGMP state for each group that has
+// been joined locally.
+func (igmp *igmpState) initializeAll() {
+	igmp.mu.Lock()
+	defer igmp.mu.Unlock()
+	igmp.mu.genericMulticastProtocol.InitializeGroups()
 }

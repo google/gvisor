@@ -50,8 +50,7 @@ var _ ip.MulticastGroupProtocol = (*mldState)(nil)
 // mldState.init MUST be called to initialize the MLD state.
 type mldState struct {
 	// The IPv6 endpoint this mldState is for.
-	ep   *endpoint
-	opts MLDOptions
+	ep *endpoint
 
 	genericMulticastProtocol ip.GenericMulticastProtocolState
 }
@@ -70,23 +69,21 @@ func (mld *mldState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 // a new mldState.
 func (mld *mldState) init(ep *endpoint, opts MLDOptions) {
 	mld.ep = ep
-	mld.opts = opts
-	mld.genericMulticastProtocol.Init(ep.protocol.stack.Rand(), ep.protocol.stack.Clock(), mld, UnsolicitedReportIntervalMax)
+	mld.genericMulticastProtocol.Init(ip.GenericMulticastProtocolOptions{
+		Enabled:                   opts.Enabled,
+		Rand:                      ep.protocol.stack.Rand(),
+		Clock:                     ep.protocol.stack.Clock(),
+		Protocol:                  mld,
+		MaxUnsolicitedReportDelay: UnsolicitedReportIntervalMax,
+		AllNodesAddress:           header.IPv6AllNodesMulticastAddress,
+	})
 }
 
 func (mld *mldState) handleMulticastListenerQuery(mldHdr header.MLD) {
-	if !mld.opts.Enabled {
-		return
-	}
-
 	mld.genericMulticastProtocol.HandleQuery(mldHdr.MulticastAddress(), mldHdr.MaximumResponseDelay())
 }
 
 func (mld *mldState) handleMulticastListenerReport(mldHdr header.MLD) {
-	if !mld.opts.Enabled {
-		return
-	}
-
 	mld.genericMulticastProtocol.HandleReport(mldHdr.MulticastAddress())
 }
 
@@ -94,45 +91,37 @@ func (mld *mldState) handleMulticastListenerReport(mldHdr header.MLD) {
 // messages.
 //
 // If the group is already joined, returns tcpip.ErrDuplicateAddress.
-func (mld *mldState) joinGroup(groupAddress tcpip.Address) *tcpip.Error {
-	if !mld.opts.Enabled {
-		return nil
-	}
+func (mld *mldState) joinGroup(groupAddress tcpip.Address) {
+	mld.genericMulticastProtocol.JoinGroup(groupAddress, !mld.ep.Enabled() /* dontInitialize */)
+}
 
-	// As per RFC 2710 section 5 page 10,
-	//
-	//   The link-scope all-nodes address (FF02::1) is handled as a special
-	//   case. The node starts in Idle Listener state for that address on
-	//   every interface, never transitions to another state, and never sends
-	//   a Report or Done for that address.
-	//
-	// This is equivalent to not performing MLD for the all-nodes multicast
-	// address. Simply not performing MLD when the group is added will prevent
-	// any work from being done on the all-nodes multicast group when leaving the
-	// group or when query or report messages are received for it since the MGP
-	// state will not know about it.
-	if groupAddress == header.IPv6AllNodesMulticastAddress {
-		return nil
-	}
-
-	// JoinGroup returns false if we have already joined the group.
-	if !mld.genericMulticastProtocol.JoinGroup(groupAddress) {
-		return tcpip.ErrDuplicateAddress
-	}
-	return nil
+// isInGroup returns true if the specified group has been joined locally.
+func (mld *mldState) isInGroup(groupAddress tcpip.Address) bool {
+	return mld.genericMulticastProtocol.IsLocallyJoined(groupAddress)
 }
 
 // leaveGroup handles removing the group from the membership map, cancels any
 // delay timers associated with that group, and sends the Done message, if
 // required.
-//
-// If the group is not joined, this function will do nothing.
-func (mld *mldState) leaveGroup(groupAddress tcpip.Address) {
-	if !mld.opts.Enabled {
-		return
+func (mld *mldState) leaveGroup(groupAddress tcpip.Address) *tcpip.Error {
+	// LeaveGroup returns false only if the group was not joined.
+	if mld.genericMulticastProtocol.LeaveGroup(groupAddress) {
+		return nil
 	}
 
-	mld.genericMulticastProtocol.LeaveGroup(groupAddress)
+	return tcpip.ErrBadLocalAddress
+}
+
+// softLeaveAll leaves all groups from the perspective of MLD, but remains
+// joined locally.
+func (mld *mldState) softLeaveAll() {
+	mld.genericMulticastProtocol.MakeAllNonMember()
+}
+
+// initializeAll attemps to initialize the MLD state for each group that has
+// been joined locally.
+func (mld *mldState) initializeAll() {
+	mld.genericMulticastProtocol.InitializeGroups()
 }
 
 func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldType header.ICMPv6Type) *tcpip.Error {
