@@ -201,7 +201,7 @@ func (r *Route) MaxHeaderLength() uint16 {
 }
 
 // Stats returns a mutable copy of current stats.
-func (r *Route) Stats() tcpip.Stats {
+func (r *Route) Stats() *tcpip.Stats {
 	return r.outgoingNIC.stack.Stats()
 }
 

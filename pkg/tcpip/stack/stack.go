@@ -778,8 +778,8 @@ func (s *Stack) Clock() tcpip.Clock {
 //
 // This is not generally exported via the public interface, but is available
 // internally.
-func (s *Stack) Stats() tcpip.Stats {
-	return s.stats
+func (s *Stack) Stats() *tcpip.Stats {
+	return &s.stats
 }
 
 // SetForwarding enables or disables packet forwarding between NICs for the
