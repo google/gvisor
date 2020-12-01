@@ -50,62 +50,31 @@ func (a *AddressableEndpointState) Init(networkEndpoint NetworkEndpoint) {
 	a.mu.endpoints = make(map[tcpip.Address]*addressState)
 }
 
-// ReadOnlyAddressableEndpointState provides read-only access to an
-// AddressableEndpointState.
-type ReadOnlyAddressableEndpointState struct {
-	inner *AddressableEndpointState
-}
-
-// AddrOrMatching returns an endpoint for the passed address that is consisdered
-// bound to the wrapped AddressableEndpointState.
+// GetAddress returns the AddressEndpoint for the passed address.
 //
-// If addr is an exact match with an existing address, that address is returned.
-// Otherwise, f is called with each address and the address that f returns true
-// for is returned.
+// GetAddress does not increment the address's reference count or check if the
+// address is considered bound to the endpoint.
 //
-// Returns nil of no address matches.
-func (m ReadOnlyAddressableEndpointState) AddrOrMatching(addr tcpip.Address, spoofingOrPrimiscuous bool, f func(AddressEndpoint) bool) AddressEndpoint {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
+// Returns nil if the passed address is not associated with the endpoint.
+func (a *AddressableEndpointState) GetAddress(addr tcpip.Address) AddressEndpoint {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 
-	if ep, ok := m.inner.mu.endpoints[addr]; ok {
-		if ep.IsAssigned(spoofingOrPrimiscuous) && ep.IncRef() {
-			return ep
-		}
-	}
-
-	for _, ep := range m.inner.mu.endpoints {
-		if ep.IsAssigned(spoofingOrPrimiscuous) && f(ep) && ep.IncRef() {
-			return ep
-		}
-	}
-
-	return nil
-}
-
-// Lookup returns the AddressEndpoint for the passed address.
-//
-// Returns nil if the passed address is not associated with the
-// AddressableEndpointState.
-func (m ReadOnlyAddressableEndpointState) Lookup(addr tcpip.Address) AddressEndpoint {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
-
-	ep, ok := m.inner.mu.endpoints[addr]
+	ep, ok := a.mu.endpoints[addr]
 	if !ok {
 		return nil
 	}
 	return ep
 }
 
-// ForEach calls f for each address pair.
+// ForEachEndpoint calls f for each address.
 //
-// If f returns false, f is no longer be called.
-func (m ReadOnlyAddressableEndpointState) ForEach(f func(AddressEndpoint) bool) {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
+// Once f returns false, f will no longer be called.
+func (a *AddressableEndpointState) ForEachEndpoint(f func(AddressEndpoint) bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 
-	for _, ep := range m.inner.mu.endpoints {
+	for _, ep := range a.mu.endpoints {
 		if !f(ep) {
 			return
 		}
@@ -114,18 +83,14 @@ func (m ReadOnlyAddressableEndpointState) ForEach(f func(AddressEndpoint) bool) 
 
 // ForEachPrimaryEndpoint calls f for each primary address.
 //
-// If f returns false, f is no longer be called.
-func (m ReadOnlyAddressableEndpointState) ForEachPrimaryEndpoint(f func(AddressEndpoint)) {
-	m.inner.mu.RLock()
-	defer m.inner.mu.RUnlock()
-	for _, ep := range m.inner.mu.primary {
+// Once f returns false, f will no longer be called.
+func (a *AddressableEndpointState) ForEachPrimaryEndpoint(f func(AddressEndpoint)) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	for _, ep := range a.mu.primary {
 		f(ep)
 	}
-}
-
-// ReadOnly returns a readonly reference to a.
-func (a *AddressableEndpointState) ReadOnly() ReadOnlyAddressableEndpointState {
-	return ReadOnlyAddressableEndpointState{inner: a}
 }
 
 func (a *AddressableEndpointState) releaseAddressState(addrState *addressState) {
@@ -460,8 +425,19 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(isValid func(*ad
 	return deprecatedEndpoint
 }
 
-// AcquireAssignedAddress implements AddressableEndpoint.
-func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
+// AcquireAssignedAddressOrMatching returns an address endpoint that is
+// considered assigned to the addressable endpoint.
+//
+// If the address is an exact match with an existing address, that address is
+// returned. Otherwise, f is called with each address and the address that f
+// returns true for is returned.
+//
+// If there is no matching address, a temporary address will be returned if
+// allowTemp is true.
+//
+// Regardless how the address was obtained, it will be acquired before it is
+// returned.
+func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tcpip.Address, f func(AddressEndpoint) bool, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -475,6 +451,14 @@ func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Addres
 		}
 
 		return addrState
+	}
+
+	if f != nil {
+		for _, addrState := range a.mu.endpoints {
+			if addrState.IsAssigned(allowTemp) && f(addrState) && addrState.IncRef() {
+				return addrState
+			}
+		}
 	}
 
 	if !allowTemp {
@@ -507,6 +491,11 @@ func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Addres
 		return nil
 	}
 	return ep
+}
+
+// AcquireAssignedAddress implements AddressableEndpoint.
+func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
+	return a.AcquireAssignedAddressOrMatching(localAddr, nil, allowTemp, tempPEB)
 }
 
 // AcquireOutgoingPrimaryAddress implements AddressableEndpoint.
