@@ -563,8 +563,7 @@ func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 		return tcpip.ErrNotSupported
 	}
 
-	_, err := gep.JoinGroup(addr)
-	return err
+	return gep.JoinGroup(addr)
 }
 
 // leaveGroup decrements the count for the given multicast address, and when it
@@ -580,11 +579,7 @@ func (n *NIC) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Addres
 		return tcpip.ErrNotSupported
 	}
 
-	if _, err := gep.LeaveGroup(addr); err != nil {
-		return err
-	}
-
-	return nil
+	return gep.LeaveGroup(addr)
 }
 
 // isInGroup returns true if n has joined the multicast group addr.
