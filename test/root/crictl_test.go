@@ -315,7 +315,7 @@ const (
 	// v1 is the containerd API v1.
 	v1 string = "v1"
 
-	// v1 is the containerd API v21.
+	// v2 is the containerd API v2.
 	v2 string = "v2"
 )
 
