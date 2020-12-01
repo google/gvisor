@@ -35,10 +35,10 @@ type fragmentInfo struct {
 	offset uint16
 	size   uint16
 	more   bool
+	id     uint32
 }
 
 func TestIPv6FragmentReassembly(t *testing.T) {
-	const fragmentID = 42
 	icmpv6ProtoNum := header.IPv6ExtensionHeaderIdentifier(header.ICMPv6ProtocolNumber)
 
 	tests := []struct {
@@ -49,10 +49,11 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 	}{
 		{
 			description:  "basic reassembly",
-			ipPayloadLen: 1500,
+			ipPayloadLen: 3000,
 			fragments: []fragmentInfo{
-				{offset: 0, size: 760, more: true},
-				{offset: 760, size: 740, more: false},
+				{offset: 0, size: 1000, id: 100, more: true},
+				{offset: 1000, size: 1000, id: 100, more: true},
+				{offset: 2000, size: 1000, id: 100, more: false},
 			},
 			expectReply: true,
 		},
@@ -60,11 +61,44 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 			description:  "out of order fragments",
 			ipPayloadLen: 3000,
 			fragments: []fragmentInfo{
-				{offset: 0, size: 1024, more: true},
-				{offset: 2048, size: 952, more: false},
-				{offset: 1024, size: 1024, more: true},
+				{offset: 0, size: 1000, id: 101, more: true},
+				{offset: 2000, size: 1000, id: 101, more: false},
+				{offset: 1000, size: 1000, id: 101, more: true},
 			},
 			expectReply: true,
+		},
+		{
+			description:  "duplicated fragments",
+			ipPayloadLen: 3000,
+			fragments: []fragmentInfo{
+				{offset: 0, size: 1000, id: 102, more: true},
+				{offset: 1000, size: 1000, id: 102, more: true},
+				{offset: 1000, size: 1000, id: 102, more: true},
+				{offset: 2000, size: 1000, id: 102, more: false},
+			},
+			expectReply: true,
+		},
+		{
+			description:  "fragment subset",
+			ipPayloadLen: 3000,
+			fragments: []fragmentInfo{
+				{offset: 0, size: 1000, id: 103, more: true},
+				{offset: 1000, size: 1000, id: 103, more: true},
+				{offset: 512, size: 256, id: 103, more: true},
+				{offset: 2000, size: 1000, id: 103, more: false},
+			},
+			expectReply: true,
+		},
+		{
+			description:  "fragment overlap",
+			ipPayloadLen: 3000,
+			fragments: []fragmentInfo{
+				{offset: 0, size: 1000, id: 104, more: true},
+				{offset: 1512, size: 1000, id: 104, more: true},
+				{offset: 1000, size: 1000, id: 104, more: true},
+				{offset: 2000, size: 1000, id: 104, more: false},
+			},
+			expectReply: false,
 		},
 	}
 
@@ -101,7 +135,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 						NextHeader:     &icmpv6ProtoNum,
 						FragmentOffset: testbench.Uint16(fragment.offset / header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit),
 						MoreFragments:  testbench.Bool(fragment.more),
-						Identification: testbench.Uint32(fragmentID),
+						Identification: testbench.Uint32(fragment.id),
 					},
 					&testbench.Payload{
 						Bytes: data[fragment.offset:][:fragment.size],
@@ -118,7 +152,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 				}, time.Second)
 				if err != nil {
 					// Either an unexpected frame was received, or none at all.
-					if bytesReceived < test.ipPayloadLen {
+					if test.expectReply && bytesReceived < test.ipPayloadLen {
 						t.Fatalf("received %d bytes out of %d, then conn.ExpectFrame(_, _, time.Second) failed with %s", bytesReceived, test.ipPayloadLen, err)
 					}
 					break
