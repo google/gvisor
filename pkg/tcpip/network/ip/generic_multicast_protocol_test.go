@@ -29,18 +29,21 @@ const (
 	addr1 = tcpip.Address("\x01")
 	addr2 = tcpip.Address("\x02")
 	addr3 = tcpip.Address("\x03")
+	addr4 = tcpip.Address("\x04")
+
+	maxUnsolicitedReportDelay = time.Second
 )
 
 var _ ip.MulticastGroupProtocol = (*mockMulticastGroupProtocol)(nil)
 
 type mockMulticastGroupProtocol struct {
 	sendReportGroupAddrCount map[tcpip.Address]int
-	sendLeaveGroupAddr       tcpip.Address
+	sendLeaveGroupAddrCount  map[tcpip.Address]int
 }
 
 func (m *mockMulticastGroupProtocol) init() {
 	m.sendReportGroupAddrCount = make(map[tcpip.Address]int)
-	m.sendLeaveGroupAddr = ""
+	m.sendLeaveGroupAddrCount = make(map[tcpip.Address]int)
 }
 
 func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) *tcpip.Error {
@@ -49,87 +52,146 @@ func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) *tcp
 }
 
 func (m *mockMulticastGroupProtocol) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
-	m.sendLeaveGroupAddr = groupAddress
+	m.sendLeaveGroupAddrCount[groupAddress]++
 	return nil
 }
 
-func checkProtocol(mgp *mockMulticastGroupProtocol, sendReportGroupAddresses []tcpip.Address, sendLeaveGroupAddr tcpip.Address) string {
+func checkProtocol(mgp *mockMulticastGroupProtocol, sendReportGroupAddresses []tcpip.Address, sendLeaveGroupAddresses []tcpip.Address) string {
 	sendReportGroupAddressesMap := make(map[tcpip.Address]int)
 	for _, a := range sendReportGroupAddresses {
 		sendReportGroupAddressesMap[a] = 1
 	}
 
+	sendLeaveGroupAddressesMap := make(map[tcpip.Address]int)
+	for _, a := range sendLeaveGroupAddresses {
+		sendLeaveGroupAddressesMap[a] = 1
+	}
+
 	diff := cmp.Diff(mockMulticastGroupProtocol{
 		sendReportGroupAddrCount: sendReportGroupAddressesMap,
-		sendLeaveGroupAddr:       sendLeaveGroupAddr,
+		sendLeaveGroupAddrCount:  sendLeaveGroupAddressesMap,
 	}, *mgp, cmp.AllowUnexported(mockMulticastGroupProtocol{}))
 	mgp.init()
 	return diff
 }
 
 func TestJoinGroup(t *testing.T) {
-	const maxUnsolicitedReportDelay = time.Second
-
-	var g ip.GenericMulticastProtocolState
-	var mgp mockMulticastGroupProtocol
-	mgp.init()
-	clock := faketime.NewManualClock()
-	g.Init(rand.New(rand.NewSource(0)), clock, &mgp, maxUnsolicitedReportDelay)
-
-	// Joining a group should send a report immediately and another after
-	// a random interval between 0 and the maximum unsolicited report delay.
-	if !g.JoinGroup(addr1) {
-		t.Errorf("got g.JoinGroup(%s) = false, want = true", addr1)
-	}
-	if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
-		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-	}
-
-	clock.Advance(maxUnsolicitedReportDelay)
-	if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
-		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	tests := []struct {
+		name              string
+		addr              tcpip.Address
+		shouldSendReports bool
+	}{
+		{
+			name:              "Normal group",
+			addr:              addr1,
+			shouldSendReports: true,
+		},
+		{
+			name:              "All-nodes group",
+			addr:              addr2,
+			shouldSendReports: false,
+		},
 	}
 
-	// Should have no more messages to send.
-	clock.Advance(time.Hour)
-	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
-		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var g ip.GenericMulticastProtocolState
+			var mgp mockMulticastGroupProtocol
+			mgp.init()
+			clock := faketime.NewManualClock()
+			g.Init(ip.GenericMulticastProtocolOptions{
+				Enabled:                   true,
+				Rand:                      rand.New(rand.NewSource(0)),
+				Clock:                     clock,
+				Protocol:                  &mgp,
+				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+				AllNodesAddress:           addr2,
+			})
+
+			// Joining a group should send a report immediately and another after
+			// a random interval between 0 and the maximum unsolicited report delay.
+			g.JoinGroup(test.addr, false /* dontInitialize */)
+			if test.shouldSendReports {
+				if diff := checkProtocol(&mgp, []tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+				}
+
+				clock.Advance(maxUnsolicitedReportDelay)
+				if diff := checkProtocol(&mgp, []tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+				}
+			}
+
+			// Should have no more messages to send.
+			clock.Advance(time.Hour)
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
 func TestLeaveGroup(t *testing.T) {
-	const maxUnsolicitedReportDelay = time.Second
-
-	var g ip.GenericMulticastProtocolState
-	var mgp mockMulticastGroupProtocol
-	mgp.init()
-	clock := faketime.NewManualClock()
-	g.Init(rand.New(rand.NewSource(1)), clock, &mgp, maxUnsolicitedReportDelay)
-
-	if !g.JoinGroup(addr1) {
-		t.Fatalf("got g.JoinGroup(%s) = false, want = true", addr1)
-	}
-	if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
-		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-	}
-
-	// Leaving a group should send a leave report immediately and cancel any
-	// delayed reports.
-	g.LeaveGroup(addr1)
-	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, addr1 /* sendLeaveGroupAddr */); diff != "" {
-		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	tests := []struct {
+		name               string
+		addr               tcpip.Address
+		shouldSendMessages bool
+	}{
+		{
+			name:               "Normal group",
+			addr:               addr1,
+			shouldSendMessages: true,
+		},
+		{
+			name:               "All-nodes group",
+			addr:               addr2,
+			shouldSendMessages: false,
+		},
 	}
 
-	// Should have no more messages to send.
-	clock.Advance(time.Hour)
-	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
-		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var g ip.GenericMulticastProtocolState
+			var mgp mockMulticastGroupProtocol
+			mgp.init()
+			clock := faketime.NewManualClock()
+			g.Init(ip.GenericMulticastProtocolOptions{
+				Enabled:                   true,
+				Rand:                      rand.New(rand.NewSource(1)),
+				Clock:                     clock,
+				Protocol:                  &mgp,
+				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+				AllNodesAddress:           addr2,
+			})
+
+			g.JoinGroup(test.addr, false /* dontInitialize */)
+			if test.shouldSendMessages {
+				if diff := checkProtocol(&mgp, []tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+					t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+				}
+			}
+
+			// Leaving a group should send a leave report immediately and cancel any
+			// delayed reports.
+			if !g.LeaveGroup(test.addr) {
+				t.Fatalf("got g.LeaveGroup(%s) = false, want = true", test.addr)
+			}
+			if test.shouldSendMessages {
+				if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, []tcpip.Address{test.addr} /* sendLeaveGroupAddresses */); diff != "" {
+					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+				}
+			}
+
+			// Should have no more messages to send.
+			clock.Advance(time.Hour)
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
 func TestHandleReport(t *testing.T) {
-	const maxUnsolicitedReportDelay = time.Second
-
 	tests := []struct {
 		name             string
 		reportAddr       tcpip.Address
@@ -151,8 +213,13 @@ func TestHandleReport(t *testing.T) {
 			expectReportsFor: []tcpip.Address{addr2},
 		},
 		{
-			name:             "Specified other",
+			name:             "Specified all-nodes",
 			reportAddr:       addr3,
+			expectReportsFor: []tcpip.Address{addr1, addr2},
+		},
+		{
+			name:             "Specified other",
+			reportAddr:       addr4,
 			expectReportsFor: []tcpip.Address{addr1, addr2},
 		},
 	}
@@ -163,18 +230,25 @@ func TestHandleReport(t *testing.T) {
 			var mgp mockMulticastGroupProtocol
 			mgp.init()
 			clock := faketime.NewManualClock()
-			g.Init(rand.New(rand.NewSource(2)), clock, &mgp, maxUnsolicitedReportDelay)
+			g.Init(ip.GenericMulticastProtocolOptions{
+				Enabled:                   true,
+				Rand:                      rand.New(rand.NewSource(2)),
+				Clock:                     clock,
+				Protocol:                  &mgp,
+				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+				AllNodesAddress:           addr3,
+			})
 
-			if !g.JoinGroup(addr1) {
-				t.Fatalf("got g.JoinGroup(%s) = false, want = true", addr1)
-			}
-			if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+			g.JoinGroup(addr1, false /* dontInitialize */)
+			if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
-			if !g.JoinGroup(addr2) {
-				t.Fatalf("got g.JoinGroup(%s) = false, want = true", addr2)
+			g.JoinGroup(addr2, false /* dontInitialize */)
+			if diff := checkProtocol(&mgp, []tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
-			if diff := checkProtocol(&mgp, []tcpip.Address{addr2} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+			g.JoinGroup(addr3, false /* dontInitialize */)
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -183,14 +257,14 @@ func TestHandleReport(t *testing.T) {
 			g.HandleReport(test.reportAddr)
 			if len(test.expectReportsFor) != 0 {
 				clock.Advance(maxUnsolicitedReportDelay)
-				if diff := checkProtocol(&mgp, test.expectReportsFor /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+				if diff := checkProtocol(&mgp, test.expectReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 				}
 			}
 
 			// Should have no more messages to send.
 			clock.Advance(time.Hour)
-			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -198,8 +272,6 @@ func TestHandleReport(t *testing.T) {
 }
 
 func TestHandleQuery(t *testing.T) {
-	const maxUnsolicitedReportDelay = time.Second
-
 	tests := []struct {
 		name             string
 		queryAddr        tcpip.Address
@@ -225,9 +297,15 @@ func TestHandleQuery(t *testing.T) {
 			expectReportsFor: []tcpip.Address{addr1},
 		},
 		{
-			name:             "Specified other",
+			name:             "Specified all-nodes",
 			queryAddr:        addr3,
 			maxDelay:         3,
+			expectReportsFor: nil,
+		},
+		{
+			name:             "Specified other",
+			queryAddr:        addr4,
+			maxDelay:         4,
 			expectReportsFor: nil,
 		},
 	}
@@ -238,22 +316,29 @@ func TestHandleQuery(t *testing.T) {
 			var mgp mockMulticastGroupProtocol
 			mgp.init()
 			clock := faketime.NewManualClock()
-			g.Init(rand.New(rand.NewSource(3)), clock, &mgp, maxUnsolicitedReportDelay)
+			g.Init(ip.GenericMulticastProtocolOptions{
+				Enabled:                   true,
+				Rand:                      rand.New(rand.NewSource(3)),
+				Clock:                     clock,
+				Protocol:                  &mgp,
+				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+				AllNodesAddress:           addr3,
+			})
 
-			if !g.JoinGroup(addr1) {
-				t.Fatalf("got g.JoinGroup(%s) = false, want = true", addr1)
-			}
-			if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+			g.JoinGroup(addr1, false /* dontInitialize */)
+			if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
-			if !g.JoinGroup(addr2) {
-				t.Fatalf("got g.JoinGroup(%s) = false, want = true", addr2)
+			g.JoinGroup(addr2, false /* dontInitialize */)
+			if diff := checkProtocol(&mgp, []tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
-			if diff := checkProtocol(&mgp, []tcpip.Address{addr2} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+			g.JoinGroup(addr3, false /* dontInitialize */)
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			clock.Advance(maxUnsolicitedReportDelay)
-			if diff := checkProtocol(&mgp, []tcpip.Address{addr1, addr2} /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+			if diff := checkProtocol(&mgp, []tcpip.Address{addr1, addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -262,33 +347,230 @@ func TestHandleQuery(t *testing.T) {
 			g.HandleQuery(test.queryAddr, test.maxDelay)
 			if len(test.expectReportsFor) != 0 {
 				clock.Advance(test.maxDelay)
-				if diff := checkProtocol(&mgp, test.expectReportsFor /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+				if diff := checkProtocol(&mgp, test.expectReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 				}
 			}
 
 			// Should have no more messages to send.
 			clock.Advance(time.Hour)
-			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, "" /* sendLeaveGroupAddr */); diff != "" {
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func TestDoubleJoinGroup(t *testing.T) {
+func TestJoinCount(t *testing.T) {
 	var g ip.GenericMulticastProtocolState
 	var mgp mockMulticastGroupProtocol
 	mgp.init()
 	clock := faketime.NewManualClock()
-	g.Init(rand.New(rand.NewSource(4)), clock, &mgp, time.Second)
+	g.Init(ip.GenericMulticastProtocolOptions{
+		Enabled:                   true,
+		Rand:                      rand.New(rand.NewSource(4)),
+		Clock:                     clock,
+		Protocol:                  &mgp,
+		MaxUnsolicitedReportDelay: time.Second,
+	})
 
-	if !g.JoinGroup(addr1) {
-		t.Fatalf("got g.JoinGroup(%s) = false, want = true", addr1)
+	// Set the join count to 2 for a group.
+	g.JoinGroup(addr1, false /* dontInitialize */)
+	if !g.IsLocallyJoined(addr1) {
+		t.Fatalf("got g.IsLocallyJoined(%s) = false, want = true", addr1)
+	}
+	// Only the first join should trigger a report to be sent.
+	if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	g.JoinGroup(addr1, false /* dontInitialize */)
+	if !g.IsLocallyJoined(addr1) {
+		t.Fatalf("got g.IsLocallyJoined(%s) = false, want = true", addr1)
+	}
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
-	// Joining the same group twice should fail.
-	if g.JoinGroup(addr1) {
-		t.Errorf("got g.JoinGroup(%s) = true, want = false", addr1)
+	// Group should still be considered joined after leaving once.
+	if !g.LeaveGroup(addr1) {
+		t.Fatalf("got g.LeaveGroup(%s) = false, want = true", addr1)
+	}
+	if !g.IsLocallyJoined(addr1) {
+		t.Fatalf("got g.IsLocallyJoined(%s) = false, want = true", addr1)
+	}
+	// A leave report should only be sent once the join count reaches 0.
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Leaving once more should actually remove us from the group.
+	if !g.LeaveGroup(addr1) {
+		t.Fatalf("got g.LeaveGroup(%s) = false, want = true", addr1)
+	}
+	if g.IsLocallyJoined(addr1) {
+		t.Fatalf("got g.IsLocallyJoined(%s) = true, want = false", addr1)
+	}
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, []tcpip.Address{addr1} /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Group should no longer be joined so we should not have anything to
+	// leave.
+	if g.LeaveGroup(addr1) {
+		t.Fatalf("got g.LeaveGroup(%s) = true, want = false", addr1)
+	}
+	if g.IsLocallyJoined(addr1) {
+		t.Fatalf("got g.IsLocallyJoined(%s) = true, want = false", addr1)
+	}
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Should have no more messages to send.
+	clock.Advance(time.Hour)
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestMakeAllNonMemberAndInitialize(t *testing.T) {
+	var g ip.GenericMulticastProtocolState
+	var mgp mockMulticastGroupProtocol
+	mgp.init()
+	clock := faketime.NewManualClock()
+	g.Init(ip.GenericMulticastProtocolOptions{
+		Enabled:                   true,
+		Rand:                      rand.New(rand.NewSource(3)),
+		Clock:                     clock,
+		Protocol:                  &mgp,
+		MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+		AllNodesAddress:           addr3,
+	})
+
+	g.JoinGroup(addr1, false /* dontInitialize */)
+	if diff := checkProtocol(&mgp, []tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	g.JoinGroup(addr2, false /* dontInitialize */)
+	if diff := checkProtocol(&mgp, []tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	g.JoinGroup(addr3, false /* dontInitialize */)
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Should send the leave reports for each but still consider them locally
+	// joined.
+	g.MakeAllNonMember()
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, []tcpip.Address{addr1, addr2} /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	clock.Advance(time.Hour)
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	for _, group := range []tcpip.Address{addr1, addr2, addr3} {
+		if !g.IsLocallyJoined(group) {
+			t.Fatalf("got g.IsLocallyJoined(%s) = false, want = true", group)
+		}
+	}
+
+	// Should send the initial set of unsolcited reports.
+	g.InitializeGroups()
+	if diff := checkProtocol(&mgp, []tcpip.Address{addr1, addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	clock.Advance(maxUnsolicitedReportDelay)
+	if diff := checkProtocol(&mgp, []tcpip.Address{addr1, addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Should have no more messages to send.
+	clock.Advance(time.Hour)
+	if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestGroupStateNonMember tests that groups do not send packets when in the
+// non-member state, but are still considered locally joined.
+func TestGroupStateNonMember(t *testing.T) {
+	tests := []struct {
+		name           string
+		enabled        bool
+		dontInitialize bool
+	}{
+		{
+			name:           "Disabled",
+			enabled:        false,
+			dontInitialize: false,
+		},
+		{
+			name:           "Keep non-member",
+			enabled:        true,
+			dontInitialize: true,
+		},
+		{
+			name:           "disabled and Keep non-member",
+			enabled:        false,
+			dontInitialize: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var g ip.GenericMulticastProtocolState
+			var mgp mockMulticastGroupProtocol
+			mgp.init()
+			clock := faketime.NewManualClock()
+			g.Init(ip.GenericMulticastProtocolOptions{
+				Enabled:                   test.enabled,
+				Rand:                      rand.New(rand.NewSource(3)),
+				Clock:                     clock,
+				Protocol:                  &mgp,
+				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+			})
+
+			g.JoinGroup(addr1, test.dontInitialize)
+			if !g.IsLocallyJoined(addr1) {
+				t.Fatalf("got g.IsLocallyJoined(%s) = false, want = true", addr1)
+			}
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+
+			g.JoinGroup(addr2, test.dontInitialize)
+			if !g.IsLocallyJoined(addr2) {
+				t.Fatalf("got g.IsLocallyJoined(%s) = false, want = true", addr2)
+			}
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+
+			g.HandleQuery(addr1, time.Nanosecond)
+			clock.Advance(time.Nanosecond)
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+
+			if !g.LeaveGroup(addr2) {
+				t.Errorf("got g.LeaveGroup(%s) = false, want = true", addr2)
+			}
+			if !g.IsLocallyJoined(addr1) {
+				t.Fatalf("got g.IsLocallyJoined(%s) = false, want = true", addr1)
+			}
+			if g.IsLocallyJoined(addr2) {
+				t.Fatalf("got g.IsLocallyJoined(%s) = true, want = false", addr2)
+			}
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+
+			clock.Advance(time.Hour)
+			if diff := checkProtocol(&mgp, nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

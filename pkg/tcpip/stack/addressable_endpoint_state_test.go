@@ -15,39 +15,11 @@
 package stack_test
 
 import (
-	"sort"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
-
-func TestJoinedGroups(t *testing.T) {
-	const addr1 = tcpip.Address("\x01")
-	const addr2 = tcpip.Address("\x02")
-
-	var ep fakeNetworkEndpoint
-	var s stack.AddressableEndpointState
-	s.Init(&ep)
-
-	if joined, err := s.JoinGroup(addr1); err != nil {
-		t.Fatalf("JoinGroup(%s): %s", addr1, err)
-	} else if !joined {
-		t.Errorf("got JoinGroup(%s) = false, want = true", addr1)
-	}
-	if joined, err := s.JoinGroup(addr2); err != nil {
-		t.Fatalf("JoinGroup(%s): %s", addr2, err)
-	} else if !joined {
-		t.Errorf("got JoinGroup(%s) = false, want = true", addr2)
-	}
-
-	joinedGroups := s.JoinedGroups()
-	sort.Slice(joinedGroups, func(i, j int) bool { return joinedGroups[i][0] < joinedGroups[j][0] })
-	if diff := cmp.Diff([]tcpip.Address{addr1, addr2}, joinedGroups); diff != "" {
-		t.Errorf("joined groups mismatch (-want +got):\n%s", diff)
-	}
-}
 
 // TestAddressableEndpointStateCleanup tests that cleaning up an addressable
 // endpoint state removes permanent addresses and leaves groups.
@@ -81,25 +53,9 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 		ep.DecRef()
 	}
 
-	group := tcpip.Address("\x02")
-	if added, err := s.JoinGroup(group); err != nil {
-		t.Fatalf("s.JoinGroup(%s): %s", group, err)
-	} else if !added {
-		t.Fatalf("got s.JoinGroup(%s) = false, want = true", group)
-	}
-	if !s.IsInGroup(group) {
-		t.Fatalf("got s.IsInGroup(%s) = false, want = true", group)
-	}
-
 	s.Cleanup()
-	{
-		ep := s.AcquireAssignedAddress(addr.Address, false /* allowTemp */, stack.NeverPrimaryEndpoint)
-		if ep != nil {
-			ep.DecRef()
-			t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = %s, want = nil", addr.Address, ep.AddressWithPrefix())
-		}
-	}
-	if s.IsInGroup(group) {
-		t.Fatalf("got s.IsInGroup(%s) = true, want = false", group)
+	if ep := s.AcquireAssignedAddress(addr.Address, false /* allowTemp */, stack.NeverPrimaryEndpoint); ep != nil {
+		ep.DecRef()
+		t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = %s, want = nil", addr.Address, ep.AddressWithPrefix())
 	}
 }

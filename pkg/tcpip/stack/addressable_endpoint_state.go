@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-var _ GroupAddressableEndpoint = (*AddressableEndpointState)(nil)
 var _ AddressableEndpoint = (*AddressableEndpointState)(nil)
 
 // AddressableEndpointState is an implementation of an AddressableEndpoint.
@@ -37,10 +36,6 @@ type AddressableEndpointState struct {
 
 		endpoints map[tcpip.Address]*addressState
 		primary   []*addressState
-
-		// groups holds the mapping between group addresses and the number of times
-		// they have been joined.
-		groups map[tcpip.Address]uint32
 	}
 }
 
@@ -53,7 +48,6 @@ func (a *AddressableEndpointState) Init(networkEndpoint NetworkEndpoint) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.mu.endpoints = make(map[tcpip.Address]*addressState)
-	a.mu.groups = make(map[tcpip.Address]uint32)
 }
 
 // ReadOnlyAddressableEndpointState provides read-only access to an
@@ -335,11 +329,6 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 func (a *AddressableEndpointState) RemovePermanentAddress(addr tcpip.Address) *tcpip.Error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	if _, ok := a.mu.groups[addr]; ok {
-		panic(fmt.Sprintf("group address = %s must be removed with LeaveGroup", addr))
-	}
-
 	return a.removePermanentAddressLocked(addr)
 }
 
@@ -588,60 +577,10 @@ func (a *AddressableEndpointState) PermanentAddresses() []tcpip.AddressWithPrefi
 	return addrs
 }
 
-// JoinGroup implements GroupAddressableEndpoint.
-func (a *AddressableEndpointState) JoinGroup(group tcpip.Address) (bool, *tcpip.Error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	joins, ok := a.mu.groups[group]
-	a.mu.groups[group] = joins + 1
-	return !ok, nil
-}
-
-// LeaveGroup implements GroupAddressableEndpoint.
-func (a *AddressableEndpointState) LeaveGroup(group tcpip.Address) (bool, *tcpip.Error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	joins, ok := a.mu.groups[group]
-	if !ok {
-		return false, tcpip.ErrBadLocalAddress
-	}
-
-	if joins == 1 {
-		delete(a.mu.groups, group)
-		return true, nil
-	}
-
-	a.mu.groups[group] = joins - 1
-	return false, nil
-}
-
-// IsInGroup implements GroupAddressableEndpoint.
-func (a *AddressableEndpointState) IsInGroup(group tcpip.Address) bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	_, ok := a.mu.groups[group]
-	return ok
-}
-
-// JoinedGroups returns a list of groups the endpoint is a member of.
-func (a *AddressableEndpointState) JoinedGroups() []tcpip.Address {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	groups := make([]tcpip.Address, 0, len(a.mu.groups))
-	for g := range a.mu.groups {
-		groups = append(groups, g)
-	}
-	return groups
-}
-
 // Cleanup forcefully leaves all groups and removes all permanent addresses.
 func (a *AddressableEndpointState) Cleanup() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	a.mu.groups = make(map[tcpip.Address]uint32)
 
 	for _, ep := range a.mu.endpoints {
 		// removePermanentEndpointLocked returns tcpip.ErrBadLocalAddress if ep is
