@@ -18,8 +18,8 @@
 //
 // In a nutshell, it works as follows:
 //
-// The creation of a new address space creates a new child processes with a
-// single thread which is traced by a single goroutine.
+// The creation of a new address space creates a new child process with a single
+// thread which is traced by a single goroutine.
 //
 // A context is just a collection of temporary variables. Calling Switch on a
 // context does the following:
