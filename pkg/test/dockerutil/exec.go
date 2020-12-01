@@ -77,11 +77,6 @@ func (c *Container) doExec(ctx context.Context, r ExecOpts, args []string) (Proc
 		return Process{}, fmt.Errorf("exec attach failed with err: %v", err)
 	}
 
-	if err := c.client.ContainerExecStart(ctx, resp.ID, types.ExecStartCheck{}); err != nil {
-		hijack.Close()
-		return Process{}, fmt.Errorf("exec start failed with err: %v", err)
-	}
-
 	return Process{
 		container: c,
 		execid:    resp.ID,
