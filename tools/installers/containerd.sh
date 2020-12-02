@@ -49,10 +49,10 @@ install_helper() {
 # and later versions no longer have the transitional package.
 source /etc/os-release
 declare BTRFS_DEV
-if [[ "${ID}" == "ubuntu" ]] && [[ "${VERSION_ID%.*}" -le "18" ]]; then
+if [[ "${VERSION_ID%.*}" -le "18" ]]; then
   BTRFS_DEV="btrfs-tools"
 else
-  BTRFS_DEV="btrfs-dev"
+  BTRFS_DEV="libbtrfs-dev"
 fi
 readonly BTRFS_DEV
 
