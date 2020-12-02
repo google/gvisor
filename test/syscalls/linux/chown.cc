@@ -75,7 +75,16 @@ TEST_P(ChownParamTest, ChownFileSucceeds) {
   if (num_groups > 0) {
     std::vector<gid_t> list(num_groups);
     EXPECT_THAT(getgroups(list.size(), list.data()), SyscallSucceeds());
-    gid = list[0];
+    // Scan the list of groups for a valid gid. Note that if a group is not
+    // defined in this local user namespace, then we will see 65534, and the
+    // group will not chown below as expected. So only change if we find a
+    // valid group in this list.
+    for (const gid_t other_gid : list) {
+      if (other_gid != 65534) {
+        gid = other_gid;
+        break;
+      }
+    }
   }
 
   EXPECT_NO_ERRNO(GetParam()(file.path(), geteuid(), gid));
