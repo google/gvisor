@@ -598,7 +598,7 @@ func (conn *Connection) ExpectFrame(t *testing.T, layers Layers, timeout time.Du
 	var errs error
 	for {
 		var gotLayers Layers
-		if timeout = time.Until(deadline); timeout > 0 {
+		if timeout := time.Until(deadline); timeout > 0 {
 			gotLayers = conn.recvFrame(t, timeout)
 		}
 		if gotLayers == nil {
