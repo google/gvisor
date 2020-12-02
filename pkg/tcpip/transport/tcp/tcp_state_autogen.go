@@ -127,13 +127,36 @@ func (r *rcvBufAutoTuneParams) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(5, new(unixTime), func(y interface{}) { r.loadRttMeasureTime(y.(unixTime)) })
 }
 
+func (e *EndpointInfo) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.EndpointInfo"
+}
+
+func (e *EndpointInfo) StateFields() []string {
+	return []string{
+		"TransportEndpointInfo",
+	}
+}
+
+func (e *EndpointInfo) beforeSave() {}
+
+func (e *EndpointInfo) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.TransportEndpointInfo)
+}
+
+func (e *EndpointInfo) afterLoad() {}
+
+func (e *EndpointInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.TransportEndpointInfo)
+}
+
 func (e *endpoint) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.endpoint"
 }
 
 func (e *endpoint) StateFields() []string {
 	return []string{
-		"TransportEndpointInfo",
+		"EndpointInfo",
 		"DefaultSocketOptionsHandler",
 		"waiterQueue",
 		"uniqueID",
@@ -211,7 +234,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(26, recentTSTimeValue)
 	var acceptedChanValue []*endpoint = e.saveAcceptedChan()
 	stateSinkObject.SaveValue(50, acceptedChanValue)
-	stateSinkObject.Save(0, &e.TransportEndpointInfo)
+	stateSinkObject.Save(0, &e.EndpointInfo)
 	stateSinkObject.Save(1, &e.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &e.waiterQueue)
 	stateSinkObject.Save(3, &e.uniqueID)
@@ -272,7 +295,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 }
 
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.TransportEndpointInfo)
+	stateSourceObject.Load(0, &e.EndpointInfo)
 	stateSourceObject.Load(1, &e.DefaultSocketOptionsHandler)
 	stateSourceObject.LoadWait(2, &e.waiterQueue)
 	stateSourceObject.Load(3, &e.uniqueID)
@@ -999,6 +1022,7 @@ func init() {
 	state.Register((*cubicState)(nil))
 	state.Register((*SACKInfo)(nil))
 	state.Register((*rcvBufAutoTuneParams)(nil))
+	state.Register((*EndpointInfo)(nil))
 	state.Register((*endpoint)(nil))
 	state.Register((*keepalive)(nil))
 	state.Register((*rackControl)(nil))
