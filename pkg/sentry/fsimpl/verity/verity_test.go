@@ -35,14 +35,16 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// rootMerkleFilename is the name of the root Merkle tree file.
-const rootMerkleFilename = "root.verity"
+const (
+	// rootMerkleFilename is the name of the root Merkle tree file.
+	rootMerkleFilename = "root.verity"
+	// maxDataSize is the maximum data size of a test file.
+	maxDataSize = 100000
+)
 
-// maxDataSize is the maximum data size written to the file for test.
-const maxDataSize = 100000
+var hashAlgs = []HashAlgorithm{SHA256, SHA512}
 
-// getD returns a *dentry corresponding to VD.
-func getD(t *testing.T, vd vfs.VirtualDentry) *dentry {
+func dentryFromVD(t *testing.T, vd vfs.VirtualDentry) *dentry {
 	t.Helper()
 	d, ok := vd.Dentry().Impl().(*dentry)
 	if !ok {
@@ -51,10 +53,21 @@ func getD(t *testing.T, vd vfs.VirtualDentry) *dentry {
 	return d
 }
 
+// dentryFromFD returns the dentry corresponding to fd.
+func dentryFromFD(t *testing.T, fd *vfs.FileDescription) *dentry {
+	t.Helper()
+	f, ok := fd.Impl().(*fileDescription)
+	if !ok {
+		t.Fatalf("can't assert %T as a *fileDescription", fd)
+	}
+	return f.d
+}
+
 // newVerityRoot creates a new verity mount, and returns the root. The
 // underlying file system is tmpfs. If the error is not nil, then cleanup
 // should be called when the root is no longer needed.
 func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem, vfs.VirtualDentry, *kernel.Task, error) {
+	t.Helper()
 	k, err := testutil.Boot()
 	if err != nil {
 		t.Fatalf("testutil.Boot: %v", err)
@@ -102,7 +115,6 @@ func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem,
 		t.Fatalf("testutil.CreateTask: %v", err)
 	}
 
-	t.Helper()
 	t.Cleanup(func() {
 		root.DecRef(ctx)
 		mntns.DecRef(ctx)
@@ -111,6 +123,8 @@ func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem,
 }
 
 // openVerityAt opens a verity file.
+//
+// TODO(chongc): release reference from opening the file when done.
 func openVerityAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, path string, flags uint32, mode linux.FileMode) (*vfs.FileDescription, error) {
 	return vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
 		Root:  vd,
@@ -123,6 +137,8 @@ func openVerityAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, vd vfs.Vir
 }
 
 // openLowerAt opens the file in the underlying file system.
+//
+// TODO(chongc): release reference from opening the file when done.
 func (d *dentry) openLowerAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, path string, flags uint32, mode linux.FileMode) (*vfs.FileDescription, error) {
 	return vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
 		Root:  d.lowerVD,
@@ -135,6 +151,8 @@ func (d *dentry) openLowerAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem,
 }
 
 // openLowerMerkleAt opens the Merkle file in the underlying file system.
+//
+// TODO(chongc): release reference from opening the file when done.
 func (d *dentry) openLowerMerkleAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, flags uint32, mode linux.FileMode) (*vfs.FileDescription, error) {
 	return vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
 		Root:  d.lowerMerkleVD,
@@ -190,21 +208,11 @@ func (d *dentry) renameLowerMerkleAt(ctx context.Context, vfsObj *vfs.VirtualFil
 	}, &vfs.RenameOptions{})
 }
 
-// getDentry returns a *dentry corresponds to fd.
-func getDentry(t *testing.T, fd *vfs.FileDescription) *dentry {
-	t.Helper()
-	f, ok := fd.Impl().(*fileDescription)
-	if !ok {
-		t.Fatalf("can't assert %T as a *fileDescription", fd)
-	}
-	return f.d
-}
-
 // newFileFD creates a new file in the verity mount, and returns the FD. The FD
 // points to a file that has random data generated.
 func newFileFD(ctx context.Context, t *testing.T, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, filePath string, mode linux.FileMode) (*vfs.FileDescription, int, error) {
 	// Create the file in the underlying file system.
-	lowerFD, err := getD(t, root).openLowerAt(ctx, vfsObj, filePath, linux.O_RDWR|linux.O_CREAT|linux.O_EXCL, linux.ModeRegular|mode)
+	lowerFD, err := dentryFromVD(t, root).openLowerAt(ctx, vfsObj, filePath, linux.O_RDWR|linux.O_CREAT|linux.O_EXCL, linux.ModeRegular|mode)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -231,9 +239,8 @@ func newFileFD(ctx context.Context, t *testing.T, vfsObj *vfs.VirtualFilesystem,
 	return fd, dataSize, err
 }
 
-// corruptRandomBit randomly flips a bit in the file represented by fd.
-func corruptRandomBit(ctx context.Context, fd *vfs.FileDescription, size int) error {
-	// Flip a random bit in the underlying file.
+// flipRandomBit randomly flips a bit in the file represented by fd.
+func flipRandomBit(ctx context.Context, fd *vfs.FileDescription, size int) error {
 	randomPos := int64(rand.Intn(size))
 	byteToModify := make([]byte, 1)
 	if _, err := fd.PRead(ctx, usermem.BytesIOSequence(byteToModify), randomPos, vfs.ReadOptions{}); err != nil {
@@ -246,7 +253,14 @@ func corruptRandomBit(ctx context.Context, fd *vfs.FileDescription, size int) er
 	return nil
 }
 
-var hashAlgs = []HashAlgorithm{SHA256, SHA512}
+func enableVerity(ctx context.Context, t *testing.T, fd *vfs.FileDescription) {
+	t.Helper()
+	var args arch.SyscallArguments
+	args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
+	if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
+		t.Fatalf("enable verity: %v", err)
+	}
+}
 
 // TestOpen ensures that when a file is created, the corresponding Merkle tree
 // file and the root Merkle tree file exist.
@@ -264,12 +278,12 @@ func TestOpen(t *testing.T) {
 		}
 
 		// Ensure that the corresponding Merkle tree file is created.
-		if _, err = getDentry(t, fd).openLowerMerkleAt(ctx, vfsObj, linux.O_RDONLY, linux.ModeRegular); err != nil {
+		if _, err = dentryFromFD(t, fd).openLowerMerkleAt(ctx, vfsObj, linux.O_RDONLY, linux.ModeRegular); err != nil {
 			t.Errorf("OpenAt Merkle tree file %s: %v", merklePrefix+filename, err)
 		}
 
 		// Ensure the root merkle tree file is created.
-		if _, err = getD(t, root).openLowerMerkleAt(ctx, vfsObj, linux.O_RDONLY, linux.ModeRegular); err != nil {
+		if _, err = dentryFromVD(t, root).openLowerMerkleAt(ctx, vfsObj, linux.O_RDONLY, linux.ModeRegular); err != nil {
 			t.Errorf("OpenAt root Merkle tree file %s: %v", merklePrefix+rootMerkleFilename, err)
 		}
 	}
@@ -291,11 +305,7 @@ func TestPReadUnmodifiedFileSucceeds(t *testing.T) {
 		}
 
 		// Enable verity on the file and confirm a normal read succeeds.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		buf := make([]byte, size)
 		n, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0 /* offset */, vfs.ReadOptions{})
@@ -325,11 +335,7 @@ func TestReadUnmodifiedFileSucceeds(t *testing.T) {
 		}
 
 		// Enable verity on the file and confirm a normal read succeeds.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		buf := make([]byte, size)
 		n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
@@ -359,11 +365,7 @@ func TestReopenUnmodifiedFileSucceeds(t *testing.T) {
 		}
 
 		// Enable verity on the file and confirms a normal read succeeds.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		// Ensure reopening the verity enabled file succeeds.
 		if _, err = openVerityAt(ctx, vfsObj, root, filename, linux.O_RDONLY, linux.ModeRegular); err != nil {
@@ -387,21 +389,14 @@ func TestOpenNonexistentFile(t *testing.T) {
 	}
 
 	// Enable verity on the file and confirms a normal read succeeds.
-	var args arch.SyscallArguments
-	args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-	if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-		t.Fatalf("Ioctl: %v", err)
-	}
+	enableVerity(ctx, t, fd)
 
 	// Enable verity on the parent directory.
 	parentFD, err := openVerityAt(ctx, vfsObj, root, "", linux.O_RDONLY, linux.ModeRegular)
 	if err != nil {
 		t.Fatalf("OpenAt: %v", err)
 	}
-
-	if _, err := parentFD.Ioctl(ctx, nil /* uio */, args); err != nil {
-		t.Fatalf("Ioctl: %v", err)
-	}
+	enableVerity(ctx, t, parentFD)
 
 	// Ensure open an unexpected file in the parent directory fails with
 	// ENOENT rather than verification failure.
@@ -426,20 +421,16 @@ func TestPReadModifiedFileFails(t *testing.T) {
 		}
 
 		// Enable verity on the file.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		// Open a new lowerFD that's read/writable.
-		lowerFD, err := getDentry(t, fd).openLowerAt(ctx, vfsObj, "", linux.O_RDWR, linux.ModeRegular)
+		lowerFD, err := dentryFromFD(t, fd).openLowerAt(ctx, vfsObj, "", linux.O_RDWR, linux.ModeRegular)
 		if err != nil {
 			t.Fatalf("OpenAt: %v", err)
 		}
 
-		if err := corruptRandomBit(ctx, lowerFD, size); err != nil {
-			t.Fatalf("corruptRandomBit: %v", err)
+		if err := flipRandomBit(ctx, lowerFD, size); err != nil {
+			t.Fatalf("flipRandomBit: %v", err)
 		}
 
 		// Confirm that read from the modified file fails.
@@ -466,20 +457,16 @@ func TestReadModifiedFileFails(t *testing.T) {
 		}
 
 		// Enable verity on the file.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		// Open a new lowerFD that's read/writable.
-		lowerFD, err := getDentry(t, fd).openLowerAt(ctx, vfsObj, "", linux.O_RDWR, linux.ModeRegular)
+		lowerFD, err := dentryFromFD(t, fd).openLowerAt(ctx, vfsObj, "", linux.O_RDWR, linux.ModeRegular)
 		if err != nil {
 			t.Fatalf("OpenAt: %v", err)
 		}
 
-		if err := corruptRandomBit(ctx, lowerFD, size); err != nil {
-			t.Fatalf("corruptRandomBit: %v", err)
+		if err := flipRandomBit(ctx, lowerFD, size); err != nil {
+			t.Fatalf("flipRandomBit: %v", err)
 		}
 
 		// Confirm that read from the modified file fails.
@@ -506,14 +493,10 @@ func TestModifiedMerkleFails(t *testing.T) {
 		}
 
 		// Enable verity on the file.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		// Open a new lowerMerkleFD that's read/writable.
-		lowerMerkleFD, err := getDentry(t, fd).openLowerMerkleAt(ctx, vfsObj, linux.O_RDWR, linux.ModeRegular)
+		lowerMerkleFD, err := dentryFromFD(t, fd).openLowerMerkleAt(ctx, vfsObj, linux.O_RDWR, linux.ModeRegular)
 		if err != nil {
 			t.Fatalf("OpenAt: %v", err)
 		}
@@ -524,14 +507,13 @@ func TestModifiedMerkleFails(t *testing.T) {
 			t.Errorf("lowerMerkleFD.Stat: %v", err)
 		}
 
-		if err := corruptRandomBit(ctx, lowerMerkleFD, int(stat.Size)); err != nil {
-			t.Fatalf("corruptRandomBit: %v", err)
+		if err := flipRandomBit(ctx, lowerMerkleFD, int(stat.Size)); err != nil {
+			t.Fatalf("flipRandomBit: %v", err)
 		}
 
 		// Confirm that read from a file with modified Merkle tree fails.
 		buf := make([]byte, size)
 		if _, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0 /* offset */, vfs.ReadOptions{}); err == nil {
-			fmt.Println(buf)
 			t.Fatalf("fd.PRead succeeded with modified Merkle file")
 		}
 	}
@@ -554,24 +536,17 @@ func TestModifiedParentMerkleFails(t *testing.T) {
 		}
 
 		// Enable verity on the file.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		// Enable verity on the parent directory.
 		parentFD, err := openVerityAt(ctx, vfsObj, root, "", linux.O_RDONLY, linux.ModeRegular)
 		if err != nil {
 			t.Fatalf("OpenAt: %v", err)
 		}
-
-		if _, err := parentFD.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, parentFD)
 
 		// Open a new lowerMerkleFD that's read/writable.
-		parentLowerMerkleFD, err := getDentry(t, fd).parent.openLowerMerkleAt(ctx, vfsObj, linux.O_RDWR, linux.ModeRegular)
+		parentLowerMerkleFD, err := dentryFromFD(t, fd).parent.openLowerMerkleAt(ctx, vfsObj, linux.O_RDWR, linux.ModeRegular)
 		if err != nil {
 			t.Fatalf("OpenAt: %v", err)
 		}
@@ -591,8 +566,8 @@ func TestModifiedParentMerkleFails(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed convert size to int: %v", err)
 		}
-		if err := corruptRandomBit(ctx, parentLowerMerkleFD, parentMerkleSize); err != nil {
-			t.Fatalf("corruptRandomBit: %v", err)
+		if err := flipRandomBit(ctx, parentLowerMerkleFD, parentMerkleSize); err != nil {
+			t.Fatalf("flipRandomBit: %v", err)
 		}
 
 		parentLowerMerkleFD.DecRef(ctx)
@@ -619,13 +594,8 @@ func TestUnmodifiedStatSucceeds(t *testing.T) {
 			t.Fatalf("newFileFD: %v", err)
 		}
 
-		// Enable verity on the file and confirms stat succeeds.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("fd.Ioctl: %v", err)
-		}
-
+		// Enable verity on the file and confirm that stat succeeds.
+		enableVerity(ctx, t, fd)
 		if _, err := fd.Stat(ctx, vfs.StatOptions{}); err != nil {
 			t.Errorf("fd.Stat: %v", err)
 		}
@@ -648,11 +618,7 @@ func TestModifiedStatFails(t *testing.T) {
 		}
 
 		// Enable verity on the file.
-		var args arch.SyscallArguments
-		args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-		if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-			t.Fatalf("fd.Ioctl: %v", err)
-		}
+		enableVerity(ctx, t, fd)
 
 		lowerFD := fd.Impl().(*fileDescription).lowerFD
 		// Change the stat of the underlying file, and check that stat fails.
@@ -711,19 +677,15 @@ func TestOpenDeletedFileFails(t *testing.T) {
 			}
 
 			// Enable verity on the file.
-			var args arch.SyscallArguments
-			args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-			if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-				t.Fatalf("Ioctl: %v", err)
-			}
+			enableVerity(ctx, t, fd)
 
 			if tc.changeFile {
-				if err := getD(t, root).unlinkLowerAt(ctx, vfsObj, filename); err != nil {
+				if err := dentryFromVD(t, root).unlinkLowerAt(ctx, vfsObj, filename); err != nil {
 					t.Fatalf("UnlinkAt: %v", err)
 				}
 			}
 			if tc.changeMerkleFile {
-				if err := getD(t, root).unlinkLowerMerkleAt(ctx, vfsObj, filename); err != nil {
+				if err := dentryFromVD(t, root).unlinkLowerMerkleAt(ctx, vfsObj, filename); err != nil {
 					t.Fatalf("UnlinkAt: %v", err)
 				}
 			}
@@ -776,20 +738,16 @@ func TestOpenRenamedFileFails(t *testing.T) {
 			}
 
 			// Enable verity on the file.
-			var args arch.SyscallArguments
-			args[1] = arch.SyscallArgument{Value: linux.FS_IOC_ENABLE_VERITY}
-			if _, err := fd.Ioctl(ctx, nil /* uio */, args); err != nil {
-				t.Fatalf("Ioctl: %v", err)
-			}
+			enableVerity(ctx, t, fd)
 
 			newFilename := "renamed-test-file"
 			if tc.changeFile {
-				if err := getD(t, root).renameLowerAt(ctx, vfsObj, filename, newFilename); err != nil {
+				if err := dentryFromVD(t, root).renameLowerAt(ctx, vfsObj, filename, newFilename); err != nil {
 					t.Fatalf("RenameAt: %v", err)
 				}
 			}
 			if tc.changeMerkleFile {
-				if err := getD(t, root).renameLowerMerkleAt(ctx, vfsObj, filename, newFilename); err != nil {
+				if err := dentryFromVD(t, root).renameLowerMerkleAt(ctx, vfsObj, filename, newFilename); err != nil {
 					t.Fatalf("UnlinkAt: %v", err)
 				}
 			}
