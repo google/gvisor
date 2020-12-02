@@ -158,7 +158,7 @@ func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol
 
 	// protocol is passed in network byte order, but netstack wants it in
 	// host order.
-	netProto := tcpip.NetworkProtocolNumber(ntohs(uint16(protocol)))
+	netProto := tcpip.NetworkProtocolNumber(socket.Ntohs(uint16(protocol)))
 
 	wq := &waiter.Queue{}
 	ep, err := epStack.Stack.NewPacketEndpoint(cooked, netProto, wq)

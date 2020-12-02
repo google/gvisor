@@ -136,7 +136,7 @@ func (s *socketOpsCommon) Endpoint() transport.Endpoint {
 
 // extractPath extracts and validates the address.
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
-	addr, family, err := netstack.AddressAndFamily(sockaddr)
+	addr, family, err := socket.AddressAndFamily(sockaddr)
 	if err != nil {
 		if err == syserr.ErrAddressFamilyNotSupported {
 			err = syserr.ErrInvalidArgument
@@ -169,7 +169,7 @@ func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *
 		return nil, 0, syserr.TranslateNetstackError(err)
 	}
 
-	a, l := netstack.ConvertAddress(linux.AF_UNIX, addr)
+	a, l := socket.ConvertAddress(linux.AF_UNIX, addr)
 	return a, l, nil
 }
 
@@ -181,7 +181,7 @@ func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *
 		return nil, 0, syserr.TranslateNetstackError(err)
 	}
 
-	a, l := netstack.ConvertAddress(linux.AF_UNIX, addr)
+	a, l := socket.ConvertAddress(linux.AF_UNIX, addr)
 	return a, l, nil
 }
 
@@ -255,7 +255,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	var addr linux.SockAddr
 	var addrLen uint32
 	if peerAddr != nil {
-		addr, addrLen = netstack.ConvertAddress(linux.AF_UNIX, *peerAddr)
+		addr, addrLen = socket.ConvertAddress(linux.AF_UNIX, *peerAddr)
 	}
 
 	fd, e := t.NewFDFrom(0, ns, kernel.FDFlags{
@@ -647,7 +647,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 		var from linux.SockAddr
 		var fromLen uint32
 		if r.From != nil && len([]byte(r.From.Addr)) != 0 {
-			from, fromLen = netstack.ConvertAddress(linux.AF_UNIX, *r.From)
+			from, fromLen = socket.ConvertAddress(linux.AF_UNIX, *r.From)
 		}
 
 		if r.ControlTrunc {
@@ -682,7 +682,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 			var from linux.SockAddr
 			var fromLen uint32
 			if r.From != nil {
-				from, fromLen = netstack.ConvertAddress(linux.AF_UNIX, *r.From)
+				from, fromLen = socket.ConvertAddress(linux.AF_UNIX, *r.From)
 			}
 
 			if r.ControlTrunc {

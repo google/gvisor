@@ -18,6 +18,7 @@
 package socket
 
 import (
+	"bytes"
 	"fmt"
 	"sync/atomic"
 	"syscall"
@@ -35,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -458,5 +460,178 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
+	}
+}
+
+var sockAddrLinkSize = (&linux.SockAddrLink{}).SizeBytes()
+var sockAddrInetSize = (&linux.SockAddrInet{}).SizeBytes()
+var sockAddrInet6Size = (&linux.SockAddrInet6{}).SizeBytes()
+
+// Ntohs converts a 16-bit number from network byte order to host byte order. It
+// assumes that the host is little endian.
+func Ntohs(v uint16) uint16 {
+	return v<<8 | v>>8
+}
+
+// Htons converts a 16-bit number from host byte order to network byte order. It
+// assumes that the host is little endian.
+func Htons(v uint16) uint16 {
+	return Ntohs(v)
+}
+
+// isLinkLocal determines if the given IPv6 address is link-local. This is the
+// case when it has the fe80::/10 prefix. This check is used to determine when
+// the NICID is relevant for a given IPv6 address.
+func isLinkLocal(addr tcpip.Address) bool {
+	return len(addr) >= 2 && addr[0] == 0xfe && addr[1]&0xc0 == 0x80
+}
+
+// ConvertAddress converts the given address to a native format.
+func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32) {
+	switch family {
+	case linux.AF_UNIX:
+		var out linux.SockAddrUnix
+		out.Family = linux.AF_UNIX
+		l := len([]byte(addr.Addr))
+		for i := 0; i < l; i++ {
+			out.Path[i] = int8(addr.Addr[i])
+		}
+
+		// Linux returns the used length of the address struct (including the
+		// null terminator) for filesystem paths. The Family field is 2 bytes.
+		// It is sometimes allowed to exclude the null terminator if the
+		// address length is the max. Abstract and empty paths always return
+		// the full exact length.
+		if l == 0 || out.Path[0] == 0 || l == len(out.Path) {
+			return &out, uint32(2 + l)
+		}
+		return &out, uint32(3 + l)
+
+	case linux.AF_INET:
+		var out linux.SockAddrInet
+		copy(out.Addr[:], addr.Addr)
+		out.Family = linux.AF_INET
+		out.Port = Htons(addr.Port)
+		return &out, uint32(sockAddrInetSize)
+
+	case linux.AF_INET6:
+		var out linux.SockAddrInet6
+		if len(addr.Addr) == header.IPv4AddressSize {
+			// Copy address in v4-mapped format.
+			copy(out.Addr[12:], addr.Addr)
+			out.Addr[10] = 0xff
+			out.Addr[11] = 0xff
+		} else {
+			copy(out.Addr[:], addr.Addr)
+		}
+		out.Family = linux.AF_INET6
+		out.Port = Htons(addr.Port)
+		if isLinkLocal(addr.Addr) {
+			out.Scope_id = uint32(addr.NIC)
+		}
+		return &out, uint32(sockAddrInet6Size)
+
+	case linux.AF_PACKET:
+		// TODO(gvisor.dev/issue/173): Return protocol too.
+		var out linux.SockAddrLink
+		out.Family = linux.AF_PACKET
+		out.InterfaceIndex = int32(addr.NIC)
+		out.HardwareAddrLen = header.EthernetAddressSize
+		copy(out.HardwareAddr[:], addr.Addr)
+		return &out, uint32(sockAddrLinkSize)
+
+	default:
+		return nil, 0
+	}
+}
+
+// BytesToIPAddress converts an IPv4 or IPv6 address from the user to the
+// netstack representation taking any addresses into account.
+func BytesToIPAddress(addr []byte) tcpip.Address {
+	if bytes.Equal(addr, make([]byte, 4)) || bytes.Equal(addr, make([]byte, 16)) {
+		return ""
+	}
+	return tcpip.Address(addr)
+}
+
+// AddressAndFamily reads an sockaddr struct from the given address and
+// converts it to the FullAddress format. It supports AF_UNIX, AF_INET,
+// AF_INET6, and AF_PACKET addresses.
+//
+// AddressAndFamily returns an address and its family.
+func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
+	// Make sure we have at least 2 bytes for the address family.
+	if len(addr) < 2 {
+		return tcpip.FullAddress{}, 0, syserr.ErrInvalidArgument
+	}
+
+	// Get the rest of the fields based on the address family.
+	switch family := usermem.ByteOrder.Uint16(addr); family {
+	case linux.AF_UNIX:
+		path := addr[2:]
+		if len(path) > linux.UnixPathMax {
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
+		}
+		// Drop the terminating NUL (if one exists) and everything after
+		// it for filesystem (non-abstract) addresses.
+		if len(path) > 0 && path[0] != 0 {
+			if n := bytes.IndexByte(path[1:], 0); n >= 0 {
+				path = path[:n+1]
+			}
+		}
+		return tcpip.FullAddress{
+			Addr: tcpip.Address(path),
+		}, family, nil
+
+	case linux.AF_INET:
+		var a linux.SockAddrInet
+		if len(addr) < sockAddrInetSize {
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
+		}
+		binary.Unmarshal(addr[:sockAddrInetSize], usermem.ByteOrder, &a)
+
+		out := tcpip.FullAddress{
+			Addr: BytesToIPAddress(a.Addr[:]),
+			Port: Ntohs(a.Port),
+		}
+		return out, family, nil
+
+	case linux.AF_INET6:
+		var a linux.SockAddrInet6
+		if len(addr) < sockAddrInet6Size {
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
+		}
+		binary.Unmarshal(addr[:sockAddrInet6Size], usermem.ByteOrder, &a)
+
+		out := tcpip.FullAddress{
+			Addr: BytesToIPAddress(a.Addr[:]),
+			Port: Ntohs(a.Port),
+		}
+		if isLinkLocal(out.Addr) {
+			out.NIC = tcpip.NICID(a.Scope_id)
+		}
+		return out, family, nil
+
+	case linux.AF_PACKET:
+		var a linux.SockAddrLink
+		if len(addr) < sockAddrLinkSize {
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
+		}
+		binary.Unmarshal(addr[:sockAddrLinkSize], usermem.ByteOrder, &a)
+		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
+		}
+
+		// TODO(gvisor.dev/issue/173): Return protocol too.
+		return tcpip.FullAddress{
+			NIC:  tcpip.NICID(a.InterfaceIndex),
+			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
+		}, family, nil
+
+	case linux.AF_UNSPEC:
+		return tcpip.FullAddress{}, family, nil
+
+	default:
+		return tcpip.FullAddress{}, 0, syserr.ErrAddressFamilyNotSupported
 	}
 }
