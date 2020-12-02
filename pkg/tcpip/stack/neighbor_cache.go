@@ -182,14 +182,15 @@ func (n *neighborCache) removeWaker(addr tcpip.Address, waker *sleep.Waker) {
 
 // entries returns all entries in the neighbor cache.
 func (n *neighborCache) entries() []NeighborEntry {
-	entries := make([]NeighborEntry, 0, len(n.cache))
 	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	entries := make([]NeighborEntry, 0, len(n.cache))
 	for _, entry := range n.cache {
 		entry.mu.RLock()
 		entries = append(entries, entry.neigh)
 		entry.mu.RUnlock()
 	}
-	n.mu.RUnlock()
 	return entries
 }
 
