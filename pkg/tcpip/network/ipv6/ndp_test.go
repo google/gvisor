@@ -220,7 +220,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 				DstAddr:       lladdr0,
 			})
 
-			invalid := s.Stats().ICMP.V6PacketsReceived.Invalid
+			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
 
 			// Invalid count should initially be 0.
 			if got := invalid.Value(); got != 0 {
@@ -326,7 +326,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testi
 				DstAddr:       lladdr0,
 			})
 
-			invalid := s.Stats().ICMP.V6PacketsReceived.Invalid
+			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
 
 			// Invalid count should initially be 0.
 			if got := invalid.Value(); got != 0 {
@@ -606,7 +606,7 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 						DstAddr:       test.nsDst,
 					})
 
-					invalid := s.Stats().ICMP.V6PacketsReceived.Invalid
+					invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
 
 					// Invalid count should initially be 0.
 					if got := invalid.Value(); got != 0 {
@@ -792,7 +792,7 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 				DstAddr:       lladdr0,
 			})
 
-			invalid := s.Stats().ICMP.V6PacketsReceived.Invalid
+			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
 
 			// Invalid count should initially be 0.
 			if got := invalid.Value(); got != 0 {
@@ -905,7 +905,7 @@ func TestNeighorAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *test
 				DstAddr:       lladdr0,
 			})
 
-			invalid := s.Stats().ICMP.V6PacketsReceived.Invalid
+			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
 
 			// Invalid count should initially be 0.
 			if got := invalid.Value(); got != 0 {
@@ -1122,7 +1122,7 @@ func TestNDPValidation(t *testing.T) {
 									s.SetForwarding(ProtocolNumber, true)
 								}
 
-								stats := s.Stats().ICMP.V6PacketsReceived
+								stats := s.Stats().ICMP.V6.PacketsReceived
 								invalid := stats.Invalid
 								routerOnly := stats.RouterOnlyPacketsDroppedByHost
 								typStat := typ.statCounter(stats)
@@ -1358,7 +1358,7 @@ func TestRouterAdvertValidation(t *testing.T) {
 						DstAddr:       header.IPv6AllNodesMulticastAddress,
 					})
 
-					stats := s.Stats().ICMP.V6PacketsReceived
+					stats := s.Stats().ICMP.V6.PacketsReceived
 					invalid := stats.Invalid
 					rxRA := stats.RouterAdvert
 

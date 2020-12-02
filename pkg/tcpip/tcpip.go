@@ -1384,25 +1384,37 @@ type ICMPv6ReceivedPacketStats struct {
 	RouterOnlyPacketsDroppedByHost *StatCounter
 }
 
-// ICMPStats collects ICMP-specific stats (both v4 and v6).
-type ICMPStats struct {
+// ICMPv4Stats collects ICMPv4-specific stats.
+type ICMPv4Stats struct {
 	// ICMPv4SentPacketStats contains counts of sent packets by ICMPv4 packet type
 	// and a single count of packets which failed to write to the link
 	// layer.
-	V4PacketsSent ICMPv4SentPacketStats
+	PacketsSent ICMPv4SentPacketStats
 
 	// ICMPv4ReceivedPacketStats contains counts of received packets by ICMPv4
 	// packet type and a single count of invalid packets received.
-	V4PacketsReceived ICMPv4ReceivedPacketStats
+	PacketsReceived ICMPv4ReceivedPacketStats
+}
 
+// ICMPv6Stats collects ICMPv6-specific stats.
+type ICMPv6Stats struct {
 	// ICMPv6SentPacketStats contains counts of sent packets by ICMPv6 packet type
 	// and a single count of packets which failed to write to the link
 	// layer.
-	V6PacketsSent ICMPv6SentPacketStats
+	PacketsSent ICMPv6SentPacketStats
 
 	// ICMPv6ReceivedPacketStats contains counts of received packets by ICMPv6
 	// packet type and a single count of invalid packets received.
-	V6PacketsReceived ICMPv6ReceivedPacketStats
+	PacketsReceived ICMPv6ReceivedPacketStats
+}
+
+// ICMPStats collects ICMP-specific stats (both v4 and v6).
+type ICMPStats struct {
+	// V4 contains the ICMPv4-specifics stats.
+	V4 ICMPv4Stats
+
+	// V6 contains the ICMPv4-specifics stats.
+	V6 ICMPv6Stats
 }
 
 // IGMPPacketStats enumerates counts for all IGMP packet types.

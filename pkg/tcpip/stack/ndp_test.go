@@ -353,7 +353,7 @@ func TestDADDisabled(t *testing.T) {
 	}
 
 	// We should not have sent any NDP NS messages.
-	if got := s.Stats().ICMP.V6PacketsSent.NeighborSolicit.Value(); got != 0 {
+	if got := s.Stats().ICMP.V6.PacketsSent.NeighborSolicit.Value(); got != 0 {
 		t.Fatalf("got NeighborSolicit = %d, want = 0", got)
 	}
 }
@@ -525,7 +525,7 @@ func TestDADResolve(t *testing.T) {
 			}
 
 			// Should not have sent any more NS messages.
-			if got := s.Stats().ICMP.V6PacketsSent.NeighborSolicit.Value(); got != uint64(test.dupAddrDetectTransmits) {
+			if got := s.Stats().ICMP.V6.PacketsSent.NeighborSolicit.Value(); got != uint64(test.dupAddrDetectTransmits) {
 				t.Fatalf("got NeighborSolicit = %d, want = %d", got, test.dupAddrDetectTransmits)
 			}
 
@@ -673,7 +673,7 @@ func TestDADFail(t *testing.T) {
 			// Receive a packet to simulate an address conflict.
 			test.rxPkt(e, addr1)
 
-			stat := test.getStat(s.Stats().ICMP.V6PacketsReceived)
+			stat := test.getStat(s.Stats().ICMP.V6.PacketsReceived)
 			if got := stat.Value(); got != 1 {
 				t.Fatalf("got stat = %d, want = 1", got)
 			}
@@ -810,7 +810,7 @@ func TestDADStop(t *testing.T) {
 			}
 
 			// Should not have sent more than 1 NS message.
-			if got := s.Stats().ICMP.V6PacketsSent.NeighborSolicit.Value(); got > 1 {
+			if got := s.Stats().ICMP.V6.PacketsSent.NeighborSolicit.Value(); got > 1 {
 				t.Errorf("got NeighborSolicit = %d, want <= 1", got)
 			}
 		})
@@ -5263,7 +5263,7 @@ func TestRouterSolicitation(t *testing.T) {
 				waitForNothing(test.effectiveMaxRtrSolicitDelay)
 			}
 
-			if got, want := s.Stats().ICMP.V6PacketsSent.RouterSolicit.Value(), uint64(test.maxRtrSolicit); got != want {
+			if got, want := s.Stats().ICMP.V6.PacketsSent.RouterSolicit.Value(), uint64(test.maxRtrSolicit); got != want {
 				t.Fatalf("got sent RouterSolicit = %d, want = %d", got, want)
 			}
 		})

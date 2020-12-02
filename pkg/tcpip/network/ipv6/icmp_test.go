@@ -317,7 +317,7 @@ func TestICMPCounts(t *testing.T) {
 			// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
 			handleIPv6Payload(header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
 
-			icmpv6Stats := s.Stats().ICMP.V6PacketsReceived
+			icmpv6Stats := s.Stats().ICMP.V6.PacketsReceived
 			visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
 				if got, want := s.Value(), uint64(1); got != want {
 					t.Errorf("got %s = %d, want = %d", name, got, want)
@@ -475,7 +475,7 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 	// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
 	handleIPv6Payload(header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
 
-	icmpv6Stats := s.Stats().ICMP.V6PacketsReceived
+	icmpv6Stats := s.Stats().ICMP.V6.PacketsReceived
 	visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
 		if got, want := s.Value(), uint64(1); got != want {
 			t.Errorf("got %s = %d, want = %d", name, got, want)
@@ -865,7 +865,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 							e.InjectInbound(ProtocolNumber, pkt)
 						}
 
-						stats := s.Stats().ICMP.V6PacketsReceived
+						stats := s.Stats().ICMP.V6.PacketsReceived
 						invalid := stats.Invalid
 						routerOnly := stats.RouterOnlyPacketsDroppedByHost
 						typStat := typ.statCounter(stats)
@@ -1060,7 +1060,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 				e.InjectInbound(ProtocolNumber, pkt)
 			}
 
-			stats := s.Stats().ICMP.V6PacketsReceived
+			stats := s.Stats().ICMP.V6.PacketsReceived
 			invalid := stats.Invalid
 			typStat := typ.statCounter(stats)
 
@@ -1239,7 +1239,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				e.InjectInbound(ProtocolNumber, pkt)
 			}
 
-			stats := s.Stats().ICMP.V6PacketsReceived
+			stats := s.Stats().ICMP.V6.PacketsReceived
 			invalid := stats.Invalid
 			typStat := typ.statCounter(stats)
 

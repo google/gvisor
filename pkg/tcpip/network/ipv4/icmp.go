@@ -63,7 +63,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	stats := e.protocol.stack.Stats()
-	received := stats.ICMP.V4PacketsReceived
+	received := stats.ICMP.V4.PacketsReceived
 	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
 	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
 	// full explanation.
@@ -130,7 +130,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	case header.ICMPv4Echo:
 		received.Echo.Increment()
 
-		sent := stats.ICMP.V4PacketsSent
+		sent := stats.ICMP.V4.PacketsSent
 		if !e.protocol.stack.AllowICMPMessage() {
 			sent.RateLimited.Increment()
 			return
@@ -379,7 +379,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	}
 	defer route.Release()
 
-	sent := p.stack.Stats().ICMP.V4PacketsSent
+	sent := p.stack.Stats().ICMP.V4.PacketsSent
 	if !p.stack.AllowICMPMessage() {
 		sent.RateLimited.Increment()
 		return nil

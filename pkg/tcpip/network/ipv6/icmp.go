@@ -126,8 +126,8 @@ func getTargetLinkAddr(it header.NDPOptionIterator) (tcpip.LinkAddress, bool) {
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 	stats := e.protocol.stack.Stats().ICMP
-	sent := stats.V6PacketsSent
-	received := stats.V6PacketsReceived
+	sent := stats.V6.PacketsSent
+	received := stats.V6.PacketsReceived
 	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
 	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
 	// full explanation.
@@ -709,7 +709,7 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	ns.Options().Serialize(optsSerializer)
 	packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-	stat := p.stack.Stats().ICMP.V6PacketsSent
+	stat := p.stack.Stats().ICMP.V6.PacketsSent
 	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.NDPHopLimit,
@@ -856,7 +856,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	defer route.Release()
 
 	stats := p.stack.Stats().ICMP
-	sent := stats.V6PacketsSent
+	sent := stats.V6.PacketsSent
 	if !p.stack.AllowICMPMessage() {
 		sent.RateLimited.Increment()
 		return nil

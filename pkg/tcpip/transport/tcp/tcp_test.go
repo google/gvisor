@@ -264,7 +264,7 @@ func TestTCPResetsSentNoICMP(t *testing.T) {
 	}
 
 	// Read outgoing ICMP stats and check no ICMP DstUnreachable was recorded.
-	sent := stats.ICMP.V4PacketsSent
+	sent := stats.ICMP.V4.PacketsSent
 	if got, want := sent.DstUnreachable.Value(), uint64(0); got != want {
 		t.Errorf("got ICMP DstUnreachable.Value() = %d, want = %d", got, want)
 	}

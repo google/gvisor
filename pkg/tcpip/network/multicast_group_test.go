@@ -218,10 +218,10 @@ func TestMGPDisabled(t *testing.T) {
 			protoNum:      ipv6.ProtocolNumber,
 			multicastAddr: ipv6MulticastAddr1,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerReport
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport
 			},
 			receivedQueryStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsReceived.MulticastListenerQuery
+				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerQuery
 			},
 			rxQuery: func(e *channel.Endpoint) {
 				createAndInjectMLDPacket(e, mldQuery, 0, header.IPv6Any)
@@ -326,7 +326,7 @@ func TestMGPReceiveCounters(t *testing.T) {
 			maxRespTime:  0,
 			groupAddress: header.IPv6Any,
 			statCounter: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsReceived.MulticastListenerQuery
+				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerQuery
 			},
 			rxMGPkt: createAndInjectMLDPacket,
 		},
@@ -336,7 +336,7 @@ func TestMGPReceiveCounters(t *testing.T) {
 			maxRespTime:  0,
 			groupAddress: header.IPv6Any,
 			statCounter: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsReceived.MulticastListenerReport
+				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerReport
 			},
 			rxMGPkt: createAndInjectMLDPacket,
 		},
@@ -346,7 +346,7 @@ func TestMGPReceiveCounters(t *testing.T) {
 			maxRespTime:  0,
 			groupAddress: header.IPv6Any,
 			statCounter: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsReceived.MulticastListenerDone
+				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerDone
 			},
 			rxMGPkt: createAndInjectMLDPacket,
 		},
@@ -399,10 +399,10 @@ func TestMGPJoinGroup(t *testing.T) {
 			multicastAddr:               ipv6MulticastAddr1,
 			maxUnsolicitedResponseDelay: ipv6.UnsolicitedReportIntervalMax,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerReport
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport
 			},
 			receivedQueryStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsReceived.MulticastListenerQuery
+				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerQuery
 			},
 			validateReport: func(t *testing.T, p channel.PacketInfo) {
 				t.Helper()
@@ -497,10 +497,10 @@ func TestMGPLeaveGroup(t *testing.T) {
 			protoNum:      ipv6.ProtocolNumber,
 			multicastAddr: ipv6MulticastAddr1,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerReport
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport
 			},
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerDone
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone
 			},
 			validateReport: func(t *testing.T, p channel.PacketInfo) {
 				t.Helper()
@@ -597,10 +597,10 @@ func TestMGPQueryMessages(t *testing.T) {
 			multicastAddr:               ipv6MulticastAddr1,
 			maxUnsolicitedResponseDelay: ipv6.UnsolicitedReportIntervalMax,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerReport
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport
 			},
 			receivedQueryStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsReceived.MulticastListenerQuery
+				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerQuery
 			},
 			rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
 				createAndInjectMLDPacket(e, mldQuery, maxRespTime, groupAddress)
@@ -744,10 +744,10 @@ func TestMGPReportMessages(t *testing.T) {
 			protoNum:      ipv6.ProtocolNumber,
 			multicastAddr: ipv6MulticastAddr1,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerReport
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport
 			},
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerDone
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone
 			},
 			rxReport: func(e *channel.Endpoint) {
 				createAndInjectMLDPacket(e, mldReport, 0, ipv6MulticastAddr1)
@@ -877,10 +877,10 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			finalMulticastAddr:          ipv6MulticastAddr3,
 			maxUnsolicitedResponseDelay: ipv6.UnsolicitedReportIntervalMax,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerReport
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport
 			},
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
-				return s.Stats().ICMP.V6PacketsSent.MulticastListenerDone
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone
 			},
 			validateReport: func(t *testing.T, p channel.PacketInfo, addr tcpip.Address) {
 				t.Helper()

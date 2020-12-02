@@ -80,7 +80,7 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 		Data: hdr.View().ToVectorisedView(),
 	}))
 
-	stats := s.Stats().ICMP.V6PacketsReceived
+	stats := s.Stats().ICMP.V6.PacketsReceived
 
 	if got := stats.NeighborAdvert.Value(); got != want {
 		t.Fatalf("got NeighborAdvert = %d, want = %d", got, want)
