@@ -58,6 +58,12 @@ void SigHandler(int sig, siginfo_t* info, void* context) { _exit(0); }
 // If pid equals -1, then sig is sent to every process for which the calling
 // process has permission to send signals, except for process 1 (init).
 TEST(KillTest, CanKillAllPIDs) {
+  // If we're not running inside the sandbox, then we skip this test
+  // as our namespace may contain may more processes that cannot tolerate
+  // the signal below. We also cannot reliably create a new pid namespace
+  // for ourselves and test the same functionality.
+  SKIP_IF(!IsRunningOnGvisor());
+
   int pipe_fds[2];
   ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
   FileDescriptor read_fd(pipe_fds[0]);
