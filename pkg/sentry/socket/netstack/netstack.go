@@ -209,18 +209,6 @@ const sizeOfInt32 int = 4
 
 var errStackType = syserr.New("expected but did not receive a netstack.Stack", linux.EINVAL)
 
-// ntohs converts a 16-bit number from network byte order to host byte order. It
-// assumes that the host is little endian.
-func ntohs(v uint16) uint16 {
-	return v<<8 | v>>8
-}
-
-// htons converts a 16-bit number from host byte order to network byte order. It
-// assumes that the host is little endian.
-func htons(v uint16) uint16 {
-	return ntohs(v)
-}
-
 // commonEndpoint represents the intersection of a tcpip.Endpoint and a
 // transport.Endpoint.
 type commonEndpoint interface {
@@ -357,88 +345,6 @@ func bytesToIPAddress(addr []byte) tcpip.Address {
 		return ""
 	}
 	return tcpip.Address(addr)
-}
-
-// AddressAndFamily reads an sockaddr struct from the given address and
-// converts it to the FullAddress format. It supports AF_UNIX, AF_INET,
-// AF_INET6, and AF_PACKET addresses.
-//
-// AddressAndFamily returns an address and its family.
-func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
-	// Make sure we have at least 2 bytes for the address family.
-	if len(addr) < 2 {
-		return tcpip.FullAddress{}, 0, syserr.ErrInvalidArgument
-	}
-
-	// Get the rest of the fields based on the address family.
-	switch family := usermem.ByteOrder.Uint16(addr); family {
-	case linux.AF_UNIX:
-		path := addr[2:]
-		if len(path) > linux.UnixPathMax {
-			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
-		}
-		// Drop the terminating NUL (if one exists) and everything after
-		// it for filesystem (non-abstract) addresses.
-		if len(path) > 0 && path[0] != 0 {
-			if n := bytes.IndexByte(path[1:], 0); n >= 0 {
-				path = path[:n+1]
-			}
-		}
-		return tcpip.FullAddress{
-			Addr: tcpip.Address(path),
-		}, family, nil
-
-	case linux.AF_INET:
-		var a linux.SockAddrInet
-		if len(addr) < sockAddrInetSize {
-			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
-		}
-		binary.Unmarshal(addr[:sockAddrInetSize], usermem.ByteOrder, &a)
-
-		out := tcpip.FullAddress{
-			Addr: bytesToIPAddress(a.Addr[:]),
-			Port: ntohs(a.Port),
-		}
-		return out, family, nil
-
-	case linux.AF_INET6:
-		var a linux.SockAddrInet6
-		if len(addr) < sockAddrInet6Size {
-			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
-		}
-		binary.Unmarshal(addr[:sockAddrInet6Size], usermem.ByteOrder, &a)
-
-		out := tcpip.FullAddress{
-			Addr: bytesToIPAddress(a.Addr[:]),
-			Port: ntohs(a.Port),
-		}
-		if isLinkLocal(out.Addr) {
-			out.NIC = tcpip.NICID(a.Scope_id)
-		}
-		return out, family, nil
-
-	case linux.AF_PACKET:
-		var a linux.SockAddrLink
-		if len(addr) < sockAddrLinkSize {
-			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
-		}
-		binary.Unmarshal(addr[:sockAddrLinkSize], usermem.ByteOrder, &a)
-		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
-			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
-		}
-
-		// TODO(gvisor.dev/issue/173): Return protocol too.
-		return tcpip.FullAddress{
-			NIC:  tcpip.NICID(a.InterfaceIndex),
-			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
-		}, family, nil
-
-	case linux.AF_UNSPEC:
-		return tcpip.FullAddress{}, family, nil
-
-	default:
-		return tcpip.FullAddress{}, 0, syserr.ErrAddressFamilyNotSupported
-	}
 }
 
 func (s *socketOpsCommon) isPacketBased() bool {
@@ -741,7 +647,7 @@ func (s *socketOpsCommon) mapFamily(addr tcpip.FullAddress, family uint16) tcpip
 // Connect implements the linux syscall connect(2) for sockets backed by
 // tpcip.Endpoint.
 func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
-	addr, family, err := AddressAndFamily(sockaddr)
+	addr, family, err := socket.AddressAndFamily(sockaddr)
 	if err != nil {
 		return err
 	}
@@ -822,7 +728,7 @@ func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		}
 	} else {
 		var err *syserr.Error
-		addr, family, err = AddressAndFamily(sockaddr)
+		addr, family, err = socket.AddressAndFamily(sockaddr)
 		if err != nil {
 			return err
 		}
@@ -913,7 +819,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	var addr linux.SockAddr
 	var addrLen uint32
 	if peerAddr != nil {
-		addr, addrLen = ConvertAddress(s.family, *peerAddr)
+		addr, addrLen = socket.ConvertAddress(s.family, *peerAddr)
 	}
 
 	fd, e := t.NewFDFrom(0, ns, kernel.FDFlags{
@@ -1496,7 +1402,7 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
-		a, _ := ConvertAddress(linux.AF_INET6, tcpip.FullAddress(v))
+		a, _ := socket.ConvertAddress(linux.AF_INET6, tcpip.FullAddress(v))
 		return a.(*linux.SockAddrInet6), nil
 
 	case linux.IP6T_SO_GET_INFO:
@@ -1614,7 +1520,7 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
-		a, _ := ConvertAddress(linux.AF_INET, tcpip.FullAddress{Addr: v.InterfaceAddr})
+		a, _ := socket.ConvertAddress(linux.AF_INET, tcpip.FullAddress{Addr: v.InterfaceAddr})
 
 		return &a.(*linux.SockAddrInet).Addr, nil
 
@@ -1677,7 +1583,7 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
-		a, _ := ConvertAddress(linux.AF_INET, tcpip.FullAddress(v))
+		a, _ := socket.ConvertAddress(linux.AF_INET, tcpip.FullAddress(v))
 		return a.(*linux.SockAddrInet), nil
 
 	case linux.IPT_SO_GET_INFO:
@@ -2322,7 +2228,7 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.MulticastInterfaceOption{
 			NIC:           tcpip.NICID(req.InterfaceIndex),
-			InterfaceAddr: bytesToIPAddress(req.InterfaceAddr[:]),
+			InterfaceAddr: socket.BytesToIPAddress(req.InterfaceAddr[:]),
 		}))
 
 	case linux.IP_MULTICAST_LOOP:
@@ -2579,72 +2485,6 @@ func emitUnimplementedEventIP(t *kernel.Task, name int) {
 	}
 }
 
-// isLinkLocal determines if the given IPv6 address is link-local. This is the
-// case when it has the fe80::/10 prefix. This check is used to determine when
-// the NICID is relevant for a given IPv6 address.
-func isLinkLocal(addr tcpip.Address) bool {
-	return len(addr) >= 2 && addr[0] == 0xfe && addr[1]&0xc0 == 0x80
-}
-
-// ConvertAddress converts the given address to a native format.
-func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32) {
-	switch family {
-	case linux.AF_UNIX:
-		var out linux.SockAddrUnix
-		out.Family = linux.AF_UNIX
-		l := len([]byte(addr.Addr))
-		for i := 0; i < l; i++ {
-			out.Path[i] = int8(addr.Addr[i])
-		}
-
-		// Linux returns the used length of the address struct (including the
-		// null terminator) for filesystem paths. The Family field is 2 bytes.
-		// It is sometimes allowed to exclude the null terminator if the
-		// address length is the max. Abstract and empty paths always return
-		// the full exact length.
-		if l == 0 || out.Path[0] == 0 || l == len(out.Path) {
-			return &out, uint32(2 + l)
-		}
-		return &out, uint32(3 + l)
-
-	case linux.AF_INET:
-		var out linux.SockAddrInet
-		copy(out.Addr[:], addr.Addr)
-		out.Family = linux.AF_INET
-		out.Port = htons(addr.Port)
-		return &out, uint32(sockAddrInetSize)
-
-	case linux.AF_INET6:
-		var out linux.SockAddrInet6
-		if len(addr.Addr) == header.IPv4AddressSize {
-			// Copy address in v4-mapped format.
-			copy(out.Addr[12:], addr.Addr)
-			out.Addr[10] = 0xff
-			out.Addr[11] = 0xff
-		} else {
-			copy(out.Addr[:], addr.Addr)
-		}
-		out.Family = linux.AF_INET6
-		out.Port = htons(addr.Port)
-		if isLinkLocal(addr.Addr) {
-			out.Scope_id = uint32(addr.NIC)
-		}
-		return &out, uint32(sockAddrInet6Size)
-
-	case linux.AF_PACKET:
-		// TODO(gvisor.dev/issue/173): Return protocol too.
-		var out linux.SockAddrLink
-		out.Family = linux.AF_PACKET
-		out.InterfaceIndex = int32(addr.NIC)
-		out.HardwareAddrLen = header.EthernetAddressSize
-		copy(out.HardwareAddr[:], addr.Addr)
-		return &out, uint32(sockAddrLinkSize)
-
-	default:
-		return nil, 0
-	}
-}
-
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
@@ -2653,7 +2493,7 @@ func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *
 		return nil, 0, syserr.TranslateNetstackError(err)
 	}
 
-	a, l := ConvertAddress(s.family, addr)
+	a, l := socket.ConvertAddress(s.family, addr)
 	return a, l, nil
 }
 
@@ -2665,7 +2505,7 @@ func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *
 		return nil, 0, syserr.TranslateNetstackError(err)
 	}
 
-	a, l := ConvertAddress(s.family, addr)
+	a, l := socket.ConvertAddress(s.family, addr)
 	return a, l, nil
 }
 
@@ -2814,10 +2654,10 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 	var addr linux.SockAddr
 	var addrLen uint32
 	if isPacket && senderRequested {
-		addr, addrLen = ConvertAddress(s.family, s.sender)
+		addr, addrLen = socket.ConvertAddress(s.family, s.sender)
 		switch v := addr.(type) {
 		case *linux.SockAddrLink:
-			v.Protocol = htons(uint16(s.linkPacketInfo.Protocol))
+			v.Protocol = socket.Htons(uint16(s.linkPacketInfo.Protocol))
 			v.PacketType = toLinuxPacketType(s.linkPacketInfo.PktType)
 		}
 	}
@@ -2982,7 +2822,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 
 	var addr *tcpip.FullAddress
 	if len(to) > 0 {
-		addrBuf, family, err := AddressAndFamily(to)
+		addrBuf, family, err := socket.AddressAndFamily(to)
 		if err != nil {
 			return 0, err
 		}
