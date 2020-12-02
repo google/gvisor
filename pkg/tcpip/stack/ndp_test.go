@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -5174,113 +5175,99 @@ func TestRouterSolicitation(t *testing.T) {
 		},
 	}
 
-	// This Run will not return until the parallel tests finish.
-	//
-	// We need this because we need to do some teardown work after the
-	// parallel tests complete.
-	//
-	// See https://godoc.org/testing#hdr-Subtests_and_Sub_benchmarks for
-	// more details.
-	t.Run("group", func(t *testing.T) {
-		for _, test := range tests {
-			test := test
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			e := channelLinkWithHeaderLength{
+				Endpoint:     channel.New(int(test.maxRtrSolicit), 1280, test.linkAddr),
+				headerLength: test.linkHeaderLen,
+			}
+			e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+			waitForPkt := func(timeout time.Duration) {
+				t.Helper()
 
-			t.Run(test.name, func(t *testing.T) {
-				t.Parallel()
-
-				e := channelLinkWithHeaderLength{
-					Endpoint:     channel.New(int(test.maxRtrSolicit), 1280, test.linkAddr),
-					headerLength: test.linkHeaderLen,
-				}
-				e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-				waitForPkt := func(timeout time.Duration) {
-					t.Helper()
-					ctx, cancel := context.WithTimeout(context.Background(), timeout)
-					defer cancel()
-					p, ok := e.ReadContext(ctx)
-					if !ok {
-						t.Fatal("timed out waiting for packet")
-						return
-					}
-
-					if p.Proto != header.IPv6ProtocolNumber {
-						t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
-					}
-
-					// Make sure the right remote link address is used.
-					if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Route.RemoteLinkAddress != want {
-						t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
-					}
-
-					checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
-						checker.SrcAddr(test.expectedSrcAddr),
-						checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
-						checker.TTL(header.NDPHopLimit),
-						checker.NDPRS(checker.NDPRSOptions(test.expectedNDPOpts)),
-					)
-
-					if l, want := p.Pkt.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
-						t.Errorf("got p.Pkt.AvailableHeaderBytes() = %d; want = %d", l, want)
-					}
-				}
-				waitForNothing := func(timeout time.Duration) {
-					t.Helper()
-					ctx, cancel := context.WithTimeout(context.Background(), timeout)
-					defer cancel()
-					if _, ok := e.ReadContext(ctx); ok {
-						t.Fatal("unexpectedly got a packet")
-					}
-				}
-				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-						NDPConfigs: ipv6.NDPConfigurations{
-							MaxRtrSolicitations:     test.maxRtrSolicit,
-							RtrSolicitationInterval: test.rtrSolicitInt,
-							MaxRtrSolicitationDelay: test.maxRtrSolicitDelay,
-						},
-					})},
-				})
-				if err := s.CreateNIC(nicID, &e); err != nil {
-					t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+				clock.Advance(timeout)
+				p, ok := e.Read()
+				if !ok {
+					t.Fatal("expected router solicitation packet")
 				}
 
-				if addr := test.nicAddr; addr != "" {
-					if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr); err != nil {
-						t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr, err)
-					}
+				if p.Proto != header.IPv6ProtocolNumber {
+					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
 				}
 
-				// Make sure each RS is sent at the right time.
-				remaining := test.maxRtrSolicit
-				if remaining > 0 {
-					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultAsyncPositiveEventTimeout)
-					remaining--
+				// Make sure the right remote link address is used.
+				if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Route.RemoteLinkAddress != want {
+					t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
 				}
 
-				for ; remaining > 0; remaining-- {
-					if test.effectiveRtrSolicitInt > defaultAsyncPositiveEventTimeout {
-						waitForNothing(test.effectiveRtrSolicitInt - defaultAsyncNegativeEventTimeout)
-						waitForPkt(defaultAsyncPositiveEventTimeout)
-					} else {
-						waitForPkt(test.effectiveRtrSolicitInt + defaultAsyncPositiveEventTimeout)
-					}
-				}
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(test.expectedSrcAddr),
+					checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
+					checker.TTL(header.NDPHopLimit),
+					checker.NDPRS(checker.NDPRSOptions(test.expectedNDPOpts)),
+				)
 
-				// Make sure no more RS.
-				if test.effectiveRtrSolicitInt > test.effectiveMaxRtrSolicitDelay {
-					waitForNothing(test.effectiveRtrSolicitInt + defaultAsyncNegativeEventTimeout)
-				} else {
-					waitForNothing(test.effectiveMaxRtrSolicitDelay + defaultAsyncNegativeEventTimeout)
+				if l, want := p.Pkt.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
+					t.Errorf("got p.Pkt.AvailableHeaderBytes() = %d; want = %d", l, want)
 				}
+			}
+			waitForNothing := func(timeout time.Duration) {
+				t.Helper()
 
-				// Make sure the counter got properly
-				// incremented.
-				if got, want := s.Stats().ICMP.V6PacketsSent.RouterSolicit.Value(), uint64(test.maxRtrSolicit); got != want {
-					t.Fatalf("got sent RouterSolicit = %d, want = %d", got, want)
+				clock.Advance(timeout)
+				if p, ok := e.Read(); ok {
+					t.Fatalf("unexpectedly got a packet = %#v", p)
 				}
+			}
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+					NDPConfigs: ipv6.NDPConfigurations{
+						MaxRtrSolicitations:     test.maxRtrSolicit,
+						RtrSolicitationInterval: test.rtrSolicitInt,
+						MaxRtrSolicitationDelay: test.maxRtrSolicitDelay,
+					},
+				})},
+				Clock: clock,
 			})
-		}
-	})
+			if err := s.CreateNIC(nicID, &e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+
+			if addr := test.nicAddr; addr != "" {
+				if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr); err != nil {
+					t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr, err)
+				}
+			}
+
+			// Make sure each RS is sent at the right time.
+			remaining := test.maxRtrSolicit
+			if remaining > 0 {
+				waitForPkt(test.effectiveMaxRtrSolicitDelay)
+				remaining--
+			}
+
+			for ; remaining > 0; remaining-- {
+				if test.effectiveRtrSolicitInt > defaultAsyncPositiveEventTimeout {
+					waitForNothing(test.effectiveRtrSolicitInt - time.Nanosecond)
+					waitForPkt(time.Nanosecond)
+				} else {
+					waitForPkt(test.effectiveRtrSolicitInt)
+				}
+			}
+
+			// Make sure no more RS.
+			if test.effectiveRtrSolicitInt > test.effectiveMaxRtrSolicitDelay {
+				waitForNothing(test.effectiveRtrSolicitInt)
+			} else {
+				waitForNothing(test.effectiveMaxRtrSolicitDelay)
+			}
+
+			if got, want := s.Stats().ICMP.V6PacketsSent.RouterSolicit.Value(), uint64(test.maxRtrSolicit); got != want {
+				t.Fatalf("got sent RouterSolicit = %d, want = %d", got, want)
+			}
+		})
+	}
 }
 
 func TestStopStartSolicitingRouters(t *testing.T) {
