@@ -29,17 +29,17 @@ import (
 )
 
 const (
-	valueMax = 32767 // SEMVMX
+	// Maximum semaphore value.
+	valueMax = linux.SEMVMX
 
-	// semaphoresMax is "maximum number of semaphores per semaphore ID" (SEMMSL).
-	semaphoresMax = 32000
+	// Maximum number of semaphore sets.
+	setsMax = linux.SEMMNI
 
-	// setMax is "system-wide limit on the number of semaphore sets" (SEMMNI).
-	setsMax = 32000
+	// Maximum number of semaphroes in a semaphore set.
+	semsMax = linux.SEMMSL
 
-	// semaphoresTotalMax is "system-wide limit on the number of semaphores"
-	// (SEMMNS = SEMMNI*SEMMSL).
-	semaphoresTotalMax = 1024000000
+	// Maximum number of semaphores in all semaphroe sets.
+	semsTotalMax = linux.SEMMNS
 )
 
 // Registry maintains a set of semaphores that can be found by key or ID.
@@ -122,7 +122,7 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 // be found. If exclusive is true, it fails if a set with the same key already
 // exists.
 func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linux.FileMode, private, create, exclusive bool) (*Set, error) {
-	if nsems < 0 || nsems > semaphoresMax {
+	if nsems < 0 || nsems > semsMax {
 		return nil, syserror.EINVAL
 	}
 
@@ -166,7 +166,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 	if len(r.semaphores) >= setsMax {
 		return nil, syserror.EINVAL
 	}
-	if r.totalSems() > int(semaphoresTotalMax-nsems) {
+	if r.totalSems() > int(semsTotalMax-nsems) {
 		return nil, syserror.EINVAL
 	}
 
