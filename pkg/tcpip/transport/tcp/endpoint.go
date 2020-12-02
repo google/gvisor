@@ -309,6 +309,19 @@ type Stats struct {
 // marker interface.
 func (*Stats) IsEndpointStats() {}
 
+// EndpointInfo holds useful information about a transport endpoint which
+// can be queried by monitoring tools. This exists to allow tcp-only state to
+// be exposed.
+//
+// +stateify savable
+type EndpointInfo struct {
+	stack.TransportEndpointInfo
+}
+
+// IsEndpointInfo is an empty method to implement the tcpip.EndpointInfo
+// marker interface.
+func (*EndpointInfo) IsEndpointInfo() {}
+
 // endpoint represents a TCP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -349,7 +362,7 @@ func (*Stats) IsEndpointStats() {}
 //
 // +stateify savable
 type endpoint struct {
-	stack.TransportEndpointInfo
+	EndpointInfo
 	tcpip.DefaultSocketOptionsHandler
 
 	// endpointEntry is used to queue endpoints for processing to the
@@ -837,9 +850,11 @@ type keepalive struct {
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
 	e := &endpoint{
 		stack: s,
-		TransportEndpointInfo: stack.TransportEndpointInfo{
-			NetProto:   netProto,
-			TransProto: header.TCPProtocolNumber,
+		EndpointInfo: EndpointInfo{
+			TransportEndpointInfo: stack.TransportEndpointInfo{
+				NetProto:   netProto,
+				TransProto: header.TCPProtocolNumber,
+			},
 		},
 		waiterQueue: waiterQueue,
 		state:       StateInitial,
