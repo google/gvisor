@@ -125,7 +125,7 @@ func (mld *mldState) initializeAll() {
 }
 
 func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldType header.ICMPv6Type) *tcpip.Error {
-	sentStats := mld.ep.protocol.stack.Stats().ICMP.V6PacketsSent
+	sentStats := mld.ep.protocol.stack.Stats().ICMP.V6.PacketsSent
 	var mldStat *tcpip.StatCounter
 	switch mldType {
 	case header.ICMPv6MulticastListenerReport:
