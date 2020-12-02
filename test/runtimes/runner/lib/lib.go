@@ -122,6 +122,10 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 			}
 			tcs = append(tcs, tests[tc])
 		}
+		if len(tcs) == 0 {
+			// No tests to add to this batch.
+			continue
+		}
 		itests = append(itests, testing.InternalTest{
 			Name: strings.Join(tcs, ", "),
 			F: func(t *testing.T) {
