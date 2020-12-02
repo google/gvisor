@@ -189,7 +189,7 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 	var addrLen uint32
 	if peerAddr != nil {
 		// Get address of the peer and write it to peer slice.
-		addr, addrLen = ConvertAddress(s.family, *peerAddr)
+		addr, addrLen = socket.ConvertAddress(s.family, *peerAddr)
 	}
 
 	fd, e := t.NewFDFromVFS2(0, ns, kernel.FDFlags{
