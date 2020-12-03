@@ -1,0 +1,103 @@
+_templates:
+  common: &common
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 2
+
+steps:
+  # Run basic smoke tests before preceding to other tests.
+  - label: ":fire: Smoke tests"
+    command: make smoke-tests
+  - wait
+
+  # Check that the Go branch builds.
+  - <<: *common
+    label: ":golang: Go branch"
+    commands:
+      - rm -rf bazel-bin/gopath
+      - make build TARGETS="//:gopath"
+      - tools/go_branch.sh
+      - git checkout go && git clean -f
+      - go build ./...
+
+  # Basic unit tests.
+  - <<: *common
+    label: ":test_tube: Unit tests"
+    command: make unit-tests
+
+  # All system call tests.
+  - <<: *common
+    label: ":toolbox: System call tests"
+    command: make syscall-tests
+    parallelism: 20
+
+  # Integration tests.
+  - <<: *common
+    label: ":parachute: FUSE tests"
+    command: make fuse-tests
+  - <<: *common
+    label: ":docker: Docker tests"
+    command: make docker-tests
+  - <<: *common
+    label: ":goggles: Overlay tests"
+    command: make overlay-tests
+  - <<: *common
+    label: ":safety_pin: Host network tests"
+    command: make hostnet-tests
+  - <<: *common
+    label: ":satellite: SWGSO tests"
+    command: make swgso-tests
+  - <<: *common
+    label: ":coffee: Do tests"
+    command: make do-tests
+  - <<: *common
+    label: ":person_in_lotus_position: KVM tests"
+    command: make kvm-tests
+  - <<: *common
+    label: ":docker: Containerd 1.3.4 tests"
+    command: make containerd-test-1.3.4
+  - <<: *common
+    label: ":docker: Containerd 1.4.1  tests"
+    command: make containerd-test-1.4.1
+
+  # Check the website builds.
+  - <<: *common
+    label: ":earth_americas: Website tests"
+    command: make website-build
+
+  # Networking tests.
+  - <<: *common
+    label: ":table_tennis_paddle_and_ball: IPTables tests"
+    command: make iptables-tests
+  - <<: *common
+    label: ":construction_worker: Packetdrill tests"
+    command: make packetdrill-tests
+  - <<: *common
+    label: ":hammer: Packetimpact tests"
+    command: make packetimpact-tests
+
+  # Start heavy runtime tests.
+  - wait
+  - <<: *common
+    label: ":php: PHP runtime tests"
+    command: make php7.3.6-runtime-tests
+    parallelism: 10
+  - <<: *common
+    label: ":java: Java runtime tests"
+    command: make java11-runtime-tests
+    parallelism: 40
+  - <<: *common
+    label: ":golang: Go runtime tests"
+    command: make go1.12-runtime-tests
+    parallelism: 10
+  - <<: *common
+    label: ":node: NodeJS runtime tests"
+    command: make nodejs12.4.0-runtime-tests
+    parallelism: 10
+  - <<: *common
+    label: ":node: Python runtime tests"
+    command: make python3.7.3-runtime-tests
+    parallelism: 10
