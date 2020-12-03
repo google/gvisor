@@ -799,8 +799,8 @@ cc_binary(
     deps = [
         ":socket_test_util",
         "//test/util:cleanup",
-        "//test/util:epoll_util",
         "//test/util:eventfd_util",
+        "//test/util:file_descriptor",
         "//test/util:fs_util",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/flags:flag",
@@ -811,6 +811,7 @@ cc_binary(
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:save_util",
+        "//test/util:signal_util",
         "//test/util:temp_path",
         "//test/util:test_util",
         "//test/util:thread_util",

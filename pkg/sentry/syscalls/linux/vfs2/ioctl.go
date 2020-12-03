@@ -100,7 +100,7 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			ownerType = linux.F_OWNER_PGRP
 			who = -who
 		}
-		return 0, nil, setAsyncOwner(t, file, ownerType, who)
+		return 0, nil, setAsyncOwner(t, int(fd), file, ownerType, who)
 	}
 
 	ret, err := file.Ioctl(t, t.MemoryManager(), args)

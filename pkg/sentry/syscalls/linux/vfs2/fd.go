@@ -165,7 +165,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			ownerType = linux.F_OWNER_PGRP
 			who = -who
 		}
-		return 0, nil, setAsyncOwner(t, file, ownerType, who)
+		return 0, nil, setAsyncOwner(t, int(fd), file, ownerType, who)
 	case linux.F_GETOWN_EX:
 		owner, hasOwner := getAsyncOwner(t, file)
 		if !hasOwner {
@@ -179,7 +179,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if err != nil {
 			return 0, nil, err
 		}
-		return 0, nil, setAsyncOwner(t, file, owner.Type, owner.PID)
+		return 0, nil, setAsyncOwner(t, int(fd), file, owner.Type, owner.PID)
 	case linux.F_SETPIPE_SZ:
 		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
 		if !ok {
@@ -207,6 +207,16 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	case linux.F_SETLK, linux.F_SETLKW:
 		return 0, nil, posixLock(t, args, file, cmd)
+	case linux.F_GETSIG:
+		a := file.AsyncHandler()
+		if a == nil {
+			// Default behavior aka SIGIO.
+			return 0, nil, nil
+		}
+		return uintptr(a.(*fasync.FileAsync).Signal()), nil, nil
+	case linux.F_SETSIG:
+		a := file.SetAsyncHandler(fasync.NewVFS2(int(fd))).(*fasync.FileAsync)
+		return 0, nil, a.SetSignal(linux.Signal(args[2].Int()))
 	default:
 		// Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL
@@ -241,7 +251,7 @@ func getAsyncOwner(t *kernel.Task, fd *vfs.FileDescription) (ownerEx linux.FOwne
 	}
 }
 
-func setAsyncOwner(t *kernel.Task, fd *vfs.FileDescription, ownerType, pid int32) error {
+func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType, pid int32) error {
 	switch ownerType {
 	case linux.F_OWNER_TID, linux.F_OWNER_PID, linux.F_OWNER_PGRP:
 		// Acceptable type.
@@ -249,7 +259,7 @@ func setAsyncOwner(t *kernel.Task, fd *vfs.FileDescription, ownerType, pid int32
 		return syserror.EINVAL
 	}
 
-	a := fd.SetAsyncHandler(fasync.NewVFS2).(*fasync.FileAsync)
+	a := file.SetAsyncHandler(fasync.NewVFS2(fd)).(*fasync.FileAsync)
 	if pid == 0 {
 		a.ClearOwner()
 		return nil
