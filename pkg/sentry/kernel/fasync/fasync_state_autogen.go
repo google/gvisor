@@ -13,8 +13,10 @@ func (a *FileAsync) StateTypeName() string {
 func (a *FileAsync) StateFields() []string {
 	return []string{
 		"e",
+		"fd",
 		"requester",
 		"registered",
+		"signal",
 		"recipientPG",
 		"recipientTG",
 		"recipientT",
@@ -26,22 +28,26 @@ func (a *FileAsync) beforeSave() {}
 func (a *FileAsync) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.e)
-	stateSinkObject.Save(1, &a.requester)
-	stateSinkObject.Save(2, &a.registered)
-	stateSinkObject.Save(3, &a.recipientPG)
-	stateSinkObject.Save(4, &a.recipientTG)
-	stateSinkObject.Save(5, &a.recipientT)
+	stateSinkObject.Save(1, &a.fd)
+	stateSinkObject.Save(2, &a.requester)
+	stateSinkObject.Save(3, &a.registered)
+	stateSinkObject.Save(4, &a.signal)
+	stateSinkObject.Save(5, &a.recipientPG)
+	stateSinkObject.Save(6, &a.recipientTG)
+	stateSinkObject.Save(7, &a.recipientT)
 }
 
 func (a *FileAsync) afterLoad() {}
 
 func (a *FileAsync) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.e)
-	stateSourceObject.Load(1, &a.requester)
-	stateSourceObject.Load(2, &a.registered)
-	stateSourceObject.Load(3, &a.recipientPG)
-	stateSourceObject.Load(4, &a.recipientTG)
-	stateSourceObject.Load(5, &a.recipientT)
+	stateSourceObject.Load(1, &a.fd)
+	stateSourceObject.Load(2, &a.requester)
+	stateSourceObject.Load(3, &a.registered)
+	stateSourceObject.Load(4, &a.signal)
+	stateSourceObject.Load(5, &a.recipientPG)
+	stateSourceObject.Load(6, &a.recipientTG)
+	stateSourceObject.Load(7, &a.recipientT)
 }
 
 func init() {

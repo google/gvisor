@@ -119,7 +119,10 @@ type EntryCallback interface {
 	// The callback is supposed to perform minimal work, and cannot call
 	// any method on the queue itself because it will be locked while the
 	// callback is running.
-	Callback(e *Entry)
+	//
+	// The mask indicates the events that occurred and that the entry is
+	// interested in.
+	Callback(e *Entry, mask EventMask)
 }
 
 // Entry represents a waiter that can be add to the a wait queue. It can
@@ -140,7 +143,7 @@ type channelCallback struct {
 }
 
 // Callback implements EntryCallback.Callback.
-func (c *channelCallback) Callback(*Entry) {
+func (c *channelCallback) Callback(*Entry, EventMask) {
 	select {
 	case c.ch <- struct{}{}:
 	default:
@@ -193,8 +196,8 @@ func (q *Queue) EventUnregister(e *Entry) {
 func (q *Queue) Notify(mask EventMask) {
 	q.mu.RLock()
 	for e := q.list.Front(); e != nil; e = e.Next() {
-		if mask&e.mask != 0 {
-			e.Callback.Callback(e)
+		if m := mask & e.mask; m != 0 {
+			e.Callback.Callback(e, m)
 		}
 	}
 	q.mu.RUnlock()

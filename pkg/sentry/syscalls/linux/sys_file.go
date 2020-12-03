@@ -646,7 +646,7 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &set); err != nil {
 			return 0, nil, err
 		}
-		fSetOwn(t, file, set)
+		fSetOwn(t, int(fd), file, set)
 		return 0, nil, nil
 
 	case linux.FIOGETOWN, linux.SIOCGPGRP:
@@ -901,8 +901,8 @@ func fGetOwn(t *kernel.Task, file *fs.File) int32 {
 //
 // If who is positive, it represents a PID. If negative, it represents a PGID.
 // If the PID or PGID is invalid, the owner is silently unset.
-func fSetOwn(t *kernel.Task, file *fs.File, who int32) error {
-	a := file.Async(fasync.New).(*fasync.FileAsync)
+func fSetOwn(t *kernel.Task, fd int, file *fs.File, who int32) error {
+	a := file.Async(fasync.New(fd)).(*fasync.FileAsync)
 	if who < 0 {
 		// Check for overflow before flipping the sign.
 		if who-1 > who {
@@ -1049,7 +1049,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_GETOWN:
 		return uintptr(fGetOwn(t, file)), nil, nil
 	case linux.F_SETOWN:
-		return 0, nil, fSetOwn(t, file, args[2].Int())
+		return 0, nil, fSetOwn(t, int(fd), file, args[2].Int())
 	case linux.F_GETOWN_EX:
 		addr := args[2].Pointer()
 		owner := fGetOwnEx(t, file)
@@ -1062,7 +1062,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if err != nil {
 			return 0, nil, err
 		}
-		a := file.Async(fasync.New).(*fasync.FileAsync)
+		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
 		switch owner.Type {
 		case linux.F_OWNER_TID:
 			task := t.PIDNamespace().TaskWithID(kernel.ThreadID(owner.PID))
@@ -1111,6 +1111,12 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		n, err := sz.SetFifoSize(int64(args[2].Int()))
 		return uintptr(n), nil, err
+	case linux.F_GETSIG:
+		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
+		return uintptr(a.Signal()), nil, nil
+	case linux.F_SETSIG:
+		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
+		return 0, nil, a.SetSignal(linux.Signal(args[2].Int()))
 	default:
 		// Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL
