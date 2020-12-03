@@ -121,17 +121,20 @@ func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 
 		panic("VFS1 and VFS2 files set")
 	}
 
-	slice := *(*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
+	slicePtr := (*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
 
 	// Grow the table as required.
-	if last := int32(len(slice)); fd >= last {
+	if last := int32(len(*slicePtr)); fd >= last {
 		end := fd + 1
 		if end < 2*last {
 			end = 2 * last
 		}
-		slice = append(slice, make([]unsafe.Pointer, end-last)...)
-		atomic.StorePointer(&f.slice, unsafe.Pointer(&slice))
+		newSlice := append(*slicePtr, make([]unsafe.Pointer, end-last)...)
+		slicePtr = &newSlice
+		atomic.StorePointer(&f.slice, unsafe.Pointer(slicePtr))
 	}
+
+	slice := *slicePtr
 
 	var desc *descriptor
 	if file != nil || fileVFS2 != nil {
