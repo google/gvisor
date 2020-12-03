@@ -254,7 +254,7 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 		return nil, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s for %s to int: %v", merkleSizeXattr, childPath, err))
 	}
 
-	fdReader := vfs.FileReadWriteSeeker{
+	fdReader := FileReadWriteSeeker{
 		FD:  parentMerkleFD,
 		Ctx: ctx,
 	}
@@ -397,7 +397,7 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 		}
 	}
 
-	fdReader := vfs.FileReadWriteSeeker{
+	fdReader := FileReadWriteSeeker{
 		FD:  fd,
 		Ctx: ctx,
 	}
