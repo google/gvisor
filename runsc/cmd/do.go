@@ -81,7 +81,7 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute.
 func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	if len(f.Args()) == 0 {
-		c.Usage()
+		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
