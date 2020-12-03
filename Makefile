@@ -123,6 +123,7 @@ list-images: ## List all available images.
 ##
 PARTITION        ?= 1
 TOTAL_PARTITIONS ?= 1
+PARTITIONS       := --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)
 
 runsc: ## Builds the runsc binary.
 	@$(call submake,build OPTIONS="-c opt" TARGETS="//runsc")
@@ -137,7 +138,7 @@ smoke-tests: ## Runs a simple smoke test after build runsc.
 .PHONY: smoke-tests
 
 fuse-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters fuse" TARGETS="test/fuse/...")
+	@$(call submake,test OPTIONS="--test_tag_filters fuse $(PARTITIONS)" TARGETS="test/fuse/...")
 .PHONY: fuse-tests
 
 unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
@@ -161,28 +162,22 @@ network-tests: iptables-tests packetdrill-tests packetimpact-tests
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 syscall-%-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters runsc_$*" TARGETS="test/syscalls/...")
+	@$(call submake,test OPTIONS="--test_tag_filters runsc_$* $(PARTITIONS)" TARGETS="test/syscalls/...")
 
 syscall-native-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters native" TARGETS="test/syscalls/...")
+	@$(call submake,test OPTIONS="--test_tag_filters native $(PARTITIONS)" TARGETS="test/syscalls/...")
 .PHONY: syscall-native-tests
 
 syscall-tests: ## Run all system call tests.
-	@$(call submake,test TARGETS="test/syscalls/...")
+	@$(call submake,test OPTIONS="$(PARTITIONS)" TARGETS="test/syscalls/...")
 
 %-runtime-tests: load-runtimes_%
 	@$(call submake,install-runtime)
-	@$(call submake,test-runtime OPTIONS="--test_timeout=10800 --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)" TARGETS="//test/runtimes:$*")
+	@$(call submake,test-runtime OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
 
 %-runtime-tests_vfs2: load-runtimes_%
-ifeq ($(PARTITION),)
-	@$(eval PARTITION := 1)
-endif
-ifeq ($(TOTAL_PARTITIONS),)
-	@$(eval TOTAL_PARTITIONS := 1)
-endif
 	@$(call submake,install-runtime RUNTIME="vfs2" ARGS="--vfs2")
-	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_timeout=10800 --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)" TARGETS="//test/runtimes:$*")
+	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
 
 do-tests: runsc
 	@$(call submake,run TARGETS="//runsc" ARGS="--rootless do true")
@@ -464,7 +459,7 @@ configure: ## Configures a single runtime. Requires sudo. Typically called from 
 .PHONY: configure
 
 test-runtime: ## A convenient wrapper around test that provides the runtime argument. Target must still be provided.
-	@$(call submake,test OPTIONS="$(OPTIONS) --test_arg=--runtime=$(RUNTIME)")
+	@$(call submake,test OPTIONS="$(OPTIONS) --test_arg=--runtime=$(RUNTIME) $(PARTITIONS)")
 .PHONY: test-runtime
 
 nogo: ## Surfaces all nogo findings.

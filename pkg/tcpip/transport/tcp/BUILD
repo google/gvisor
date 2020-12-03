@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test", "more_shards")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -93,7 +93,7 @@ go_test(
         "tcp_test.go",
         "tcp_timestamp_test.go",
     ],
-    shard_count = 10,
+    shard_count = more_shards,
     deps = [
         ":tcp",
         "//pkg/rand",

@@ -29,7 +29,7 @@ function failure() {
 }
 trap 'failure ${LINENO} "$BASH_COMMAND"' ERR
 
-declare -r LONGOPTS="dut_platform:,init_script:,runtime:"
+declare -r LONGOPTS="dut_platform:,init_script:,runtime:,partition:,total_partitions:"
 
 # Don't use declare below so that the error from getopt will end the script.
 PARSED=$(getopt --options "" --longoptions=$LONGOPTS --name "$0" -- "$@")
@@ -48,10 +48,15 @@ while true; do
       shift 2
       ;;
     --runtime)
-      # Not readonly because there might be multiple --runtime arguments and we
-      # want to use just the last one.  Only used if --dut_platform is
-      # "netstack".
       declare RUNTIME="$2"
+      shift 2
+      ;;
+    --partition)
+      # Ignored.
+      shift 2
+      ;;
+    --total_partitions)
+      # Ignored.
       shift 2
       ;;
     --)
