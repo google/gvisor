@@ -48,7 +48,9 @@ import (
 )
 
 var (
-	checkpoint = flag.Bool("checkpoint", true, "control checkpoint/restore support")
+	checkpoint      = flag.Bool("checkpoint", true, "control checkpoint/restore support")
+	partition       = flag.Int("partition", 1, "partition number, this is 1-indexed")
+	totalPartitions = flag.Int("total_partitions", 1, "total number of partitions")
 )
 
 // IsCheckpointSupported returns the relevant command line flag.
@@ -521,7 +523,8 @@ func TouchShardStatusFile() error {
 }
 
 // TestIndicesForShard returns indices for this test shard based on the
-// TEST_SHARD_INDEX and TEST_TOTAL_SHARDS environment vars.
+// TEST_SHARD_INDEX and TEST_TOTAL_SHARDS environment vars, as well as
+// the passed partition flags.
 //
 // If either of the env vars are not present, then the function will return all
 // tests. If there are more shards than there are tests, then the returned list
@@ -545,6 +548,11 @@ func TestIndicesForShard(numTests int) ([]int, error) {
 			return nil, fmt.Errorf("invalid TEST_TOTAL_SHARDS %q: %v", totalStr, err)
 		}
 	}
+
+	// Combine with the partitions.
+	partitionSize := shardTotal
+	shardTotal = (*totalPartitions) * shardTotal
+	shardIndex = partitionSize*(*partition-1) + shardIndex
 
 	// Calculate!
 	var indices []int

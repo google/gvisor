@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test", "most_shards")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -112,7 +112,7 @@ go_test(
         "transport_demuxer_test.go",
         "transport_test.go",
     ],
-    shard_count = 20,
+    shard_count = most_shards,
     deps = [
         ":stack",
         "//pkg/rand",

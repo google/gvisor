@@ -1,3 +1,4 @@
+load("//tools:defs.bzl", "more_shards", "most_shards")
 load("//test/runner:defs.bzl", "syscall_test")
 
 package(licenses = ["notice"])
@@ -12,7 +13,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:accept_bind_test",
 )
 
@@ -32,7 +33,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:alarm_test",
 )
 
@@ -66,7 +67,7 @@ syscall_test(
     size = "large",
     # Produce too many logs in the debug mode.
     debug = False,
-    shard_count = 50,
+    shard_count = most_shards,
     # Takes too long for TSAN. Since this is kind of a stress test that doesn't
     # involve much concurrency, TSAN's usefulness here is limited anyway.
     tags = ["nogotsan"],
@@ -211,7 +212,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:futex_test",
 )
 
@@ -258,7 +259,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:itimer_test",
 )
 
@@ -313,7 +314,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:mmap_test",
 )
 
@@ -347,6 +348,7 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:open_test",
 )
 
@@ -376,7 +378,7 @@ syscall_test(
 syscall_test(
     size = "large",
     add_overlay = True,
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:pipe_test",
 )
 
@@ -448,7 +450,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:pty_test",
 )
 
@@ -475,6 +477,7 @@ syscall_test(
 )
 
 syscall_test(
+    shard_count = more_shards,
     test = "//test/syscalls/linux:raw_socket_test",
 )
 
@@ -490,7 +493,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:readv_socket_test",
 )
 
@@ -539,7 +542,7 @@ syscall_test(
 )
 
 syscall_test(
-    shard_count = 20,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:semaphore_test",
 )
 
@@ -594,7 +597,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_abstract_test",
 )
 
@@ -605,7 +608,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_domain_test",
 )
 
@@ -618,19 +621,19 @@ syscall_test(
 syscall_test(
     size = "large",
     add_overlay = True,
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_filesystem_test",
 )
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
 )
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     # Takes too long for TSAN. Creates a lot of TCP sockets.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:socket_inet_loopback_nogotsan_test",
@@ -638,7 +641,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
 
@@ -649,13 +652,13 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_test",
 )
 
 syscall_test(
     size = "medium",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_udp_generic_loopback_test",
 )
 
@@ -666,7 +669,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_test",
 )
 
@@ -677,6 +680,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    shard_count = more_shards,
     # Takes too long under gotsan to run.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_nogotsan_test",
@@ -691,6 +695,7 @@ syscall_test(
 )
 
 syscall_test(
+    shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ip_unbound_test",
 )
 
@@ -753,7 +758,7 @@ syscall_test(
 syscall_test(
     # NOTE(b/116636318): Large sendmsg may stall a long time.
     size = "enormous",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_dgram_local_test",
 )
 
@@ -765,14 +770,14 @@ syscall_test(
 syscall_test(
     size = "large",
     add_overlay = True,
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_unix_pair_test",
 )
 
 syscall_test(
     # NOTE(b/116636318): Large sendmsg may stall a long time.
     size = "enormous",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_seqpacket_local_test",
 )
 
@@ -798,13 +803,13 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 10,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_unbound_seqpacket_test",
 )
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_unix_unbound_stream_test",
 )
 
@@ -858,7 +863,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 10,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:tcp_socket_test",
 )
 
@@ -867,6 +872,7 @@ syscall_test(
 )
 
 syscall_test(
+    shard_count = more_shards,
     test = "//test/syscalls/linux:timerfd_test",
 )
 
@@ -903,7 +909,7 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
-    shard_count = 10,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:udp_socket_test",
 )
 
@@ -947,7 +953,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 5,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:wait_test",
 )
 

@@ -7,6 +7,8 @@ build_test = _build_test
 bzl_library = _bzl_library
 rbe_platform = native.platform
 rbe_toolchain = native.toolchain
+more_shards = 4
+most_shards = 8
 
 def short_path(path):
     return path

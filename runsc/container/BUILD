@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test", "more_shards")
 
 package(licenses = ["notice"])
 
@@ -49,7 +49,7 @@ go_test(
         "//test/cmd/test_app",
     ],
     library = ":container",
-    shard_count = 10,
+    shard_count = more_shards,
     tags = [
         "requires-kvm",
     ],

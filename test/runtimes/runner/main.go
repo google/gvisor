@@ -25,13 +25,11 @@ import (
 )
 
 var (
-	lang            = flag.String("lang", "", "language runtime to test")
-	image           = flag.String("image", "", "docker image with runtime tests")
-	excludeFile     = flag.String("exclude_file", "", "file containing list of tests to exclude, in CSV format with fields: test name, bug id, comment")
-	partition       = flag.Int("partition", 1, "partition number, this is 1-indexed")
-	totalPartitions = flag.Int("total_partitions", 1, "total number of partitions")
-	batchSize       = flag.Int("batch", 50, "number of test cases run in one command")
-	timeout         = flag.Duration("timeout", 90*time.Minute, "batch timeout")
+	lang        = flag.String("lang", "", "language runtime to test")
+	image       = flag.String("image", "", "docker image with runtime tests")
+	excludeFile = flag.String("exclude_file", "", "file containing list of tests to exclude, in CSV format with fields: test name, bug id, comment")
+	batchSize   = flag.Int("batch", 50, "number of test cases run in one command")
+	timeout     = flag.Duration("timeout", 90*time.Minute, "batch timeout")
 )
 
 func main() {
@@ -40,5 +38,5 @@ func main() {
 		fmt.Fprintf(os.Stderr, "lang and image flags must not be empty\n")
 		os.Exit(1)
 	}
-	os.Exit(lib.RunTests(*lang, *image, *excludeFile, *partition, *totalPartitions, *batchSize, *timeout))
+	os.Exit(lib.RunTests(*lang, *image, *excludeFile, *batchSize, *timeout))
 }

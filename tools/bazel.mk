@@ -41,6 +41,9 @@ DOCKER_CONFIG := /etc/docker
 # Bazel flags.
 BAZEL := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS := --color=no --curses=no
+ifneq (,$(BAZEL_CONFIG))
+BASE_OPTIONS += --config=$(BAZEL_CONFIG)
+endif
 
 # Basic options.
 UID := $(shell id -u ${USER})
@@ -101,11 +104,6 @@ USERADD_OPTIONS += --groups $(KVM_GROUP)
 GROUPADD_DOCKER += groupadd --gid $(KVM_GROUP) --non-unique kvm-$(HASH) &&
 FULL_DOCKER_RUN_OPTIONS += --group-add $(KVM_GROUP)
 endif
-endif
-
-# Load the appropriate config.
-ifneq (,$(BAZEL_CONFIG))
-OPTIONS += --config=$(BAZEL_CONFIG)
 endif
 
 bazel-image: load-default
