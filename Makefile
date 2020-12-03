@@ -297,6 +297,7 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
 .PHONY: init-benchmark-table
 
 benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
+	# change for kokoro presubmits
 	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
 	  $(call submake,run-benchmark RUNTIME="$(PLATFORM)" ARGS="--platform=$(PLATFORM) --vfs2") && \
 	  $(call submake,run-benchmark RUNTIME="$(PLATFORM)_vfs1" ARGS="--platform=$(PLATFORM)") && \
@@ -318,7 +319,6 @@ run-benchmark: load-benchmarks-images ## Runs single benchmark and optionally se
 	rm -rf $$T; \
 	exit $$rc
 .PHONY: run-benchmark
-.PHONY: load-benchmarks-images
 
 ##
 ## Website & documentation helpers.
