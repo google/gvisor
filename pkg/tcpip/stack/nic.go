@@ -279,9 +279,9 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 // WritePacketToRemote implements NetworkInterface.
 func (n *NIC) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
 	r := Route{
-		NetProto:          protocol,
-		RemoteLinkAddress: remoteLinkAddr,
+		NetProto: protocol,
 	}
+	r.ResolveWith(remoteLinkAddr)
 	return n.writePacket(&r, gso, protocol, pkt)
 }
 
