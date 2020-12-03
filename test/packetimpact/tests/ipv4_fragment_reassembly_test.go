@@ -45,8 +45,6 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 		ipPayloadLen int
 		fragments    []fragmentInfo
 		expectReply  bool
-		skip         bool
-		skipReason   string
 	}{
 		{
 			description:  "basic reassembly",
@@ -78,8 +76,6 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 				{offset: 2000, size: 1000, id: 7, more: 0},
 			},
 			expectReply: true,
-			skip:        true,
-			skipReason:  "gvisor.dev/issues/4971",
 		},
 		{
 			description:  "fragment subset",
@@ -91,8 +87,6 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 				{offset: 2000, size: 1000, id: 8, more: 0},
 			},
 			expectReply: true,
-			skip:        true,
-			skipReason:  "gvisor.dev/issues/4971",
 		},
 		{
 			description:  "fragment overlap",
@@ -104,16 +98,10 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 				{offset: 2000, size: 1000, id: 9, more: 0},
 			},
 			expectReply: false,
-			skip:        true,
-			skipReason:  "gvisor.dev/issues/4971",
 		},
 	}
 
 	for _, test := range tests {
-		if test.skip {
-			t.Skip("%s test skipped: %s", test.description, test.skipReason)
-			continue
-		}
 		t.Run(test.description, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
 			conn := dut.Net.NewIPv4Conn(t, testbench.IPv4{}, testbench.IPv4{})
