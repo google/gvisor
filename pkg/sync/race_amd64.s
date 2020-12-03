@@ -12,13 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64 arm64
+// +build race
+// +build amd64
 
-package syncevent
+#include "textflag.h"
 
-import (
-	"unsafe"
-)
+// func RaceUncheckedAtomicCompareAndSwapUintptr(ptr *uintptr, old, new uintptr) bool
+TEXT ·RaceUncheckedAtomicCompareAndSwapUintptr(SB),NOSPLIT,$0-25
+	MOVQ ptr+0(FP), DI
+	MOVQ old+8(FP), AX
+	MOVQ new+16(FP), SI
 
-// See waiter_noasm_unsafe.go for a description of waiterUnlock.
-func waiterUnlock(ptr unsafe.Pointer, wg *unsafe.Pointer) bool
+	LOCK
+	CMPXCHGQ SI, 0(DI)
+
+	SETEQ AX
+	MOVB AX, ret+24(FP)
+
+	RET
+

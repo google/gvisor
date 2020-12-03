@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build go1.11
-// +build !go1.17
-
-// Check go:linkname function signatures when updating Go version.
-
 package syncevent
 
 import (
@@ -24,17 +19,6 @@ import (
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sync"
-)
-
-//go:linkname gopark runtime.gopark
-func gopark(unlockf func(unsafe.Pointer, *unsafe.Pointer) bool, wg *unsafe.Pointer, reason uint8, traceEv byte, traceskip int)
-
-//go:linkname goready runtime.goready
-func goready(g unsafe.Pointer, traceskip int)
-
-const (
-	waitReasonSelect     = 9  // Go: src/runtime/runtime2.go
-	traceEvGoBlockSelect = 24 // Go: src/runtime/trace.go
 )
 
 // Waiter allows a goroutine to block on pending events received by a Receiver.
@@ -45,20 +29,19 @@ type Waiter struct {
 
 	// g is one of:
 	//
-	// - nil: No goroutine is blocking in Wait.
+	// - 0: No goroutine is blocking in Wait.
 	//
-	// - &preparingG: A goroutine is in Wait preparing to sleep, but hasn't yet
+	// - preparingG: A goroutine is in Wait preparing to sleep, but hasn't yet
 	// completed waiterUnlock(). Thus the wait can only be interrupted by
-	// replacing the value of g with nil (the G may not be in state Gwaiting
-	// yet, so we can't call goready.)
+	// replacing the value of g with 0 (the G may not be in state Gwaiting yet,
+	// so we can't call goready.)
 	//
 	// - Otherwise: g is a pointer to the runtime.g in state Gwaiting for the
 	// goroutine blocked in Wait, which can only be woken by calling goready.
-	g unsafe.Pointer `state:"zerovalue"`
+	g uintptr `state:"zerovalue"`
 }
 
-// Sentinel object for Waiter.g.
-var preparingG struct{}
+const preparingG = 1
 
 // Init must be called before first use of w.
 func (w *Waiter) Init() {
@@ -99,19 +82,27 @@ func (w *Waiter) WaitFor(es Set) Set {
 		}
 
 		// Indicate that we're preparing to go to sleep.
-		atomic.StorePointer(&w.g, (unsafe.Pointer)(&preparingG))
+		atomic.StoreUintptr(&w.g, preparingG)
 
 		// If an event is pending, abort the sleep.
 		if p := w.r.Pending(); p&es != NoEvents {
-			atomic.StorePointer(&w.g, nil)
+			atomic.StoreUintptr(&w.g, 0)
 			return p
 		}
 
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
-		// called or has not reached atomic.SwapPointer()), go to sleep until
+		// called or has not reached atomic.SwapUintptr()), go to sleep until
 		// w.NotifyPending() => goready().
-		gopark(waiterUnlock, &w.g, waitReasonSelect, traceEvGoBlockSelect, 0)
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0)
 	}
+}
+
+//go:norace
+//go:nosplit
+func waiterCommit(g uintptr, wg unsafe.Pointer) bool {
+	// The only way this CAS can fail is if a call to Waiter.NotifyPending()
+	// has replaced *wg with nil, in which case we should not sleep.
+	return sync.RaceUncheckedAtomicCompareAndSwapUintptr((*uintptr)(wg), preparingG, g)
 }
 
 // Ack marks the given events as not pending.
@@ -135,20 +126,20 @@ func (w *Waiter) WaitAndAckAll() Set {
 
 	for {
 		// Indicate that we're preparing to go to sleep.
-		atomic.StorePointer(&w.g, (unsafe.Pointer)(&preparingG))
+		atomic.StoreUintptr(&w.g, preparingG)
 
 		// If an event is pending, abort the sleep.
 		if w.r.Pending() != NoEvents {
 			if p := w.r.PendingAndAckAll(); p != NoEvents {
-				atomic.StorePointer(&w.g, nil)
+				atomic.StoreUintptr(&w.g, 0)
 				return p
 			}
 		}
 
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
-		// called or has not reached atomic.SwapPointer()), go to sleep until
+		// called or has not reached atomic.SwapUintptr()), go to sleep until
 		// w.NotifyPending() => goready().
-		gopark(waiterUnlock, &w.g, waitReasonSelect, traceEvGoBlockSelect, 0)
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0)
 
 		// Check for pending events. We call PendingAndAckAll() directly now since
 		// we only expect to be woken after events become pending.
@@ -171,14 +162,14 @@ func (w *Waiter) NotifyPending() {
 	// goroutine. NotifyPending is called after w.r.Pending() is updated, so
 	// concurrent and future calls to w.Wait() will observe pending events and
 	// abort sleeping.
-	if atomic.LoadPointer(&w.g) == nil {
+	if atomic.LoadUintptr(&w.g) == 0 {
 		return
 	}
 	// Wake a sleeping G, or prevent a G that is preparing to sleep from doing
 	// so. Swap is needed here to ensure that only one call to NotifyPending
 	// calls goready.
-	if g := atomic.SwapPointer(&w.g, nil); g != nil && g != (unsafe.Pointer)(&preparingG) {
-		goready(g, 0)
+	if g := atomic.SwapUintptr(&w.g, 0); g > preparingG {
+		sync.Goready(g, 0)
 	}
 }
 

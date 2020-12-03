@@ -14,11 +14,5 @@ import (
 	_ "unsafe" // for go:linkname
 )
 
-//go:linkname canSpin sync.runtime_canSpin
-func canSpin(i int) bool
-
-//go:linkname doSpin sync.runtime_doSpin
-func doSpin()
-
 //go:linkname goyield runtime.goyield
 func goyield()
