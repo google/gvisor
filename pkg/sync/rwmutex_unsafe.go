@@ -3,11 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.13
-// +build !go1.17
-
-// Check go:linkname function signatures when updating Go version.
-
 // This is mostly copied from the standard library's sync/rwmutex.go.
 //
 // Happens-before relationships indicated to the race detector:
@@ -23,16 +18,10 @@ import (
 	"unsafe"
 )
 
-//go:linkname runtimeSemacquire sync.runtime_Semacquire
-func runtimeSemacquire(s *uint32)
-
-//go:linkname runtimeSemrelease sync.runtime_Semrelease
-func runtimeSemrelease(s *uint32, handoff bool, skipframes int)
-
 // RWMutex is identical to sync.RWMutex, but adds the DowngradeLock,
 // TryLock and TryRLock methods.
 type RWMutex struct {
-	// w is held if there are pending writers
+	// w is held by writers.
 	//
 	// We use CrossGoroutineMutex rather than Mutex because the lock
 	// annotation instrumentation in Mutex will trigger false positives in
@@ -78,7 +67,7 @@ func (rw *RWMutex) RLock() {
 	}
 	if atomic.AddInt32(&rw.readerCount, 1) < 0 {
 		// A writer is pending, wait for it.
-		runtimeSemacquire(&rw.readerSem)
+		semacquire(&rw.readerSem)
 	}
 	if RaceEnabled {
 		RaceEnable()
@@ -99,7 +88,7 @@ func (rw *RWMutex) RUnlock() {
 		// A writer is pending.
 		if atomic.AddInt32(&rw.readerWait, -1) == 0 {
 			// The last reader unblocks the writer.
-			runtimeSemrelease(&rw.writerSem, false, 0)
+			semrelease(&rw.writerSem, false, 0)
 		}
 	}
 	if RaceEnabled {
@@ -146,7 +135,7 @@ func (rw *RWMutex) Lock() {
 	r := atomic.AddInt32(&rw.readerCount, -rwmutexMaxReaders) + rwmutexMaxReaders
 	// Wait for active readers.
 	if r != 0 && atomic.AddInt32(&rw.readerWait, r) != 0 {
-		runtimeSemacquire(&rw.writerSem)
+		semacquire(&rw.writerSem)
 	}
 	if RaceEnabled {
 		RaceEnable()
@@ -168,7 +157,7 @@ func (rw *RWMutex) Unlock() {
 	}
 	// Unblock blocked readers, if any.
 	for i := 0; i < int(r); i++ {
-		runtimeSemrelease(&rw.readerSem, false, 0)
+		semrelease(&rw.readerSem, false, 0)
 	}
 	// Allow other writers to proceed.
 	rw.w.Unlock()
@@ -191,7 +180,7 @@ func (rw *RWMutex) DowngradeLock() {
 	// Unblock blocked readers, if any. Note that this loop starts as 1 since r
 	// includes this goroutine.
 	for i := 1; i < int(r); i++ {
-		runtimeSemrelease(&rw.readerSem, false, 0)
+		semrelease(&rw.readerSem, false, 0)
 	}
 	// Allow other writers to proceed to rw.w.Lock(). Note that they will still
 	// block on rw.writerSem since at least this reader exists, such that
