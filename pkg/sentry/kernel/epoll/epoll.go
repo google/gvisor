@@ -273,7 +273,7 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 //
 // Callback is called when one of the files we're polling becomes ready. It
 // moves said file to the readyList if it's currently in the waiting list.
-func (p *pollEntry) Callback(*waiter.Entry) {
+func (p *pollEntry) Callback(*waiter.Entry, waiter.EventMask) {
 	e := p.epoll
 
 	e.listsMu.Lock()
@@ -306,9 +306,8 @@ func (e *EventPoll) initEntryReadiness(entry *pollEntry) {
 	f.EventRegister(&entry.waiter, entry.mask)
 
 	// Check if the file happens to already be in a ready state.
-	ready := f.Readiness(entry.mask) & entry.mask
-	if ready != 0 {
-		entry.Callback(&entry.waiter)
+	if ready := f.Readiness(entry.mask) & entry.mask; ready != 0 {
+		entry.Callback(&entry.waiter, ready)
 	}
 }
 

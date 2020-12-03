@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // FilesystemImplSaveRestoreExtension is an optional extension to
@@ -120,5 +122,20 @@ func (mnt *Mount) afterLoad() {
 func (epi *epollInterest) afterLoad() {
 	// Mark all epollInterests as ready after restore so that the next call to
 	// EpollInstance.ReadEvents() rechecks their readiness.
-	epi.Callback(nil)
+	epi.Callback(nil, waiter.EventMaskFromLinux(epi.mask))
+}
+
+// beforeSave is called by stateify.
+func (fd *FileDescription) beforeSave() {
+	fd.saved = true
+	if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
+		fd.asyncHandler.Unregister(fd)
+	}
+}
+
+// afterLoad is called by stateify.
+func (fd *FileDescription) afterLoad() {
+	if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
+		fd.asyncHandler.Register(fd)
+	}
 }

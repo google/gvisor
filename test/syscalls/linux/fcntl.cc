@@ -14,10 +14,13 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/epoll.h>
 #include <sys/types.h>
 #include <syscall.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <deque>
 #include <iostream>
 #include <list>
 #include <string>
@@ -34,31 +37,38 @@
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
+#include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 #include "test/util/timer_util.h"
 
-ABSL_FLAG(std::string, child_setlock_on, "",
+ABSL_FLAG(std::string, child_set_lock_on, "",
           "Contains the path to try to set a file lock on.");
-ABSL_FLAG(bool, child_setlock_write, false,
+ABSL_FLAG(bool, child_set_lock_write, false,
           "Whether to set a writable lock (otherwise readable)");
 ABSL_FLAG(bool, blocking, false,
           "Whether to set a blocking lock (otherwise non-blocking).");
 ABSL_FLAG(bool, retry_eintr, false,
           "Whether to retry in the subprocess on EINTR.");
-ABSL_FLAG(uint64_t, child_setlock_start, 0, "The value of struct flock start");
-ABSL_FLAG(uint64_t, child_setlock_len, 0, "The value of struct flock len");
+ABSL_FLAG(uint64_t, child_set_lock_start, 0, "The value of struct flock start");
+ABSL_FLAG(uint64_t, child_set_lock_len, 0, "The value of struct flock len");
 ABSL_FLAG(int32_t, socket_fd, -1,
           "A socket to use for communicating more state back "
           "to the parent.");
 
 namespace gvisor {
 namespace testing {
+
+std::function<void(int, siginfo_t*, void*)> setsig_signal_handle;
+void setsig_signal_handler(int signum, siginfo_t* siginfo, void* ucontext) {
+  setsig_signal_handle(signum, siginfo, ucontext);
+}
 
 class FcntlLockTest : public ::testing::Test {
  public:
@@ -84,18 +94,93 @@ class FcntlLockTest : public ::testing::Test {
   int fds_[2] = {};
 };
 
+struct SignalDelivery {
+  int num;
+  siginfo_t info;
+};
+
+class FcntlSignalTest : public ::testing::Test {
+ public:
+  void SetUp() override {
+    int pipe_fds[2];
+    ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+    pipe_read_fd_ = pipe_fds[0];
+    pipe_write_fd_ = pipe_fds[1];
+  }
+
+  PosixErrorOr<Cleanup> RegisterSignalHandler(int signum) {
+    struct sigaction handler;
+    handler.sa_sigaction = setsig_signal_handler;
+    setsig_signal_handle = [&](int signum, siginfo_t* siginfo,
+                               void* unused_ucontext) {
+      SignalDelivery sig;
+      sig.num = signum;
+      sig.info = *siginfo;
+      signals_received_.push_back(sig);
+      num_signals_received_++;
+    };
+    sigemptyset(&handler.sa_mask);
+    handler.sa_flags = SA_SIGINFO;
+    return ScopedSigaction(signum, handler);
+  }
+
+  void FlushAndCloseFD(int fd) {
+    char buf;
+    int read_bytes;
+    do {
+      read_bytes = read(fd, &buf, 1);
+    } while (read_bytes > 0);
+    // read() can also fail with EWOULDBLOCK since the pipe is open in
+    // non-blocking mode. This is not an error.
+    EXPECT_TRUE(read_bytes == 0 || (read_bytes == -1 && errno == EWOULDBLOCK));
+    EXPECT_THAT(close(fd), SyscallSucceeds());
+  }
+
+  void DupReadFD() {
+    ASSERT_THAT(pipe_read_fd_dup_ = dup(pipe_read_fd_), SyscallSucceeds());
+    max_expected_signals++;
+  }
+
+  void RegisterFD(int fd, int signum) {
+    ASSERT_THAT(fcntl(fd, F_SETOWN, getpid()), SyscallSucceeds());
+    ASSERT_THAT(fcntl(fd, F_SETSIG, signum), SyscallSucceeds());
+    int old_flags;
+    ASSERT_THAT(old_flags = fcntl(fd, F_GETFL), SyscallSucceeds());
+    ASSERT_THAT(fcntl(fd, F_SETFL, old_flags | O_ASYNC), SyscallSucceeds());
+  }
+
+  void GenerateIOEvent() {
+    ASSERT_THAT(write(pipe_write_fd_, "test", 4), SyscallSucceedsWithValue(4));
+  }
+
+  void WaitForSignalDelivery(absl::Duration timeout) {
+    absl::Time wait_start = absl::Now();
+    while (num_signals_received_ < max_expected_signals &&
+           absl::Now() - wait_start < timeout) {
+      absl::SleepFor(absl::Milliseconds(10));
+    }
+  }
+
+  int pipe_read_fd_ = -1;
+  int pipe_read_fd_dup_ = -1;
+  int pipe_write_fd_ = -1;
+  int max_expected_signals = 1;
+  std::deque<SignalDelivery> signals_received_;
+  std::atomic<int> num_signals_received_ = 0;
+};
+
 namespace {
 
 PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
                                      bool blocking, bool retry_eintr, int fd,
                                      off_t start, off_t length, pid_t* child) {
   std::vector<std::string> args = {
-      "/proc/self/exe",        "--child_setlock_on", path,
-      "--child_setlock_start", absl::StrCat(start),  "--child_setlock_len",
-      absl::StrCat(length),    "--socket_fd",        absl::StrCat(fd)};
+      "/proc/self/exe",         "--child_set_lock_on", path,
+      "--child_set_lock_start", absl::StrCat(start),   "--child_set_lock_len",
+      absl::StrCat(length),     "--socket_fd",         absl::StrCat(fd)};
 
   if (for_write) {
-    args.push_back("--child_setlock_write");
+    args.push_back("--child_set_lock_write");
   }
 
   if (blocking) {
@@ -965,7 +1050,6 @@ TEST(FcntlTest, GetOwnNone) {
   // into F_{GET,SET}OWN_EX.
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
-  MaybeSave();
 }
 
 TEST(FcntlTest, GetOwnExNone) {
@@ -1009,7 +1093,6 @@ TEST(FcntlTest, SetOwnPid) {
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(pid));
-  MaybeSave();
 }
 
 TEST(FcntlTest, SetOwnPgrp) {
@@ -1030,7 +1113,6 @@ TEST(FcntlTest, SetOwnPgrp) {
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(got_owner.type, F_OWNER_PGRP);
   EXPECT_EQ(got_owner.pid, pgid);
-  MaybeSave();
 }
 
 TEST(FcntlTest, SetOwnUnset) {
@@ -1058,7 +1140,6 @@ TEST(FcntlTest, SetOwnUnset) {
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
-  MaybeSave();
 }
 
 // F_SETOWN flips the sign of negative values, an operation that is guarded
@@ -1130,7 +1211,6 @@ TEST(FcntlTest, SetOwnExTid) {
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(owner.pid));
-  MaybeSave();
 }
 
 TEST(FcntlTest, SetOwnExPid) {
@@ -1146,7 +1226,6 @@ TEST(FcntlTest, SetOwnExPid) {
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(owner.pid));
-  MaybeSave();
 }
 
 TEST(FcntlTest, SetOwnExPgrp) {
@@ -1168,7 +1247,6 @@ TEST(FcntlTest, SetOwnExPgrp) {
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(got_owner.type, set_owner.type);
   EXPECT_EQ(got_owner.pid, set_owner.pid);
-  MaybeSave();
 }
 
 TEST(FcntlTest, SetOwnExUnset) {
@@ -1201,7 +1279,6 @@ TEST(FcntlTest, SetOwnExUnset) {
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
-  MaybeSave();
 }
 
 TEST(FcntlTest, GetOwnExTid) {
@@ -1258,9 +1335,269 @@ TEST(FcntlTest, GetOwnExPgrp) {
   EXPECT_EQ(got_owner.pid, set_owner.pid);
 }
 
+TEST(FcntlTest, SetSig) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETSIG, SIGUSR1),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETSIG),
+              SyscallSucceedsWithValue(SIGUSR1));
+}
+
+TEST(FcntlTest, SetSigDefaultsToZero) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  // Defaults to returning the zero value, indicating default behavior (SIGIO).
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETSIG),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST(FcntlTest, SetSigToDefault) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETSIG, SIGIO),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETSIG),
+              SyscallSucceedsWithValue(SIGIO));
+
+  // Can be reset to the default behavior.
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETSIG, 0),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETSIG),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST(FcntlTest, SetSigInvalid) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETSIG, SIGRTMAX + 1),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETSIG),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST(FcntlTest, SetSigInvalidDoesNotResetPreviousChoice) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETSIG, SIGUSR1),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETSIG, SIGRTMAX + 1),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETSIG),
+              SyscallSucceedsWithValue(SIGUSR1));
+}
+
+TEST_F(FcntlSignalTest, SetSigDefault) {
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGIO));
+  RegisterFD(pipe_read_fd_, 0);  // Zero = default behavior
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  signals_received_.pop_front();
+  EXPECT_EQ(sig.num, SIGIO);
+  EXPECT_EQ(sig.info.si_signo, SIGIO);
+  // siginfo contents is undefined in this case.
+}
+
+TEST_F(FcntlSignalTest, SetSigCustom) {
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  signals_received_.pop_front();
+  EXPECT_EQ(sig.num, SIGUSR1);
+  EXPECT_EQ(sig.info.si_signo, SIGUSR1);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigUnregisterStillGetsSigio) {
+  const auto sigio_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGIO));
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  RegisterFD(pipe_read_fd_, 0);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  signals_received_.pop_front();
+  EXPECT_EQ(sig.num, SIGIO);
+  // siginfo contents is undefined in this case.
+}
+
+TEST_F(FcntlSignalTest, SetSigWithSigioStillGetsSiginfo) {
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGIO));
+  RegisterFD(pipe_read_fd_, SIGIO);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  EXPECT_EQ(sig.num, SIGIO);
+  EXPECT_EQ(sig.info.si_signo, SIGIO);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigDupThenCloseOld) {
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  DupReadFD();
+  FlushAndCloseFD(pipe_read_fd_);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with the **old** FD (even though it is closed).
+  EXPECT_EQ(sig.num, SIGUSR1);
+  EXPECT_EQ(sig.info.si_signo, SIGUSR1);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigDupThenCloseNew) {
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  DupReadFD();
+  FlushAndCloseFD(pipe_read_fd_dup_);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with the old FD.
+  EXPECT_EQ(sig.num, SIGUSR1);
+  EXPECT_EQ(sig.info.si_signo, SIGUSR1);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigDupOldRegistered) {
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  DupReadFD();
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with the old FD.
+  EXPECT_EQ(sig.num, SIGUSR1);
+  EXPECT_EQ(sig.info.si_signo, SIGUSR1);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigDupNewRegistered) {
+  const auto sigusr2_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR2));
+  DupReadFD();
+  RegisterFD(pipe_read_fd_dup_, SIGUSR2);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with the new FD.
+  EXPECT_EQ(sig.num, SIGUSR2);
+  EXPECT_EQ(sig.info.si_signo, SIGUSR2);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_dup_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigDupBothRegistered) {
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  const auto sigusr2_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR2));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  DupReadFD();
+  RegisterFD(pipe_read_fd_dup_, SIGUSR2);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with the **new** signal number, but the **old** FD.
+  EXPECT_EQ(sig.num, SIGUSR2);
+  EXPECT_EQ(sig.info.si_signo, SIGUSR2);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigDupBothRegisteredAfterDup) {
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  const auto sigusr2_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR2));
+  DupReadFD();
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  RegisterFD(pipe_read_fd_dup_, SIGUSR2);
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with the **new** signal number, but the **old** FD.
+  EXPECT_EQ(sig.num, SIGUSR2);
+  EXPECT_EQ(sig.info.si_signo, SIGUSR2);
+  EXPECT_EQ(sig.info.si_fd, pipe_read_fd_);
+  EXPECT_EQ(sig.info.si_band, EPOLLIN | EPOLLRDNORM);
+}
+
+TEST_F(FcntlSignalTest, SetSigDupUnregisterOld) {
+  const auto sigio_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGIO));
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  const auto sigusr2_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR2));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  DupReadFD();
+  RegisterFD(pipe_read_fd_dup_, SIGUSR2);
+  RegisterFD(pipe_read_fd_, 0);  // Should go back to SIGIO behavior.
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with SIGIO.
+  EXPECT_EQ(sig.num, SIGIO);
+  // siginfo is undefined in this case.
+}
+
+TEST_F(FcntlSignalTest, SetSigDupUnregisterNew) {
+  const auto sigio_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGIO));
+  const auto sigusr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
+  const auto sigusr2_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR2));
+  RegisterFD(pipe_read_fd_, SIGUSR1);
+  DupReadFD();
+  RegisterFD(pipe_read_fd_dup_, SIGUSR2);
+  RegisterFD(pipe_read_fd_dup_, 0);  // Should go back to SIGIO behavior.
+  GenerateIOEvent();
+  WaitForSignalDelivery(absl::Seconds(1));
+  ASSERT_EQ(num_signals_received_, 1);
+  SignalDelivery sig = signals_received_.front();
+  // We get a signal with SIGIO.
+  EXPECT_EQ(sig.num, SIGIO);
+  // siginfo is undefined in this case.
+}
+
 // Make sure that making multiple concurrent changes to async signal generation
 // does not cause any race issues.
-TEST(FcntlTest, SetFlSetOwnDoNotRace) {
+TEST(FcntlTest, SetFlSetOwnSetSigDoNotRace) {
   FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
 
@@ -1268,22 +1605,29 @@ TEST(FcntlTest, SetFlSetOwnDoNotRace) {
   EXPECT_THAT(pid = getpid(), SyscallSucceeds());
 
   constexpr absl::Duration runtime = absl::Milliseconds(300);
-  auto setAsync = [&s, &runtime] {
+  auto set_async = [&s, &runtime] {
     for (auto start = absl::Now(); absl::Now() - start < runtime;) {
       ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETFL, O_ASYNC),
                   SyscallSucceeds());
       sched_yield();
     }
   };
-  auto resetAsync = [&s, &runtime] {
+  auto reset_async = [&s, &runtime] {
     for (auto start = absl::Now(); absl::Now() - start < runtime;) {
       ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETFL, 0), SyscallSucceeds());
       sched_yield();
     }
   };
-  auto setOwn = [&s, &pid, &runtime] {
+  auto set_own = [&s, &pid, &runtime] {
     for (auto start = absl::Now(); absl::Now() - start < runtime;) {
       ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid),
+                  SyscallSucceeds());
+      sched_yield();
+    }
+  };
+  auto set_sig = [&s, &runtime] {
+    for (auto start = absl::Now(); absl::Now() - start < runtime;) {
+      ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETSIG, SIGUSR1),
                   SyscallSucceeds());
       sched_yield();
     }
@@ -1291,9 +1635,10 @@ TEST(FcntlTest, SetFlSetOwnDoNotRace) {
 
   std::list<ScopedThread> threads;
   for (int i = 0; i < 10; i++) {
-    threads.emplace_back(setAsync);
-    threads.emplace_back(resetAsync);
-    threads.emplace_back(setOwn);
+    threads.emplace_back(set_async);
+    threads.emplace_back(reset_async);
+    threads.emplace_back(set_own);
+    threads.emplace_back(set_sig);
   }
 }
 
@@ -1302,57 +1647,60 @@ TEST(FcntlTest, SetFlSetOwnDoNotRace) {
 }  // namespace testing
 }  // namespace gvisor
 
+int set_lock() {
+  const std::string set_lock_on = absl::GetFlag(FLAGS_child_set_lock_on);
+  int socket_fd = absl::GetFlag(FLAGS_socket_fd);
+  int fd = open(set_lock_on.c_str(), O_RDWR, 0666);
+  if (fd == -1 && errno != 0) {
+    int err = errno;
+    std::cerr << "CHILD open " << set_lock_on << " failed: " << err
+              << std::endl;
+    return err;
+  }
+
+  struct flock fl;
+  if (absl::GetFlag(FLAGS_child_set_lock_write)) {
+    fl.l_type = F_WRLCK;
+  } else {
+    fl.l_type = F_RDLCK;
+  }
+  fl.l_whence = SEEK_SET;
+  fl.l_start = absl::GetFlag(FLAGS_child_set_lock_start);
+  fl.l_len = absl::GetFlag(FLAGS_child_set_lock_len);
+
+  // Test the fcntl.
+  int err = 0;
+  int ret = 0;
+
+  gvisor::testing::MonotonicTimer timer;
+  timer.Start();
+  do {
+    ret = fcntl(fd, absl::GetFlag(FLAGS_blocking) ? F_SETLKW : F_SETLK, &fl);
+  } while (absl::GetFlag(FLAGS_retry_eintr) && ret == -1 && errno == EINTR);
+  auto usec = absl::ToInt64Microseconds(timer.Duration());
+
+  if (ret == -1 && errno != 0) {
+    err = errno;
+    std::cerr << "CHILD lock " << set_lock_on << " failed " << err << std::endl;
+  }
+
+  // If there is a socket fd let's send back the time in microseconds it took
+  // to execute this syscall.
+  if (socket_fd != -1) {
+    gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&usec),
+                                   sizeof(usec));
+    close(socket_fd);
+  }
+
+  close(fd);
+  return err;
+}
+
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
-  const std::string setlock_on = absl::GetFlag(FLAGS_child_setlock_on);
-  if (!setlock_on.empty()) {
-    int socket_fd = absl::GetFlag(FLAGS_socket_fd);
-    int fd = open(setlock_on.c_str(), O_RDWR, 0666);
-    if (fd == -1 && errno != 0) {
-      int err = errno;
-      std::cerr << "CHILD open " << setlock_on << " failed " << err
-                << std::endl;
-      exit(err);
-    }
-
-    struct flock fl;
-    if (absl::GetFlag(FLAGS_child_setlock_write)) {
-      fl.l_type = F_WRLCK;
-    } else {
-      fl.l_type = F_RDLCK;
-    }
-    fl.l_whence = SEEK_SET;
-    fl.l_start = absl::GetFlag(FLAGS_child_setlock_start);
-    fl.l_len = absl::GetFlag(FLAGS_child_setlock_len);
-
-    // Test the fcntl.
-    int err = 0;
-    int ret = 0;
-
-    gvisor::testing::MonotonicTimer timer;
-    timer.Start();
-    do {
-      ret = fcntl(fd, absl::GetFlag(FLAGS_blocking) ? F_SETLKW : F_SETLK, &fl);
-    } while (absl::GetFlag(FLAGS_retry_eintr) && ret == -1 && errno == EINTR);
-    auto usec = absl::ToInt64Microseconds(timer.Duration());
-
-    if (ret == -1 && errno != 0) {
-      err = errno;
-      std::cerr << "CHILD lock " << setlock_on << " failed " << err
-                << std::endl;
-    }
-
-    // If there is a socket fd let's send back the time in microseconds it took
-    // to execute this syscall.
-    if (socket_fd != -1) {
-      gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&usec),
-                                     sizeof(usec));
-      close(socket_fd);
-    }
-
-    close(fd);
-    exit(err);
+  if (!absl::GetFlag(FLAGS_child_set_lock_on).empty()) {
+    exit(set_lock());
   }
 
   return gvisor::testing::RunAllTests();

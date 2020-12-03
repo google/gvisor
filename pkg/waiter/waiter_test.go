@@ -20,12 +20,12 @@ import (
 )
 
 type callbackStub struct {
-	f func(e *Entry)
+	f func(e *Entry, m EventMask)
 }
 
 // Callback implements EntryCallback.Callback.
-func (c *callbackStub) Callback(e *Entry) {
-	c.f(e)
+func (c *callbackStub) Callback(e *Entry, m EventMask) {
+	c.f(e, m)
 }
 
 func TestEmptyQueue(t *testing.T) {
@@ -36,7 +36,7 @@ func TestEmptyQueue(t *testing.T) {
 
 	// Register then unregister a waiter, then notify the queue.
 	cnt := 0
-	e := Entry{Callback: &callbackStub{func(*Entry) { cnt++ }}}
+	e := Entry{Callback: &callbackStub{func(*Entry, EventMask) { cnt++ }}}
 	q.EventRegister(&e, EventIn)
 	q.EventUnregister(&e)
 	q.Notify(EventIn)
@@ -49,7 +49,7 @@ func TestMask(t *testing.T) {
 	// Register a waiter.
 	var q Queue
 	var cnt int
-	e := Entry{Callback: &callbackStub{func(*Entry) { cnt++ }}}
+	e := Entry{Callback: &callbackStub{func(*Entry, EventMask) { cnt++ }}}
 	q.EventRegister(&e, EventIn|EventErr)
 
 	// Notify with an overlapping mask.
@@ -101,10 +101,13 @@ func TestConcurrentRegistration(t *testing.T) {
 	for i := 0; i < concurrency; i++ {
 		go func() {
 			var e Entry
-			e.Callback = &callbackStub{func(entry *Entry) {
+			e.Callback = &callbackStub{func(entry *Entry, mask EventMask) {
 				cnt++
 				if entry != &e {
 					t.Errorf("entry = %p, want %p", entry, &e)
+				}
+				if mask != EventIn {
+					t.Errorf("mask = %#x want %#x", mask, EventIn)
 				}
 			}}
 
@@ -158,10 +161,13 @@ func TestConcurrentNotification(t *testing.T) {
 	// Register waiters.
 	for i := 0; i < waiterCount; i++ {
 		var e Entry
-		e.Callback = &callbackStub{func(entry *Entry) {
+		e.Callback = &callbackStub{func(entry *Entry, mask EventMask) {
 			atomic.AddInt32(&cnt, 1)
 			if entry != &e {
 				t.Errorf("entry = %p, want %p", entry, &e)
+			}
+			if mask != EventIn {
+				t.Errorf("mask = %#x want %#x", mask, EventIn)
 			}
 		}}
 
