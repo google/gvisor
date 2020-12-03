@@ -749,15 +749,15 @@ func (fd *fileDescription) Seek(ctx context.Context, offset int64, whence int32)
 //
 // Preconditions: fd.d.fs.verityMu must be locked.
 func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, uint64, error) {
-	fdReader := vfs.FileReadWriteSeeker{
+	fdReader := FileReadWriteSeeker{
 		FD:  fd.lowerFD,
 		Ctx: ctx,
 	}
-	merkleReader := vfs.FileReadWriteSeeker{
+	merkleReader := FileReadWriteSeeker{
 		FD:  fd.merkleReader,
 		Ctx: ctx,
 	}
-	merkleWriter := vfs.FileReadWriteSeeker{
+	merkleWriter := FileReadWriteSeeker{
 		FD:  fd.merkleWriter,
 		Ctx: ctx,
 	}
@@ -1047,12 +1047,12 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		return 0, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
 	}
 
-	dataReader := vfs.FileReadWriteSeeker{
+	dataReader := FileReadWriteSeeker{
 		FD:  fd.lowerFD,
 		Ctx: ctx,
 	}
 
-	merkleReader := vfs.FileReadWriteSeeker{
+	merkleReader := FileReadWriteSeeker{
 		FD:  fd.merkleReader,
 		Ctx: ctx,
 	}
@@ -1100,4 +1100,46 @@ func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t
 // UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
 func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
 	return fd.lowerFD.UnlockPOSIX(ctx, uid, start, length, whence)
+}
+
+// FileReadWriteSeeker is a helper struct to pass a vfs.FileDescription as
+// io.Reader/io.Writer/io.ReadSeeker/io.ReaderAt/io.WriterAt/etc.
+type FileReadWriteSeeker struct {
+	FD    *vfs.FileDescription
+	Ctx   context.Context
+	ROpts vfs.ReadOptions
+	WOpts vfs.WriteOptions
+}
+
+// ReadAt implements io.ReaderAt.ReadAt.
+func (f *FileReadWriteSeeker) ReadAt(p []byte, off int64) (int, error) {
+	dst := usermem.BytesIOSequence(p)
+	n, err := f.FD.PRead(f.Ctx, dst, off, f.ROpts)
+	return int(n), err
+}
+
+// Read implements io.ReadWriteSeeker.Read.
+func (f *FileReadWriteSeeker) Read(p []byte) (int, error) {
+	dst := usermem.BytesIOSequence(p)
+	n, err := f.FD.Read(f.Ctx, dst, f.ROpts)
+	return int(n), err
+}
+
+// Seek implements io.ReadWriteSeeker.Seek.
+func (f *FileReadWriteSeeker) Seek(offset int64, whence int) (int64, error) {
+	return f.FD.Seek(f.Ctx, offset, int32(whence))
+}
+
+// WriteAt implements io.WriterAt.WriteAt.
+func (f *FileReadWriteSeeker) WriteAt(p []byte, off int64) (int, error) {
+	dst := usermem.BytesIOSequence(p)
+	n, err := f.FD.PWrite(f.Ctx, dst, off, f.WOpts)
+	return int(n), err
+}
+
+// Write implements io.ReadWriteSeeker.Write.
+func (f *FileReadWriteSeeker) Write(p []byte) (int, error) {
+	buf := usermem.BytesIOSequence(p)
+	n, err := f.FD.Write(f.Ctx, buf, f.WOpts)
+	return int(n), err
 }
