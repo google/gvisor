@@ -150,9 +150,9 @@ func (*testInterface) Promiscuous() bool {
 
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	r := stack.Route{
-		NetProto:          protocol,
-		RemoteLinkAddress: remoteLinkAddr,
+		NetProto: protocol,
 	}
+	r.ResolveWith(remoteLinkAddr)
 	return t.LinkEndpoint.WritePacket(&r, gso, protocol, pkt)
 }
 
@@ -600,8 +600,8 @@ func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.
 		return
 	}
 
-	if len(args.remoteLinkAddr) != 0 && args.remoteLinkAddr != pi.Route.RemoteLinkAddress {
-		t.Errorf("got remote link address = %s, want = %s", pi.Route.RemoteLinkAddress, args.remoteLinkAddr)
+	if got := pi.Route.RemoteLinkAddress(); len(args.remoteLinkAddr) != 0 && got != args.remoteLinkAddr {
+		t.Errorf("got remote link address = %s, want = %s", got, args.remoteLinkAddr)
 	}
 
 	// Pull the full payload since network header. Needed for header.IPv6 to
@@ -1381,8 +1381,8 @@ func TestLinkAddressRequest(t *testing.T) {
 		if !ok {
 			t.Fatal("expected to send a link address request")
 		}
-		if pkt.Route.RemoteLinkAddress != test.expectedRemoteLinkAddr {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedRemoteLinkAddr)
+		if got := pkt.Route.RemoteLinkAddress(); got != test.expectedRemoteLinkAddr {
+			t.Errorf("got pkt.Route.RemoteLinkAddress() = %s, want = %s", got, test.expectedRemoteLinkAddr)
 		}
 		if pkt.Route.RemoteAddress != test.expectedRemoteAddr {
 			t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.expectedRemoteAddr)
@@ -1463,8 +1463,8 @@ func TestPacketQueing(t *testing.T) {
 				if p.Proto != ProtocolNumber {
 					t.Errorf("got p.Proto = %d, want = %d", p.Proto, ProtocolNumber)
 				}
-				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				if got := p.Route.RemoteLinkAddress(); got != host2NICLinkAddr {
+					t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, host2NICLinkAddr)
 				}
 				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
@@ -1505,8 +1505,8 @@ func TestPacketQueing(t *testing.T) {
 				if p.Proto != ProtocolNumber {
 					t.Errorf("got p.Proto = %d, want = %d", p.Proto, ProtocolNumber)
 				}
-				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				if got := p.Route.RemoteLinkAddress(); got != host2NICLinkAddr {
+					t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, host2NICLinkAddr)
 				}
 				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
@@ -1556,8 +1556,8 @@ func TestPacketQueing(t *testing.T) {
 					t.Errorf("got Proto = %d, want = %d", p.Proto, ProtocolNumber)
 				}
 				snmc := header.SolicitedNodeAddr(host2IPv6Addr.AddressWithPrefix.Address)
-				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Route.RemoteLinkAddress != want {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, want)
+				if got, want := p.Route.RemoteLinkAddress(), header.EthernetAddressFromMulticastIPv6Address(snmc); got != want {
+					t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, want)
 				}
 				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),

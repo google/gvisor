@@ -274,26 +274,8 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 	}
 
-	var route *stack.Route
-	if to == nil {
-		route = e.route
-
-		if route.IsResolutionRequired() {
-			// Promote lock to exclusive if using a shared route,
-			// given that it may need to change in Route.Resolve()
-			// call below.
-			e.mu.RUnlock()
-			defer e.mu.RLock()
-
-			e.mu.Lock()
-			defer e.mu.Unlock()
-
-			// Recheck state after lock was re-acquired.
-			if e.state != stateConnected {
-				return 0, nil, tcpip.ErrInvalidEndpointState
-			}
-		}
-	} else {
+	route := e.route
+	if to != nil {
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
 		nicID := to.NIC
