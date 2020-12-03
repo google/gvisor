@@ -204,8 +204,8 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 	file.EventRegister(&epi.waiter, wmask)
 
 	// Check if the file is already ready.
-	if file.Readiness(wmask)&wmask != 0 {
-		epi.Callback(nil)
+	if m := file.Readiness(wmask) & wmask; m != 0 {
+		epi.Callback(nil, m)
 	}
 
 	// Add epi to file.epolls so that it is removed when the last
@@ -274,8 +274,8 @@ func (ep *EpollInstance) ModifyInterest(file *FileDescription, num int32, event 
 	file.EventRegister(&epi.waiter, wmask)
 
 	// Check if the file is already ready with the new mask.
-	if file.Readiness(wmask)&wmask != 0 {
-		epi.Callback(nil)
+	if m := file.Readiness(wmask) & wmask; m != 0 {
+		epi.Callback(nil, m)
 	}
 
 	return nil
@@ -311,7 +311,7 @@ func (ep *EpollInstance) DeleteInterest(file *FileDescription, num int32) error 
 }
 
 // Callback implements waiter.EntryCallback.Callback.
-func (epi *epollInterest) Callback(*waiter.Entry) {
+func (epi *epollInterest) Callback(*waiter.Entry, waiter.EventMask) {
 	newReady := false
 	epi.epoll.mu.Lock()
 	if !epi.ready {

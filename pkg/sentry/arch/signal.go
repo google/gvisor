@@ -251,3 +251,26 @@ func (s *SignalInfo) Arch() uint32 {
 func (s *SignalInfo) SetArch(val uint32) {
 	usermem.ByteOrder.PutUint32(s.Fields[12:16], val)
 }
+
+// Band returns the si_band field.
+func (s *SignalInfo) Band() int64 {
+	return int64(usermem.ByteOrder.Uint64(s.Fields[0:8]))
+}
+
+// SetBand mutates the si_band field.
+func (s *SignalInfo) SetBand(val int64) {
+	// Note: this assumes the platform uses `long` as `__ARCH_SI_BAND_T`.
+	// On some platforms, which gVisor doesn't support, `__ARCH_SI_BAND_T` is
+	// `int`. See siginfo.h.
+	usermem.ByteOrder.PutUint64(s.Fields[0:8], uint64(val))
+}
+
+// FD returns the si_fd field.
+func (s *SignalInfo) FD() uint32 {
+	return usermem.ByteOrder.Uint32(s.Fields[8:12])
+}
+
+// SetFD mutates the si_fd field.
+func (s *SignalInfo) SetFD(val uint32) {
+	usermem.ByteOrder.PutUint32(s.Fields[8:12], val)
+}

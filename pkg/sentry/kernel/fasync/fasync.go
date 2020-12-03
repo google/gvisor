@@ -17,22 +17,45 @@ package fasync
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// New creates a new fs.FileAsync.
-func New() fs.FileAsync {
-	return &FileAsync{}
+// Table to convert waiter event masks into si_band siginfo codes.
+// Taken from fs/fcntl.c:band_table.
+var bandTable = map[waiter.EventMask]int64{
+	// POLL_IN
+	waiter.EventIn: linux.EPOLLIN | linux.EPOLLRDNORM,
+	// POLL_OUT
+	waiter.EventOut: linux.EPOLLOUT | linux.EPOLLWRNORM | linux.EPOLLWRBAND,
+	// POLL_ERR
+	waiter.EventErr: linux.EPOLLERR,
+	// POLL_PRI
+	waiter.EventPri: linux.EPOLLPRI | linux.EPOLLRDBAND,
+	// POLL_HUP
+	waiter.EventHUp: linux.EPOLLHUP | linux.EPOLLERR,
 }
 
-// NewVFS2 creates a new vfs.FileAsync.
-func NewVFS2() vfs.FileAsync {
-	return &FileAsync{}
+// New returns a function that creates a new fs.FileAsync with the given file
+// descriptor.
+func New(fd int) func() fs.FileAsync {
+	return func() fs.FileAsync {
+		return &FileAsync{fd: fd}
+	}
+}
+
+// NewVFS2 returns a function that creates a new vfs.FileAsync with the given
+// file descriptor.
+func NewVFS2(fd int) func() vfs.FileAsync {
+	return func() vfs.FileAsync {
+		return &FileAsync{fd: fd}
+	}
 }
 
 // FileAsync sends signals when the registered file is ready for IO.
@@ -41,6 +64,12 @@ func NewVFS2() vfs.FileAsync {
 type FileAsync struct {
 	// e is immutable after first use (which is protected by mu below).
 	e waiter.Entry
+
+	// fd is the file descriptor to notify about.
+	// It is immutable, set at allocation time. This matches Linux semantics in
+	// fs/fcntl.c:fasync_helper.
+	// The fd value is passed to the signal recipient in siginfo.si_fd.
+	fd int
 
 	// regMu protects registeration and unregistration actions on e.
 	//
@@ -56,6 +85,10 @@ type FileAsync struct {
 	mu         sync.Mutex `state:"nosave"`
 	requester  *auth.Credentials
 	registered bool
+	// signal is the signal to deliver upon I/O being available.
+	// The default value ("zero signal") means the default SIGIO signal will be
+	// delivered.
+	signal linux.Signal
 
 	// Only one of the following is allowed to be non-nil.
 	recipientPG *kernel.ProcessGroup
@@ -64,10 +97,10 @@ type FileAsync struct {
 }
 
 // Callback sends a signal.
-func (a *FileAsync) Callback(e *waiter.Entry) {
+func (a *FileAsync) Callback(e *waiter.Entry, mask waiter.EventMask) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if !a.registered {
-		a.mu.Unlock()
 		return
 	}
 	t := a.recipientT
@@ -80,19 +113,34 @@ func (a *FileAsync) Callback(e *waiter.Entry) {
 	}
 	if t == nil {
 		// No recipient has been registered.
-		a.mu.Unlock()
 		return
 	}
 	c := t.Credentials()
 	// Logic from sigio_perm in fs/fcntl.c.
-	if a.requester.EffectiveKUID == 0 ||
+	permCheck := (a.requester.EffectiveKUID == 0 ||
 		a.requester.EffectiveKUID == c.SavedKUID ||
 		a.requester.EffectiveKUID == c.RealKUID ||
 		a.requester.RealKUID == c.SavedKUID ||
-		a.requester.RealKUID == c.RealKUID {
-		t.SendSignal(kernel.SignalInfoPriv(linux.SIGIO))
+		a.requester.RealKUID == c.RealKUID)
+	if !permCheck {
+		return
 	}
-	a.mu.Unlock()
+	signalInfo := &arch.SignalInfo{
+		Signo: int32(linux.SIGIO),
+		Code:  arch.SignalInfoKernel,
+	}
+	if a.signal != 0 {
+		signalInfo.Signo = int32(a.signal)
+		signalInfo.SetFD(uint32(a.fd))
+		var band int64
+		for m, bandCode := range bandTable {
+			if m&mask != 0 {
+				band |= bandCode
+			}
+		}
+		signalInfo.SetBand(band)
+	}
+	t.SendSignal(signalInfo)
 }
 
 // Register sets the file which will be monitored for IO events.
@@ -185,4 +233,26 @@ func (a *FileAsync) ClearOwner() {
 	a.recipientT = nil
 	a.recipientTG = nil
 	a.recipientPG = nil
+}
+
+// Signal returns which signal will be sent to the signal recipient.
+// A value of zero means the signal to deliver wasn't customized, which means
+// the default signal (SIGIO) will be delivered.
+func (a *FileAsync) Signal() linux.Signal {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.signal
+}
+
+// SetSignal overrides which signal to send when I/O is available.
+// The default behavior can be reset by specifying signal zero, which means
+// to send SIGIO.
+func (a *FileAsync) SetSignal(signal linux.Signal) error {
+	if signal != 0 && !signal.IsValid() {
+		return syserror.EINVAL
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.signal = signal
+	return nil
 }

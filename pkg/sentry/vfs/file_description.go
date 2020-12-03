@@ -43,7 +43,7 @@ import (
 type FileDescription struct {
 	FileDescriptionRefs
 
-	// flagsMu protects statusFlags and asyncHandler below.
+	// flagsMu protects `statusFlags`, `saved`, and `asyncHandler` below.
 	flagsMu sync.Mutex `state:"nosave"`
 
 	// statusFlags contains status flags, "initialized by open(2) and possibly
@@ -51,6 +51,11 @@ type FileDescription struct {
 	// memory operations when it does not need to be synchronized with an
 	// access to asyncHandler.
 	statusFlags uint32
+
+	// saved is true after beforeSave is called. This is used to prevent
+	// double-unregistration of asyncHandler. This does not work properly for
+	// save-resume, which is not currently supported in gVisor (see b/26588733).
+	saved bool `state:"nosave"`
 
 	// asyncHandler handles O_ASYNC signal generation. It is set with the
 	// F_SETOWN or F_SETOWN_EX fcntls. For asyncHandler to be used, O_ASYNC must
@@ -184,7 +189,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		}
 		fd.vd.DecRef(ctx)
 		fd.flagsMu.Lock()
-		if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
+		if !fd.saved && fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
 			fd.asyncHandler.Unregister(fd)
 		}
 		fd.asyncHandler = nil

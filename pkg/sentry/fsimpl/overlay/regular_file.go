@@ -103,8 +103,8 @@ func (fd *regularFileFD) currentFDLocked(ctx context.Context) (*vfs.FileDescript
 			for e, mask := range fd.lowerWaiters {
 				fd.cachedFD.EventUnregister(e)
 				upperFD.EventRegister(e, mask)
-				if ready&mask != 0 {
-					e.Callback.Callback(e)
+				if m := ready & mask; m != 0 {
+					e.Callback.Callback(e, m)
 				}
 			}
 		}
