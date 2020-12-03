@@ -410,7 +410,7 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 // currently writable, the packet is dropped.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	if e.hdrSize > 0 {
-		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
+		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress(), protocol, pkt)
 	}
 
 	var builder iovec.Builder
@@ -453,7 +453,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 	mmsgHdrs := make([]rawfile.MMsgHdr, 0, len(batch))
 	for _, pkt := range batch {
 		if e.hdrSize > 0 {
-			e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+			e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress(), pkt.NetworkProtocolNumber, pkt)
 		}
 
 		var vnetHdrBuf []byte
