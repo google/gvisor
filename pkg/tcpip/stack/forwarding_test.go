@@ -309,7 +309,7 @@ func (e *fwdTestLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 
 func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
 	p := fwdTestPacketInfo{
-		RemoteLinkAddress: r.RemoteLinkAddress,
+		RemoteLinkAddress: r.RemoteLinkAddress(),
 		LocalLinkAddress:  r.LocalLinkAddress,
 		Pkt:               pkt,
 	}

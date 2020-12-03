@@ -260,9 +260,8 @@ func TestSimpleSend(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare route.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	var r stack.Route
+	r.ResolveWith(remoteLinkAddr)
 
 	for iters := 1000; iters > 0; iters-- {
 		func() {
@@ -342,9 +341,9 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	newLocalLinkAddress := tcpip.LinkAddress(strings.Repeat("0xFE", 6))
 	// Set both remote and local link address in route.
 	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-		LocalLinkAddress:  newLocalLinkAddress,
+		LocalLinkAddress: newLocalLinkAddress,
 	}
+	r.ResolveWith(remoteLinkAddr)
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		// WritePacket panics given a prependable with anything less than
@@ -395,9 +394,8 @@ func TestFillTxQueue(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	var r stack.Route
+	r.ResolveWith(remoteLinkAddr)
 
 	buf := buffer.NewView(100)
 
@@ -444,9 +442,8 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	c.txq.rx.Flush()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	var r stack.Route
+	r.ResolveWith(remoteLinkAddr)
 
 	buf := buffer.NewView(100)
 
@@ -509,9 +506,8 @@ func TestFillTxMemory(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	var r stack.Route
+	r.ResolveWith(remoteLinkAddr)
 
 	buf := buffer.NewView(100)
 
@@ -557,9 +553,8 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	defer c.cleanup()
 
 	// Prepare to send a packet.
-	r := stack.Route{
-		RemoteLinkAddress: remoteLinkAddr,
-	}
+	var r stack.Route
+	r.ResolveWith(remoteLinkAddr)
 
 	buf := buffer.NewView(100)
 

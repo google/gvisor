@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -1570,8 +1569,8 @@ func verifyRoute(gotRoute, wantRoute *stack.Route) error {
 	if gotRoute.RemoteAddress != wantRoute.RemoteAddress {
 		return fmt.Errorf("bad remote address: got %s, want = %s", gotRoute.RemoteAddress, wantRoute.RemoteAddress)
 	}
-	if gotRoute.RemoteLinkAddress != wantRoute.RemoteLinkAddress {
-		return fmt.Errorf("bad remote link address: got %s, want = %s", gotRoute.RemoteLinkAddress, wantRoute.RemoteLinkAddress)
+	if got, want := gotRoute.RemoteLinkAddress(), wantRoute.RemoteLinkAddress(); got != want {
+		return fmt.Errorf("bad remote link address: got %s, want = %s", got, want)
 	}
 	if gotRoute.NextHop != wantRoute.NextHop {
 		return fmt.Errorf("bad next-hop address: got %s, want = %s", gotRoute.NextHop, wantRoute.NextHop)
@@ -3351,11 +3350,16 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 	remNetSubnetBcast := remNetSubnet.Broadcast()
 
 	tests := []struct {
-		name          string
-		nicAddr       tcpip.ProtocolAddress
-		routes        []tcpip.Route
-		remoteAddr    tcpip.Address
-		expectedRoute *stack.Route
+		name                      string
+		nicAddr                   tcpip.ProtocolAddress
+		routes                    []tcpip.Route
+		remoteAddr                tcpip.Address
+		expectedLocalAddress      tcpip.Address
+		expectedRemoteAddress     tcpip.Address
+		expectedRemoteLinkAddress tcpip.LinkAddress
+		expectedNextHop           tcpip.Address
+		expectedNetProto          tcpip.NetworkProtocolNumber
+		expectedLoop              stack.PacketLooping
 	}{
 		// Broadcast to a locally attached subnet populates the broadcast MAC.
 		{
@@ -3370,14 +3374,12 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 					NIC:         nicID1,
 				},
 			},
-			remoteAddr: ipv4SubnetBcast,
-			expectedRoute: &stack.Route{
-				LocalAddress:      ipv4Addr.Address,
-				RemoteAddress:     ipv4SubnetBcast,
-				RemoteLinkAddress: header.EthernetBroadcastAddress,
-				NetProto:          header.IPv4ProtocolNumber,
-				Loop:              stack.PacketOut | stack.PacketLoop,
-			},
+			remoteAddr:                ipv4SubnetBcast,
+			expectedLocalAddress:      ipv4Addr.Address,
+			expectedRemoteAddress:     ipv4SubnetBcast,
+			expectedRemoteLinkAddress: header.EthernetBroadcastAddress,
+			expectedNetProto:          header.IPv4ProtocolNumber,
+			expectedLoop:              stack.PacketOut | stack.PacketLoop,
 		},
 		// Broadcast to a locally attached /31 subnet does not populate the
 		// broadcast MAC.
@@ -3393,13 +3395,11 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 					NIC:         nicID1,
 				},
 			},
-			remoteAddr: ipv4Subnet31Bcast,
-			expectedRoute: &stack.Route{
-				LocalAddress:  ipv4AddrPrefix31.Address,
-				RemoteAddress: ipv4Subnet31Bcast,
-				NetProto:      header.IPv4ProtocolNumber,
-				Loop:          stack.PacketOut,
-			},
+			remoteAddr:            ipv4Subnet31Bcast,
+			expectedLocalAddress:  ipv4AddrPrefix31.Address,
+			expectedRemoteAddress: ipv4Subnet31Bcast,
+			expectedNetProto:      header.IPv4ProtocolNumber,
+			expectedLoop:          stack.PacketOut,
 		},
 		// Broadcast to a locally attached /32 subnet does not populate the
 		// broadcast MAC.
@@ -3415,13 +3415,11 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 					NIC:         nicID1,
 				},
 			},
-			remoteAddr: ipv4Subnet32Bcast,
-			expectedRoute: &stack.Route{
-				LocalAddress:  ipv4AddrPrefix32.Address,
-				RemoteAddress: ipv4Subnet32Bcast,
-				NetProto:      header.IPv4ProtocolNumber,
-				Loop:          stack.PacketOut,
-			},
+			remoteAddr:            ipv4Subnet32Bcast,
+			expectedLocalAddress:  ipv4AddrPrefix32.Address,
+			expectedRemoteAddress: ipv4Subnet32Bcast,
+			expectedNetProto:      header.IPv4ProtocolNumber,
+			expectedLoop:          stack.PacketOut,
 		},
 		// IPv6 has no notion of a broadcast.
 		{
@@ -3436,13 +3434,11 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 					NIC:         nicID1,
 				},
 			},
-			remoteAddr: ipv6SubnetBcast,
-			expectedRoute: &stack.Route{
-				LocalAddress:  ipv6Addr.Address,
-				RemoteAddress: ipv6SubnetBcast,
-				NetProto:      header.IPv6ProtocolNumber,
-				Loop:          stack.PacketOut,
-			},
+			remoteAddr:            ipv6SubnetBcast,
+			expectedLocalAddress:  ipv6Addr.Address,
+			expectedRemoteAddress: ipv6SubnetBcast,
+			expectedNetProto:      header.IPv6ProtocolNumber,
+			expectedLoop:          stack.PacketOut,
 		},
 		// Broadcast to a remote subnet in the route table is send to the next-hop
 		// gateway.
@@ -3459,14 +3455,12 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 					NIC:         nicID1,
 				},
 			},
-			remoteAddr: remNetSubnetBcast,
-			expectedRoute: &stack.Route{
-				LocalAddress:  ipv4Addr.Address,
-				RemoteAddress: remNetSubnetBcast,
-				NextHop:       ipv4Gateway,
-				NetProto:      header.IPv4ProtocolNumber,
-				Loop:          stack.PacketOut,
-			},
+			remoteAddr:            remNetSubnetBcast,
+			expectedLocalAddress:  ipv4Addr.Address,
+			expectedRemoteAddress: remNetSubnetBcast,
+			expectedNextHop:       ipv4Gateway,
+			expectedNetProto:      header.IPv4ProtocolNumber,
+			expectedLoop:          stack.PacketOut,
 		},
 		// Broadcast to an unknown subnet follows the default route. Note that this
 		// is essentially just routing an unknown destination IP, because w/o any
@@ -3484,14 +3478,12 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 					NIC:         nicID1,
 				},
 			},
-			remoteAddr: remNetSubnetBcast,
-			expectedRoute: &stack.Route{
-				LocalAddress:  ipv4Addr.Address,
-				RemoteAddress: remNetSubnetBcast,
-				NextHop:       ipv4Gateway,
-				NetProto:      header.IPv4ProtocolNumber,
-				Loop:          stack.PacketOut,
-			},
+			remoteAddr:            remNetSubnetBcast,
+			expectedLocalAddress:  ipv4Addr.Address,
+			expectedRemoteAddress: remNetSubnetBcast,
+			expectedNextHop:       ipv4Gateway,
+			expectedNetProto:      header.IPv4ProtocolNumber,
+			expectedLoop:          stack.PacketOut,
 		},
 	}
 
@@ -3520,10 +3512,27 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				t.Fatalf("got unexpected address length = %d bytes", l)
 			}
 
-			if r, err := s.FindRoute(unspecifiedNICID, "" /* localAddr */, test.remoteAddr, netProto, false /* multicastLoop */); err != nil {
+			r, err := s.FindRoute(unspecifiedNICID, "" /* localAddr */, test.remoteAddr, netProto, false /* multicastLoop */)
+			if err != nil {
 				t.Fatalf("FindRoute(%d, '', %s, %d): %s", unspecifiedNICID, test.remoteAddr, netProto, err)
-			} else if diff := cmp.Diff(r, test.expectedRoute, cmpopts.IgnoreUnexported(stack.Route{})); diff != "" {
-				t.Errorf("route mismatch (-want +got):\n%s", diff)
+			}
+			if r.LocalAddress != test.expectedLocalAddress {
+				t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, test.expectedLocalAddress)
+			}
+			if r.RemoteAddress != test.expectedRemoteAddress {
+				t.Errorf("got r.RemoteAddress = %s, want = %s", r.RemoteAddress, test.expectedRemoteAddress)
+			}
+			if got := r.RemoteLinkAddress(); got != test.expectedRemoteLinkAddress {
+				t.Errorf("got r.RemoteLinkAddress() = %s, want = %s", got, test.expectedRemoteLinkAddress)
+			}
+			if r.NextHop != test.expectedNextHop {
+				t.Errorf("got r.NextHop = %s, want = %s", r.NextHop, test.expectedNextHop)
+			}
+			if r.NetProto != test.expectedNetProto {
+				t.Errorf("got r.NetProto = %d, want = %d", r.NetProto, test.expectedNetProto)
+			}
+			if r.Loop != test.expectedLoop {
+				t.Errorf("got r.Loop = %x, want = %x", r.Loop, test.expectedLoop)
 			}
 		})
 	}
@@ -4195,7 +4204,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			if got, want := pkt.Proto, test.protocol; got != want {
 				t.Fatalf("pkt.Proto = %d, want %d", got, want)
 			}
-			if got, want := pkt.Route.RemoteLinkAddress, linkAddr2; got != want {
+			if got, want := pkt.Route.RemoteLinkAddress(), linkAddr2; got != want {
 				t.Fatalf("pkt.Route.RemoteAddress = %s, want %s", got, want)
 			}
 			if diff := cmp.Diff(pkt.Pkt.Data.ToView(), buffer.View(test.payload)); diff != "" {
