@@ -39,3 +39,9 @@ func RaceRelease(addr unsafe.Pointer) {
 func RaceReleaseMerge(addr unsafe.Pointer) {
 	runtime.RaceReleaseMerge(addr)
 }
+
+// RaceUncheckedAtomicCompareAndSwapUintptr is equivalent to
+// sync/atomic.CompareAndSwapUintptr, but is not checked by the race detector.
+// This is necessary when implementing gopark callbacks, since no race context
+// is available during their execution.
+func RaceUncheckedAtomicCompareAndSwapUintptr(ptr *uintptr, old, new uintptr) bool

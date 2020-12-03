@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build go1.11
-// +build !go1.17
-
-// Check go:linkname function signatures when updating Go version.
-
 // Package sleep allows goroutines to efficiently sleep on multiple sources of
 // notifications (wakers). It offers O(1) complexity, which is different from
 // multi-channel selects which have O(n) complexity (where n is the number of
@@ -90,12 +85,6 @@ var (
 	// wakers that are asserted.
 	assertedSleeper Sleeper
 )
-
-//go:linkname gopark runtime.gopark
-func gopark(unlockf func(uintptr, *uintptr) bool, wg *uintptr, reason uint8, traceEv byte, traceskip int)
-
-//go:linkname goready runtime.goready
-func goready(g uintptr, traceskip int)
 
 // Sleeper allows a goroutine to sleep and receive wake up notifications from
 // Wakers in an efficient way.
@@ -189,7 +178,7 @@ func (s *Sleeper) nextWaker(block bool) *Waker {
 			// See:runtime2.go in the go runtime package for
 			// the values to pass as the waitReason here.
 			const waitReasonSelect = 9
-			gopark(commitSleep, &s.waitingG, waitReasonSelect, traceEvGoBlockSelect, 0)
+			sync.Gopark(commitSleep, unsafe.Pointer(&s.waitingG), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0)
 		}
 
 		// Pull the shared list out and reverse it in the local
@@ -210,6 +199,18 @@ func (s *Sleeper) nextWaker(block bool) *Waker {
 	s.localList = w.next
 
 	return w
+}
+
+// commitSleep signals to wakers that the given g is now sleeping. Wakers can
+// then fetch it and wake it.
+//
+// The commit may fail if wakers have been asserted after our last check, in
+// which case they will have set s.waitingG to zero.
+//
+//go:norace
+//go:nosplit
+func commitSleep(g uintptr, waitingG unsafe.Pointer) bool {
+	return sync.RaceUncheckedAtomicCompareAndSwapUintptr((*uintptr)(waitingG), preparingG, g)
 }
 
 // Fetch fetches the next wake-up notification. If a notification is immediately
@@ -311,7 +312,7 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
 	case 0, preparingG:
 	default:
 		// We managed to get a G. Wake it up.
-		goready(g, 0)
+		sync.Goready(g, 0)
 	}
 }
 
