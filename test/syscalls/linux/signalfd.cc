@@ -126,7 +126,7 @@ TEST_P(SignalfdTest, Blocking) {
 
   // Shared tid variable.
   absl::Mutex mu;
-  bool has_tid;
+  bool has_tid = false;
   pid_t tid;
 
   // Start a thread reading.
