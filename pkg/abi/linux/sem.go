@@ -41,6 +41,12 @@ const (
 	SEMMNS = SEMMNI * SEMMSL
 	SEMOPM = 500
 	SEMVMX = 32767
+	SEMAEM = SEMVMX
+
+	// followings are unused in kernel
+	SEMUME = SEMOPM
+	SEMMNU = SEMMNS
+	SEMMAP = SEMMNS
 )
 
 const SEM_UNDO = 0x1000
@@ -52,4 +58,22 @@ type Sembuf struct {
 	SemNum uint16
 	SemOp  int16
 	SemFlg int16
+}
+
+// SemInfo is equivalent to struct seminfo.
+//
+// Source: include/uapi/linux/sem.h
+//
+// +marshal
+type SemInfo struct {
+	SemMap uint32
+	SemMni uint32
+	SemMns uint32
+	SemMnu uint32
+	SemMsl uint32
+	SemOpm uint32
+	SemUme uint32
+	SemUsz uint32
+	SemVmx uint32
+	SemAem uint32
 }

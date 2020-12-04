@@ -773,6 +773,21 @@ TEST(SemaphoreTest, SemopGetncntOnSignal_NoRandomSave) {
   EXPECT_EQ(semctl(sem.get(), 0, GETNCNT), 0);
 }
 
+TEST(SemaphoreTest, IpcInfo) {
+  struct seminfo info;
+  ASSERT_THAT(semctl(0, 0, IPC_INFO, &info), SyscallSucceeds());
+
+  EXPECT_EQ(info.semmap, 1024000000);
+  EXPECT_EQ(info.semmni, 32000);
+  EXPECT_EQ(info.semmns, 1024000000);
+  EXPECT_EQ(info.semmnu, 1024000000);
+  EXPECT_EQ(info.semmsl, 32000);
+  EXPECT_EQ(info.semopm, 500);
+  EXPECT_EQ(info.semume, 500);
+  EXPECT_EQ(info.semvmx, 32767);
+  EXPECT_EQ(info.semaem, 32767);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
