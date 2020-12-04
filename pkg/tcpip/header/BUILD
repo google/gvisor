@@ -42,6 +42,7 @@ go_test(
     srcs = [
         "checksum_test.go",
         "igmp_test.go",
+        "ipv4_test.go",
         "ipv6_test.go",
         "ipversion_test.go",
         "tcp_test.go",

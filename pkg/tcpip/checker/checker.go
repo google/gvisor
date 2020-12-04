@@ -217,6 +217,42 @@ func IPv4Options(want header.IPv4Options) NetworkChecker {
 	}
 }
 
+// IPv4RouterAlert returns a checker that checks that the RouterAlert option is
+// set in an IPv4 packet.
+func IPv4RouterAlert() NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+		ip, ok := h[0].(header.IPv4)
+		if !ok {
+			t.Fatalf("unexpected network header passed to checker, got = %T, want = header.IPv4", h[0])
+		}
+		iterator := ip.Options().MakeIterator()
+		for {
+			opt, done, err := iterator.Next()
+			if err != nil {
+				t.Fatalf("error acquiring next IPv4 option %s", err)
+			}
+			if done {
+				break
+			}
+			if opt.Type() != header.IPv4OptionRouterAlertType {
+				continue
+			}
+			want := [header.IPv4OptionRouterAlertLength]byte{
+				byte(header.IPv4OptionRouterAlertType),
+				header.IPv4OptionRouterAlertLength,
+				header.IPv4OptionRouterAlertValue,
+				header.IPv4OptionRouterAlertValue,
+			}
+			if diff := cmp.Diff(want[:], opt.Contents()); diff != "" {
+				t.Errorf("router alert option mismatch (-want +got):\n%s", diff)
+			}
+			return
+		}
+		t.Errorf("failed to find router alert option in %v", ip.Options())
+	}
+}
+
 // FragmentOffset creates a checker that checks the FragmentOffset field.
 func FragmentOffset(offset uint16) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {

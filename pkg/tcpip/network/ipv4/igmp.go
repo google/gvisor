@@ -250,10 +250,10 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 		Protocol: header.IGMPProtocolNumber,
 		TTL:      header.IGMPTTL,
 		TOS:      stack.DefaultTOS,
+	}, header.IPv4OptionsSerializer{
+		&header.IPv4SerializableRouterAlertOption{},
 	})
 
-	// TODO(b/162198658): set the ROUTER_ALERT option when sending Host
-	// Membership Reports.
 	sent := igmp.ep.protocol.stack.Stats().IGMP.PacketsSent
 	if err := igmp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv4Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 		sent.Dropped.Increment()

@@ -90,6 +90,7 @@ func validateIGMPPacket(t *testing.T, p channel.PacketInfo, remoteAddress tcpip.
 		checker.DstAddr(remoteAddress),
 		// TTL for an IGMP message must be 1 as per RFC 2236 section 2.
 		checker.TTL(1),
+		checker.IPv4RouterAlert(),
 		checker.IGMP(
 			checker.IGMPType(header.IGMPType(igmpType)),
 			checker.IGMPMaxRespTime(header.DecisecondToDuration(maxRespTime)),
