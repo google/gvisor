@@ -318,7 +318,6 @@ run-benchmark: load-benchmarks-images ## Runs single benchmark and optionally se
 	rm -rf $$T; \
 	exit $$rc
 .PHONY: run-benchmark
-.PHONY: load-benchmarks-images
 
 ##
 ## Website & documentation helpers.
