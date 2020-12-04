@@ -151,7 +151,7 @@ tests: unit-tests syscall-tests
 
 integration-tests: ## Run all standard integration tests.
 integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
-integration-tests: do-tests kvm-tests containerd-test-1.3.4
+integration-tests: do-tests kvm-tests containerd-test-1.3.9
 .PHONY: integration-tests
 
 network-tests: ## Run all networking integration tests.
@@ -261,7 +261,7 @@ containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-b
 # actually drive the tests. The v1 API is tested exclusively through 1.2.13.
 containerd-tests: ## Runs all supported containerd version tests.
 containerd-tests: containerd-test-1.2.13
-containerd-tests: containerd-test-1.3.4
+containerd-tests: containerd-test-1.3.9
 containerd-tests: containerd-test-1.4.0-beta.0
 
 ##
