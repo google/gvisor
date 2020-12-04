@@ -298,7 +298,7 @@ func (b NDPOptions) Iter(check bool) (NDPOptionIterator, error) {
 	return it, nil
 }
 
-// Serialize serializes the provided list of NDP options into o.
+// Serialize serializes the provided list of NDP options into b.
 //
 // Note, b must be of sufficient size to hold all the options in s. See
 // NDPOptionsSerializer.Length for details on the getting the total size
