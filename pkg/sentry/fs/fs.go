@@ -65,7 +65,7 @@ var (
 	// runs with the lock held for reading. AsyncBarrier will take the lock
 	// for writing, thus ensuring that all Async work completes before
 	// AsyncBarrier returns.
-	workMu sync.RWMutex
+	workMu sync.CrossGoroutineRWMutex
 
 	// asyncError is used to store up to one asynchronous execution error.
 	asyncError = make(chan error, 1)
