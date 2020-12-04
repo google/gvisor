@@ -112,14 +112,6 @@ TEST(CreateTest, CreatFileWithOTruncAndReadOnly) {
   ASSERT_THAT(close(dirfd), SyscallSucceeds());
 }
 
-TEST(CreateTest, CreateFailsOnUnpermittedDir) {
-  // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
-  // always override directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_THAT(open("/foo", O_CREAT | O_RDWR, 0644),
-              SyscallFailsWithErrno(EACCES));
-}
-
 TEST(CreateTest, CreateFailsOnDirWithoutWritePerms) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // always override directory permissions.
