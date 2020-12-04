@@ -146,8 +146,15 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		v, err := getNCnt(t, id, num)
 		return uintptr(v), nil, err
 
-	case linux.IPC_INFO,
-		linux.SEM_INFO,
+	case linux.IPC_INFO:
+		buf := args[3].Pointer()
+		r := t.IPCNamespace().SemaphoreRegistry()
+		info := r.IPCInfo()
+		_, err := info.CopyOut(t, buf)
+		// TODO(gvisor.dev/issue/137): Return the index of the highest used entry.
+		return 0, nil, err
+
+	case linux.SEM_INFO,
 		linux.SEM_STAT,
 		linux.SEM_STAT_ANY:
 
