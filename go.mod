@@ -11,7 +11,7 @@ require (
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422 // indirect
 	github.com/cilium/ebpf v0.0.0-20200110133405-4032b1d8aae3 // indirect
 	github.com/containerd/cgroups v0.0.0-20181219155423-39b18af02c41 // indirect
-	github.com/containerd/containerd v1.3.4 // indirect
+	github.com/containerd/containerd v1.3.9 // indirect
 	github.com/containerd/continuity v0.0.0-20200928162600-f2cc35102c2a // indirect
 	github.com/containerd/fifo v0.0.0-20191213151349-ff969a566b00 // indirect
 	github.com/containerd/go-runc v0.0.0-20200220073739-7016d3ce2328 // indirect
