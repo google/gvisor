@@ -193,8 +193,8 @@ go_repository(
     name = "com_github_containerd_containerd",
     build_file_proto_mode = "disable",
     importpath = "github.com/containerd/containerd",
-    sum = "h1:3o0smo5SKY7H6AJCmJhsnCjR2/V2T8VmiHt7seN2/kI=",
-    version = "v1.3.4",
+    sum = "h1:K2U/F4jGAMBqeUssfgJRbFuomLcS2Fxo1vR3UM/Mbh8=",
+    version = "v1.3.9",
 )
 
 go_repository(
