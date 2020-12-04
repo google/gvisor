@@ -15,6 +15,7 @@
 package cgroup
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -728,5 +729,32 @@ func TestLoadPaths(t *testing.T) {
 				t.Errorf("Unexpected controller %q: %q", k, v)
 			}
 		})
+	}
+}
+
+func TestLegacyCgroupState(t *testing.T) {
+	legacyState := cgroupLegacy{
+		Name: "test",
+		Own:  true,
+	}
+
+	data, err := json.Marshal(legacyState)
+	if err != nil {
+		t.Fatalf("json.Marshal -> %s", err)
+	}
+
+	c := Cgroup{}
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	for ctrlr, _ := range controllers {
+		v, ok := c.Own[ctrlr]
+		if !ok {
+			t.Fatalf("%s isn't in c.Sandbox.Cgroup.Own", ctrlr)
+		}
+		if !v {
+			t.Fatalf("c.Sandbox.Cgroup.Own[%s] is false", ctrlr)
+		}
 	}
 }

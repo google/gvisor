@@ -19,6 +19,7 @@ package cgroup
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -231,10 +232,43 @@ func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
 // Cgroup represents a group inside all controllers. For example:
 //   Name='/foo/bar' maps to /sys/fs/cgroup/<controller>/foo/bar on
 //   all controllers.
-type Cgroup struct {
+type Cgroup cgroup
+
+type cgroup struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
 	Own     map[string]bool   `json:"own"`
+}
+
+// cgroupLegacy is the previous version of the Cgroup structure.
+//
+// FIXME(b/174766718): Need to delete it after a few releases.
+type cgroupLegacy struct {
+	Name    string            `json:"name"`
+	Parents map[string]string `json:"parents"`
+	Own     bool              `json:"own"`
+}
+
+// UnmarshalJSON parses data to the cgroup structure and if this fails it tries
+// to parse data to the cgroupLegacy structure to support the old format.
+func (c *Cgroup) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, (*cgroup)(c)); err == nil {
+		return nil
+	}
+
+	cl := cgroupLegacy{}
+	if err := json.Unmarshal(data, &cl); err != nil {
+		return err
+	}
+
+	c.Name = cl.Name
+	c.Parents = cl.Parents
+	c.Own = make(map[string]bool)
+	for ctrlr, _ := range controllers {
+		c.Own[ctrlr] = cl.Own
+	}
+
+	return nil
 }
 
 // New creates a new Cgroup instance if the spec includes a cgroup path.
