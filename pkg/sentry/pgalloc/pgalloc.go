@@ -423,11 +423,7 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 	}
 
 	if f.opts.ManualZeroing {
-		if err := f.forEachMappingSlice(fr, func(bs []byte) {
-			for i := range bs {
-				bs[i] = 0
-			}
-		}); err != nil {
+		if err := f.manuallyZero(fr); err != nil {
 			return memmap.FileRange{}, err
 		}
 	}
@@ -560,19 +556,39 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) error {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 
+	if f.opts.ManualZeroing {
+		// FALLOC_FL_PUNCH_HOLE may not zero pages if ManualZeroing is in
+		// effect.
+		if err := f.manuallyZero(fr); err != nil {
+			return err
+		}
+	} else {
+		if err := f.decommitFile(fr); err != nil {
+			return err
+		}
+	}
+
+	f.markDecommitted(fr)
+	return nil
+}
+
+func (f *MemoryFile) manuallyZero(fr memmap.FileRange) error {
+	return f.forEachMappingSlice(fr, func(bs []byte) {
+		for i := range bs {
+			bs[i] = 0
+		}
+	})
+}
+
+func (f *MemoryFile) decommitFile(fr memmap.FileRange) error {
 	// "After a successful call, subsequent reads from this range will
 	// return zeroes. The FALLOC_FL_PUNCH_HOLE flag must be ORed with
 	// FALLOC_FL_KEEP_SIZE in mode ..." - fallocate(2)
-	err := syscall.Fallocate(
+	return syscall.Fallocate(
 		int(f.file.Fd()),
 		_FALLOC_FL_PUNCH_HOLE|_FALLOC_FL_KEEP_SIZE,
 		int64(fr.Start),
 		int64(fr.Length()))
-	if err != nil {
-		return err
-	}
-	f.markDecommitted(fr)
-	return nil
 }
 
 func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
@@ -1044,20 +1060,20 @@ func (f *MemoryFile) runReclaim() {
 			break
 		}
 
-		if err := f.Decommit(fr); err != nil {
-			log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
-			// Zero the pages manually. This won't reduce memory usage, but at
-			// least ensures that the pages will be zero when reallocated.
-			f.forEachMappingSlice(fr, func(bs []byte) {
-				for i := range bs {
-					bs[i] = 0
+		// If ManualZeroing is in effect, pages will be zeroed on allocation
+		// and may not be freed by decommitFile, so calling decommitFile is
+		// unnecessary.
+		if !f.opts.ManualZeroing {
+			if err := f.decommitFile(fr); err != nil {
+				log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
+				// Zero the pages manually. This won't reduce memory usage, but at
+				// least ensures that the pages will be zero when reallocated.
+				if err := f.manuallyZero(fr); err != nil {
+					panic(fmt.Sprintf("Reclaim failed to decommit or zero %v: %v", fr, err))
 				}
-			})
-			// Pretend the pages were decommitted even though they weren't,
-			// since the memory accounting implementation has no idea how to
-			// deal with this.
-			f.markDecommitted(fr)
+			}
 		}
+		f.markDecommitted(fr)
 		f.markReclaimed(fr)
 	}
 
