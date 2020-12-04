@@ -176,6 +176,22 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 	return r.newSet(ctx, key, owner, owner, perms, nsems)
 }
 
+// IPCInfo returns information about system-wide semaphore limits and parameters.
+func (r *Registry) IPCInfo() *linux.SemInfo {
+	return &linux.SemInfo{
+		SemMap: linux.SEMMAP,
+		SemMni: linux.SEMMNI,
+		SemMns: linux.SEMMNS,
+		SemMnu: linux.SEMMNU,
+		SemMsl: linux.SEMMSL,
+		SemOpm: linux.SEMOPM,
+		SemUme: linux.SEMUME,
+		SemUsz: 0, // SemUsz not supported.
+		SemVmx: linux.SEMVMX,
+		SemAem: linux.SEMAEM,
+	}
+}
+
 // RemoveID removes set with give 'id' from the registry and marks the set as
 // dead. All waiters will be awakened and fail.
 func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
