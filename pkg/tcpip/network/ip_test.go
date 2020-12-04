@@ -1089,7 +1089,19 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 	dataBuf := [dataLen]byte{1, 2, 3, 4}
 	data := dataBuf[:]
 
-	ipv4Options := header.IPv4Options{0, 1, 0, 1}
+	ipv4Options := header.IPv4OptionsSerializer{
+		&header.IPv4SerializableListEndOption{},
+		&header.IPv4SerializableNOPOption{},
+		&header.IPv4SerializableListEndOption{},
+		&header.IPv4SerializableNOPOption{},
+	}
+
+	expectOptions := header.IPv4Options{
+		byte(header.IPv4OptionListEndType),
+		byte(header.IPv4OptionNOPType),
+		byte(header.IPv4OptionListEndType),
+		byte(header.IPv4OptionNOPType),
+	}
 
 	ipv6FragmentExtHdrBuf := [header.IPv6FragmentExtHdrLength]byte{transportProto, 0, 62, 4, 1, 2, 3, 4}
 	ipv6FragmentExtHdr := ipv6FragmentExtHdrBuf[:]
@@ -1239,7 +1251,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			nicAddr:      localIPv4Addr,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
-				ipHdrLen := header.IPv4MinimumSize + ipv4Options.SizeWithPadding()
+				ipHdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
 				totalLen := ipHdrLen + len(data)
 				hdr := buffer.NewPrependable(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
@@ -1262,7 +1274,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 
 				netHdr := pkt.NetworkHeader()
 
-				hdrLen := header.IPv4MinimumSize + len(ipv4Options)
+				hdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
 				if len(netHdr.View()) != hdrLen {
 					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), hdrLen)
 				}
@@ -1272,7 +1284,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					checker.DstAddr(remoteIPv4Addr),
 					checker.IPv4HeaderLength(hdrLen),
 					checker.IPFullLength(uint16(hdrLen+len(data))),
-					checker.IPv4Options(ipv4Options),
+					checker.IPv4Options(expectOptions),
 					checker.IPPayload(data),
 				)
 			},
@@ -1284,7 +1296,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			nicAddr:      localIPv4Addr,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
-				ip := header.IPv4(make([]byte, header.IPv4MinimumSize+ipv4Options.SizeWithPadding()))
+				ip := header.IPv4(make([]byte, header.IPv4MinimumSize+ipv4Options.Length()))
 				ip.Encode(&header.IPv4Fields{
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
@@ -1303,7 +1315,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 
 				netHdr := pkt.NetworkHeader()
 
-				hdrLen := header.IPv4MinimumSize + len(ipv4Options)
+				hdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
 				if len(netHdr.View()) != hdrLen {
 					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), hdrLen)
 				}
@@ -1313,7 +1325,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					checker.DstAddr(remoteIPv4Addr),
 					checker.IPv4HeaderLength(hdrLen),
 					checker.IPFullLength(uint16(hdrLen+len(data))),
-					checker.IPv4Options(ipv4Options),
+					checker.IPv4Options(expectOptions),
 					checker.IPPayload(data),
 				)
 			},
