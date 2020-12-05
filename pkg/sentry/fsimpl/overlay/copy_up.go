@@ -16,7 +16,6 @@ package overlay
 
 import (
 	"fmt"
-	"io"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -129,25 +128,9 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 			return err
 		}
 		defer newFD.DecRef(ctx)
-		bufIOSeq := usermem.BytesIOSequence(make([]byte, 32*1024)) // arbitrary buffer size
-		for {
-			readN, readErr := oldFD.Read(ctx, bufIOSeq, vfs.ReadOptions{})
-			if readErr != nil && readErr != io.EOF {
-				cleanupUndoCopyUp()
-				return readErr
-			}
-			total := int64(0)
-			for total < readN {
-				writeN, writeErr := newFD.Write(ctx, bufIOSeq.DropFirst64(total), vfs.WriteOptions{})
-				total += writeN
-				if writeErr != nil {
-					cleanupUndoCopyUp()
-					return writeErr
-				}
-			}
-			if readErr == io.EOF {
-				break
-			}
+		if _, err := vfs.CopyRegularFileData(ctx, newFD, oldFD); err != nil {
+			cleanupUndoCopyUp()
+			return err
 		}
 		d.mapsMu.Lock()
 		defer d.mapsMu.Unlock()
