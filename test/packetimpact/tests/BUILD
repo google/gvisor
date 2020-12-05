@@ -366,6 +366,16 @@ packetimpact_testbench(
     ],
 )
 
+packetimpact_testbench(
+    name = "tcp_zero_receive_window",
+    srcs = ["tcp_zero_receive_window_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 validate_all_tests()
 
 [packetimpact_go_test(

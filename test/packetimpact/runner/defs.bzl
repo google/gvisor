@@ -224,6 +224,9 @@ ALL_TESTS = [
         name = "tcp_user_timeout",
     ),
     PacketimpactTestInfo(
+        name = "tcp_zero_receive_window",
+    ),
+    PacketimpactTestInfo(
         name = "tcp_queue_receive_in_syn_sent",
     ),
     PacketimpactTestInfo(

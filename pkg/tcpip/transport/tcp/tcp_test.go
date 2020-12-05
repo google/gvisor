@@ -6098,10 +6098,13 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// Introduce a 25ms latency by delaying the first byte.
 	latency := 25 * time.Millisecond
 	time.Sleep(latency)
-	rawEP.SendPacketWithTS([]byte{1}, tsVal)
+	// Send an initial payload with atleast segment overhead size. The receive
+	// window would not grow for smaller segments.
+	rawEP.SendPacketWithTS(make([]byte, tcp.SegSize), tsVal)
 
 	pkt := rawEP.VerifyAndReturnACKWithTS(tsVal)
 	rcvWnd := header.TCP(header.IPv4(pkt).Payload()).WindowSize()
+
 	time.Sleep(25 * time.Millisecond)
 
 	// Allocate a large enough payload for the test.
