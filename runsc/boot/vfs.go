@@ -250,36 +250,76 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 	overlayOpts := *lowerOpts
 	overlayOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{}
 
-	// Next mount upper and lower. Upper is a tmpfs mount to keep all
-	// modifications inside the sandbox.
-	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %v", upperOpts, err)
-	}
-	cu := cleanup.Make(func() { upper.DecRef(ctx) })
-	defer cu.Clean()
-
 	// All writes go to the upper layer, be paranoid and make lower readonly.
 	lowerOpts.ReadOnly = true
 	lower, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, lowerFSName, lowerOpts)
 	if err != nil {
 		return nil, nil, err
 	}
-	cu.Add(func() { lower.DecRef(ctx) })
+	cu := cleanup.Make(func() { lower.DecRef(ctx) })
+	defer cu.Clean()
 
-	// Propagate the lower layer's root's owner, group, and mode to the upper
-	// layer's root for consistency with VFS1.
-	upperRootVD := vfs.MakeVirtualDentry(upper, upper.Root())
+	// Determine the lower layer's root's type.
 	lowerRootVD := vfs.MakeVirtualDentry(lower, lower.Root())
 	stat, err := c.k.VFS().StatAt(ctx, creds, &vfs.PathOperation{
 		Root:  lowerRootVD,
 		Start: lowerRootVD,
 	}, &vfs.StatOptions{
-		Mask: linux.STATX_UID | linux.STATX_GID | linux.STATX_MODE,
+		Mask: linux.STATX_UID | linux.STATX_GID | linux.STATX_MODE | linux.STATX_TYPE,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to stat lower layer's root: %v", err)
 	}
+	if stat.Mask&linux.STATX_TYPE == 0 {
+		return nil, nil, fmt.Errorf("failed to get file type of lower layer's root")
+	}
+	rootType := stat.Mode & linux.S_IFMT
+	if rootType != linux.S_IFDIR && rootType != linux.S_IFREG {
+		return nil, nil, fmt.Errorf("lower layer's root has unsupported file type %v", rootType)
+	}
+
+	// Upper is a tmpfs mount to keep all modifications inside the sandbox.
+	upperOpts.GetFilesystemOptions.InternalData = tmpfs.FilesystemOpts{
+		RootFileType: uint16(rootType),
+	}
+	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %v", upperOpts, err)
+	}
+	cu.Add(func() { upper.DecRef(ctx) })
+
+	// If the overlay mount consists of a regular file, copy up its contents
+	// from the lower layer, since in the overlay the otherwise-empty upper
+	// layer file will take precedence.
+	upperRootVD := vfs.MakeVirtualDentry(upper, upper.Root())
+	if rootType == linux.S_IFREG {
+		lowerFD, err := c.k.VFS().OpenAt(ctx, creds, &vfs.PathOperation{
+			Root:  lowerRootVD,
+			Start: lowerRootVD,
+		}, &vfs.OpenOptions{
+			Flags: linux.O_RDONLY,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open lower layer root for copying: %v", err)
+		}
+		defer lowerFD.DecRef(ctx)
+		upperFD, err := c.k.VFS().OpenAt(ctx, creds, &vfs.PathOperation{
+			Root:  upperRootVD,
+			Start: upperRootVD,
+		}, &vfs.OpenOptions{
+			Flags: linux.O_WRONLY,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open upper layer root for copying: %v", err)
+		}
+		defer upperFD.DecRef(ctx)
+		if _, err := vfs.CopyRegularFileData(ctx, upperFD, lowerFD); err != nil {
+			return nil, nil, fmt.Errorf("failed to copy up overlay file: %v", err)
+		}
+	}
+
+	// Propagate the lower layer's root's owner, group, and mode to the upper
+	// layer's root for consistency with VFS1.
 	err = c.k.VFS().SetStatAt(ctx, creds, &vfs.PathOperation{
 		Root:  upperRootVD,
 		Start: upperRootVD,
