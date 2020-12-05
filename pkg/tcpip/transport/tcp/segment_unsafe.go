@@ -19,5 +19,6 @@ import (
 )
 
 const (
-	segSize = int(unsafe.Sizeof(segment{}))
+	// SegSize is the minimal size of the segment overhead.
+	SegSize = int(unsafe.Sizeof(segment{}))
 )

@@ -16,6 +16,7 @@ package tcp
 
 import (
 	"container/heap"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -47,6 +48,10 @@ type receiver struct {
 	rcvWUP seqnum.Value
 
 	rcvWndScale uint8
+
+	// prevBufused is the snapshot of endpoint rcvBufUsed taken when we
+	// advertise a receive window.
+	prevBufUsed int
 
 	closed bool
 
@@ -80,9 +85,9 @@ func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 	// outgoing packets, we should use what we have advertised for acceptability
 	// test.
 	scaledWindowSize := r.rcvWnd >> r.rcvWndScale
-	if scaledWindowSize > 0xffff {
+	if scaledWindowSize > math.MaxUint16 {
 		// This is what we actually put in the Window field.
-		scaledWindowSize = 0xffff
+		scaledWindowSize = math.MaxUint16
 	}
 	advertisedWindowSize := scaledWindowSize << r.rcvWndScale
 	return header.Acceptable(segSeq, segLen, r.rcvNxt, r.rcvNxt.Add(advertisedWindowSize))
@@ -106,6 +111,34 @@ func (r *receiver) currentWindow() (curWnd seqnum.Size) {
 func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	newWnd := r.ep.selectWindow()
 	curWnd := r.currentWindow()
+	unackLen := int(r.ep.snd.maxSentAck.Size(r.rcvNxt))
+	bufUsed := r.ep.receiveBufferUsed()
+
+	// Grow the right edge of the window only for payloads larger than the
+	// the segment overhead OR if the application is actively consuming data.
+	//
+	// Avoiding growing the right edge otherwise, addresses a situation below:
+	// An application has been slow in reading data and we have burst of
+	// incoming segments lengths < segment overhead. Here, our available free
+	// memory would reduce drastically when compared to the advertised receive
+	// window.
+	//
+	// For example: With incoming 512 bytes segments, segment overhead of
+	// 552 bytes (at the time of writing this comment), with receive window
+	// starting from 1MB and with rcvAdvWndScale being 1, buffer would reach 0
+	// when the curWnd is still 19436 bytes, because for every incoming segment
+	// newWnd would reduce by (552+512) >> rcvAdvWndScale (current value 1),
+	// while curWnd would reduce by 512 bytes.
+	// Such a situation causes us to keep tail dropping the incoming segments
+	// and never advertise zero receive window to the peer.
+	//
+	// Linux does a similar check for minimal sk_buff size (128):
+	// https://github.com/torvalds/linux/blob/d5beb3140f91b1c8a3d41b14d729aefa4dcc58bc/net/ipv4/tcp_input.c#L783
+	//
+	// Also, if the application is reading the data, we keep growing the right
+	// edge, as we are still advertising a window that we think can be serviced.
+	toGrow := unackLen >= SegSize || bufUsed <= r.prevBufUsed
+
 	// Update rcvAcc only if new window is > previously advertised window. We
 	// should never shrink the acceptable sequence space once it has been
 	// advertised the peer. If we shrink the acceptable sequence space then we
@@ -115,7 +148,7 @@ func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	// rcvWUP       rcvNxt         rcvAcc          new rcvAcc
 	//               <=====curWnd ===>
 	//               <========= newWnd > curWnd ========= >
-	if r.rcvNxt.Add(seqnum.Size(curWnd)).LessThan(r.rcvNxt.Add(seqnum.Size(newWnd))) {
+	if r.rcvNxt.Add(seqnum.Size(curWnd)).LessThan(r.rcvNxt.Add(seqnum.Size(newWnd))) && toGrow {
 		// If the new window moves the right edge, then update rcvAcc.
 		r.rcvAcc = r.rcvNxt.Add(seqnum.Size(newWnd))
 	} else {
@@ -130,10 +163,23 @@ func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	// receiver's estimated RTT.
 	r.rcvWnd = newWnd
 	r.rcvWUP = r.rcvNxt
+	r.prevBufUsed = bufUsed
 	scaledWnd := r.rcvWnd >> r.rcvWndScale
 	if scaledWnd == 0 {
 		// Increment a metric if we are advertising an actual zero window.
 		r.ep.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
+	}
+
+	// If we started off with a window larger than what can he held in
+	// the 16bit window field, we ceil the value to the max value.
+	// While ceiling, we still do not want to grow the right edge when
+	// not applicable.
+	if scaledWnd > math.MaxUint16 {
+		if toGrow {
+			scaledWnd = seqnum.Size(math.MaxUint16)
+		} else {
+			scaledWnd = seqnum.Size(uint16(scaledWnd))
+		}
 	}
 	return r.rcvNxt, scaledWnd
 }

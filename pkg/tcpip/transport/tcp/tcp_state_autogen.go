@@ -447,6 +447,7 @@ func (r *receiver) StateFields() []string {
 		"rcvWnd",
 		"rcvWUP",
 		"rcvWndScale",
+		"prevBufUsed",
 		"closed",
 		"pendingRcvdSegments",
 		"pendingBufUsed",
@@ -459,16 +460,17 @@ func (r *receiver) beforeSave() {}
 func (r *receiver) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	var lastRcvdAckTimeValue unixTime = r.saveLastRcvdAckTime()
-	stateSinkObject.SaveValue(9, lastRcvdAckTimeValue)
+	stateSinkObject.SaveValue(10, lastRcvdAckTimeValue)
 	stateSinkObject.Save(0, &r.ep)
 	stateSinkObject.Save(1, &r.rcvNxt)
 	stateSinkObject.Save(2, &r.rcvAcc)
 	stateSinkObject.Save(3, &r.rcvWnd)
 	stateSinkObject.Save(4, &r.rcvWUP)
 	stateSinkObject.Save(5, &r.rcvWndScale)
-	stateSinkObject.Save(6, &r.closed)
-	stateSinkObject.Save(7, &r.pendingRcvdSegments)
-	stateSinkObject.Save(8, &r.pendingBufUsed)
+	stateSinkObject.Save(6, &r.prevBufUsed)
+	stateSinkObject.Save(7, &r.closed)
+	stateSinkObject.Save(8, &r.pendingRcvdSegments)
+	stateSinkObject.Save(9, &r.pendingBufUsed)
 }
 
 func (r *receiver) afterLoad() {}
@@ -480,10 +482,11 @@ func (r *receiver) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &r.rcvWnd)
 	stateSourceObject.Load(4, &r.rcvWUP)
 	stateSourceObject.Load(5, &r.rcvWndScale)
-	stateSourceObject.Load(6, &r.closed)
-	stateSourceObject.Load(7, &r.pendingRcvdSegments)
-	stateSourceObject.Load(8, &r.pendingBufUsed)
-	stateSourceObject.LoadValue(9, new(unixTime), func(y interface{}) { r.loadLastRcvdAckTime(y.(unixTime)) })
+	stateSourceObject.Load(6, &r.prevBufUsed)
+	stateSourceObject.Load(7, &r.closed)
+	stateSourceObject.Load(8, &r.pendingRcvdSegments)
+	stateSourceObject.Load(9, &r.pendingBufUsed)
+	stateSourceObject.LoadValue(10, new(unixTime), func(y interface{}) { r.loadLastRcvdAckTime(y.(unixTime)) })
 }
 
 func (r *renoState) StateTypeName() string {

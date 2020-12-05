@@ -16,6 +16,7 @@ package tcp
 
 import (
 	"encoding/binary"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/rand"
@@ -133,7 +134,7 @@ func FindWndScale(wnd seqnum.Size) int {
 		return 0
 	}
 
-	max := seqnum.Size(0xffff)
+	max := seqnum.Size(math.MaxUint16)
 	s := 0
 	for wnd > max && s < header.MaxWndScale {
 		s++
@@ -818,8 +819,8 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 	data = data.Clone(nil)
 
 	optLen := len(tf.opts)
-	if tf.rcvWnd > 0xffff {
-		tf.rcvWnd = 0xffff
+	if tf.rcvWnd > math.MaxUint16 {
+		tf.rcvWnd = math.MaxUint16
 	}
 
 	mss := int(gso.MSS)
@@ -863,8 +864,8 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 // network endpoint and under the provided identity.
 func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) *tcpip.Error {
 	optLen := len(tf.opts)
-	if tf.rcvWnd > 0xffff {
-		tf.rcvWnd = 0xffff
+	if tf.rcvWnd > math.MaxUint16 {
+		tf.rcvWnd = math.MaxUint16
 	}
 
 	if r.Loop&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
