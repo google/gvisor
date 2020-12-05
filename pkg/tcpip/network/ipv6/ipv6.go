@@ -263,7 +263,7 @@ func (e *endpoint) Enable() *tcpip.Error {
 	// Addresses may have aleady completed DAD but in the time since the endpoint
 	// was last enabled, other devices may have acquired the same addresses.
 	var err *tcpip.Error
-	e.mu.addressableEndpointState.ReadOnly().ForEach(func(addressEndpoint stack.AddressEndpoint) bool {
+	e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		addr := addressEndpoint.AddressWithPrefix().Address
 		if !header.IsV6UnicastAddress(addr) {
 			return true
@@ -357,7 +357,7 @@ func (e *endpoint) disableLocked() {
 // Precondition: e.mu must be write locked.
 func (e *endpoint) stopDADForPermanentAddressesLocked() {
 	// Stop DAD for all the tentative unicast addresses.
-	e.mu.addressableEndpointState.ReadOnly().ForEach(func(addressEndpoint stack.AddressEndpoint) bool {
+	e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		if addressEndpoint.GetKind() != stack.PermanentTentative {
 			return true
 		}
@@ -1261,7 +1261,7 @@ func (e *endpoint) hasPermanentAddressRLocked(addr tcpip.Address) bool {
 //
 // Precondition: e.mu must be read or write locked.
 func (e *endpoint) getAddressRLocked(localAddr tcpip.Address) stack.AddressEndpoint {
-	return e.mu.addressableEndpointState.ReadOnly().Lookup(localAddr)
+	return e.mu.addressableEndpointState.GetAddress(localAddr)
 }
 
 // MainAddress implements stack.AddressableEndpoint.
@@ -1312,7 +1312,7 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 	// Create a candidate set of available addresses we can potentially use as a
 	// source address.
 	var cs []addrCandidate
-	e.mu.addressableEndpointState.ReadOnly().ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) {
+	e.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) {
 		// If r is not valid for outgoing connections, it is not a valid endpoint.
 		if !addressEndpoint.IsAssigned(allowExpired) {
 			return
