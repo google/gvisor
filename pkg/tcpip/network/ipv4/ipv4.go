@@ -799,28 +799,12 @@ func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp boo
 	defer e.mu.Unlock()
 
 	loopback := e.nic.IsLoopback()
-	addressEndpoint := e.mu.addressableEndpointState.ReadOnly().AddrOrMatching(localAddr, allowTemp, func(addressEndpoint stack.AddressEndpoint) bool {
+	return e.mu.addressableEndpointState.AcquireAssignedAddressOrMatching(localAddr, func(addressEndpoint stack.AddressEndpoint) bool {
 		subnet := addressEndpoint.Subnet()
 		// IPv4 has a notion of a subnet broadcast address and considers the
 		// loopback interface bound to an address's whole subnet (on linux).
 		return subnet.IsBroadcast(localAddr) || (loopback && subnet.Contains(localAddr))
-	})
-	if addressEndpoint != nil {
-		return addressEndpoint
-	}
-
-	if !allowTemp {
-		return nil
-	}
-
-	addr := localAddr.WithPrefix()
-	addressEndpoint, err := e.mu.addressableEndpointState.AddAndAcquireTemporaryAddress(addr, tempPEB)
-	if err != nil {
-		// AddAddress only returns an error if the address is already assigned,
-		// but we just checked above if the address exists so we expect no error.
-		panic(fmt.Sprintf("e.mu.addressableEndpointState.AddAndAcquireTemporaryAddress(%s, %d): %s", addr, tempPEB, err))
-	}
-	return addressEndpoint
+	}, allowTemp, tempPEB)
 }
 
 // AcquireOutgoingPrimaryAddress implements stack.AddressableEndpoint.
