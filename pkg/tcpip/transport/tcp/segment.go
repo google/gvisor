@@ -204,7 +204,7 @@ func (s *segment) payloadSize() int {
 // segMemSize is the amount of memory used to hold the segment data and
 // the associated metadata.
 func (s *segment) segMemSize() int {
-	return segSize + s.data.Size()
+	return SegSize + s.data.Size()
 }
 
 // parse populates the sequence & ack numbers, flags, and window fields of the
