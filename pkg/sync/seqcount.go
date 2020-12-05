@@ -6,8 +6,6 @@
 package sync
 
 import (
-	"fmt"
-	"reflect"
 	"sync/atomic"
 )
 
@@ -26,9 +24,6 @@ import (
 //
 // - SeqCount may be more flexible: correct use of SeqCount.ReadOk allows other
 // operations to be made atomic with reads of SeqCount-protected data.
-//
-// - SeqCount may be less flexible: as of this writing, SeqCount-protected data
-// cannot include pointers.
 //
 // - SeqCount is more cumbersome to use; atomic reads of SeqCount-protected
 // data require instantiating function templates using go_generics (see
@@ -126,34 +121,5 @@ func (s *SeqCount) BeginWrite() {
 func (s *SeqCount) EndWrite() {
 	if epoch := atomic.AddUint32(&s.epoch, 1); epoch&1 != 0 {
 		panic("SeqCount.EndWrite outside writer critical section")
-	}
-}
-
-// PointersInType returns a list of pointers reachable from values named
-// valName of the given type.
-//
-// PointersInType is not exhaustive, but it is guaranteed that if typ contains
-// at least one pointer, then PointersInTypeOf returns a non-empty list.
-func PointersInType(typ reflect.Type, valName string) []string {
-	switch kind := typ.Kind(); kind {
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
-		return nil
-
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice, reflect.String, reflect.UnsafePointer:
-		return []string{valName}
-
-	case reflect.Array:
-		return PointersInType(typ.Elem(), valName+"[]")
-
-	case reflect.Struct:
-		var ptrs []string
-		for i, n := 0, typ.NumField(); i < n; i++ {
-			field := typ.Field(i)
-			ptrs = append(ptrs, PointersInType(field.Type, fmt.Sprintf("%s.%s", valName, field.Name))...)
-		}
-		return ptrs
-
-	default:
-		return []string{fmt.Sprintf("%s (of type %s with unknown kind %s)", valName, typ, kind)}
 	}
 }
