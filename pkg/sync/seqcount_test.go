@@ -6,7 +6,6 @@
 package sync
 
 import (
-	"reflect"
 	"testing"
 	"time"
 )
@@ -98,56 +97,4 @@ func BenchmarkSeqCountReadUncontended(b *testing.B) {
 			}
 		}
 	})
-}
-
-func TestPointersInType(t *testing.T) {
-	for _, test := range []struct {
-		name string // used for both test and value name
-		val  interface{}
-		ptrs []string
-	}{
-		{
-			name: "EmptyStruct",
-			val:  struct{}{},
-		},
-		{
-			name: "Int",
-			val:  int(0),
-		},
-		{
-			name: "MixedStruct",
-			val: struct {
-				b             bool
-				I             int
-				ExportedPtr   *struct{}
-				unexportedPtr *struct{}
-				arr           [2]int
-				ptrArr        [2]*int
-				nestedStruct  struct {
-					nestedNonptr int
-					nestedPtr    *int
-				}
-				structArr [1]struct {
-					nonptr int
-					ptr    *int
-				}
-			}{},
-			ptrs: []string{
-				"MixedStruct.ExportedPtr",
-				"MixedStruct.unexportedPtr",
-				"MixedStruct.ptrArr[]",
-				"MixedStruct.nestedStruct.nestedPtr",
-				"MixedStruct.structArr[].ptr",
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			typ := reflect.TypeOf(test.val)
-			ptrs := PointersInType(typ, test.name)
-			t.Logf("Found pointers: %v", ptrs)
-			if (len(ptrs) != 0 || len(test.ptrs) != 0) && !reflect.DeepEqual(ptrs, test.ptrs) {
-				t.Errorf("Got %v, wanted %v", ptrs, test.ptrs)
-			}
-		})
-	}
 }
