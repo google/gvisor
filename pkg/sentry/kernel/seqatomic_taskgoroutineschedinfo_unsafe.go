@@ -1,9 +1,6 @@
 package kernel
 
 import (
-	"fmt"
-	"reflect"
-	"strings"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -37,13 +34,4 @@ func SeqAtomicTryLoadTaskGoroutineSchedInfo(seq *sync.SeqCount, epoch sync.SeqCo
 	}
 	ok = seq.ReadOk(epoch)
 	return
-}
-
-func initTaskGoroutineSchedInfo() {
-	var val TaskGoroutineSchedInfo
-	typ := reflect.TypeOf(val)
-	name := typ.Name()
-	if ptrs := sync.PointersInType(typ, name); len(ptrs) != 0 {
-		panic(fmt.Sprintf("SeqAtomicLoad<%s> is invalid since values %s of type %s contain pointers:\n%s", typ, name, typ, strings.Join(ptrs, "\n")))
-	}
 }
