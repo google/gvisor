@@ -15,6 +15,7 @@
 package vfs
 
 import (
+	"io"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -837,4 +838,29 @@ func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) FileAsyn
 		}
 	}
 	return fd.asyncHandler
+}
+
+// CopyRegularFileData copies data from srcFD to dstFD until reading from srcFD
+// returns EOF or an error. It returns the number of bytes copied.
+func CopyRegularFileData(ctx context.Context, dstFD, srcFD *FileDescription) (int64, error) {
+	done := int64(0)
+	buf := usermem.BytesIOSequence(make([]byte, 32*1024)) // arbitrary buffer size
+	for {
+		readN, readErr := srcFD.Read(ctx, buf, ReadOptions{})
+		if readErr != nil && readErr != io.EOF {
+			return done, readErr
+		}
+		src := buf.TakeFirst64(readN)
+		for src.NumBytes() != 0 {
+			writeN, writeErr := dstFD.Write(ctx, src, WriteOptions{})
+			done += writeN
+			src = src.DropFirst64(writeN)
+			if writeErr != nil {
+				return done, writeErr
+			}
+		}
+		if readErr == io.EOF {
+			return done, nil
+		}
+	}
 }
