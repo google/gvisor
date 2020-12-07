@@ -202,40 +202,6 @@
   MOVD offset+PTRACE_R29(reg), R29; \
   MOVD offset+PTRACE_R30(reg), R30;
 
-// NOP-s
-#define nop31Instructions() \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f; \
-        WORD $0xd503201f;
-
 #define ESR_ELx_EC_UNKNOWN	(0x00)
 #define ESR_ELx_EC_WFx		(0x01)
 /* Unallocated EC: 0x02 */
@@ -834,79 +800,43 @@ TEXT ·El0_error_invalid(SB),NOSPLIT,$0
 	B ·Shutdown(SB)
 
 // Vectors implements exception vector table.
+// The start address of exception vector table should be 11-bits aligned.
+// For detail, please refer to arm developer document:
+// https://developer.arm.com/documentation/100933/0100/AArch64-exception-vector-table
+// Also can refer to the code in linux kernel: arch/arm64/kernel/entry.S
 TEXT ·Vectors(SB),NOSPLIT,$0
+	PCALIGN $2048
 	B ·El1_sync_invalid(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El1_irq_invalid(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El1_fiq_invalid(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El1_error_invalid(SB)
-	nop31Instructions()
 
+	PCALIGN $128
 	B ·El1_sync(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El1_irq(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El1_fiq(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El1_error(SB)
-	nop31Instructions()
 
+	PCALIGN $128
 	B ·El0_sync(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El0_irq(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El0_fiq(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El0_error(SB)
-	nop31Instructions()
 
+	PCALIGN $128
 	B ·El0_sync_invalid(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El0_irq_invalid(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El0_fiq_invalid(SB)
-	nop31Instructions()
+	PCALIGN $128
 	B ·El0_error_invalid(SB)
-	nop31Instructions()
-
-	// The exception-vector-table is required to be 11-bits aligned.
-	// Please see Linux source code as reference: arch/arm64/kernel/entry.s.
-	// For gvisor, I defined it as 4K in length, filled the 2nd 2K part with NOPs.
-	// So that, I can safely move the 1st 2K part into the address with 11-bits alignment.
-	WORD $0xd503201f	//nop
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
-	WORD $0xd503201f
-	nop31Instructions()
