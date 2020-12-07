@@ -207,7 +207,7 @@ swgso-tests: load-basic-images
 
 hostnet-tests: load-basic-images
 	@$(call submake,install-runtime RUNTIME="hostnet" ARGS="--network=host")
-	@$(call submake,test-runtime RUNTIME="hostnet" OPTIONS="--test_arg=-checkpoint=false" TARGETS="$(INTEGRATION_TARGETS)")
+	@$(call submake,test-runtime RUNTIME="hostnet" OPTIONS="--test_arg=-checkpoint=false --test_arg=-hostnet=true" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: hostnet-tests
 
 kvm-tests: load-basic-images
