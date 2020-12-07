@@ -56,6 +56,7 @@ const (
 	_KVM_EXIT_FAIL_ENTRY      = 0x9
 	_KVM_EXIT_INTERNAL_ERROR  = 0x11
 	_KVM_EXIT_SYSTEM_EVENT    = 0x18
+	_KVM_EXIT_ARM_NISV        = 0x1c
 )
 
 // KVM capability options.
