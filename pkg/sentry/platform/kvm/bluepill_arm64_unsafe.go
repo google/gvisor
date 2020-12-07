@@ -85,7 +85,7 @@ func bluepillStopGuest(c *vCPU) {
 		uintptr(c.fd),
 		_KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(&vcpuSErrBounce))); errno != 0 {
-		throw("sErr injection failed")
+		throw("bounce sErr injection failed")
 	}
 }
 
@@ -93,13 +93,37 @@ func bluepillStopGuest(c *vCPU) {
 //
 //go:nosplit
 func bluepillSigBus(c *vCPU) {
+	// Host must support ARM64_HAS_RAS_EXTN.
 	if _, _, errno := syscall.RawSyscall( // escapes: no.
 		syscall.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(&vcpuSErrNMI))); errno != 0 {
-		throw("sErr injection failed")
+		if errno == syscall.EINVAL {
+			throw("No ARM64_HAS_RAS_EXTN feature in host.")
+		}
+		throw("nmi sErr injection failed")
 	}
+}
+
+// bluepillExtDabt is reponsible for injecting external data abort.
+//
+//go:nosplit
+func bluepillExtDabt(c *vCPU) {
+	if _, _, errno := syscall.RawSyscall( // escapes: no.
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_VCPU_EVENTS,
+		uintptr(unsafe.Pointer(&vcpuExtDabt))); errno != 0 {
+		throw("ext_dabt injection failed")
+	}
+}
+
+// bluepillHandleEnosys is reponsible for handling enosys error.
+//
+//go:nosplit
+func bluepillHandleEnosys(c *vCPU) {
+	bluepillExtDabt(c)
 }
 
 // bluepillReadyStopGuest checks whether the current vCPU is ready for sError injection.
@@ -107,4 +131,16 @@ func bluepillSigBus(c *vCPU) {
 //go:nosplit
 func bluepillReadyStopGuest(c *vCPU) bool {
 	return true
+}
+
+// bluepillArchHandleExit checks architecture specific exitcode.
+//
+//go:nosplit
+func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
+	switch c.runData.exitReason {
+	case _KVM_EXIT_ARM_NISV:
+		bluepillExtDabt(c)
+	default:
+		c.die(bluepillArchContext(context), "unknown")
+	}
 }
