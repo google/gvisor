@@ -42,6 +42,13 @@ var (
 			sErrEsr:     _ESR_ELx_SERR_NMI,
 		},
 	}
+
+	// vcpuExtDabt is the event of ext_dabt.
+	vcpuExtDabt = kvmVcpuEvents{
+		exception: exception{
+			extDabtPending: 1,
+		},
+	}
 )
 
 // getTLS returns the value of TPIDR_EL0 register.
