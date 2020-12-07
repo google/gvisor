@@ -222,7 +222,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	}
 
 	// Create the Docker container for the testbench.
-	testbench := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
+	testbenchContainer := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
 
 	const containerDUTTestNetsDir = "/tmp/dut-test-nets"
 	const dutTestNetsFileName = "pool.json"
@@ -235,12 +235,12 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	}
 	tbb := path.Base(testbenchBinary)
 	containerTestbenchBinary := filepath.Join("/packetimpact", tbb)
-	testbench.CopyFiles(&runOpts, "/packetimpact", filepath.Join("test/packetimpact/tests", tbb))
+	testbenchContainer.CopyFiles(&runOpts, "/packetimpact", filepath.Join("test/packetimpact/tests", tbb))
 
 	if err := StartContainer(
 		ctx,
 		runOpts,
-		testbench,
+		testbenchContainer,
 		testbenchAddr,
 		dockerNetworks,
 		"tail", "-f", "/dev/null",
@@ -249,16 +249,16 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	}
 
 	for i := range dutTestNets {
-		name, info, err := deviceByIP(ctx, testbench, dutTestNets[i].LocalIPv4)
+		name, info, err := deviceByIP(ctx, testbenchContainer, dutTestNets[i].LocalIPv4)
 		if err != nil {
 			t.Fatalf("failed to get the device name associated with %s: %s", dutTestNets[i].LocalIPv4, err)
 		}
 		dutTestNets[i].LocalDevName = name
 		dutTestNets[i].LocalDevID = info.ID
 		dutTestNets[i].LocalMAC = info.MAC
-		localIPv6, err := getOrAssignIPv6Addr(ctx, testbench, name)
+		localIPv6, err := getOrAssignIPv6Addr(ctx, testbenchContainer, name)
 		if err != nil {
-			t.Fatalf("failed to get IPV6 address on %s: %s", testbench.Name, err)
+			t.Fatalf("failed to get IPV6 address on %s: %s", testbenchContainer.Name, err)
 		}
 		dutTestNets[i].LocalIPv6 = localIPv6
 	}
@@ -272,7 +272,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		snifferProg = "tshark"
 	}
 	for _, n := range dutTestNets {
-		_, err := testbench.ExecProcess(ctx, dockerutil.ExecOpts{}, snifferArgs(n.LocalDevName)...)
+		_, err := testbenchContainer.ExecProcess(ctx, dockerutil.ExecOpts{}, snifferArgs(n.LocalDevName)...)
 		if err != nil {
 			t.Fatalf("failed to start exec a sniffer on %s: %s", n.LocalDevName, err)
 		}
@@ -283,15 +283,15 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		// this, we can install the following iptables rules. The raw socket that
 		// packetimpact tests use will still be able to see everything.
 		for _, bin := range []string{"iptables", "ip6tables"} {
-			if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, bin, "-A", "INPUT", "-i", n.LocalDevName, "-p", "tcp", "-j", "DROP"); err != nil {
-				t.Fatalf("unable to Exec %s on container %s: %s, logs from testbench:\n%s", bin, testbench.Name, err, logs)
+			if logs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, bin, "-A", "INPUT", "-i", n.LocalDevName, "-p", "tcp", "-j", "DROP"); err != nil {
+				t.Fatalf("unable to Exec %s on container %s: %s, logs from testbench:\n%s", bin, testbenchContainer.Name, err, logs)
 			}
 		}
 	}
 
 	t.Cleanup(func() {
 		time.Sleep(1 * time.Second)
-		if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, "killall", snifferProg); err != nil {
+		if logs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, "killall", snifferProg); err != nil {
 			t.Errorf("failed to kill all sniffers: %s, logs: %s", err, logs)
 		}
 	})
@@ -310,7 +310,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		fmt.Sprintf("--native=%t", native),
 		"--dut_test_nets_json", string(dutTestNetsBytes),
 	)
-	testbenchLogs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
+	testbenchLogs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
 	if (err != nil) != expectFailure {
 		var dutLogs string
 		for i, dut := range duts {
