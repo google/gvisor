@@ -62,6 +62,4 @@ func DisableVFP()
 // Init sets function pointers based on architectural features.
 //
 // This must be called prior to using ring0.
-func Init() {
-	rewriteVectors()
-}
+func Init() {}
