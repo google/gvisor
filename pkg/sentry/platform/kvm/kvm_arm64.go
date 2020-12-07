@@ -47,10 +47,11 @@ type userRegs struct {
 }
 
 type exception struct {
-	sErrPending uint8
-	sErrHasEsr  uint8
-	pad         [6]uint8
-	sErrEsr     uint64
+	sErrPending    uint8
+	sErrHasEsr     uint8
+	extDabtPending uint8
+	pad            [5]uint8
+	sErrEsr        uint64
 }
 
 type kvmVcpuEvents struct {

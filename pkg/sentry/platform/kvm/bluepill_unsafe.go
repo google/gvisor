@@ -148,6 +148,9 @@ func bluepillHandler(context unsafe.Pointer) {
 			// mode and have interrupts disabled.
 			bluepillSigBus(c)
 			continue // Rerun vCPU.
+		case syscall.ENOSYS:
+			bluepillHandleEnosys(c)
+			continue
 		default:
 			throw("run failed")
 		}
@@ -220,7 +223,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "entry failed")
 			return
 		default:
-			c.die(bluepillArchContext(context), "unknown")
+			bluepillArchHandleExit(c, context)
 			return
 		}
 	}
