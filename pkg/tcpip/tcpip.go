@@ -1438,8 +1438,7 @@ type IGMPPacketStats struct {
 type IGMPSentPacketStats struct {
 	IGMPPacketStats
 
-	// Dropped is the total number of IGMP packets dropped due to link layer
-	// errors.
+	// Dropped is the total number of IGMP packets dropped.
 	Dropped *StatCounter
 }
 
