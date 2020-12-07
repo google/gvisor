@@ -152,9 +152,6 @@ type GenericMulticastProtocolState struct {
 }
 
 // Init initializes the Generic Multicast Protocol state.
-//
-// maxUnsolicitedReportDelay is the maximum time between sending unsolicited
-// reports after joining a group.
 func (g *GenericMulticastProtocolState) Init(opts GenericMulticastProtocolOptions) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
