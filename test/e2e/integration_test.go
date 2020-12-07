@@ -494,6 +494,55 @@ func TestLink(t *testing.T) {
 	}
 }
 
+// This test ensures we can run ping without errors.
+func TestPing4Loopback(t *testing.T) {
+	if testutil.IsRunningWithHostNet() {
+		// TODO(gvisor.dev/issue/5011): support ICMP sockets in hostnet and enable
+		// this test.
+		t.Skip("hostnet only supports TCP/UDP sockets, so ping is not supported.")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if got, err := d.Run(ctx, dockerutil.RunOpts{
+		Image: "basic/ping4test",
+	}, "/root/ping4.sh"); err != nil {
+		t.Fatalf("docker run failed: %s", err)
+	} else if got != "" {
+		t.Errorf("test failed:\n%s", got)
+	}
+}
+
+// This test ensures we can enable ipv6 on loopback and run ping6 without
+// errors.
+func TestPing6Loopback(t *testing.T) {
+	if testutil.IsRunningWithHostNet() {
+		// TODO(gvisor.dev/issue/5011): support ICMP sockets in hostnet and enable
+		// this test.
+		t.Skip("hostnet only supports TCP/UDP sockets, so ping6 is not supported.")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if got, err := d.Run(ctx, dockerutil.RunOpts{
+		Image: "basic/ping6test",
+		// The CAP_NET_ADMIN capability is required to use the `ip` utility, which
+		// we use to enable ipv6 on loopback.
+		//
+		// By default, ipv6 loopback is not enabled by runsc, because docker does
+		// not assign an ipv6 address to the test container.
+		CapAdd: []string{"NET_ADMIN"},
+	}, "/root/ping6.sh"); err != nil {
+		t.Fatalf("docker run failed: %s", err)
+	} else if got != "" {
+		t.Errorf("test failed:\n%s", got)
+	}
+}
+
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()

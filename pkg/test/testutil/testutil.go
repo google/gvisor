@@ -48,14 +48,20 @@ import (
 )
 
 var (
-	checkpoint      = flag.Bool("checkpoint", true, "control checkpoint/restore support")
-	partition       = flag.Int("partition", 1, "partition number, this is 1-indexed")
-	totalPartitions = flag.Int("total_partitions", 1, "total number of partitions")
+	checkpoint           = flag.Bool("checkpoint", true, "control checkpoint/restore support")
+	partition            = flag.Int("partition", 1, "partition number, this is 1-indexed")
+	totalPartitions      = flag.Int("total_partitions", 1, "total number of partitions")
+	isRunningWithHostNet = flag.Bool("hostnet", false, "whether test is running with hostnet")
 )
 
 // IsCheckpointSupported returns the relevant command line flag.
 func IsCheckpointSupported() bool {
 	return *checkpoint
+}
+
+// IsRunningWithHostNet returns the relevant command line flag.
+func IsRunningWithHostNet() bool {
+	return *isRunningWithHostNet
 }
 
 // ImageByName mangles the image name used locally. This depends on the image
