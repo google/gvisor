@@ -296,25 +296,6 @@ func (t *Tlopen) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	ref.openedMu.Lock()
-	defer ref.openedMu.Unlock()
-
-	// Has it been opened already?
-	if ref.opened || !CanOpen(ref.mode) {
-		return newErr(syscall.EINVAL)
-	}
-
-	if ref.mode.IsDir() {
-		// Directory must be opened ReadOnly.
-		if t.Flags&OpenFlagsModeMask != ReadOnly {
-			return newErr(syscall.EISDIR)
-		}
-		// Directory not truncatable.
-		if t.Flags&OpenTruncate != 0 {
-			return newErr(syscall.EISDIR)
-		}
-	}
-
 	var (
 		qid    QID
 		ioUnit uint32
@@ -324,6 +305,22 @@ func (t *Tlopen) handle(cs *connState) message {
 		// Has it been deleted already?
 		if ref.isDeleted() {
 			return syscall.EINVAL
+		}
+
+		// Has it been opened already?
+		if ref.opened || !CanOpen(ref.mode) {
+			return syscall.EINVAL
+		}
+
+		if ref.mode.IsDir() {
+			// Directory must be opened ReadOnly.
+			if t.Flags&OpenFlagsModeMask != ReadOnly {
+				return syscall.EISDIR
+			}
+			// Directory not truncatable.
+			if t.Flags&OpenTruncate != 0 {
+				return syscall.EISDIR
+			}
 		}
 
 		osFile, qid, ioUnit, err = ref.file.Open(t.Flags)
@@ -366,7 +363,7 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -437,7 +434,7 @@ func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -476,7 +473,7 @@ func (t *Tlink) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -518,7 +515,7 @@ func (t *Trenameat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -561,7 +558,7 @@ func (t *Tunlinkat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -701,13 +698,12 @@ func (t *Tread) handle(cs *connState) message {
 	)
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened already?
-		openFlags, opened := ref.OpenFlags()
-		if !opened {
+		if !ref.opened {
 			return syscall.EINVAL
 		}
 
 		// Can it be read? Check permissions.
-		if openFlags&OpenFlagsModeMask == WriteOnly {
+		if ref.openFlags&OpenFlagsModeMask == WriteOnly {
 			return syscall.EPERM
 		}
 
@@ -731,13 +727,12 @@ func (t *Twrite) handle(cs *connState) message {
 	var n int
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened already?
-		openFlags, opened := ref.OpenFlags()
-		if !opened {
+		if !ref.opened {
 			return syscall.EINVAL
 		}
 
 		// Can it be written? Check permissions.
-		if openFlags&OpenFlagsModeMask == ReadOnly {
+		if ref.openFlags&OpenFlagsModeMask == ReadOnly {
 			return syscall.EPERM
 		}
 
@@ -778,7 +773,7 @@ func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -820,7 +815,7 @@ func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -898,13 +893,12 @@ func (t *Tallocate) handle(cs *connState) message {
 
 	if err := ref.safelyWrite(func() error {
 		// Has it been opened already?
-		openFlags, opened := ref.OpenFlags()
-		if !opened {
+		if !ref.opened {
 			return syscall.EINVAL
 		}
 
 		// Can it be written? Check permissions.
-		if openFlags&OpenFlagsModeMask == ReadOnly {
+		if ref.openFlags&OpenFlagsModeMask == ReadOnly {
 			return syscall.EBADF
 		}
 
@@ -1049,8 +1043,8 @@ func (t *Treaddir) handle(cs *connState) message {
 			return syscall.EINVAL
 		}
 
-		// Has it been opened already?
-		if _, opened := ref.OpenFlags(); !opened {
+		// Has it been opened yet?
+		if !ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -1076,8 +1070,8 @@ func (t *Tfsync) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	if err := ref.safelyRead(func() (err error) {
-		// Has it been opened already?
-		if _, opened := ref.OpenFlags(); !opened {
+		// Has it been opened yet?
+		if !ref.opened {
 			return syscall.EINVAL
 		}
 
@@ -1185,8 +1179,13 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 	}
 
 	// Has it been opened already?
-	if _, opened := ref.OpenFlags(); opened {
-		err = syscall.EBUSY
+	err = ref.safelyRead(func() (err error) {
+		if ref.opened {
+			return syscall.EBUSY
+		}
+		return nil
+	})
+	if err != nil {
 		return
 	}
 
