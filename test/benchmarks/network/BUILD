@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library")
+load("//test/benchmarks:defs.bzl", "benchmark_test")
 
 package(licenses = ["notice"])
 
@@ -16,7 +17,7 @@ go_library(
     ],
 )
 
-go_test(
+benchmark_test(
     name = "network_test",
     size = "large",
     srcs = [
@@ -27,11 +28,6 @@ go_test(
         "ruby_test.go",
     ],
     library = ":network",
-    tags = [
-        # Requires docker and runsc to be configured before test runs.
-        "manual",
-        "local",
-    ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",

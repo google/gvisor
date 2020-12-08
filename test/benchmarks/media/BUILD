@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library")
+load("//test/benchmarks:defs.bzl", "benchmark_test")
 
 package(licenses = ["notice"])
 
@@ -9,7 +10,7 @@ go_library(
     deps = ["//test/benchmarks/harness"],
 )
 
-go_test(
+benchmark_test(
     name = "media_test",
     size = "large",
     srcs = ["ffmpeg_test.go"],
