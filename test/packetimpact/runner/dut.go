@@ -224,8 +224,6 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	// Create the Docker container for the testbench.
 	testbenchContainer := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
 
-	const containerDUTTestNetsDir = "/tmp/dut-test-nets"
-	const dutTestNetsFileName = "pool.json"
 	runOpts := dockerutil.RunOpts{
 		Image:  "packetimpact",
 		CapAdd: []string{"NET_ADMIN"},
@@ -290,6 +288,9 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	}
 
 	t.Cleanup(func() {
+		// Wait 1 second before killing tcpdump to give it time to flush
+		// any packets. On linux tests killing it immediately can
+		// sometimes result in partial pcaps.
 		time.Sleep(1 * time.Second)
 		if logs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, "killall", snifferProg); err != nil {
 			t.Errorf("failed to kill all sniffers: %s, logs: %s", err, logs)
@@ -362,7 +363,7 @@ func NewDockerDUT(c *dockerutil.Container) DUT {
 }
 
 // Prepare implements DUT.Prepare.
-func (dut *DockerDUT) Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string, error) {
+func (dut *DockerDUT) Prepare(ctx context.Context, _ *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string, error) {
 	const containerPosixServerBinary = "/packetimpact/posix_server"
 	dut.c.CopyFiles(&runOpts, "/packetimpact", "test/packetimpact/dut/posix_server")
 
@@ -422,11 +423,11 @@ func AddNetworks(ctx context.Context, d *dockerutil.Container, addr net.IP, netw
 // new address. The return address bits come from the subnet where the mask is
 // 1 and from the ip address where the mask is 0.
 func AddressInSubnet(addr net.IP, subnet net.IPNet) net.IP {
-	var octets []byte
+	var octets net.IP
 	for i := 0; i < 4; i++ {
 		octets = append(octets, (subnet.IP.To4()[i]&subnet.Mask[i])+(addr.To4()[i]&(^subnet.Mask[i])))
 	}
-	return net.IP(octets)
+	return octets
 }
 
 // devicesInfo will run "ip addr show" on the container and parse the output
@@ -522,7 +523,7 @@ func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerut
 	return nil
 }
 
-// MountTempDirectory creates a temporary directory on host with the template
+// mountTempDirectory creates a temporary directory on host with the template
 // and then mounts it into the container under the name provided. The temporary
 // directory name is returned. Content in that directory will be copied to
 // TEST_UNDECLARED_OUTPUTS_DIR in cleanup phase.
