@@ -228,3 +228,15 @@ cc_binary(
         "//test/util:test_util",
     ],
 )
+
+cc_binary(
+    name = "mount_test",
+    testonly = 1,
+    srcs = ["mount_test.cc"],
+    deps = [
+        gtest,
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)

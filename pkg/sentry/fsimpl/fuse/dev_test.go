@@ -219,10 +219,7 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 		data: rand.Uint32(),
 	}
 
-	req, err := conn.NewRequest(creds, pid, inode, echoTestOpcode, testObj)
-	if err != nil {
-		t.Fatalf("NewRequest creation failed: %v", err)
-	}
+	req := conn.NewRequest(creds, pid, inode, echoTestOpcode, testObj)
 
 	// Queue up a request.
 	// Analogous to Call except it doesn't block on the task.

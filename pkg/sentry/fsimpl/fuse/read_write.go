@@ -79,13 +79,9 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 		in.Offset = off + (uint64(pagesRead) << usermem.PageShift)
 		in.Size = pagesCanRead << usermem.PageShift
 
-		req, err := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), fd.inode().nodeID, linux.FUSE_READ, &in)
-		if err != nil {
-			return nil, 0, err
-		}
-
 		// TODO(gvisor.dev/issue/3247): support async read.
 
+		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), fd.inode().nodeID, linux.FUSE_READ, &in)
 		res, err := fs.conn.Call(t, req)
 		if err != nil {
 			return nil, 0, err
@@ -204,11 +200,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 		in.Offset = off + uint64(written)
 		in.Size = toWrite
 
-		req, err := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), inode.nodeID, linux.FUSE_WRITE, &in)
-		if err != nil {
-			return 0, err
-		}
-
+		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), inode.nodeID, linux.FUSE_WRITE, &in)
 		req.payload = data[written : written+toWrite]
 
 		// TODO(gvisor.dev/issue/3247): support async write.

@@ -71,3 +71,8 @@ syscall_test(
     fuse = "True",
     test = "//test/fuse/linux:setstat_test",
 )
+
+syscall_test(
+    fuse = "True",
+    test = "//test/fuse/linux:mount_test",
+)
