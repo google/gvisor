@@ -272,6 +272,17 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		"--packet-buffered",
 		// Disable DNS resolution.
 		"-n",
+		// run tcpdump as root since the output directory is owned by root. From
+		// `man tcpdump`:
+		//
+		// -Z user
+		// --relinquish-privileges=user
+		//        If tcpdump is running as root, after opening the capture device
+		//        or input savefile, change the user ID to user and the group ID to
+		//        the primary group of user.
+		// This behavior is enabled by default (-Z tcpdump), and can be
+		// disabled by -Z root.
+		"-Z", "root",
 	}
 	if tshark {
 		baseSnifferArgs = []string{
@@ -294,10 +305,17 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 				filepath.Join(testOutputDir, fmt.Sprintf("%s.pcap", n.LocalDevName)),
 			)
 		}
-		_, err := testbenchContainer.ExecProcess(ctx, dockerutil.ExecOpts{}, snifferArgs...)
+		p, err := testbenchContainer.ExecProcess(ctx, dockerutil.ExecOpts{}, snifferArgs...)
 		if err != nil {
 			t.Fatalf("failed to start exec a sniffer on %s: %s", n.LocalDevName, err)
 		}
+		t.Cleanup(func() {
+			if snifferOut, err := p.Logs(); err != nil {
+				t.Errorf("sniffer logs failed: %s\n%s", err, snifferOut)
+			} else {
+				t.Logf("sniffer logs:\n%s", snifferOut)
+			}
+		})
 		// When the Linux kernel receives a SYN-ACK for a SYN it didn't send, it
 		// will respond with an RST. In most packetimpact tests, the SYN is sent
 		// by the raw socket, the kernel knows nothing about the connection, this
