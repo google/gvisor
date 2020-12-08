@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ipv4_test
+package ipv4
 
 import (
 	"context"
@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
@@ -48,7 +47,7 @@ const (
 
 func TestExcludeBroadcast(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	})
 
@@ -69,7 +68,7 @@ func TestExcludeBroadcast(t *testing.T) {
 
 	var wq waiter.Queue
 	t.Run("WithoutPrimaryAddress", func(t *testing.T) {
-		ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+		ep, err := s.NewEndpoint(udp.ProtocolNumber, ProtocolNumber, &wq)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,14 +86,14 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 
 	t.Run("WithPrimaryAddress", func(t *testing.T) {
-		ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+		ep, err := s.NewEndpoint(udp.ProtocolNumber, ProtocolNumber, &wq)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer ep.Close()
 
 		// Add a valid primary endpoint address, now we can connect.
-		if err := s.AddAddress(1, ipv4.ProtocolNumber, "\x0a\x00\x00\x02"); err != nil {
+		if err := s.AddAddress(1, ProtocolNumber, "\x0a\x00\x00\x02"); err != nil {
 			t.Fatalf("AddAddress failed: %v", err)
 		}
 		if err := ep.Connect(randomAddr); err != nil {
@@ -152,11 +151,11 @@ func TestForwarding(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
 			})
 			// We expect at most a single packet in response to our ICMP Echo Request.
-			e1 := channel.New(1, ipv4.MaxTotalSize, "")
+			e1 := channel.New(1, MaxTotalSize, "")
 			if err := s.CreateNIC(nicID1, e1); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
 			}
@@ -165,7 +164,7 @@ func TestForwarding(t *testing.T) {
 				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID1, ipv4ProtoAddr1, err)
 			}
 
-			e2 := channel.New(1, ipv4.MaxTotalSize, "")
+			e2 := channel.New(1, MaxTotalSize, "")
 			if err := s.CreateNIC(nicID2, e2); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
 			}
@@ -222,7 +221,7 @@ func TestForwarding(t *testing.T) {
 				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
 					checker.SrcAddr(ipv4Addr1.Address),
 					checker.DstAddr(remoteIPv4Addr1),
-					checker.TTL(ipv4.DefaultTTL),
+					checker.TTL(DefaultTTL),
 					checker.ICMPv4(
 						checker.ICMPv4Checksum(),
 						checker.ICMPv4Type(header.ICMPv4TimeExceeded),
@@ -294,13 +293,13 @@ func TestIPv4Sanity(t *testing.T) {
 	}{
 		{
 			name:              "valid no options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 		},
 		{
 			name:              "bad header checksum",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			badHeaderChecksum: true,
@@ -319,19 +318,19 @@ func TestIPv4Sanity(t *testing.T) {
 		//      received with TTL less than 2.
 		{
 			name:              "zero TTL",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               0,
 		},
 		{
 			name:              "one TTL",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               1,
 		},
 		{
 			name:              "End options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{0, 0, 0, 0},
@@ -339,7 +338,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "NOP options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{1, 1, 1, 1},
@@ -347,7 +346,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "NOP and End options",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{1, 1, 0, 0},
@@ -356,7 +355,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			name:              "bad header length",
 			headerLength:      header.IPv4MinimumSize - 1,
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			shouldFail:        true,
@@ -384,7 +383,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad protocol",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: 99,
 			TTL:               ttl,
 			shouldFail:        true,
@@ -394,7 +393,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "timestamp option overflow",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -410,7 +409,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "timestamp option overflow full",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -428,7 +427,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "unknown option",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{10, 4, 9, 0},
@@ -438,7 +437,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad option - length 0",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -450,7 +449,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "bad option - length big",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -467,7 +466,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// The ICMP pointer returned is 22 for Linux but the
 			// error is actually in spot 21.
 			name:              "bad option - length bad",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			// Timestamps are in multiples of 4 or 8 but never 7.
@@ -486,7 +485,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "multiple type 0 with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -509,7 +508,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// The timestamp area is full so add to the overflow count.
 			name:              "multiple type 1 timestamps",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -532,7 +531,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "multiple type 1 timestamps with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -557,7 +556,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Timestamp pointer uses one based counting so 0 is invalid.
 			name:              "timestamp pointer invalid",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -575,7 +574,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// Timestamp pointer cannot be less than 5. It must point past the header
 			// which is 4 bytes. (1 based counting)
 			name:              "timestamp pointer too small by 1",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -591,7 +590,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "valid timestamp pointer",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -607,7 +606,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Needs 8 bytes for a type 1 timestamp but there are only 4 free.
 			name:              "bad timer element alignment",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -627,7 +626,7 @@ func TestIPv4Sanity(t *testing.T) {
 		// End of option list with illegal option after it, which should be ignored.
 		{
 			name:              "end of options list",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -646,7 +645,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Timestamp with a size too small.
 			name:              "timestamp truncated",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options:           header.IPv4Options{68, 1, 0, 0},
@@ -655,7 +654,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "single record route with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -671,7 +670,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "multiple record route with room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -695,7 +694,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "single record route with no room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -712,7 +711,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Unlike timestamp, this should just succeed.
 			name:              "multiple record route with no room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -737,7 +736,7 @@ func TestIPv4Sanity(t *testing.T) {
 		{
 			// Pointer uses one based counting so 0 is invalid.
 			name:              "record route pointer zero",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -755,7 +754,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// Pointer must be 4 or more as it must point past the 3 byte header
 			// using 1 based counting. 3 should fail.
 			name:              "record route pointer too small by 1",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -774,7 +773,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// using 1 based counting. Check 4 passes. (Duplicates "single
 			// record route with room")
 			name:              "valid record route pointer",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -792,7 +791,7 @@ func TestIPv4Sanity(t *testing.T) {
 			// Confirm Linux bug for bug compatibility.
 			// Linux returns slot 22 but the error is in slot 21.
 			name:              "multiple record route with not enough room",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -811,7 +810,7 @@ func TestIPv4Sanity(t *testing.T) {
 		},
 		{
 			name:              "duplicate record route",
-			maxTotalLength:    ipv4.MaxTotalSize,
+			maxTotalLength:    MaxTotalSize,
 			transportProtocol: uint8(header.ICMPv4ProtocolNumber),
 			TTL:               ttl,
 			options: header.IPv4Options{
@@ -834,12 +833,12 @@ func TestIPv4Sanity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
 				Clock:              clock,
 			})
 			// We expect at most a single packet in response to our ICMP Echo Request.
-			e := channel.New(1, ipv4.MaxTotalSize, "")
+			e := channel.New(1, MaxTotalSize, "")
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -1668,14 +1667,14 @@ func TestInvalidFragments(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{
-					ipv4.NewProtocol,
+					NewProtocol,
 				},
 			})
 			e := channel.New(0, 1500, linkAddr)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr2); err != nil {
+			if err := s.AddAddress(nicID, ProtocolNumber, addr2); err != nil {
 				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, addr2, err)
 			}
 
@@ -1885,7 +1884,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{
-					ipv4.NewProtocol,
+					NewProtocol,
 				},
 				Clock: clock,
 			})
@@ -1893,7 +1892,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr2); err != nil {
+			if err := s.AddAddress(nicID, ProtocolNumber, addr2); err != nil {
 				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, addr2, err)
 			}
 			s.SetRouteTable([]tcpip.Route{{
@@ -1926,7 +1925,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 			}
 
-			clock.Advance(ipv4.ReassembleTimeout)
+			clock.Advance(ReassembleTimeout)
 
 			reply, ok := e.Read()
 			if !test.expectICMP {
@@ -2351,7 +2350,7 @@ func TestReceiveFragments(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			// Setup a stack and endpoint.
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			e := channel.New(0, 1280, tcpip.LinkAddress("\xf0\x00"))
@@ -2557,7 +2556,7 @@ func TestWriteStats(t *testing.T) {
 
 func buildRoute(t *testing.T, ep stack.LinkEndpoint) *stack.Route {
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 	})
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC(1, _) failed: %s", err)
@@ -2566,8 +2565,8 @@ func buildRoute(t *testing.T, ep stack.LinkEndpoint) *stack.Route {
 		src = "\x10\x00\x00\x01"
 		dst = "\x10\x00\x00\x02"
 	)
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, src); err != nil {
-		t.Fatalf("AddAddress(1, %d, %s) failed: %s", ipv4.ProtocolNumber, src, err)
+	if err := s.AddAddress(1, ProtocolNumber, src); err != nil {
+		t.Fatalf("AddAddress(1, %d, %s) failed: %s", ProtocolNumber, src, err)
 	}
 	{
 		mask := tcpip.AddressMask(header.IPv4Broadcast)
@@ -2580,9 +2579,9 @@ func buildRoute(t *testing.T, ep stack.LinkEndpoint) *stack.Route {
 			NIC:         1,
 		}})
 	}
-	rt, err := s.FindRoute(1, src, dst, ipv4.ProtocolNumber, false /* multicastLoop */)
+	rt, err := s.FindRoute(1, src, dst, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
-		t.Fatalf("FindRoute(1, %s, %s, %d, false) = %s", src, dst, ipv4.ProtocolNumber, err)
+		t.Fatalf("FindRoute(1, %s, %s, %d, false) = %s", src, dst, ProtocolNumber, err)
 	}
 	return rt
 }
@@ -2615,14 +2614,14 @@ func TestPacketQueing(t *testing.T) {
 		host2NICLinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
 
 		host1IPv4Addr = tcpip.ProtocolAddress{
-			Protocol: ipv4.ProtocolNumber,
+			Protocol: ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
 				Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
 				PrefixLen: 24,
 			},
 		}
 		host2IPv4Addr = tcpip.ProtocolAddress{
-			Protocol: ipv4.ProtocolNumber,
+			Protocol: ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
 				Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
 				PrefixLen: 8,
@@ -2651,13 +2650,13 @@ func TestPacketQueing(t *testing.T) {
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
 					TotalLength: header.IPv4MinimumSize + header.UDPMinimumSize,
-					TTL:         ipv4.DefaultTTL,
+					TTL:         DefaultTTL,
 					Protocol:    uint8(udp.ProtocolNumber),
 					SrcAddr:     host2IPv4Addr.AddressWithPrefix.Address,
 					DstAddr:     host1IPv4Addr.AddressWithPrefix.Address,
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
-				e.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
 				}))
 			},
@@ -2695,7 +2694,7 @@ func TestPacketQueing(t *testing.T) {
 				ip.Encode(&header.IPv4Fields{
 					TotalLength: uint16(totalLen),
 					Protocol:    uint8(icmp.ProtocolNumber4),
-					TTL:         ipv4.DefaultTTL,
+					TTL:         DefaultTTL,
 					SrcAddr:     host2IPv4Addr.AddressWithPrefix.Address,
 					DstAddr:     host1IPv4Addr.AddressWithPrefix.Address,
 				})
@@ -2730,7 +2729,7 @@ func TestPacketQueing(t *testing.T) {
 			e := channel.New(1, defaultMTU, host1NICLinkAddr)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 

@@ -30,6 +30,7 @@ go_test(
         "igmp_test.go",
         "ipv4_test.go",
     ],
+    library = ":ipv4",
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
@@ -39,7 +40,6 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/arp",
-        "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/testutil",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/icmp",

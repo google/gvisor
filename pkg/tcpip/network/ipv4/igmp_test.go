@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ipv4_test
+package ipv4
 
 import (
 	"testing"
@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -61,8 +60,8 @@ func createStack(t *testing.T, igmpEnabled bool) (*channel.Endpoint, *stack.Stac
 	e := channel.New(1, 1280, linkAddr)
 	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocolWithOptions(ipv4.Options{
-			IGMP: ipv4.IGMPOptions{
+		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocolWithOptions(Options{
+			IGMP: IGMPOptions{
 				Enabled: igmpEnabled,
 			},
 		})},
@@ -94,7 +93,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 	igmp.SetGroupAddress(groupAddress)
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 
-	e.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+	e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 }
@@ -105,7 +104,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 func TestIgmpV1Present(t *testing.T) {
 	e, s, clock := createStack(t, true)
 
-	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr); err != nil {
+	if err := s.JoinGroup(ProtocolNumber, nicID, multicastAddr); err != nil {
 		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr, err)
 	}
 
@@ -144,7 +143,7 @@ func TestIgmpV1Present(t *testing.T) {
 	if ok {
 		t.Fatalf("sent unexpected packet, expected V1MembershipReport only after advancing the clock = %+v", p.Pkt)
 	}
-	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
+	clock.Advance(UnsolicitedReportIntervalMax)
 	p, ok = e.Read()
 	if !ok {
 		t.Fatal("unable to Read IGMP packet, expected V1MembershipReport")
