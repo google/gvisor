@@ -119,7 +119,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	deviceDescriptor, err := strconv.ParseInt(deviceDescriptorStr, 10 /* base */, 32 /* bitSize */)
 	if err != nil {
-		return nil, nil, err
+		log.Debugf("%s.GetFilesystem: device FD '%v' not parsable: %v", fsType.Name(), deviceDescriptorStr, err)
+		return nil, nil, syserror.EINVAL
 	}
 
 	kernelTask := kernel.TaskFromContext(ctx)
@@ -360,12 +361,8 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 			in.Flags &= ^uint32(linux.O_TRUNC)
 		}
 
-		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, &in)
-		if err != nil {
-			return nil, err
-		}
-
 		// Send the request and receive the reply.
+		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, &in)
 		res, err := i.fs.conn.Call(kernelTask, req)
 		if err != nil {
 			return nil, err
@@ -485,10 +482,7 @@ func (i *inode) Unlink(ctx context.Context, name string, child kernfs.Inode) err
 		return syserror.EINVAL
 	}
 	in := linux.FUSEUnlinkIn{Name: name}
-	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_UNLINK, &in)
-	if err != nil {
-		return err
-	}
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_UNLINK, &in)
 	res, err := i.fs.conn.Call(kernelTask, req)
 	if err != nil {
 		return err
@@ -515,11 +509,7 @@ func (i *inode) RmDir(ctx context.Context, name string, child kernfs.Inode) erro
 	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
 
 	in := linux.FUSERmDirIn{Name: name}
-	req, err := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_RMDIR, &in)
-	if err != nil {
-		return err
-	}
-
+	req := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_RMDIR, &in)
 	res, err := i.fs.conn.Call(task, req)
 	if err != nil {
 		return err
@@ -535,10 +525,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
 		return nil, syserror.EINVAL
 	}
-	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, payload)
-	if err != nil {
-		return nil, err
-	}
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, payload)
 	res, err := i.fs.conn.Call(kernelTask, req)
 	if err != nil {
 		return nil, err
@@ -574,10 +561,7 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 			log.Warningf("fusefs.Inode.Readlink: couldn't get kernel task from context")
 			return "", syserror.EINVAL
 		}
-		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
-		if err != nil {
-			return "", err
-		}
+		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
 		res, err := i.fs.conn.Call(kernelTask, req)
 		if err != nil {
 			return "", err
@@ -680,11 +664,7 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 		GetAttrFlags: flags,
 		Fh:           fh,
 	}
-	req, err := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_GETATTR, &in)
-	if err != nil {
-		return linux.FUSEAttr{}, err
-	}
-
+	req := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_GETATTR, &in)
 	res, err := i.fs.conn.Call(task, req)
 	if err != nil {
 		return linux.FUSEAttr{}, err
@@ -803,11 +783,7 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		UID:       opts.Stat.UID,
 		GID:       opts.Stat.GID,
 	}
-	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_SETATTR, &in)
-	if err != nil {
-		return err
-	}
-
+	req := conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_SETATTR, &in)
 	res, err := conn.Call(task, req)
 	if err != nil {
 		return err

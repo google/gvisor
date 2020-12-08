@@ -84,11 +84,7 @@ func (conn *connection) InitSend(creds *auth.Credentials, pid uint32) error {
 		Flags:        fuseDefaultInitFlags,
 	}
 
-	req, err := conn.NewRequest(creds, pid, 0, linux.FUSE_INIT, &in)
-	if err != nil {
-		return err
-	}
-
+	req := conn.NewRequest(creds, pid, 0, linux.FUSE_INIT, &in)
 	// Since there is no task to block on and FUSE_INIT is the request
 	// to unblock other requests, use nil.
 	return conn.CallAsync(nil, req)

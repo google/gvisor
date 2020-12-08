@@ -104,7 +104,7 @@ type Request struct {
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
-func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
+func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) *Request {
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
 	conn.fd.nextOpID += linux.FUSEOpID(reqIDStep)
@@ -130,7 +130,7 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 		id:   hdr.Unique,
 		hdr:  &hdr,
 		data: buf,
-	}, nil
+	}
 }
 
 // futureResponse represents an in-flight request, that may or may not have
