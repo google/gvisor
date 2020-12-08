@@ -59,6 +59,11 @@ func (e *testIPv6Endpoint) MTU() uint32 {
 	return e.nic.MTU() - header.IPv6MinimumSize
 }
 
+// HeaderLengthNoIPOptions implements NetworkEndpoint.HeaderLengthNoIPOptions.
+func (e *testIPv6Endpoint) HeaderLengthNoIPOptions() uint16 {
+	return e.MaxHeaderLength()
+}
+
 // MaxHeaderLength implements NetworkEndpoint.MaxHeaderLength.
 func (e *testIPv6Endpoint) MaxHeaderLength() uint16 {
 	return e.nic.MaxHeaderLength() + header.IPv6MinimumSize

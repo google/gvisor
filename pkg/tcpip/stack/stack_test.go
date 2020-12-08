@@ -141,6 +141,10 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	f.dispatcher.DeliverTransportPacket(tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
 }
 
+func (f *fakeNetworkEndpoint) HeaderLengthNoIPOptions() uint16 {
+	return f.MaxHeaderLength()
+}
+
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
 	return f.nic.MaxHeaderLength() + fakeNetHeaderLen
 }

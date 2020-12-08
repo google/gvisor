@@ -100,6 +100,10 @@ func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
 	_ = r.WriteHeaderIncludedPacket(pkt)
 }
 
+func (f *fwdTestNetworkEndpoint) HeaderLengthNoIPOptions() uint16 {
+	return f.MaxHeaderLength()
+}
+
 func (f *fwdTestNetworkEndpoint) MaxHeaderLength() uint16 {
 	return f.nic.MaxHeaderLength() + fwdTestNetHeaderLen
 }

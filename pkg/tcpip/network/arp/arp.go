@@ -94,6 +94,10 @@ func (e *endpoint) MTU() uint32 {
 	return lmtu - uint32(e.MaxHeaderLength())
 }
 
+func (e *endpoint) HeaderLengthNoIPOptions() uint16 {
+	return e.MaxHeaderLength()
+}
+
 func (e *endpoint) MaxHeaderLength() uint16 {
 	return e.nic.MaxHeaderLength() + header.ARPSize
 }

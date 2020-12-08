@@ -386,6 +386,12 @@ func (e *endpoint) MTU() uint32 {
 	return networkMTU
 }
 
+// HeaderLengthNoIPOptions implements
+// stack.NetworkEndpoint.HeaderLengthNoIPOptions.
+func (e *endpoint) HeaderLengthNoIPOptions() uint16 {
+	return e.MaxHeaderLength()
+}
+
 // MaxHeaderLength returns the maximum length needed by ipv6 headers (and
 // underlying protocols).
 func (e *endpoint) MaxHeaderLength() uint16 {

@@ -892,7 +892,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	if mtu > header.IPv6MinimumMTU {
 		mtu = header.IPv6MinimumMTU
 	}
-	headerLen := int(route.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize
+	headerLen := int(route.HeaderLengthNoIPOptions()) + header.ICMPv6ErrorHeaderSize
 	available := int(mtu) - headerLen
 	if available < header.IPv6MinimumSize {
 		return nil

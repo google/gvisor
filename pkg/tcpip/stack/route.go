@@ -203,6 +203,12 @@ func (r *Route) NICID() tcpip.NICID {
 	return r.outgoingNIC.ID()
 }
 
+// HeaderLengthNoIPOptions forwards the call to the network endpoint's
+// implementation.
+func (r *Route) HeaderLengthNoIPOptions() uint16 {
+	return r.outgoingNIC.getNetworkEndpoint(r.NetProto).HeaderLengthNoIPOptions()
+}
+
 // MaxHeaderLength forwards the call to the network endpoint's implementation.
 func (r *Route) MaxHeaderLength() uint16 {
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto).MaxHeaderLength()

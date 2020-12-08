@@ -438,7 +438,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	if mtu > header.IPv4MinimumProcessableDatagramSize {
 		mtu = header.IPv4MinimumProcessableDatagramSize
 	}
-	headerLen := int(route.MaxHeaderLength()) + header.ICMPv4MinimumSize
+	headerLen := int(route.HeaderLengthNoIPOptions()) + header.ICMPv4MinimumSize
 	available := int(mtu) - headerLen
 
 	if available < header.IPv4MinimumSize+header.ICMPv4MinimumErrorPayloadSize {
