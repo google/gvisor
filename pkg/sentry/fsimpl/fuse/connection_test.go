@@ -76,10 +76,7 @@ func TestConnectionAbort(t *testing.T) {
 	var futNormal []*futureResponse
 
 	for i := 0; i < int(numRequests); i++ {
-		req, err := conn.NewRequest(creds, uint32(i), uint64(i), 0, testObj)
-		if err != nil {
-			t.Fatalf("NewRequest creation failed: %v", err)
-		}
+		req := conn.NewRequest(creds, uint32(i), uint64(i), 0, testObj)
 		fut, err := conn.callFutureLocked(task, req)
 		if err != nil {
 			t.Fatalf("callFutureLocked failed: %v", err)
@@ -105,10 +102,7 @@ func TestConnectionAbort(t *testing.T) {
 	}
 
 	// After abort, Call() should return directly with ENOTCONN.
-	req, err := conn.NewRequest(creds, 0, 0, 0, testObj)
-	if err != nil {
-		t.Fatalf("NewRequest creation failed: %v", err)
-	}
+	req := conn.NewRequest(creds, 0, 0, 0, testObj)
 	_, err = conn.Call(task, req)
 	if err != syserror.ENOTCONN {
 		t.Fatalf("Incorrect error code received for Call() after connection aborted")
