@@ -265,12 +265,36 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		t.Fatalf("failed to marshal %v into json: %s", dutTestNets, err)
 	}
 
-	snifferProg := "tcpdump"
+	baseSnifferArgs := []string{
+		"tcpdump",
+		"-vvv",
+		"--absolute-tcp-sequence-numbers",
+		"--packet-buffered",
+		// Disable DNS resolution.
+		"-n",
+	}
 	if tshark {
-		snifferProg = "tshark"
+		baseSnifferArgs = []string{
+			"tshark",
+			"-V",
+			"-o", "tcp.check_checksum:TRUE",
+			"-o", "udp.check_checksum:TRUE",
+			// Disable buffering.
+			"-l",
+			// Disable DNS resolution.
+			"-n",
+		}
 	}
 	for _, n := range dutTestNets {
-		_, err := testbenchContainer.ExecProcess(ctx, dockerutil.ExecOpts{}, snifferArgs(n.LocalDevName)...)
+		snifferArgs := append(baseSnifferArgs, "-i", n.LocalDevName)
+		if !tshark {
+			snifferArgs = append(
+				snifferArgs,
+				"-w",
+				filepath.Join(testOutputDir, fmt.Sprintf("%s.pcap", n.LocalDevName)),
+			)
+		}
+		_, err := testbenchContainer.ExecProcess(ctx, dockerutil.ExecOpts{}, snifferArgs...)
 		if err != nil {
 			t.Fatalf("failed to start exec a sniffer on %s: %s", n.LocalDevName, err)
 		}
@@ -292,7 +316,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		// any packets. On linux tests killing it immediately can
 		// sometimes result in partial pcaps.
 		time.Sleep(1 * time.Second)
-		if logs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, "killall", snifferProg); err != nil {
+		if logs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, "killall", baseSnifferArgs[0]); err != nil {
 			t.Errorf("failed to kill all sniffers: %s, logs: %s", err, logs)
 		}
 	})
@@ -548,25 +572,4 @@ func mountTempDirectory(t *testing.T, runOpts *dockerutil.RunOpts, hostDirTempla
 		ReadOnly: false,
 	})
 	return tmpDir, nil
-}
-
-// snifferArgs returns the correct command line to run sniffer on the testbench.
-func snifferArgs(devName string) []string {
-	if tshark {
-		// Run tshark in the test bench unbuffered, without DNS resolution, just
-		// on the interface with the test packets.
-		return []string{
-			"tshark", "-V", "-l", "-n", "-i", devName,
-			"-o", "tcp.check_checksum:TRUE",
-			"-o", "udp.check_checksum:TRUE",
-		}
-	}
-	// Run tcpdump in the test bench unbuffered, without DNS resolution, just
-	// on the interface with the test packets.
-	return []string{
-		"tcpdump",
-		"-S", "-vvv", "-U", "-n",
-		"-i", devName,
-		"-w", filepath.Join(testOutputDir, fmt.Sprintf("%s.pcap", devName)),
-	}
 }
