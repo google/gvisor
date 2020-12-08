@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library")
+load("//test/benchmarks:defs.bzl", "benchmark_test")
 
 package(licenses = ["notice"])
 
@@ -14,7 +15,7 @@ go_library(
     ],
 )
 
-go_test(
+benchmark_test(
     name = "startup_test",
     size = "enormous",
     srcs = ["startup_test.go"],
@@ -26,7 +27,7 @@ go_test(
     ],
 )
 
-go_test(
+benchmark_test(
     name = "size_test",
     size = "enormous",
     srcs = ["size_test.go"],
@@ -39,7 +40,7 @@ go_test(
     ],
 )
 
-go_test(
+benchmark_test(
     name = "sysbench_test",
     size = "enormous",
     srcs = ["sysbench_test.go"],
