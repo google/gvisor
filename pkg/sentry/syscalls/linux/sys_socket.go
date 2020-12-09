@@ -784,8 +784,9 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	}
 	defer cms.Release(t)
 
+	family, _, _ := s.Type()
 	controlData := make([]byte, 0, msg.ControlLen)
-	controlData = control.PackControlMessages(t, cms, controlData)
+	controlData = control.PackControlMessages(t, family, cms, controlData)
 
 	if cr, ok := s.(transport.Credentialer); ok && cr.Passcred() {
 		creds, _ := cms.Unix.Credentials.(control.SCMCredentials)

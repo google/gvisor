@@ -2451,6 +2451,27 @@ cc_library(
 )
 
 cc_library(
+    name = "socket_ipv6_udp_unbound_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_ipv6_udp_unbound.cc",
+    ],
+    hdrs = [
+        "socket_ipv6_udp_unbound.h",
+    ],
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_test_util",
+        "@com_google_absl//absl/memory",
+        gtest,
+        "//test/util:posix_error",
+        "//test/util:save_util",
+        "//test/util:test_util",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
     name = "socket_ipv4_udp_unbound_netlink_test_cases",
     testonly = 1,
     srcs = [
@@ -2783,6 +2804,22 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_test_cases",
+        ":socket_test_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "socket_ipv6_udp_unbound_loopback_test",
+    testonly = 1,
+    srcs = [
+        "socket_ipv6_udp_unbound_loopback.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_ipv6_udp_unbound_test_cases",
         ":socket_test_util",
         "//test/util:test_main",
         "//test/util:test_util",
