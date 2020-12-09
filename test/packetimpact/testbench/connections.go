@@ -603,9 +603,9 @@ func (conn *Connection) ExpectFrame(t *testing.T, layers Layers, timeout time.Du
 		}
 		if gotLayers == nil {
 			if errs == nil {
-				return nil, fmt.Errorf("got no frames matching %v during %s", layers, timeout)
+				return nil, fmt.Errorf("got no frames matching %s during %s", layers, timeout)
 			}
-			return nil, fmt.Errorf("got frames %w want %v during %s", errs, layers, timeout)
+			return nil, fmt.Errorf("got frames:\n%w want %s during %s", errs, layers, timeout)
 		}
 		if conn.match(layers, gotLayers) {
 			for i, s := range conn.layerStates {
