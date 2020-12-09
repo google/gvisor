@@ -234,7 +234,7 @@ func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
 type Cgroup struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
-	Own     map[string]bool   `json:"own"`
+	Own     interface{}       `json:"own"`
 }
 
 // New creates a new Cgroup instance if the spec includes a cgroup path.
@@ -280,7 +280,14 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 		}
 
 		// Mark that cgroup resources are owned by me.
-		c.Own[key] = true
+		switch own := c.Own.(type) {
+		case bool:
+			c.Own = true
+		case map[string]bool:
+			own[key] = true
+		default:
+			return fmt.Errorf("unexpected type for Cgroup.Own %T", own)
+		}
 
 		if err := os.MkdirAll(path, 0755); err != nil {
 			if cfg.optional && errors.Is(err, syscall.EROFS) {
@@ -302,9 +309,17 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 func (c *Cgroup) Uninstall() error {
 	log.Debugf("Deleting cgroup %q", c.Name)
 	for key := range controllers {
-		if !c.Own[key] {
-			// cgroup is managed by caller, don't touch it.
-			continue
+		switch own := c.Own.(type) {
+		case bool:
+			if !own {
+				return nil
+			}
+		case map[string]bool:
+			if !own[key] {
+				continue
+			}
+		default:
+			return fmt.Errorf("unexpected type for Cgroup.Own %T", own)
 		}
 		path := c.makePath(key)
 		log.Debugf("Removing cgroup controller for key=%q path=%q", key, path)

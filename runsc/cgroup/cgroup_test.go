@@ -30,10 +30,11 @@ func TestUninstallEnoent(t *testing.T) {
 		// set a non-existent name
 		Name: "runsc-test-uninstall-656e6f656e740a",
 	}
-	c.Own = make(map[string]bool)
+	own := make(map[string]bool)
 	for key := range controllers {
-		c.Own[key] = true
+		own[key] = true
 	}
+	c.Own = own
 	if err := c.Uninstall(); err != nil {
 		t.Errorf("Uninstall() failed: %v", err)
 	}
