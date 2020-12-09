@@ -72,7 +72,6 @@ type endpoint struct {
 	nic        stack.NetworkInterface
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
-	igmp       igmpState
 
 	// enabled is set to 1 when the enpoint is enabled and 0 when it is
 	// disabled.
@@ -84,6 +83,7 @@ type endpoint struct {
 		sync.RWMutex
 
 		addressableEndpointState stack.AddressableEndpointState
+		igmp                     igmpState
 	}
 }
 
@@ -94,8 +94,10 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.LinkAddressCa
 		dispatcher: dispatcher,
 		protocol:   p,
 	}
+	e.mu.Lock()
 	e.mu.addressableEndpointState.Init(e)
-	e.igmp.init(e, p.options.IGMP)
+	e.mu.igmp.init(e)
+	e.mu.Unlock()
 	return e
 }
 
@@ -127,7 +129,7 @@ func (e *endpoint) Enable() *tcpip.Error {
 	// endpoint may have left groups from the perspective of IGMP when the
 	// endpoint was disabled. Either way, we need to let routers know to
 	// send us multicast traffic.
-	e.igmp.initializeAll()
+	e.mu.igmp.initializeAll()
 
 	// As per RFC 1122 section 3.3.7, all hosts should join the all-hosts
 	// multicast group. Note, the IANA calls the all-hosts multicast group the
@@ -181,7 +183,7 @@ func (e *endpoint) disableLocked() {
 
 	// Leave groups from the perspective of IGMP so that routers know that
 	// we are no longer interested in the group.
-	e.igmp.softLeaveAll()
+	e.mu.igmp.softLeaveAll()
 
 	// The address may have already been removed.
 	if err := e.mu.addressableEndpointState.RemovePermanentAddress(ipv4BroadcastAddr.Address); err != nil && err != tcpip.ErrBadLocalAddress {
@@ -718,7 +720,9 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 	if p == header.IGMPProtocolNumber {
-		e.igmp.handleIGMP(pkt)
+		e.mu.Lock()
+		e.mu.igmp.handleIGMP(pkt)
+		e.mu.Unlock()
 		return
 	}
 	if opts := h.Options(); len(opts) != 0 {
@@ -843,7 +847,7 @@ func (e *endpoint) joinGroupLocked(addr tcpip.Address) *tcpip.Error {
 		return tcpip.ErrBadAddress
 	}
 
-	e.igmp.joinGroup(addr)
+	e.mu.igmp.joinGroup(addr)
 	return nil
 }
 
@@ -858,14 +862,14 @@ func (e *endpoint) LeaveGroup(addr tcpip.Address) *tcpip.Error {
 //
 // Precondition: e.mu must be locked.
 func (e *endpoint) leaveGroupLocked(addr tcpip.Address) *tcpip.Error {
-	return e.igmp.leaveGroup(addr)
+	return e.mu.igmp.leaveGroup(addr)
 }
 
 // IsInGroup implements stack.GroupAddressableEndpoint.
 func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.igmp.isInGroup(addr)
+	return e.mu.igmp.isInGroup(addr)
 }
 
 var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
