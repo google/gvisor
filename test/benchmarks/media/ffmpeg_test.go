@@ -15,12 +15,15 @@ package media
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
+
+var h harness.Harness
 
 // BenchmarkFfmpeg runs ffmpeg in a container and records runtime.
 // BenchmarkFfmpeg should run as root to drop caches.
@@ -32,13 +35,13 @@ func BenchmarkFfmpeg(b *testing.B) {
 	defer machine.CleanUp()
 
 	ctx := context.Background()
-	container := machine.GetContainer(ctx, b)
-	defer container.CleanUp(ctx)
 	cmd := strings.Split("ffmpeg -i video.mp4 -c:v libx264 -preset veryslow output.mp4", " ")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
+		container := machine.GetContainer(ctx, b)
+		defer container.CleanUp(ctx)
 		if err := harness.DropCaches(machine); err != nil {
 			b.Skipf("failed to drop caches: %v. You probably need root.", err)
 		}
@@ -50,4 +53,9 @@ func BenchmarkFfmpeg(b *testing.B) {
 			b.Fatalf("failed to run container: %v", err)
 		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }

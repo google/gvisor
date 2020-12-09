@@ -14,18 +14,3 @@
 
 // Package media holds benchmarks around media processing applications.
 package media
-
-import (
-	"os"
-	"testing"
-
-	"gvisor.dev/gvisor/test/benchmarks/harness"
-)
-
-var h harness.Harness
-
-// TestMain is the main method for package media.
-func TestMain(m *testing.M) {
-	h.Init()
-	os.Exit(m.Run())
-}

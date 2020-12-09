@@ -7,12 +7,11 @@ go_library(
     name = "media",
     testonly = 1,
     srcs = ["media.go"],
-    deps = ["//test/benchmarks/harness"],
 )
 
 benchmark_test(
-    name = "media_test",
-    size = "large",
+    name = "ffmpeg_test",
+    size = "enormous",
     srcs = ["ffmpeg_test.go"],
     library = ":media",
     visibility = ["//:sandbox"],
