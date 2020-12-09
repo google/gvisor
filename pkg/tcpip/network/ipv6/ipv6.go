@@ -85,9 +85,8 @@ type endpoint struct {
 
 		addressableEndpointState stack.AddressableEndpointState
 		ndp                      ndpState
+		mld                      mldState
 	}
-
-	mld mldState
 }
 
 // NICNameFromID is a function that returns a stable name for the specified NIC,
@@ -232,7 +231,7 @@ func (e *endpoint) Enable() *tcpip.Error {
 	// endpoint may have left groups from the perspective of MLD when the
 	// endpoint was disabled. Either way, we need to let routers know to
 	// send us multicast traffic.
-	e.mld.initializeAll()
+	e.mu.mld.initializeAll()
 
 	// Join the IPv6 All-Nodes Multicast group if the stack is configured to
 	// use IPv6. This is required to ensure that this node properly receives
@@ -349,7 +348,7 @@ func (e *endpoint) disableLocked() {
 
 	// Leave groups from the perspective of MLD so that routers know that
 	// we are no longer interested in the group.
-	e.mld.softLeaveAll()
+	e.mu.mld.softLeaveAll()
 }
 
 // stopDADForPermanentAddressesLocked stops DAD for all permaneent addresses.
@@ -1417,7 +1416,7 @@ func (e *endpoint) joinGroupLocked(addr tcpip.Address) *tcpip.Error {
 		return tcpip.ErrBadAddress
 	}
 
-	e.mld.joinGroup(addr)
+	e.mu.mld.joinGroup(addr)
 	return nil
 }
 
@@ -1432,14 +1431,14 @@ func (e *endpoint) LeaveGroup(addr tcpip.Address) *tcpip.Error {
 //
 // Precondition: e.mu must be locked.
 func (e *endpoint) leaveGroupLocked(addr tcpip.Address) *tcpip.Error {
-	return e.mld.leaveGroup(addr)
+	return e.mu.mld.leaveGroup(addr)
 }
 
 // IsInGroup implements stack.GroupAddressableEndpoint.
 func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mld.isInGroup(addr)
+	return e.mu.mld.isInGroup(addr)
 }
 
 var _ stack.ForwardingNetworkProtocol = (*protocol)(nil)
@@ -1504,17 +1503,11 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.L
 		dispatcher:    dispatcher,
 		protocol:      p,
 	}
+	e.mu.Lock()
 	e.mu.addressableEndpointState.Init(e)
-	e.mu.ndp = ndpState{
-		ep:             e,
-		configs:        p.options.NDPConfigs,
-		dad:            make(map[tcpip.Address]dadState),
-		defaultRouters: make(map[tcpip.Address]defaultRouterState),
-		onLinkPrefixes: make(map[tcpip.Subnet]onLinkPrefixState),
-		slaacPrefixes:  make(map[tcpip.Subnet]slaacPrefixState),
-	}
-	e.mu.ndp.initializeTempAddrState()
-	e.mld.init(e, p.options.MLD)
+	e.mu.ndp.init(e)
+	e.mu.mld.init(e)
+	e.mu.Unlock()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()

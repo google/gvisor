@@ -16,7 +16,6 @@ package ipv4
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -68,8 +67,9 @@ var _ ip.MulticastGroupProtocol = (*igmpState)(nil)
 // igmpState.init() MUST be called after creating an IGMP state.
 type igmpState struct {
 	// The IPv4 endpoint this igmpState is for.
-	ep   *endpoint
-	opts IGMPOptions
+	ep *endpoint
+
+	genericMulticastProtocol ip.GenericMulticastProtocolState
 
 	// igmpV1Present is for maintaining compatibility with IGMPv1 Routers, from
 	// RFC 2236 Section 4 Page 6: "The IGMPv1 router expects Version 1
@@ -84,16 +84,10 @@ type igmpState struct {
 	// when false.
 	igmpV1Present uint32
 
-	mu struct {
-		sync.RWMutex
-
-		genericMulticastProtocol ip.GenericMulticastProtocolState
-
-		// igmpV1Job is scheduled when this interface receives an IGMPv1 style
-		// message, upon expiration the igmpV1Present flag is cleared.
-		// igmpV1Job may not be nil once igmpState is initialized.
-		igmpV1Job *tcpip.Job
-	}
+	// igmpV1Job is scheduled when this interface receives an IGMPv1 style
+	// message, upon expiration the igmpV1Present flag is cleared.
+	// igmpV1Job may not be nil once igmpState is initialized.
+	igmpV1Job *tcpip.Job
 }
 
 // SendReport implements ip.MulticastGroupProtocol.
@@ -119,13 +113,12 @@ func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 
 // init sets up an igmpState struct, and is required to be called before using
 // a new igmpState.
-func (igmp *igmpState) init(ep *endpoint, opts IGMPOptions) {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
+//
+// Must only be called once for the lifetime of igmp.
+func (igmp *igmpState) init(ep *endpoint) {
 	igmp.ep = ep
-	igmp.opts = opts
-	igmp.mu.genericMulticastProtocol.Init(ip.GenericMulticastProtocolOptions{
-		Enabled:                   opts.Enabled,
+	igmp.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
+		Enabled:                   ep.protocol.options.IGMP.Enabled,
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  igmp,
@@ -133,11 +126,14 @@ func (igmp *igmpState) init(ep *endpoint, opts IGMPOptions) {
 		AllNodesAddress:           header.IPv4AllSystems,
 	})
 	igmp.igmpV1Present = igmpV1PresentDefault
-	igmp.mu.igmpV1Job = igmp.ep.protocol.stack.NewJob(&igmp.mu, func() {
+	igmp.igmpV1Job = ep.protocol.stack.NewJob(&ep.mu, func() {
 		igmp.setV1Present(false)
 	})
 }
 
+// handleIGMP handles an IGMP packet.
+//
+// Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
 	stats := igmp.ep.protocol.stack.Stats()
 	received := stats.IGMP.PacketsReceived
@@ -207,27 +203,28 @@ func (igmp *igmpState) setV1Present(v bool) {
 	}
 }
 
+// handleMembershipQuery handles a membership query.
+//
+// Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxRespTime time.Duration) {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
-
 	// As per RFC 2236 Section 6, Page 10: If the maximum response time is zero
 	// then change the state to note that an IGMPv1 router is present and
 	// schedule the query received Job.
-	if maxRespTime == 0 && igmp.opts.Enabled {
-		igmp.mu.igmpV1Job.Cancel()
-		igmp.mu.igmpV1Job.Schedule(v1RouterPresentTimeout)
+	if maxRespTime == 0 && igmp.ep.protocol.options.IGMP.Enabled {
+		igmp.igmpV1Job.Cancel()
+		igmp.igmpV1Job.Schedule(v1RouterPresentTimeout)
 		igmp.setV1Present(true)
 		maxRespTime = v1MaxRespTime
 	}
 
-	igmp.mu.genericMulticastProtocol.HandleQuery(groupAddress, maxRespTime)
+	igmp.genericMulticastProtocol.HandleQueryLocked(groupAddress, maxRespTime)
 }
 
+// handleMembershipReport handles a membership report.
+//
+// Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
-	igmp.mu.genericMulticastProtocol.HandleReport(groupAddress)
+	igmp.genericMulticastProtocol.HandleReportLocked(groupAddress)
 }
 
 // writePacket assembles and sends an IGMP packet with the provided fields,
@@ -278,28 +275,27 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 //
 // If the group already exists in the membership map, returns
 // tcpip.ErrDuplicateAddress.
+//
+// Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
-	igmp.mu.genericMulticastProtocol.JoinGroup(groupAddress, !igmp.ep.Enabled() /* dontInitialize */)
+	igmp.genericMulticastProtocol.JoinGroupLocked(groupAddress, !igmp.ep.Enabled() /* dontInitialize */)
 }
 
 // isInGroup returns true if the specified group has been joined locally.
+//
+// Precondition: igmp.ep.mu must be read locked.
 func (igmp *igmpState) isInGroup(groupAddress tcpip.Address) bool {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
-	return igmp.mu.genericMulticastProtocol.IsLocallyJoined(groupAddress)
+	return igmp.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
 
 // leaveGroup handles removing the group from the membership map, cancels any
 // delay timers associated with that group, and sends the Leave Group message
 // if required.
+//
+// Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) *tcpip.Error {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
-
 	// LeaveGroup returns false only if the group was not joined.
-	if igmp.mu.genericMulticastProtocol.LeaveGroup(groupAddress) {
+	if igmp.genericMulticastProtocol.LeaveGroupLocked(groupAddress) {
 		return nil
 	}
 
@@ -308,16 +304,16 @@ func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) *tcpip.Error {
 
 // softLeaveAll leaves all groups from the perspective of IGMP, but remains
 // joined locally.
+//
+// Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) softLeaveAll() {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
-	igmp.mu.genericMulticastProtocol.MakeAllNonMember()
+	igmp.genericMulticastProtocol.MakeAllNonMemberLocked()
 }
 
 // initializeAll attemps to initialize the IGMP state for each group that has
 // been joined locally.
+//
+// Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) initializeAll() {
-	igmp.mu.Lock()
-	defer igmp.mu.Unlock()
-	igmp.mu.genericMulticastProtocol.InitializeGroups()
+	igmp.genericMulticastProtocol.InitializeGroupsLocked()
 }
