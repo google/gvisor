@@ -162,7 +162,7 @@ func setUpDUT(ctx context.Context, t *testing.T, id int, mkDevice func(*dockerut
 		Image:  "packetimpact",
 		CapAdd: []string{"NET_ADMIN"},
 	}
-	if _, err := mountTempDirectory(t, &runOpts, "dut-output", testOutputDir); err != nil {
+	if _, err := MountTempDirectory(t, &runOpts, "dut-output", testOutputDir); err != nil {
 		return dutInfo{}, err
 	}
 
@@ -228,7 +228,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		Image:  "packetimpact",
 		CapAdd: []string{"NET_ADMIN"},
 	}
-	if _, err := mountTempDirectory(t, &runOpts, "testbench-output", testOutputDir); err != nil {
+	if _, err := MountTempDirectory(t, &runOpts, "testbench-output", testOutputDir); err != nil {
 		t.Fatal(err)
 	}
 	tbb := path.Base(testbenchBinary)
@@ -565,11 +565,11 @@ func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerut
 	return nil
 }
 
-// mountTempDirectory creates a temporary directory on host with the template
+// MountTempDirectory creates a temporary directory on host with the template
 // and then mounts it into the container under the name provided. The temporary
 // directory name is returned. Content in that directory will be copied to
 // TEST_UNDECLARED_OUTPUTS_DIR in cleanup phase.
-func mountTempDirectory(t *testing.T, runOpts *dockerutil.RunOpts, hostDirTemplate, containerDir string) (string, error) {
+func MountTempDirectory(t *testing.T, runOpts *dockerutil.RunOpts, hostDirTemplate, containerDir string) (string, error) {
 	t.Helper()
 	tmpDir, err := ioutil.TempDir("", hostDirTemplate)
 	if err != nil {

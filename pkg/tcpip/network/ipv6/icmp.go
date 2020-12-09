@@ -645,26 +645,34 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		}
 
 	case header.ICMPv6MulticastListenerQuery, header.ICMPv6MulticastListenerReport, header.ICMPv6MulticastListenerDone:
-		var handler func(header.MLD)
 		switch icmpType {
 		case header.ICMPv6MulticastListenerQuery:
 			received.MulticastListenerQuery.Increment()
-			handler = e.mld.handleMulticastListenerQuery
 		case header.ICMPv6MulticastListenerReport:
 			received.MulticastListenerReport.Increment()
-			handler = e.mld.handleMulticastListenerReport
 		case header.ICMPv6MulticastListenerDone:
 			received.MulticastListenerDone.Increment()
 		default:
 			panic(fmt.Sprintf("unrecognized MLD message = %d", icmpType))
 		}
+
 		if pkt.Data.Size()-header.ICMPv6HeaderSize < header.MLDMinimumSize {
 			received.Invalid.Increment()
 			return
 		}
 
-		if handler != nil {
-			handler(header.MLD(payload.ToView()))
+		switch icmpType {
+		case header.ICMPv6MulticastListenerQuery:
+			e.mu.Lock()
+			e.mu.mld.handleMulticastListenerQuery(header.MLD(payload.ToView()))
+			e.mu.Unlock()
+		case header.ICMPv6MulticastListenerReport:
+			e.mu.Lock()
+			e.mu.mld.handleMulticastListenerReport(header.MLD(payload.ToView()))
+			e.mu.Unlock()
+		case header.ICMPv6MulticastListenerDone:
+		default:
+			panic(fmt.Sprintf("unrecognized MLD message = %d", icmpType))
 		}
 
 	default:
