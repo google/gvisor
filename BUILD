@@ -72,7 +72,10 @@ build_test(
         "//test/benchmarks/fs:fio_test",
         "//test/benchmarks/media:ffmpeg_test",
         "//test/benchmarks/ml:tensorflow_test",
-        "//test/benchmarks/network:network_test",
+        "//test/benchmarks/network:httpd_test",
+        "//test/benchmarks/network:nginx_test",
+        "//test/benchmarks/network:node_test",
+        "//test/benchmarks/network:ruby_test",
     ],
 )
 

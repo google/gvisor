@@ -31,7 +31,7 @@ type Iperf struct {
 // MakeCmd returns a iperf client command.
 func (i *Iperf) MakeCmd(ip net.IP, port int) []string {
 	// iperf report in Kb realtime
-	return strings.Split(fmt.Sprintf("iperf -f K --realtime --time %d -c %s -p %d", i.Time, ip, port), " ")
+	return strings.Split(fmt.Sprintf("iperf -f K --realtime --time %d --client %s --port %d", i.Time, ip, port), " ")
 }
 
 // Report parses output from iperf client and reports metrics.

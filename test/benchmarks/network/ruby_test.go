@@ -16,6 +16,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -24,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
+
+var h harness.Harness
 
 // BenchmarkRuby runs requests using 'hey' against a ruby application server.
 // On start, ruby app generates some random data and pushes it to a redis
@@ -52,7 +55,6 @@ func BenchmarkRuby(b *testing.B) {
 
 // runRuby runs the test for a given # of requests and concurrency.
 func runRuby(b *testing.B, hey *tools.Hey) {
-	b.Helper()
 	// The machine to hold Redis and the Ruby Server.
 	serverMachine, err := h.GetMachine()
 	if err != nil {
@@ -140,4 +142,9 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	b.StopTimer()
 	hey.Report(b, out)
 	b.StartTimer()
+}
+
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }
