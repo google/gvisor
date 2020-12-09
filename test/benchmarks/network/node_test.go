@@ -15,6 +15,7 @@ package network
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -23,6 +24,8 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
+
+var h harness.Harness
 
 // BenchmarkNode runs requests using 'hey' against a Node server run on
 // 'runtime'. The server responds to requests by grabbing some data in a
@@ -131,5 +134,9 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	// Stop the timer to parse the data and report stats.
 	b.StopTimer()
 	hey.Report(b, out)
-	b.StartTimer()
+}
+
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }

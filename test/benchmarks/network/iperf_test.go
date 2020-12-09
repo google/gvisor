@@ -15,6 +15,7 @@ package network
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -23,9 +24,11 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
+var h harness.Harness
+
 func BenchmarkIperf(b *testing.B) {
 	iperf := tools.Iperf{
-		Time: 10, // time in seconds to run client.
+		Time: b.N, // time in seconds to run client.
 	}
 
 	clientMachine, err := h.GetMachine()
@@ -97,17 +100,19 @@ func BenchmarkIperf(b *testing.B) {
 			// Restart the server profiles. If the server isn't being profiled
 			// this does nothing.
 			server.RestartProfiles()
-			for i := 0; i < b.N; i++ {
-				out, err := client.Run(ctx, dockerutil.RunOpts{
-					Image: "benchmarks/iperf",
-				}, iperf.MakeCmd(ip, servingPort)...)
-				if err != nil {
-					b.Fatalf("failed to run client: %v", err)
-				}
-				b.StopTimer()
-				iperf.Report(b, out)
-				b.StartTimer()
+			out, err := client.Run(ctx, dockerutil.RunOpts{
+				Image: "benchmarks/iperf",
+			}, iperf.MakeCmd(ip, servingPort)...)
+			if err != nil {
+				b.Fatalf("failed to run client: %v", err)
 			}
+			b.StopTimer()
+			iperf.Report(b, out)
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }
