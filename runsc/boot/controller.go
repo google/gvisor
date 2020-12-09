@@ -61,6 +61,9 @@ const (
 	// ContainerPause pauses the container.
 	ContainerPause = "containerManager.Pause"
 
+	// ContainerPortForward starts port forwarding with the sandbox.
+	ContainerPortForward = "containerManager.PortForward"
+
 	// ContainerProcesses is the URPC endpoint for getting the list of
 	// processes running in a container.
 	ContainerProcesses = "containerManager.Processes"
@@ -330,17 +333,36 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 // Checkpoint pauses a sandbox and saves its state.
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
-	state := control.State{
-		Kernel:   cm.l.k,
-		Watchdog: cm.l.watchdog,
-	}
-	return state.Save(o, nil)
+	return cm.l.Checkpoint(o)
 }
 
 // Pause suspends a container.
 func (cm *containerManager) Pause(_, _ *struct{}) error {
 	log.Debugf("containerManager.Pause")
-	cm.l.k.Pause()
+	cm.l.Pause()
+	return nil
+}
+
+// PortForwardOpts contains options for port forwarding to a port in a
+// container.
+type PortForwardOpts struct {
+	// FilePayload contains one fd for a UDS (or local port) used for port
+	// forwarding.
+	urpc.FilePayload
+
+	// ContainerID is the container for the process being executed.
+	ContainerID string
+	// Port is the port to to forward.
+	Port int
+}
+
+// PortForward initiates a port forward to the container.
+func (cm *containerManager) PortForward(opts *PortForwardOpts, _ *struct{}) error {
+	log.Debugf("containerManager.PortForward, cid: %s, port: %d", opts.ContainerID, opts.Port)
+	if err := cm.l.portForward(opts); err != nil {
+		log.Debugf("containerManager.PortForward failed, opts: %+v, err: %v", opts, err)
+		return err
+	}
 	return nil
 }
 

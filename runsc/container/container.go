@@ -506,6 +506,15 @@ func (c *Container) Event() (*boot.EventOut, error) {
 	return event, nil
 }
 
+// PortForward starts port forwarding to the container.
+func (c *Container) PortForward(opts *boot.PortForwardOpts) error {
+	if err := c.requireStatus("port forward", Running); err != nil {
+		return err
+	}
+	opts.ContainerID = c.ID
+	return c.Sandbox.PortForward(opts)
+}
+
 // SandboxPid returns the Pid of the sandbox the container is running in, or -1 if the
 // container is not running.
 func (c *Container) SandboxPid() int {

@@ -79,6 +79,7 @@ func Main(version string) {
 	subcommands.Register(new(cmd.Kill), "")
 	subcommands.Register(new(cmd.List), "")
 	subcommands.Register(new(cmd.Pause), "")
+	subcommands.Register(new(cmd.PortForward), "")
 	subcommands.Register(new(cmd.PS), "")
 	subcommands.Register(new(cmd.Restore), "")
 	subcommands.Register(new(cmd.Resume), "")

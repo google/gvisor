@@ -30,11 +30,16 @@ type Cleanup struct {
 
 // Make creates a new Cleanup object.
 func Make(f func()) Cleanup {
-	return Cleanup{cleaners: []func(){f}}
+	c := Cleanup{}
+	c.Add(f)
+	return c
 }
 
 // Add adds a new function to be called on Clean().
 func (c *Cleanup) Add(f func()) {
+	if f == nil {
+		return
+	}
 	c.cleaners = append(c.cleaners, f)
 }
 
