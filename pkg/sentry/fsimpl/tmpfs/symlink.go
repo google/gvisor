@@ -16,7 +16,12 @@ package tmpfs
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // +stateify savable
@@ -34,5 +39,58 @@ func (fs *filesystem) newSymlink(kuid auth.KUID, kgid auth.KGID, mode linux.File
 	return &link.inode
 }
 
-// O_PATH is unimplemented, so there's no way to get a FileDescription
-// representing a symlink yet.
+// +stateify savable
+type symlinkFD struct {
+	fileDescription
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (fd *symlinkFD) Release(context.Context) {
+	// noop
+}
+
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (fd *symlinkFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	return syserror.ENODEV
+}
+
+// PRead implements vfs.FileDescriptionImpl.PRead.
+func (fd *symlinkFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	return 0, syserror.EBADF
+}
+
+// Read implements vfs.FileDescriptionImpl.Read.
+func (fd *symlinkFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	return 0, syserror.EBADF
+}
+
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
+func (fd *symlinkFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	return 0, syserror.EBADF
+}
+
+// pwrite returns the number of bytes written, final offset and error. The
+// final offset should be ignored by PWrite.
+func (fd *symlinkFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
+	return 0, 0, syserror.EBADF
+}
+
+// Write implements vfs.FileDescriptionImpl.Write.
+func (fd *symlinkFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	return 0, syserror.EBADF
+}
+
+// IterDirents implements vfs.FileDescriptionImpl.IterDirents.
+func (fd *symlinkFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
+	return syserror.ENOTDIR
+}
+
+// Seek implements vfs.FileDescriptionImpl.Seek.
+func (fd *symlinkFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	return 0, syserror.EBADF
+}
+
+// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
+func (fd *symlinkFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+	return syserror.EBADF
+}
