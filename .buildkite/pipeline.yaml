@@ -17,9 +17,7 @@ steps:
   - <<: *common
     label: ":golang: Go branch"
     commands:
-      - rm -rf bazel-bin/gopath
-      - make build TARGETS="//:gopath"
-      - tools/go_branch.sh
+      - make go
       - git checkout go && git clean -f
       - go build ./...
 

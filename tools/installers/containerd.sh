@@ -16,7 +16,7 @@
 
 set -xeo pipefail
 
-declare -r CONTAINERD_VERSION=${CONTAINERD_VERSION:-1.3.0}
+declare -r CONTAINERD_VERSION=${1:-1.3.0}
 declare -r CONTAINERD_MAJOR="$(echo ${CONTAINERD_VERSION} | awk -F '.' '{ print $1; }')"
 declare -r CONTAINERD_MINOR="$(echo ${CONTAINERD_VERSION} | awk -F '.' '{ print $2; }')"
 
