@@ -28,7 +28,7 @@ def go_proto_library(name, **kwargs):
 def go_grpc_and_proto_libraries(name, **kwargs):
     _go_proto_or_grpc_library(_go_grpc_library, name, **kwargs)
 
-def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
+def go_binary(name, static = False, pure = False, x_defs = None, system_malloc = False, **kwargs):
     """Build a go binary.
 
     Args:
@@ -52,7 +52,7 @@ def go_importpath(target):
     """Returns the importpath for the target."""
     return target[GoLibrary].importpath
 
-def go_library(name, **kwargs):
+def go_library(name, arch_deps = [], **kwargs):
     _go_library(
         name = name,
         importpath = "gvisor.dev/gvisor/" + native.package_name(),

@@ -11,7 +11,8 @@ go_library(
         "futex_linux.go",
         "io.go",
         "packet_window_allocator.go",
-        "packet_window_mmap.go",
+        "packet_window_mmap_amd64.go",
+        "packet_window_mmap_arm64.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
