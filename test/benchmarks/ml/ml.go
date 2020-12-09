@@ -14,18 +14,3 @@
 
 // Package ml holds benchmarks around machine learning performance.
 package ml
-
-import (
-	"os"
-	"testing"
-
-	"gvisor.dev/gvisor/test/benchmarks/harness"
-)
-
-var h harness.Harness
-
-// TestMain is the main method for package ml.
-func TestMain(m *testing.M) {
-	h.Init()
-	os.Exit(m.Run())
-}

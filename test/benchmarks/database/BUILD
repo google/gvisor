@@ -7,11 +7,10 @@ go_library(
     name = "database",
     testonly = 1,
     srcs = ["database.go"],
-    deps = ["//test/benchmarks/harness"],
 )
 
 benchmark_test(
-    name = "database_test",
+    name = "redis_test",
     size = "enormous",
     srcs = ["redis_test.go"],
     library = ":database",

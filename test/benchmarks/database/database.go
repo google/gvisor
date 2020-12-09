@@ -14,18 +14,3 @@
 
 // Package database holds benchmarks around database applications.
 package database
-
-import (
-	"os"
-	"testing"
-
-	"gvisor.dev/gvisor/test/benchmarks/harness"
-)
-
-var h harness.Harness
-
-// TestMain is the main method for package database.
-func TestMain(m *testing.M) {
-	h.Init()
-	os.Exit(m.Run())
-}

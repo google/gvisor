@@ -15,11 +15,14 @@ package ml
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
+
+var h harness.Harness
 
 // BenchmarkTensorflow runs workloads from a TensorFlow tutorial.
 // See: https://github.com/aymericdamien/TensorFlow-Examples
@@ -44,12 +47,12 @@ func BenchmarkTensorflow(b *testing.B) {
 	for name, workload := range workloads {
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
-			container := machine.GetContainer(ctx, b)
-			defer container.CleanUp(ctx)
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
+				container := machine.GetContainer(ctx, b)
+				defer container.CleanUp(ctx)
 				if err := harness.DropCaches(machine); err != nil {
 					b.Skipf("failed to drop caches: %v. You probably need root.", err)
 				}
@@ -66,4 +69,9 @@ func BenchmarkTensorflow(b *testing.B) {
 		})
 	}
 
+}
+
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }
