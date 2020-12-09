@@ -140,22 +140,15 @@ func (c *vCPU) initArchState() error {
 
 	// vbar_el1
 	reg.id = _KVM_ARM64_REGS_VBAR_EL1
-
-	fromLocation := reflect.ValueOf(ring0.Vectors).Pointer()
-	offset := fromLocation & (1<<11 - 1)
-	if offset != 0 {
-		offset = 1<<11 - offset
-	}
-
-	toLocation := fromLocation + offset
-	data = uint64(ring0.KernelStartAddress | toLocation)
+	vectorLocation := reflect.ValueOf(ring0.Vectors).Pointer()
+	data = uint64(ring0.KernelStartAddress | vectorLocation)
 	if err := c.setOneRegister(&reg); err != nil {
 		return err
 	}
 
 	// Use the address of the exception vector table as
 	// the MMIO address base.
-	arm64HypercallMMIOBase = toLocation
+	arm64HypercallMMIOBase = vectorLocation
 
 	// Initialize the PCID database.
 	if hasGuestPCID {
