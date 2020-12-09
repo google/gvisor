@@ -38,6 +38,15 @@ packetdrill_test(
     scripts = ["tcp_defer_accept_timeout.pkt"],
 )
 
+test_suite(
+    name = "all_tests",
+    tags = [
+        "manual",
+        "packetdrill",
+    ],
+    tests = existing_rules(),
+)
+
 bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],

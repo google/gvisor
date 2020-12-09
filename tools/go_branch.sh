@@ -90,7 +90,7 @@ find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
 # Sync the entire gopath_dir.
-rsync --recursive --verbose --delete --exclude .git -L "${gopath_dir}/" .
+rsync --recursive --delete --exclude .git -L "${gopath_dir}/" .
 
 # Add additional files.
 for file in "${othersrc[@]}"; do

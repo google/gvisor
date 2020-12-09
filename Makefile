@@ -14,26 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Helpful pretty-printer.
-ifeq (0,$(MAKELEVEL))
-OPENLAST := || (rc=$$?; echo '^^^ +++' >&2; exit $$rc)
-else
-OPENLAST :=
-endif
-CMDLINE := $(shell cut -d '' -f2- /proc/$$PPID/cmdline | sed 's|\x00| |g')
-submake = echo '--- make $1' >&2 && \
-  $(MAKE) -s $1 && \
-  echo '--- make $(CMDLINE) (resume)' >&2 \
-  $(OPENLAST)
-
-# Described below.
-OPTIONS :=
-STARTUP_OPTIONS :=
-TARGETS := //runsc
-ARGS    :=
-
 default: runsc
 .PHONY: default
+
+# Header for debugging (used by other macros).
+header = echo --- $(1) >&2
+
+# Make hacks.
+EMPTY :=
+SPACE := $(EMPTY) $(EMPTY)
 
 ## usage: make <target>
 ##         or
@@ -46,7 +35,6 @@ default: runsc
 ##   requirements.
 ##
 ##   There are common arguments that may be passed to targets. These are:
-##     STARTUP_OPTIONS - Bazel startup options.
 ##     OPTIONS - Build or test options.
 ##     TARGETS - The bazel targets.
 ##     ARGS    - Arguments for run or sudo.
@@ -57,7 +45,7 @@ default: runsc
 ##     make build OPTIONS="" TARGETS="//runsc"'
 ##
 help: ## Shows all targets and help from the Makefile (this message).
-	@grep --no-filename -E '^([a-z.A-Z_-]+:.*?|)##' $(MAKEFILE_LIST) | \
+	@grep --no-filename -E '^([a-z.A-Z_%-]+:.*?|)##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = "(:.*?|)## ?"}; { \
 			if (length($$1) > 0) { \
 				printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2; \
@@ -65,17 +53,34 @@ help: ## Shows all targets and help from the Makefile (this message).
 				printf "%s\n", $$2; \
 			} \
 		}'
+
 build: ## Builds the given $(TARGETS) with the given $(OPTIONS). E.g. make build TARGETS=runsc
-test:  ## Tests the given $(TARGETS) with the given $(OPTIONS). E.g. make test TARGETS=pkg/buffer:buffer_test
-copy:  ## Copies the given $(TARGETS) to the given $(DESTINATION). E.g. make copy TARGETS=runsc DESTINATION=/tmp
-run:   ## Runs the given $(TARGETS), built with $(OPTIONS), using $(ARGS). E.g. make run TARGETS=runsc ARGS=-version
-sudo:  ## Runs the given $(TARGETS) as per run, but using "sudo -E". E.g. make sudo TARGETS=test/root:root_test ARGS=-test.v
-.PHONY: help build test copy run sudo
+	@$(call build,$(OPTIONS) $(TARGETS))
+.PHONY: build
+
+test: ## Tests the given $(TARGETS) with the given $(OPTIONS). E.g. make test TARGETS=pkg/buffer:buffer_test
+	@$(call build,$(OPTIONS) $(TARGETS))
+.PHONY: test
+
+copy: ## Copies the given $(TARGETS) to the given $(DESTINATION). E.g. make copy TARGETS=runsc DESTINATION=/tmp
+	@$(call copy,$(TARGETS),$(DESTINATION))
+.PHONY: copy
+
+run: ## Runs the given $(TARGETS), built with $(OPTIONS), using $(ARGS). E.g. make run TARGETS=runsc ARGS=-version
+	@$(call build,$(TARGETS) $(ARGS))
+.PHONY: run
+
+sudo: ## Runs the given $(TARGETS) as per run, but using "sudo -E". E.g. make sudo TARGETS=test/root:root_test ARGS=-test.v
+	@$(call sudo,$(TARGETS) $(ARGS))
+.PHONY: sudo
+
+# Load image helpers.
+include tools/images.mk
 
 # Load all bazel wrappers.
 #
 # This file should define the basic "build", "test", "run" and "sudo" rules, in
-# addition to the $(BRANCH_NAME) variable.
+# addition to the $(BRANCH_NAME) and $(BUILD_ROOTS) variables.
 ifneq (,$(wildcard tools/google.mk))
 include tools/google.mk
 else
@@ -83,32 +88,71 @@ include tools/bazel.mk
 endif
 
 ##
-## Docker image targets.
+## Development helpers and tooling.
 ##
-##   Images used by the tests must also be built and available locally.
-##   The canonical test targets defined below will automatically load
-##   relevant images. These can be loaded or built manually via these
-##   targets.
+##   These targets faciliate local development by automatically
+##   installing and configuring a runtime. Several variables may
+##   be used here to tweak the installation:
+##     RUNTIME         - The name of the installed runtime (default: branch).
+##     RUNTIME_DIR     - Where the runtime will be installed (default: temporary directory with the $RUNTIME).
+##     RUNTIME_BIN     - The runtime binary (default: $RUNTIME_DIR/runsc).
+##     RUNTIME_LOG_DIR - The logs directory (default: $RUNTIME_DIR/logs).
+##     RUNTIME_LOGS    - The log pattern (default: $RUNTIME_LOG_DIR/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%).
 ##
-##   (*) Note that you may provide an ARCH parameter in order to build
-##   and load images from an alternate archiecture (using qemu). When
-##   bazel is run as a server, this has the effect of running an full
-##   cross-architecture chain, and can produce cross-compiled binaries.
-##
-define images
-$(1)-%: ## Image tool: $(1) a given image (also may use 'all-images').
-	@$(call submake,-C images $$@)
-endef
-rebuild-...: ## Rebuild the given image. Also may use 'rebuild-all-images'.
-$(eval $(call images,rebuild))
-push-...: ## Push the given image. Also may use 'push-all-images'.
-$(eval $(call images,push))
-pull-...: ## Pull the given image. Also may use 'pull-all-images'.
-$(eval $(call images,pull))
-load-...: ## Load (pull or rebuild) the given image. Also may use 'load-all-images'.
-$(eval $(call images,load))
-list-images: ## List all available images.
-	@$(call submake, -C images $$@)
+ifeq (,$(BRANCH_NAME))
+RUNTIME     := runsc
+RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
+else
+RUNTIME     := $(BRANCH_NAME)
+RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
+endif
+RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
+RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
+RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
+
+$(RUNTIME_BIN): # See below.
+	@mkdir -p "$(RUNTIME_DIR)"
+	@$(call copy,//runsc,$(RUNTIME_BIN))
+.PHONY: $(RUNTIME_BIN) # Real file, but force rebuild.
+
+# Configure helpers for below.
+configure_noreload = \
+  $(call header,CONFIGURE $(1) → $(RUNTIME_BIN) $(2)); \
+  sudo $(RUNTIME_BIN) install --experimental=true --runtime="$(1)" -- --debug-log "$(RUNTIME_LOGS)" $(2) && \
+  sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
+reload_docker = \
+  sudo systemctl reload docker && \
+  if test -f /etc/docker/daemon.json; then \
+    sudo chmod 0755 /etc/docker && \
+    sudo chmod 0644 /etc/docker/daemon.json; \
+  fi
+configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker)
+
+# Helpers for above. Requires $(RUNTIME_BIN) dependency.
+install_runtime = $(call configure,$(RUNTIME),$(1) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
+test_runtime = $(call test,--test_arg=--runtime=$(RUNTIME) $(PARTITIONS) $(1))
+
+dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
+	@$(call configure_noreload,$(RUNTIME),--net-raw)
+	@$(call configure_noreload,$(RUNTIME)-d,--net-raw --debug --strace --log-packets)
+	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
+	@$(call configure_noreload,$(RUNTIME)-vfs2-d,--net-raw --debug --strace --log-packets --vfs2)
+	@$(call reload_docker)
+.PHONY: dev
+
+nogo: ## Surfaces all nogo findings.
+	@$(call build,--build_tag_filters nogo //...)
+	@$(call run,//tools/github $(foreach dir,$(BUILD_ROOTS),-path=$(CURDIR)/$(dir)) -dry-run nogo)
+.PHONY: nogo
+
+go: ## Builds the Go branch.
+	@$(call clean)
+	@$(call build,//:gopath)
+	@tools/go_branch.sh
+
+gazelle: ## Runs gazelle to update WORKSPACE.
+	@$(call run,//:gazelle update-repos -from_file=go.mod -prune)
+.PHONY: gazelle
 
 ##
 ## Canonical build and test targets.
@@ -126,23 +170,23 @@ TOTAL_PARTITIONS ?= 1
 PARTITIONS       := --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)
 
 runsc: ## Builds the runsc binary.
-	@$(call submake,build OPTIONS="-c opt" TARGETS="//runsc")
+	@$(call build,-c opt //runsc)
 .PHONY: runsc
 
 debian: ## Builds the debian packages.
-	@$(call submake,build OPTIONS="-c opt" TARGETS="//debian:debian")
+	@$(call build,-c opt //debian:debian)
 .PHONY: debian
 
 smoke-tests: ## Runs a simple smoke test after build runsc.
-	@$(call submake,run DOCKER_PRIVILEGED="" ARGS="--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true")
+	@$(call run,//runsc,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
 .PHONY: smoke-tests
 
 fuse-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters fuse $(PARTITIONS)" TARGETS="test/fuse/...")
+	@$(call test,--test_tag_filters=fuse $(PARTITIONS) test/fuse/...)
 .PHONY: fuse-tests
 
 unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
-	@$(call submake,test TARGETS="pkg/... runsc/... tools/...")
+	@$(call test,pkg/... runsc/... tools/...)
 .PHONY: unit-tests
 
 tests: ## Runs all unit tests and syscall tests.
@@ -158,101 +202,92 @@ network-tests: ## Run all networking integration tests.
 network-tests: iptables-tests packetdrill-tests packetimpact-tests
 .PHONY: network-tests
 
-# Standard integration targets.
-INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
-
 syscall-%-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters runsc_$* $(PARTITIONS)" TARGETS="test/syscalls/...")
+	@$(call test,--test_tag_filters=runsc_$* $(PARTITIONS) test/syscalls/...)
 
 syscall-native-tests:
-	@$(call submake,test OPTIONS="--test_tag_filters native $(PARTITIONS)" TARGETS="test/syscalls/...")
+	@$(call test,--test_tag_filters=native $(PARTITIONS) test/syscalls/...)
 .PHONY: syscall-native-tests
 
 syscall-tests: ## Run all system call tests.
-	@$(call submake,test OPTIONS="$(PARTITIONS)" TARGETS="test/syscalls/...")
+	@$(call test,$(PARTITIONS) test/syscalls/...)
 
-%-runtime-tests: load-runtimes_%
-	@$(call submake,install-runtime)
-	@$(call submake,test-runtime OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
+%-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
+	@$(call install_runtime,) # Ensure flags are cleared.
+	@$(call test_runtime,--test_timeout=10800 //test/runtimes:$*)
 
-%-runtime-tests_vfs2: load-runtimes_%
-	@$(call submake,install-runtime RUNTIME="vfs2" ARGS="--vfs2")
-	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
+%-runtime-tests_vfs2: load-runtimes_% $(RUNTIME_BIN)
+	@$(call install_runtime,--vfs2)
+	@$(call test_runtime,--test_timeout=10800 //test/runtimes:$*)
 
-do-tests: runsc
-	@$(call submake,run TARGETS="//runsc" ARGS="--rootless do true")
-	@$(call submake,run TARGETS="//runsc" ARGS="--rootless -network=none do true")
-	@$(call submake,sudo TARGETS="//runsc" ARGS="do true")
+do-tests:
+	@$(call run,//runsc,--rootless do true)
+	@$(call run,//runsc,--rootless -network=none do true)
+	@$(call sudo,//runsc,do true)
 .PHONY: do-tests
 
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
-docker-tests: load-basic-images
-	@$(call submake,install-runtime RUNTIME="vfs1")
-	@$(call submake,test-runtime RUNTIME="vfs1" TARGETS="$(INTEGRATION_TARGETS)")
-	@$(call submake,install-runtime RUNTIME="vfs2" ARGS="--vfs2")
-	@$(call submake,test-runtime RUNTIME="vfs2" TARGETS="$(INTEGRATION_TARGETS)")
+# Standard integration targets.
+INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
+
+docker-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,) # Clear flags.
+	@$(call test_runtime,$(INTEGRATION_TARGETS))
+	@$(call install_runtime,--vfs2)
+	@$(call test_runtime,$(INTEGRATION_TARGETS))
 .PHONY: docker-tests
 
-overlay-tests: load-basic-images
-	@$(call submake,install-runtime RUNTIME="overlay" ARGS="--overlay")
-	@$(call submake,test-runtime RUNTIME="overlay" TARGETS="$(INTEGRATION_TARGETS)")
+overlay-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,--overlay)
+	@$(call test_runtime,$(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 
-swgso-tests: load-basic-images
-	@$(call submake,install-runtime RUNTIME="swgso" ARGS="--software-gso=true --gso=false")
-	@$(call submake,test-runtime RUNTIME="swgso" TARGETS="$(INTEGRATION_TARGETS)")
+swgso-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,--software-gso=true --gso=false)
+	@$(call test_runtime,$(INTEGRATION_TARGETS))
 .PHONY: swgso-tests
 
-hostnet-tests: load-basic-images
-	@$(call submake,install-runtime RUNTIME="hostnet" ARGS="--network=host")
-	@$(call submake,test-runtime RUNTIME="hostnet" OPTIONS="--test_arg=-checkpoint=false --test_arg=-hostnet=true" TARGETS="$(INTEGRATION_TARGETS)")
+hostnet-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,--network=host)
+	@$(call test_runtime,--test_arg=-checkpoint=false  --test_arg=-hostnet=true $(INTEGRATION_TARGETS))
 .PHONY: hostnet-tests
 
-kvm-tests: load-basic-images
+kvm-tests: load-basic $(RUNTIME_BIN)
 	@(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
-	@if ! [[ -w /dev/kvm ]]; then sudo chmod a+rw /dev/kvm; fi
-	@$(call submake,test TARGETS="//pkg/sentry/platform/kvm:kvm_test")
-	@$(call submake,install-runtime RUNTIME="kvm" ARGS="--platform=kvm")
-	@$(call submake,test-runtime RUNTIME="kvm" TARGETS="$(INTEGRATION_TARGETS)")
+	@if ! test -w /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
+	@$(call test,//pkg/sentry/platform/kvm:kvm_test)
+	@$(call install_runtime,--platform=kvm)
+	@$(call test_runtime,$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
-iptables-tests: load-iptables
+iptables-tests: load-iptables $(RUNTIME_BIN)
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
-	@$(call submake,test-runtime RUNTIME="runc" TARGETS="//test/iptables:iptables_test")
-	@$(call submake,install-runtime RUNTIME="iptables" ARGS="--net-raw")
-	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
+	@$(call test,--test_arg=-runtime=runc $(PARTITIONS) //test/iptables:iptables_test)
+	@$(call install_runtime,--net-raw)
+	@$(call test_runtime,//test/iptables:iptables_test)
 .PHONY: iptables-tests
 
-# Run the iptables tests with runsc only. Useful for developing to skip runc
-# testing.
-iptables-runsc-tests: load-iptables
-	@sudo modprobe iptable_filter
-	@sudo modprobe ip6table_filter
-	@$(call submake,install-runtime RUNTIME="iptables" ARGS="--net-raw")
-	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
-.PHONY: iptables-runsc-tests
-
-packetdrill-tests: load-packetdrill
-	@$(call submake,install-runtime RUNTIME="packetdrill")
-	@$(call submake,test-runtime RUNTIME="packetdrill" TARGETS="$(shell $(MAKE) -s query TARGETS='attr(tags, packetdrill, tests(//...))')")
+packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
+	@$(call install_runtime,) # Clear flags.
+	@$(call test_runtime,//test/packetdrill:all_tests)
 .PHONY: packetdrill-tests
 
-packetimpact-tests: load-packetimpact
+packetimpact-tests: load-packetimpact $(RUNTIME_BIN)
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
-	@$(call submake,install-runtime RUNTIME="packetimpact")
-	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) -s query TARGETS='attr(tags, packetimpact, tests(//...))')")
+	@$(call install_runtime,) # Clear flags.
+	@$(call test_runtime,--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
 .PHONY: packetimpact-tests
 
 # Specific containerd version tests.
-containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu
-	@$(call submake,install-runtime RUNTIME="root")
-	@CONTAINERD_VERSION=$* $(MAKE) -s sudo TARGETS="tools/installers:containerd"
-	@$(MAKE) -s sudo TARGETS="tools/installers:shim"
-	@$(MAKE) -s sudo TARGETS="test/root:root_test" ARGS="--runtime=root -test.v"
+containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
+	@$(call install_runtime,) # Clear flags.
+	@$(call sudo,tools/installers:containerd,$*)
+	@$(call sudo,tools/installers:shim)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 
 # Note that we can't run containerd-test-1.1.8 tests here.
 #
@@ -290,33 +325,33 @@ BENCHMARKS_PLATFORMS := ptrace
 BENCHMARKS_TARGETS   := //test/benchmarks/base:startup_test
 BENCHMARKS_ARGS      := -test.bench=. -pprof-cpu -pprof-heap -pprof-heap -pprof-block
 
-init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema
-## (see //tools/bigquery/bigquery.go). If the table alread exists, this is a noop.
-	$(call submake, run TARGETS=//tools/parsers:parser ARGS="init --project=$(BENCHMARKS_PROJECT) \
-	  --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE)")
+init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
+	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
 .PHONY: init-benchmark-table
 
-benchmark-platforms: load-benchmarks-images ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
-	$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
-	  $(call submake,run-benchmark RUNTIME="$(PLATFORM)" ARGS="--platform=$(PLATFORM) --vfs2") && \
-	  $(call submake,run-benchmark RUNTIME="$(PLATFORM)_vfs1" ARGS="--platform=$(PLATFORM)") && \
+# $(1) is the runtime name, $(2) are the arguments.
+run_benchmark = \
+  $(call header,BENCHMARK $(1) $(2)); \
+  if test "$(1)" != "runc"; then $(call install_runtime,--profile $(2)); fi \
+  @T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
+  $(call sudo,$(BENCHMARKS_TARGETS) --runtime=$(RUNTIME) $(BENCHMARKS_ARGS) | tee $$T); \
+  rc=$$?; \
+  if test $$rc -eq 0 && test "$(BENCHMARKS_UPLOAD)" == "true"; then \
+    $(call run,tools/parsers:parser parse --debug --file=$$T --runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+  fi; \
+  rm -rf $$T; \
+  exit $$rc
+
+benchmark-platforms: load-benchmarks ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
+	@$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
+	  $(call run_benchmark,$(RUNTIME)+vfs2,$(BENCHMARK_ARGS) --platform=$(PLATFORM) --vfs2) && \
+	  $(call run_benchmark,$(RUNTIME),$(BENCHMARK_ARGS) --platform=$(PLATFORM)) && \
 	) \
-	$(call submake, run-benchmark RUNTIME="runc")
+	$(call run-benchmark,runc)
 .PHONY: benchmark-platforms
 
-run-benchmark: load-benchmarks-images ## Runs single benchmark and optionally sends data to BigQuery.
-	@if [[ "$(RUNTIME)" != "runc" ]]; then $(call submake,install-runtime ARGS="$(ARGS) --profile"); fi
-	@T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
-	$(call submake,sudo TARGETS="$(BENCHMARKS_TARGETS)" ARGS="--runtime=$(RUNTIME) $(BENCHMARKS_ARGS) | tee $$T"); \
-	rc=$$?; \
-	if [[ $$rc -eq 0 ]] && [[ "$(BENCHMARKS_UPLOAD)" == "true" ]]; then \
-	  $(call submake,run TARGETS="tools/parsers:parser" ARGS="parse --debug --file=$$T \
-	    --runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) \
-	    --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) \
-	    --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)"); \
-	fi; \
-	rm -rf $$T; \
-	exit $$rc
+run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
+	@$(call run_benchmark,$(RUNTIME),$(BENCHMARK_ARGS))
 .PHONY: run-benchmark
 
 ##
@@ -336,7 +371,7 @@ WEBSITE_PROJECT := gvisordev
 WEBSITE_REGION  := us-central1
 
 website-build: load-jekyll ## Build the site image locally.
-	@$(call submake,run TARGETS="//website:website" ARGS="$(WEBSITE_IMAGE)")
+	@$(call run,//website:website $(WEBSITE_IMAGE))
 .PHONY: website-build
 
 website-server: website-build ## Run a local server for development.
@@ -362,17 +397,17 @@ website-deploy: website-push ## Deploy a new version of the website.
 ##     RELEASE_NAME    - The name of the release in the proper format (needed for tag).
 ##     RELEASE_NOTES   - The file containing release notes (needed for tag).
 ##
-RELEASE_ROOT    := $(CURDIR)/repo
-RELEASE_KEY     := repo.key
-RELEASE_NIGHTLY := false
-RELEASE_COMMIT  :=
-RELEASE_NAME    :=
-RELEASE_NOTES   :=
-
+RELEASE_ROOT     := $(CURDIR)/repo
+RELEASE_KEY      := repo.key
+RELEASE_NIGHTLY  := false
+RELEASE_COMMIT   :=
+RELEASE_NAME     :=
+RELEASE_NOTES    :=
 GPG_TEST_OPTIONS := $(shell if gpg --pinentry-mode loopback --version >/dev/null 2>&1; then echo --pinentry-mode loopback; fi)
+
 $(RELEASE_KEY):
 	@echo "WARNING: Generating a key for testing ($@); don't use this."
-	T=$$(mktemp --tmpdir keyring.XXXXXX); \
+	@T=$$(mktemp --tmpdir keyring.XXXXXX); \
 	C=$$(mktemp --tmpdir config.XXXXXX); \
 	echo Key-Type: DSA >> $$C && \
 	echo Key-Length: 1024 >> $$C && \
@@ -386,11 +421,11 @@ $(RELEASE_KEY):
 
 release: $(RELEASE_KEY) ## Builds a release.
 	@mkdir -p $(RELEASE_ROOT)
-	@T=$$(mktemp -d --tmpdir release.XXXXXX); \
-	  $(call submake,copy TARGETS="//runsc:runsc" DESTINATION=$$T) && \
-	  $(call submake,copy TARGETS="//shim/v1:gvisor-containerd-shim" DESTINATION=$$T) && \
-	  $(call submake,copy TARGETS="//shim/v2:containerd-shim-runsc-v1" DESTINATION=$$T) && \
-	  $(call submake,copy TARGETS="//debian:debian" DESTINATION=$$T) && \
+	@export T=$$(mktemp -d --tmpdir release.XXXXXX); \
+	  $(call copy,//runsc:runsc,$$T) && \
+	  $(call copy,//shim/v1:gvisor-containerd-shim,$$T) && \
+	  $(call copy,//shim/v2:containerd-shim-runsc-v1,$$T) && \
+	  $(call copy,//debian:debian,$$T) && \
 	  NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$T/*; \
 	rc=$$?; rm -rf $$T; exit $$rc
 .PHONY: release
@@ -398,74 +433,3 @@ release: $(RELEASE_KEY) ## Builds a release.
 tag: ## Creates and pushes a release tag.
 	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"
 .PHONY: tag
-
-##
-## Development helpers and tooling.
-##
-##   These targets faciliate local development by automatically
-##   installing and configuring a runtime. Several variables may
-##   be used here to tweak the installation:
-##     RUNTIME         - The name of the installed runtime (default: branch).
-##     RUNTIME_DIR     - Where the runtime will be installed (default: temporary directory with the $RUNTIME).
-##     RUNTIME_BIN     - The runtime binary (default: $RUNTIME_DIR/runsc).
-##     RUNTIME_LOG_DIR - The logs directory (default: $RUNTIME_DIR/logs).
-##     RUNTIME_LOGS    - The log pattern (default: $RUNTIME_LOG_DIR/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%).
-##
-ifeq (,$(BRANCH_NAME))
-RUNTIME     := runsc
-RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
-else
-RUNTIME     := $(BRANCH_NAME)
-RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
-endif
-RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
-RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
-RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
-
-dev: ## Installs a set of local runtimes. Requires sudo.
-	@$(call submake,refresh)
-	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)" ARGS="--net-raw")
-	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-d" ARGS="--net-raw --debug --strace --log-packets")
-	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-p" ARGS="--net-raw --profile")
-	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-vfs2-d" ARGS="--net-raw --debug --strace --log-packets --vfs2")
-	@sudo systemctl restart docker
-.PHONY: dev
-
-refresh: ## Refreshes the runtime binary (for development only). Must have called 'dev' or 'install-runtime' first.
-	@mkdir -p "$(RUNTIME_DIR)"
-	@$(call submake,copy TARGETS=runsc DESTINATION="$(RUNTIME_BIN)")
-.PHONY: refresh
-
-install-runtime: ## Installs the runtime for testing. Requires sudo.
-	@$(call submake,refresh)
-	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)" ARGS="$(ARGS) --TESTONLY-test-name-env=RUNSC_TEST_NAME")
-	@sudo systemctl restart docker
-	@if [[ -f /etc/docker/daemon.json ]]; then \
-		sudo chmod 0755 /etc/docker && \
-		sudo chmod 0644 /etc/docker/daemon.json; \
-	fi
-.PHONY: install-runtime
-
-install-debug-runtime: ## Installs the runtime for debugging. Requires sudo.
-	@$(call submake,install-runtime ARGS="--debug --strace --log-packets $(ARGS)")
-.PHONY: install-debug-runtime
-
-configure: ## Configures a single runtime. Requires sudo. Typically called from dev or install-runtime.
-	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME_NAME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)
-	@echo -e "$(INFO) Installed runtime \"$(RUNTIME)\" @ $(RUNTIME_BIN)"
-	@echo -e "$(INFO) Logs are in: $(RUNTIME_LOG_DIR)"
-	@sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
-.PHONY: configure
-
-test-runtime: ## A convenient wrapper around test that provides the runtime argument. Target must still be provided.
-	@$(call submake,test OPTIONS="$(OPTIONS) --test_arg=--runtime=$(RUNTIME) $(PARTITIONS)")
-.PHONY: test-runtime
-
-nogo: ## Surfaces all nogo findings.
-	@$(call submake,build OPTIONS="--build_tag_filters nogo" TARGETS="//...")
-	@$(call submake,run TARGETS="//tools/github" ARGS="$(foreach dir,$(BUILD_ROOTS),-path=$(CURDIR)/$(dir)) -dry-run nogo")
-.PHONY: nogo
-
-gazelle: ## Runs gazelle to update WORKSPACE.
-	@$(call submake,run TARGETS="//:gazelle" ARGS="update-repos -from_file=go.mod -prune")
-.PHONY: gazelle

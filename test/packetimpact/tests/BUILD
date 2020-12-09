@@ -383,3 +383,12 @@ validate_all_tests()
     expect_netstack_failure = hasattr(t, "expect_netstack_failure"),
     num_duts = t.num_duts if hasattr(t, "num_duts") else 1,
 ) for t in ALL_TESTS]
+
+test_suite(
+    name = "all_tests",
+    tags = [
+        "manual",
+        "packetimpact",
+    ],
+    tests = existing_rules(),
+)
