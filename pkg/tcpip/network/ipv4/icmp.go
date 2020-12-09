@@ -153,7 +153,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 
 		// Take the base of the incoming request IP header but replace the options.
 		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
-		replyIPHdr := header.IPv4(append(iph[:header.IPv4MinimumSize:header.IPv4MinimumSize], newOptions...))
+		replyIPHdr := header.IPv4(append(make([]byte, header.IPv4MinimumSize), newOptions...))
+		copy(replyIPHdr, ipHdr[:header.IPv4MinimumSize])
 		replyIPHdr.SetHeaderLength(replyHeaderLength)
 
 		// As per RFC 1122 section 3.2.1.3, when a host sends any datagram, the IP
