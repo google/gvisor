@@ -214,6 +214,8 @@ analyzers:
   printf:
     external: # Enabled.
   shift:
+    generated: # Disabled for generated code; these shifts are well-defined.
+      exclude: [".*"]
     external: # Enabled.
   stringintconv:
     external:

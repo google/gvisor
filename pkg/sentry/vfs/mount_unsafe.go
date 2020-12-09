@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build go1.12
-// +build !go1.17
-
-// Check go:linkname function signatures when updating Go version.
-
 package vfs
 
 import (
@@ -41,6 +36,15 @@ type mountKey struct {
 	point  unsafe.Pointer // *Dentry
 }
 
+var (
+	mountKeyHasher = sync.MapKeyHasher(map[mountKey]struct{}(nil))
+	mountKeySeed   = sync.RandUintptr()
+)
+
+func (k *mountKey) hash() uintptr {
+	return mountKeyHasher(gohacks.Noescape(unsafe.Pointer(k)), mountKeySeed)
+}
+
 func (mnt *Mount) parent() *Mount {
 	return (*Mount)(atomic.LoadPointer(&mnt.key.parent))
 }
@@ -56,23 +60,17 @@ func (mnt *Mount) getKey() VirtualDentry {
 	}
 }
 
-func (mnt *Mount) saveKey() VirtualDentry { return mnt.getKey() }
-
 // Invariant: mnt.key.parent == nil. vd.Ok().
 func (mnt *Mount) setKey(vd VirtualDentry) {
 	atomic.StorePointer(&mnt.key.parent, unsafe.Pointer(vd.mount))
 	atomic.StorePointer(&mnt.key.point, unsafe.Pointer(vd.dentry))
 }
 
-func (mnt *Mount) loadKey(vd VirtualDentry) { mnt.setKey(vd) }
-
 // mountTable maps (mount parent, mount point) pairs to mounts. It supports
 // efficient concurrent lookup, even in the presence of concurrent mutators
 // (provided mutation is sufficiently uncommon).
 //
 // mountTable.Init() must be called on new mountTables before use.
-//
-// +stateify savable
 type mountTable struct {
 	// mountTable is implemented as a seqcount-protected hash table that
 	// resolves collisions with linear probing, featuring Robin Hood insertion
@@ -84,8 +82,7 @@ type mountTable struct {
 	// intrinsics and inline assembly, limiting the performance of this
 	// approach.)
 
-	seq  sync.SeqCount `state:"nosave"`
-	seed uint32        // for hashing keys
+	seq sync.SeqCount `state:"nosave"`
 
 	// size holds both length (number of elements) and capacity (number of
 	// slots): capacity is stored as its base-2 log (referred to as order) in
@@ -150,7 +147,6 @@ func init() {
 
 // Init must be called exactly once on each mountTable before use.
 func (mt *mountTable) Init() {
-	mt.seed = rand32()
 	mt.size = mtInitOrder
 	mt.slots = newMountTableSlots(mtInitCap)
 }
@@ -167,7 +163,7 @@ func newMountTableSlots(cap uintptr) unsafe.Pointer {
 // Lookup may be called even if there are concurrent mutators of mt.
 func (mt *mountTable) Lookup(parent *Mount, point *Dentry) *Mount {
 	key := mountKey{parent: unsafe.Pointer(parent), point: unsafe.Pointer(point)}
-	hash := memhash(gohacks.Noescape(unsafe.Pointer(&key)), uintptr(mt.seed), mountKeyBytes)
+	hash := key.hash()
 
 loop:
 	for {
@@ -247,7 +243,7 @@ func (mt *mountTable) Insert(mount *Mount) {
 // * mt.seq must be in a writer critical section.
 // * mt must not already contain a Mount with the same mount point and parent.
 func (mt *mountTable) insertSeqed(mount *Mount) {
-	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
+	hash := mount.key.hash()
 
 	// We're under the maximum load factor if:
 	//
@@ -346,7 +342,7 @@ func (mt *mountTable) Remove(mount *Mount) {
 // * mt.seq must be in a writer critical section.
 // * mt must contain mount.
 func (mt *mountTable) removeSeqed(mount *Mount) {
-	hash := memhash(unsafe.Pointer(&mount.key), uintptr(mt.seed), mountKeyBytes)
+	hash := mount.key.hash()
 	tcap := uintptr(1) << (mt.size & mtSizeOrderMask)
 	mask := tcap - 1
 	slots := mt.slots
@@ -386,9 +382,3 @@ func (mt *mountTable) removeSeqed(mount *Mount) {
 		off = (off + mountSlotBytes) & offmask
 	}
 }
-
-//go:linkname memhash runtime.memhash
-func memhash(p unsafe.Pointer, seed, s uintptr) uintptr
-
-//go:linkname rand32 runtime.fastrand
-func rand32() uint32

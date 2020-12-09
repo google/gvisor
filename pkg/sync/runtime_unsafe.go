@@ -11,6 +11,8 @@
 package sync
 
 import (
+	"fmt"
+	"reflect"
 	"unsafe"
 )
 
@@ -60,6 +62,57 @@ const (
 const (
 	TraceEvGoBlockSelect byte = 24
 )
+
+// Rand32 returns a non-cryptographically-secure random uint32.
+func Rand32() uint32 {
+	return fastrand()
+}
+
+// Rand64 returns a non-cryptographically-secure random uint64.
+func Rand64() uint64 {
+	return uint64(fastrand())<<32 | uint64(fastrand())
+}
+
+//go:linkname fastrand runtime.fastrand
+func fastrand() uint32
+
+// RandUintptr returns a non-cryptographically-secure random uintptr.
+func RandUintptr() uintptr {
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		return uintptr(Rand32())
+	}
+	return uintptr(Rand64())
+}
+
+// MapKeyHasher returns a hash function for pointers of m's key type.
+//
+// Preconditions: m must be a map.
+func MapKeyHasher(m interface{}) func(unsafe.Pointer, uintptr) uintptr {
+	if rtyp := reflect.TypeOf(m); rtyp.Kind() != reflect.Map {
+		panic(fmt.Sprintf("sync.MapKeyHasher: m is %v, not map", rtyp))
+	}
+	mtyp := *(**maptype)(unsafe.Pointer(&m))
+	return mtyp.hasher
+}
+
+type maptype struct {
+	size       uintptr
+	ptrdata    uintptr
+	hash       uint32
+	tflag      uint8
+	align      uint8
+	fieldAlign uint8
+	kind       uint8
+	equal      func(unsafe.Pointer, unsafe.Pointer) bool
+	gcdata     *byte
+	str        int32
+	ptrToThis  int32
+	key        unsafe.Pointer
+	elem       unsafe.Pointer
+	bucket     unsafe.Pointer
+	hasher     func(unsafe.Pointer, uintptr) uintptr
+	// more fields
+}
 
 // These functions are only used within the sync package.
 
