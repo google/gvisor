@@ -1,4 +1,4 @@
-# Installers for use by the tools/vm_test rules.
+# Installers for use by top-level scripts.
 
 package(
     default_visibility = ["//:sandbox"],
@@ -10,14 +10,6 @@ sh_binary(
     srcs = ["head.sh"],
     data = [
         "//runsc",
-    ],
-)
-
-sh_binary(
-    name = "images",
-    srcs = ["images.sh"],
-    data = [
-        "//images",
     ],
 )
 

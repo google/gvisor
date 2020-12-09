@@ -1267,7 +1267,6 @@ func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
 func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
-	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().View())
 	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
 		// Malformed packet.
@@ -1275,6 +1274,10 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		return
 	}
+
+	// TODO(gvisor.dev/issues/5033): We should mirror the Network layer and cap
+	// packets at "Parse" instead of when handling a packet.
+	pkt.Data.CapLength(int(hdr.PayloadLength()))
 
 	if !verifyChecksum(hdr, pkt) {
 		// Checksum Error.
@@ -1309,7 +1312,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		senderAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
 			Addr: id.RemoteAddress,
-			Port: header.UDP(hdr).SourcePort(),
+			Port: hdr.SourcePort(),
 		},
 	}
 	packet.data = pkt.Data

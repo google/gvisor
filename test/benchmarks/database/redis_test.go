@@ -16,6 +16,7 @@ package database
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -23,6 +24,8 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
+
+var h harness.Harness
 
 // All possible operations from redis. Note: "ping" will
 // run both PING_INLINE and PING_BUILD.
@@ -111,21 +114,23 @@ func BenchmarkRedis(b *testing.B) {
 			// Reset profiles and timer to begin the measurement.
 			server.RestartProfiles()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				client := clientMachine.GetNativeContainer(ctx, b)
-				defer client.CleanUp(ctx)
-				out, err := client.Run(ctx, dockerutil.RunOpts{
-					Image: "benchmarks/redis",
-				}, redis.MakeCmd(ip, serverPort)...)
-				if err != nil {
-					b.Fatalf("redis-benchmark failed with: %v", err)
-				}
-
-				// Stop time while we parse results.
-				b.StopTimer()
-				redis.Report(b, out)
-				b.StartTimer()
+			client := clientMachine.GetNativeContainer(ctx, b)
+			defer client.CleanUp(ctx)
+			out, err := client.Run(ctx, dockerutil.RunOpts{
+				Image: "benchmarks/redis",
+			}, redis.MakeCmd(ip, serverPort, b.N /*requests*/)...)
+			if err != nil {
+				b.Fatalf("redis-benchmark failed with: %v", err)
 			}
+
+			// Stop time while we parse results.
+			b.StopTimer()
+			redis.Report(b, out)
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }

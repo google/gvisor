@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gtest/gtest.h"
+// Package atomicptrmap instantiates generic_atomicptrmap for testing.
+package atomicptrmap
 
-namespace {
-
-TEST(Image, Sanity0) {
-  // Do nothing (in shard 0).
+type testValue struct {
+	val int
 }
-
-TEST(Image, Sanity1) {
-  // Do nothing (in shard 1).
-}
-
-}  // namespace

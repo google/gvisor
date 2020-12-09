@@ -29,17 +29,17 @@ type Redis struct {
 }
 
 // MakeCmd returns a redis-benchmark client command.
-func (r *Redis) MakeCmd(ip net.IP, port int) []string {
+func (r *Redis) MakeCmd(ip net.IP, port, requests int) []string {
 	// There is no -t PING_BULK for redis-benchmark, so adjust the command in that case.
 	// Note that "ping" will run both PING_INLINE and PING_BULK.
 	if r.Operation == "PING_BULK" {
 		return strings.Split(
-			fmt.Sprintf("redis-benchmark --csv -t ping -h %s -p %d", ip, port), " ")
+			fmt.Sprintf("redis-benchmark --csv -t ping -h %s -p %d -n %d", ip, port, requests), " ")
 	}
 
 	// runs redis-benchmark -t operation for 100K requests against server.
 	return strings.Split(
-		fmt.Sprintf("redis-benchmark --csv -t %s -h %s -p %d", r.Operation, ip, port), " ")
+		fmt.Sprintf("redis-benchmark --csv -t %s -h %s -p %d -n %d", r.Operation, ip, port, requests), " ")
 }
 
 // Report parses output from redis-benchmark client and reports metrics.

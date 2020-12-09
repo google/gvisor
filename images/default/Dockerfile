@@ -6,7 +6,7 @@ RUN pip install --no-cache-dir pycparser
 RUN dnf install -y bazel3
 # Install gcloud.
 RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-289.0.0-linux-x86_64.tar.gz | \
-    tar zxvf - google-cloud-sdk && \
+    tar zxf - google-cloud-sdk && \
     google-cloud-sdk/install.sh && \
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
 # Install Docker client for the website build.

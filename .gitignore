@@ -2,3 +2,6 @@
 /bazel-*
 # Generated build event file.
 /.build_events.json
+# Generated repository.
+/repo
+/repo.key

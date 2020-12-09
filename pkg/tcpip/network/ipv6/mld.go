@@ -40,6 +40,9 @@ type MLDOptions struct {
 	// When enabled, MLD may transmit MLD report and done messages when
 	// joining and leaving multicast groups respectively, and handle incoming
 	// MLD packets.
+	//
+	// This field is ignored and is always assumed to be false for interfaces
+	// without neighbouring nodes (e.g. loopback).
 	Enabled bool
 }
 
@@ -67,10 +70,14 @@ func (mld *mldState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 
 // init sets up an mldState struct, and is required to be called before using
 // a new mldState.
-func (mld *mldState) init(ep *endpoint, opts MLDOptions) {
+//
+// Must only be called once for the lifetime of mld.
+func (mld *mldState) init(ep *endpoint) {
 	mld.ep = ep
-	mld.genericMulticastProtocol.Init(ip.GenericMulticastProtocolOptions{
-		Enabled:                   opts.Enabled,
+	mld.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
+		// No need to perform MLD on loopback interfaces since they don't have
+		// neighbouring nodes.
+		Enabled:                   ep.protocol.options.MLD.Enabled && !mld.ep.nic.IsLoopback(),
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  mld,
@@ -79,33 +86,45 @@ func (mld *mldState) init(ep *endpoint, opts MLDOptions) {
 	})
 }
 
+// handleMulticastListenerQuery handles a query message.
+//
+// Precondition: mld.ep.mu must be locked.
 func (mld *mldState) handleMulticastListenerQuery(mldHdr header.MLD) {
-	mld.genericMulticastProtocol.HandleQuery(mldHdr.MulticastAddress(), mldHdr.MaximumResponseDelay())
+	mld.genericMulticastProtocol.HandleQueryLocked(mldHdr.MulticastAddress(), mldHdr.MaximumResponseDelay())
 }
 
+// handleMulticastListenerReport handles a report message.
+//
+// Precondition: mld.ep.mu must be locked.
 func (mld *mldState) handleMulticastListenerReport(mldHdr header.MLD) {
-	mld.genericMulticastProtocol.HandleReport(mldHdr.MulticastAddress())
+	mld.genericMulticastProtocol.HandleReportLocked(mldHdr.MulticastAddress())
 }
 
 // joinGroup handles joining a new group and sending and scheduling the required
 // messages.
 //
 // If the group is already joined, returns tcpip.ErrDuplicateAddress.
+//
+// Precondition: mld.ep.mu must be locked.
 func (mld *mldState) joinGroup(groupAddress tcpip.Address) {
-	mld.genericMulticastProtocol.JoinGroup(groupAddress, !mld.ep.Enabled() /* dontInitialize */)
+	mld.genericMulticastProtocol.JoinGroupLocked(groupAddress, !mld.ep.Enabled() /* dontInitialize */)
 }
 
 // isInGroup returns true if the specified group has been joined locally.
+//
+// Precondition: mld.ep.mu must be read locked.
 func (mld *mldState) isInGroup(groupAddress tcpip.Address) bool {
-	return mld.genericMulticastProtocol.IsLocallyJoined(groupAddress)
+	return mld.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
 
 // leaveGroup handles removing the group from the membership map, cancels any
 // delay timers associated with that group, and sends the Done message, if
 // required.
+//
+// Precondition: mld.ep.mu must be locked.
 func (mld *mldState) leaveGroup(groupAddress tcpip.Address) *tcpip.Error {
 	// LeaveGroup returns false only if the group was not joined.
-	if mld.genericMulticastProtocol.LeaveGroup(groupAddress) {
+	if mld.genericMulticastProtocol.LeaveGroupLocked(groupAddress) {
 		return nil
 	}
 
@@ -114,14 +133,18 @@ func (mld *mldState) leaveGroup(groupAddress tcpip.Address) *tcpip.Error {
 
 // softLeaveAll leaves all groups from the perspective of MLD, but remains
 // joined locally.
+//
+// Precondition: mld.ep.mu must be locked.
 func (mld *mldState) softLeaveAll() {
-	mld.genericMulticastProtocol.MakeAllNonMember()
+	mld.genericMulticastProtocol.MakeAllNonMemberLocked()
 }
 
 // initializeAll attemps to initialize the MLD state for each group that has
 // been joined locally.
+//
+// Precondition: mld.ep.mu must be locked.
 func (mld *mldState) initializeAll() {
-	mld.genericMulticastProtocol.InitializeGroups()
+	mld.genericMulticastProtocol.InitializeGroupsLocked()
 }
 
 func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldType header.ICMPv6Type) *tcpip.Error {

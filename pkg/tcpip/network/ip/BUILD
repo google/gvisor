@@ -18,6 +18,7 @@ go_test(
     srcs = ["generic_multicast_protocol_test.go"],
     deps = [
         ":ip",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",
         "@com_github_google_go_cmp//cmp:go_default_library",

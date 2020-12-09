@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -104,7 +105,14 @@ func createStack(t *testing.T, mgpEnabled bool) (*channel.Endpoint, *stack.Stack
 
 	// Create an endpoint of queue size 2, since no more than 2 packets are ever
 	// queued in the tests in this file.
-	e := channel.New(2, 1280, linkAddr)
+	e := channel.New(2, header.IPv6MinimumMTU, linkAddr)
+	s, clock := createStackWithLinkEndpoint(t, mgpEnabled, e)
+	return e, s, clock
+}
+
+func createStackWithLinkEndpoint(t *testing.T, mgpEnabled bool, e stack.LinkEndpoint) (*stack.Stack, *faketime.ManualClock) {
+	t.Helper()
+
 	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
@@ -125,7 +133,7 @@ func createStack(t *testing.T, mgpEnabled bool) (*channel.Endpoint, *stack.Stack
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	return e, s, clock
+	return s, clock
 }
 
 // createAndInjectIGMPPacket creates and injects an IGMP packet with the
@@ -1063,6 +1071,62 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			clock.Advance(time.Hour)
 			if p, ok := e.Read(); ok {
 				t.Fatalf("sent unexpected packet = %#v", p)
+			}
+		})
+	}
+}
+
+// TestMGPDisabledOnLoopback tests that the multicast group protocol is not
+// performed on loopback interfaces since they have no neighbours.
+func TestMGPDisabledOnLoopback(t *testing.T) {
+	tests := []struct {
+		name           string
+		protoNum       tcpip.NetworkProtocolNumber
+		multicastAddr  tcpip.Address
+		sentReportStat func(*stack.Stack) *tcpip.StatCounter
+	}{
+		{
+			name:          "IGMP",
+			protoNum:      ipv4.ProtocolNumber,
+			multicastAddr: ipv4MulticastAddr1,
+			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
+				return s.Stats().IGMP.PacketsSent.V2MembershipReport
+			},
+		},
+		{
+			name:          "MLD",
+			protoNum:      ipv6.ProtocolNumber,
+			multicastAddr: ipv6MulticastAddr1,
+			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
+				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s, clock := createStackWithLinkEndpoint(t, true /* mgpEnabled */, loopback.New())
+
+			sentReportStat := test.sentReportStat(s)
+			if got := sentReportStat.Value(); got != 0 {
+				t.Fatalf("got sentReportStat.Value() = %d, want = 0", got)
+			}
+			clock.Advance(time.Hour)
+			if got := sentReportStat.Value(); got != 0 {
+				t.Fatalf("got sentReportStat.Value() = %d, want = 0", got)
+			}
+
+			// Test joining a specific group explicitly and verify that no reports are
+			// sent.
+			if err := s.JoinGroup(test.protoNum, nicID, test.multicastAddr); err != nil {
+				t.Fatalf("JoinGroup(%d, %d, %s): %s", test.protoNum, nicID, test.multicastAddr, err)
+			}
+			if got := sentReportStat.Value(); got != 0 {
+				t.Fatalf("got sentReportStat.Value() = %d, want = 0", got)
+			}
+			clock.Advance(time.Hour)
+			if got := sentReportStat.Value(); got != 0 {
+				t.Fatalf("got sentReportStat.Value() = %d, want = 0", got)
 			}
 		})
 	}

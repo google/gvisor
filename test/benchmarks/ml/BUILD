@@ -7,12 +7,11 @@ go_library(
     name = "ml",
     testonly = 1,
     srcs = ["ml.go"],
-    deps = ["//test/benchmarks/harness"],
 )
 
 benchmark_test(
-    name = "ml_test",
-    size = "large",
+    name = "tensorflow_test",
+    size = "enormous",
     srcs = ["tensorflow_test.go"],
     library = ":ml",
     visibility = ["//:sandbox"],

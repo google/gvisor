@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -459,6 +460,9 @@ func (c *NDPConfigurations) validate() {
 
 // ndpState is the per-interface NDP state.
 type ndpState struct {
+	// Do not allow overwriting this state.
+	_ sync.NoCopy
+
 	// The IPv6 endpoint this ndpState is for.
 	ep *endpoint
 
@@ -1884,11 +1888,19 @@ func (ndp *ndpState) stopSolicitingRouters() {
 	ndp.rtrSolicitJob = nil
 }
 
-// initializeTempAddrState initializes state related to temporary SLAAC
-// addresses.
-func (ndp *ndpState) initializeTempAddrState() {
-	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.options.TempIIDSeed, ndp.ep.nic.ID())
+func (ndp *ndpState) init(ep *endpoint) {
+	if ndp.dad != nil {
+		panic("attempted to initialize NDP state twice")
+	}
 
+	ndp.ep = ep
+	ndp.configs = ep.protocol.options.NDPConfigs
+	ndp.dad = make(map[tcpip.Address]dadState)
+	ndp.defaultRouters = make(map[tcpip.Address]defaultRouterState)
+	ndp.onLinkPrefixes = make(map[tcpip.Subnet]onLinkPrefixState)
+	ndp.slaacPrefixes = make(map[tcpip.Subnet]slaacPrefixState)
+
+	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.options.TempIIDSeed, ndp.ep.nic.ID())
 	if MaxDesyncFactor != 0 {
 		ndp.temporaryAddressDesyncFactor = time.Duration(rand.Int63n(int64(MaxDesyncFactor)))
 	}
