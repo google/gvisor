@@ -101,6 +101,9 @@ func (vfs *VirtualFilesystem) saveMounts() []*Mount {
 	return mounts
 }
 
+// saveKey is called by stateify.
+func (mnt *Mount) saveKey() VirtualDentry { return mnt.getKey() }
+
 // loadMounts is called by stateify.
 func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
 	if mounts == nil {
@@ -111,6 +114,9 @@ func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
 		vfs.mounts.Insert(mount)
 	}
 }
+
+// loadKey is called by stateify.
+func (mnt *Mount) loadKey(vd VirtualDentry) { mnt.setKey(vd) }
 
 func (mnt *Mount) afterLoad() {
 	if atomic.LoadInt64(&mnt.refs) != 0 {

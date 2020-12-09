@@ -223,7 +223,7 @@ func main() {
 		} else {
 			switch kind {
 			case globals.KindType, globals.KindVar, globals.KindConst, globals.KindFunction:
-				if ident.Name != "_" {
+				if ident.Name != "_" && !(ident.Name == "init" && kind == globals.KindFunction) {
 					ident.Name = *prefix + ident.Name + *suffix
 				}
 			case globals.KindTag:

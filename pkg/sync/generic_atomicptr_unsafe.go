@@ -3,9 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package template doesn't exist. This file must be instantiated using the
+// Package seqatomic doesn't exist. This file must be instantiated using the
 // go_template_instance rule in tools/go_generics/defs.bzl.
-package template
+package seqatomic
 
 import (
 	"sync/atomic"
