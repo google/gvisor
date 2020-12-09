@@ -321,6 +321,19 @@ func ReceiveIPPacketInfo(want tcpip.IPPacketInfo) ControlMessagesChecker {
 	}
 }
 
+// ReceiveOriginalDstAddr creates a checker that checks the OriginalDstAddress
+// field in ControlMessages.
+func ReceiveOriginalDstAddr(want tcpip.FullAddress) ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if !cm.HasOriginalDstAddress {
+			t.Errorf("got cm.HasOriginalDstAddress = %t, want = true", cm.HasOriginalDstAddress)
+		} else if diff := cmp.Diff(want, cm.OriginalDstAddress); diff != "" {
+			t.Errorf("OriginalDstAddress mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
 // TOS creates a checker that checks the TOS field.
 func TOS(tos uint8, label uint32) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {

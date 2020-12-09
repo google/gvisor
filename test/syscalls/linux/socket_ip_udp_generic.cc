@@ -15,6 +15,9 @@
 #include "test/syscalls/linux/socket_ip_udp_generic.h"
 
 #include <errno.h>
+#ifdef __linux__
+#include <linux/in6.h>
+#endif  // __linux__
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -332,6 +335,58 @@ TEST_P(UDPSocketPairTest, SetAndGetIPPKTINFO) {
 
   int level = SOL_IP;
   int type = IP_PKTINFO;
+
+  // Check getsockopt before IP_PKTINFO is set.
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), level, type, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), level, type, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOn);
+  EXPECT_EQ(get_len, sizeof(get));
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), level, type, &kSockOptOff,
+                         sizeof(kSockOptOff)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), level, type, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOff);
+  EXPECT_EQ(get_len, sizeof(get));
+}
+
+// Test getsockopt for a socket which is not set with IP_RECVORIGDSTADDR option.
+TEST_P(UDPSocketPairTest, ReceiveOrigDstAddrDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  int level = SOL_IP;
+  int type = IP_RECVORIGDSTADDR;
+  if (sockets->first_addr()->sa_family == AF_INET6) {
+    level = SOL_IPV6;
+    type = IPV6_RECVORIGDSTADDR;
+  }
+  ASSERT_THAT(getsockopt(sockets->first_fd(), level, type, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+// Test setsockopt and getsockopt for a socket with IP_RECVORIGDSTADDR option.
+TEST_P(UDPSocketPairTest, SetAndGetReceiveOrigDstAddr) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int level = SOL_IP;
+  int type = IP_RECVORIGDSTADDR;
+  if (sockets->first_addr()->sa_family == AF_INET6) {
+    level = SOL_IPV6;
+    type = IPV6_RECVORIGDSTADDR;
+  }
 
   // Check getsockopt before IP_PKTINFO is set.
   int get = -1;

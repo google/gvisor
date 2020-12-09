@@ -30,10 +30,11 @@ import (
 // +stateify savable
 type udpPacket struct {
 	udpPacketEntry
-	senderAddress tcpip.FullAddress
-	packetInfo    tcpip.IPPacketInfo
-	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	timestamp     int64
+	senderAddress      tcpip.FullAddress
+	destinationAddress tcpip.FullAddress
+	packetInfo         tcpip.IPPacketInfo
+	data               buffer.VectorisedView `state:".(buffer.VectorisedView)"`
+	timestamp          int64
 	// tos stores either the receiveTOS or receiveTClass value.
 	tos uint8
 }
@@ -322,6 +323,10 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	if e.ops.GetReceivePacketInfo() {
 		cm.HasIPPacketInfo = true
 		cm.PacketInfo = p.packetInfo
+	}
+	if e.ops.GetReceiveOriginalDstAddress() {
+		cm.HasOriginalDstAddress = true
+		cm.OriginalDstAddress = p.destinationAddress
 	}
 	return p.data.ToView(), cm, nil
 }
@@ -1313,6 +1318,11 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 			NIC:  pkt.NICID,
 			Addr: id.RemoteAddress,
 			Port: hdr.SourcePort(),
+		},
+		destinationAddress: tcpip.FullAddress{
+			NIC:  pkt.NICID,
+			Addr: id.LocalAddress,
+			Port: header.UDP(hdr).DestinationPort(),
 		},
 	}
 	packet.data = pkt.Data

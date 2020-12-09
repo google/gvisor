@@ -1428,6 +1428,93 @@ func TestReadIPPacketInfo(t *testing.T) {
 	}
 }
 
+func TestReadRecvOriginalDstAddr(t *testing.T) {
+	tests := []struct {
+		name                    string
+		proto                   tcpip.NetworkProtocolNumber
+		flow                    testFlow
+		expectedOriginalDstAddr tcpip.FullAddress
+	}{
+		{
+			name:                    "IPv4 unicast",
+			proto:                   header.IPv4ProtocolNumber,
+			flow:                    unicastV4,
+			expectedOriginalDstAddr: tcpip.FullAddress{1, stackAddr, stackPort},
+		},
+		{
+			name:  "IPv4 multicast",
+			proto: header.IPv4ProtocolNumber,
+			flow:  multicastV4,
+			// This should actually be a unicast address assigned to the interface.
+			//
+			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
+			// behaviour. We still include the test so that once the bug is
+			// resolved, this test will start to fail and the individual tasked
+			// with fixing this bug knows to also fix this test :).
+			expectedOriginalDstAddr: tcpip.FullAddress{1, multicastAddr, stackPort},
+		},
+		{
+			name:  "IPv4 broadcast",
+			proto: header.IPv4ProtocolNumber,
+			flow:  broadcast,
+			// This should actually be a unicast address assigned to the interface.
+			//
+			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
+			// behaviour. We still include the test so that once the bug is
+			// resolved, this test will start to fail and the individual tasked
+			// with fixing this bug knows to also fix this test :).
+			expectedOriginalDstAddr: tcpip.FullAddress{1, broadcastAddr, stackPort},
+		},
+		{
+			name:                    "IPv6 unicast",
+			proto:                   header.IPv6ProtocolNumber,
+			flow:                    unicastV6,
+			expectedOriginalDstAddr: tcpip.FullAddress{1, stackV6Addr, stackPort},
+		},
+		{
+			name:  "IPv6 multicast",
+			proto: header.IPv6ProtocolNumber,
+			flow:  multicastV6,
+			// This should actually be a unicast address assigned to the interface.
+			//
+			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
+			// behaviour. We still include the test so that once the bug is
+			// resolved, this test will start to fail and the individual tasked
+			// with fixing this bug knows to also fix this test :).
+			expectedOriginalDstAddr: tcpip.FullAddress{1, multicastV6Addr, stackPort},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpoint(test.proto)
+
+			bindAddr := tcpip.FullAddress{Port: stackPort}
+			if err := c.ep.Bind(bindAddr); err != nil {
+				t.Fatalf("Bind(%+v): %s", bindAddr, err)
+			}
+
+			if test.flow.isMulticast() {
+				ifoptSet := tcpip.AddMembershipOption{NIC: 1, MulticastAddr: test.flow.getMcastAddr()}
+				if err := c.ep.SetSockOpt(&ifoptSet); err != nil {
+					c.t.Fatalf("SetSockOpt(&%#v): %s:", ifoptSet, err)
+				}
+			}
+
+			c.ep.SocketOptions().SetReceiveOriginalDstAddress(true)
+
+			testRead(c, test.flow, checker.ReceiveOriginalDstAddr(test.expectedOriginalDstAddr))
+
+			if got := c.s.Stats().UDP.PacketsReceived.Value(); got != 1 {
+				t.Fatalf("Read did not increment PacketsReceived: got = %d, want = 1", got)
+			}
+		})
+	}
+}
+
 func TestWriteIncrementsPacketsSent(t *testing.T) {
 	c := newDualTestContext(t, defaultMTU)
 	defer c.cleanup()

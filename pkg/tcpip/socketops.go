@@ -130,6 +130,10 @@ type SocketOptions struct {
 	// corkOptionEnabled is used to specify if data should be held until segments
 	// are full by the TCP transport protocol.
 	corkOptionEnabled uint32
+
+	// receiveOriginalDstAddress is used to specify if the original destination of
+	// the incoming packet should be returned as an ancillary message.
+	receiveOriginalDstAddress uint32
 }
 
 // InitHandler initializes the handler. This must be called before using the
@@ -301,4 +305,14 @@ func (so *SocketOptions) GetCorkOption() bool {
 func (so *SocketOptions) SetCorkOption(v bool) {
 	storeAtomicBool(&so.corkOptionEnabled, v)
 	so.handler.OnCorkOptionSet(v)
+}
+
+// GetReceiveOriginalDstAddress gets value for IP(V6)_RECVORIGDSTADDR option.
+func (so *SocketOptions) GetReceiveOriginalDstAddress() bool {
+	return atomic.LoadUint32(&so.receiveOriginalDstAddress) != 0
+}
+
+// SetReceiveOriginalDstAddress sets value for IP(V6)_RECVORIGDSTADDR option.
+func (so *SocketOptions) SetReceiveOriginalDstAddress(v bool) {
+	storeAtomicBool(&so.receiveOriginalDstAddress, v)
 }

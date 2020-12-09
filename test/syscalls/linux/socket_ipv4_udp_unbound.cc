@@ -2222,6 +2222,90 @@ TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPPKTINFO) {
   EXPECT_EQ(received_pktinfo.ipi_addr.s_addr, htonl(INADDR_LOOPBACK));
 }
 
+// Test that socket will receive IP_RECVORIGDSTADDR control message.
+TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPReceiveOrigDstAddr) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver_addr = V4Loopback();
+  int level = SOL_IP;
+  int type = IP_RECVORIGDSTADDR;
+
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+
+  // Retrieve the port bound by the receiver.
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  ASSERT_THAT(
+      connect(sender->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+              receiver_addr.addr_len),
+      SyscallSucceeds());
+
+  // Get address and port bound by the sender.
+  sockaddr_storage sender_addr_storage;
+  socklen_t sender_addr_len = sizeof(sender_addr_storage);
+  ASSERT_THAT(getsockname(sender->get(),
+                          reinterpret_cast<sockaddr*>(&sender_addr_storage),
+                          &sender_addr_len),
+              SyscallSucceeds());
+  ASSERT_EQ(sender_addr_len, sizeof(struct sockaddr_in));
+
+  // Enable IP_RECVORIGDSTADDR on socket so that we get the original destination
+  // address of the datagram as auxiliary information in the control message.
+  ASSERT_THAT(
+      setsockopt(receiver->get(), level, type, &kSockOptOn, sizeof(kSockOptOn)),
+      SyscallSucceeds());
+
+  // Prepare message to send.
+  constexpr size_t kDataLength = 1024;
+  msghdr sent_msg = {};
+  iovec sent_iov = {};
+  char sent_data[kDataLength];
+  sent_iov.iov_base = sent_data;
+  sent_iov.iov_len = kDataLength;
+  sent_msg.msg_iov = &sent_iov;
+  sent_msg.msg_iovlen = 1;
+  sent_msg.msg_flags = 0;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(sender->get(), &sent_msg, 0),
+              SyscallSucceedsWithValue(kDataLength));
+
+  msghdr received_msg = {};
+  iovec received_iov = {};
+  char received_data[kDataLength];
+  char received_cmsg_buf[CMSG_SPACE(sizeof(sockaddr_in))] = {};
+  size_t cmsg_data_len = sizeof(sockaddr_in);
+  received_iov.iov_base = received_data;
+  received_iov.iov_len = kDataLength;
+  received_msg.msg_iov = &received_iov;
+  received_msg.msg_iovlen = 1;
+  received_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
+  received_msg.msg_control = received_cmsg_buf;
+
+  ASSERT_THAT(RecvMsgTimeout(receiver->get(), &received_msg, 1 /*timeout*/),
+              IsPosixErrorOkAndHolds(kDataLength));
+
+  cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
+  EXPECT_EQ(cmsg->cmsg_level, level);
+  EXPECT_EQ(cmsg->cmsg_type, type);
+
+  // Check the data
+  sockaddr_in received_addr = {};
+  memcpy(&received_addr, CMSG_DATA(cmsg), sizeof(received_addr));
+  auto orig_receiver_addr = reinterpret_cast<sockaddr_in*>(&receiver_addr.addr);
+  EXPECT_EQ(received_addr.sin_addr.s_addr, orig_receiver_addr->sin_addr.s_addr);
+  EXPECT_EQ(received_addr.sin_port, orig_receiver_addr->sin_port);
+}
+
 // Check that setting SO_RCVBUF below min is clamped to the minimum
 // receive buffer size.
 TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufBelowMin) {
