@@ -213,11 +213,8 @@ TEST_F(OpenTest, OpenNoFollowSymlink) {
     EXPECT_THAT(unlink(link_path.c_str()), SyscallSucceeds());
   });
 
-  // Open will succeed without O_NOFOLLOW and fails with O_NOFOLLOW.
   const FileDescriptor fd2 =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(link_path, O_RDONLY));
-  ASSERT_THAT(open(link_path.c_str(), O_RDONLY | O_NOFOLLOW),
-              SyscallFailsWithErrno(ELOOP));
+      ASSERT_NO_ERRNO_AND_VALUE(Open(link_path, O_RDONLY | O_NOFOLLOW));
 }
 
 TEST_F(OpenTest, OpenNoFollowStillFollowsLinksInPath) {

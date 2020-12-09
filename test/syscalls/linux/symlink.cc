@@ -419,8 +419,6 @@ TEST_P(ParamSymlinkTest, OpenLinkExclFails) {
   ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
 }
 
-// Test that opening an existing symlink with O_CREAT|O_NOFOLLOW will fail with
-// ELOOP.
 TEST_P(ParamSymlinkTest, OpenLinkNoFollowFails) {
   const std::string target = GetParam();
   const std::string linkpath = NewTempAbsPath();
@@ -428,7 +426,7 @@ TEST_P(ParamSymlinkTest, OpenLinkNoFollowFails) {
   ASSERT_THAT(symlink(target.c_str(), linkpath.c_str()), SyscallSucceeds());
 
   EXPECT_THAT(open(linkpath.c_str(), O_CREAT | O_NOFOLLOW, 0666),
-              SyscallFailsWithErrno(ELOOP));
+              SyscallSucceeds());
 
   ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
 }

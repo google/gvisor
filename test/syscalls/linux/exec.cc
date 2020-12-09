@@ -675,7 +675,7 @@ TEST(ExecveatTest, SymlinkNoFollowWithRelativePath) {
   ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(dirfd.get(), base, {base}, {},
                                             AT_SYMLINK_NOFOLLOW,
                                             /*child=*/nullptr, &execve_errno));
-  EXPECT_EQ(execve_errno, ELOOP);
+  EXPECT_EQ(execve_errno, 0);
 }
 
 TEST(ExecveatTest, UnshareFiles) {

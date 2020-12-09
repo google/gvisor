@@ -1018,8 +1018,12 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 		return &fd.vfsfd, nil
 	case linux.S_IFLNK:
-		// Can't open symlinks without O_PATH (which is unimplemented).
-		return nil, syserror.ELOOP
+		var fd symlinkFD
+		fd.LockFD.Init(&d.locks)
+		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
+		return &fd.vfsfd, nil
 	case linux.S_IFSOCK:
 		if d.isSynthetic() {
 			return nil, syserror.ENXIO
