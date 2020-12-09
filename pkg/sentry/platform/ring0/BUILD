@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "arch_genrule", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -39,19 +39,19 @@ go_template_instance(
     template = ":defs_arm64",
 )
 
-genrule(
+arch_genrule(
     name = "entry_impl_amd64",
     srcs = ["entry_amd64.s"],
     outs = ["entry_impl_amd64.s"],
-    cmd = "(echo -e '// build +amd64\\n' && $(location //pkg/sentry/platform/ring0/gen_offsets) && cat $(SRCS)) > $@",
+    cmd = "(echo -e '// build +amd64\\n' && QEMU $(location //pkg/sentry/platform/ring0/gen_offsets) && cat $(location entry_amd64.s)) > $@",
     tools = ["//pkg/sentry/platform/ring0/gen_offsets"],
 )
 
-genrule(
+arch_genrule(
     name = "entry_impl_arm64",
     srcs = ["entry_arm64.s"],
     outs = ["entry_impl_arm64.s"],
-    cmd = "(echo -e '// build +arm64\\n' && $(location //pkg/sentry/platform/ring0/gen_offsets) && cat $(SRCS)) > $@",
+    cmd = "(echo -e '// build +arm64\\n' && QEMU $(location //pkg/sentry/platform/ring0/gen_offsets) && cat $(location entry_arm64.s)) > $@",
     tools = ["//pkg/sentry/platform/ring0/gen_offsets"],
 )
 

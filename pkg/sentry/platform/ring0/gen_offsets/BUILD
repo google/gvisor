@@ -24,6 +24,9 @@ go_binary(
         "defs_impl_arm64.go",
         "main.go",
     ],
+    # Use the libc malloc to avoid any extra dependencies. This is required to
+    # pass the sentry deps test.
+    system_malloc = True,
     visibility = [
         "//pkg/sentry/platform/kvm:__pkg__",
         "//pkg/sentry/platform/ring0:__pkg__",
