@@ -15,6 +15,8 @@
 package syserr
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -48,45 +50,56 @@ var (
 	ErrNotPermittedNet       = New(tcpip.ErrNotPermitted.String(), linux.EPERM)
 )
 
-var netstackErrorTranslations = map[*tcpip.Error]*Error{
-	tcpip.ErrUnknownProtocol:           ErrUnknownProtocol,
-	tcpip.ErrUnknownNICID:              ErrUnknownNICID,
-	tcpip.ErrUnknownDevice:             ErrUnknownDevice,
-	tcpip.ErrUnknownProtocolOption:     ErrUnknownProtocolOption,
-	tcpip.ErrDuplicateNICID:            ErrDuplicateNICID,
-	tcpip.ErrDuplicateAddress:          ErrDuplicateAddress,
-	tcpip.ErrNoRoute:                   ErrNoRoute,
-	tcpip.ErrBadLinkEndpoint:           ErrBadLinkEndpoint,
-	tcpip.ErrAlreadyBound:              ErrAlreadyBound,
-	tcpip.ErrInvalidEndpointState:      ErrInvalidEndpointState,
-	tcpip.ErrAlreadyConnecting:         ErrAlreadyConnecting,
-	tcpip.ErrAlreadyConnected:          ErrAlreadyConnected,
-	tcpip.ErrNoPortAvailable:           ErrNoPortAvailable,
-	tcpip.ErrPortInUse:                 ErrPortInUse,
-	tcpip.ErrBadLocalAddress:           ErrBadLocalAddress,
-	tcpip.ErrClosedForSend:             ErrClosedForSend,
-	tcpip.ErrClosedForReceive:          ErrClosedForReceive,
-	tcpip.ErrWouldBlock:                ErrWouldBlock,
-	tcpip.ErrConnectionRefused:         ErrConnectionRefused,
-	tcpip.ErrTimeout:                   ErrTimeout,
-	tcpip.ErrAborted:                   ErrAborted,
-	tcpip.ErrConnectStarted:            ErrConnectStarted,
-	tcpip.ErrDestinationRequired:       ErrDestinationRequired,
-	tcpip.ErrNotSupported:              ErrNotSupported,
-	tcpip.ErrQueueSizeNotSupported:     ErrQueueSizeNotSupported,
-	tcpip.ErrNotConnected:              ErrNotConnected,
-	tcpip.ErrConnectionReset:           ErrConnectionReset,
-	tcpip.ErrConnectionAborted:         ErrConnectionAborted,
-	tcpip.ErrNoSuchFile:                ErrNoSuchFile,
-	tcpip.ErrInvalidOptionValue:        ErrInvalidOptionValue,
-	tcpip.ErrNoLinkAddress:             ErrHostDown,
-	tcpip.ErrBadAddress:                ErrBadAddress,
-	tcpip.ErrNetworkUnreachable:        ErrNetworkUnreachable,
-	tcpip.ErrMessageTooLong:            ErrMessageTooLong,
-	tcpip.ErrNoBufferSpace:             ErrNoBufferSpace,
-	tcpip.ErrBroadcastDisabled:         ErrBroadcastDisabled,
-	tcpip.ErrNotPermitted:              ErrNotPermittedNet,
-	tcpip.ErrAddressFamilyNotSupported: ErrAddressFamilyNotSupported,
+var netstackErrorTranslations map[string]*Error
+
+func addErrMapping(tcpipErr *tcpip.Error, netstackErr *Error) {
+	key := tcpipErr.String()
+	if _, ok := netstackErrorTranslations[key]; ok {
+		panic(fmt.Sprintf("duplicate error key: %s", key))
+	}
+	netstackErrorTranslations[key] = netstackErr
+}
+
+func init() {
+	netstackErrorTranslations = make(map[string]*Error)
+	addErrMapping(tcpip.ErrUnknownProtocol, ErrUnknownProtocol)
+	addErrMapping(tcpip.ErrUnknownNICID, ErrUnknownNICID)
+	addErrMapping(tcpip.ErrUnknownDevice, ErrUnknownDevice)
+	addErrMapping(tcpip.ErrUnknownProtocolOption, ErrUnknownProtocolOption)
+	addErrMapping(tcpip.ErrDuplicateNICID, ErrDuplicateNICID)
+	addErrMapping(tcpip.ErrDuplicateAddress, ErrDuplicateAddress)
+	addErrMapping(tcpip.ErrNoRoute, ErrNoRoute)
+	addErrMapping(tcpip.ErrBadLinkEndpoint, ErrBadLinkEndpoint)
+	addErrMapping(tcpip.ErrAlreadyBound, ErrAlreadyBound)
+	addErrMapping(tcpip.ErrInvalidEndpointState, ErrInvalidEndpointState)
+	addErrMapping(tcpip.ErrAlreadyConnecting, ErrAlreadyConnecting)
+	addErrMapping(tcpip.ErrAlreadyConnected, ErrAlreadyConnected)
+	addErrMapping(tcpip.ErrNoPortAvailable, ErrNoPortAvailable)
+	addErrMapping(tcpip.ErrPortInUse, ErrPortInUse)
+	addErrMapping(tcpip.ErrBadLocalAddress, ErrBadLocalAddress)
+	addErrMapping(tcpip.ErrClosedForSend, ErrClosedForSend)
+	addErrMapping(tcpip.ErrClosedForReceive, ErrClosedForReceive)
+	addErrMapping(tcpip.ErrWouldBlock, ErrWouldBlock)
+	addErrMapping(tcpip.ErrConnectionRefused, ErrConnectionRefused)
+	addErrMapping(tcpip.ErrTimeout, ErrTimeout)
+	addErrMapping(tcpip.ErrAborted, ErrAborted)
+	addErrMapping(tcpip.ErrConnectStarted, ErrConnectStarted)
+	addErrMapping(tcpip.ErrDestinationRequired, ErrDestinationRequired)
+	addErrMapping(tcpip.ErrNotSupported, ErrNotSupported)
+	addErrMapping(tcpip.ErrQueueSizeNotSupported, ErrQueueSizeNotSupported)
+	addErrMapping(tcpip.ErrNotConnected, ErrNotConnected)
+	addErrMapping(tcpip.ErrConnectionReset, ErrConnectionReset)
+	addErrMapping(tcpip.ErrConnectionAborted, ErrConnectionAborted)
+	addErrMapping(tcpip.ErrNoSuchFile, ErrNoSuchFile)
+	addErrMapping(tcpip.ErrInvalidOptionValue, ErrInvalidOptionValue)
+	addErrMapping(tcpip.ErrNoLinkAddress, ErrHostDown)
+	addErrMapping(tcpip.ErrBadAddress, ErrBadAddress)
+	addErrMapping(tcpip.ErrNetworkUnreachable, ErrNetworkUnreachable)
+	addErrMapping(tcpip.ErrMessageTooLong, ErrMessageTooLong)
+	addErrMapping(tcpip.ErrNoBufferSpace, ErrNoBufferSpace)
+	addErrMapping(tcpip.ErrBroadcastDisabled, ErrBroadcastDisabled)
+	addErrMapping(tcpip.ErrNotPermitted, ErrNotPermittedNet)
+	addErrMapping(tcpip.ErrAddressFamilyNotSupported, ErrAddressFamilyNotSupported)
 }
 
 // TranslateNetstackError converts an error from the tcpip package to a sentry
@@ -95,7 +108,7 @@ func TranslateNetstackError(err *tcpip.Error) *Error {
 	if err == nil {
 		return nil
 	}
-	se, ok := netstackErrorTranslations[err]
+	se, ok := netstackErrorTranslations[err.String()]
 	if !ok {
 		panic("Unknown error: " + err.String())
 	}
