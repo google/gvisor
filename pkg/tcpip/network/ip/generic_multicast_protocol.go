@@ -161,7 +161,8 @@ type GenericMulticastProtocolState struct {
 
 // Init initializes the Generic Multicast Protocol state.
 //
-// Must only be called once for the lifetime of g.
+// Must only be called once for the lifetime of g; Init will panic if it is
+// called twice.
 //
 // The GenericMulticastProtocolState will only grab the lock when timers/jobs
 // fire.
@@ -170,9 +171,11 @@ func (g *GenericMulticastProtocolState) Init(protocolMU *sync.RWMutex, opts Gene
 		panic("attempted to initialize generic membership protocol state twice")
 	}
 
-	g.opts = opts
-	g.memberships = make(map[tcpip.Address]multicastGroupState)
-	g.protocolMU = protocolMU
+	*g = GenericMulticastProtocolState{
+		opts:        opts,
+		memberships: make(map[tcpip.Address]multicastGroupState),
+		protocolMU:  protocolMU,
+	}
 }
 
 // MakeAllNonMemberLocked transitions all groups to the non-member state.
