@@ -57,6 +57,9 @@ type IGMPOptions struct {
 	// When enabled, IGMP may transmit IGMP report and leave messages when
 	// joining and leaving multicast groups respectively, and handle incoming
 	// IGMP packets.
+	//
+	// This field is ignored and is always assumed to be false for interfaces
+	// without neighbouring nodes (e.g. loopback).
 	Enabled bool
 }
 
@@ -68,6 +71,8 @@ var _ ip.MulticastGroupProtocol = (*igmpState)(nil)
 type igmpState struct {
 	// The IPv4 endpoint this igmpState is for.
 	ep *endpoint
+
+	enabled bool
 
 	genericMulticastProtocol ip.GenericMulticastProtocolState
 
@@ -117,8 +122,11 @@ func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 // Must only be called once for the lifetime of igmp.
 func (igmp *igmpState) init(ep *endpoint) {
 	igmp.ep = ep
+	// No need to perform IGMP on loopback interfaces since they don't have
+	// neighbouring nodes.
+	igmp.enabled = ep.protocol.options.IGMP.Enabled && !igmp.ep.nic.IsLoopback()
 	igmp.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
-		Enabled:                   ep.protocol.options.IGMP.Enabled,
+		Enabled:                   igmp.enabled,
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  igmp,
@@ -210,7 +218,7 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 	// As per RFC 2236 Section 6, Page 10: If the maximum response time is zero
 	// then change the state to note that an IGMPv1 router is present and
 	// schedule the query received Job.
-	if maxRespTime == 0 && igmp.ep.protocol.options.IGMP.Enabled {
+	if igmp.enabled && maxRespTime == 0 {
 		igmp.igmpV1Job.Cancel()
 		igmp.igmpV1Job.Schedule(v1RouterPresentTimeout)
 		igmp.setV1Present(true)

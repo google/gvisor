@@ -40,6 +40,9 @@ type MLDOptions struct {
 	// When enabled, MLD may transmit MLD report and done messages when
 	// joining and leaving multicast groups respectively, and handle incoming
 	// MLD packets.
+	//
+	// This field is ignored and is always assumed to be false for interfaces
+	// without neighbouring nodes (e.g. loopback).
 	Enabled bool
 }
 
@@ -72,7 +75,9 @@ func (mld *mldState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 func (mld *mldState) init(ep *endpoint) {
 	mld.ep = ep
 	mld.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
-		Enabled:                   ep.protocol.options.MLD.Enabled,
+		// No need to perform MLD on loopback interfaces since they don't have
+		// neighbouring nodes.
+		Enabled:                   ep.protocol.options.MLD.Enabled && !mld.ep.nic.IsLoopback(),
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  mld,
