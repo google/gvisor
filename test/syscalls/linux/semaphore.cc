@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cerrno>
 #include <ctime>
+#include <stack>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -774,8 +775,27 @@ TEST(SemaphoreTest, SemopGetncntOnSignal_NoRandomSave) {
 }
 
 TEST(SemaphoreTest, IpcInfo) {
+  std::stack<int> sem_ids;
   struct seminfo info;
-  ASSERT_THAT(semctl(0, 0, IPC_INFO, &info), SyscallSucceeds());
+  int start_index = 0;
+  EXPECT_THAT(start_index = semctl(0, 0, IPC_INFO, &info), SyscallSucceeds());
+  for (int i = 0; i < 3; i++) {
+    int sem_id = 0;
+    ASSERT_THAT(sem_id = semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT),
+                SyscallSucceeds());
+    sem_ids.push(sem_id);
+    EXPECT_THAT(semctl(0, 0, IPC_INFO, &info),
+                SyscallSucceedsWithValue(start_index + i));
+  }
+  while (!sem_ids.empty()) {
+    int sem_id = sem_ids.top();
+    sem_ids.pop();
+    ASSERT_THAT(semctl(sem_id, 0, IPC_RMID), SyscallSucceeds());
+    int index = sem_ids.size() - 1;
+    EXPECT_THAT(semctl(0, 0, IPC_INFO, &info),
+                SyscallSucceedsWithValue(index >= 0 ? index : 0));
+  }
+  ASSERT_THAT(semctl(0, 0, IPC_INFO, &info), SyscallSucceedsWithValue(0));
 
   EXPECT_EQ(info.semmap, 1024000000);
   EXPECT_EQ(info.semmni, 32000);
