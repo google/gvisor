@@ -156,6 +156,22 @@ const (
 	_ESR_ELx_SERR_NMI = 0x1
 )
 
+// ARM Architecture Reference Manual for ARMv8 Profile-A, Issue A.a
+// Section C3.1 "A64 instruction index by encoding":
+// AArch64 main encoding table
+const (
+	_AARCH64_INSN_FUNCS_MASK = 0xfff00000
+	_AARCH64_INSN_FUNCS_MRS  = 0xd5300000
+
+	_AARCH64_INSN_SYSREG_MIDR   = (0x3 << 19)
+	_AARCH64_INSN_SYSREG_MPIDR  = (0x3 << 19) | (0x5 << 5)
+	_AARCH64_INSN_SYSREG_REVIDR = (0x3 << 19) | (0x6 << 5)
+	_AARCH64_INSN_SYSREG_MASK   = 0xffff
+	_AARCH64_INSN_SYSREG_SHIFT  = 0x5
+
+	_AARCH64_INSN_COMMONREG_MASK = 0xf
+)
+
 // Arm64: MMIO base address used to dispatch hypercalls.
 const (
 	// on Arm64, the MMIO address must be 64-bit aligned.
