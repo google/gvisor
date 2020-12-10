@@ -55,7 +55,9 @@ func TestZeroReceiveWindow(t *testing.T) {
 				if err != nil {
 					t.Fatalf("expected packet was not received: %s", err)
 				}
-				if *gotTCP.WindowSize == 0 {
+				windowSize := *gotTCP.WindowSize
+				t.Logf("got window size = %d", windowSize)
+				if windowSize == 0 {
 					break
 				}
 			}
