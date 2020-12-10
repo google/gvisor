@@ -16,6 +16,7 @@ DocInfo = provider(
         "weight",
         "editpath",
         "authors",
+        "include_in_menu",
     ],
 )
 
@@ -33,6 +34,7 @@ def _doc_impl(ctx):
             weight = ctx.attr.weight,
             editpath = short_path(ctx.files.src[0].short_path),
             authors = ctx.attr.authors,
+            include_in_menu = ctx.attr.include_in_menu,
         ),
     ]
 
@@ -74,6 +76,10 @@ doc = rule(
             default = "50",
         ),
         "authors": attr.string_list(),
+        "include_in_menu": attr.bool(
+            doc = "Include document in the navigation menu.",
+            default = True,
+        ),
     },
 )
 
@@ -111,7 +117,8 @@ subcategory: {subcategory}
 weight: {weight}
 editpath: {editpath}
 authors: {authors}
-layout: {layout}"""
+layout: {layout}
+include_in_menu: {include_in_menu}"""
 
         for f in dep.files.to_list():
             # Is this a markdown file? If not, then we ensure that it ends up

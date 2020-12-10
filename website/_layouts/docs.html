@@ -16,21 +16,24 @@ categories:
           <ul class="sidebar-nav">
           {% assign subcats = site.pages | where: 'layout', 'docs' | where: 'category', category | group_by: 'subcategory' | sort: 'name', 'first' %}
           {% for subcategory in subcats %}
-            {% assign sorted_pages = subcategory.items | sort: 'weight', 'last' %}
-            {% if subcategory.name != "" %}
-              {% assign ac = "aria-controls" %}
-              {% assign cid = category | remove: " " | downcase %}
-              {% assign sid = subcategory.name | remove: " " | downcase %}
-              <li>
-                <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" aria-expanded="false" {{ ac }}="{{ cid }}-{{ sid }}">{{ subcategory.name }}<span class="caret"></span></a>
-                <ul class="collapse sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
-            {% endif %}
-            {% for p in sorted_pages %}
-              <li><a href="{{ p.url }}">{{ p.title }}</a></li>
-            {% endfor %}
-            {% if subcategory.name != "" %}
-              </li>
-            </ul>
+            {% assign sorted_pages = subcategory.items | where: 'include_in_menu', true | sort: 'weight', 'last' %}
+            {% comment %}If all pages in the subcategory are excluded don't show it.{% endcomment %}
+            {% if sorted_pages.size > 0 %}
+              {% if subcategory.name != "" %}
+                {% assign ac = "aria-controls" %}
+                {% assign cid = category | remove: " " | downcase %}
+                {% assign sid = subcategory.name | remove: " " | downcase %}
+                <li>
+                  <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" aria-expanded="false" {{ ac }}="{{ cid }}-{{ sid }}">{{ subcategory.name }}<span class="caret"></span></a>
+                  <ul class="collapse sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
+              {% endif %}
+              {% for p in sorted_pages %}
+                <li><a href="{{ p.url }}">{{ p.title }}</a></li>
+              {% endfor %}
+              {% if subcategory.name != "" %}
+                </li>
+              </ul>
+              {% endif %}
             {% endif %}
           {% endfor %}
           </ul>
