@@ -99,8 +99,8 @@ loaded1_$(1)=.PHONY: load-$$(1)
 endef
 $(foreach image, $(EXISTING_IMAGES), $(eval $(call existing_image_rule,$(image))))
 define tag_expand_rule =
-$(eval $(loaded0_$(call local_image,$(1))_$(call tag,$(1))))
-$(eval $(loaded1_$(call local_image,$(1))_$(call tag,$(1))))
+$(eval $(loaded0_$(call remote_image,$(1))_$(call tag,$(1))))
+$(eval $(loaded1_$(call remote_image,$(1))_$(call tag,$(1))))
 endef
 $(foreach image, $(ALL_IMAGES), $(eval $(call tag_expand_rule,$(image))))
 
@@ -108,16 +108,19 @@ $(foreach image, $(ALL_IMAGES), $(eval $(call tag_expand_rule,$(image))))
 # ensure that caching works as expected, as well as the "latest" tag that is
 # used by the tests.
 local_tag = \
-  docker tag $(call remote_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):$(call tag,$(1)) && \
-  docker tag $(call remote_image,$(1)):$(call tag,$(1)) $(call local_image,$(1))
+  docker tag $(call remote_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):$(call tag,$(1))
+latest_tag = \
+  docker tag $(call local_image,$(1)):$(call tag,$(1)) $(call local_image,$(1))
 tag-%: ## Tag a local image.
-	@$(call local_tag,$*)
+	@$(call header,TAG $*)
+	@$(call local_tag,$*) && $(call latest_tag,$*)
 
 # pull forces the image to be pulled.
 pull = \
   $(call header,PULL $(1)) && \
   docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) && \
-  $(call local_tag,$(1))
+  $(call local_tag,$(1)) && \
+  $(call latest_tag,$(1))
 pull-%: register-cross ## Force a repull of the image.
 	@$(call pull,$*)
 
@@ -134,7 +137,8 @@ rebuild = \
     -t "$(call remote_image,$(1)):$(call tag,$(1))" \
     $$T && \
   rm -rf $$T) && \
-  $(call local_tag,$(1))
+  $(call local_tag,$(1)) && \
+  $(call latest_tag,$(1))
 rebuild-%: register-cross ## Force rebuild an image locally.
 	@$(call rebuild,$*)
 
