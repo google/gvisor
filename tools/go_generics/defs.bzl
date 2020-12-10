@@ -67,7 +67,7 @@ def _go_template_instance_impl(ctx):
     # Check that all defined types are expected by the template.
     for t in ctx.attr.types:
         if (t not in info.types) and (t not in info.opt_types):
-            fail("Type %s it not a parameter to %s" % (t, ctx.attr.template.label))
+            fail("Type %s is not a parameter to %s" % (t, ctx.attr.template.label))
 
     # Check that all required consts are defined.
     for t in info.consts:
@@ -77,7 +77,7 @@ def _go_template_instance_impl(ctx):
     # Check that all defined consts are expected by the template.
     for t in ctx.attr.consts:
         if (t not in info.consts) and (t not in info.opt_consts):
-            fail("Const %s it not a parameter to %s" % (t, ctx.attr.template.label))
+            fail("Const %s is not a parameter to %s" % (t, ctx.attr.template.label))
 
     # Build the argument list.
     args = ["-i=%s" % info.template.path, "-o=%s" % output.path]
