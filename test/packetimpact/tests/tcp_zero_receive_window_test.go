@@ -46,8 +46,8 @@ func TestZeroReceiveWindow(t *testing.T) {
 
 			dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
-			samplePayload := &testbench.Payload{Bytes: make([]byte, payloadLen)} //testbench.GenerateRandomPayload(t, payloadLen)}
-			// Expect the DUT to eventually advertize zero receive window.
+			samplePayload := &testbench.Payload{Bytes: testbench.GenerateRandomPayload(t, payloadLen)}
+			// Expect the DUT to eventually advertise zero receive window.
 			// The test would timeout otherwise.
 			for {
 				conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
