@@ -74,6 +74,32 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(15, &so.corkOptionEnabled)
 }
 
+func (e *Error) StateTypeName() string {
+	return "pkg/tcpip.Error"
+}
+
+func (e *Error) StateFields() []string {
+	return []string{
+		"msg",
+		"ignoreStats",
+	}
+}
+
+func (e *Error) beforeSave() {}
+
+func (e *Error) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.msg)
+	stateSinkObject.Save(1, &e.ignoreStats)
+}
+
+func (e *Error) afterLoad() {}
+
+func (e *Error) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.msg)
+	stateSourceObject.Load(1, &e.ignoreStats)
+}
+
 func (f *FullAddress) StateTypeName() string {
 	return "pkg/tcpip.FullAddress"
 }
@@ -236,6 +262,7 @@ func (i *IPPacketInfo) StateLoad(stateSourceObject state.Source) {
 
 func init() {
 	state.Register((*SocketOptions)(nil))
+	state.Register((*Error)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))
