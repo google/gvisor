@@ -306,11 +306,11 @@ func (s *tcpState) incoming(received Layer) Layer {
 	if s.remoteSeqNum != nil {
 		newIn.SeqNum = Uint32(uint32(*s.remoteSeqNum))
 	}
-	if s.localSeqNum != nil && (*tcpReceived.Flags&header.TCPFlagAck) != 0 {
+	if seq, flags := s.localSeqNum, tcpReceived.Flags; seq != nil && flags != nil && *flags&header.TCPFlagAck != 0 {
 		// The caller didn't specify an AckNum so we'll expect the calculated one,
 		// but only if the ACK flag is set because the AckNum is not valid in a
 		// header if ACK is not set.
-		newIn.AckNum = Uint32(uint32(*s.localSeqNum))
+		newIn.AckNum = Uint32(uint32(*seq))
 	}
 	return &newIn
 }
@@ -615,7 +615,12 @@ func (conn *Connection) ExpectFrame(t *testing.T, layers Layers, timeout time.Du
 			}
 			return gotLayers, nil
 		}
-		errs = multierr.Combine(errs, &layersError{got: gotLayers, want: conn.incoming(gotLayers)})
+		want := conn.incoming(layers)
+		if err := want.merge(layers); err != nil {
+			errs = multierr.Combine(errs, err)
+		} else {
+			errs = multierr.Combine(errs, &layersError{got: gotLayers, want: want})
+		}
 	}
 }
 
