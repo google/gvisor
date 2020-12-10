@@ -47,6 +47,9 @@ type mockMulticastGroupProtocol struct {
 
 	// Must only be accessed with mu held.
 	sendLeaveGroupAddrCount map[tcpip.Address]int
+
+	// Must only be accessed with mu held.
+	makeQueuePackets bool
 }
 
 func (m *mockMulticastGroupProtocol) init() {
@@ -60,7 +63,7 @@ func (m *mockMulticastGroupProtocol) initLocked() {
 	m.sendLeaveGroupAddrCount = make(map[tcpip.Address]int)
 }
 
-func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) *tcpip.Error {
+func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) (bool, *tcpip.Error) {
 	if m.mu.TryLock() {
 		m.mu.Unlock()
 		m.t.Fatalf("got write lock, expected to not take the lock; generic multicast protocol must take the write lock before sending report for %s", groupAddress)
@@ -71,7 +74,7 @@ func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) *tcp
 	}
 
 	m.sendReportGroupAddrCount[groupAddress]++
-	return nil
+	return !m.makeQueuePackets, nil
 }
 
 func (m *mockMulticastGroupProtocol) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
@@ -112,7 +115,7 @@ func (m *mockMulticastGroupProtocol) check(sendReportGroupAddresses []tcpip.Addr
 		// ignore mockMulticastGroupProtocol.mu and mockMulticastGroupProtocol.t
 		cmp.FilterPath(
 			func(p cmp.Path) bool {
-				return p.Last().String() == ".mu" || p.Last().String() == ".t"
+				return p.Last().String() == ".mu" || p.Last().String() == ".t" || p.Last().String() == ".makeQueuePackets"
 			},
 			cmp.Ignore(),
 		),
@@ -730,5 +733,152 @@ func TestGroupStateNonMember(t *testing.T) {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestQueuedPackets(t *testing.T) {
+	var g ip.GenericMulticastProtocolState
+	var mgp mockMulticastGroupProtocol
+	mgp.init()
+	clock := faketime.NewManualClock()
+	g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
+		Enabled:                   true,
+		Rand:                      rand.New(rand.NewSource(4)),
+		Clock:                     clock,
+		Protocol:                  &mgp,
+		MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+	})
+
+	// Joining should trigger a SendReport, but mgp should report that we did not
+	// send the packet.
+	mgp.mu.Lock()
+	mgp.makeQueuePackets = true
+	g.JoinGroupLocked(addr1, false /* dontInitialize */)
+	mgp.mu.Unlock()
+	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// The delayed report timer should have been cancelled since we did not send
+	// the initial report earlier.
+	clock.Advance(time.Hour)
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Mock being able to successfully send the report.
+	mgp.mu.Lock()
+	mgp.makeQueuePackets = false
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// The delayed report (sent after the initial report) should now be sent.
+	clock.Advance(maxUnsolicitedReportDelay)
+	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Should not have anything else to send (we should be idle).
+	mgp.mu.Lock()
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	clock.Advance(time.Hour)
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Receive a query but mock being unable to send reports again.
+	mgp.mu.Lock()
+	mgp.makeQueuePackets = true
+	g.HandleQueryLocked(addr1, time.Nanosecond)
+	mgp.mu.Unlock()
+	clock.Advance(time.Nanosecond)
+	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Mock being able to send reports again - we should have a packet queued to
+	// send.
+	mgp.mu.Lock()
+	mgp.makeQueuePackets = false
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Should not have anything else to send.
+	mgp.mu.Lock()
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	clock.Advance(time.Hour)
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Receive a query again, but mock being unable to send reports.
+	mgp.mu.Lock()
+	mgp.makeQueuePackets = true
+	g.HandleQueryLocked(addr1, time.Nanosecond)
+	mgp.mu.Unlock()
+	clock.Advance(time.Nanosecond)
+	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Receiving a report should should transition us into the idle member state,
+	// even if we had a packet queued. We should no longer have any packets to
+	// send.
+	mgp.mu.Lock()
+	g.HandleReportLocked(addr1)
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	clock.Advance(time.Hour)
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// When we fail to send the initial set of reports, incoming reports should
+	// not affect a newly joined group's reports from being sent.
+	mgp.mu.Lock()
+	mgp.makeQueuePackets = true
+	g.JoinGroupLocked(addr2, false /* dontInitialize */)
+	mgp.mu.Unlock()
+	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	mgp.mu.Lock()
+	g.HandleReportLocked(addr2)
+	// Attempting to send queued reports while still unable to send reports should
+	// not change the host state.
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	// Mock being able to successfully send the report.
+	mgp.mu.Lock()
+	mgp.makeQueuePackets = false
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	// The delayed report (sent after the initial report) should now be sent.
+	clock.Advance(maxUnsolicitedReportDelay)
+	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	// Should not have anything else to send.
+	mgp.mu.Lock()
+	g.SendQueuedReportsLocked()
+	mgp.mu.Unlock()
+	clock.Advance(time.Hour)
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }

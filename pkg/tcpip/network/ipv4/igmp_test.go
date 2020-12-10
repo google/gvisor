@@ -16,6 +16,7 @@ package ipv4_test
 
 import (
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -29,6 +30,7 @@ import (
 
 const (
 	linkAddr      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	addr          = tcpip.Address("\x0a\x00\x00\x01")
 	multicastAddr = tcpip.Address("\xe0\x00\x00\x03")
 	nicID         = 1
 )
@@ -41,6 +43,7 @@ func validateIgmpPacket(t *testing.T, p channel.PacketInfo, remoteAddress tcpip.
 
 	payload := header.IPv4(stack.PayloadSince(p.Pkt.NetworkHeader()))
 	checker.IPv4(t, payload,
+		checker.SrcAddr(addr),
 		checker.DstAddr(remoteAddress),
 		// TTL for an IGMP message must be 1 as per RFC 2236 section 2.
 		checker.TTL(1),
@@ -71,7 +74,6 @@ func createStack(t *testing.T, igmpEnabled bool) (*channel.Endpoint, *stack.Stac
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
-
 	return e, s, clock
 }
 
@@ -104,6 +106,9 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 // reports for backwards compatibility.
 func TestIgmpV1Present(t *testing.T) {
 	e, s, clock := createStack(t, true)
+	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, addr, err)
+	}
 
 	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr); err != nil {
 		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr, err)
@@ -153,4 +158,58 @@ func TestIgmpV1Present(t *testing.T) {
 		t.Fatalf("got V1MembershipReport messages sent = %d, want = 1", got)
 	}
 	validateIgmpPacket(t, p, multicastAddr, header.IGMPv1MembershipReport, 0, multicastAddr)
+}
+
+func TestSendQueuedIGMPReports(t *testing.T) {
+	e, s, clock := createStack(t, true)
+
+	// Joining a group without an assigned address should queue IGMP packets; none
+	// should be sent without an assigned address.
+	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr); err != nil {
+		t.Fatalf("JoinGroup(%d, %d, %s): %s", ipv4.ProtocolNumber, nicID, multicastAddr, err)
+	}
+	reportStat := s.Stats().IGMP.PacketsSent.V2MembershipReport
+	if got := reportStat.Value(); got != 0 {
+		t.Errorf("got reportStat.Value() = %d, want = 0", got)
+	}
+	clock.Advance(time.Hour)
+	if p, ok := e.Read(); ok {
+		t.Fatalf("got unexpected packet = %#v", p)
+	}
+
+	// The initial set of IGMP reports that were queued should be sent once an
+	// address is assigned.
+	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, addr, err)
+	}
+	if got := reportStat.Value(); got != 1 {
+		t.Errorf("got reportStat.Value() = %d, want = 1", got)
+	}
+	if p, ok := e.Read(); !ok {
+		t.Error("expected to send an IGMP membership report")
+	} else {
+		validateIgmpPacket(t, p, multicastAddr, header.IGMPv2MembershipReport, 0, multicastAddr)
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
+	if got := reportStat.Value(); got != 2 {
+		t.Errorf("got reportStat.Value() = %d, want = 2", got)
+	}
+	if p, ok := e.Read(); !ok {
+		t.Error("expected to send an IGMP membership report")
+	} else {
+		validateIgmpPacket(t, p, multicastAddr, header.IGMPv2MembershipReport, 0, multicastAddr)
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	// Should have no more packets to send after the initial set of unsolicited
+	// reports.
+	clock.Advance(time.Hour)
+	if p, ok := e.Read(); ok {
+		t.Fatalf("got unexpected packet = %#v", p)
+	}
 }

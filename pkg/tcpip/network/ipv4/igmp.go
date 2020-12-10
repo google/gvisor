@@ -96,7 +96,9 @@ type igmpState struct {
 }
 
 // SendReport implements ip.MulticastGroupProtocol.
-func (igmp *igmpState) SendReport(groupAddress tcpip.Address) *tcpip.Error {
+//
+// Precondition: igmp.ep.mu must be read locked.
+func (igmp *igmpState) SendReport(groupAddress tcpip.Address) (bool, *tcpip.Error) {
 	igmpType := header.IGMPv2MembershipReport
 	if igmp.v1Present() {
 		igmpType = header.IGMPv1MembershipReport
@@ -105,6 +107,8 @@ func (igmp *igmpState) SendReport(groupAddress tcpip.Address) *tcpip.Error {
 }
 
 // SendLeave implements ip.MulticastGroupProtocol.
+//
+// Precondition: igmp.ep.mu must be read locked.
 func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 	// As per RFC 2236 Section 6, Page 8: "If the interface state says the
 	// Querier is running IGMPv1, this action SHOULD be skipped. If the flag
@@ -113,7 +117,8 @@ func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 	if igmp.v1Present() {
 		return nil
 	}
-	return igmp.writePacket(header.IPv4AllRoutersGroup, groupAddress, header.IGMPLeaveGroup)
+	_, err := igmp.writePacket(header.IPv4AllRoutersGroup, groupAddress, header.IGMPLeaveGroup)
+	return err
 }
 
 // init sets up an igmpState struct, and is required to be called before using
@@ -235,9 +240,10 @@ func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
 	igmp.genericMulticastProtocol.HandleReportLocked(groupAddress)
 }
 
-// writePacket assembles and sends an IGMP packet with the provided fields,
-// incrementing the provided stat counter on success.
-func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip.Address, igmpType header.IGMPType) *tcpip.Error {
+// writePacket assembles and sends an IGMP packet.
+//
+// Precondition: igmp.ep.mu must be read locked.
+func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip.Address, igmpType header.IGMPType) (bool, *tcpip.Error) {
 	igmpData := header.IGMP(buffer.NewView(header.IGMPReportMinimumSize))
 	igmpData.SetType(igmpType)
 	igmpData.SetGroupAddress(groupAddress)
@@ -248,9 +254,13 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 		Data:               buffer.View(igmpData).ToVectorisedView(),
 	})
 
-	// TODO(gvisor.dev/issue/4888): We should not use the unspecified address,
-	// rather we should select an appropriate local address.
-	localAddr := header.IPv4Any
+	addressEndpoint := igmp.ep.acquireOutgoingPrimaryAddressRLocked(destAddress, false /* allowExpired */)
+	if addressEndpoint == nil {
+		return false, nil
+	}
+	localAddr := addressEndpoint.AddressWithPrefix().Address
+	addressEndpoint.DecRef()
+	addressEndpoint = nil
 	igmp.ep.addIPHeader(localAddr, destAddress, pkt, stack.NetworkHeaderParams{
 		Protocol: header.IGMPProtocolNumber,
 		TTL:      header.IGMPTTL,
@@ -259,22 +269,22 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 		&header.IPv4SerializableRouterAlertOption{},
 	})
 
-	sent := igmp.ep.protocol.stack.Stats().IGMP.PacketsSent
+	sentStats := igmp.ep.protocol.stack.Stats().IGMP.PacketsSent
 	if err := igmp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv4Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
-		sent.Dropped.Increment()
-		return err
+		sentStats.Dropped.Increment()
+		return false, err
 	}
 	switch igmpType {
 	case header.IGMPv1MembershipReport:
-		sent.V1MembershipReport.Increment()
+		sentStats.V1MembershipReport.Increment()
 	case header.IGMPv2MembershipReport:
-		sent.V2MembershipReport.Increment()
+		sentStats.V2MembershipReport.Increment()
 	case header.IGMPLeaveGroup:
-		sent.LeaveGroup.Increment()
+		sentStats.LeaveGroup.Increment()
 	default:
 		panic(fmt.Sprintf("unrecognized igmp type = %d", igmpType))
 	}
-	return nil
+	return true, nil
 }
 
 // joinGroup handles adding a new group to the membership map, setting up the
@@ -324,4 +334,11 @@ func (igmp *igmpState) softLeaveAll() {
 // Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) initializeAll() {
 	igmp.genericMulticastProtocol.InitializeGroupsLocked()
+}
+
+// sendQueuedReports attempts to send any reports that are queued for sending.
+//
+// Precondition: igmp.ep.mu must be locked.
+func (igmp *igmpState) sendQueuedReports() {
+	igmp.genericMulticastProtocol.SendQueuedReportsLocked()
 }
