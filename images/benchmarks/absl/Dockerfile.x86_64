@@ -12,6 +12,7 @@ RUN set -x \
             unzip \
             python3 \
         && rm -rf /var/lib/apt/lists/*
+
 RUN wget https://github.com/bazelbuild/bazel/releases/download/0.27.0/bazel-0.27.0-installer-linux-x86_64.sh
 RUN chmod +x bazel-0.27.0-installer-linux-x86_64.sh
 RUN ./bazel-0.27.0-installer-linux-x86_64.sh

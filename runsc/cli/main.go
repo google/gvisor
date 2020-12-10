@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -207,6 +208,8 @@ func Main(version string) {
 	log.Infof("***************************")
 	log.Infof("Args: %s", os.Args)
 	log.Infof("Version %s", version)
+	log.Infof("GOOS: %s", runtime.GOOS)
+	log.Infof("GOARCH: %s", runtime.GOARCH)
 	log.Infof("PID: %d", os.Getpid())
 	log.Infof("UID: %d, GID: %d", os.Getuid(), os.Getgid())
 	log.Infof("Configuration:")

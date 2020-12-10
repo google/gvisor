@@ -9,7 +9,8 @@ _templates:
 
 steps:
   # Run basic smoke tests before preceding to other tests.
-  - label: ":fire: Smoke tests"
+  - <<: *common
+    label: ":fire: Smoke tests"
     command: make smoke-tests
   - wait
 
@@ -77,25 +78,24 @@ steps:
     label: ":hammer: Packetimpact tests"
     command: make packetimpact-tests
 
-  # Start heavy runtime tests.
-  - wait
+  # Runtime tests.
   - <<: *common
     label: ":php: PHP runtime tests"
-    command: make php7.3.6-runtime-tests
+    command: make php7.3.6-runtime-tests_vfs2
     parallelism: 10
   - <<: *common
     label: ":java: Java runtime tests"
-    command: make java11-runtime-tests
+    command: make java11-runtime-tests_vfs2
     parallelism: 40
   - <<: *common
     label: ":golang: Go runtime tests"
-    command: make go1.12-runtime-tests
+    command: make go1.12-runtime-tests_vfs2
     parallelism: 10
   - <<: *common
     label: ":node: NodeJS runtime tests"
-    command: make nodejs12.4.0-runtime-tests
+    command: make nodejs12.4.0-runtime-tests_vfs2
     parallelism: 10
   - <<: *common
     label: ":python: Python runtime tests"
-    command: make python3.7.3-runtime-tests
+    command: make python3.7.3-runtime-tests_vfs2
     parallelism: 10

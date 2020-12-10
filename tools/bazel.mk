@@ -44,8 +44,8 @@ BUILD_ROOTS := bazel-bin/ bazel-out/
 # Bazel container configuration (see below).
 USER := $(shell whoami)
 HASH := $(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
-BUILDER_NAME := gvisor-builder-$(HASH)
-DOCKER_NAME := gvisor-bazel-$(HASH)
+BUILDER_NAME := gvisor-builder-$(HASH)-$(ARCH)
+DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
 DOCKER_PRIVILEGED := --privileged
 BAZEL_CACHE := $(shell readlink -m ~/.cache/bazel/)
 GCLOUD_CONFIG := $(shell readlink -m ~/.config/gcloud/)
@@ -164,7 +164,7 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder
 .PHONY: bazel-image
 
-ifeq (,$(findstring $(DOCKER_NAME),$(shell docker ps 2>/dev/null)))
+ifneq (true,$(shell $(wrapper echo true)))
 bazel-server: bazel-image ## Ensures that the server exists.
 	@$(call header,DOCKER RUN)
 	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
@@ -207,6 +207,10 @@ copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
 run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
 sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(TEST_OPTIONS) $(1))
+
+clean: ## Cleans the bazel cache.
+	@$(call clean)
+.PHONY: clean
 
 testlogs: ## Returns the most recent set of test logs.
 	@if test -f .build_events.json; then \
