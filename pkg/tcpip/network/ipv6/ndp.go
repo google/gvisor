@@ -647,6 +647,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, true, nil)
 		}
 
+		ndp.ep.onAddressAssignedLocked(addr)
 		return nil
 	}
 
@@ -690,12 +691,14 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 				ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, dadDone, err)
 			}
 
-			// If DAD resolved for a stable SLAAC address, attempt generation of a
-			// temporary SLAAC address.
-			if dadDone && addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
-				// Reset the generation attempts counter as we are starting the generation
-				// of a new address for the SLAAC prefix.
-				ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */)
+			if dadDone {
+				if addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
+					// Reset the generation attempts counter as we are starting the
+					// generation of a new address for the SLAAC prefix.
+					ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */)
+				}
+
+				ndp.ep.onAddressAssignedLocked(addr)
 			}
 		}),
 	}

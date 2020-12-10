@@ -172,7 +172,7 @@ func (n *NIC) disable() {
 //
 // n MUST be locked.
 func (n *NIC) disableLocked() {
-	if !n.setEnabled(false) {
+	if !n.Enabled() {
 		return
 	}
 
@@ -183,6 +183,10 @@ func (n *NIC) disableLocked() {
 
 	for _, ep := range n.networkEndpoints {
 		ep.Disable()
+	}
+
+	if !n.setEnabled(false) {
+		panic("should have only done work to disable the NIC if it was enabled")
 	}
 }
 
