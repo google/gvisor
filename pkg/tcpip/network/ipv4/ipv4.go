@@ -593,7 +593,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 
 	// Check if the destination is owned by the stack.
 	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
-		ep.handlePacket(pkt)
+		ep.handleValidatedPacket(h, pkt)
 		return nil
 	}
 
@@ -626,7 +626,6 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 // this endpoint.
 func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	stats := e.stats.ip
-
 	stats.PacketsReceived.Increment()
 
 	if !e.isEnabled() {
@@ -634,12 +633,25 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
-	if !e.protocol.parse(pkt) {
+	h, ok := e.protocol.parseAndValidate(pkt)
+	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
 
 	if !e.nic.IsLoopback() {
+		if !e.protocol.options.AllowExternalLoopbackTraffic {
+			if header.IsV4LoopbackAddress(h.SourceAddress()) {
+				stats.InvalidSourceAddressesReceived.Increment()
+				return
+			}
+
+			if header.IsV4LoopbackAddress(h.DestinationAddress()) {
+				stats.InvalidDestinationAddressesReceived.Increment()
+				return
+			}
+		}
+
 		if e.protocol.stack.HandleLocal() {
 			addressEndpoint := e.AcquireAssignedAddress(header.IPv4(pkt.NetworkHeader().View()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
 			if addressEndpoint != nil {
@@ -662,61 +674,36 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 	}
 
-	e.handlePacket(pkt)
+	e.handleValidatedPacket(h, pkt)
 }
 
 func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum bool) {
 	stats := e.stats.ip
-
 	stats.PacketsReceived.Increment()
 
 	pkt = pkt.CloneToInbound()
-	if e.protocol.parse(pkt) {
-		pkt.RXTransportChecksumValidated = canSkipRXChecksum
-		e.handlePacket(pkt)
-		return
-	}
-
-	stats.MalformedPacketsReceived.Increment()
+	pkt.RXTransportChecksumValidated = canSkipRXChecksum
+	e.handlePacket(pkt)
 }
 
 // handlePacket is like HandlePacket except it does not perform the prerouting
-// iptables hook.
+// iptables hook or check for loopback traffic that originated from outside of
+// the netstack (i.e. martian loopback packets).
 func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
+	stats := e.stats.ip
+
+	h, ok := e.protocol.parseAndValidate(pkt)
+	if !ok {
+		stats.MalformedPacketsReceived.Increment()
+		return
+	}
+
+	e.handleValidatedPacket(h, pkt)
+}
+
+func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer) {
 	pkt.NICID = e.nic.ID()
 	stats := e.stats
-
-	h := header.IPv4(pkt.NetworkHeader().View())
-	if !h.IsValid(pkt.Data().Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
-		stats.ip.MalformedPacketsReceived.Increment()
-		return
-	}
-
-	// There has been some confusion regarding verifying checksums. We need
-	// just look for negative 0 (0xffff) as the checksum, as it's not possible to
-	// get positive 0 (0) for the checksum. Some bad implementations could get it
-	// when doing entry replacement in the early days of the Internet,
-	// however the lore that one needs to check for both persists.
-	//
-	// RFC 1624 section 1 describes the source of this confusion as:
-	//     [the partial recalculation method described in RFC 1071] computes a
-	//     result for certain cases that differs from the one obtained from
-	//     scratch (one's complement of one's complement sum of the original
-	//     fields).
-	//
-	// However RFC 1624 section 5 clarifies that if using the verification method
-	// "recommended by RFC 1071, it does not matter if an intermediate system
-	// generated a -0 instead of +0".
-	//
-	// RFC1071 page 1 specifies the verification method as:
-	//	  (3)  To check a checksum, the 1's complement sum is computed over the
-	//        same set of octets, including the checksum field.  If the result
-	//        is all 1 bits (-0 in 1's complement arithmetic), the check
-	//        succeeds.
-	if h.CalculateChecksum() != 0xffff {
-		stats.ip.MalformedPacketsReceived.Increment()
-		return
-	}
 
 	srcAddr := h.SourceAddress()
 	dstAddr := h.DestinationAddress()
@@ -1114,13 +1101,46 @@ func (*protocol) Close() {}
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
 
-// parse is like Parse but also attempts to parse the transport layer.
+// parseAndValidate parses the packet (including its transport layer header) and
+// returns the parsed IP header.
 //
-// Returns true if the network header was successfully parsed.
-func (p *protocol) parse(pkt *stack.PacketBuffer) bool {
+// Returns true if the IP header was successfully parsed.
+func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (header.IPv4, bool) {
 	transProtoNum, hasTransportHdr, ok := p.Parse(pkt)
 	if !ok {
-		return false
+		return nil, false
+	}
+
+	h := header.IPv4(pkt.NetworkHeader().View())
+	// Do not include the link header's size when calculating the size of the IP
+	// packet.
+	if !h.IsValid(pkt.Size() - pkt.LinkHeader().View().Size()) {
+		return nil, false
+	}
+
+	// There has been some confusion regarding verifying checksums. We need
+	// just look for negative 0 (0xffff) as the checksum, as it's not possible to
+	// get positive 0 (0) for the checksum. Some bad implementations could get it
+	// when doing entry replacement in the early days of the Internet,
+	// however the lore that one needs to check for both persists.
+	//
+	// RFC 1624 section 1 describes the source of this confusion as:
+	//     [the partial recalculation method described in RFC 1071] computes a
+	//     result for certain cases that differs from the one obtained from
+	//     scratch (one's complement of one's complement sum of the original
+	//     fields).
+	//
+	// However RFC 1624 section 5 clarifies that if using the verification method
+	// "recommended by RFC 1071, it does not matter if an intermediate system
+	// generated a -0 instead of +0".
+	//
+	// RFC1071 page 1 specifies the verification method as:
+	//	  (3)  To check a checksum, the 1's complement sum is computed over the
+	//        same set of octets, including the checksum field.  If the result
+	//        is all 1 bits (-0 in 1's complement arithmetic), the check
+	//        succeeds.
+	if h.CalculateChecksum() != 0xffff {
+		return nil, false
 	}
 
 	if hasTransportHdr {
@@ -1134,7 +1154,7 @@ func (p *protocol) parse(pkt *stack.PacketBuffer) bool {
 		}
 	}
 
-	return true
+	return h, true
 }
 
 // Parse implements stack.NetworkProtocol.Parse.
@@ -1213,6 +1233,11 @@ func hashRoute(srcAddr, dstAddr tcpip.Address, protocol tcpip.TransportProtocolN
 type Options struct {
 	// IGMP holds options for IGMP.
 	IGMP IGMPOptions
+
+	// AllowExternalLoopbackTraffic indicates that the stack should allow loopback
+	// traffic that originated from outside of the netstack (i.e. martian loopback
+	// packets).
+	AllowExternalLoopbackTraffic bool
 }
 
 // NewProtocolWithOptions returns an IPv4 network protocol.

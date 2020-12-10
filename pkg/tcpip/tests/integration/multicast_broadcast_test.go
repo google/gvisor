@@ -45,82 +45,61 @@ const (
 func TestPingMulticastBroadcast(t *testing.T) {
 	const nicID = 1
 
-	rxIPv4ICMP := func(e *channel.Endpoint, dst tcpip.Address) {
-		totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
-		hdr := buffer.NewPrependable(totalLen)
-		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
-		pkt.SetType(header.ICMPv4Echo)
-		pkt.SetCode(0)
-		pkt.SetChecksum(0)
-		pkt.SetChecksum(^header.Checksum(pkt, 0))
-		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
-		ip.Encode(&header.IPv4Fields{
-			TotalLength: uint16(totalLen),
-			Protocol:    uint8(icmp.ProtocolNumber4),
-			TTL:         ttl,
-			SrcAddr:     utils.RemoteIPv4Addr,
-			DstAddr:     dst,
-		})
-		ip.SetChecksum(^ip.CalculateChecksum())
-
-		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: hdr.View().ToVectorisedView(),
-		}))
-	}
-
-	rxIPv6ICMP := func(e *channel.Endpoint, dst tcpip.Address) {
-		totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
-		hdr := buffer.NewPrependable(totalLen)
-		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
-		pkt.SetType(header.ICMPv6EchoRequest)
-		pkt.SetCode(0)
-		pkt.SetChecksum(0)
-		pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
-			Header: pkt,
-			Src:    utils.RemoteIPv6Addr,
-			Dst:    dst,
-		}))
-		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
-		ip.Encode(&header.IPv6Fields{
-			PayloadLength:     header.ICMPv6MinimumSize,
-			TransportProtocol: icmp.ProtocolNumber6,
-			HopLimit:          ttl,
-			SrcAddr:           utils.RemoteIPv6Addr,
-			DstAddr:           dst,
-		})
-
-		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: hdr.View().ToVectorisedView(),
-		}))
-	}
-
 	tests := []struct {
-		name    string
-		dstAddr tcpip.Address
+		name        string
+		protoNum    tcpip.NetworkProtocolNumber
+		rxICMP      func(*channel.Endpoint, tcpip.Address, tcpip.Address)
+		srcAddr     tcpip.Address
+		dstAddr     tcpip.Address
+		expectedSrc tcpip.Address
 	}{
 		{
-			name:    "IPv4 unicast",
-			dstAddr: utils.Ipv4Addr.Address,
+			name:        "IPv4 unicast",
+			protoNum:    header.IPv4ProtocolNumber,
+			dstAddr:     utils.Ipv4Addr.Address,
+			srcAddr:     utils.RemoteIPv4Addr,
+			rxICMP:      utils.RxICMPv4EchoRequest,
+			expectedSrc: utils.Ipv4Addr.Address,
 		},
 		{
-			name:    "IPv4 directed broadcast",
-			dstAddr: utils.Ipv4SubnetBcast,
+			name:        "IPv4 directed broadcast",
+			protoNum:    header.IPv4ProtocolNumber,
+			rxICMP:      utils.RxICMPv4EchoRequest,
+			srcAddr:     utils.RemoteIPv4Addr,
+			dstAddr:     utils.Ipv4SubnetBcast,
+			expectedSrc: utils.Ipv4Addr.Address,
 		},
 		{
-			name:    "IPv4 broadcast",
-			dstAddr: header.IPv4Broadcast,
+			name:        "IPv4 broadcast",
+			protoNum:    header.IPv4ProtocolNumber,
+			rxICMP:      utils.RxICMPv4EchoRequest,
+			srcAddr:     utils.RemoteIPv4Addr,
+			dstAddr:     header.IPv4Broadcast,
+			expectedSrc: utils.Ipv4Addr.Address,
 		},
 		{
-			name:    "IPv4 all-systems multicast",
-			dstAddr: header.IPv4AllSystems,
+			name:        "IPv4 all-systems multicast",
+			protoNum:    header.IPv4ProtocolNumber,
+			rxICMP:      utils.RxICMPv4EchoRequest,
+			srcAddr:     utils.RemoteIPv4Addr,
+			dstAddr:     header.IPv4AllSystems,
+			expectedSrc: utils.Ipv4Addr.Address,
 		},
 		{
-			name:    "IPv6 unicast",
-			dstAddr: utils.Ipv6Addr.Address,
+			name:        "IPv6 unicast",
+			protoNum:    header.IPv6ProtocolNumber,
+			rxICMP:      utils.RxICMPv6EchoRequest,
+			srcAddr:     utils.RemoteIPv6Addr,
+			dstAddr:     utils.Ipv6Addr.Address,
+			expectedSrc: utils.Ipv6Addr.Address,
 		},
 		{
-			name:    "IPv6 all-nodes multicast",
-			dstAddr: header.IPv6AllNodesMulticastAddress,
+			name:        "IPv6 all-nodes multicast",
+			protoNum:    header.IPv6ProtocolNumber,
+			rxICMP:      utils.RxICMPv6EchoRequest,
+			srcAddr:     utils.RemoteIPv6Addr,
+			dstAddr:     header.IPv6AllNodesMulticastAddress,
+			expectedSrc: utils.Ipv6Addr.Address,
 		},
 	}
 
@@ -157,44 +136,29 @@ func TestPingMulticastBroadcast(t *testing.T) {
 				},
 			})
 
-			var rxICMP func(*channel.Endpoint, tcpip.Address)
-			var expectedSrc tcpip.Address
-			var expectedDst tcpip.Address
-			var protoNum tcpip.NetworkProtocolNumber
-			switch l := len(test.dstAddr); l {
-			case header.IPv4AddressSize:
-				rxICMP = rxIPv4ICMP
-				expectedSrc = utils.Ipv4Addr.Address
-				expectedDst = utils.RemoteIPv4Addr
-				protoNum = header.IPv4ProtocolNumber
-			case header.IPv6AddressSize:
-				rxICMP = rxIPv6ICMP
-				expectedSrc = utils.Ipv6Addr.Address
-				expectedDst = utils.RemoteIPv6Addr
-				protoNum = header.IPv6ProtocolNumber
-			default:
-				t.Fatalf("got unexpected address length = %d bytes", l)
-			}
-
-			rxICMP(e, test.dstAddr)
+			test.rxICMP(e, test.srcAddr, test.dstAddr)
 			pkt, ok := e.Read()
 			if !ok {
 				t.Fatal("expected ICMP response")
 			}
 
-			if pkt.Route.LocalAddress != expectedSrc {
-				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, expectedSrc)
+			if pkt.Route.LocalAddress != test.expectedSrc {
+				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, test.expectedSrc)
 			}
-			if pkt.Route.RemoteAddress != expectedDst {
-				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, expectedDst)
+			// The destination of the response packet should be the source of the
+			// original packet.
+			if pkt.Route.RemoteAddress != test.srcAddr {
+				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.srcAddr)
 			}
 
-			src, dst := s.NetworkProtocolInstance(protoNum).ParseAddresses(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
-			if src != expectedSrc {
-				t.Errorf("got pkt source = %s, want = %s", src, expectedSrc)
+			src, dst := s.NetworkProtocolInstance(test.protoNum).ParseAddresses(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+			if src != test.expectedSrc {
+				t.Errorf("got pkt source = %s, want = %s", src, test.expectedSrc)
 			}
-			if dst != expectedDst {
-				t.Errorf("got pkt destination = %s, want = %s", dst, expectedDst)
+			// The destination of the response packet should be the source of the
+			// original packet.
+			if dst != test.srcAddr {
+				t.Errorf("got pkt destination = %s, want = %s", dst, test.srcAddr)
 			}
 		})
 	}
