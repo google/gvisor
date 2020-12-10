@@ -492,6 +492,14 @@ type ControlMessages struct {
 
 	// PacketInfo holds interface and address data on an incoming packet.
 	PacketInfo IPPacketInfo
+
+	// HasOriginalDestinationAddress indicates whether OriginalDstAddress is
+	// set.
+	HasOriginalDstAddress bool
+
+	// OriginalDestinationAddress holds the original destination address
+	// and port of the incoming packet.
+	OriginalDstAddress FullAddress
 }
 
 // PacketOwner is used to get UID and GID of the packet.

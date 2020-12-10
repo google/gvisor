@@ -359,13 +359,26 @@ func PackIPPacketInfo(t *kernel.Task, packetInfo tcpip.IPPacketInfo, buf []byte)
 	)
 }
 
+// PackOriginalDstAddress packs an IP_RECVORIGINALDSTADDR socket control message.
+func PackOriginalDstAddress(t *kernel.Task, family int, originalDstAddress tcpip.FullAddress, buf []byte) []byte {
+	p, _ := socket.ConvertAddress(family, originalDstAddress)
+	level := uint32(linux.SOL_IP)
+	optType := uint32(linux.IP_RECVORIGDSTADDR)
+	if family == linux.AF_INET6 {
+		level = linux.SOL_IPV6
+		optType = linux.IPV6_RECVORIGDSTADDR
+	}
+	return putCmsgStruct(
+		buf, level, optType, t.Arch().Width(), p)
+}
+
 // PackControlMessages packs control messages into the given buffer.
 //
 // We skip control messages specific to Unix domain sockets.
 //
 // Note that some control messages may be truncated if they do not fit under
 // the capacity of buf.
-func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byte) []byte {
+func PackControlMessages(t *kernel.Task, family int, cmsgs socket.ControlMessages, buf []byte) []byte {
 	if cmsgs.IP.HasTimestamp {
 		buf = PackTimestamp(t, cmsgs.IP.Timestamp, buf)
 	}
@@ -385,6 +398,10 @@ func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byt
 
 	if cmsgs.IP.HasIPPacketInfo {
 		buf = PackIPPacketInfo(t, cmsgs.IP.PacketInfo, buf)
+	}
+
+	if cmsgs.IP.HasOriginalDstAddress {
+		buf = PackOriginalDstAddress(t, family, cmsgs.IP.OriginalDstAddress, buf)
 	}
 
 	return buf

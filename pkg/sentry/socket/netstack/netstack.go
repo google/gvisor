@@ -1418,6 +1418,14 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReceiveTClass()))
 		return &v, nil
 
+	case linux.IPV6_RECVORIGDSTADDR:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReceiveOriginalDstAddress()))
+		return &v, nil
+
 	case linux.IP6T_ORIGINAL_DST:
 		if outLen < int(binary.Size(linux.SockAddrInet6{})) {
 			return nil, syserr.ErrInvalidArgument
@@ -1597,6 +1605,14 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		}
 
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetHeaderIncluded()))
+		return &v, nil
+
+	case linux.IP_RECVORIGDSTADDR:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReceiveOriginalDstAddress()))
 		return &v, nil
 
 	case linux.SO_ORIGINAL_DST:
@@ -2094,6 +2110,15 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 
 		t.Kernel().EmitUnimplementedEvent(t)
 
+	case linux.IPV6_RECVORIGDSTADDR:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		v := int32(usermem.ByteOrder.Uint32(optVal))
+
+		ep.SocketOptions().SetReceiveOriginalDstAddress(v != 0)
+		return nil
+
 	case linux.IPV6_TCLASS:
 		if len(optVal) < sizeOfInt32 {
 			return syserr.ErrInvalidArgument
@@ -2325,6 +2350,18 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		ep.SocketOptions().SetHeaderIncluded(v != 0)
 		return nil
 
+	case linux.IP_RECVORIGDSTADDR:
+		if len(optVal) == 0 {
+			return nil
+		}
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+
+		ep.SocketOptions().SetReceiveOriginalDstAddress(v != 0)
+		return nil
+
 	case linux.IPT_SO_SET_REPLACE:
 		if len(optVal) < linux.SizeOfIPTReplace {
 			return syserr.ErrInvalidArgument
@@ -2363,7 +2400,6 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		linux.IP_RECVERR,
 		linux.IP_RECVFRAGSIZE,
 		linux.IP_RECVOPTS,
-		linux.IP_RECVORIGDSTADDR,
 		linux.IP_RECVTTL,
 		linux.IP_RETOPTS,
 		linux.IP_TRANSPARENT,
@@ -2441,7 +2477,6 @@ func emitUnimplementedEventIPv6(t *kernel.Task, name int) {
 		linux.IPV6_RECVFRAGSIZE,
 		linux.IPV6_RECVHOPLIMIT,
 		linux.IPV6_RECVHOPOPTS,
-		linux.IPV6_RECVORIGDSTADDR,
 		linux.IPV6_RECVPATHMTU,
 		linux.IPV6_RECVPKTINFO,
 		linux.IPV6_RECVRTHDR,
@@ -2746,14 +2781,16 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 func (s *socketOpsCommon) controlMessages() socket.ControlMessages {
 	return socket.ControlMessages{
 		IP: tcpip.ControlMessages{
-			HasTimestamp:    s.readCM.HasTimestamp && s.sockOptTimestamp,
-			Timestamp:       s.readCM.Timestamp,
-			HasTOS:          s.readCM.HasTOS,
-			TOS:             s.readCM.TOS,
-			HasTClass:       s.readCM.HasTClass,
-			TClass:          s.readCM.TClass,
-			HasIPPacketInfo: s.readCM.HasIPPacketInfo,
-			PacketInfo:      s.readCM.PacketInfo,
+			HasTimestamp:          s.readCM.HasTimestamp && s.sockOptTimestamp,
+			Timestamp:             s.readCM.Timestamp,
+			HasTOS:                s.readCM.HasTOS,
+			TOS:                   s.readCM.TOS,
+			HasTClass:             s.readCM.HasTClass,
+			TClass:                s.readCM.TClass,
+			HasIPPacketInfo:       s.readCM.HasIPPacketInfo,
+			PacketInfo:            s.readCM.PacketInfo,
+			HasOriginalDstAddress: s.readCM.HasOriginalDstAddress,
+			OriginalDstAddress:    s.readCM.OriginalDstAddress,
 		},
 	}
 }

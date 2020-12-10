@@ -15,6 +15,7 @@ func (u *udpPacket) StateFields() []string {
 	return []string{
 		"udpPacketEntry",
 		"senderAddress",
+		"destinationAddress",
 		"packetInfo",
 		"data",
 		"timestamp",
@@ -27,12 +28,13 @@ func (u *udpPacket) beforeSave() {}
 func (u *udpPacket) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	var dataValue buffer.VectorisedView = u.saveData()
-	stateSinkObject.SaveValue(3, dataValue)
+	stateSinkObject.SaveValue(4, dataValue)
 	stateSinkObject.Save(0, &u.udpPacketEntry)
 	stateSinkObject.Save(1, &u.senderAddress)
-	stateSinkObject.Save(2, &u.packetInfo)
-	stateSinkObject.Save(4, &u.timestamp)
-	stateSinkObject.Save(5, &u.tos)
+	stateSinkObject.Save(2, &u.destinationAddress)
+	stateSinkObject.Save(3, &u.packetInfo)
+	stateSinkObject.Save(5, &u.timestamp)
+	stateSinkObject.Save(6, &u.tos)
 }
 
 func (u *udpPacket) afterLoad() {}
@@ -40,10 +42,11 @@ func (u *udpPacket) afterLoad() {}
 func (u *udpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.udpPacketEntry)
 	stateSourceObject.Load(1, &u.senderAddress)
-	stateSourceObject.Load(2, &u.packetInfo)
-	stateSourceObject.Load(4, &u.timestamp)
-	stateSourceObject.Load(5, &u.tos)
-	stateSourceObject.LoadValue(3, new(buffer.VectorisedView), func(y interface{}) { u.loadData(y.(buffer.VectorisedView)) })
+	stateSourceObject.Load(2, &u.destinationAddress)
+	stateSourceObject.Load(3, &u.packetInfo)
+	stateSourceObject.Load(5, &u.timestamp)
+	stateSourceObject.Load(6, &u.tos)
+	stateSourceObject.LoadValue(4, new(buffer.VectorisedView), func(y interface{}) { u.loadData(y.(buffer.VectorisedView)) })
 }
 
 func (e *endpoint) StateTypeName() string {

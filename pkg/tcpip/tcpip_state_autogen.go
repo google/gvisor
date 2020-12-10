@@ -28,6 +28,7 @@ func (so *SocketOptions) StateFields() []string {
 		"quickAckEnabled",
 		"delayOptionEnabled",
 		"corkOptionEnabled",
+		"receiveOriginalDstAddress",
 	}
 }
 
@@ -51,6 +52,7 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &so.quickAckEnabled)
 	stateSinkObject.Save(14, &so.delayOptionEnabled)
 	stateSinkObject.Save(15, &so.corkOptionEnabled)
+	stateSinkObject.Save(16, &so.receiveOriginalDstAddress)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -72,6 +74,7 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &so.quickAckEnabled)
 	stateSourceObject.Load(14, &so.delayOptionEnabled)
 	stateSourceObject.Load(15, &so.corkOptionEnabled)
+	stateSourceObject.Load(16, &so.receiveOriginalDstAddress)
 }
 
 func (e *Error) StateTypeName() string {
@@ -145,6 +148,8 @@ func (c *ControlMessages) StateFields() []string {
 		"TClass",
 		"HasIPPacketInfo",
 		"PacketInfo",
+		"HasOriginalDstAddress",
+		"OriginalDstAddress",
 	}
 }
 
@@ -162,6 +167,8 @@ func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &c.TClass)
 	stateSinkObject.Save(8, &c.HasIPPacketInfo)
 	stateSinkObject.Save(9, &c.PacketInfo)
+	stateSinkObject.Save(10, &c.HasOriginalDstAddress)
+	stateSinkObject.Save(11, &c.OriginalDstAddress)
 }
 
 func (c *ControlMessages) afterLoad() {}
@@ -177,6 +184,8 @@ func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &c.TClass)
 	stateSourceObject.Load(8, &c.HasIPPacketInfo)
 	stateSourceObject.Load(9, &c.PacketInfo)
+	stateSourceObject.Load(10, &c.HasOriginalDstAddress)
+	stateSourceObject.Load(11, &c.OriginalDstAddress)
 }
 
 func (l *LinkPacketInfo) StateTypeName() string {
