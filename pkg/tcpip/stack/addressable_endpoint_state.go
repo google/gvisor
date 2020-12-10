@@ -82,12 +82,16 @@ func (a *AddressableEndpointState) ForEachEndpoint(f func(AddressEndpoint) bool)
 }
 
 // ForEachPrimaryEndpoint calls f for each primary address.
-func (a *AddressableEndpointState) ForEachPrimaryEndpoint(f func(AddressEndpoint)) {
+//
+// Once f returns false, f will no longer be called.
+func (a *AddressableEndpointState) ForEachPrimaryEndpoint(f func(AddressEndpoint) bool) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	for _, ep := range a.mu.primary {
-		f(ep)
+		if !f(ep) {
+			return
+		}
 	}
 }
 

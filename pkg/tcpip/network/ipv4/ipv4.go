@@ -172,7 +172,7 @@ func (e *endpoint) Disable() {
 }
 
 func (e *endpoint) disableLocked() {
-	if !e.setEnabled(false) {
+	if !e.isEnabled() {
 		return
 	}
 
@@ -188,6 +188,10 @@ func (e *endpoint) disableLocked() {
 	// The address may have already been removed.
 	if err := e.mu.addressableEndpointState.RemovePermanentAddress(ipv4BroadcastAddr.Address); err != nil && err != tcpip.ErrBadLocalAddress {
 		panic(fmt.Sprintf("unexpected error when removing address = %s: %s", ipv4BroadcastAddr.Address, err))
+	}
+
+	if !e.setEnabled(false) {
+		panic("should have only done work to disable the endpoint if it was enabled")
 	}
 }
 
@@ -780,7 +784,12 @@ func (e *endpoint) Close() {
 func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, peb, configType, deprecated)
+
+	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, peb, configType, deprecated)
+	if err == nil {
+		e.mu.igmp.sendQueuedReports()
+	}
+	return ep, err
 }
 
 // RemovePermanentAddress implements stack.AddressableEndpoint.
@@ -815,6 +824,14 @@ func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp boo
 func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+	return e.acquireOutgoingPrimaryAddressRLocked(remoteAddr, allowExpired)
+}
+
+// acquireOutgoingPrimaryAddressRLocked is like AcquireOutgoingPrimaryAddress
+// but with locking requirements
+//
+// Precondition: igmp.ep.mu must be read locked.
+func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	return e.mu.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
 }
 
