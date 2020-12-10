@@ -121,6 +121,45 @@ type OpaqueInterfaceIdentifierOptions struct {
 	SecretKey []byte
 }
 
+// onAddressAssignedLocked handles an address being assigned.
+//
+// Precondition: e.mu must be exclusively locked.
+func (e *endpoint) onAddressAssignedLocked(addr tcpip.Address) {
+	// As per RFC 2710 section 3,
+	//
+	//   All MLD  messages described in this document are sent with a link-local
+	//   IPv6 Source Address, ...
+	//
+	// If we just completed DAD for a link-local address, then attempt to send any
+	// queued MLD reports. Note, we may have sent reports already for some of the
+	// groups before we had a valid link-local address to use as the source for
+	// the MLD messages, but that was only so that MLD snooping switches are aware
+	// of our membership to groups - routers would not have handled those reports.
+	//
+	// As per RFC 3590 section 4,
+	//
+	//   MLD Report and Done messages are sent with a link-local address as
+	//   the IPv6 source address, if a valid address is available on the
+	//   interface. If a valid link-local address is not available (e.g., one
+	//   has not been configured), the message is sent with the unspecified
+	//   address (::) as the IPv6 source address.
+	//
+	//   Once a valid link-local address is available, a node SHOULD generate
+	//   new MLD Report messages for all multicast addresses joined on the
+	//   interface.
+	//
+	//   Routers receiving an MLD Report or Done message with the unspecified
+	//   address as the IPv6 source address MUST silently discard the packet
+	//   without taking any action on the packets contents.
+	//
+	//   Snooping switches MUST manage multicast forwarding state based on MLD
+	//   Report and Done messages sent with the unspecified address as the
+	//   IPv6 source address.
+	if header.IsV6LinkLocalAddress(addr) {
+		e.mu.mld.sendQueuedReports()
+	}
+}
+
 // InvalidateDefaultRouter implements stack.NDPEndpoint.
 func (e *endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
 	e.mu.Lock()
@@ -333,7 +372,7 @@ func (e *endpoint) Disable() {
 }
 
 func (e *endpoint) disableLocked() {
-	if !e.setEnabled(false) {
+	if !e.Enabled() {
 		return
 	}
 
@@ -349,6 +388,10 @@ func (e *endpoint) disableLocked() {
 	// Leave groups from the perspective of MLD so that routers know that
 	// we are no longer interested in the group.
 	e.mu.mld.softLeaveAll()
+
+	if !e.setEnabled(false) {
+		panic("should have only done work to disable the endpoint if it was enabled")
+	}
 }
 
 // stopDADForPermanentAddressesLocked stops DAD for all permaneent addresses.
@@ -1176,19 +1219,19 @@ func (e *endpoint) addAndAcquirePermanentAddressLocked(addr tcpip.AddressWithPre
 		return addressEndpoint, nil
 	}
 
-	snmc := header.SolicitedNodeAddr(addr.Address)
-	if err := e.joinGroupLocked(snmc); err != nil {
-		// joinGroupLocked only returns an error if the group address is not a valid
-		// IPv6 multicast address.
-		panic(fmt.Sprintf("e.joinGroupLocked(%s): %s", snmc, err))
-	}
-
 	addressEndpoint.SetKind(stack.PermanentTentative)
 
 	if e.Enabled() {
 		if err := e.mu.ndp.startDuplicateAddressDetection(addr.Address, addressEndpoint); err != nil {
 			return nil, err
 		}
+	}
+
+	snmc := header.SolicitedNodeAddr(addr.Address)
+	if err := e.joinGroupLocked(snmc); err != nil {
+		// joinGroupLocked only returns an error if the group address is not a valid
+		// IPv6 multicast address.
+		panic(fmt.Sprintf("e.joinGroupLocked(%s): %s", snmc, err))
 	}
 
 	return addressEndpoint, nil
@@ -1292,6 +1335,26 @@ func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allow
 	return e.acquireOutgoingPrimaryAddressRLocked(remoteAddr, allowExpired)
 }
 
+// getLinkLocalAddressRLocked returns a link-local address from the primary list
+// of addresses, if one is available.
+//
+// See stack.PrimaryEndpointBehavior for more details about the primary list.
+//
+// Precondition: e.mu must be read locked.
+func (e *endpoint) getLinkLocalAddressRLocked() tcpip.Address {
+	var linkLocalAddr tcpip.Address
+	e.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+		if addressEndpoint.IsAssigned(false /* allowExpired */) {
+			if addr := addressEndpoint.AddressWithPrefix().Address; header.IsV6LinkLocalAddress(addr) {
+				linkLocalAddr = addr
+				return false
+			}
+		}
+		return true
+	})
+	return linkLocalAddr
+}
+
 // acquireOutgoingPrimaryAddressRLocked is like AcquireOutgoingPrimaryAddress
 // but with locking requirements.
 //
@@ -1311,10 +1374,10 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 	// Create a candidate set of available addresses we can potentially use as a
 	// source address.
 	var cs []addrCandidate
-	e.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) {
+	e.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		// If r is not valid for outgoing connections, it is not a valid endpoint.
 		if !addressEndpoint.IsAssigned(allowExpired) {
-			return
+			return true
 		}
 
 		addr := addressEndpoint.AddressWithPrefix().Address
@@ -1330,6 +1393,8 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 			addressEndpoint: addressEndpoint,
 			scope:           scope,
 		})
+
+		return true
 	})
 
 	remoteScope, err := header.ScopeForIPv6Address(remoteAddr)

@@ -58,7 +58,10 @@ go_test(
     srcs = ["mld_test.go"],
     deps = [
         ":ipv6",
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/stack",
