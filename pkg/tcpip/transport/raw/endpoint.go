@@ -227,6 +227,13 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		return 0, nil, tcpip.ErrInvalidOptionValue
 	}
 
+	if opts.To != nil {
+		// Raw sockets do not support sending to a IPv4 address on a IPv6 endpoint.
+		if e.TransportEndpointInfo.NetProto == header.IPv6ProtocolNumber && len(opts.To.Addr) != header.IPv6AddressSize {
+			return 0, nil, tcpip.ErrInvalidOptionValue
+		}
+	}
+
 	n, ch, err := e.write(p, opts)
 	switch err {
 	case nil:
@@ -397,6 +404,11 @@ func (*endpoint) Disconnect() *tcpip.Error {
 
 // Connect implements tcpip.Endpoint.Connect.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
+	// Raw sockets do not support connecting to a IPv4 address on a IPv6 endpoint.
+	if e.TransportEndpointInfo.NetProto == header.IPv6ProtocolNumber && len(addr.Addr) != header.IPv6AddressSize {
+		return tcpip.ErrInvalidOptionValue
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

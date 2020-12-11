@@ -852,6 +852,51 @@ TEST(RawSocketTest, IPv6ProtoRaw) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(RawSocketTest, IPv6SendMsg) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET6, SOCK_RAW, IPPROTO_TCP),
+              SyscallSucceeds());
+
+  char kBuf[] = "hello";
+  struct iovec iov = {};
+  iov.iov_base = static_cast<void*>(const_cast<char*>(kBuf));
+  iov.iov_len = static_cast<size_t>(sizeof(kBuf));
+
+  struct sockaddr_storage addr = {};
+  struct sockaddr_in* sin = reinterpret_cast<struct sockaddr_in*>(&addr);
+  sin->sin_family = AF_INET;
+  sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  struct msghdr msg = {};
+  msg.msg_name = static_cast<void*>(&addr);
+  msg.msg_namelen = sizeof(sockaddr_in);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = NULL;
+  msg.msg_controllen = 0;
+  msg.msg_flags = 0;
+  ASSERT_THAT(sendmsg(sock, &msg, 0), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(RawSocketTest, ConnectOnIPv6Socket) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET6, SOCK_RAW, IPPROTO_TCP),
+              SyscallSucceeds());
+
+  struct sockaddr_storage addr = {};
+  struct sockaddr_in* sin = reinterpret_cast<struct sockaddr_in*>(&addr);
+  sin->sin_family = AF_INET;
+  sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  ASSERT_THAT(connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
+                      sizeof(sockaddr_in6)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllInetTests, RawSocketTest,
     ::testing::Combine(::testing::Values(IPPROTO_TCP, IPPROTO_UDP),
