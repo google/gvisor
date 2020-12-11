@@ -1,0 +1,24 @@
+# Upload test logs on failure, if there are any.
+if [[ "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0" ]]; then
+  declare log_count=0
+  for log in $(make testlogs 2>/dev/null | sort | uniq); do
+    buildkite-agent artifact upload "${log}"
+    log_count=$((${log_count}+1))
+    # N.B. If *all* tests fail due to some common cause, then we will
+    # end up spending way too much time uploading logs. Instead, we just
+    # upload the first 100 and stop. That is hopefully enough to debug.
+    if [[ "${log_count}" -ge 100 ]]; then
+      echo "Only uploaded first 100 failures; skipping the rest."
+      break
+    fi
+  done
+  # Attempt to clear the cache and shut down.
+  make clean || echo "make clean failed with code $?"
+  make bazel-shutdown || echo "make bazel-shutdown failed with code $?"
+fi
+
+# Kill any running containers (clear state).
+CONTAINERS="$(docker ps -q)"
+if ! [[ -z "${CONTAINERS}" ]]; then
+  docker container kill ${CONTAINERS} 2>/dev/null || true
+fi
