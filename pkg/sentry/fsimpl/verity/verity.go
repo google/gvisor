@@ -64,6 +64,10 @@ const (
 	// tree file for "/foo" is "/.merkle.verity.foo".
 	merklePrefix = ".merkle.verity."
 
+	// merkleRootPrefix is the prefix of the Merkle tree root file. This
+	// needs to be different from merklePrefix to avoid name collision.
+	merkleRootPrefix = ".merkleroot.verity."
+
 	// merkleOffsetInParentXattr is the extended attribute name specifying the
 	// offset of the child hash in its parent's Merkle tree.
 	merkleOffsetInParentXattr = "user.merkle.offset"
@@ -255,7 +259,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	lowerVD.IncRef()
 	d.lowerVD = lowerVD
 
-	rootMerkleName := merklePrefix + iopts.RootMerkleFileName
+	rootMerkleName := merkleRootPrefix + iopts.RootMerkleFileName
 
 	lowerMerkleVD, err := vfsObj.GetDentryAt(ctx, fs.creds, &vfs.PathOperation{
 		Root:  lowerVD,
