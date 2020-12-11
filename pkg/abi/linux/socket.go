@@ -111,12 +111,12 @@ type SockType int
 // Socket types, from linux/net.h.
 const (
 	SOCK_STREAM    SockType = 1
-	SOCK_DGRAM              = 2
-	SOCK_RAW                = 3
-	SOCK_RDM                = 4
-	SOCK_SEQPACKET          = 5
-	SOCK_DCCP               = 6
-	SOCK_PACKET             = 10
+	SOCK_DGRAM     SockType = 2
+	SOCK_RAW       SockType = 3
+	SOCK_RDM       SockType = 4
+	SOCK_SEQPACKET SockType = 5
+	SOCK_DCCP      SockType = 6
+	SOCK_PACKET    SockType = 10
 )
 
 // SOCK_TYPE_MASK covers all of the above socket types. The remaining bits are

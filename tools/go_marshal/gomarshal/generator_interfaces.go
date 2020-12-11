@@ -54,10 +54,10 @@ func (g *interfaceGenerator) typeName() string {
 }
 
 // newinterfaceGenerator creates a new interface generator.
-func newInterfaceGenerator(t *ast.TypeSpec, fset *token.FileSet) *interfaceGenerator {
+func newInterfaceGenerator(t *ast.TypeSpec, r string, fset *token.FileSet) *interfaceGenerator {
 	g := &interfaceGenerator{
 		t:  t,
-		r:  receiverName(t),
+		r:  r,
 		f:  fset,
 		is: make(map[string]struct{}),
 		ms: make(map[string]struct{}),

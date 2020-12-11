@@ -160,7 +160,7 @@ func CheckTranslateResult(required, optional MappableRange, at usermem.AccessTyp
 		// Translations must be contiguous and in increasing order of
 		// Translation.Source.
 		if i > 0 && ts[i-1].Source.End != t.Source.Start {
-			return fmt.Errorf("Translations %+v and %+v are not contiguous", ts[i-1], t)
+			return fmt.Errorf("Translation %+v and Translation %+v are not contiguous", ts[i-1], t)
 		}
 		// At least part of each Translation must be required.
 		if t.Source.Intersect(required).Length() == 0 {

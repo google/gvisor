@@ -8,6 +8,7 @@ go_library(
         "api.go",
         "platform.go",
         "service.go",
+        "shim.go",
     ],
     visibility = [
         "//pkg/shim:__subpackages__",

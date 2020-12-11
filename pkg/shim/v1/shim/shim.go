@@ -1,5 +1,5 @@
 // Copyright 2018 The containerd Authors.
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,26 +13,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package proc contains process-related utilities.
-package proc
-
-import (
-	"fmt"
-)
-
-// RunscRoot is the path to the root runsc state directory.
-const RunscRoot = "/run/containerd/runsc"
-
-func stateName(v interface{}) string {
-	switch v.(type) {
-	case *runningState, *execRunningState:
-		return "running"
-	case *createdState, *execCreatedState:
-		return "created"
-	case *deletedState:
-		return "deleted"
-	case *stoppedState:
-		return "stopped"
-	}
-	panic(fmt.Errorf("invalid state %v", v))
-}
+// Package shim contains the core containerd shim implementation.
+package shim

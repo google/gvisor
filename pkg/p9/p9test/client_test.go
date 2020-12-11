@@ -678,16 +678,15 @@ func renameHelper(h *Harness, root p9.File, srcNames []string, dstNames []string
 			// case.
 			defer checkDeleted(h, dst)
 		} else {
+			// If the type is different than the destination, then
+			// we expect the rename to fail. We expect that this
+			// is returned.
+			//
+			// If the file being renamed to itself, this is
+			// technically allowed and a no-op, but all the
+			// triggers will fire.
 			if !selfRename {
-				// If the type is different than the
-				// destination, then we expect the rename to
-				// fail. We expect ensure that this is
-				// returned.
 				expectedErr = syscall.EINVAL
-			} else {
-				// This is the file being renamed to itself.
-				// This is technically allowed and a no-op, but
-				// all the triggers will fire.
 			}
 			dst.Close()
 		}

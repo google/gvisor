@@ -73,7 +73,7 @@ func SignalInfoNoInfo(sig linux.Signal, sender, receiver *Task) *arch.SignalInfo
 		Signo: int32(sig),
 		Code:  arch.SignalInfoUser,
 	}
-	info.SetPid(int32(receiver.tg.pidns.IDOfThreadGroup(sender.tg)))
-	info.SetUid(int32(sender.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
+	info.SetPID(int32(receiver.tg.pidns.IDOfThreadGroup(sender.tg)))
+	info.SetUID(int32(sender.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
 	return info
 }

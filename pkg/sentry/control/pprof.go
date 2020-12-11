@@ -193,7 +193,7 @@ func (p *Profile) StopTrace(_, _ *struct{}) error {
 	defer p.mu.Unlock()
 
 	if p.traceFile == nil {
-		return errors.New("Execution tracing not started")
+		return errors.New("execution tracing not started")
 	}
 
 	// Similarly to the case above, if tasks have not ended traces, we will

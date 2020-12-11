@@ -20,21 +20,21 @@ import (
 )
 
 var (
-	allIntTs    = []int{-1, 0, 1}
-	allInt8s    = []int8{math.MinInt8, -1, 0, 1, math.MaxInt8}
-	allInt16s   = []int16{math.MinInt16, -1, 0, 1, math.MaxInt16}
-	allInt32s   = []int32{math.MinInt32, -1, 0, 1, math.MaxInt32}
-	allInt64s   = []int64{math.MinInt64, -1, 0, 1, math.MaxInt64}
-	allUintTs   = []uint{0, 1}
-	allUintptrs = []uintptr{0, 1, ^uintptr(0)}
-	allUint8s   = []uint8{0, 1, math.MaxUint8}
-	allUint16s  = []uint16{0, 1, math.MaxUint16}
-	allUint32s  = []uint32{0, 1, math.MaxUint32}
-	allUint64s  = []uint64{0, 1, math.MaxUint64}
+	allBasicInts  = []int{-1, 0, 1}
+	allInt8s      = []int8{math.MinInt8, -1, 0, 1, math.MaxInt8}
+	allInt16s     = []int16{math.MinInt16, -1, 0, 1, math.MaxInt16}
+	allInt32s     = []int32{math.MinInt32, -1, 0, 1, math.MaxInt32}
+	allInt64s     = []int64{math.MinInt64, -1, 0, 1, math.MaxInt64}
+	allBasicUints = []uint{0, 1}
+	allUintptrs   = []uintptr{0, 1, ^uintptr(0)}
+	allUint8s     = []uint8{0, 1, math.MaxUint8}
+	allUint16s    = []uint16{0, 1, math.MaxUint16}
+	allUint32s    = []uint32{0, 1, math.MaxUint32}
+	allUint64s    = []uint64{0, 1, math.MaxUint64}
 )
 
 var allInts = flatten(
-	allIntTs,
+	allBasicInts,
 	allInt8s,
 	allInt16s,
 	allInt32s,
@@ -42,7 +42,7 @@ var allInts = flatten(
 )
 
 var allUints = flatten(
-	allUintTs,
+	allBasicUints,
 	allUintptrs,
 	allUint8s,
 	allUint16s,

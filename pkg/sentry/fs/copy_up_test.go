@@ -64,7 +64,7 @@ func TestConcurrentCopyUp(t *testing.T) {
 			wg.Add(1)
 			go func(o *overlayTestFile) {
 				if err := o.File.Dirent.Inode.Truncate(ctx, o.File.Dirent, truncateFileSize); err != nil {
-					t.Fatalf("failed to copy up: %v", err)
+					t.Errorf("failed to copy up: %v", err)
 				}
 				wg.Done()
 			}(file)

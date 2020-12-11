@@ -248,7 +248,7 @@ func (FilterOutputOwnerFail) Name() string {
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterOutputOwnerFail) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "OUTPUT", "-p", "udp", "-m", "owner", "-j", "ACCEPT"); err == nil {
-		return fmt.Errorf("Invalid argument")
+		return fmt.Errorf("invalid argument")
 	}
 
 	return nil

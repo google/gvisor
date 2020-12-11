@@ -368,8 +368,8 @@ func (t *Task) exitChildren() {
 				Signo: int32(sig),
 				Code:  arch.SignalInfoUser,
 			}
-			siginfo.SetPid(int32(c.tg.pidns.tids[t]))
-			siginfo.SetUid(int32(t.Credentials().RealKUID.In(c.UserNamespace()).OrOverflow()))
+			siginfo.SetPID(int32(c.tg.pidns.tids[t]))
+			siginfo.SetUID(int32(t.Credentials().RealKUID.In(c.UserNamespace()).OrOverflow()))
 			c.tg.signalHandlers.mu.Lock()
 			c.sendSignalLocked(siginfo, true /* group */)
 			c.tg.signalHandlers.mu.Unlock()
@@ -698,8 +698,8 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *arch.Si
 	info := &arch.SignalInfo{
 		Signo: int32(sig),
 	}
-	info.SetPid(int32(receiver.tg.pidns.tids[t]))
-	info.SetUid(int32(t.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
+	info.SetPID(int32(receiver.tg.pidns.tids[t]))
+	info.SetUID(int32(t.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
 	if t.exitStatus.Signaled() {
 		info.Code = arch.CLD_KILLED
 		info.SetStatus(int32(t.exitStatus.Signo))

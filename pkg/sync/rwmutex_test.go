@@ -102,7 +102,7 @@ func downgradingWriter(rwm *RWMutex, numIterations int, activity *int32, cdone c
 		}
 		for i := 0; i < 100; i++ {
 		}
-		n = atomic.AddInt32(activity, -1)
+		atomic.AddInt32(activity, -1)
 		rwm.RUnlock()
 	}
 	cdone <- true
