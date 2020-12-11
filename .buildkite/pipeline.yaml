@@ -1,12 +1,30 @@
 _templates:
   common: &common
     timeout_in_minutes: 30
+    # XXX Remove before submission.
+    if build.branch == master
     retry:
       automatic:
         - exit_status: -1
           limit: 10
         - exit_status: "*"
           limit: 2
+  benchmarks_base: &benchmarks_base
+    <<: *common
+    # XXX Uncomment before submission.
+    # if: build.branch == master
+    soft_fail: true
+    env:
+      BENCHMARKS_BAZEL_VERSION: "3.7.0"
+      BENCHMARKS_DATASET: buildkite
+      BENCHMARKS_OFFICIAL: true
+      BENCHMARKS_PLATFORMS: "ptrace kvm"
+      BENCHMARKS_PROJECT: gvisor-benchmarks
+      BENCHMARKS_TABLE: benchmarks
+      BENCHMARKS_UPLOAD: true
+  benchmarks: &benchmarks
+    <<: *benchmarks_base
+    depends_on: "benchmarks-setup"
 
 steps:
   # Run basic smoke tests before preceding to other tests.
@@ -105,3 +123,51 @@ steps:
     label: ":python: Python runtime tests"
     command: make python3.7.3-runtime-tests_vfs2
     parallelism: 10
+
+  # Ensure benchmarks are initialized.
+  - <<: *benchmarks_base
+    key: "benchmarks-setup"
+    label: ":fire: Benchmarks setup"
+    command: make benchmarks-init
+  - <<: *benchmarks
+    label: ":bazel: ABSL build benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=ABSL/page_cache.clean --test.v --test.benchtime=1x" BENCHMARKS_SUITE=absl BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
+  - <<: *benchmarks
+    label: ":bazel: runsc build benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=Runsc/page_cache.clean/filesystem.bind --test.v --test.benchtime=1x" BENCHMARKS_SUITE=runsc BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
+  - <<: *benchmarks
+    label: ":metal: FFMPEG benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v" BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test
+  - <<: *benchmarks
+    label: ":floppy_disk: FIO benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v" BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test
+  - <<: *benchmarks
+    label: ":globe_with_meridians: HTTPD benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=Continuous --test.v --test.benchtime=100000x" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
+  - <<: *benchmarks
+    label: ":piedpiper: iperf benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v --test.benchtime=180x" BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test
+  - <<: *benchmarks
+    label: ":nginx: nginx benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=Continuous--test.v --test.benchtime=100000x" BENCHMARKS_SUITE=nginx BENCHMARKS_TARGETS=test/benchmarks/network:nginx_test
+  - <<: *benchmarks
+    label: ":node: node benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v --test.benchtime=100000x" BENCHMARKS_SUITE=node BENCHMARKS_TARGETS=test/benchmarks/network:node_test
+  - <<: *benchmarks
+    label: ":redis: Redis benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v --test.benchtime=100000x" BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test
+  - <<: *benchmarks
+    label: ":ruby: Ruby benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v --test.benchtime=100000x" BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_est
+  - <<: *benchmarks
+    label: ":weight_lifter: Size benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v --test.benchtime=10x" BENCHMARKS_SUITE=size BENCHMARKS_TARGETS=test/benchmarks/base:size_test
+  - <<: *benchmarks
+    label: ":spedboat: Startup benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v --test.benchtime=10x" BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
+  - <<: *benchmarks
+    label: ":computer: sysbench benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v" BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test
+  - <<: *benchmarks
+    label: ":tensorflow: TensorFlow benchmarks"
+    command: make benchmark-platforms BENCHMARKS_ARGS="--test.bench=. --test.v" BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test
