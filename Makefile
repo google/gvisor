@@ -371,7 +371,7 @@ WEBSITE_PROJECT := gvisordev
 WEBSITE_REGION  := us-central1
 
 website-build: load-jekyll ## Build the site image locally.
-	@$(call run,//website:website $(WEBSITE_IMAGE))
+	@$(call run,//website:website,$(WEBSITE_IMAGE))
 .PHONY: website-build
 
 website-server: website-build ## Run a local server for development.
