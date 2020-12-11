@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cerrno>
 #include <ctime>
+#include <stack>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -774,8 +775,32 @@ TEST(SemaphoreTest, SemopGetncntOnSignal_NoRandomSave) {
 }
 
 TEST(SemaphoreTest, IpcInfo) {
+  std::stack<int> sem_ids;
+  std::stack<int> max_used_indexes;
   struct seminfo info;
-  ASSERT_THAT(semctl(0, 0, IPC_INFO, &info), SyscallSucceeds());
+  for (int i = 0; i < 3; i++) {
+    int sem_id = 0;
+    ASSERT_THAT(sem_id = semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT),
+                SyscallSucceeds());
+    sem_ids.push(sem_id);
+    int max_used_index = 0;
+    EXPECT_THAT(max_used_index = semctl(0, 0, IPC_INFO, &info),
+                SyscallSucceeds());
+    if (!max_used_indexes.empty()) {
+      EXPECT_GT(max_used_index, max_used_indexes.top());
+    }
+    max_used_indexes.push(max_used_index);
+  }
+  while (!sem_ids.empty()) {
+    int sem_id = sem_ids.top();
+    sem_ids.pop();
+    ASSERT_THAT(semctl(sem_id, 0, IPC_RMID), SyscallSucceeds());
+    int max_index = max_used_indexes.top();
+    EXPECT_THAT(max_index = semctl(0, 0, IPC_INFO, &info), SyscallSucceeds());
+    EXPECT_GE(max_used_indexes.top(), max_index);
+    max_used_indexes.pop();
+  }
+  ASSERT_THAT(semctl(0, 0, IPC_INFO, &info), SyscallSucceedsWithValue(0));
 
   EXPECT_EQ(info.semmap, 1024000000);
   EXPECT_EQ(info.semmni, 32000);
