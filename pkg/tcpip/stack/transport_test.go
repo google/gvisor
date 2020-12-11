@@ -109,8 +109,8 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 	return int64(len(v)), nil, nil
 }
 
-func (*fakeTransportEndpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
-	return 0, tcpip.ControlMessages{}, nil
+func (*fakeTransportEndpoint) Peek([][]byte) (int64, *tcpip.Error) {
+	return 0, nil
 }
 
 // SetSockOpt sets a socket option. Currently not supported.

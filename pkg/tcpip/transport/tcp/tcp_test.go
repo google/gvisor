@@ -4148,7 +4148,7 @@ func TestReadAfterClosedState(t *testing.T) {
 
 	// Check that peek works.
 	peekBuf := make([]byte, 10)
-	n, _, err := c.EP.Peek([][]byte{peekBuf})
+	n, err := c.EP.Peek([][]byte{peekBuf})
 	if err != nil {
 		t.Fatalf("Peek failed: %s", err)
 	}
@@ -4174,7 +4174,7 @@ func TestReadAfterClosedState(t *testing.T) {
 		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrClosedForReceive)
 	}
 
-	if _, _, err := c.EP.Peek([][]byte{peekBuf}); err != tcpip.ErrClosedForReceive {
+	if _, err := c.EP.Peek([][]byte{peekBuf}); err != tcpip.ErrClosedForReceive {
 		t.Fatalf("got c.EP.Peek(...) = %s, want = %s", err, tcpip.ErrClosedForReceive)
 	}
 }

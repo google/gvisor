@@ -448,6 +448,8 @@ type ControlMessageCredentials struct {
 // A ControlMessageIPPacketInfo is IP_PKTINFO socket control message.
 //
 // ControlMessageIPPacketInfo represents struct in_pktinfo from linux/in.h.
+//
+// +stateify savable
 type ControlMessageIPPacketInfo struct {
 	NIC             int32
 	LocalAddr       InetAddr
