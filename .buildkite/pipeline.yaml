@@ -1,5 +1,6 @@
 _templates:
   common: &common
+    timeout_in_minutes: 30
     retry:
       automatic:
         - exit_status: -1
@@ -21,6 +22,11 @@ steps:
       - make go
       - git checkout go && git clean -f
       - go build ./...
+
+  # Release workflow.
+  - <<: *common
+    label: ":ship: Release tests"
+    commands: make release
 
   # Basic unit tests.
   - <<: *common
