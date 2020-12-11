@@ -32,6 +32,7 @@ go_library(
         "start.go",
         "state.go",
         "statefile.go",
+        "symbolize.go",
         "syscalls.go",
         "wait.go",
     ],
@@ -39,6 +40,7 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/coverage",
         "//pkg/log",
         "//pkg/p9",
         "//pkg/sentry/control",

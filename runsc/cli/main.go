@@ -83,6 +83,7 @@ func Main(version string) {
 	subcommands.Register(new(cmd.Spec), "")
 	subcommands.Register(new(cmd.State), "")
 	subcommands.Register(new(cmd.Start), "")
+	subcommands.Register(new(cmd.Symbolize), "")
 	subcommands.Register(new(cmd.Wait), "")
 
 	// Register internal commands with the internal group name. This causes
