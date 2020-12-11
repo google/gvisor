@@ -9,7 +9,7 @@ go_template(
         "refs_template.go",
     ],
     opt_consts = [
-        "logTrace",
+        "enableLogging",
     ],
     types = [
         "T",
