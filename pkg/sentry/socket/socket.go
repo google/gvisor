@@ -44,7 +44,79 @@ import (
 // control messages.
 type ControlMessages struct {
 	Unix transport.ControlMessages
-	IP   tcpip.ControlMessages
+	IP   IPControlMessages
+}
+
+// packetInfoToLinux converts IPPacketInfo from tcpip format to Linux format.
+func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPacketInfo {
+	var p linux.ControlMessageIPPacketInfo
+	p.NIC = int32(packetInfo.NIC)
+	copy(p.LocalAddr[:], []byte(packetInfo.LocalAddr))
+	copy(p.DestinationAddr[:], []byte(packetInfo.DestinationAddr))
+	return p
+}
+
+// NewIPControlMessages converts the tcpip ControlMessgaes (which does not
+// have Linux specific format) to Linux format.
+func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessages {
+	var orgDstAddr linux.SockAddr
+	if cmgs.HasOriginalDstAddress {
+		orgDstAddr, _ = ConvertAddress(family, cmgs.OriginalDstAddress)
+	}
+	return IPControlMessages{
+		HasTimestamp:       cmgs.HasTimestamp,
+		Timestamp:          cmgs.Timestamp,
+		HasInq:             cmgs.HasInq,
+		Inq:                cmgs.Inq,
+		HasTOS:             cmgs.HasTOS,
+		TOS:                cmgs.TOS,
+		HasTClass:          cmgs.HasTClass,
+		TClass:             cmgs.TClass,
+		HasIPPacketInfo:    cmgs.HasIPPacketInfo,
+		PacketInfo:         packetInfoToLinux(cmgs.PacketInfo),
+		OriginalDstAddress: orgDstAddr,
+	}
+}
+
+// IPControlMessages contains socket control messages for IP sockets.
+// This can contain Linux specific structures unlike tcpip.ControlMessages.
+//
+// +stateify savable
+type IPControlMessages struct {
+	// HasTimestamp indicates whether Timestamp is valid/set.
+	HasTimestamp bool
+
+	// Timestamp is the time (in ns) that the last packet used to create
+	// the read data was received.
+	Timestamp int64
+
+	// HasInq indicates whether Inq is valid/set.
+	HasInq bool
+
+	// Inq is the number of bytes ready to be received.
+	Inq int32
+
+	// HasTOS indicates whether Tos is valid/set.
+	HasTOS bool
+
+	// TOS is the IPv4 type of service of the associated packet.
+	TOS uint8
+
+	// HasTClass indicates whether TClass is valid/set.
+	HasTClass bool
+
+	// TClass is the IPv6 traffic class of the associated packet.
+	TClass uint32
+
+	// HasIPPacketInfo indicates whether PacketInfo is set.
+	HasIPPacketInfo bool
+
+	// PacketInfo holds interface and address data on an incoming packet.
+	PacketInfo linux.ControlMessageIPPacketInfo
+
+	// OriginalDestinationAddress holds the original destination address
+	// and port of the incoming packet.
+	OriginalDstAddress linux.SockAddr
 }
 
 // Release releases Unix domain socket credentials and rights.

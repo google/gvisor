@@ -1498,7 +1498,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 // Peek reads data without consuming it from the endpoint.
 //
 // This method does not block if there is no data pending.
-func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
+func (e *endpoint) Peek(vec [][]byte) (int64, *tcpip.Error) {
 	e.LockUser()
 	defer e.UnlockUser()
 
@@ -1506,10 +1506,10 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 	// but has some pending unread data.
 	if s := e.EndpointState(); !s.connected() && s != StateClose {
 		if s == StateError {
-			return 0, tcpip.ControlMessages{}, e.hardErrorLocked()
+			return 0, e.hardErrorLocked()
 		}
 		e.stats.ReadErrors.InvalidEndpointState.Increment()
-		return 0, tcpip.ControlMessages{}, tcpip.ErrInvalidEndpointState
+		return 0, tcpip.ErrInvalidEndpointState
 	}
 
 	e.rcvListMu.Lock()
@@ -1518,9 +1518,9 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 	if e.rcvBufUsed == 0 {
 		if e.rcvClosed || !e.EndpointState().connected() {
 			e.stats.ReadErrors.ReadClosed.Increment()
-			return 0, tcpip.ControlMessages{}, tcpip.ErrClosedForReceive
+			return 0, tcpip.ErrClosedForReceive
 		}
-		return 0, tcpip.ControlMessages{}, tcpip.ErrWouldBlock
+		return 0, tcpip.ErrWouldBlock
 	}
 
 	// Make a copy of vec so we can modify the slide headers.
@@ -1535,7 +1535,7 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 
 			for len(v) > 0 {
 				if len(vec) == 0 {
-					return num, tcpip.ControlMessages{}, nil
+					return num, nil
 				}
 				if len(vec[0]) == 0 {
 					vec = vec[1:]
@@ -1550,7 +1550,7 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 		}
 	}
 
-	return num, tcpip.ControlMessages{}, nil
+	return num, nil
 }
 
 // selectWindowLocked returns the new window without checking for shrinking or scaling

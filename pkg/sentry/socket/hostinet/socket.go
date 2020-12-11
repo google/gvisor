@@ -523,7 +523,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 				controlMessages.IP.HasIPPacketInfo = true
 				var packetInfo linux.ControlMessageIPPacketInfo
 				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageIPPacketInfo], usermem.ByteOrder, &packetInfo)
-				controlMessages.IP.PacketInfo = control.NewIPPacketInfo(packetInfo)
+				controlMessages.IP.PacketInfo = packetInfo
 			}
 
 		case syscall.SOL_IPV6:
@@ -551,7 +551,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 	}
 	controlBuf := make([]byte, 0, space)
 	// PackControlMessages will append up to space bytes to controlBuf.
-	controlBuf = control.PackControlMessages(t, s.family, controlMessages, controlBuf)
+	controlBuf = control.PackControlMessages(t, controlMessages, controlBuf)
 
 	sendmsgFromBlocks := safemem.WriterFunc(func(srcs safemem.BlockSeq) (uint64, error) {
 		// Refuse to do anything if any part of src.Addrs was unusable.
