@@ -34,6 +34,10 @@ func TestParseLine(t *testing.T) {
 				Name: "BenchmarkIperf",
 				Condition: []*bigquery.Condition{
 					{
+						Name:  "iterations",
+						Value: "1",
+					},
+					{
 						Name:  "GOMAXPROCS",
 						Value: "6",
 					},
@@ -62,6 +66,10 @@ func TestParseLine(t *testing.T) {
 			want: &bigquery.Benchmark{
 				Name: "BenchmarkRuby",
 				Condition: []*bigquery.Condition{
+					{
+						Name:  "iterations",
+						Value: "1",
+					},
 					{
 						Name:  "GOMAXPROCS",
 						Value: "6",
@@ -100,12 +108,14 @@ func TestParseLine(t *testing.T) {
 			}
 
 			if !cmp.Equal(tc.want, got, nil) {
-				for _, c := range got.Condition {
-					t.Logf("Cond: %+v", c)
+				for i := range got.Condition {
+					t.Logf("Metric: want: %+v got:%+v", got.Condition[i], tc.want.Condition[i])
 				}
-				for _, m := range got.Metric {
-					t.Logf("Metric: %+v", m)
+
+				for i := range got.Metric {
+					t.Logf("Metric: want: %+v got:%+v", got.Metric[i], tc.want.Metric[i])
 				}
+
 				t.Fatalf("Compare failed want: %+v got: %+v", tc.want, got)
 			}
 		})
@@ -131,7 +141,7 @@ func TestParseOutput(t *testing.T) {
 			`,
 			numBenchmarks: 2,
 			numMetrics:    1,
-			numConditions: 1,
+			numConditions: 2,
 		},
 		{
 			name: "Ruby",
@@ -142,7 +152,7 @@ BenchmarkRuby/server_threads.5
 BenchmarkRuby/server_threads.5-6 1	1416003331 ns/op	0.00950 average_latency.s 465 requests_per_second.QPS`,
 			numBenchmarks: 2,
 			numMetrics:    3,
-			numConditions: 2,
+			numConditions: 3,
 		},
 	}
 
