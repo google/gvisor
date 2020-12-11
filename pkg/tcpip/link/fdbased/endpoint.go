@@ -284,9 +284,12 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher
 		}
 		switch sa.(type) {
 		case *unix.SockaddrLinklayer:
-			// enable PACKET_FANOUT mode is the underlying socket is
-			// of type AF_PACKET.
-			const fanoutType = 0x8000 // PACKET_FANOUT_HASH | PACKET_FANOUT_FLAG_DEFRAG
+			// Enable PACKET_FANOUT mode if the underlying socket is of type
+			// AF_PACKET. We do not enable PACKET_FANOUT_FLAG_DEFRAG as that will
+			// prevent gvisor from receiving fragmented packets and the host does the
+			// reassembly on our behalf before delivering the fragments. This makes it
+			// hard to test fragmentation reassembly code in Netstack.
+			const fanoutType = unix.PACKET_FANOUT_HASH
 			fanoutArg := fanoutID | fanoutType<<16
 			if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
 				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %v", err)
