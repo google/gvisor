@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package fdimport provides the Import function.
 package fdimport
 
 import (

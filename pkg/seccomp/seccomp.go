@@ -79,7 +79,7 @@ func Install(rules SyscallRules) error {
 
 	// Perform the actual installation.
 	if errno := SetFilter(instrs); errno != 0 {
-		return fmt.Errorf("Failed to set filter: %v", errno)
+		return fmt.Errorf("failed to set filter: %v", errno)
 	}
 
 	log.Infof("Seccomp filters installed.")

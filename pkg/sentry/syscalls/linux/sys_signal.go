@@ -88,8 +88,8 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 				Signo: int32(sig),
 				Code:  arch.SignalInfoUser,
 			}
-			info.SetPid(int32(target.PIDNamespace().IDOfTask(t)))
-			info.SetUid(int32(t.Credentials().RealKUID.In(target.UserNamespace()).OrOverflow()))
+			info.SetPID(int32(target.PIDNamespace().IDOfTask(t)))
+			info.SetUID(int32(t.Credentials().RealKUID.In(target.UserNamespace()).OrOverflow()))
 			if err := target.SendGroupSignal(info); err != syserror.ESRCH {
 				return 0, nil, err
 			}
@@ -127,8 +127,8 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 				Signo: int32(sig),
 				Code:  arch.SignalInfoUser,
 			}
-			info.SetPid(int32(tg.PIDNamespace().IDOfTask(t)))
-			info.SetUid(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
+			info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
+			info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
 			err := tg.SendSignal(info)
 			if err == syserror.ESRCH {
 				// ESRCH is ignored because it means the task
@@ -171,8 +171,8 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 					Signo: int32(sig),
 					Code:  arch.SignalInfoUser,
 				}
-				info.SetPid(int32(tg.PIDNamespace().IDOfTask(t)))
-				info.SetUid(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
+				info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
+				info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
 				// See note above regarding ESRCH race above.
 				if err := tg.SendSignal(info); err != syserror.ESRCH {
 					lastErr = err
@@ -189,8 +189,8 @@ func tkillSigInfo(sender, receiver *kernel.Task, sig linux.Signal) *arch.SignalI
 		Signo: int32(sig),
 		Code:  arch.SignalInfoTkill,
 	}
-	info.SetPid(int32(receiver.PIDNamespace().IDOfThreadGroup(sender.ThreadGroup())))
-	info.SetUid(int32(sender.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
+	info.SetPID(int32(receiver.PIDNamespace().IDOfThreadGroup(sender.ThreadGroup())))
+	info.SetUID(int32(sender.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
 	return info
 }
 

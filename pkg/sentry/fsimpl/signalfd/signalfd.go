@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package signalfd provides basic signalfd file implementations.
 package signalfd
 
 import (
@@ -98,8 +99,8 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 		Signo:   uint32(info.Signo),
 		Errno:   info.Errno,
 		Code:    info.Code,
-		PID:     uint32(info.Pid()),
-		UID:     uint32(info.Uid()),
+		PID:     uint32(info.PID()),
+		UID:     uint32(info.UID()),
 		Status:  info.Status(),
 		Overrun: uint32(info.Overrun()),
 		Addr:    info.Addr(),

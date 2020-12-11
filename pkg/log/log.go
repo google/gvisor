@@ -356,7 +356,7 @@ func CopyStandardLogTo(l Level) error {
 	case Warning:
 		f = Warningf
 	default:
-		return fmt.Errorf("Unknown log level %v", l)
+		return fmt.Errorf("unknown log level %v", l)
 	}
 
 	stdlog.SetOutput(linewriter.NewWriter(func(p []byte) {

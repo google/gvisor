@@ -32,7 +32,7 @@ var linuxHostTranslations [maxErrno]linuxHostTranslation
 
 // FromHost translates a syscall.Errno to a corresponding Error value.
 func FromHost(err syscall.Errno) *Error {
-	if err < 0 || int(err) >= len(linuxHostTranslations) || !linuxHostTranslations[err].ok {
+	if int(err) >= len(linuxHostTranslations) || !linuxHostTranslations[err].ok {
 		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
 	}
 	return linuxHostTranslations[err].err

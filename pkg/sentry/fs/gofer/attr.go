@@ -117,8 +117,6 @@ func ntype(pattr p9.Attr) fs.InodeType {
 		return fs.BlockDevice
 	case pattr.Mode.IsSocket():
 		return fs.Socket
-	case pattr.Mode.IsRegular():
-		fallthrough
 	default:
 		return fs.RegularFile
 	}

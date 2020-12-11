@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package pool provides a trivial integer pool.
 package pool
 
 import (
