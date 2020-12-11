@@ -521,99 +521,6 @@ func UnmarshalUnsafeBPFInstructionSlice(dst []BPFInstruction, src []byte) (int, 
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (c *CapUserHeader) SizeBytes() int {
-    return 8
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (c *CapUserHeader) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(c.Version))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(c.Pid))
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (c *CapUserHeader) UnmarshalBytes(src []byte) {
-    c.Version = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    c.Pid = int32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (c *CapUserHeader) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (c *CapUserHeader) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(c))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (c *CapUserHeader) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(c), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (c *CapUserHeader) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
-    hdr.Len = c.SizeBytes()
-    hdr.Cap = c.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that c
-    // must live until the use above.
-    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (c *CapUserHeader) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return c.CopyOutN(cc, addr, c.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (c *CapUserHeader) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
-    hdr.Len = c.SizeBytes()
-    hdr.Cap = c.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that c
-    // must live until the use above.
-    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (c *CapUserHeader) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
-    hdr.Len = c.SizeBytes()
-    hdr.Cap = c.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that c
-    // must live until the use above.
-    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (c *CapUserData) SizeBytes() int {
     return 12
 }
@@ -797,95 +704,95 @@ func UnmarshalUnsafeCapUserDataSlice(dst []CapUserData, src []byte) (int, error)
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FOwnerEx) SizeBytes() int {
+func (c *CapUserHeader) SizeBytes() int {
     return 8
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FOwnerEx) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Type))
+func (c *CapUserHeader) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(c.Version))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.PID))
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(c.Pid))
     dst = dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FOwnerEx) UnmarshalBytes(src []byte) {
-    f.Type = int32(usermem.ByteOrder.Uint32(src[:4]))
+func (c *CapUserHeader) UnmarshalBytes(src []byte) {
+    c.Version = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    f.PID = int32(usermem.ByteOrder.Uint32(src[:4]))
+    c.Pid = int32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (f *FOwnerEx) Packed() bool {
+func (c *CapUserHeader) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FOwnerEx) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+func (c *CapUserHeader) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(c))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FOwnerEx) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+func (c *CapUserHeader) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(c), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (f *FOwnerEx) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (c *CapUserHeader) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
+    // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (f *FOwnerEx) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
+func (c *CapUserHeader) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return c.CopyOutN(cc, addr, c.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (f *FOwnerEx) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (c *CapUserHeader) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
+    // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FOwnerEx) WriteTo(writer io.Writer) (int64, error) {
+func (c *CapUserHeader) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
+    // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -990,6 +897,99 @@ func (f *Flock) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (f *Flock) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FOwnerEx) SizeBytes() int {
+    return 8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FOwnerEx) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Type))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.PID))
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FOwnerEx) UnmarshalBytes(src []byte) {
+    f.Type = int32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.PID = int32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FOwnerEx) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FOwnerEx) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FOwnerEx) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FOwnerEx) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FOwnerEx) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FOwnerEx) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FOwnerEx) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1352,126 +1352,77 @@ func (s *Statfs) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEGetAttrIn) SizeBytes() int {
-    return 16
+func (f *FUSEAttr) SizeBytes() int {
+    return 88
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEGetAttrIn) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.GetAttrFlags))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Fh))
+func (f *FUSEAttr) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Ino))
     dst = dst[8:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEGetAttrIn) UnmarshalBytes(src []byte) {
-    f.GetAttrFlags = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-    f.Fh = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEGetAttrIn) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEGetAttrIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEGetAttrIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEGetAttrIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEGetAttrIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEGetAttrIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEGetAttrIn) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEMknodMeta) SizeBytes() int {
-    return 16
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEMknodMeta) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Size))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Blocks))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Atime))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Mtime))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Ctime))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.AtimeNsec))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MtimeNsec))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.CtimeNsec))
+    dst = dst[4:]
     usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Mode))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Nlink))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.UID))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.GID))
     dst = dst[4:]
     usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Rdev))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Umask))
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.BlkSize))
     dst = dst[4:]
     // Padding: dst[:sizeof(uint32)] ~= uint32(0)
     dst = dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEMknodMeta) UnmarshalBytes(src []byte) {
+func (f *FUSEAttr) UnmarshalBytes(src []byte) {
+    f.Ino = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Size = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Blocks = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Atime = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Mtime = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Ctime = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.AtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.MtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.CtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
     f.Mode = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.Nlink = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.UID = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.GID = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     f.Rdev = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    f.Umask = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    f.BlkSize = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: var _ uint32 ~= src[:sizeof(uint32)]
     src = src[4:]
@@ -1479,23 +1430,23 @@ func (f *FUSEMknodMeta) UnmarshalBytes(src []byte) {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (f *FUSEMknodMeta) Packed() bool {
+func (f *FUSEAttr) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEMknodMeta) MarshalUnsafe(dst []byte) {
+func (f *FUSEAttr) MarshalUnsafe(dst []byte) {
     safecopy.CopyIn(dst, unsafe.Pointer(f))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEMknodMeta) UnmarshalUnsafe(src []byte) {
+func (f *FUSEAttr) UnmarshalUnsafe(src []byte) {
     safecopy.CopyOut(unsafe.Pointer(f), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (f *FUSEMknodMeta) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (f *FUSEAttr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1512,13 +1463,13 @@ func (f *FUSEMknodMeta) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limi
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (f *FUSEMknodMeta) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (f *FUSEAttr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     return f.CopyOutN(cc, addr, f.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (f *FUSEMknodMeta) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (f *FUSEAttr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1534,274 +1485,7 @@ func (f *FUSEMknodMeta) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEMknodMeta) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEInitOut) SizeBytes() int {
-    return 32 +
-        4*8
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEInitOut) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Major))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Minor))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MaxReadahead))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Flags))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(f.MaxBackground))
-    dst = dst[2:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(f.CongestionThreshold))
-    dst = dst[2:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MaxWrite))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.TimeGran))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(f.MaxPages))
-    dst = dst[2:]
-    // Padding: dst[:sizeof(uint16)] ~= uint16(0)
-    dst = dst[2:]
-    // Padding: dst[:sizeof(uint32)*8] ~= [8]uint32{0}
-    dst = dst[4*(8):]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEInitOut) UnmarshalBytes(src []byte) {
-    f.Major = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Minor = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.MaxReadahead = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.MaxBackground = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    f.CongestionThreshold = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    f.MaxWrite = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.TimeGran = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.MaxPages = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    // Padding: var _ uint16 ~= src[:sizeof(uint16)]
-    src = src[2:]
-    // Padding: ~ copy([8]uint32(f._), src[:sizeof(uint32)*8])
-    src = src[4*(8):]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEInitOut) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEInitOut) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEInitOut) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEInitOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEInitOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEInitOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEInitOut) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEGetAttrOut) SizeBytes() int {
-    return 16 +
-        (*FUSEAttr)(nil).SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEGetAttrOut) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.AttrValid))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.AttrValidNsec))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-    f.Attr.MarshalBytes(dst[:f.Attr.SizeBytes()])
-    dst = dst[f.Attr.SizeBytes():]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEGetAttrOut) UnmarshalBytes(src []byte) {
-    f.AttrValid = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.AttrValidNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-    f.Attr.UnmarshalBytes(src[:f.Attr.SizeBytes()])
-    src = src[f.Attr.SizeBytes():]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEGetAttrOut) Packed() bool {
-    return f.Attr.Packed()
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEGetAttrOut) MarshalUnsafe(dst []byte) {
-    if f.Attr.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(f))
-    } else {
-        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fallback to MarshalBytes.
-        f.MarshalBytes(dst)
-    }
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEGetAttrOut) UnmarshalUnsafe(src []byte) {
-    if f.Attr.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(f), src)
-    } else {
-        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-        f.UnmarshalBytes(src)
-    }
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEGetAttrOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !f.Attr.Packed() {
-        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := cc.CopyScratchBuffer(f.SizeBytes()) // escapes: okay.
-        f.MarshalBytes(buf) // escapes: fallback.
-        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEGetAttrOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEGetAttrOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !f.Attr.Packed() {
-        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-        buf := cc.CopyScratchBuffer(f.SizeBytes()) // escapes: okay.
-        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-        // Unmarshal unconditionally. If we had a short copy-in, this results in a
-        // partially unmarshalled struct.
-        f.UnmarshalBytes(buf) // escapes: fallback.
-        return length, err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEGetAttrOut) WriteTo(writer io.Writer) (int64, error) {
-    if !f.Attr.Packed() {
-        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := make([]byte, f.SizeBytes())
-        f.MarshalBytes(buf)
-        length, err := writer.Write(buf)
-        return int64(length), err
-    }
-
+func (f *FUSEAttr) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1966,99 +1650,6 @@ func (f *FUSEEntryOut) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEWriteOut) SizeBytes() int {
-    return 8
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEWriteOut) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Size))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEWriteOut) UnmarshalBytes(src []byte) {
-    f.Size = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEWriteOut) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEWriteOut) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEWriteOut) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEWriteOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEWriteOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEWriteOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEWriteOut) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (f *FUSECreateMeta) SizeBytes() int {
     return 16
 }
@@ -2145,155 +1736,6 @@ func (f *FUSECreateMeta) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int,
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (f *FUSECreateMeta) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSESetAttrIn) SizeBytes() int {
-    return 88
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSESetAttrIn) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Valid))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Fh))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Size))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.LockOwner))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Atime))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Mtime))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Ctime))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.AtimeNsec))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MtimeNsec))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.CtimeNsec))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Mode))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.UID))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.GID))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSESetAttrIn) UnmarshalBytes(src []byte) {
-    f.Valid = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-    f.Fh = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Size = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.LockOwner = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Atime = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Mtime = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Ctime = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.AtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.MtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.CtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Mode = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-    f.UID = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.GID = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSESetAttrIn) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSESetAttrIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSESetAttrIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSESetAttrIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSESetAttrIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSESetAttrIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSESetAttrIn) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -2442,291 +1884,53 @@ func (f *FUSEHeaderOut) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEAttr) SizeBytes() int {
-    return 88
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEAttr) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Ino))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Size))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Blocks))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Atime))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Mtime))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Ctime))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.AtimeNsec))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MtimeNsec))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.CtimeNsec))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Mode))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Nlink))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.UID))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.GID))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Rdev))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.BlkSize))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEAttr) UnmarshalBytes(src []byte) {
-    f.Ino = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Size = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Blocks = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Atime = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Mtime = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.Ctime = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.AtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.MtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.CtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Mode = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Nlink = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.UID = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.GID = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Rdev = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.BlkSize = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEAttr) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEAttr) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEAttr) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEAttr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEAttr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEAttr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEAttr) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEOpenIn) SizeBytes() int {
-    return 8
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEOpenIn) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Flags))
-    dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEOpenIn) UnmarshalBytes(src []byte) {
-    f.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEOpenIn) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEOpenIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEOpenIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEOpenIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEOpenIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEOpenIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEOpenIn) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEOpenOut) SizeBytes() int {
+func (f *FUSEInitIn) SizeBytes() int {
     return 16
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEOpenOut) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Fh))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.OpenFlag))
+func (f *FUSEInitIn) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Major))
     dst = dst[4:]
-    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Minor))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MaxReadahead))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Flags))
     dst = dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEOpenOut) UnmarshalBytes(src []byte) {
-    f.Fh = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    f.OpenFlag = uint32(usermem.ByteOrder.Uint32(src[:4]))
+func (f *FUSEInitIn) UnmarshalBytes(src []byte) {
+    f.Major = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    f.Minor = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.MaxReadahead = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (f *FUSEOpenOut) Packed() bool {
+func (f *FUSEInitIn) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEOpenOut) MarshalUnsafe(dst []byte) {
+func (f *FUSEInitIn) MarshalUnsafe(dst []byte) {
     safecopy.CopyIn(dst, unsafe.Pointer(f))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEOpenOut) UnmarshalUnsafe(src []byte) {
+func (f *FUSEInitIn) UnmarshalUnsafe(src []byte) {
     safecopy.CopyOut(unsafe.Pointer(f), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (f *FUSEOpenOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (f *FUSEInitIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -2743,13 +1947,13 @@ func (f *FUSEOpenOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit 
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (f *FUSEOpenOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (f *FUSEInitIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     return f.CopyOutN(cc, addr, f.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (f *FUSEOpenOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (f *FUSEInitIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -2765,7 +1969,104 @@ func (f *FUSEOpenOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, er
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEOpenOut) WriteTo(writer io.Writer) (int64, error) {
+func (f *FUSEInitIn) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSEGetAttrIn) SizeBytes() int {
+    return 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEGetAttrIn) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.GetAttrFlags))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Fh))
+    dst = dst[8:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEGetAttrIn) UnmarshalBytes(src []byte) {
+    f.GetAttrFlags = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+    f.Fh = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEGetAttrIn) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEGetAttrIn) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEGetAttrIn) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEGetAttrIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEGetAttrIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEGetAttrIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEGetAttrIn) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -2879,6 +2180,99 @@ func (f *FUSEReadIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, err
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (f *FUSEReadIn) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSEWriteOut) SizeBytes() int {
+    return 8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEWriteOut) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Size))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEWriteOut) UnmarshalBytes(src []byte) {
+    f.Size = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEWriteOut) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEWriteOut) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEWriteOut) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEWriteOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEWriteOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEWriteOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEWriteOut) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -3081,95 +2475,6 @@ func (f *FUSEMkdirMeta) WriteTo(writer io.Writer) (int64, error) {
     hdr.Cap = f.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-//go:nosplit
-func (f *FUSEOpcode) SizeBytes() int {
-    return 4
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEOpcode) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(*f))
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEOpcode) UnmarshalBytes(src []byte) {
-    *f = FUSEOpcode(uint32(usermem.ByteOrder.Uint32(src[:4])))
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEOpcode) Packed() bool {
-    // Scalar newtypes are always packed.
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEOpcode) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEOpcode) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEOpcode) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEOpcode) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEOpcode) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEOpcode) WriteTo(w io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := w.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f) // escapes: replaced by intrinsic.
@@ -3420,107 +2725,6 @@ func (f *FUSEHeaderIn) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (f *FUSEInitIn) SizeBytes() int {
-    return 16
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (f *FUSEInitIn) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Major))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Minor))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MaxReadahead))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Flags))
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FUSEInitIn) UnmarshalBytes(src []byte) {
-    f.Major = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Minor = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.MaxReadahead = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    f.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (f *FUSEInitIn) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (f *FUSEInitIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (f *FUSEInitIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (f *FUSEInitIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (f *FUSEInitIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return f.CopyOutN(cc, addr, f.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (f *FUSEInitIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEInitIn) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
-    hdr.Len = f.SizeBytes()
-    hdr.Cap = f.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that f
-    // must live until the use above.
-    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (f *FUSEWriteIn) SizeBytes() int {
     return 40
 }
@@ -3634,6 +2838,107 @@ func (f *FUSEWriteIn) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSEMknodMeta) SizeBytes() int {
+    return 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEMknodMeta) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Mode))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Rdev))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Umask))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEMknodMeta) UnmarshalBytes(src []byte) {
+    f.Mode = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.Rdev = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.Umask = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEMknodMeta) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEMknodMeta) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEMknodMeta) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEMknodMeta) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEMknodMeta) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEMknodMeta) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEMknodMeta) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (f *FUSEDirentMeta) SizeBytes() int {
     return 24
 }
@@ -3720,6 +3025,701 @@ func (f *FUSEDirentMeta) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int,
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (f *FUSEDirentMeta) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSEOpenIn) SizeBytes() int {
+    return 8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEOpenIn) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Flags))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEOpenIn) UnmarshalBytes(src []byte) {
+    f.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEOpenIn) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEOpenIn) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEOpenIn) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEOpenIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEOpenIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEOpenIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEOpenIn) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSEOpenOut) SizeBytes() int {
+    return 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEOpenOut) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Fh))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.OpenFlag))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEOpenOut) UnmarshalBytes(src []byte) {
+    f.Fh = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.OpenFlag = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEOpenOut) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEOpenOut) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEOpenOut) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEOpenOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEOpenOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEOpenOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEOpenOut) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSEGetAttrOut) SizeBytes() int {
+    return 16 +
+        (*FUSEAttr)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEGetAttrOut) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.AttrValid))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.AttrValidNsec))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+    f.Attr.MarshalBytes(dst[:f.Attr.SizeBytes()])
+    dst = dst[f.Attr.SizeBytes():]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEGetAttrOut) UnmarshalBytes(src []byte) {
+    f.AttrValid = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.AttrValidNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+    f.Attr.UnmarshalBytes(src[:f.Attr.SizeBytes()])
+    src = src[f.Attr.SizeBytes():]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEGetAttrOut) Packed() bool {
+    return f.Attr.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEGetAttrOut) MarshalUnsafe(dst []byte) {
+    if f.Attr.Packed() {
+        safecopy.CopyIn(dst, unsafe.Pointer(f))
+    } else {
+        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fallback to MarshalBytes.
+        f.MarshalBytes(dst)
+    }
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEGetAttrOut) UnmarshalUnsafe(src []byte) {
+    if f.Attr.Packed() {
+        safecopy.CopyOut(unsafe.Pointer(f), src)
+    } else {
+        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+        f.UnmarshalBytes(src)
+    }
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEGetAttrOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    if !f.Attr.Packed() {
+        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(f.SizeBytes()) // escapes: okay.
+        f.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEGetAttrOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEGetAttrOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    if !f.Attr.Packed() {
+        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(f.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        f.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEGetAttrOut) WriteTo(writer io.Writer) (int64, error) {
+    if !f.Attr.Packed() {
+        // Type FUSEGetAttrOut doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, f.SizeBytes())
+        f.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSESetAttrIn) SizeBytes() int {
+    return 88
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSESetAttrIn) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Valid))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Fh))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Size))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.LockOwner))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Atime))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Mtime))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Ctime))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.AtimeNsec))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MtimeNsec))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.CtimeNsec))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Mode))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.UID))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.GID))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSESetAttrIn) UnmarshalBytes(src []byte) {
+    f.Valid = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+    f.Fh = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Size = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.LockOwner = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Atime = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Mtime = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.Ctime = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    f.AtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.MtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.CtimeNsec = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.Mode = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+    f.UID = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.GID = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSESetAttrIn) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSESetAttrIn) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSESetAttrIn) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSESetAttrIn) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSESetAttrIn) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSESetAttrIn) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSESetAttrIn) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+//go:nosplit
+func (f *FUSEOpcode) SizeBytes() int {
+    return 4
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEOpcode) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(*f))
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEOpcode) UnmarshalBytes(src []byte) {
+    *f = FUSEOpcode(uint32(usermem.ByteOrder.Uint32(src[:4])))
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEOpcode) Packed() bool {
+    // Scalar newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEOpcode) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEOpcode) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEOpcode) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEOpcode) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEOpcode) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEOpcode) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (f *FUSEInitOut) SizeBytes() int {
+    return 32 +
+        4*8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (f *FUSEInitOut) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Major))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Minor))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MaxReadahead))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Flags))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(f.MaxBackground))
+    dst = dst[2:]
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(f.CongestionThreshold))
+    dst = dst[2:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.MaxWrite))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.TimeGran))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(f.MaxPages))
+    dst = dst[2:]
+    // Padding: dst[:sizeof(uint16)] ~= uint16(0)
+    dst = dst[2:]
+    // Padding: dst[:sizeof(uint32)*8] ~= [8]uint32{0}
+    dst = dst[4*(8):]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (f *FUSEInitOut) UnmarshalBytes(src []byte) {
+    f.Major = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.Minor = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.MaxReadahead = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.MaxBackground = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    f.CongestionThreshold = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    f.MaxWrite = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.TimeGran = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    f.MaxPages = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    // Padding: var _ uint16 ~= src[:sizeof(uint16)]
+    src = src[2:]
+    // Padding: ~ copy([8]uint32(f._), src[:sizeof(uint32)*8])
+    src = src[4*(8):]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (f *FUSEInitOut) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (f *FUSEInitOut) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(f))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (f *FUSEInitOut) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(f), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (f *FUSEInitOut) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (f *FUSEInitOut) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return f.CopyOutN(cc, addr, f.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (f *FUSEInitOut) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(f)))
+    hdr.Len = f.SizeBytes()
+    hdr.Cap = f.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that f
+    // must live until the use above.
+    runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (f *FUSEInitOut) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4473,6 +4473,342 @@ func (i *IFConf) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
+//go:nosplit
+func (en *ExtensionName) SizeBytes() int {
+    return 1 * XT_EXTENSION_MAXNAMELEN
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (en *ExtensionName) MarshalBytes(dst []byte) {
+    for idx := 0; idx < XT_EXTENSION_MAXNAMELEN; idx++ {
+        dst[0] = byte(en[idx])
+        dst = dst[1:]
+    }
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (en *ExtensionName) UnmarshalBytes(src []byte) {
+    for idx := 0; idx < XT_EXTENSION_MAXNAMELEN; idx++ {
+        en[idx] = src[0]
+        src = src[1:]
+    }
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (en *ExtensionName) Packed() bool {
+    // Array newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (en *ExtensionName) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(en))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (en *ExtensionName) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(en), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (en *ExtensionName) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(en)))
+    hdr.Len = en.SizeBytes()
+    hdr.Cap = en.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that en
+    // must live until the use above.
+    runtime.KeepAlive(en) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (en *ExtensionName) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return en.CopyOutN(cc, addr, en.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (en *ExtensionName) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(en)))
+    hdr.Len = en.SizeBytes()
+    hdr.Cap = en.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that en
+    // must live until the use above.
+    runtime.KeepAlive(en) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (en *ExtensionName) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(en)))
+    hdr.Len = en.SizeBytes()
+    hdr.Cap = en.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that en
+    // must live until the use above.
+    runtime.KeepAlive(en) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+//go:nosplit
+func (tn *TableName) SizeBytes() int {
+    return 1 * XT_TABLE_MAXNAMELEN
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (tn *TableName) MarshalBytes(dst []byte) {
+    for idx := 0; idx < XT_TABLE_MAXNAMELEN; idx++ {
+        dst[0] = byte(tn[idx])
+        dst = dst[1:]
+    }
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (tn *TableName) UnmarshalBytes(src []byte) {
+    for idx := 0; idx < XT_TABLE_MAXNAMELEN; idx++ {
+        tn[idx] = src[0]
+        src = src[1:]
+    }
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (tn *TableName) Packed() bool {
+    // Array newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (tn *TableName) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(tn))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (tn *TableName) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(tn), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (tn *TableName) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tn)))
+    hdr.Len = tn.SizeBytes()
+    hdr.Cap = tn.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that tn
+    // must live until the use above.
+    runtime.KeepAlive(tn) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (tn *TableName) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return tn.CopyOutN(cc, addr, tn.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (tn *TableName) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tn)))
+    hdr.Len = tn.SizeBytes()
+    hdr.Cap = tn.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that tn
+    // must live until the use above.
+    runtime.KeepAlive(tn) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (tn *TableName) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tn)))
+    hdr.Len = tn.SizeBytes()
+    hdr.Cap = tn.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that tn
+    // must live until the use above.
+    runtime.KeepAlive(tn) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (i *IPTEntry) SizeBytes() int {
+    return 12 +
+        (*IPTIP)(nil).SizeBytes() +
+        (*XTCounters)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (i *IPTEntry) MarshalBytes(dst []byte) {
+    i.IP.MarshalBytes(dst[:i.IP.SizeBytes()])
+    dst = dst[i.IP.SizeBytes():]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(i.NFCache))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(i.TargetOffset))
+    dst = dst[2:]
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(i.NextOffset))
+    dst = dst[2:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(i.Comeback))
+    dst = dst[4:]
+    i.Counters.MarshalBytes(dst[:i.Counters.SizeBytes()])
+    dst = dst[i.Counters.SizeBytes():]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (i *IPTEntry) UnmarshalBytes(src []byte) {
+    i.IP.UnmarshalBytes(src[:i.IP.SizeBytes()])
+    src = src[i.IP.SizeBytes():]
+    i.NFCache = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    i.TargetOffset = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    i.NextOffset = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    i.Comeback = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    i.Counters.UnmarshalBytes(src[:i.Counters.SizeBytes()])
+    src = src[i.Counters.SizeBytes():]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (i *IPTEntry) Packed() bool {
+    return i.Counters.Packed() && i.IP.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (i *IPTEntry) MarshalUnsafe(dst []byte) {
+    if i.Counters.Packed() && i.IP.Packed() {
+        safecopy.CopyIn(dst, unsafe.Pointer(i))
+    } else {
+        // Type IPTEntry doesn't have a packed layout in memory, fallback to MarshalBytes.
+        i.MarshalBytes(dst)
+    }
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (i *IPTEntry) UnmarshalUnsafe(src []byte) {
+    if i.Counters.Packed() && i.IP.Packed() {
+        safecopy.CopyOut(unsafe.Pointer(i), src)
+    } else {
+        // Type IPTEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+        i.UnmarshalBytes(src)
+    }
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (i *IPTEntry) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    if !i.Counters.Packed() && i.IP.Packed() {
+        // Type IPTEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
+        i.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (i *IPTEntry) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (i *IPTEntry) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    if !i.Counters.Packed() && i.IP.Packed() {
+        // Type IPTEntry doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        i.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (i *IPTEntry) WriteTo(writer io.Writer) (int64, error) {
+    if !i.Counters.Packed() && i.IP.Packed() {
+        // Type IPTEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, i.SizeBytes())
+        i.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (i *IPTIP) SizeBytes() int {
     return 4 +
         (*InetAddr)(nil).SizeBytes() +
@@ -5172,265 +5508,126 @@ func (i *IPTGetEntries) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-//go:nosplit
-func (en *ExtensionName) SizeBytes() int {
-    return 1 * XT_EXTENSION_MAXNAMELEN
+func (i *IP6TIP) SizeBytes() int {
+    return 5 +
+        (*Inet6Addr)(nil).SizeBytes() +
+        (*Inet6Addr)(nil).SizeBytes() +
+        (*Inet6Addr)(nil).SizeBytes() +
+        (*Inet6Addr)(nil).SizeBytes() +
+        1*IFNAMSIZ +
+        1*IFNAMSIZ +
+        1*IFNAMSIZ +
+        1*IFNAMSIZ +
+        1*3
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (en *ExtensionName) MarshalBytes(dst []byte) {
-    for idx := 0; idx < XT_EXTENSION_MAXNAMELEN; idx++ {
-        dst[0] = byte(en[idx])
+func (i *IP6TIP) MarshalBytes(dst []byte) {
+    i.Src.MarshalBytes(dst[:i.Src.SizeBytes()])
+    dst = dst[i.Src.SizeBytes():]
+    i.Dst.MarshalBytes(dst[:i.Dst.SizeBytes()])
+    dst = dst[i.Dst.SizeBytes():]
+    i.SrcMask.MarshalBytes(dst[:i.SrcMask.SizeBytes()])
+    dst = dst[i.SrcMask.SizeBytes():]
+    i.DstMask.MarshalBytes(dst[:i.DstMask.SizeBytes()])
+    dst = dst[i.DstMask.SizeBytes():]
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        dst[0] = byte(i.InputInterface[idx])
         dst = dst[1:]
     }
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (en *ExtensionName) UnmarshalBytes(src []byte) {
-    for idx := 0; idx < XT_EXTENSION_MAXNAMELEN; idx++ {
-        en[idx] = src[0]
-        src = src[1:]
-    }
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (en *ExtensionName) Packed() bool {
-    // Array newtypes are always packed.
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (en *ExtensionName) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(en))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (en *ExtensionName) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(en), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (en *ExtensionName) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(en)))
-    hdr.Len = en.SizeBytes()
-    hdr.Cap = en.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that en
-    // must live until the use above.
-    runtime.KeepAlive(en) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (en *ExtensionName) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return en.CopyOutN(cc, addr, en.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (en *ExtensionName) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(en)))
-    hdr.Len = en.SizeBytes()
-    hdr.Cap = en.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that en
-    // must live until the use above.
-    runtime.KeepAlive(en) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (en *ExtensionName) WriteTo(w io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(en)))
-    hdr.Len = en.SizeBytes()
-    hdr.Cap = en.SizeBytes()
-
-    length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that en
-    // must live until the use above.
-    runtime.KeepAlive(en) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-//go:nosplit
-func (tn *TableName) SizeBytes() int {
-    return 1 * XT_TABLE_MAXNAMELEN
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (tn *TableName) MarshalBytes(dst []byte) {
-    for idx := 0; idx < XT_TABLE_MAXNAMELEN; idx++ {
-        dst[0] = byte(tn[idx])
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        dst[0] = byte(i.OutputInterface[idx])
         dst = dst[1:]
     }
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        dst[0] = byte(i.InputInterfaceMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        dst[0] = byte(i.OutputInterfaceMask[idx])
+        dst = dst[1:]
+    }
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(i.Protocol))
+    dst = dst[2:]
+    dst[0] = byte(i.TOS)
+    dst = dst[1:]
+    dst[0] = byte(i.Flags)
+    dst = dst[1:]
+    dst[0] = byte(i.InverseFlags)
+    dst = dst[1:]
+    // Padding: dst[:sizeof(byte)*3] ~= [3]byte{0}
+    dst = dst[1*(3):]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (tn *TableName) UnmarshalBytes(src []byte) {
-    for idx := 0; idx < XT_TABLE_MAXNAMELEN; idx++ {
-        tn[idx] = src[0]
+func (i *IP6TIP) UnmarshalBytes(src []byte) {
+    i.Src.UnmarshalBytes(src[:i.Src.SizeBytes()])
+    src = src[i.Src.SizeBytes():]
+    i.Dst.UnmarshalBytes(src[:i.Dst.SizeBytes()])
+    src = src[i.Dst.SizeBytes():]
+    i.SrcMask.UnmarshalBytes(src[:i.SrcMask.SizeBytes()])
+    src = src[i.SrcMask.SizeBytes():]
+    i.DstMask.UnmarshalBytes(src[:i.DstMask.SizeBytes()])
+    src = src[i.DstMask.SizeBytes():]
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        i.InputInterface[idx] = src[0]
         src = src[1:]
     }
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        i.OutputInterface[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        i.InputInterfaceMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < IFNAMSIZ; idx++ {
+        i.OutputInterfaceMask[idx] = src[0]
+        src = src[1:]
+    }
+    i.Protocol = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    i.TOS = uint8(src[0])
+    src = src[1:]
+    i.Flags = uint8(src[0])
+    src = src[1:]
+    i.InverseFlags = uint8(src[0])
+    src = src[1:]
+    // Padding: ~ copy([3]byte(i._), src[:sizeof(byte)*3])
+    src = src[1*(3):]
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (tn *TableName) Packed() bool {
-    // Array newtypes are always packed.
-    return true
+func (i *IP6TIP) Packed() bool {
+    return i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (tn *TableName) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(tn))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (tn *TableName) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(tn), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (tn *TableName) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tn)))
-    hdr.Len = tn.SizeBytes()
-    hdr.Cap = tn.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that tn
-    // must live until the use above.
-    runtime.KeepAlive(tn) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (tn *TableName) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return tn.CopyOutN(cc, addr, tn.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (tn *TableName) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tn)))
-    hdr.Len = tn.SizeBytes()
-    hdr.Cap = tn.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that tn
-    // must live until the use above.
-    runtime.KeepAlive(tn) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (tn *TableName) WriteTo(w io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tn)))
-    hdr.Len = tn.SizeBytes()
-    hdr.Cap = tn.SizeBytes()
-
-    length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that tn
-    // must live until the use above.
-    runtime.KeepAlive(tn) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (i *IPTEntry) SizeBytes() int {
-    return 12 +
-        (*IPTIP)(nil).SizeBytes() +
-        (*XTCounters)(nil).SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *IPTEntry) MarshalBytes(dst []byte) {
-    i.IP.MarshalBytes(dst[:i.IP.SizeBytes()])
-    dst = dst[i.IP.SizeBytes():]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(i.NFCache))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(i.TargetOffset))
-    dst = dst[2:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(i.NextOffset))
-    dst = dst[2:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(i.Comeback))
-    dst = dst[4:]
-    i.Counters.MarshalBytes(dst[:i.Counters.SizeBytes()])
-    dst = dst[i.Counters.SizeBytes():]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *IPTEntry) UnmarshalBytes(src []byte) {
-    i.IP.UnmarshalBytes(src[:i.IP.SizeBytes()])
-    src = src[i.IP.SizeBytes():]
-    i.NFCache = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    i.TargetOffset = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    i.NextOffset = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    i.Comeback = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    i.Counters.UnmarshalBytes(src[:i.Counters.SizeBytes()])
-    src = src[i.Counters.SizeBytes():]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (i *IPTEntry) Packed() bool {
-    return i.Counters.Packed() && i.IP.Packed()
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *IPTEntry) MarshalUnsafe(dst []byte) {
-    if i.Counters.Packed() && i.IP.Packed() {
+func (i *IP6TIP) MarshalUnsafe(dst []byte) {
+    if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(i))
     } else {
-        // Type IPTEntry doesn't have a packed layout in memory, fallback to MarshalBytes.
+        // Type IP6TIP doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
     }
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *IPTEntry) UnmarshalUnsafe(src []byte) {
-    if i.Counters.Packed() && i.IP.Packed() {
+func (i *IP6TIP) UnmarshalUnsafe(src []byte) {
+    if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
-        // Type IPTEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+        // Type IP6TIP doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
     }
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (i *IPTEntry) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !i.Counters.Packed() && i.IP.Packed() {
-        // Type IPTEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+func (i *IP6TIP) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    if !i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
+        // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -5452,15 +5649,15 @@ func (i *IPTEntry) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (i *IPTEntry) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *IP6TIP) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     return i.CopyOutN(cc, addr, i.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (i *IPTEntry) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !i.Counters.Packed() && i.IP.Packed() {
-        // Type IPTEntry doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+func (i *IP6TIP) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    if !i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
+        // Type IP6TIP doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -5484,9 +5681,9 @@ func (i *IPTEntry) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *IPTEntry) WriteTo(writer io.Writer) (int64, error) {
-    if !i.Counters.Packed() && i.IP.Packed() {
-        // Type IPTEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+func (i *IP6TIP) WriteTo(writer io.Writer) (int64, error) {
+    if !i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
+        // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -5801,203 +5998,6 @@ func (i *IP6TEntry) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, erro
 func (i *IP6TEntry) WriteTo(writer io.Writer) (int64, error) {
     if !i.Counters.Packed() && i.IPv6.Packed() {
         // Type IP6TEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := make([]byte, i.SizeBytes())
-        i.MarshalBytes(buf)
-        length, err := writer.Write(buf)
-        return int64(length), err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (i *IP6TIP) SizeBytes() int {
-    return 5 +
-        (*Inet6Addr)(nil).SizeBytes() +
-        (*Inet6Addr)(nil).SizeBytes() +
-        (*Inet6Addr)(nil).SizeBytes() +
-        (*Inet6Addr)(nil).SizeBytes() +
-        1*IFNAMSIZ +
-        1*IFNAMSIZ +
-        1*IFNAMSIZ +
-        1*IFNAMSIZ +
-        1*3
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *IP6TIP) MarshalBytes(dst []byte) {
-    i.Src.MarshalBytes(dst[:i.Src.SizeBytes()])
-    dst = dst[i.Src.SizeBytes():]
-    i.Dst.MarshalBytes(dst[:i.Dst.SizeBytes()])
-    dst = dst[i.Dst.SizeBytes():]
-    i.SrcMask.MarshalBytes(dst[:i.SrcMask.SizeBytes()])
-    dst = dst[i.SrcMask.SizeBytes():]
-    i.DstMask.MarshalBytes(dst[:i.DstMask.SizeBytes()])
-    dst = dst[i.DstMask.SizeBytes():]
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        dst[0] = byte(i.InputInterface[idx])
-        dst = dst[1:]
-    }
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        dst[0] = byte(i.OutputInterface[idx])
-        dst = dst[1:]
-    }
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        dst[0] = byte(i.InputInterfaceMask[idx])
-        dst = dst[1:]
-    }
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        dst[0] = byte(i.OutputInterfaceMask[idx])
-        dst = dst[1:]
-    }
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(i.Protocol))
-    dst = dst[2:]
-    dst[0] = byte(i.TOS)
-    dst = dst[1:]
-    dst[0] = byte(i.Flags)
-    dst = dst[1:]
-    dst[0] = byte(i.InverseFlags)
-    dst = dst[1:]
-    // Padding: dst[:sizeof(byte)*3] ~= [3]byte{0}
-    dst = dst[1*(3):]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *IP6TIP) UnmarshalBytes(src []byte) {
-    i.Src.UnmarshalBytes(src[:i.Src.SizeBytes()])
-    src = src[i.Src.SizeBytes():]
-    i.Dst.UnmarshalBytes(src[:i.Dst.SizeBytes()])
-    src = src[i.Dst.SizeBytes():]
-    i.SrcMask.UnmarshalBytes(src[:i.SrcMask.SizeBytes()])
-    src = src[i.SrcMask.SizeBytes():]
-    i.DstMask.UnmarshalBytes(src[:i.DstMask.SizeBytes()])
-    src = src[i.DstMask.SizeBytes():]
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        i.InputInterface[idx] = src[0]
-        src = src[1:]
-    }
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        i.OutputInterface[idx] = src[0]
-        src = src[1:]
-    }
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        i.InputInterfaceMask[idx] = src[0]
-        src = src[1:]
-    }
-    for idx := 0; idx < IFNAMSIZ; idx++ {
-        i.OutputInterfaceMask[idx] = src[0]
-        src = src[1:]
-    }
-    i.Protocol = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    i.TOS = uint8(src[0])
-    src = src[1:]
-    i.Flags = uint8(src[0])
-    src = src[1:]
-    i.InverseFlags = uint8(src[0])
-    src = src[1:]
-    // Padding: ~ copy([3]byte(i._), src[:sizeof(byte)*3])
-    src = src[1*(3):]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (i *IP6TIP) Packed() bool {
-    return i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed()
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *IP6TIP) MarshalUnsafe(dst []byte) {
-    if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
-    } else {
-        // Type IP6TIP doesn't have a packed layout in memory, fallback to MarshalBytes.
-        i.MarshalBytes(dst)
-    }
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *IP6TIP) UnmarshalUnsafe(src []byte) {
-    if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
-    } else {
-        // Type IP6TIP doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-        i.UnmarshalBytes(src)
-    }
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (i *IP6TIP) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
-        i.MarshalBytes(buf) // escapes: fallback.
-        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (i *IP6TIP) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return i.CopyOutN(cc, addr, i.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (i *IP6TIP) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        // Type IP6TIP doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
-        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-        // Unmarshal unconditionally. If we had a short copy-in, this results in a
-        // partially unmarshalled struct.
-        i.UnmarshalBytes(buf) // escapes: fallback.
-        return length, err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (i *IP6TIP) WriteTo(writer io.Writer) (int64, error) {
-    if !i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        // Type IP6TIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -6700,131 +6700,6 @@ func (s *SeccompData) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (s *SemInfo) SizeBytes() int {
-    return 40
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (s *SemInfo) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMap))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMni))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMns))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMnu))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMsl))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemOpm))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemUme))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemUsz))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemVmx))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemAem))
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *SemInfo) UnmarshalBytes(src []byte) {
-    s.SemMap = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemMni = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemMns = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemMnu = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemMsl = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemOpm = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemUme = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemUsz = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemVmx = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.SemAem = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (s *SemInfo) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (s *SemInfo) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (s *SemInfo) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (s *SemInfo) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (s *SemInfo) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return s.CopyOutN(cc, addr, s.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (s *SemInfo) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (s *SemInfo) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *Sembuf) SizeBytes() int {
     return 6
 }
@@ -7005,6 +6880,295 @@ func UnmarshalUnsafeSembufSlice(dst []Sembuf, src []byte) (int, error) {
     // must live until the use above.
     runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (s *SemInfo) SizeBytes() int {
+    return 40
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (s *SemInfo) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMap))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMni))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMns))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMnu))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemMsl))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemOpm))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemUme))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemUsz))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemVmx))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.SemAem))
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (s *SemInfo) UnmarshalBytes(src []byte) {
+    s.SemMap = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemMni = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemMns = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemMnu = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemMsl = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemOpm = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemUme = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemUsz = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemVmx = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.SemAem = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (s *SemInfo) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (s *SemInfo) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(s))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (s *SemInfo) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(s), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (s *SemInfo) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (s *SemInfo) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return s.CopyOutN(cc, addr, s.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (s *SemInfo) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (s *SemInfo) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (s *ShmidDS) SizeBytes() int {
+    return 40 +
+        (*IPCPerm)(nil).SizeBytes() +
+        (*TimeT)(nil).SizeBytes() +
+        (*TimeT)(nil).SizeBytes() +
+        (*TimeT)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (s *ShmidDS) MarshalBytes(dst []byte) {
+    s.ShmPerm.MarshalBytes(dst[:s.ShmPerm.SizeBytes()])
+    dst = dst[s.ShmPerm.SizeBytes():]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.ShmSegsz))
+    dst = dst[8:]
+    s.ShmAtime.MarshalBytes(dst[:s.ShmAtime.SizeBytes()])
+    dst = dst[s.ShmAtime.SizeBytes():]
+    s.ShmDtime.MarshalBytes(dst[:s.ShmDtime.SizeBytes()])
+    dst = dst[s.ShmDtime.SizeBytes():]
+    s.ShmCtime.MarshalBytes(dst[:s.ShmCtime.SizeBytes()])
+    dst = dst[s.ShmCtime.SizeBytes():]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.ShmCpid))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.ShmLpid))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.ShmNattach))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Unused4))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Unused5))
+    dst = dst[8:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (s *ShmidDS) UnmarshalBytes(src []byte) {
+    s.ShmPerm.UnmarshalBytes(src[:s.ShmPerm.SizeBytes()])
+    src = src[s.ShmPerm.SizeBytes():]
+    s.ShmSegsz = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    s.ShmAtime.UnmarshalBytes(src[:s.ShmAtime.SizeBytes()])
+    src = src[s.ShmAtime.SizeBytes():]
+    s.ShmDtime.UnmarshalBytes(src[:s.ShmDtime.SizeBytes()])
+    src = src[s.ShmDtime.SizeBytes():]
+    s.ShmCtime.UnmarshalBytes(src[:s.ShmCtime.SizeBytes()])
+    src = src[s.ShmCtime.SizeBytes():]
+    s.ShmCpid = int32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.ShmLpid = int32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    s.ShmNattach = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    s.Unused4 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    s.Unused5 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (s *ShmidDS) Packed() bool {
+    return s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (s *ShmidDS) MarshalUnsafe(dst []byte) {
+    if s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
+        safecopy.CopyIn(dst, unsafe.Pointer(s))
+    } else {
+        // Type ShmidDS doesn't have a packed layout in memory, fallback to MarshalBytes.
+        s.MarshalBytes(dst)
+    }
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (s *ShmidDS) UnmarshalUnsafe(src []byte) {
+    if s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
+        safecopy.CopyOut(unsafe.Pointer(s), src)
+    } else {
+        // Type ShmidDS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+        s.UnmarshalBytes(src)
+    }
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (s *ShmidDS) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    if !s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
+        // Type ShmidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
+        s.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (s *ShmidDS) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return s.CopyOutN(cc, addr, s.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (s *ShmidDS) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    if !s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
+        // Type ShmidDS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        s.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (s *ShmidDS) WriteTo(writer io.Writer) (int64, error) {
+    if !s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
+        // Type ShmidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, s.SizeBytes())
+        s.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return int64(length), err
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -7212,170 +7376,6 @@ func (s *ShmInfo) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error)
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *ShmInfo) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (s *ShmidDS) SizeBytes() int {
-    return 40 +
-        (*IPCPerm)(nil).SizeBytes() +
-        (*TimeT)(nil).SizeBytes() +
-        (*TimeT)(nil).SizeBytes() +
-        (*TimeT)(nil).SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (s *ShmidDS) MarshalBytes(dst []byte) {
-    s.ShmPerm.MarshalBytes(dst[:s.ShmPerm.SizeBytes()])
-    dst = dst[s.ShmPerm.SizeBytes():]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.ShmSegsz))
-    dst = dst[8:]
-    s.ShmAtime.MarshalBytes(dst[:s.ShmAtime.SizeBytes()])
-    dst = dst[s.ShmAtime.SizeBytes():]
-    s.ShmDtime.MarshalBytes(dst[:s.ShmDtime.SizeBytes()])
-    dst = dst[s.ShmDtime.SizeBytes():]
-    s.ShmCtime.MarshalBytes(dst[:s.ShmCtime.SizeBytes()])
-    dst = dst[s.ShmCtime.SizeBytes():]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.ShmCpid))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.ShmLpid))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.ShmNattach))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Unused4))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Unused5))
-    dst = dst[8:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *ShmidDS) UnmarshalBytes(src []byte) {
-    s.ShmPerm.UnmarshalBytes(src[:s.ShmPerm.SizeBytes()])
-    src = src[s.ShmPerm.SizeBytes():]
-    s.ShmSegsz = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    s.ShmAtime.UnmarshalBytes(src[:s.ShmAtime.SizeBytes()])
-    src = src[s.ShmAtime.SizeBytes():]
-    s.ShmDtime.UnmarshalBytes(src[:s.ShmDtime.SizeBytes()])
-    src = src[s.ShmDtime.SizeBytes():]
-    s.ShmCtime.UnmarshalBytes(src[:s.ShmCtime.SizeBytes()])
-    src = src[s.ShmCtime.SizeBytes():]
-    s.ShmCpid = int32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.ShmLpid = int32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    s.ShmNattach = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    s.Unused4 = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    s.Unused5 = uint64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (s *ShmidDS) Packed() bool {
-    return s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed()
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (s *ShmidDS) MarshalUnsafe(dst []byte) {
-    if s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(s))
-    } else {
-        // Type ShmidDS doesn't have a packed layout in memory, fallback to MarshalBytes.
-        s.MarshalBytes(dst)
-    }
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (s *ShmidDS) UnmarshalUnsafe(src []byte) {
-    if s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(s), src)
-    } else {
-        // Type ShmidDS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-        s.UnmarshalBytes(src)
-    }
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (s *ShmidDS) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
-        // Type ShmidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
-        s.MarshalBytes(buf) // escapes: fallback.
-        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (s *ShmidDS) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return s.CopyOutN(cc, addr, s.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (s *ShmidDS) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
-        // Type ShmidDS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-        buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
-        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-        // Unmarshal unconditionally. If we had a short copy-in, this results in a
-        // partially unmarshalled struct.
-        s.UnmarshalBytes(buf) // escapes: fallback.
-        return length, err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (s *ShmidDS) WriteTo(writer io.Writer) (int64, error) {
-    if !s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
-        // Type ShmidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := make([]byte, s.SizeBytes())
-        s.MarshalBytes(buf)
-        length, err := writer.Write(buf)
-        return int64(length), err
-    }
-
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -7730,70 +7730,252 @@ func (s *SignalfdSiginfo) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (s *SockAddrLink) SizeBytes() int {
+//go:nosplit
+func (i *InetAddr) SizeBytes() int {
+    return 1 * 4
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (i *InetAddr) MarshalBytes(dst []byte) {
+    for idx := 0; idx < 4; idx++ {
+        dst[0] = byte(i[idx])
+        dst = dst[1:]
+    }
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (i *InetAddr) UnmarshalBytes(src []byte) {
+    for idx := 0; idx < 4; idx++ {
+        i[idx] = src[0]
+        src = src[1:]
+    }
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (i *InetAddr) Packed() bool {
+    // Array newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (i *InetAddr) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(i))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (i *InetAddr) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(i), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (i *InetAddr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (i *InetAddr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (i *InetAddr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (i *InetAddr) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+//go:nosplit
+func (i *Inet6Addr) SizeBytes() int {
+    return 1 * 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (i *Inet6Addr) MarshalBytes(dst []byte) {
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(i[idx])
+        dst = dst[1:]
+    }
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (i *Inet6Addr) UnmarshalBytes(src []byte) {
+    for idx := 0; idx < 16; idx++ {
+        i[idx] = src[0]
+        src = src[1:]
+    }
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (i *Inet6Addr) Packed() bool {
+    // Array newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (i *Inet6Addr) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(i))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (i *Inet6Addr) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(i), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (i *Inet6Addr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (i *Inet6Addr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (i *Inet6Addr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (i *Inet6Addr) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (s *SockAddrInet6) SizeBytes() int {
     return 12 +
-        1*8
+        1*16
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (s *SockAddrLink) MarshalBytes(dst []byte) {
+func (s *SockAddrInet6) MarshalBytes(dst []byte) {
     usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Family))
     dst = dst[2:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Protocol))
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Port))
     dst = dst[2:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.InterfaceIndex))
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Flowinfo))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.ARPHardwareType))
-    dst = dst[2:]
-    dst[0] = byte(s.PacketType)
-    dst = dst[1:]
-    dst[0] = byte(s.HardwareAddrLen)
-    dst = dst[1:]
-    for idx := 0; idx < 8; idx++ {
-        dst[0] = byte(s.HardwareAddr[idx])
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(s.Addr[idx])
         dst = dst[1:]
     }
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Scope_id))
+    dst = dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *SockAddrLink) UnmarshalBytes(src []byte) {
+func (s *SockAddrInet6) UnmarshalBytes(src []byte) {
     s.Family = uint16(usermem.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    s.Protocol = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    s.Port = uint16(usermem.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    s.InterfaceIndex = int32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Flowinfo = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.ARPHardwareType = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    s.PacketType = src[0]
-    src = src[1:]
-    s.HardwareAddrLen = src[0]
-    src = src[1:]
-    for idx := 0; idx < 8; idx++ {
-        s.HardwareAddr[idx] = src[0]
+    for idx := 0; idx < 16; idx++ {
+        s.Addr[idx] = src[0]
         src = src[1:]
     }
+    s.Scope_id = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (s *SockAddrLink) Packed() bool {
+func (s *SockAddrInet6) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (s *SockAddrLink) MarshalUnsafe(dst []byte) {
+func (s *SockAddrInet6) MarshalUnsafe(dst []byte) {
     safecopy.CopyIn(dst, unsafe.Pointer(s))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (s *SockAddrLink) UnmarshalUnsafe(src []byte) {
+func (s *SockAddrInet6) UnmarshalUnsafe(src []byte) {
     safecopy.CopyOut(unsafe.Pointer(s), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (s *SockAddrLink) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (s *SockAddrInet6) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -7810,13 +7992,13 @@ func (s *SockAddrLink) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (s *SockAddrLink) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SockAddrInet6) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (s *SockAddrLink) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SockAddrInet6) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -7832,7 +8014,7 @@ func (s *SockAddrLink) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, e
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *SockAddrLink) WriteTo(writer io.Writer) (int64, error) {
+func (s *SockAddrInet6) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -7844,197 +8026,6 @@ func (s *SockAddrLink) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (s *SockAddrUnix) SizeBytes() int {
-    return 2 +
-        1*UnixPathMax
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (s *SockAddrUnix) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Family))
-    dst = dst[2:]
-    for idx := 0; idx < UnixPathMax; idx++ {
-        dst[0] = byte(s.Path[idx])
-        dst = dst[1:]
-    }
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *SockAddrUnix) UnmarshalBytes(src []byte) {
-    s.Family = uint16(usermem.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    for idx := 0; idx < UnixPathMax; idx++ {
-        s.Path[idx] = int8(src[0])
-        src = src[1:]
-    }
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (s *SockAddrUnix) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (s *SockAddrUnix) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (s *SockAddrUnix) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (s *SockAddrUnix) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (s *SockAddrUnix) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return s.CopyOutN(cc, addr, s.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (s *SockAddrUnix) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (s *SockAddrUnix) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
-    hdr.Len = s.SizeBytes()
-    hdr.Cap = s.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that s
-    // must live until the use above.
-    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (l *Linger) SizeBytes() int {
-    return 8
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (l *Linger) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(l.OnOff))
-    dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(l.Linger))
-    dst = dst[4:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (l *Linger) UnmarshalBytes(src []byte) {
-    l.OnOff = int32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-    l.Linger = int32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (l *Linger) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (l *Linger) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(l))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (l *Linger) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(l), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (l *Linger) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(l)))
-    hdr.Len = l.SizeBytes()
-    hdr.Cap = l.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that l
-    // must live until the use above.
-    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (l *Linger) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return l.CopyOutN(cc, addr, l.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (l *Linger) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(l)))
-    hdr.Len = l.SizeBytes()
-    hdr.Cap = l.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that l
-    // must live until the use above.
-    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (l *Linger) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(l)))
-    hdr.Len = l.SizeBytes()
-    hdr.Cap = l.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that l
-    // must live until the use above.
-    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -8405,101 +8396,6 @@ func (c *ControlMessageCredentials) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-//go:nosplit
-func (i *InetAddr) SizeBytes() int {
-    return 1 * 4
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *InetAddr) MarshalBytes(dst []byte) {
-    for idx := 0; idx < 4; idx++ {
-        dst[0] = byte(i[idx])
-        dst = dst[1:]
-    }
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *InetAddr) UnmarshalBytes(src []byte) {
-    for idx := 0; idx < 4; idx++ {
-        i[idx] = src[0]
-        src = src[1:]
-    }
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (i *InetAddr) Packed() bool {
-    // Array newtypes are always packed.
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *InetAddr) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *InetAddr) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (i *InetAddr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (i *InetAddr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return i.CopyOutN(cc, addr, i.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (i *InetAddr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (i *InetAddr) WriteTo(w io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SockAddrInet) SizeBytes() int {
     return 4 +
         (*InetAddr)(nil).SizeBytes() +
@@ -8638,157 +8534,70 @@ func (s *SockAddrInet) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-//go:nosplit
-func (i *Inet6Addr) SizeBytes() int {
-    return 1 * 16
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *Inet6Addr) MarshalBytes(dst []byte) {
-    for idx := 0; idx < 16; idx++ {
-        dst[0] = byte(i[idx])
-        dst = dst[1:]
-    }
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *Inet6Addr) UnmarshalBytes(src []byte) {
-    for idx := 0; idx < 16; idx++ {
-        i[idx] = src[0]
-        src = src[1:]
-    }
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (i *Inet6Addr) Packed() bool {
-    // Array newtypes are always packed.
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *Inet6Addr) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *Inet6Addr) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (i *Inet6Addr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (i *Inet6Addr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return i.CopyOutN(cc, addr, i.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (i *Inet6Addr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (i *Inet6Addr) WriteTo(w io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (s *SockAddrInet6) SizeBytes() int {
+func (s *SockAddrLink) SizeBytes() int {
     return 12 +
-        1*16
+        1*8
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (s *SockAddrInet6) MarshalBytes(dst []byte) {
+func (s *SockAddrLink) MarshalBytes(dst []byte) {
     usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Family))
     dst = dst[2:]
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Port))
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Protocol))
     dst = dst[2:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Flowinfo))
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.InterfaceIndex))
     dst = dst[4:]
-    for idx := 0; idx < 16; idx++ {
-        dst[0] = byte(s.Addr[idx])
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.ARPHardwareType))
+    dst = dst[2:]
+    dst[0] = byte(s.PacketType)
+    dst = dst[1:]
+    dst[0] = byte(s.HardwareAddrLen)
+    dst = dst[1:]
+    for idx := 0; idx < 8; idx++ {
+        dst[0] = byte(s.HardwareAddr[idx])
         dst = dst[1:]
     }
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Scope_id))
-    dst = dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *SockAddrInet6) UnmarshalBytes(src []byte) {
+func (s *SockAddrLink) UnmarshalBytes(src []byte) {
     s.Family = uint16(usermem.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    s.Port = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    s.Protocol = uint16(usermem.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    s.Flowinfo = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    s.InterfaceIndex = int32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    for idx := 0; idx < 16; idx++ {
-        s.Addr[idx] = src[0]
+    s.ARPHardwareType = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    s.PacketType = src[0]
+    src = src[1:]
+    s.HardwareAddrLen = src[0]
+    src = src[1:]
+    for idx := 0; idx < 8; idx++ {
+        s.HardwareAddr[idx] = src[0]
         src = src[1:]
     }
-    s.Scope_id = uint32(usermem.ByteOrder.Uint32(src[:4]))
-    src = src[4:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (s *SockAddrInet6) Packed() bool {
+func (s *SockAddrLink) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (s *SockAddrInet6) MarshalUnsafe(dst []byte) {
+func (s *SockAddrLink) MarshalUnsafe(dst []byte) {
     safecopy.CopyIn(dst, unsafe.Pointer(s))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (s *SockAddrInet6) UnmarshalUnsafe(src []byte) {
+func (s *SockAddrLink) UnmarshalUnsafe(src []byte) {
     safecopy.CopyOut(unsafe.Pointer(s), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (s *SockAddrInet6) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (s *SockAddrLink) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -8805,13 +8614,13 @@ func (s *SockAddrInet6) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limi
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (s *SockAddrInet6) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SockAddrLink) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (s *SockAddrInet6) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SockAddrLink) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -8827,7 +8636,7 @@ func (s *SockAddrInet6) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *SockAddrInet6) WriteTo(writer io.Writer) (int64, error) {
+func (s *SockAddrLink) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -8839,6 +8648,904 @@ func (s *SockAddrInet6) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (s *SockAddrUnix) SizeBytes() int {
+    return 2 +
+        1*UnixPathMax
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (s *SockAddrUnix) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(s.Family))
+    dst = dst[2:]
+    for idx := 0; idx < UnixPathMax; idx++ {
+        dst[0] = byte(s.Path[idx])
+        dst = dst[1:]
+    }
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (s *SockAddrUnix) UnmarshalBytes(src []byte) {
+    s.Family = uint16(usermem.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    for idx := 0; idx < UnixPathMax; idx++ {
+        s.Path[idx] = int8(src[0])
+        src = src[1:]
+    }
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (s *SockAddrUnix) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (s *SockAddrUnix) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(s))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (s *SockAddrUnix) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(s), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (s *SockAddrUnix) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (s *SockAddrUnix) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return s.CopyOutN(cc, addr, s.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (s *SockAddrUnix) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (s *SockAddrUnix) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(s)))
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until the use above.
+    runtime.KeepAlive(s) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (l *Linger) SizeBytes() int {
+    return 8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (l *Linger) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(l.OnOff))
+    dst = dst[4:]
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(l.Linger))
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (l *Linger) UnmarshalBytes(src []byte) {
+    l.OnOff = int32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    l.Linger = int32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (l *Linger) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (l *Linger) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(l))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (l *Linger) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(l), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (l *Linger) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(l)))
+    hdr.Len = l.SizeBytes()
+    hdr.Cap = l.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that l
+    // must live until the use above.
+    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (l *Linger) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return l.CopyOutN(cc, addr, l.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (l *Linger) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(l)))
+    hdr.Len = l.SizeBytes()
+    hdr.Cap = l.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that l
+    // must live until the use above.
+    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (l *Linger) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(l)))
+    hdr.Len = l.SizeBytes()
+    hdr.Cap = l.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that l
+    // must live until the use above.
+    runtime.KeepAlive(l) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (i *Itimerspec) SizeBytes() int {
+    return 0 +
+        (*Timespec)(nil).SizeBytes() +
+        (*Timespec)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (i *Itimerspec) MarshalBytes(dst []byte) {
+    i.Interval.MarshalBytes(dst[:i.Interval.SizeBytes()])
+    dst = dst[i.Interval.SizeBytes():]
+    i.Value.MarshalBytes(dst[:i.Value.SizeBytes()])
+    dst = dst[i.Value.SizeBytes():]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (i *Itimerspec) UnmarshalBytes(src []byte) {
+    i.Interval.UnmarshalBytes(src[:i.Interval.SizeBytes()])
+    src = src[i.Interval.SizeBytes():]
+    i.Value.UnmarshalBytes(src[:i.Value.SizeBytes()])
+    src = src[i.Value.SizeBytes():]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (i *Itimerspec) Packed() bool {
+    return i.Interval.Packed() && i.Value.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (i *Itimerspec) MarshalUnsafe(dst []byte) {
+    if i.Interval.Packed() && i.Value.Packed() {
+        safecopy.CopyIn(dst, unsafe.Pointer(i))
+    } else {
+        // Type Itimerspec doesn't have a packed layout in memory, fallback to MarshalBytes.
+        i.MarshalBytes(dst)
+    }
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (i *Itimerspec) UnmarshalUnsafe(src []byte) {
+    if i.Interval.Packed() && i.Value.Packed() {
+        safecopy.CopyOut(unsafe.Pointer(i), src)
+    } else {
+        // Type Itimerspec doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+        i.UnmarshalBytes(src)
+    }
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (i *Itimerspec) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    if !i.Interval.Packed() && i.Value.Packed() {
+        // Type Itimerspec doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
+        i.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (i *Itimerspec) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (i *Itimerspec) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    if !i.Interval.Packed() && i.Value.Packed() {
+        // Type Itimerspec doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        i.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (i *Itimerspec) WriteTo(writer io.Writer) (int64, error) {
+    if !i.Interval.Packed() && i.Value.Packed() {
+        // Type Itimerspec doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, i.SizeBytes())
+        i.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (ts *Timespec) SizeBytes() int {
+    return 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (ts *Timespec) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(ts.Sec))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(ts.Nsec))
+    dst = dst[8:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (ts *Timespec) UnmarshalBytes(src []byte) {
+    ts.Sec = int64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    ts.Nsec = int64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (ts *Timespec) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (ts *Timespec) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(ts))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (ts *Timespec) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(ts), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (ts *Timespec) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(ts)))
+    hdr.Len = ts.SizeBytes()
+    hdr.Cap = ts.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that ts
+    // must live until the use above.
+    runtime.KeepAlive(ts) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (ts *Timespec) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return ts.CopyOutN(cc, addr, ts.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (ts *Timespec) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(ts)))
+    hdr.Len = ts.SizeBytes()
+    hdr.Cap = ts.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that ts
+    // must live until the use above.
+    runtime.KeepAlive(ts) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (ts *Timespec) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(ts)))
+    hdr.Len = ts.SizeBytes()
+    hdr.Cap = ts.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that ts
+    // must live until the use above.
+    runtime.KeepAlive(ts) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// CopyTimespecSliceIn copies in a slice of Timespec objects from the task's memory.
+func CopyTimespecSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []Timespec) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timespec)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := cc.CopyInBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyTimespecSliceOut copies a slice of Timespec objects to the task's memory.
+func CopyTimespecSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []Timespec) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timespec)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := cc.CopyOutBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// MarshalUnsafeTimespecSlice is like Timespec.MarshalUnsafe, but for a []Timespec.
+func MarshalUnsafeTimespecSlice(src []Timespec, dst []byte) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timespec)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyIn(dst[:(size*count)], val)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// UnmarshalUnsafeTimespecSlice is like Timespec.UnmarshalUnsafe, but for a []Timespec.
+func UnmarshalUnsafeTimespecSlice(dst []Timespec, src []byte) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timespec)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyOut(val, src[:(size*count)])
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (tv *Timeval) SizeBytes() int {
+    return 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (tv *Timeval) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(tv.Sec))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(tv.Usec))
+    dst = dst[8:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (tv *Timeval) UnmarshalBytes(src []byte) {
+    tv.Sec = int64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    tv.Usec = int64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (tv *Timeval) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (tv *Timeval) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(tv))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (tv *Timeval) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(tv), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (tv *Timeval) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tv)))
+    hdr.Len = tv.SizeBytes()
+    hdr.Cap = tv.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that tv
+    // must live until the use above.
+    runtime.KeepAlive(tv) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (tv *Timeval) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return tv.CopyOutN(cc, addr, tv.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (tv *Timeval) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tv)))
+    hdr.Len = tv.SizeBytes()
+    hdr.Cap = tv.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that tv
+    // must live until the use above.
+    runtime.KeepAlive(tv) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (tv *Timeval) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tv)))
+    hdr.Len = tv.SizeBytes()
+    hdr.Cap = tv.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that tv
+    // must live until the use above.
+    runtime.KeepAlive(tv) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// CopyTimevalSliceIn copies in a slice of Timeval objects from the task's memory.
+func CopyTimevalSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []Timeval) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timeval)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := cc.CopyInBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyTimevalSliceOut copies a slice of Timeval objects to the task's memory.
+func CopyTimevalSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []Timeval) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timeval)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := cc.CopyOutBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// MarshalUnsafeTimevalSlice is like Timeval.MarshalUnsafe, but for a []Timeval.
+func MarshalUnsafeTimevalSlice(src []Timeval, dst []byte) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timeval)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyIn(dst[:(size*count)], val)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// UnmarshalUnsafeTimevalSlice is like Timeval.UnmarshalUnsafe, but for a []Timeval.
+func UnmarshalUnsafeTimevalSlice(dst []Timeval, src []byte) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Timeval)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyOut(val, src[:(size*count)])
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (i *ItimerVal) SizeBytes() int {
+    return 0 +
+        (*Timeval)(nil).SizeBytes() +
+        (*Timeval)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (i *ItimerVal) MarshalBytes(dst []byte) {
+    i.Interval.MarshalBytes(dst[:i.Interval.SizeBytes()])
+    dst = dst[i.Interval.SizeBytes():]
+    i.Value.MarshalBytes(dst[:i.Value.SizeBytes()])
+    dst = dst[i.Value.SizeBytes():]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (i *ItimerVal) UnmarshalBytes(src []byte) {
+    i.Interval.UnmarshalBytes(src[:i.Interval.SizeBytes()])
+    src = src[i.Interval.SizeBytes():]
+    i.Value.UnmarshalBytes(src[:i.Value.SizeBytes()])
+    src = src[i.Value.SizeBytes():]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (i *ItimerVal) Packed() bool {
+    return i.Interval.Packed() && i.Value.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (i *ItimerVal) MarshalUnsafe(dst []byte) {
+    if i.Interval.Packed() && i.Value.Packed() {
+        safecopy.CopyIn(dst, unsafe.Pointer(i))
+    } else {
+        // Type ItimerVal doesn't have a packed layout in memory, fallback to MarshalBytes.
+        i.MarshalBytes(dst)
+    }
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (i *ItimerVal) UnmarshalUnsafe(src []byte) {
+    if i.Interval.Packed() && i.Value.Packed() {
+        safecopy.CopyOut(unsafe.Pointer(i), src)
+    } else {
+        // Type ItimerVal doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+        i.UnmarshalBytes(src)
+    }
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (i *ItimerVal) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    if !i.Interval.Packed() && i.Value.Packed() {
+        // Type ItimerVal doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
+        i.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (i *ItimerVal) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (i *ItimerVal) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    if !i.Interval.Packed() && i.Value.Packed() {
+        // Type ItimerVal doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        i.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (i *ItimerVal) WriteTo(writer io.Writer) (int64, error) {
+    if !i.Interval.Packed() && i.Value.Packed() {
+        // Type ItimerVal doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, i.SizeBytes())
+        i.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+//go:nosplit
+func (c *ClockT) SizeBytes() int {
+    return 8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (c *ClockT) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(*c))
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (c *ClockT) UnmarshalBytes(src []byte) {
+    *c = ClockT(int64(usermem.ByteOrder.Uint64(src[:8])))
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (c *ClockT) Packed() bool {
+    // Scalar newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (c *ClockT) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(c))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (c *ClockT) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(c), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (c *ClockT) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (c *ClockT) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return c.CopyOutN(cc, addr, c.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (c *ClockT) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (c *ClockT) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -9072,445 +9779,6 @@ func (t *TimerID) WriteTo(w io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (ts *Timespec) SizeBytes() int {
-    return 16
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (ts *Timespec) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(ts.Sec))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(ts.Nsec))
-    dst = dst[8:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (ts *Timespec) UnmarshalBytes(src []byte) {
-    ts.Sec = int64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    ts.Nsec = int64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (ts *Timespec) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (ts *Timespec) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(ts))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (ts *Timespec) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(ts), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (ts *Timespec) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(ts)))
-    hdr.Len = ts.SizeBytes()
-    hdr.Cap = ts.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that ts
-    // must live until the use above.
-    runtime.KeepAlive(ts) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (ts *Timespec) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return ts.CopyOutN(cc, addr, ts.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (ts *Timespec) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(ts)))
-    hdr.Len = ts.SizeBytes()
-    hdr.Cap = ts.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that ts
-    // must live until the use above.
-    runtime.KeepAlive(ts) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (ts *Timespec) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(ts)))
-    hdr.Len = ts.SizeBytes()
-    hdr.Cap = ts.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that ts
-    // must live until the use above.
-    runtime.KeepAlive(ts) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// CopyTimespecSliceIn copies in a slice of Timespec objects from the task's memory.
-func CopyTimespecSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []Timespec) (int, error) {
-    count := len(dst)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timespec)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(val)
-    hdr.Len = size * count
-    hdr.Cap = size * count
-
-    length, err := cc.CopyInBytes(addr, buf)
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyTimespecSliceOut copies a slice of Timespec objects to the task's memory.
-func CopyTimespecSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []Timespec) (int, error) {
-    count := len(src)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timespec)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(val)
-    hdr.Len = size * count
-    hdr.Cap = size * count
-
-    length, err := cc.CopyOutBytes(addr, buf)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// MarshalUnsafeTimespecSlice is like Timespec.MarshalUnsafe, but for a []Timespec.
-func MarshalUnsafeTimespecSlice(src []Timespec, dst []byte) (int, error) {
-    count := len(src)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timespec)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// UnmarshalUnsafeTimespecSlice is like Timespec.UnmarshalUnsafe, but for a []Timespec.
-func UnmarshalUnsafeTimespecSlice(dst []Timespec, src []byte) (int, error) {
-    count := len(dst)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timespec)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (i *Itimerspec) SizeBytes() int {
-    return 0 +
-        (*Timespec)(nil).SizeBytes() +
-        (*Timespec)(nil).SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *Itimerspec) MarshalBytes(dst []byte) {
-    i.Interval.MarshalBytes(dst[:i.Interval.SizeBytes()])
-    dst = dst[i.Interval.SizeBytes():]
-    i.Value.MarshalBytes(dst[:i.Value.SizeBytes()])
-    dst = dst[i.Value.SizeBytes():]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *Itimerspec) UnmarshalBytes(src []byte) {
-    i.Interval.UnmarshalBytes(src[:i.Interval.SizeBytes()])
-    src = src[i.Interval.SizeBytes():]
-    i.Value.UnmarshalBytes(src[:i.Value.SizeBytes()])
-    src = src[i.Value.SizeBytes():]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (i *Itimerspec) Packed() bool {
-    return i.Interval.Packed() && i.Value.Packed()
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *Itimerspec) MarshalUnsafe(dst []byte) {
-    if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
-    } else {
-        // Type Itimerspec doesn't have a packed layout in memory, fallback to MarshalBytes.
-        i.MarshalBytes(dst)
-    }
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *Itimerspec) UnmarshalUnsafe(src []byte) {
-    if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
-    } else {
-        // Type Itimerspec doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-        i.UnmarshalBytes(src)
-    }
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (i *Itimerspec) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
-        // Type Itimerspec doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
-        i.MarshalBytes(buf) // escapes: fallback.
-        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (i *Itimerspec) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return i.CopyOutN(cc, addr, i.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (i *Itimerspec) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
-        // Type Itimerspec doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
-        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-        // Unmarshal unconditionally. If we had a short copy-in, this results in a
-        // partially unmarshalled struct.
-        i.UnmarshalBytes(buf) // escapes: fallback.
-        return length, err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (i *Itimerspec) WriteTo(writer io.Writer) (int64, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
-        // Type Itimerspec doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := make([]byte, i.SizeBytes())
-        i.MarshalBytes(buf)
-        length, err := writer.Write(buf)
-        return int64(length), err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (i *ItimerVal) SizeBytes() int {
-    return 0 +
-        (*Timeval)(nil).SizeBytes() +
-        (*Timeval)(nil).SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *ItimerVal) MarshalBytes(dst []byte) {
-    i.Interval.MarshalBytes(dst[:i.Interval.SizeBytes()])
-    dst = dst[i.Interval.SizeBytes():]
-    i.Value.MarshalBytes(dst[:i.Value.SizeBytes()])
-    dst = dst[i.Value.SizeBytes():]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *ItimerVal) UnmarshalBytes(src []byte) {
-    i.Interval.UnmarshalBytes(src[:i.Interval.SizeBytes()])
-    src = src[i.Interval.SizeBytes():]
-    i.Value.UnmarshalBytes(src[:i.Value.SizeBytes()])
-    src = src[i.Value.SizeBytes():]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (i *ItimerVal) Packed() bool {
-    return i.Interval.Packed() && i.Value.Packed()
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *ItimerVal) MarshalUnsafe(dst []byte) {
-    if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
-    } else {
-        // Type ItimerVal doesn't have a packed layout in memory, fallback to MarshalBytes.
-        i.MarshalBytes(dst)
-    }
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *ItimerVal) UnmarshalUnsafe(src []byte) {
-    if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
-    } else {
-        // Type ItimerVal doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-        i.UnmarshalBytes(src)
-    }
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (i *ItimerVal) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
-        // Type ItimerVal doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
-        i.MarshalBytes(buf) // escapes: fallback.
-        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (i *ItimerVal) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return i.CopyOutN(cc, addr, i.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (i *ItimerVal) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
-        // Type ItimerVal doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
-        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-        // Unmarshal unconditionally. If we had a short copy-in, this results in a
-        // partially unmarshalled struct.
-        i.UnmarshalBytes(buf) // escapes: fallback.
-        return length, err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (i *ItimerVal) WriteTo(writer io.Writer) (int64, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
-        // Type ItimerVal doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := make([]byte, i.SizeBytes())
-        i.MarshalBytes(buf)
-        length, err := writer.Write(buf)
-        return int64(length), err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (sxts *StatxTimestamp) SizeBytes() int {
     return 16
 }
@@ -9608,99 +9876,6 @@ func (sxts *StatxTimestamp) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (u *Utime) SizeBytes() int {
-    return 16
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (u *Utime) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(u.Actime))
-    dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(u.Modtime))
-    dst = dst[8:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (u *Utime) UnmarshalBytes(src []byte) {
-    u.Actime = int64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-    u.Modtime = int64(usermem.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (u *Utime) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (u *Utime) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (u *Utime) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (u *Utime) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
-    // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (u *Utime) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return u.CopyOutN(cc, addr, u.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (u *Utime) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
-    // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (u *Utime) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that u
-    // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 //go:nosplit
 func (t *TimeT) SizeBytes() int {
     return 8
@@ -9790,270 +9965,95 @@ func (t *TimeT) WriteTo(w io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (tv *Timeval) SizeBytes() int {
+func (u *Utime) SizeBytes() int {
     return 16
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (tv *Timeval) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(tv.Sec))
+func (u *Utime) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(u.Actime))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(tv.Usec))
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(u.Modtime))
     dst = dst[8:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (tv *Timeval) UnmarshalBytes(src []byte) {
-    tv.Sec = int64(usermem.ByteOrder.Uint64(src[:8]))
+func (u *Utime) UnmarshalBytes(src []byte) {
+    u.Actime = int64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    tv.Usec = int64(usermem.ByteOrder.Uint64(src[:8]))
+    u.Modtime = int64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (tv *Timeval) Packed() bool {
+func (u *Utime) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (tv *Timeval) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(tv))
+func (u *Utime) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(u))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (tv *Timeval) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(tv), src)
+func (u *Utime) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(u), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (tv *Timeval) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (u *Utime) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tv)))
-    hdr.Len = tv.SizeBytes()
-    hdr.Cap = tv.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
+    hdr.Len = u.SizeBytes()
+    hdr.Cap = u.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that tv
+    // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(tv) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (tv *Timeval) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return tv.CopyOutN(cc, addr, tv.SizeBytes())
+func (u *Utime) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return u.CopyOutN(cc, addr, u.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (tv *Timeval) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Utime) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tv)))
-    hdr.Len = tv.SizeBytes()
-    hdr.Cap = tv.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
+    hdr.Len = u.SizeBytes()
+    hdr.Cap = u.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that tv
+    // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(tv) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (tv *Timeval) WriteTo(writer io.Writer) (int64, error) {
+func (u *Utime) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(tv)))
-    hdr.Len = tv.SizeBytes()
-    hdr.Cap = tv.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
+    hdr.Len = u.SizeBytes()
+    hdr.Cap = u.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that tv
+    // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
-    runtime.KeepAlive(tv) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// CopyTimevalSliceIn copies in a slice of Timeval objects from the task's memory.
-func CopyTimevalSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []Timeval) (int, error) {
-    count := len(dst)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timeval)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(val)
-    hdr.Len = size * count
-    hdr.Cap = size * count
-
-    length, err := cc.CopyInBytes(addr, buf)
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyTimevalSliceOut copies a slice of Timeval objects to the task's memory.
-func CopyTimevalSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []Timeval) (int, error) {
-    count := len(src)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timeval)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(val)
-    hdr.Len = size * count
-    hdr.Cap = size * count
-
-    length, err := cc.CopyOutBytes(addr, buf)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// MarshalUnsafeTimevalSlice is like Timeval.MarshalUnsafe, but for a []Timeval.
-func MarshalUnsafeTimevalSlice(src []Timeval, dst []byte) (int, error) {
-    count := len(src)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timeval)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// UnmarshalUnsafeTimevalSlice is like Timeval.UnmarshalUnsafe, but for a []Timeval.
-func UnmarshalUnsafeTimevalSlice(dst []Timeval, src []byte) (int, error) {
-    count := len(dst)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Timeval)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-//go:nosplit
-func (c *ClockT) SizeBytes() int {
-    return 8
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (c *ClockT) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(*c))
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (c *ClockT) UnmarshalBytes(src []byte) {
-    *c = ClockT(int64(usermem.ByteOrder.Uint64(src[:8])))
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (c *ClockT) Packed() bool {
-    // Scalar newtypes are always packed.
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (c *ClockT) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(c))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (c *ClockT) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(c), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (c *ClockT) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
-    hdr.Len = c.SizeBytes()
-    hdr.Cap = c.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that c
-    // must live until the use above.
-    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (c *ClockT) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return c.CopyOutN(cc, addr, c.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (c *ClockT) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
-    hdr.Len = c.SizeBytes()
-    hdr.Cap = c.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that c
-    // must live until the use above.
-    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (c *ClockT) WriteTo(w io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
-    hdr.Len = c.SizeBytes()
-    hdr.Cap = c.SizeBytes()
-
-    length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that c
-    // must live until the use above.
-    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
