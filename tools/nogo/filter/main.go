@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -76,12 +77,14 @@ func main() {
 			log.Fatalf("unable to read %s: %v", filename, err)
 		}
 		var newConfig nogo.Config // For current file.
-		if err := yaml.Unmarshal(content, &newConfig); err != nil {
+		dec := yaml.NewDecoder(bytes.NewBuffer(content))
+		dec.SetStrict(true)
+		if err := dec.Decode(&newConfig); err != nil {
 			log.Fatalf("unable to decode %s: %v", filename, err)
 		}
 		config.Merge(&newConfig)
 		if showConfig {
-			bytes, err := yaml.Marshal(&newConfig)
+			content, err := yaml.Marshal(&newConfig)
 			if err != nil {
 				log.Fatalf("error marshalling config: %v", err)
 			}
@@ -89,7 +92,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("error marshalling config: %v", err)
 			}
-			fmt.Fprintf(os.Stdout, "Loaded configuration from %s:\n%s\n", filename, string(bytes))
+			fmt.Fprintf(os.Stdout, "Loaded configuration from %s:\n%s\n", filename, string(content))
 			fmt.Fprintf(os.Stdout, "Merged configuration:\n%s\n", string(mergedBytes))
 		}
 	}

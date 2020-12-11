@@ -56,123 +56,8 @@ global:
       - "should not use ALL_CAPS in Go names"
       - "should not use underscores in Go names"
     exclude:
-      # A variety of staticcheck and stylecheck
-      # rules apply here. These should be fixed
-      # and removed from here, and the global
-      # rules should be used sparingly.
-      - pkg/abi/linux/fuse.go:22
-      - pkg/abi/linux/fuse.go:25
-      - pkg/abi/linux/socket.go:113
-      - pkg/abi/linux/tty.go:73
-      - pkg/cpuid/cpuid_x86.go:675
-      - pkg/gohacks/gohacks_unsafe.go:33
-      - pkg/log/json.go:30
-      - pkg/log/log.go:359
-      - pkg/metric/metric_test.go:20
-      - pkg/p9/p9test/client_test.go:687
-      - pkg/p9/transport_test.go:196
-      - pkg/pool/pool.go:15
-      - pkg/refs/refcounter.go:510
-      - pkg/refs/refcounter_test.go:169
-      - pkg/safemem/block_unsafe.go:89
-      - pkg/seccomp/seccomp.go:82
-      - pkg/segment/test/set_functions.go:15
-      - pkg/sentry/arch/signal.go:166
-      - pkg/sentry/arch/signal.go:171
-      - pkg/sentry/control/pprof.go:196
-      - pkg/sentry/devices/memdev/full.go:58
-      - pkg/sentry/devices/memdev/null.go:59
-      - pkg/sentry/devices/memdev/random.go:68
-      - pkg/sentry/devices/memdev/zero.go:86
-      - pkg/sentry/fdimport/fdimport.go:15
-      - pkg/sentry/fs/attr.go:257
-      - pkg/sentry/fsbridge/fs.go:116
-      - pkg/sentry/fsbridge/vfs.go:124
-      - pkg/sentry/fsbridge/vfs.go:70
-      - pkg/sentry/fs/copy_up.go:365
-      - pkg/sentry/fs/copy_up_test.go:65
-      - pkg/sentry/fs/dev/net_tun.go:161
-      - pkg/sentry/fs/dev/net_tun.go:63
-      - pkg/sentry/fs/dev/null.go:97
-      - pkg/sentry/fs/dirent_cache.go:64
-      - pkg/sentry/fs/fdpipe/pipe_opener_test.go:366
-      - pkg/sentry/fs/file_overlay.go:327
-      - pkg/sentry/fs/file_overlay.go:524
-      - pkg/sentry/fs/filetest/filetest.go:55
-      - pkg/sentry/fs/filetest/filetest.go:60
-      - pkg/sentry/fs/fs.go:77
-      - pkg/sentry/fs/fsutil/file.go:290
-      - pkg/sentry/fs/fsutil/file.go:346
-      - pkg/sentry/fs/fsutil/host_file_mapper.go:105
-      - pkg/sentry/fs/fsutil/inode_cached.go:676
-      - pkg/sentry/fs/fsutil/inode_cached.go:772
-      - pkg/sentry/fs/gofer/attr.go:120
-      - pkg/sentry/fs/gofer/fifo.go:33
-      - pkg/sentry/fs/gofer/inode.go:410
-      - pkg/sentry/fsimpl/ext/disklayout/superblock_64.go:97
-      - pkg/sentry/fsimpl/ext/disklayout/superblock_old.go:92
-      - pkg/sentry/fsimpl/ext/disklayout/block_group_32.go:44
-      - pkg/sentry/fsimpl/ext/disklayout/inode_new.go:91
-      - pkg/sentry/fsimpl/ext/disklayout/inode_old.go:93
-      - pkg/sentry/fsimpl/ext/disklayout/superblock_32.go:66
-      - pkg/sentry/fsimpl/ext/disklayout/block_group_64.go:53
-      - pkg/sentry/fsimpl/fuse/request_response.go:71
-      - pkg/sentry/fsimpl/signalfd/signalfd.go:15
-      - pkg/sentry/memmap/memmap.go:103
-      - pkg/sentry/memmap/memmap.go:163
-      - pkg/sentry/mm/aio_context.go:208
-      - pkg/sentry/mm/pma.go:683
-      - pkg/sentry/usage/cpu.go:42
-      - pkg/shim/runsc/runsc.go:16
-      - pkg/shim/runsc/utils.go:16
-      - pkg/shim/v1/proc/deleted_state.go:16
-      - pkg/shim/v1/proc/exec.go:16
-      - pkg/shim/v1/proc/exec_state.go:16
-      - pkg/shim/v1/proc/init.go:16
-      - pkg/shim/v1/proc/init_state.go:16
-      - pkg/shim/v1/proc/io.go:16
-      - pkg/shim/v1/proc/process.go:16
-      - pkg/shim/v1/proc/types.go:16
-      - pkg/shim/v1/proc/utils.go:16
-      - pkg/shim/v1/shim/api.go:16
-      - pkg/shim/v1/shim/platform.go:16
-      - pkg/shim/v1/shim/service.go:16
-      - pkg/shim/v1/utils/annotations.go:15
-      - pkg/shim/v1/utils/utils.go:15
-      - pkg/shim/v1/utils/volumes.go:15
-      - pkg/shim/v2/api.go:16
-      - pkg/shim/v2/epoll.go:18
-      - pkg/shim/v2/options/options.go:15
-      - pkg/shim/v2/options/options.go:24
-      - pkg/shim/v2/options/options.go:26
-      - pkg/shim/v2/runtimeoptions/runtimeoptions.go:16
-      - pkg/shim/v2/runtimeoptions/runtimeoptions_cri.go # Generated: exempt all.
-      - pkg/shim/v2/runtimeoptions/runtimeoptions_test.go:22
-      - pkg/shim/v2/service.go:15
-      - pkg/shim/v2/service_linux.go:18
-      - pkg/state/tests/integer_test.go:23
-      - pkg/state/tests/integer_test.go:28
-      - pkg/sync/rwmutex_test.go:105
-      - pkg/syserr/host_linux.go:35
-      - pkg/usermem/addr.go:34
-      - pkg/usermem/usermem.go:171
-      - pkg/usermem/usermem.go:170
-      - runsc/boot/compat.go:56
-      - test/cmd/test_app/fds.go:171
-      - test/iptables/filter_output.go:251
-      - test/packetimpact/testbench/connections.go:77
-      - tools/bigquery/bigquery.go:106
-      - tools/checkescape/test1/test1.go:108
-      - tools/checkescape/test1/test1.go:122
-      - tools/checkescape/test1/test1.go:137
-      - tools/checkescape/test1/test1.go:151
-      - tools/checkescape/test1/test1.go:170
-      - tools/checkescape/test1/test1.go:39
-      - tools/checkescape/test1/test1.go:45
-      - tools/checkescape/test1/test1.go:50
-      - tools/checkescape/test1/test1.go:64
-      - tools/checkescape/test1/test1.go:80
-      - tools/checkescape/test1/test1.go:94
+      # Generated: exempt all.
+      - pkg/shim/v2/runtimeoptions/runtimeoptions_cri.go
 analyzers:
   asmdecl:
     external: # Enabled.
@@ -252,3 +137,22 @@ analyzers:
     external: # Enabled.
   checkescape:
     external: # Enabled.
+  SA4016:
+    internal:
+      exclude:
+        - pkg/gohacks/gohacks_unsafe.go # x ^ 0 always equals x.
+  SA2001:
+    internal:
+      exclude:
+        - pkg/sentry/fs/fs.go          # Intentional.
+        - pkg/sentry/fs/gofer/inode.go # Intentional.
+        - pkg/refs/refcounter_test.go  # Intentional.
+  ST1021:
+    internal:
+      suppress:
+        - "comment on exported type Translation" # Intentional.
+        - "comment on exported type PinnedRange" # Intentional.
+  SA5011:
+    internal:
+      exclude:
+        - pkg/sentry/fs/fdpipe/pipe_opener_test.go # False positive.

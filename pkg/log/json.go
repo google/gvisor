@@ -27,8 +27,8 @@ type jsonLog struct {
 }
 
 // MarshalJSON implements json.Marshaler.MarashalJSON.
-func (lv Level) MarshalJSON() ([]byte, error) {
-	switch lv {
+func (l Level) MarshalJSON() ([]byte, error) {
+	switch l {
 	case Warning:
 		return []byte(`"warning"`), nil
 	case Info:
@@ -36,20 +36,20 @@ func (lv Level) MarshalJSON() ([]byte, error) {
 	case Debug:
 		return []byte(`"debug"`), nil
 	default:
-		return nil, fmt.Errorf("unknown level %v", lv)
+		return nil, fmt.Errorf("unknown level %v", l)
 	}
 }
 
 // UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON.  It can unmarshal
 // from both string names and integers.
-func (lv *Level) UnmarshalJSON(b []byte) error {
+func (l *Level) UnmarshalJSON(b []byte) error {
 	switch s := string(b); s {
 	case "0", `"warning"`:
-		*lv = Warning
+		*l = Warning
 	case "1", `"info"`:
-		*lv = Info
+		*l = Info
 	case "2", `"debug"`:
-		*lv = Debug
+		*l = Debug
 	default:
 		return fmt.Errorf("unknown level %q", s)
 	}

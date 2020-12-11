@@ -53,10 +53,10 @@ type testGenerator struct {
 	decl *importStmt
 }
 
-func newTestGenerator(t *ast.TypeSpec) *testGenerator {
+func newTestGenerator(t *ast.TypeSpec, r string) *testGenerator {
 	g := &testGenerator{
 		t:       t,
-		r:       receiverName(t),
+		r:       r,
 		imports: newImportTable(),
 	}
 

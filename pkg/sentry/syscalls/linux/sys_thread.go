@@ -413,8 +413,8 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	si := arch.SignalInfo{
 		Signo: int32(linux.SIGCHLD),
 	}
-	si.SetPid(int32(wr.TID))
-	si.SetUid(int32(wr.UID))
+	si.SetPID(int32(wr.TID))
+	si.SetUID(int32(wr.UID))
 	// TODO(b/73541790): convert kernel.ExitStatus to functions and make
 	// WaitResult.Status a linux.WaitStatus.
 	s := syscall.WaitStatus(wr.Status)

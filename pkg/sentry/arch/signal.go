@@ -152,23 +152,23 @@ func (s *SignalInfo) FixSignalCodeForUser() {
 	}
 }
 
-// Pid returns the si_pid field.
-func (s *SignalInfo) Pid() int32 {
+// PID returns the si_pid field.
+func (s *SignalInfo) PID() int32 {
 	return int32(usermem.ByteOrder.Uint32(s.Fields[0:4]))
 }
 
-// SetPid mutates the si_pid field.
-func (s *SignalInfo) SetPid(val int32) {
+// SetPID mutates the si_pid field.
+func (s *SignalInfo) SetPID(val int32) {
 	usermem.ByteOrder.PutUint32(s.Fields[0:4], uint32(val))
 }
 
-// Uid returns the si_uid field.
-func (s *SignalInfo) Uid() int32 {
+// UID returns the si_uid field.
+func (s *SignalInfo) UID() int32 {
 	return int32(usermem.ByteOrder.Uint32(s.Fields[4:8]))
 }
 
-// SetUid mutates the si_uid field.
-func (s *SignalInfo) SetUid(val int32) {
+// SetUID mutates the si_uid field.
+func (s *SignalInfo) SetUID(val int32) {
 	usermem.ByteOrder.PutUint32(s.Fields[4:8], uint32(val))
 }
 

@@ -259,8 +259,8 @@ func (t *Task) ptraceTrapLocked(code int32) {
 		Signo: int32(linux.SIGTRAP),
 		Code:  code,
 	}
-	t.ptraceSiginfo.SetPid(int32(t.tg.pidns.tids[t]))
-	t.ptraceSiginfo.SetUid(int32(t.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()))
+	t.ptraceSiginfo.SetPID(int32(t.tg.pidns.tids[t]))
+	t.ptraceSiginfo.SetUID(int32(t.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()))
 	if t.beginPtraceStopLocked() {
 		tracer := t.Tracer()
 		tracer.signalStop(t, arch.CLD_TRAPPED, int32(linux.SIGTRAP))

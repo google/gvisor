@@ -70,6 +70,7 @@ func (r *fuseInitRes) UnmarshalBytes(src []byte) {
 		out.MaxPages = uint16(usermem.ByteOrder.Uint16(src[:2]))
 		src = src[2:]
 	}
+	_ = src // Remove unused warning.
 }
 
 // SizeBytes is the size of the payload of the FUSE_INIT response.

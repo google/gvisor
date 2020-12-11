@@ -213,10 +213,11 @@ type sliceAPI struct {
 type marshallableType struct {
 	spec  *ast.TypeSpec
 	slice *sliceAPI
+	recv  string
 }
 
-func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.TypeSpec) marshallableType {
-	mt := marshallableType{
+func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.TypeSpec) *marshallableType {
+	mt := &marshallableType{
 		spec:  spec,
 		slice: nil,
 	}
@@ -261,12 +262,31 @@ func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.Ty
 
 // collectMarshallableTypes walks the parsed AST and collects a list of type
 // declarations for which we need to generate the Marshallable interface.
-func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []marshallableType {
-	var types []marshallableType
+func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) map[*ast.TypeSpec]*marshallableType {
+	recv := make(map[string]string) // Type name to recevier name.
+	types := make(map[*ast.TypeSpec]*marshallableType)
 	for _, decl := range a.Decls {
 		gdecl, ok := decl.(*ast.GenDecl)
 		// Type declaration?
 		if !ok || gdecl.Tok != token.TYPE {
+			// Is this a function declaration? We remember receiver names.
+			d, ok := decl.(*ast.FuncDecl)
+			if ok && d.Recv != nil && len(d.Recv.List) == 1 {
+				// Accept concrete methods & pointer methods.
+				ident, ok := d.Recv.List[0].Type.(*ast.Ident)
+				if !ok {
+					var st *ast.StarExpr
+					st, ok = d.Recv.List[0].Type.(*ast.StarExpr)
+					if ok {
+						ident, ok = st.X.(*ast.Ident)
+					}
+				}
+				// The receiver name may be not present.
+				if ok && len(d.Recv.List[0].Names) == 1 {
+					// Recover the type receiver name in this case.
+					recv[ident.Name] = d.Recv.List[0].Names[0].Name
+				}
+			}
 			debugfAt(f.Position(decl.Pos()), "Skipping declaration since it's not a type declaration.\n")
 			continue
 		}
@@ -305,9 +325,19 @@ func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []ma
 				// don't support it.
 				abortAt(f.Position(t.Pos()), fmt.Sprintf("Marshalling codegen was requested on type '%s', but go-marshal doesn't support this kind of declaration.\n", t.Name))
 			}
-			types = append(types, newMarshallableType(f, tagLine, t))
-
+			types[t] = newMarshallableType(f, tagLine, t)
 		}
+	}
+	// Update the types with the last seen receiver. As long as the
+	// receiver name is consistent for the type, then we will generate
+	// code that is still consistent with itself.
+	for t, mt := range types {
+		r, ok := recv[t.Name.Name]
+		if !ok {
+			mt.recv = receiverName(t) // Default.
+			continue
+		}
+		mt.recv = r // Last seen.
 	}
 	return types
 }
@@ -345,8 +375,8 @@ func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]imp
 
 }
 
-func (g *Generator) generateOne(t marshallableType, fset *token.FileSet) *interfaceGenerator {
-	i := newInterfaceGenerator(t.spec, fset)
+func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *interfaceGenerator {
+	i := newInterfaceGenerator(t.spec, t.recv, fset)
 	switch ty := t.spec.Type.(type) {
 	case *ast.StructType:
 		i.validateStruct(t.spec, ty)
@@ -376,8 +406,8 @@ func (g *Generator) generateOne(t marshallableType, fset *token.FileSet) *interf
 
 // generateOneTestSuite generates a test suite for the automatically generated
 // implementations type t.
-func (g *Generator) generateOneTestSuite(t marshallableType) *testGenerator {
-	i := newTestGenerator(t.spec)
+func (g *Generator) generateOneTestSuite(t *marshallableType) *testGenerator {
+	i := newTestGenerator(t.spec, t.recv)
 	i.emitTests(t.slice)
 	return i
 }

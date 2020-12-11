@@ -52,10 +52,10 @@ func NewTestFile(tb testing.TB) *fs.File {
 
 // Read just fails the request.
 func (*TestFileOperations) Read(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, fmt.Errorf("Readv not implemented")
+	return 0, fmt.Errorf("TestFileOperations.Read not implemented")
 }
 
 // Write just fails the request.
 func (*TestFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, fmt.Errorf("Writev not implemented")
+	return 0, fmt.Errorf("TestFileOperations.Write not implemented")
 }

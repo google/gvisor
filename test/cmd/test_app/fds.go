@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -168,8 +169,8 @@ func (fdr *fdReceiver) Execute(ctx context.Context, f *flag.FlagSet, args ...int
 
 	file := os.NewFile(uintptr(fd), "received file")
 	defer file.Close()
-	if _, err := file.Seek(0, os.SEEK_SET); err != nil {
-		log.Fatalf("Seek(0, 0) failed: %v", err)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		log.Fatalf("Error from seek(0, 0): %v", err)
 	}
 
 	got, err := ioutil.ReadAll(file)

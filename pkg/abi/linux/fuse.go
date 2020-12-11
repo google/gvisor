@@ -19,16 +19,22 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
+// FUSEOpcode is a FUSE operation code.
+//
 // +marshal
 type FUSEOpcode uint32
 
+// FUSEOpID is a FUSE operation ID.
+//
 // +marshal
 type FUSEOpID uint64
 
 // FUSE_ROOT_ID is the id of root inode.
 const FUSE_ROOT_ID = 1
 
-// Opcodes for FUSE operations. Analogous to the opcodes in include/linux/fuse.h.
+// Opcodes for FUSE operations.
+//
+// Analogous to the opcodes in include/linux/fuse.h.
 const (
 	FUSE_LOOKUP   FUSEOpcode = 1
 	FUSE_FORGET              = 2 /* no reply */
