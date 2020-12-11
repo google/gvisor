@@ -239,6 +239,18 @@ func newFileFD(ctx context.Context, t *testing.T, vfsObj *vfs.VirtualFilesystem,
 	return fd, dataSize, err
 }
 
+// newEmptyFileFD creates a new empty file in the verity mount, and returns the FD.
+func newEmptyFileFD(ctx context.Context, t *testing.T, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, filePath string, mode linux.FileMode) (*vfs.FileDescription, error) {
+	// Create the file in the underlying file system.
+	_, err := dentryFromVD(t, root).openLowerAt(ctx, vfsObj, filePath, linux.O_RDWR|linux.O_CREAT|linux.O_EXCL, linux.ModeRegular|mode)
+	if err != nil {
+		return nil, err
+	}
+	// Now open the verity file descriptor.
+	fd, err := openVerityAt(ctx, vfsObj, root, filePath, linux.O_RDONLY, mode)
+	return fd, err
+}
+
 // flipRandomBit randomly flips a bit in the file represented by fd.
 func flipRandomBit(ctx context.Context, fd *vfs.FileDescription, size int) error {
 	randomPos := int64(rand.Intn(size))
@@ -345,6 +357,36 @@ func TestReadUnmodifiedFileSucceeds(t *testing.T) {
 
 		if n != int64(size) {
 			t.Errorf("fd.PRead got read length %d, want %d", n, size)
+		}
+	}
+}
+
+// TestReadUnmodifiedEmptyFileSucceeds ensures that read from an untouched empty verity
+// file succeeds after enabling verity for it.
+func TestReadUnmodifiedEmptyFileSucceeds(t *testing.T) {
+	for _, alg := range hashAlgs {
+		vfsObj, root, ctx, err := newVerityRoot(t, alg)
+		if err != nil {
+			t.Fatalf("newVerityRoot: %v", err)
+		}
+
+		filename := "verity-test-empty-file"
+		fd, err := newEmptyFileFD(ctx, t, vfsObj, root, filename, 0644)
+		if err != nil {
+			t.Fatalf("newEmptyFileFD: %v", err)
+		}
+
+		// Enable verity on the file and confirm a normal read succeeds.
+		enableVerity(ctx, t, fd)
+
+		var buf []byte
+		n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+		if err != nil && err != io.EOF {
+			t.Fatalf("fd.Read: %v", err)
+		}
+
+		if n != 0 {
+			t.Errorf("fd.Read got read length %d, expected 0", n)
 		}
 	}
 }
