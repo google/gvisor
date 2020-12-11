@@ -43,9 +43,14 @@ func BenchmarkRuby(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Failed to parse parameters: %v", err)
 		}
+		requests := b.N
+		if requests < c {
+			b.Logf("b.N is %d must be greater than threads %d. Consider running with --test.benchtime=Nx where N >= %d", b.N, c, c)
+			requests = c
+		}
 		b.Run(name, func(b *testing.B) {
 			hey := &tools.Hey{
-				Requests:    b.N * c, // b.N requests per thread.
+				Requests:    requests,
 				Concurrency: c,
 			}
 			runRuby(b, hey)
