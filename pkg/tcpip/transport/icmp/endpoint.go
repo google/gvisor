@@ -332,8 +332,8 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 }
 
 // Peek only returns data from a single datagram, so do nothing here.
-func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
-	return 0, tcpip.ControlMessages{}, nil
+func (e *endpoint) Peek([][]byte) (int64, *tcpip.Error) {
+	return 0, nil
 }
 
 // SetSockOpt sets a socket option.

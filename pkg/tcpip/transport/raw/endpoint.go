@@ -386,8 +386,8 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 }
 
 // Peek implements tcpip.Endpoint.Peek.
-func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
-	return 0, tcpip.ControlMessages{}, nil
+func (e *endpoint) Peek([][]byte) (int64, *tcpip.Error) {
+	return 0, nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
