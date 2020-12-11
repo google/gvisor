@@ -1,0 +1,10 @@
+# Setup for parallelization with PARTITION and TOTAL_PARTITIONS.
+export PARTITION=${BUILDKITE_PARALLEL_JOB:-0}
+PARTITION=$((${PARTITION}+1)) # 1-indexed, but PARALLEL_JOB is 0-indexed.
+export TOTAL_PARTITIONS=${BUILDKITE_PARALLEL_JOB_COUNT:-1}
+
+# Ensure Docker has experimental enabled.
+if ! grep experimental /etc/docker/daemon.json >/dev/null; then
+  make sudo TARGETS=//runsc:runsc ARGS="install --experimental=true"
+  sudo systemctl reload docker
+fi
