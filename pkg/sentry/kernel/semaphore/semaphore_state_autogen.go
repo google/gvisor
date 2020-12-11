@@ -15,6 +15,7 @@ func (r *Registry) StateFields() []string {
 		"userNS",
 		"semaphores",
 		"lastIDUsed",
+		"indexes",
 	}
 }
 
@@ -25,6 +26,7 @@ func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.userNS)
 	stateSinkObject.Save(1, &r.semaphores)
 	stateSinkObject.Save(2, &r.lastIDUsed)
+	stateSinkObject.Save(3, &r.indexes)
 }
 
 func (r *Registry) afterLoad() {}
@@ -33,6 +35,7 @@ func (r *Registry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.userNS)
 	stateSourceObject.Load(1, &r.semaphores)
 	stateSourceObject.Load(2, &r.lastIDUsed)
+	stateSourceObject.Load(3, &r.indexes)
 }
 
 func (s *Set) StateTypeName() string {
