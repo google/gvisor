@@ -21,6 +21,7 @@ package bigquery
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,6 +110,12 @@ func NewBenchmark(name string, iters int) *Benchmark {
 	return &Benchmark{
 		Name:   name,
 		Metric: make([]*Metric, 0),
+		Condition: []*Condition{
+			{
+				Name:  "iterations",
+				Value: strconv.Itoa(iters),
+			},
+		},
 	}
 }
 
