@@ -67,11 +67,11 @@ copy: ## Copies the given $(TARGETS) to the given $(DESTINATION). E.g. make copy
 .PHONY: copy
 
 run: ## Runs the given $(TARGETS), built with $(OPTIONS), using $(ARGS). E.g. make run TARGETS=runsc ARGS=-version
-	@$(call build,$(TARGETS) $(ARGS))
+	@$(call run,$(TARGETS),$(ARGS))
 .PHONY: run
 
 sudo: ## Runs the given $(TARGETS) as per run, but using "sudo -E". E.g. make sudo TARGETS=test/root:root_test ARGS=-test.v
-	@$(call sudo,$(TARGETS) $(ARGS))
+	@$(call sudo,$(TARGETS),$(ARGS))
 .PHONY: sudo
 
 # Load image helpers.
