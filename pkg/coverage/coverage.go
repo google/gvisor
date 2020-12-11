@@ -27,6 +27,7 @@ import (
 	"io"
 	"sort"
 	"sync/atomic"
+	"testing"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -34,18 +35,28 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/coverdata"
 )
 
-// KcovAvailable returns whether the kcov coverage interface is available. It is
-// available as long as coverage is enabled for some files.
-func KcovAvailable() bool {
-	return len(coverdata.Cover.Blocks) > 0
-}
-
 // coverageMu must be held while accessing coverdata.Cover. This prevents
 // concurrent reads/writes from multiple threads collecting coverage data.
 var coverageMu sync.RWMutex
 
 // once ensures that globalData is only initialized once.
 var once sync.Once
+
+// blockBitLength is the number of bits used to represent coverage block index
+// in a synthetic PC (the rest are used to represent the file index). Even
+// though a PC has 64 bits, we only use the lower 32 bits because some users
+// (e.g., syzkaller) may truncate that address to a 32-bit value.
+//
+// As of this writing, there are ~1200 files that can be instrumented and at
+// most ~1200 blocks per file, so 16 bits is more than enough to represent every
+// file and every block.
+const blockBitLength = 16
+
+// KcovAvailable returns whether the kcov coverage interface is available. It is
+// available as long as coverage is enabled for some files.
+func KcovAvailable() bool {
+	return len(coverdata.Cover.Blocks) > 0
+}
 
 var globalData struct {
 	// files is the set of covered files sorted by filename. It is calculated at
@@ -104,14 +115,14 @@ var coveragePool = sync.Pool{
 // coverage tools, we reset the global coverage data every time this function is
 // run.
 func ConsumeCoverageData(w io.Writer) int {
-	once.Do(initCoverageData)
+	InitCoverageData()
 
 	coverageMu.Lock()
 	defer coverageMu.Unlock()
 
 	total := 0
 	var pcBuffer [8]byte
-	for fileIndex, file := range globalData.files {
+	for fileNum, file := range globalData.files {
 		counters := coverdata.Cover.Counters[file]
 		for index := 0; index < len(counters); index++ {
 			if atomic.LoadUint32(&counters[index]) == 0 {
@@ -119,7 +130,7 @@ func ConsumeCoverageData(w io.Writer) int {
 			}
 			// Non-zero coverage data found; consume it and report as a PC.
 			atomic.StoreUint32(&counters[index], 0)
-			pc := globalData.syntheticPCs[fileIndex][index]
+			pc := globalData.syntheticPCs[fileNum][index]
 			usermem.ByteOrder.PutUint64(pcBuffer[:], pc)
 			n, err := w.Write(pcBuffer[:])
 			if err != nil {
@@ -142,31 +153,84 @@ func ConsumeCoverageData(w io.Writer) int {
 	return total
 }
 
-// initCoverageData initializes globalData. It should only be called once,
-// before any kcov data is written.
-func initCoverageData() {
-	// First, order all files. Then calculate synthetic PCs for every block
-	// (using the well-defined ordering for files as well).
-	for file := range coverdata.Cover.Blocks {
-		globalData.files = append(globalData.files, file)
-	}
-	sort.Strings(globalData.files)
-
-	// nextSyntheticPC is the first PC that we generate for a block.
-	//
-	// This uses a standard-looking kernel range for simplicity.
-	//
-	// FIXME(b/160639712): This is only necessary because syzkaller requires
-	// addresses in the kernel range. If we can remove this constraint, then we
-	// should be able to use the actual addresses.
-	var nextSyntheticPC uint64 = 0xffffffff80000000
-	for _, file := range globalData.files {
-		blocks := coverdata.Cover.Blocks[file]
-		thisFile := make([]uint64, 0, len(blocks))
-		for range blocks {
-			thisFile = append(thisFile, nextSyntheticPC)
-			nextSyntheticPC++ // Advance.
+// InitCoverageData initializes globalData. It should be called before any kcov
+// data is written.
+func InitCoverageData() {
+	once.Do(func() {
+		// First, order all files. Then calculate synthetic PCs for every block
+		// (using the well-defined ordering for files as well).
+		for file := range coverdata.Cover.Blocks {
+			globalData.files = append(globalData.files, file)
 		}
-		globalData.syntheticPCs = append(globalData.syntheticPCs, thisFile)
+		sort.Strings(globalData.files)
+
+		for fileNum, file := range globalData.files {
+			blocks := coverdata.Cover.Blocks[file]
+			pcs := make([]uint64, 0, len(blocks))
+			for blockNum := range blocks {
+				pcs = append(pcs, calculateSyntheticPC(fileNum, blockNum))
+			}
+			globalData.syntheticPCs = append(globalData.syntheticPCs, pcs)
+		}
+	})
+}
+
+// Symbolize prints information about the block corresponding to pc.
+func Symbolize(out io.Writer, pc uint64) error {
+	fileNum, blockNum := syntheticPCToIndexes(pc)
+	file, err := fileFromIndex(fileNum)
+	if err != nil {
+		return err
 	}
+	block, err := blockFromIndex(file, blockNum)
+	if err != nil {
+		return err
+	}
+	writeBlock(out, pc, file, block)
+	return nil
+}
+
+// WriteAllBlocks prints all information about all blocks along with their
+// corresponding synthetic PCs.
+func WriteAllBlocks(out io.Writer) {
+	for fileNum, file := range globalData.files {
+		for blockNum, block := range coverdata.Cover.Blocks[file] {
+			writeBlock(out, calculateSyntheticPC(fileNum, blockNum), file, block)
+		}
+	}
+}
+
+func calculateSyntheticPC(fileNum int, blockNum int) uint64 {
+	return (uint64(fileNum) << blockBitLength) + uint64(blockNum)
+}
+
+func syntheticPCToIndexes(pc uint64) (fileNum int, blockNum int) {
+	return int(pc >> blockBitLength), int(pc & ((1 << blockBitLength) - 1))
+}
+
+// fileFromIndex returns the name of the file in the sorted list of instrumented files.
+func fileFromIndex(i int) (string, error) {
+	total := len(globalData.files)
+	if i < 0 || i >= total {
+		return "", fmt.Errorf("file index out of range: [%d] with length %d", i, total)
+	}
+	return globalData.files[i], nil
+}
+
+// blockFromIndex returns the i-th block in the given file.
+func blockFromIndex(file string, i int) (testing.CoverBlock, error) {
+	blocks, ok := coverdata.Cover.Blocks[file]
+	if !ok {
+		return testing.CoverBlock{}, fmt.Errorf("instrumented file %s does not exist", file)
+	}
+	total := len(blocks)
+	if i < 0 || i >= total {
+		return testing.CoverBlock{}, fmt.Errorf("block index out of range: [%d] with length %d", i, total)
+	}
+	return blocks[i], nil
+}
+
+func writeBlock(out io.Writer, pc uint64, file string, block testing.CoverBlock) {
+	io.WriteString(out, fmt.Sprintf("%#x\n", pc))
+	io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", file, block.Line0, block.Col0, block.Line1, block.Col1))
 }
