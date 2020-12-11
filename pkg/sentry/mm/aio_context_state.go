@@ -15,6 +15,6 @@
 package mm
 
 // afterLoad is invoked by stateify.
-func (a *AIOContext) afterLoad() {
-	a.requestReady = make(chan struct{}, 1)
+func (ctx *AIOContext) afterLoad() {
+	ctx.requestReady = make(chan struct{}, 1)
 }

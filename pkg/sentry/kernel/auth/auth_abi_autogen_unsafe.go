@@ -19,179 +19,179 @@ var _ marshal.Marshallable = (*UID)(nil)
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 //go:nosplit
-func (u *UID) SizeBytes() int {
+func (uid *UID) SizeBytes() int {
     return 4
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (u *UID) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(*u))
+func (uid *UID) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(*uid))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (u *UID) UnmarshalBytes(src []byte) {
-    *u = UID(uint32(usermem.ByteOrder.Uint32(src[:4])))
+func (uid *UID) UnmarshalBytes(src []byte) {
+    *uid = UID(uint32(usermem.ByteOrder.Uint32(src[:4])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (u *UID) Packed() bool {
+func (uid *UID) Packed() bool {
     // Scalar newtypes are always packed.
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (u *UID) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
+func (uid *UID) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(uid))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (u *UID) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
+func (uid *UID) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(uid), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (u *UID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (uid *UID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(uid)))
+    hdr.Len = uid.SizeBytes()
+    hdr.Cap = uid.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that uid
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(uid) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (u *UID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return u.CopyOutN(cc, addr, u.SizeBytes())
+func (uid *UID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return uid.CopyOutN(cc, addr, uid.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (u *UID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (uid *UID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(uid)))
+    hdr.Len = uid.SizeBytes()
+    hdr.Cap = uid.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that uid
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(uid) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (u *UID) WriteTo(w io.Writer) (int64, error) {
+func (uid *UID) WriteTo(w io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(uid)))
+    hdr.Len = uid.SizeBytes()
+    hdr.Cap = uid.SizeBytes()
 
     length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that uid
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(uid) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 //go:nosplit
-func (g *GID) SizeBytes() int {
+func (gid *GID) SizeBytes() int {
     return 4
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (g *GID) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(*g))
+func (gid *GID) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(*gid))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (g *GID) UnmarshalBytes(src []byte) {
-    *g = GID(uint32(usermem.ByteOrder.Uint32(src[:4])))
+func (gid *GID) UnmarshalBytes(src []byte) {
+    *gid = GID(uint32(usermem.ByteOrder.Uint32(src[:4])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (g *GID) Packed() bool {
+func (gid *GID) Packed() bool {
     // Scalar newtypes are always packed.
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (g *GID) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(g))
+func (gid *GID) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(gid))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (g *GID) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(g), src)
+func (gid *GID) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(gid), src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (g *GID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (gid *GID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(gid)))
+    hdr.Len = gid.SizeBytes()
+    hdr.Cap = gid.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that g
+    // Since we bypassed the compiler's escape analysis, indicate that gid
     // must live until the use above.
-    runtime.KeepAlive(g) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(gid) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (g *GID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return g.CopyOutN(cc, addr, g.SizeBytes())
+func (gid *GID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return gid.CopyOutN(cc, addr, gid.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (g *GID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (gid *GID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(gid)))
+    hdr.Len = gid.SizeBytes()
+    hdr.Cap = gid.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that g
+    // Since we bypassed the compiler's escape analysis, indicate that gid
     // must live until the use above.
-    runtime.KeepAlive(g) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(gid) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (g *GID) WriteTo(w io.Writer) (int64, error) {
+func (gid *GID) WriteTo(w io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(gid)))
+    hdr.Len = gid.SizeBytes()
+    hdr.Cap = gid.SizeBytes()
 
     length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that g
+    // Since we bypassed the compiler's escape analysis, indicate that gid
     // must live until the use above.
-    runtime.KeepAlive(g) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(gid) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 

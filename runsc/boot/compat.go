@@ -53,7 +53,7 @@ type compatEmitter struct {
 func newCompatEmitter(logFD int) (*compatEmitter, error) {
 	nameMap, ok := getSyscallNameMap()
 	if !ok {
-		return nil, fmt.Errorf("Linux syscall table not found")
+		return nil, fmt.Errorf("syscall table not found")
 	}
 
 	c := &compatEmitter{

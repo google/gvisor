@@ -55,11 +55,11 @@ func (i *ioResult) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &i.ioEntry)
 }
 
-func (a *AIOContext) StateTypeName() string {
+func (ctx *AIOContext) StateTypeName() string {
 	return "pkg/sentry/mm.AIOContext"
 }
 
-func (a *AIOContext) StateFields() []string {
+func (ctx *AIOContext) StateFields() []string {
 	return []string{
 		"results",
 		"maxOutstanding",
@@ -67,23 +67,23 @@ func (a *AIOContext) StateFields() []string {
 	}
 }
 
-func (a *AIOContext) beforeSave() {}
+func (ctx *AIOContext) beforeSave() {}
 
-func (a *AIOContext) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	if !state.IsZeroValue(&a.dead) {
-		state.Failf("dead is %#v, expected zero", &a.dead)
+func (ctx *AIOContext) StateSave(stateSinkObject state.Sink) {
+	ctx.beforeSave()
+	if !state.IsZeroValue(&ctx.dead) {
+		state.Failf("dead is %#v, expected zero", &ctx.dead)
 	}
-	stateSinkObject.Save(0, &a.results)
-	stateSinkObject.Save(1, &a.maxOutstanding)
-	stateSinkObject.Save(2, &a.outstanding)
+	stateSinkObject.Save(0, &ctx.results)
+	stateSinkObject.Save(1, &ctx.maxOutstanding)
+	stateSinkObject.Save(2, &ctx.outstanding)
 }
 
-func (a *AIOContext) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.results)
-	stateSourceObject.Load(1, &a.maxOutstanding)
-	stateSourceObject.Load(2, &a.outstanding)
-	stateSourceObject.AfterLoad(a.afterLoad)
+func (ctx *AIOContext) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ctx.results)
+	stateSourceObject.Load(1, &ctx.maxOutstanding)
+	stateSourceObject.Load(2, &ctx.outstanding)
+	stateSourceObject.AfterLoad(ctx.afterLoad)
 }
 
 func (m *aioMappable) StateTypeName() string {

@@ -167,7 +167,7 @@ func (rw *IOReadWriter) Read(dst []byte) (int, error) {
 	return n, err
 }
 
-// Writer implements io.Writer.Write.
+// Write implements io.Writer.Write.
 func (rw *IOReadWriter) Write(src []byte) (int, error) {
 	n, err := rw.IO.CopyOut(rw.Ctx, rw.Addr, src, rw.Opts)
 	end, ok := rw.Addr.AddLength(uint64(n))
