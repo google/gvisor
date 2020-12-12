@@ -54,11 +54,6 @@ func (r *MountNamespaceRefs) LogRefs() bool {
 	return MountNamespaceenableLogging
 }
 
-// EnableLeakCheck enables reference leak checking on r.
-func (r *MountNamespaceRefs) EnableLeakCheck() {
-	refsvfs2.Register(r)
-}
-
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
 func (r *MountNamespaceRefs) ReadRefs() int64 {
@@ -115,7 +110,7 @@ func (r *MountNamespaceRefs) TryIncRef() bool {
 func (r *MountNamespaceRefs) DecRef(destroy func()) {
 	v := atomic.AddInt64(&r.refCount, -1)
 	if MountNamespaceenableLogging {
-		refsvfs2.LogDecRef(r, v+1)
+		refsvfs2.LogDecRef(r, v)
 	}
 	switch {
 	case v < 0:
@@ -132,6 +127,6 @@ func (r *MountNamespaceRefs) DecRef(destroy func()) {
 
 func (r *MountNamespaceRefs) afterLoad() {
 	if r.ReadRefs() > 0 {
-		r.EnableLeakCheck()
+		refsvfs2.Register(r)
 	}
 }

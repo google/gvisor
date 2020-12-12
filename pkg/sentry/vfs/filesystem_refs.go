@@ -54,11 +54,6 @@ func (r *FilesystemRefs) LogRefs() bool {
 	return FilesystemenableLogging
 }
 
-// EnableLeakCheck enables reference leak checking on r.
-func (r *FilesystemRefs) EnableLeakCheck() {
-	refsvfs2.Register(r)
-}
-
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
 func (r *FilesystemRefs) ReadRefs() int64 {
@@ -115,7 +110,7 @@ func (r *FilesystemRefs) TryIncRef() bool {
 func (r *FilesystemRefs) DecRef(destroy func()) {
 	v := atomic.AddInt64(&r.refCount, -1)
 	if FilesystemenableLogging {
-		refsvfs2.LogDecRef(r, v+1)
+		refsvfs2.LogDecRef(r, v)
 	}
 	switch {
 	case v < 0:
@@ -132,6 +127,6 @@ func (r *FilesystemRefs) DecRef(destroy func()) {
 
 func (r *FilesystemRefs) afterLoad() {
 	if r.ReadRefs() > 0 {
-		r.EnableLeakCheck()
+		refsvfs2.Register(r)
 	}
 }
