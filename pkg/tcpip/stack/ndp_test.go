@@ -577,11 +577,11 @@ func rxNDPSolicit(e *channel.Endpoint, tgt tcpip.Address) {
 	payloadLength := hdr.UsedLength()
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength: uint16(payloadLength),
-		NextHeader:    uint8(icmp.ProtocolNumber6),
-		HopLimit:      255,
-		SrcAddr:       header.IPv6Any,
-		DstAddr:       snmc,
+		PayloadLength:     uint16(payloadLength),
+		TransportProtocol: icmp.ProtocolNumber6,
+		HopLimit:          255,
+		SrcAddr:           header.IPv6Any,
+		DstAddr:           snmc,
 	})
 	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: hdr.View().ToVectorisedView()}))
 }
@@ -623,11 +623,11 @@ func TestDADFail(t *testing.T) {
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(payloadLength),
-					NextHeader:    uint8(icmp.ProtocolNumber6),
-					HopLimit:      255,
-					SrcAddr:       tgt,
-					DstAddr:       header.IPv6AllNodesMulticastAddress,
+					PayloadLength:     uint16(payloadLength),
+					TransportProtocol: icmp.ProtocolNumber6,
+					HopLimit:          255,
+					SrcAddr:           tgt,
+					DstAddr:           header.IPv6AllNodesMulticastAddress,
 				})
 				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: hdr.View().ToVectorisedView()}))
 			},
@@ -1011,11 +1011,11 @@ func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherCo
 	payloadLength := hdr.UsedLength()
 	iph := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	iph.Encode(&header.IPv6Fields{
-		PayloadLength: uint16(payloadLength),
-		NextHeader:    uint8(icmp.ProtocolNumber6),
-		HopLimit:      header.NDPHopLimit,
-		SrcAddr:       ip,
-		DstAddr:       header.IPv6AllNodesMulticastAddress,
+		PayloadLength:     uint16(payloadLength),
+		TransportProtocol: icmp.ProtocolNumber6,
+		HopLimit:          header.NDPHopLimit,
+		SrcAddr:           ip,
+		DstAddr:           header.IPv6AllNodesMulticastAddress,
 	})
 
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{

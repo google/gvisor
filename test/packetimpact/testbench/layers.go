@@ -505,13 +505,13 @@ func (l *IPv6) ToBytes() ([]byte, error) {
 		}
 	}
 	if l.NextHeader != nil {
-		fields.NextHeader = *l.NextHeader
+		fields.TransportProtocol = tcpip.TransportProtocolNumber(*l.NextHeader)
 	} else {
 		nh, err := nextHeaderByLayer(l.next())
 		if err != nil {
 			return nil, err
 		}
-		fields.NextHeader = nh
+		fields.TransportProtocol = tcpip.TransportProtocolNumber(nh)
 	}
 	if l.HopLimit != nil {
 		fields.HopLimit = *l.HopLimit

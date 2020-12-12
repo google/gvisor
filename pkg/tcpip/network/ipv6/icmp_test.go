@@ -296,11 +296,11 @@ func TestICMPCounts(t *testing.T) {
 				})
 				ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(len(icmp)),
-					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-					HopLimit:      header.NDPHopLimit,
-					SrcAddr:       lladdr1,
-					DstAddr:       lladdr0,
+					PayloadLength:     uint16(len(icmp)),
+					TransportProtocol: header.ICMPv6ProtocolNumber,
+					HopLimit:          header.NDPHopLimit,
+					SrcAddr:           lladdr1,
+					DstAddr:           lladdr0,
 				})
 				ep.HandlePacket(pkt)
 			}
@@ -454,11 +454,11 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 		})
 		ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: uint16(len(icmp)),
-			NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-			HopLimit:      header.NDPHopLimit,
-			SrcAddr:       lladdr1,
-			DstAddr:       lladdr0,
+			PayloadLength:     uint16(len(icmp)),
+			TransportProtocol: header.ICMPv6ProtocolNumber,
+			HopLimit:          header.NDPHopLimit,
+			SrcAddr:           lladdr1,
+			DstAddr:           lladdr0,
 		})
 		ep.HandlePacket(pkt)
 	}
@@ -853,11 +853,11 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 							}
 							ip := header.IPv6(buffer.NewView(header.IPv6MinimumSize))
 							ip.Encode(&header.IPv6Fields{
-								PayloadLength: uint16(len(icmp)),
-								NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-								HopLimit:      header.NDPHopLimit,
-								SrcAddr:       lladdr1,
-								DstAddr:       lladdr0,
+								PayloadLength:     uint16(len(icmp)),
+								TransportProtocol: header.ICMPv6ProtocolNumber,
+								HopLimit:          header.NDPHopLimit,
+								SrcAddr:           lladdr1,
+								DstAddr:           lladdr0,
 							})
 							pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 								Data: buffer.NewVectorisedView(len(ip)+len(icmp), []buffer.View{buffer.View(ip), buffer.View(icmp)}),
@@ -930,11 +930,11 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 	errorICMPBody := func(view buffer.View) {
 		ip := header.IPv6(view)
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: simpleBodySize,
-			NextHeader:    10,
-			HopLimit:      20,
-			SrcAddr:       lladdr0,
-			DstAddr:       lladdr1,
+			PayloadLength:     simpleBodySize,
+			TransportProtocol: 10,
+			HopLimit:          20,
+			SrcAddr:           lladdr0,
+			DstAddr:           lladdr1,
 		})
 		simpleBody(view[header.IPv6MinimumSize:])
 	}
@@ -1048,11 +1048,11 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(icmpSize),
-					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-					HopLimit:      header.NDPHopLimit,
-					SrcAddr:       lladdr1,
-					DstAddr:       lladdr0,
+					PayloadLength:     uint16(icmpSize),
+					TransportProtocol: header.ICMPv6ProtocolNumber,
+					HopLimit:          header.NDPHopLimit,
+					SrcAddr:           lladdr1,
+					DstAddr:           lladdr0,
 				})
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
@@ -1108,11 +1108,11 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 	errorICMPBody := func(view buffer.View) {
 		ip := header.IPv6(view)
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: simpleBodySize,
-			NextHeader:    10,
-			HopLimit:      20,
-			SrcAddr:       lladdr0,
-			DstAddr:       lladdr1,
+			PayloadLength:     simpleBodySize,
+			TransportProtocol: 10,
+			HopLimit:          20,
+			SrcAddr:           lladdr0,
+			DstAddr:           lladdr1,
 		})
 		simpleBody(view[header.IPv6MinimumSize:])
 	}
@@ -1227,11 +1227,11 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(size + payloadSize),
-					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-					HopLimit:      header.NDPHopLimit,
-					SrcAddr:       lladdr1,
-					DstAddr:       lladdr0,
+					PayloadLength:     uint16(size + payloadSize),
+					TransportProtocol: header.ICMPv6ProtocolNumber,
+					HopLimit:          header.NDPHopLimit,
+					SrcAddr:           lladdr1,
+					DstAddr:           lladdr0,
 				})
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: buffer.NewVectorisedView(header.IPv6MinimumSize+size+payloadSize, []buffer.View{hdr.View(), payload}),
@@ -1445,11 +1445,11 @@ func TestPacketQueing(t *testing.T) {
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(payloadLength),
-					NextHeader:    uint8(udp.ProtocolNumber),
-					HopLimit:      DefaultTTL,
-					SrcAddr:       host2IPv6Addr.AddressWithPrefix.Address,
-					DstAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+					PayloadLength:     uint16(payloadLength),
+					TransportProtocol: udp.ProtocolNumber,
+					HopLimit:          DefaultTTL,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
@@ -1487,11 +1487,11 @@ func TestPacketQueing(t *testing.T) {
 				pkt.SetChecksum(header.ICMPv6Checksum(pkt, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, buffer.VectorisedView{}))
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: header.ICMPv6MinimumSize,
-					NextHeader:    uint8(icmp.ProtocolNumber6),
-					HopLimit:      DefaultTTL,
-					SrcAddr:       host2IPv6Addr.AddressWithPrefix.Address,
-					DstAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+					PayloadLength:     header.ICMPv6MinimumSize,
+					TransportProtocol: icmp.ProtocolNumber6,
+					HopLimit:          DefaultTTL,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
@@ -1586,11 +1586,11 @@ func TestPacketQueing(t *testing.T) {
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(payloadLength),
-					NextHeader:    uint8(icmp.ProtocolNumber6),
-					HopLimit:      header.NDPHopLimit,
-					SrcAddr:       host2IPv6Addr.AddressWithPrefix.Address,
-					DstAddr:       host1IPv6Addr.AddressWithPrefix.Address,
+					PayloadLength:     uint16(payloadLength),
+					TransportProtocol: icmp.ProtocolNumber6,
+					HopLimit:          header.NDPHopLimit,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
@@ -1828,11 +1828,11 @@ func TestCallsToNeighborCache(t *testing.T) {
 			})
 			ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength: uint16(len(icmp)),
-				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-				HopLimit:      header.NDPHopLimit,
-				SrcAddr:       test.source,
-				DstAddr:       test.destination,
+				PayloadLength:     uint16(len(icmp)),
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          header.NDPHopLimit,
+				SrcAddr:           test.source,
+				DstAddr:           test.destination,
 			})
 			ep.HandlePacket(pkt)
 

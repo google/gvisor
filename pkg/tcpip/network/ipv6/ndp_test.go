@@ -213,11 +213,11 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength: uint16(payloadLength),
-				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-				HopLimit:      255,
-				SrcAddr:       lladdr1,
-				DstAddr:       lladdr0,
+				PayloadLength:     uint16(payloadLength),
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          255,
+				SrcAddr:           lladdr1,
+				DstAddr:           lladdr0,
 			})
 
 			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
@@ -319,11 +319,11 @@ func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testi
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength: uint16(payloadLength),
-				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-				HopLimit:      255,
-				SrcAddr:       lladdr1,
-				DstAddr:       lladdr0,
+				PayloadLength:     uint16(payloadLength),
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          255,
+				SrcAddr:           lladdr1,
+				DstAddr:           lladdr0,
 			})
 
 			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
@@ -599,11 +599,11 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 					payloadLength := hdr.UsedLength()
 					ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 					ip.Encode(&header.IPv6Fields{
-						PayloadLength: uint16(payloadLength),
-						NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-						HopLimit:      255,
-						SrcAddr:       test.nsSrc,
-						DstAddr:       test.nsDst,
+						PayloadLength:     uint16(payloadLength),
+						TransportProtocol: header.ICMPv6ProtocolNumber,
+						HopLimit:          255,
+						SrcAddr:           test.nsSrc,
+						DstAddr:           test.nsDst,
 					})
 
 					invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
@@ -681,11 +681,11 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 						payloadLength := hdr.UsedLength()
 						ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 						ip.Encode(&header.IPv6Fields{
-							PayloadLength: uint16(payloadLength),
-							NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-							HopLimit:      header.NDPHopLimit,
-							SrcAddr:       test.nsSrc,
-							DstAddr:       nicAddr,
+							PayloadLength:     uint16(payloadLength),
+							TransportProtocol: header.ICMPv6ProtocolNumber,
+							HopLimit:          header.NDPHopLimit,
+							SrcAddr:           test.nsSrc,
+							DstAddr:           nicAddr,
 						})
 						e.InjectLinkAddr(ProtocolNumber, "", stack.NewPacketBuffer(stack.PacketBufferOptions{
 							Data: hdr.View().ToVectorisedView(),
@@ -785,11 +785,11 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength: uint16(payloadLength),
-				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-				HopLimit:      255,
-				SrcAddr:       lladdr1,
-				DstAddr:       lladdr0,
+				PayloadLength:     uint16(payloadLength),
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          255,
+				SrcAddr:           lladdr1,
+				DstAddr:           lladdr0,
 			})
 
 			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
@@ -898,11 +898,11 @@ func TestNeighorAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *test
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength: uint16(payloadLength),
-				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-				HopLimit:      255,
-				SrcAddr:       lladdr1,
-				DstAddr:       lladdr0,
+				PayloadLength:     uint16(payloadLength),
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          255,
+				SrcAddr:           lladdr1,
+				DstAddr:           lladdr0,
 			})
 
 			invalid := s.Stats().ICMP.V6.PacketsReceived.Invalid
@@ -979,29 +979,25 @@ func TestNDPValidation(t *testing.T) {
 			}
 
 			handleIPv6Payload := func(payload buffer.View, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint) {
-				nextHdr := uint8(header.ICMPv6ProtocolNumber)
-				var extensions buffer.View
+				var extHdrs header.IPv6ExtHdrSerializer
 				if atomicFragment {
-					extensions = buffer.NewView(header.IPv6FragmentExtHdrLength)
-					extensions[0] = nextHdr
-					nextHdr = uint8(header.IPv6FragmentExtHdrIdentifier)
+					extHdrs = append(extHdrs, &header.IPv6SerializableFragmentExtHdr{})
 				}
+				extHdrsLen := extHdrs.Length()
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					ReserveHeaderBytes: header.IPv6MinimumSize + len(extensions),
+					ReserveHeaderBytes: header.IPv6MinimumSize + extHdrsLen,
 					Data:               payload.ToVectorisedView(),
 				})
-				ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + len(extensions)))
+				ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(len(payload) + len(extensions)),
-					NextHeader:    nextHdr,
-					HopLimit:      hopLimit,
-					SrcAddr:       lladdr1,
-					DstAddr:       lladdr0,
+					PayloadLength:     uint16(len(payload) + extHdrsLen),
+					TransportProtocol: header.ICMPv6ProtocolNumber,
+					HopLimit:          hopLimit,
+					SrcAddr:           lladdr1,
+					DstAddr:           lladdr0,
+					ExtensionHeaders:  extHdrs,
 				})
-				if n := copy(ip[header.IPv6MinimumSize:], extensions); n != len(extensions) {
-					t.Fatalf("expected to write %d bytes of extensions, but wrote %d", len(extensions), n)
-				}
 				ep.HandlePacket(pkt)
 			}
 
@@ -1351,11 +1347,11 @@ func TestRouterAdvertValidation(t *testing.T) {
 					pkt.SetChecksum(header.ICMPv6Checksum(pkt, test.src, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
 					ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 					ip.Encode(&header.IPv6Fields{
-						PayloadLength: uint16(payloadLength),
-						NextHeader:    uint8(icmp.ProtocolNumber6),
-						HopLimit:      test.hopLimit,
-						SrcAddr:       test.src,
-						DstAddr:       header.IPv6AllNodesMulticastAddress,
+						PayloadLength:     uint16(payloadLength),
+						TransportProtocol: icmp.ProtocolNumber6,
+						HopLimit:          test.hopLimit,
+						SrcAddr:           test.src,
+						DstAddr:           header.IPv6AllNodesMulticastAddress,
 					})
 
 					stats := s.Stats().ICMP.V6.PacketsReceived

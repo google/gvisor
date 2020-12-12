@@ -69,11 +69,11 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 	payloadLength := hdr.UsedLength()
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength: uint16(payloadLength),
-		NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-		HopLimit:      255,
-		SrcAddr:       src,
-		DstAddr:       dst,
+		PayloadLength:     uint16(payloadLength),
+		TransportProtocol: header.ICMPv6ProtocolNumber,
+		HopLimit:          255,
+		SrcAddr:           src,
+		DstAddr:           dst,
 	})
 
 	e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -127,11 +127,11 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 	payloadLength := hdr.UsedLength()
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength: uint16(payloadLength),
-		NextHeader:    uint8(udp.ProtocolNumber),
-		HopLimit:      255,
-		SrcAddr:       src,
-		DstAddr:       dst,
+		PayloadLength:     uint16(payloadLength),
+		TransportProtocol: udp.ProtocolNumber,
+		HopLimit:          255,
+		SrcAddr:           src,
+		DstAddr:           dst,
 	})
 
 	e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -915,10 +915,12 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength: uint16(payloadLength),
-				NextHeader:    ipv6NextHdr,
-				HopLimit:      255,
-				SrcAddr:       addr1,
-				DstAddr:       dstAddr,
+				// We're lying about transport protocol here to be able to generate
+				// raw extension headers from the test definitions.
+				TransportProtocol: tcpip.TransportProtocolNumber(ipv6NextHdr),
+				HopLimit:          255,
+				SrcAddr:           addr1,
+				DstAddr:           dstAddr,
 			})
 
 			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -1947,10 +1949,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
 					PayloadLength: uint16(f.data.Size()),
-					NextHeader:    f.nextHdr,
-					HopLimit:      255,
-					SrcAddr:       f.srcAddr,
-					DstAddr:       f.dstAddr,
+					// We're lying about transport protocol here so that we can generate
+					// raw extension headers for the tests.
+					TransportProtocol: tcpip.TransportProtocolNumber(f.nextHdr),
+					HopLimit:          255,
+					SrcAddr:           f.srcAddr,
+					DstAddr:           f.dstAddr,
 				})
 
 				vv := hdr.View().ToVectorisedView()
@@ -1995,7 +1999,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 
 	type fragmentData struct {
 		ipv6Fields         header.IPv6Fields
-		ipv6FragmentFields header.IPv6FragmentFields
+		ipv6FragmentFields header.IPv6SerializableFragmentExtHdr
 		payload            []byte
 	}
 
@@ -2014,14 +2018,13 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: header.IPv6FragmentHeaderSize + 9,
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     header.IPv6FragmentHeaderSize + 9,
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 0 >> 3,
 						M:              true,
 						Identification: ident,
@@ -2041,14 +2044,13 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: header.IPv6FragmentHeaderSize + 16,
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     header.IPv6FragmentHeaderSize + 16,
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: ((header.IPv6MaximumPayloadSize + 1) - 16) >> 3,
 						M:              false,
 						Identification: ident,
@@ -2089,10 +2091,9 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
 
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize))
-				ip.Encode(&f.ipv6Fields)
-
-				fragHDR := header.IPv6Fragment(hdr.View()[header.IPv6MinimumSize:])
-				fragHDR.Encode(&f.ipv6FragmentFields)
+				encodeArgs := f.ipv6Fields
+				encodeArgs.ExtensionHeaders = append(encodeArgs.ExtensionHeaders, &f.ipv6FragmentFields)
+				ip.Encode(&encodeArgs)
 
 				vv := hdr.View().ToVectorisedView()
 				vv.AppendView(f.payload)
@@ -2154,7 +2155,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 	type fragmentData struct {
 		ipv6Fields         header.IPv6Fields
-		ipv6FragmentFields header.IPv6FragmentFields
+		ipv6FragmentFields header.IPv6SerializableFragmentExtHdr
 		payload            []byte
 	}
 
@@ -2168,14 +2169,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: header.IPv6FragmentHeaderSize + 16,
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     header.IPv6FragmentHeaderSize + 16,
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 0,
 						M:              true,
 						Identification: ident,
@@ -2190,14 +2190,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: header.IPv6FragmentHeaderSize + 16,
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     header.IPv6FragmentHeaderSize + 16,
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 0,
 						M:              true,
 						Identification: ident,
@@ -2206,14 +2205,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				},
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: header.IPv6FragmentHeaderSize + 16,
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     header.IPv6FragmentHeaderSize + 16,
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 0,
 						M:              true,
 						Identification: ident,
@@ -2228,14 +2226,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 8,
 						M:              false,
 						Identification: ident,
@@ -2250,14 +2247,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: header.IPv6FragmentHeaderSize + 16,
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     header.IPv6FragmentHeaderSize + 16,
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 0,
 						M:              true,
 						Identification: ident,
@@ -2266,14 +2262,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				},
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 8,
 						M:              false,
 						Identification: ident,
@@ -2288,14 +2283,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			fragments: []fragmentData{
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     uint16(header.IPv6FragmentHeaderSize + len(data) - 16),
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 8,
 						M:              false,
 						Identification: ident,
@@ -2304,14 +2298,13 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				},
 				{
 					ipv6Fields: header.IPv6Fields{
-						PayloadLength: header.IPv6FragmentHeaderSize + 16,
-						NextHeader:    header.IPv6FragmentHeader,
-						HopLimit:      hoplimit,
-						SrcAddr:       addr1,
-						DstAddr:       addr2,
+						PayloadLength:     header.IPv6FragmentHeaderSize + 16,
+						TransportProtocol: header.UDPProtocolNumber,
+						HopLimit:          hoplimit,
+						SrcAddr:           addr1,
+						DstAddr:           addr2,
 					},
-					ipv6FragmentFields: header.IPv6FragmentFields{
-						NextHeader:     uint8(header.UDPProtocolNumber),
+					ipv6FragmentFields: header.IPv6SerializableFragmentExtHdr{
 						FragmentOffset: 0,
 						M:              true,
 						Identification: ident,
@@ -2350,10 +2343,11 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
 
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize))
-				ip.Encode(&f.ipv6Fields)
+				encodeArgs := f.ipv6Fields
+				encodeArgs.ExtensionHeaders = append(encodeArgs.ExtensionHeaders, &f.ipv6FragmentFields)
+				ip.Encode(&encodeArgs)
 
 				fragHDR := header.IPv6Fragment(hdr.View()[header.IPv6MinimumSize:])
-				fragHDR.Encode(&f.ipv6FragmentFields)
 
 				vv := hdr.View().ToVectorisedView()
 				vv.AppendView(f.payload)
@@ -2994,11 +2988,11 @@ func TestForwarding(t *testing.T) {
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, remoteIPv6Addr1, remoteIPv6Addr2, buffer.VectorisedView{}))
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength: header.ICMPv6MinimumSize,
-				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-				HopLimit:      test.TTL,
-				SrcAddr:       remoteIPv6Addr1,
-				DstAddr:       remoteIPv6Addr2,
+				PayloadLength:     header.ICMPv6MinimumSize,
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          test.TTL,
+				SrcAddr:           remoteIPv6Addr1,
+				DstAddr:           remoteIPv6Addr2,
 			})
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
