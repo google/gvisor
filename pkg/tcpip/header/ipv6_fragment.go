@@ -27,12 +27,11 @@ const (
 	idV6        = 4
 )
 
-// IPv6FragmentFields contains the fields of an IPv6 fragment. It is used to describe the
-// fields of a packet that needs to be encoded.
-type IPv6FragmentFields struct {
-	// NextHeader is the "next header" field of an IPv6 fragment.
-	NextHeader uint8
+var _ IPv6SerializableExtHdr = (*IPv6SerializableFragmentExtHdr)(nil)
 
+// IPv6SerializableFragmentExtHdr is used to serialize an IPv6 fragment
+// extension header as defined in RFC 8200 section 4.5.
+type IPv6SerializableFragmentExtHdr struct {
 	// FragmentOffset is the "fragment offset" field of an IPv6 fragment.
 	FragmentOffset uint16
 
@@ -41,6 +40,29 @@ type IPv6FragmentFields struct {
 
 	// Identification is the "identification" field of an IPv6 fragment.
 	Identification uint32
+}
+
+// identifier implements IPv6SerializableFragmentExtHdr.
+func (h *IPv6SerializableFragmentExtHdr) identifier() IPv6ExtensionHeaderIdentifier {
+	return IPv6FragmentHeader
+}
+
+// length implements IPv6SerializableFragmentExtHdr.
+func (h *IPv6SerializableFragmentExtHdr) length() int {
+	return IPv6FragmentHeaderSize
+}
+
+// serializeInto implements IPv6SerializableFragmentExtHdr.
+func (h *IPv6SerializableFragmentExtHdr) serializeInto(nextHeader uint8, b []byte) int {
+	// Prevent too many bounds checks.
+	_ = b[IPv6FragmentHeaderSize:]
+	binary.BigEndian.PutUint32(b[idV6:], h.Identification)
+	binary.BigEndian.PutUint16(b[fragOff:], h.FragmentOffset<<ipv6FragmentExtHdrFragmentOffsetShift)
+	b[nextHdrFrag] = nextHeader
+	if h.M {
+		b[more] |= ipv6FragmentExtHdrMFlagMask
+	}
+	return IPv6FragmentHeaderSize
 }
 
 // IPv6Fragment represents an ipv6 fragment header stored in a byte array.
@@ -57,16 +79,6 @@ const (
 	// IPv6FragmentHeaderSize is the size of the fragment header.
 	IPv6FragmentHeaderSize = 8
 )
-
-// Encode encodes all the fields of the ipv6 fragment.
-func (b IPv6Fragment) Encode(i *IPv6FragmentFields) {
-	b[nextHdrFrag] = i.NextHeader
-	binary.BigEndian.PutUint16(b[fragOff:], i.FragmentOffset<<3)
-	if i.M {
-		b[more] |= 1
-	}
-	binary.BigEndian.PutUint32(b[idV6:], i.Identification)
-}
 
 // IsValid performs basic validation on the fragment header.
 func (b IPv6Fragment) IsValid() bool {

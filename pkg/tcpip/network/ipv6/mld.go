@@ -234,17 +234,21 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 
 	icmp.SetChecksum(header.ICMPv6Checksum(icmp, localAddress, destAddress, buffer.VectorisedView{}))
 
+	extensionHeaders := header.IPv6ExtHdrSerializer{
+		header.IPv6SerializableHopByHopExtHdr{
+			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
+		},
+	}
+
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(mld.ep.MaxHeaderLength()),
+		ReserveHeaderBytes: int(mld.ep.MaxHeaderLength()) + extensionHeaders.Length(),
 		Data:               buffer.View(icmp).ToVectorisedView(),
 	})
 
 	mld.ep.addIPHeader(localAddress, destAddress, pkt, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.MLDHopLimit,
-	})
-	// TODO(b/162198658): set the ROUTER_ALERT option when sending Host
-	// Membership Reports.
+	}, extensionHeaders)
 	if err := mld.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 		sentStats.Dropped.Increment()
 		return false, err
