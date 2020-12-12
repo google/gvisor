@@ -54,11 +54,6 @@ func (r *IPCNamespaceRefs) LogRefs() bool {
 	return IPCNamespaceenableLogging
 }
 
-// EnableLeakCheck enables reference leak checking on r.
-func (r *IPCNamespaceRefs) EnableLeakCheck() {
-	refsvfs2.Register(r)
-}
-
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
 func (r *IPCNamespaceRefs) ReadRefs() int64 {
@@ -115,7 +110,7 @@ func (r *IPCNamespaceRefs) TryIncRef() bool {
 func (r *IPCNamespaceRefs) DecRef(destroy func()) {
 	v := atomic.AddInt64(&r.refCount, -1)
 	if IPCNamespaceenableLogging {
-		refsvfs2.LogDecRef(r, v+1)
+		refsvfs2.LogDecRef(r, v)
 	}
 	switch {
 	case v < 0:
@@ -132,6 +127,6 @@ func (r *IPCNamespaceRefs) DecRef(destroy func()) {
 
 func (r *IPCNamespaceRefs) afterLoad() {
 	if r.ReadRefs() > 0 {
-		r.EnableLeakCheck()
+		refsvfs2.Register(r)
 	}
 }

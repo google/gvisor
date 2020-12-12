@@ -54,11 +54,6 @@ func (r *fdDirInodeRefs) LogRefs() bool {
 	return fdDirInodeenableLogging
 }
 
-// EnableLeakCheck enables reference leak checking on r.
-func (r *fdDirInodeRefs) EnableLeakCheck() {
-	refsvfs2.Register(r)
-}
-
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
 func (r *fdDirInodeRefs) ReadRefs() int64 {
@@ -115,7 +110,7 @@ func (r *fdDirInodeRefs) TryIncRef() bool {
 func (r *fdDirInodeRefs) DecRef(destroy func()) {
 	v := atomic.AddInt64(&r.refCount, -1)
 	if fdDirInodeenableLogging {
-		refsvfs2.LogDecRef(r, v+1)
+		refsvfs2.LogDecRef(r, v)
 	}
 	switch {
 	case v < 0:
@@ -132,6 +127,6 @@ func (r *fdDirInodeRefs) DecRef(destroy func()) {
 
 func (r *fdDirInodeRefs) afterLoad() {
 	if r.ReadRefs() > 0 {
-		r.EnableLeakCheck()
+		refsvfs2.Register(r)
 	}
 }
