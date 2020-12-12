@@ -53,6 +53,10 @@ var (
 	// ErrFragmentOverlap indicates that, during reassembly, a fragment overlaps
 	// with another one.
 	ErrFragmentOverlap = errors.New("overlapping fragments")
+
+	// ErrFragmentConflict indicates that, during reassembly, some fragments are
+	// in conflict with one another.
+	ErrFragmentConflict = errors.New("conflicting fragments")
 )
 
 // FragmentID is the identifier for a fragment.
