@@ -15,9 +15,8 @@
 package fragmentation
 
 import (
-	"container/heap"
-	"fmt"
 	"math"
+	"sort"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -29,6 +28,8 @@ type hole struct {
 	first  uint16
 	last   uint16
 	filled bool
+	final  bool
+	data   buffer.View
 }
 
 type reassembler struct {
@@ -39,7 +40,6 @@ type reassembler struct {
 	mu           sync.Mutex
 	holes        []hole
 	filled       int
-	heap         fragHeap
 	done         bool
 	creationTime int64
 	pkt          *stack.PacketBuffer
@@ -48,72 +48,15 @@ type reassembler struct {
 func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
 	r := &reassembler{
 		id:           id,
-		holes:        make([]hole, 0, 16),
-		heap:         make(fragHeap, 0, 8),
 		creationTime: clock.NowMonotonic(),
 	}
 	r.holes = append(r.holes, hole{
 		first:  0,
 		last:   math.MaxUint16,
 		filled: false,
+		final:  true,
 	})
 	return r
-}
-
-// updateHoles updates the list of holes for an incoming fragment. It returns
-// true if the fragment fits, it is not a duplicate and it does not overlap with
-// another fragment.
-//
-// For IPv6, overlaps with an existing fragment are explicitly forbidden by
-// RFC 8200 section 4.5:
-//   If any of the fragments being reassembled overlap with any other fragments
-//   being reassembled for the same packet, reassembly of that packet must be
-//   abandoned and all the fragments that have been received for that packet
-//   must be discarded, and no ICMP error messages should be sent.
-//
-// It is not explicitly forbidden for IPv4, but to keep parity with Linux we
-// disallow it as well:
-// https://github.com/torvalds/linux/blob/38525c6/net/ipv4/inet_fragment.c#L349
-func (r *reassembler) updateHoles(first, last uint16, more bool) (bool, error) {
-	for i := range r.holes {
-		currentHole := &r.holes[i]
-
-		if currentHole.filled || last < currentHole.first || currentHole.last < first {
-			continue
-		}
-
-		if first < currentHole.first || currentHole.last < last {
-			// Incoming fragment only partially fits in the free hole.
-			return false, ErrFragmentOverlap
-		}
-
-		r.filled++
-		if first > currentHole.first {
-			r.holes = append(r.holes, hole{
-				first:  currentHole.first,
-				last:   first - 1,
-				filled: false,
-			})
-		}
-		if last < currentHole.last && more {
-			r.holes = append(r.holes, hole{
-				first:  last + 1,
-				last:   currentHole.last,
-				filled: false,
-			})
-		}
-		// Update the current hole to precisely match the incoming fragment.
-		r.holes[i] = hole{
-			first:  first,
-			last:   last,
-			filled: true,
-		}
-		return true, nil
-	}
-
-	// Incoming fragment is a duplicate/subset, or its offset comes after the end
-	// of the reassembled payload.
-	return false, nil
 }
 
 func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (buffer.VectorisedView, uint8, bool, int, error) {
@@ -126,13 +69,73 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		return buffer.VectorisedView{}, 0, false, 0, nil
 	}
 
-	used, err := r.updateHoles(first, last, more)
-	if err != nil {
-		return buffer.VectorisedView{}, 0, false, 0, fmt.Errorf("fragment reassembly failed: %w", err)
-	}
-
+	var holeFound bool
 	var consumed int
-	if used {
+	for i := range r.holes {
+		currentHole := &r.holes[i]
+
+		if last < currentHole.first || currentHole.last < first {
+			continue
+		}
+		// For IPv6, overlaps with an existing fragment are explicitly forbidden by
+		// RFC 8200 section 4.5:
+		//   If any of the fragments being reassembled overlap with any other
+		//   fragments being reassembled for the same packet, reassembly of that
+		//   packet must be abandoned and all the fragments that have been received
+		//   for that packet must be discarded, and no ICMP error messages should be
+		//   sent.
+		//
+		// It is not explicitly forbidden for IPv4, but to keep parity with Linux we
+		// disallow it as well:
+		// https://github.com/torvalds/linux/blob/38525c6/net/ipv4/inet_fragment.c#L349
+		if first < currentHole.first || currentHole.last < last {
+			// Incoming fragment only partially fits in the free hole.
+			return buffer.VectorisedView{}, 0, false, 0, ErrFragmentOverlap
+		}
+		if !more {
+			if !currentHole.final || currentHole.filled && currentHole.last != last {
+				// We have another final fragment, which does not perfectly overlap.
+				return buffer.VectorisedView{}, 0, false, 0, ErrFragmentConflict
+			}
+		}
+
+		holeFound = true
+		if currentHole.filled {
+			// Incoming fragment is a duplicate.
+			continue
+		}
+
+		// We are populating the current hole with the payload and creating a new
+		// hole for any unfilled ranges on either end.
+		if first > currentHole.first {
+			r.holes = append(r.holes, hole{
+				first:  currentHole.first,
+				last:   first - 1,
+				filled: false,
+				final:  false,
+			})
+		}
+		if last < currentHole.last && more {
+			r.holes = append(r.holes, hole{
+				first:  last + 1,
+				last:   currentHole.last,
+				filled: false,
+				final:  currentHole.final,
+			})
+			currentHole.final = false
+		}
+		v := pkt.Data.ToOwnedView()
+		consumed = v.Size()
+		r.size += consumed
+		// Update the current hole to precisely match the incoming fragment.
+		r.holes[i] = hole{
+			first:  first,
+			last:   last,
+			filled: true,
+			final:  currentHole.final,
+			data:   v,
+		}
+		r.filled++
 		// For IPv6, it is possible to have different Protocol values between
 		// fragments of a packet (because, unlike IPv4, the Protocol is not used to
 		// identify a fragment). In this case, only the Protocol of the first
@@ -145,22 +148,30 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 			r.pkt = pkt
 			r.proto = proto
 		}
-		vv := pkt.Data
-		// We store the incoming packet only if it filled some holes.
-		heap.Push(&r.heap, fragment{offset: first, vv: vv.Clone(nil)})
-		consumed = vv.Size()
-		r.size += consumed
+
+		break
+	}
+	if !holeFound {
+		// Incoming fragment is beyond end.
+		return buffer.VectorisedView{}, 0, false, 0, ErrFragmentConflict
 	}
 
 	// Check if all the holes have been filled and we are ready to reassemble.
 	if r.filled < len(r.holes) {
 		return buffer.VectorisedView{}, 0, false, consumed, nil
 	}
-	res, err := r.heap.reassemble()
-	if err != nil {
-		return buffer.VectorisedView{}, 0, false, 0, fmt.Errorf("fragment reassembly failed: %w", err)
+
+	sort.Slice(r.holes, func(i, j int) bool {
+		return r.holes[i].first < r.holes[j].first
+	})
+
+	var size int
+	views := make([]buffer.View, 0, len(r.holes))
+	for _, hole := range r.holes {
+		views = append(views, hole.data)
+		size += hole.data.Size()
 	}
-	return res, r.proto, true, consumed, nil
+	return buffer.NewVectorisedView(size, views), r.proto, true, consumed, nil
 }
 
 func (r *reassembler) checkDoneOrMark() bool {

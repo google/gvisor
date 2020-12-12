@@ -19,105 +19,156 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-type updateHolesParams struct {
+type processParams struct {
 	first     uint16
 	last      uint16
 	more      bool
-	wantUsed  bool
+	pkt       *stack.PacketBuffer
+	wantDone  bool
 	wantError error
 }
 
-func TestUpdateHoles(t *testing.T) {
+func TestReassemblerProcess(t *testing.T) {
+	const proto = 99
+
+	v := func(size int) buffer.View {
+		payload := buffer.NewView(size)
+		for i := 1; i < size; i++ {
+			payload[i] = uint8(i) * 3
+		}
+		return payload
+	}
+
+	pkt := func(size int) *stack.PacketBuffer {
+		return stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: v(size).ToVectorisedView(),
+		})
+	}
+
 	var tests = []struct {
 		name   string
-		params []updateHolesParams
+		params []processParams
 		want   []hole
 	}{
 		{
 			name:   "No fragments",
 			params: nil,
-			want:   []hole{{first: 0, last: math.MaxUint16, filled: false}},
+			want:   []hole{{first: 0, last: math.MaxUint16, filled: false, final: true}},
 		},
 		{
 			name:   "One fragment at beginning",
-			params: []updateHolesParams{{first: 0, last: 1, more: true, wantUsed: true, wantError: nil}},
+			params: []processParams{{first: 0, last: 1, more: true, pkt: pkt(2), wantDone: false, wantError: nil}},
 			want: []hole{
-				{first: 0, last: 1, filled: true},
-				{first: 2, last: math.MaxUint16, filled: false},
+				{first: 0, last: 1, filled: true, final: false, data: v(2)},
+				{first: 2, last: math.MaxUint16, filled: false, final: true},
 			},
 		},
 		{
 			name:   "One fragment in the middle",
-			params: []updateHolesParams{{first: 1, last: 2, more: true, wantUsed: true, wantError: nil}},
+			params: []processParams{{first: 1, last: 2, more: true, pkt: pkt(2), wantDone: false, wantError: nil}},
 			want: []hole{
-				{first: 1, last: 2, filled: true},
-				{first: 0, last: 0, filled: false},
-				{first: 3, last: math.MaxUint16, filled: false},
+				{first: 1, last: 2, filled: true, final: false, data: v(2)},
+				{first: 0, last: 0, filled: false, final: false},
+				{first: 3, last: math.MaxUint16, filled: false, final: true},
 			},
 		},
 		{
 			name:   "One fragment at the end",
-			params: []updateHolesParams{{first: 1, last: 2, more: false, wantUsed: true, wantError: nil}},
+			params: []processParams{{first: 1, last: 2, more: false, pkt: pkt(2), wantDone: false, wantError: nil}},
 			want: []hole{
-				{first: 1, last: 2, filled: true},
+				{first: 1, last: 2, filled: true, final: true, data: v(2)},
 				{first: 0, last: 0, filled: false},
 			},
 		},
 		{
 			name:   "One fragment completing a packet",
-			params: []updateHolesParams{{first: 0, last: 1, more: false, wantUsed: true, wantError: nil}},
+			params: []processParams{{first: 0, last: 1, more: false, pkt: pkt(2), wantDone: true, wantError: nil}},
 			want: []hole{
-				{first: 0, last: 1, filled: true},
+				{first: 0, last: 1, filled: true, final: true, data: v(2)},
 			},
 		},
 		{
 			name: "Two fragments completing a packet",
-			params: []updateHolesParams{
-				{first: 0, last: 1, more: true, wantUsed: true, wantError: nil},
-				{first: 2, last: 3, more: false, wantUsed: true, wantError: nil},
+			params: []processParams{
+				{first: 0, last: 1, more: true, pkt: pkt(2), wantDone: false, wantError: nil},
+				{first: 2, last: 3, more: false, pkt: pkt(2), wantDone: true, wantError: nil},
 			},
 			want: []hole{
-				{first: 0, last: 1, filled: true},
-				{first: 2, last: 3, filled: true},
+				{first: 0, last: 1, filled: true, final: false, data: v(2)},
+				{first: 2, last: 3, filled: true, final: true, data: v(2)},
 			},
 		},
 		{
 			name: "Two fragments completing a packet with a duplicate",
-			params: []updateHolesParams{
-				{first: 0, last: 1, more: true, wantUsed: true, wantError: nil},
-				{first: 0, last: 1, more: true, wantUsed: false, wantError: nil},
-				{first: 2, last: 3, more: false, wantUsed: true, wantError: nil},
+			params: []processParams{
+				{first: 0, last: 1, more: true, pkt: pkt(2), wantDone: false, wantError: nil},
+				{first: 0, last: 1, more: true, pkt: pkt(2), wantDone: false, wantError: nil},
+				{first: 2, last: 3, more: false, pkt: pkt(2), wantDone: true, wantError: nil},
 			},
 			want: []hole{
-				{first: 0, last: 1, filled: true},
-				{first: 2, last: 3, filled: true},
+				{first: 0, last: 1, filled: true, final: false, data: v(2)},
+				{first: 2, last: 3, filled: true, final: true, data: v(2)},
+			},
+		},
+		{
+			name: "Two fragments completing a packet with a partial duplicate",
+			params: []processParams{
+				{first: 0, last: 3, more: true, pkt: pkt(4), wantDone: false, wantError: nil},
+				{first: 1, last: 2, more: true, pkt: pkt(2), wantDone: false, wantError: nil},
+				{first: 4, last: 5, more: false, pkt: pkt(2), wantDone: true, wantError: nil},
+			},
+			want: []hole{
+				{first: 0, last: 3, filled: true, final: false, data: v(4)},
+				{first: 4, last: 5, filled: true, final: true, data: v(2)},
 			},
 		},
 		{
 			name: "Two overlapping fragments",
-			params: []updateHolesParams{
-				{first: 0, last: 10, more: true, wantUsed: true, wantError: nil},
-				{first: 5, last: 15, more: false, wantUsed: false, wantError: ErrFragmentOverlap},
-				{first: 11, last: 15, more: false, wantUsed: true, wantError: nil},
+			params: []processParams{
+				{first: 0, last: 10, more: true, pkt: pkt(11), wantDone: false, wantError: nil},
+				{first: 5, last: 15, more: false, pkt: pkt(11), wantDone: false, wantError: ErrFragmentOverlap},
 			},
 			want: []hole{
-				{first: 0, last: 10, filled: true},
-				{first: 11, last: 15, filled: true},
+				{first: 0, last: 10, filled: true, final: false, data: v(11)},
+				{first: 11, last: math.MaxUint16, filled: false, final: true},
 			},
 		},
 		{
-			name: "Out of bounds fragment",
-			params: []updateHolesParams{
-				{first: 0, last: 10, more: true, wantUsed: true, wantError: nil},
-				{first: 11, last: 15, more: false, wantUsed: true, wantError: nil},
-				{first: 16, last: 20, more: false, wantUsed: false, wantError: nil},
+			name: "Two final fragments with different ends",
+			params: []processParams{
+				{first: 10, last: 14, more: false, pkt: pkt(5), wantDone: false, wantError: nil},
+				{first: 0, last: 9, more: false, pkt: pkt(10), wantDone: false, wantError: ErrFragmentConflict},
 			},
 			want: []hole{
-				{first: 0, last: 10, filled: true},
-				{first: 11, last: 15, filled: true},
+				{first: 10, last: 14, filled: true, final: true, data: v(5)},
+				{first: 0, last: 9, filled: false, final: false},
+			},
+		},
+		{
+			name: "Two final fragments - duplicate",
+			params: []processParams{
+				{first: 5, last: 14, more: false, pkt: pkt(10), wantDone: false, wantError: nil},
+				{first: 10, last: 14, more: false, pkt: pkt(5), wantDone: false, wantError: nil},
+			},
+			want: []hole{
+				{first: 5, last: 14, filled: true, final: true, data: v(10)},
+				{first: 0, last: 4, filled: false, final: false},
+			},
+		},
+		{
+			name: "Two final fragments - duplicate, with different ends",
+			params: []processParams{
+				{first: 5, last: 14, more: false, pkt: pkt(10), wantDone: false, wantError: nil},
+				{first: 10, last: 13, more: false, pkt: pkt(4), wantDone: false, wantError: ErrFragmentConflict},
+			},
+			want: []hole{
+				{first: 5, last: 14, filled: true, final: true, data: v(10)},
+				{first: 0, last: 4, filled: false, final: false},
 			},
 		},
 	}
@@ -126,9 +177,9 @@ func TestUpdateHoles(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			r := newReassembler(FragmentID{}, &faketime.NullClock{})
 			for _, param := range test.params {
-				used, err := r.updateHoles(param.first, param.last, param.more)
-				if used != param.wantUsed || err != param.wantError {
-					t.Errorf("got r.updateHoles(%d, %d, %t) = (%t, %v), want = (%t, %v)", param.first, param.last, param.more, used, err, param.wantUsed, param.wantError)
+				_, _, done, _, err := r.process(param.first, param.last, param.more, proto, param.pkt)
+				if done != param.wantDone || err != param.wantError {
+					t.Errorf("got r.process(%d, %d, %t, %d, _) = (_, _, %t, _, %v), want = (%t, %v)", param.first, param.last, param.more, proto, done, err, param.wantDone, param.wantError)
 				}
 			}
 			if diff := cmp.Diff(test.want, r.holes, cmp.AllowUnexported(hole{})); diff != "" {
