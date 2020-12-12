@@ -117,6 +117,10 @@ func TTL(ttl uint8) NetworkChecker {
 			v = ip.TTL()
 		case header.IPv6:
 			v = ip.HopLimit()
+		case *ipv6HeaderWithExtHdr:
+			v = ip.HopLimit()
+		default:
+			t.Fatalf("unrecognized header type %T for TTL evaluation", ip)
 		}
 		if v != ttl {
 			t.Fatalf("Bad TTL, got = %d, want = %d", v, ttl)
@@ -1410,6 +1414,192 @@ func IGMPGroupAddress(want tcpip.Address) TransportChecker {
 		}
 		if got := igmp.GroupAddress(); got != want {
 			t.Errorf("got igmp.GroupAddress() = %s, want = %s", got, want)
+		}
+	}
+}
+
+// IPv6ExtHdrChecker is a function to check an extension header.
+type IPv6ExtHdrChecker func(*testing.T, header.IPv6PayloadHeader)
+
+// IPv6WithExtHdr is like IPv6 but allows IPv6 packets with extension headers.
+func IPv6WithExtHdr(t *testing.T, b []byte, checkers ...NetworkChecker) {
+	t.Helper()
+
+	ipv6 := header.IPv6(b)
+	if !ipv6.IsValid(len(b)) {
+		t.Error("not a valid IPv6 packet")
+		return
+	}
+
+	payloadIterator := header.MakeIPv6PayloadIterator(
+		header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
+		buffer.View(ipv6.Payload()).ToVectorisedView(),
+	)
+
+	var rawPayloadHeader header.IPv6RawPayloadHeader
+	for {
+		h, done, err := payloadIterator.Next()
+		if err != nil {
+			t.Errorf("payloadIterator.Next(): %s", err)
+			return
+		}
+		if done {
+			t.Errorf("got payloadIterator.Next() = (%T, %t, _), want = (_, true, _)", h, done)
+			return
+		}
+		r, ok := h.(header.IPv6RawPayloadHeader)
+		if ok {
+			rawPayloadHeader = r
+			break
+		}
+	}
+
+	networkHeader := ipv6HeaderWithExtHdr{
+		IPv6:      ipv6,
+		transport: tcpip.TransportProtocolNumber(rawPayloadHeader.Identifier),
+		payload:   rawPayloadHeader.Buf.ToView(),
+	}
+
+	for _, checker := range checkers {
+		checker(t, []header.Network{&networkHeader})
+	}
+}
+
+// IPv6ExtHdr checks for the presence of extension headers.
+//
+// All the extension headers in headers will be checked exhaustively in the
+// order provided.
+func IPv6ExtHdr(headers ...IPv6ExtHdrChecker) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
+		extHdrs, ok := h[0].(*ipv6HeaderWithExtHdr)
+		if !ok {
+			t.Errorf("got network header = %T, want = *ipv6HeaderWithExtHdr", h[0])
+			return
+		}
+
+		payloadIterator := header.MakeIPv6PayloadIterator(
+			header.IPv6ExtensionHeaderIdentifier(extHdrs.IPv6.NextHeader()),
+			buffer.View(extHdrs.IPv6.Payload()).ToVectorisedView(),
+		)
+
+		for _, check := range headers {
+			h, done, err := payloadIterator.Next()
+			if err != nil {
+				t.Errorf("payloadIterator.Next(): %s", err)
+				return
+			}
+			if done {
+				t.Errorf("got payloadIterator.Next() = (%T, %t, _), want = (_, false, _)", h, done)
+				return
+			}
+			check(t, h)
+		}
+		// Validate we consumed all headers.
+		//
+		// The next one over should be a raw payload and then iterator should
+		// terminate.
+		wantDone := false
+		for {
+			h, done, err := payloadIterator.Next()
+			if err != nil {
+				t.Errorf("payloadIterator.Next(): %s", err)
+				return
+			}
+			if done != wantDone {
+				t.Errorf("got payloadIterator.Next() = (%T, %t, _), want = (_, %t, _)", h, done, wantDone)
+				return
+			}
+			if done {
+				break
+			}
+			if _, ok := h.(header.IPv6RawPayloadHeader); !ok {
+				t.Errorf("got payloadIterator.Next() = (%T, _, _), want = (header.IPv6RawPayloadHeader, _, _)", h)
+				continue
+			}
+			wantDone = true
+		}
+	}
+}
+
+var _ header.Network = (*ipv6HeaderWithExtHdr)(nil)
+
+// ipv6HeaderWithExtHdr provides a header.Network implementation that takes
+// extension headers into consideration, which is not the case with vanilla
+// header.IPv6.
+type ipv6HeaderWithExtHdr struct {
+	header.IPv6
+	transport tcpip.TransportProtocolNumber
+	payload   []byte
+}
+
+// TransportProtocol implements header.Network.
+func (h *ipv6HeaderWithExtHdr) TransportProtocol() tcpip.TransportProtocolNumber {
+	return h.transport
+}
+
+// Payload implements header.Network.
+func (h *ipv6HeaderWithExtHdr) Payload() []byte {
+	return h.payload
+}
+
+// IPv6ExtHdrOptionChecker is a function to check an extension header option.
+type IPv6ExtHdrOptionChecker func(*testing.T, header.IPv6ExtHdrOption)
+
+// IPv6HopByHopExtensionHeader checks the extension header is a Hop by Hop
+// extension header and validates the containing options with checkers.
+//
+// checkers must exhaustively contain all the expected options.
+func IPv6HopByHopExtensionHeader(checkers ...IPv6ExtHdrOptionChecker) IPv6ExtHdrChecker {
+	return func(t *testing.T, payloadHeader header.IPv6PayloadHeader) {
+		t.Helper()
+
+		hbh, ok := payloadHeader.(header.IPv6HopByHopOptionsExtHdr)
+		if !ok {
+			t.Errorf("unexpected IPv6 payload header, got = %T, want = header.IPv6HopByHopOptionsExtHdr", payloadHeader)
+			return
+		}
+		optionsIterator := hbh.Iter()
+		for _, f := range checkers {
+			opt, done, err := optionsIterator.Next()
+			if err != nil {
+				t.Errorf("optionsIterator.Next(): %s", err)
+				return
+			}
+			if done {
+				t.Errorf("got optionsIterator.Next() = (%T, %t, _), want = (_, false, _)", opt, done)
+			}
+			f(t, opt)
+		}
+		// Validate all options were consumed.
+		for {
+			opt, done, err := optionsIterator.Next()
+			if err != nil {
+				t.Errorf("optionsIterator.Next(): %s", err)
+				return
+			}
+			if !done {
+				t.Errorf("got optionsIterator.Next() = (%T, %t, _), want = (_, true, _)", opt, done)
+			}
+			if done {
+				break
+			}
+		}
+	}
+}
+
+// IPv6RouterAlert validates that an extension header option is the RouterAlert
+// option and matches on its value.
+func IPv6RouterAlert(want header.IPv6RouterAlertValue) IPv6ExtHdrOptionChecker {
+	return func(t *testing.T, opt header.IPv6ExtHdrOption) {
+		routerAlert, ok := opt.(*header.IPv6RouterAlertOption)
+		if !ok {
+			t.Errorf("unexpected extension header option, got = %T, want = header.IPv6RouterAlertOption", opt)
+			return
+		}
+		if routerAlert.Value != want {
+			t.Errorf("got routerAlert.Value = %d, want = %d", routerAlert.Value, want)
 		}
 	}
 }

@@ -635,11 +635,11 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength: uint16(header.TCPMinimumSize + len(payload)),
-		NextHeader:    uint8(tcp.ProtocolNumber),
-		HopLimit:      65,
-		SrcAddr:       src,
-		DstAddr:       dst,
+		PayloadLength:     uint16(header.TCPMinimumSize + len(payload)),
+		TransportProtocol: tcp.ProtocolNumber,
+		HopLimit:          65,
+		SrcAddr:           src,
+		DstAddr:           dst,
 	})
 
 	// Initialize the TCP header.

@@ -735,7 +735,7 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.Add
 	ndp.ep.addIPHeader(header.IPv6Any, snmc, pkt, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.NDPHopLimit,
-	})
+	}, nil /* extensionHeaders */)
 
 	if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(snmc), nil /* gso */, ProtocolNumber, pkt); err != nil {
 		sent.Dropped.Increment()
@@ -1857,7 +1857,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 		ndp.ep.addIPHeader(localAddr, header.IPv6AllRoutersMulticastAddress, pkt, stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      header.NDPHopLimit,
-		})
+		}, nil /* extensionHeaders */)
 
 		if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 			sent.Dropped.Increment()

@@ -344,11 +344,11 @@ func TestSourceAddressValidation(t *testing.T) {
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, src, localIPv6Addr, buffer.VectorisedView{}))
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: header.ICMPv6MinimumSize,
-			NextHeader:    uint8(icmp.ProtocolNumber6),
-			HopLimit:      ipv6.DefaultTTL,
-			SrcAddr:       src,
-			DstAddr:       localIPv6Addr,
+			PayloadLength:     header.ICMPv6MinimumSize,
+			TransportProtocol: icmp.ProtocolNumber6,
+			HopLimit:          ipv6.DefaultTTL,
+			SrcAddr:           src,
+			DstAddr:           localIPv6Addr,
 		})
 		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: hdr.View().ToVectorisedView(),
@@ -619,11 +619,11 @@ func TestReceive(t *testing.T) {
 				view := buffer.NewView(header.IPv6MinimumSize + payloadLen)
 				ip := header.IPv6(view)
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: payloadLen,
-					NextHeader:    10,
-					HopLimit:      ipv6.DefaultTTL,
-					SrcAddr:       remoteIPv6Addr,
-					DstAddr:       localIPv6Addr,
+					PayloadLength:     payloadLen,
+					TransportProtocol: 10,
+					HopLimit:          ipv6.DefaultTTL,
+					SrcAddr:           remoteIPv6Addr,
+					DstAddr:           localIPv6Addr,
 				})
 
 				// Make payload be non-zero.
@@ -993,11 +993,11 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Create the outer IPv6 header.
 			ip := header.IPv6(view)
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength: uint16(len(view) - header.IPv6MinimumSize - c.trunc),
-				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-				HopLimit:      20,
-				SrcAddr:       outerSrcAddr,
-				DstAddr:       localIPv6Addr,
+				PayloadLength:     uint16(len(view) - header.IPv6MinimumSize - c.trunc),
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          20,
+				SrcAddr:           outerSrcAddr,
+				DstAddr:           localIPv6Addr,
 			})
 
 			// Create the ICMP header.
@@ -1007,27 +1007,26 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			icmp.SetIdent(0xdead)
 			icmp.SetSequence(0xbeef)
 
-			// Create the inner IPv6 header.
-			ip = header.IPv6(view[header.IPv6MinimumSize+header.ICMPv6PayloadOffset:])
-			ip.Encode(&header.IPv6Fields{
-				PayloadLength: 100,
-				NextHeader:    10,
-				HopLimit:      20,
-				SrcAddr:       localIPv6Addr,
-				DstAddr:       remoteIPv6Addr,
-			})
-
+			var extHdrs header.IPv6ExtHdrSerializer
 			// Build the fragmentation header if needed.
 			if c.fragmentOffset != nil {
-				ip.SetNextHeader(header.IPv6FragmentHeader)
-				frag := header.IPv6Fragment(view[2*header.IPv6MinimumSize+header.ICMPv6MinimumSize:])
-				frag.Encode(&header.IPv6FragmentFields{
-					NextHeader:     10,
+				extHdrs = append(extHdrs, &header.IPv6SerializableFragmentExtHdr{
 					FragmentOffset: *c.fragmentOffset,
 					M:              true,
 					Identification: 0x12345678,
 				})
 			}
+
+			// Create the inner IPv6 header.
+			ip = header.IPv6(view[header.IPv6MinimumSize+header.ICMPv6PayloadOffset:])
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength:     100,
+				TransportProtocol: 10,
+				HopLimit:          20,
+				SrcAddr:           localIPv6Addr,
+				DstAddr:           remoteIPv6Addr,
+				ExtensionHeaders:  extHdrs,
+			})
 
 			// Make payload be non-zero.
 			for i := dataOffset; i < len(view); i++ {
@@ -1344,10 +1343,10 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 				}
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					NextHeader: transportProto,
-					HopLimit:   ipv6.DefaultTTL,
-					SrcAddr:    src,
-					DstAddr:    header.IPv4Any,
+					TransportProtocol: transportProto,
+					HopLimit:          ipv6.DefaultTTL,
+					SrcAddr:           src,
+					DstAddr:           header.IPv4Any,
 				})
 				return hdr.View().ToVectorisedView()
 			},
@@ -1387,10 +1386,12 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 				}
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					NextHeader: uint8(header.IPv6FragmentExtHdrIdentifier),
-					HopLimit:   ipv6.DefaultTTL,
-					SrcAddr:    src,
-					DstAddr:    header.IPv4Any,
+					// NB: we're lying about transport protocol here to verify the raw
+					// fragment header bytes.
+					TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6FragmentExtHdrIdentifier),
+					HopLimit:          ipv6.DefaultTTL,
+					SrcAddr:           src,
+					DstAddr:           header.IPv4Any,
 				})
 				return hdr.View().ToVectorisedView()
 			},
@@ -1422,10 +1423,10 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ip := header.IPv6(make([]byte, header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					NextHeader: transportProto,
-					HopLimit:   ipv6.DefaultTTL,
-					SrcAddr:    src,
-					DstAddr:    header.IPv4Any,
+					TransportProtocol: transportProto,
+					HopLimit:          ipv6.DefaultTTL,
+					SrcAddr:           src,
+					DstAddr:           header.IPv4Any,
 				})
 				return buffer.View(ip).ToVectorisedView()
 			},
@@ -1457,10 +1458,10 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ip := header.IPv6(make([]byte, header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					NextHeader: transportProto,
-					HopLimit:   ipv6.DefaultTTL,
-					SrcAddr:    src,
-					DstAddr:    header.IPv4Any,
+					TransportProtocol: transportProto,
+					HopLimit:          ipv6.DefaultTTL,
+					SrcAddr:           src,
+					DstAddr:           header.IPv4Any,
 				})
 				return buffer.View(ip[:len(ip)-1]).ToVectorisedView()
 			},

@@ -453,12 +453,12 @@ func (c *testContext) buildV6Packet(payload []byte, h *header4Tuple) buffer.View
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
-		TrafficClass:  testTOS,
-		PayloadLength: uint16(header.UDPMinimumSize + len(payload)),
-		NextHeader:    uint8(udp.ProtocolNumber),
-		HopLimit:      65,
-		SrcAddr:       h.srcAddr.Addr,
-		DstAddr:       h.dstAddr.Addr,
+		TrafficClass:      testTOS,
+		PayloadLength:     uint16(header.UDPMinimumSize + len(payload)),
+		TransportProtocol: udp.ProtocolNumber,
+		HopLimit:          65,
+		SrcAddr:           h.srcAddr.Addr,
+		DstAddr:           h.dstAddr.Addr,
 	})
 
 	// Initialize the UDP header.
@@ -1494,7 +1494,7 @@ func TestReadRecvOriginalDstAddr(t *testing.T) {
 
 			bindAddr := tcpip.FullAddress{Port: stackPort}
 			if err := c.ep.Bind(bindAddr); err != nil {
-				t.Fatalf("Bind(%+v): %s", bindAddr, err)
+				t.Fatalf("Bind(%#v): %s", bindAddr, err)
 			}
 
 			if test.flow.isMulticast() {
@@ -2029,8 +2029,8 @@ func TestV6UnknownDestination(t *testing.T) {
 			}
 			// Correct UDP length to access payload.
 			origDgram.SetLength(uint16(wantPayloadLen + header.UDPMinimumSize))
-			if got, want := origDgram.Payload(), payload[:wantPayloadLen]; !bytes.Equal(got, want) {
-				t.Fatalf("got origDgram.Payload() = %x, want = %x", got, want)
+			if diff := cmp.Diff(payload[:wantPayloadLen], origDgram.Payload()); diff != "" {
+				t.Fatalf("origDgram.Payload() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -2089,12 +2089,12 @@ func TestShortHeader(t *testing.T) {
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
-		TrafficClass:  testTOS,
-		PayloadLength: uint16(udpSize),
-		NextHeader:    uint8(udp.ProtocolNumber),
-		HopLimit:      65,
-		SrcAddr:       h.srcAddr.Addr,
-		DstAddr:       h.dstAddr.Addr,
+		TrafficClass:      testTOS,
+		PayloadLength:     uint16(udpSize),
+		TransportProtocol: udp.ProtocolNumber,
+		HopLimit:          65,
+		SrcAddr:           h.srcAddr.Addr,
+		DstAddr:           h.dstAddr.Addr,
 	})
 
 	// Initialize the UDP header.
@@ -2597,12 +2597,12 @@ func TestReceiveShortLength(t *testing.T) {
 			// Try to receive the data.
 			v, _, err := c.ep.Read(nil)
 			if err != nil {
-				t.Fatalf("c.ep.Read(..): %s", err)
+				t.Fatalf("c.ep.Read(nil): %s", err)
 			}
 
 			// Check the payload is read back without extra bytes.
 			if diff := cmp.Diff(buffer.View(payload), v); diff != "" {
-				t.Errorf("c.ep.Read(..) mismatch (-want +got):\n%s", diff)
+				t.Errorf("c.ep.Read(nil) mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

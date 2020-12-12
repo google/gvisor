@@ -42,7 +42,10 @@ var (
 func validateMLDPacket(t *testing.T, p buffer.View, localAddress, remoteAddress tcpip.Address, mldType header.ICMPv6Type, groupAddress tcpip.Address) {
 	t.Helper()
 
-	checker.IPv6(t, p,
+	checker.IPv6WithExtHdr(t, p,
+		checker.IPv6ExtHdr(
+			checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
+		),
 		checker.SrcAddr(localAddress),
 		checker.DstAddr(remoteAddress),
 		// Hop Limit for an MLD message must be 1 as per RFC 2710 section 3.

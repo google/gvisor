@@ -48,11 +48,13 @@ type IPv6Fields struct {
 	// FlowLabel is the "flow label" field of an IPv6 packet.
 	FlowLabel uint32
 
-	// PayloadLength is the "payload length" field of an IPv6 packet.
+	// PayloadLength is the "payload length" field of an IPv6 packet, including
+	// the length of all extension headers.
 	PayloadLength uint16
 
-	// NextHeader is the "next header" field of an IPv6 packet.
-	NextHeader uint8
+	// TransportProtocol is the transport layer protocol number. Serialized in the
+	// last "next header" field of the IPv6 header + extension headers.
+	TransportProtocol tcpip.TransportProtocolNumber
 
 	// HopLimit is the "Hop Limit" field of an IPv6 packet.
 	HopLimit uint8
@@ -62,6 +64,9 @@ type IPv6Fields struct {
 
 	// DstAddr is the "destination ip address" of an IPv6 packet.
 	DstAddr tcpip.Address
+
+	// ExtensionHeaders are the extension headers following the IPv6 header.
+	ExtensionHeaders IPv6ExtHdrSerializer
 }
 
 // IPv6 represents an ipv6 header stored in a byte array.
@@ -253,12 +258,14 @@ func (IPv6) SetChecksum(uint16) {
 
 // Encode encodes all the fields of the ipv6 header.
 func (b IPv6) Encode(i *IPv6Fields) {
+	extHdr := b[IPv6MinimumSize:]
 	b.SetTOS(i.TrafficClass, i.FlowLabel)
 	b.SetPayloadLength(i.PayloadLength)
-	b[IPv6NextHeaderOffset] = i.NextHeader
 	b[hopLimit] = i.HopLimit
 	b.SetSourceAddress(i.SrcAddr)
 	b.SetDestinationAddress(i.DstAddr)
+	nextHeader, _ := i.ExtensionHeaders.Serialize(i.TransportProtocol, extHdr)
+	b[IPv6NextHeaderOffset] = nextHeader
 }
 
 // IsValid performs basic validation on the packet.

@@ -141,11 +141,11 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength: uint16(header.UDPMinimumSize + len(payload)),
-		NextHeader:    uint8(udp.ProtocolNumber),
-		HopLimit:      65,
-		SrcAddr:       testSrcAddrV6,
-		DstAddr:       testDstAddrV6,
+		PayloadLength:     uint16(header.UDPMinimumSize + len(payload)),
+		TransportProtocol: udp.ProtocolNumber,
+		HopLimit:          65,
+		SrcAddr:           testSrcAddrV6,
+		DstAddr:           testDstAddrV6,
 	})
 
 	// Initialize the UDP header.

@@ -96,11 +96,11 @@ func TestPingMulticastBroadcast(t *testing.T) {
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, remoteIPv6Addr, dst, buffer.VectorisedView{}))
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: header.ICMPv6MinimumSize,
-			NextHeader:    uint8(icmp.ProtocolNumber6),
-			HopLimit:      ttl,
-			SrcAddr:       remoteIPv6Addr,
-			DstAddr:       dst,
+			PayloadLength:     header.ICMPv6MinimumSize,
+			TransportProtocol: icmp.ProtocolNumber6,
+			HopLimit:          ttl,
+			SrcAddr:           remoteIPv6Addr,
+			DstAddr:           dst,
 		})
 
 		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -272,11 +272,11 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: uint16(payloadLen),
-			NextHeader:    uint8(udp.ProtocolNumber),
-			HopLimit:      ttl,
-			SrcAddr:       remoteIPv6Addr,
-			DstAddr:       dst,
+			PayloadLength:     uint16(payloadLen),
+			TransportProtocol: udp.ProtocolNumber,
+			HopLimit:          ttl,
+			SrcAddr:           remoteIPv6Addr,
+			DstAddr:           dst,
 		})
 
 		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
