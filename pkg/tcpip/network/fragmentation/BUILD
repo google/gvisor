@@ -18,7 +18,6 @@ go_template_instance(
 go_library(
     name = "fragmentation",
     srcs = [
-        "frag_heap.go",
         "fragmentation.go",
         "reassembler.go",
         "reassembler_list.go",
@@ -38,7 +37,6 @@ go_test(
     name = "fragmentation_test",
     size = "small",
     srcs = [
-        "frag_heap_test.go",
         "fragmentation_test.go",
         "reassembler_test.go",
     ],
