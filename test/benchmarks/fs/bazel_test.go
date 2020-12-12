@@ -61,10 +61,10 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 	for _, bm := range benchmarks {
 		pageCache := tools.Parameter{
 			Name:  "page_cache",
-			Value: "clean",
+			Value: "dirty",
 		}
 		if bm.clearCache {
-			pageCache.Value = "dirty"
+			pageCache.Value = "clean"
 		}
 
 		filesystem := tools.Parameter{
@@ -129,12 +129,14 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 				if !strings.Contains(got, want) {
 					b.Fatalf("string %s not in: %s", want, got)
 				}
-				// Clean bazel in case we use b.N.
-				_, err = container.Exec(ctx, dockerutil.ExecOpts{
-					WorkDir: prefix + workdir,
-				}, "bazel", "clean")
-				if err != nil {
-					b.Fatalf("build failed with: %v", err)
+
+				// Clean bazel in the case we are doing another run.
+				if i < b.N-1 {
+					if _, err = container.Exec(ctx, dockerutil.ExecOpts{
+						WorkDir: prefix + workdir,
+					}, "bazel", "clean"); err != nil {
+						b.Fatalf("build failed with: %v", err)
+					}
 				}
 				b.StartTimer()
 			}
