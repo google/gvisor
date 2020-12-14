@@ -11,7 +11,7 @@ import (
 // stack traces). This is false by default and should only be set to true for
 // debugging purposes, as it can generate an extremely large amount of output
 // and drastically degrade performance.
-const ShmenableLogging = false
+const ShmenableLogging = true
 
 // obj is used to customize logging. Note that we use a pointer to T so that
 // we do not copy the entire object when passed as a format parameter.
