@@ -62,6 +62,7 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 		Callback: func(err error) {
 			if err == nil {
 				log.Infof("Save succeeded: exiting...")
+				s.Kernel.SetSaveSuccess(false /* autosave */)
 			} else {
 				log.Warningf("Save failed: exiting...")
 				s.Kernel.SetSaveError(err)

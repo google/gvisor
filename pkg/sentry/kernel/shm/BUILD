@@ -6,6 +6,9 @@ package(licenses = ["notice"])
 go_template_instance(
     name = "shm_refs",
     out = "shm_refs.go",
+    consts = {
+        "enableLogging": "true",
+    },
     package = "shm",
     prefix = "Shm",
     template = "//pkg/refsvfs2:refs_template",
