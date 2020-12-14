@@ -853,5 +853,21 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
   }
 }
 
+TEST_P(AllSocketPairTest, GetSocketOutOfBandInlineOption) {
+  // We do not support disabling this option. It is always enabled.
+  SKIP_IF(!IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int enable = -1;
+  socklen_t enableLen = sizeof(enable);
+
+  int want = 1;
+  ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_OOBINLINE, &enable,
+                         &enableLen),
+              SyscallSucceeds());
+  ASSERT_EQ(enableLen, sizeof(enable));
+  EXPECT_EQ(enable, want);
+}
+
 }  // namespace testing
 }  // namespace gvisor

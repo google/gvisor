@@ -1096,14 +1096,6 @@ type RemoveMembershipOption MembershipOption
 
 func (*RemoveMembershipOption) isSettableSocketOption() {}
 
-// OutOfBandInlineOption is used by SetSockOpt/GetSockOpt to specify whether
-// TCP out-of-band data is delivered along with the normal in-band data.
-type OutOfBandInlineOption int
-
-func (*OutOfBandInlineOption) isGettableSocketOption() {}
-
-func (*OutOfBandInlineOption) isSettableSocketOption() {}
-
 // SocketDetachFilterOption is used by SetSockOpt to detach a previously attached
 // classic BPF filter on a given endpoint.
 type SocketDetachFilterOption int
