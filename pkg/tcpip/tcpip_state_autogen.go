@@ -29,6 +29,7 @@ func (so *SocketOptions) StateFields() []string {
 		"delayOptionEnabled",
 		"corkOptionEnabled",
 		"receiveOriginalDstAddress",
+		"linger",
 	}
 }
 
@@ -53,6 +54,7 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &so.delayOptionEnabled)
 	stateSinkObject.Save(15, &so.corkOptionEnabled)
 	stateSinkObject.Save(16, &so.receiveOriginalDstAddress)
+	stateSinkObject.Save(17, &so.linger)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -75,6 +77,7 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(14, &so.delayOptionEnabled)
 	stateSourceObject.Load(15, &so.corkOptionEnabled)
 	stateSourceObject.Load(16, &so.receiveOriginalDstAddress)
+	stateSourceObject.Load(17, &so.linger)
 }
 
 func (e *Error) StateTypeName() string {

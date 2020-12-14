@@ -63,7 +63,6 @@ func (ep *endpoint) StateFields() []string {
 		"closed",
 		"bound",
 		"boundNIC",
-		"linger",
 		"lastError",
 		"ops",
 	}
@@ -74,7 +73,7 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	var rcvBufSizeMaxValue int = ep.saveRcvBufSizeMax()
 	stateSinkObject.SaveValue(6, rcvBufSizeMaxValue)
 	var lastErrorValue string = ep.saveLastError()
-	stateSinkObject.SaveValue(15, lastErrorValue)
+	stateSinkObject.SaveValue(14, lastErrorValue)
 	stateSinkObject.Save(0, &ep.TransportEndpointInfo)
 	stateSinkObject.Save(1, &ep.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &ep.netProto)
@@ -88,8 +87,7 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &ep.closed)
 	stateSinkObject.Save(12, &ep.bound)
 	stateSinkObject.Save(13, &ep.boundNIC)
-	stateSinkObject.Save(14, &ep.linger)
-	stateSinkObject.Save(16, &ep.ops)
+	stateSinkObject.Save(15, &ep.ops)
 }
 
 func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
@@ -106,10 +104,9 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &ep.closed)
 	stateSourceObject.Load(12, &ep.bound)
 	stateSourceObject.Load(13, &ep.boundNIC)
-	stateSourceObject.Load(14, &ep.linger)
-	stateSourceObject.Load(16, &ep.ops)
+	stateSourceObject.Load(15, &ep.ops)
 	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { ep.loadRcvBufSizeMax(y.(int)) })
-	stateSourceObject.LoadValue(15, new(string), func(y interface{}) { ep.loadLastError(y.(string)) })
+	stateSourceObject.LoadValue(14, new(string), func(y interface{}) { ep.loadLastError(y.(string)) })
 	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 

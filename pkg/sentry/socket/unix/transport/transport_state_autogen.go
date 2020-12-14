@@ -333,7 +333,6 @@ func (e *baseEndpoint) StateFields() []string {
 		"receiver",
 		"connected",
 		"path",
-		"linger",
 		"ops",
 	}
 }
@@ -347,8 +346,7 @@ func (e *baseEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &e.receiver)
 	stateSinkObject.Save(3, &e.connected)
 	stateSinkObject.Save(4, &e.path)
-	stateSinkObject.Save(5, &e.linger)
-	stateSinkObject.Save(6, &e.ops)
+	stateSinkObject.Save(5, &e.ops)
 }
 
 func (e *baseEndpoint) afterLoad() {}
@@ -359,8 +357,7 @@ func (e *baseEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &e.receiver)
 	stateSourceObject.Load(3, &e.connected)
 	stateSourceObject.Load(4, &e.path)
-	stateSourceObject.Load(5, &e.linger)
-	stateSourceObject.Load(6, &e.ops)
+	stateSourceObject.Load(5, &e.ops)
 }
 
 func init() {
