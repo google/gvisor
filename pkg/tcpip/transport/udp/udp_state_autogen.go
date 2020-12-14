@@ -82,7 +82,6 @@ func (e *endpoint) StateFields() []string {
 		"multicastMemberships",
 		"effectiveNetProtos",
 		"owner",
-		"linger",
 		"ops",
 	}
 }
@@ -118,8 +117,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(24, &e.multicastMemberships)
 	stateSinkObject.Save(25, &e.effectiveNetProtos)
 	stateSinkObject.Save(26, &e.owner)
-	stateSinkObject.Save(27, &e.linger)
-	stateSinkObject.Save(28, &e.ops)
+	stateSinkObject.Save(27, &e.ops)
 }
 
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
@@ -148,8 +146,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(24, &e.multicastMemberships)
 	stateSourceObject.Load(25, &e.effectiveNetProtos)
 	stateSourceObject.Load(26, &e.owner)
-	stateSourceObject.Load(27, &e.linger)
-	stateSourceObject.Load(28, &e.ops)
+	stateSourceObject.Load(27, &e.ops)
 	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
 	stateSourceObject.LoadValue(19, new(string), func(y interface{}) { e.loadLastError(y.(string)) })
 	stateSourceObject.AfterLoad(e.afterLoad)

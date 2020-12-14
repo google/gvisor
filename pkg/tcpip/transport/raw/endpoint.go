@@ -85,8 +85,6 @@ type endpoint struct {
 	// Connect(), and is valid only when conneted is true.
 	route *stack.Route                 `state:"manual"`
 	stats tcpip.TransportEndpointStats `state:"nosave"`
-	// linger is used for SO_LINGER socket option.
-	linger tcpip.LingerOption
 
 	// owner is used to get uid and gid of the packet.
 	owner tcpip.PacketOwner
@@ -532,14 +530,8 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // SetSockOpt implements tcpip.Endpoint.SetSockOpt.
 func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
-	switch v := opt.(type) {
+	switch opt.(type) {
 	case *tcpip.SocketDetachFilterOption:
-		return nil
-
-	case *tcpip.LingerOption:
-		e.mu.Lock()
-		e.linger = *v
-		e.mu.Unlock()
 		return nil
 
 	default:
@@ -593,16 +585,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
-	switch o := opt.(type) {
-	case *tcpip.LingerOption:
-		e.mu.Lock()
-		*o = e.linger
-		e.mu.Unlock()
-		return nil
-
-	default:
-		return tcpip.ErrUnknownProtocolOption
-	}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.

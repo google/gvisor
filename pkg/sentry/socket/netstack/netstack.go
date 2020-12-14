@@ -428,11 +428,7 @@ func (s *socketOpsCommon) Release(ctx context.Context) {
 		return
 	}
 
-	var v tcpip.LingerOption
-	if err := s.Endpoint.GetSockOpt(&v); err != nil {
-		return
-	}
-
+	v := s.Endpoint.SocketOptions().GetLinger()
 	// The case for zero timeout is handled in tcp endpoint close function.
 	// Close is blocked until either:
 	// 1. The endpoint state is not in any of the states: FIN-WAIT1,
@@ -1092,11 +1088,8 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		var v tcpip.LingerOption
 		var linger linux.Linger
-		if err := ep.GetSockOpt(&v); err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
+		v := ep.SocketOptions().GetLinger()
 
 		if v.Enabled {
 			linger.OnOff = 1
@@ -1899,10 +1892,11 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 			socket.SetSockOptEmitUnimplementedEvent(t, name)
 		}
 
-		return syserr.TranslateNetstackError(
-			ep.SetSockOpt(&tcpip.LingerOption{
-				Enabled: v.OnOff != 0,
-				Timeout: time.Second * time.Duration(v.Linger)}))
+		ep.SocketOptions().SetLinger(tcpip.LingerOption{
+			Enabled: v.OnOff != 0,
+			Timeout: time.Second * time.Duration(v.Linger),
+		})
+		return nil
 
 	case linux.SO_DETACH_FILTER:
 		// optval is ignored.
