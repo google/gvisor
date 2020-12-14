@@ -214,9 +214,11 @@ type Kernel struct {
 	// netlinkPorts manages allocation of netlink socket port IDs.
 	netlinkPorts *port.Manager
 
-	// saveErr is the error causing the sandbox to exit during save, if
-	// any. It is protected by extMu.
-	saveErr error `state:"nosave"`
+	// saveStatus is nil if the sandbox has not been saved, errSaved or
+	// errAutoSaved if it has been saved successfully, or the error causing the
+	// sandbox to exit during save.
+	// It is protected by extMu.
+	saveStatus error `state:"nosave"`
 
 	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
 	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`
@@ -1481,12 +1483,42 @@ func (k *Kernel) NetlinkPorts() *port.Manager {
 	return k.netlinkPorts
 }
 
-// SaveError returns the sandbox error that caused the kernel to exit during
-// save.
-func (k *Kernel) SaveError() error {
+var (
+	errSaved     = errors.New("sandbox has been successfully saved")
+	errAutoSaved = errors.New("sandbox has been successfully auto-saved")
+)
+
+// SaveStatus returns the sandbox save status. If it was saved successfully,
+// autosaved indicates whether save was triggered by autosave. If it was not
+// saved successfully, err indicates the sandbox error that caused the kernel to
+// exit during save.
+func (k *Kernel) SaveStatus() (saved, autosaved bool, err error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	return k.saveErr
+	switch k.saveStatus {
+	case nil:
+		return false, false, nil
+	case errSaved:
+		return true, false, nil
+	case errAutoSaved:
+		return true, true, nil
+	default:
+		return false, false, k.saveStatus
+	}
+}
+
+// SetSaveSuccess sets the flag indicating that save completed successfully, if
+// no status was already set.
+func (k *Kernel) SetSaveSuccess(autosave bool) {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	if k.saveStatus == nil {
+		if autosave {
+			k.saveStatus = errAutoSaved
+		} else {
+			k.saveStatus = errSaved
+		}
+	}
 }
 
 // SetSaveError sets the sandbox error that caused the kernel to exit during
@@ -1494,8 +1526,8 @@ func (k *Kernel) SaveError() error {
 func (k *Kernel) SetSaveError(err error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	if k.saveErr == nil {
-		k.saveErr = err
+	if k.saveStatus == nil {
+		k.saveStatus = err
 	}
 }
 
