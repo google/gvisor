@@ -965,7 +965,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 		}
 
 		// Get the last error and convert it.
-		err := ep.LastError()
+		err := ep.SocketOptions().GetLastError()
 		if err == nil {
 			optP := primitive.Int32(0)
 			return &optP, nil
@@ -1127,13 +1127,8 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		var v tcpip.OutOfBandInlineOption
-		if err := ep.GetSockOpt(&v); err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		vP := primitive.Int32(v)
-		return &vP, nil
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetOutOfBandInline()))
+		return &v, nil
 
 	case linux.SO_NO_CHECK:
 		if outLen < sizeOfInt32 {
@@ -1880,8 +1875,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 			socket.SetSockOptEmitUnimplementedEvent(t, name)
 		}
 
-		opt := tcpip.OutOfBandInlineOption(v)
-		return syserr.TranslateNetstackError(ep.SetSockOpt(&opt))
+		ep.SocketOptions().SetOutOfBandInline(v != 0)
+		return nil
 
 	case linux.SO_NO_CHECK:
 		if len(optVal) < sizeOfInt32 {

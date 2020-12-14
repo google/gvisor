@@ -1838,9 +1838,6 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 
-	case *tcpip.OutOfBandInlineOption:
-		// We don't currently support disabling this option.
-
 	case *tcpip.TCPUserTimeoutOption:
 		e.LockUser()
 		e.userTimeout = time.Duration(*v)
@@ -2045,10 +2042,6 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 		e.LockUser()
 		*o = tcpip.TCPUserTimeoutOption(e.userTimeout)
 		e.UnlockUser()
-
-	case *tcpip.OutOfBandInlineOption:
-		// We don't currently support disabling this option.
-		*o = 1
 
 	case *tcpip.CongestionControlOption:
 		e.LockUser()

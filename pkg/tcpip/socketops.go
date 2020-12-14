@@ -37,6 +37,9 @@ type SocketOptionsHandler interface {
 
 	// OnCorkOptionSet is invoked when TCP_CORK is set for an endpoint.
 	OnCorkOptionSet(v bool)
+
+	// LastError is invoked when SO_ERROR is read for an endpoint.
+	LastError() *Error
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -59,6 +62,11 @@ func (*DefaultSocketOptionsHandler) OnDelayOptionSet(bool) {}
 
 // OnCorkOptionSet implements SocketOptionsHandler.OnCorkOptionSet.
 func (*DefaultSocketOptionsHandler) OnCorkOptionSet(bool) {}
+
+// LastError implements SocketOptionsHandler.LastError.
+func (*DefaultSocketOptionsHandler) LastError() *Error {
+	return nil
+}
 
 // SocketOptions contains all the variables which store values for SOL_SOCKET,
 // SOL_IP, SOL_IPV6 and SOL_TCP level options.
@@ -316,3 +324,17 @@ func (so *SocketOptions) GetReceiveOriginalDstAddress() bool {
 func (so *SocketOptions) SetReceiveOriginalDstAddress(v bool) {
 	storeAtomicBool(&so.receiveOriginalDstAddress, v)
 }
+
+// GetLastError gets value for SO_ERROR option.
+func (so *SocketOptions) GetLastError() *Error {
+	return so.handler.LastError()
+}
+
+// GetOutOfBandInline gets value for SO_OOBINLINE option.
+func (*SocketOptions) GetOutOfBandInline() bool {
+	return true
+}
+
+// SetOutOfBandInline sets value for SO_OOBINLINE option. We currently do not
+// support disabling this option.
+func (*SocketOptions) SetOutOfBandInline(bool) {}
