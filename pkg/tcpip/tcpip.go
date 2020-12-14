@@ -1145,10 +1145,6 @@ type LingerOption struct {
 	Timeout time.Duration
 }
 
-func (*LingerOption) isGettableSocketOption() {}
-
-func (*LingerOption) isSettableSocketOption() {}
-
 // IPPacketInfo is the message structure for IP_PKTINFO.
 //
 // +stateify savable

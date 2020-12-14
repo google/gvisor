@@ -674,9 +674,6 @@ type endpoint struct {
 	// owner is used to get uid and gid of the packet.
 	owner tcpip.PacketOwner
 
-	// linger is used for SO_LINGER socket option.
-	linger tcpip.LingerOption
-
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
 }
@@ -1040,7 +1037,8 @@ func (e *endpoint) Close() {
 		return
 	}
 
-	if e.linger.Enabled && e.linger.Timeout == 0 {
+	linger := e.SocketOptions().GetLinger()
+	if linger.Enabled && linger.Timeout == 0 {
 		s := e.EndpointState()
 		isResetState := s == StateEstablished || s == StateCloseWait || s == StateFinWait1 || s == StateFinWait2 || s == StateSynRecv
 		if isResetState {
@@ -1906,11 +1904,6 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 	case *tcpip.SocketDetachFilterOption:
 		return nil
 
-	case *tcpip.LingerOption:
-		e.LockUser()
-		e.linger = *v
-		e.UnlockUser()
-
 	default:
 		return nil
 	}
@@ -2070,11 +2063,6 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 			Addr: addr,
 			Port: port,
 		}
-
-	case *tcpip.LingerOption:
-		e.LockUser()
-		*o = e.linger
-		e.UnlockUser()
 
 	default:
 		return tcpip.ErrUnknownProtocolOption
