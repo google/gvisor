@@ -524,8 +524,8 @@ go_repository(
     name = "com_github_containerd_cgroups",
     build_file_proto_mode = "disable",
     importpath = "github.com/containerd/cgroups",
-    sum = "h1:5yg0k8gqOssNLsjjCtXIADoPbAtUtQZJfC8hQ4r2oFY=",
-    version = "v0.0.0-20181219155423-39b18af02c41",
+    sum = "h1:7grrpcfCtbZLsjtB0DgMuzs1umsJmpzaHMZ6cO6iAWw=",
+    version = "v0.0.0-20201119153540-4cbc285b3327",
 )
 
 go_repository(

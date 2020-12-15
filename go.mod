@@ -10,7 +10,7 @@ require (
 	github.com/Microsoft/hcsshim v0.8.6 // indirect
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422 // indirect
 	github.com/cilium/ebpf v0.0.0-20200110133405-4032b1d8aae3 // indirect
-	github.com/containerd/cgroups v0.0.0-20181219155423-39b18af02c41 // indirect
+	github.com/containerd/cgroups v0.0.0-20201119153540-4cbc285b3327
 	github.com/containerd/containerd v1.3.9 // indirect
 	github.com/containerd/continuity v0.0.0-20200928162600-f2cc35102c2a // indirect
 	github.com/containerd/fifo v0.0.0-20191213151349-ff969a566b00 // indirect
