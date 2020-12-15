@@ -36,12 +36,12 @@ type aioManager struct {
 	contexts map[uint64]*AIOContext
 }
 
-func (a *aioManager) destroy() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+func (mm *MemoryManager) destroyAIOManager(ctx context.Context) {
+	mm.aioManager.mu.Lock()
+	defer mm.aioManager.mu.Unlock()
 
-	for _, ctx := range a.contexts {
-		ctx.destroy()
+	for id := range mm.aioManager.contexts {
+		mm.destroyAIOContextLocked(ctx, id)
 	}
 }
 
@@ -68,16 +68,26 @@ func (a *aioManager) newAIOContext(events uint32, id uint64) bool {
 // be drained.
 //
 // Nil is returned if the context does not exist.
-func (a *aioManager) destroyAIOContext(id uint64) *AIOContext {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	ctx, ok := a.contexts[id]
+//
+// Precondition: mm.aioManager.mu is locked.
+func (mm *MemoryManager) destroyAIOContextLocked(ctx context.Context, id uint64) *AIOContext {
+	aioCtx, ok := mm.aioManager.contexts[id]
 	if !ok {
 		return nil
 	}
-	delete(a.contexts, id)
-	ctx.destroy()
-	return ctx
+
+	// Only unmaps after it assured that the address is a valid aio context to
+	// prevent random memory from been unmapped.
+	//
+	// Note: It's possible to unmap this address and map something else into
+	// the same address. Then it would be unmapping memory that it doesn't own.
+	// This is, however, the way Linux implements AIO. Keeps the same [weird]
+	// semantics in case anyone relies on it.
+	mm.MUnmap(ctx, usermem.Addr(id), aioRingBufferSize)
+
+	delete(mm.aioManager.contexts, id)
+	aioCtx.destroy()
+	return aioCtx
 }
 
 // lookupAIOContext looks up the given context.
@@ -140,16 +150,21 @@ func (ctx *AIOContext) checkForDone() {
 	}
 }
 
-// Prepare reserves space for a new request, returning true if available.
-// Returns false if the context is busy.
-func (ctx *AIOContext) Prepare() bool {
+// Prepare reserves space for a new request, returning nil if available.
+// Returns EAGAIN if the context is busy and EINVAL if the context is dead.
+func (ctx *AIOContext) Prepare() error {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
+	if ctx.dead {
+		// Context died after the caller looked it up.
+		return syserror.EINVAL
+	}
 	if ctx.outstanding >= ctx.maxOutstanding {
-		return false
+		// Context is busy.
+		return syserror.EAGAIN
 	}
 	ctx.outstanding++
-	return true
+	return nil
 }
 
 // PopRequest pops a completed request if available, this function does not do
@@ -391,20 +406,13 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 // DestroyAIOContext destroys an asynchronous I/O context. It returns the
 // destroyed context. nil if the context does not exist.
 func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) *AIOContext {
-	if _, ok := mm.LookupAIOContext(ctx, id); !ok {
+	if !mm.isValidAddr(ctx, id) {
 		return nil
 	}
 
-	// Only unmaps after it assured that the address is a valid aio context to
-	// prevent random memory from been unmapped.
-	//
-	// Note: It's possible to unmap this address and map something else into
-	// the same address. Then it would be unmapping memory that it doesn't own.
-	// This is, however, the way Linux implements AIO. Keeps the same [weird]
-	// semantics in case anyone relies on it.
-	mm.MUnmap(ctx, usermem.Addr(id), aioRingBufferSize)
-
-	return mm.aioManager.destroyAIOContext(id)
+	mm.aioManager.mu.Lock()
+	defer mm.aioManager.mu.Unlock()
+	return mm.destroyAIOContextLocked(ctx, id)
 }
 
 // LookupAIOContext looks up the given context. It returns false if the context
@@ -415,13 +423,18 @@ func (mm *MemoryManager) LookupAIOContext(ctx context.Context, id uint64) (*AIOC
 		return nil, false
 	}
 
-	// Protect against 'ids' that are inaccessible (Linux also reads 4 bytes
-	// from id).
-	var buf [4]byte
-	_, err := mm.CopyIn(ctx, usermem.Addr(id), buf[:], usermem.IOOpts{})
-	if err != nil {
+	// Protect against 'id' that is inaccessible.
+	if !mm.isValidAddr(ctx, id) {
 		return nil, false
 	}
 
 	return aioCtx, true
+}
+
+// isValidAddr determines if the address `id` is valid. (Linux also reads 4
+// bytes from id).
+func (mm *MemoryManager) isValidAddr(ctx context.Context, id uint64) bool {
+	var buf [4]byte
+	_, err := mm.CopyIn(ctx, usermem.Addr(id), buf[:], usermem.IOOpts{})
+	return err == nil
 }

@@ -130,9 +130,8 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr user
 	if !ok {
 		return syserror.EINVAL
 	}
-	if ready := aioCtx.Prepare(); !ready {
-		// Context is busy.
-		return syserror.EAGAIN
+	if err := aioCtx.Prepare(); err != nil {
+		return err
 	}
 
 	if eventFD != nil {
