@@ -289,7 +289,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher
 			// prevent gvisor from receiving fragmented packets and the host does the
 			// reassembly on our behalf before delivering the fragments. This makes it
 			// hard to test fragmentation reassembly code in Netstack.
-			const fanoutType = unix.PACKET_FANOUT_HASH
+			const fanoutType = 0x8000
 			fanoutArg := fanoutID | fanoutType<<16
 			if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
 				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %v", err)

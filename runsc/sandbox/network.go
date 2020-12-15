@@ -279,6 +279,8 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	ll := syscall.SockaddrLinklayer{
 		Protocol: protocol,
 		Ifindex:  iface.Index,
+		Hatype:   0, // No ARP type.
+		Pkttype:  syscall.PACKET_OTHERHOST,
 	}
 	if err := syscall.Bind(fd, &ll); err != nil {
 		return nil, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
