@@ -1,3 +1,5 @@
+# This workflow revives issues that are still referenced in the code, and may
+# have been accidentally closed or marked stale.
 name: "Issue reviver"
 on:
   schedule:
