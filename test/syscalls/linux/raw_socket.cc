@@ -894,7 +894,7 @@ TEST_P(RawSocketTest, ConnectOnIPv6Socket) {
 
   ASSERT_THAT(connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
                       sizeof(sockaddr_in6)),
-              SyscallFailsWithErrno(EINVAL));
+              SyscallFailsWithErrno(EAFNOSUPPORT));
 }
 
 INSTANTIATE_TEST_SUITE_P(
