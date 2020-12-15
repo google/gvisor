@@ -647,6 +647,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_non_blocking_test",
 )
 
@@ -658,12 +659,14 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_udp_generic_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_non_blocking_test",
 )
 
@@ -680,6 +683,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = more_shards,
     # Takes too long under gotsan to run.
     tags = ["nogotsan"],
@@ -728,6 +732,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_non_stream_blocking_local_test",
 )
 
@@ -903,6 +908,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:udp_bind_test",
 )
 
@@ -967,6 +973,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:proc_net_tcp_test",
 )
 

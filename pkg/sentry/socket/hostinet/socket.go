@@ -331,17 +331,17 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 	switch level {
 	case linux.SOL_IP:
 		switch name {
-		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_PKTINFO:
+		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_PKTINFO, linux.IP_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_IPV6:
 		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_V6ONLY:
+		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_SOCKET:
 		switch name {
-		case linux.SO_ERROR, linux.SO_KEEPALIVE, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR:
+		case linux.SO_ERROR, linux.SO_KEEPALIVE, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
 			optlen = sizeofInt32
 		case linux.SO_LINGER:
 			optlen = syscall.SizeofLinger
@@ -377,24 +377,24 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 	switch level {
 	case linux.SOL_IP:
 		switch name {
-		case linux.IP_TOS, linux.IP_RECVTOS:
+		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		case linux.IP_PKTINFO:
 			optlen = linux.SizeOfControlMessageIPPacketInfo
 		}
 	case linux.SOL_IPV6:
 		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_V6ONLY:
+		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_SOCKET:
 		switch name {
-		case linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR:
+		case linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_TCP:
 		switch name {
-		case linux.TCP_NODELAY:
+		case linux.TCP_NODELAY, linux.TCP_INQ:
 			optlen = sizeofInt32
 		}
 	}
@@ -513,24 +513,48 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	controlMessages := socket.ControlMessages{}
 	for _, unixCmsg := range unixControlMessages {
 		switch unixCmsg.Header.Level {
-		case syscall.SOL_IP:
+		case linux.SOL_SOCKET:
 			switch unixCmsg.Header.Type {
-			case syscall.IP_TOS:
+			case linux.SO_TIMESTAMP:
+				controlMessages.IP.HasTimestamp = true
+				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfTimeval], usermem.ByteOrder, &controlMessages.IP.Timestamp)
+			}
+
+		case linux.SOL_IP:
+			switch unixCmsg.Header.Type {
+			case linux.IP_TOS:
 				controlMessages.IP.HasTOS = true
 				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageTOS], usermem.ByteOrder, &controlMessages.IP.TOS)
 
-			case syscall.IP_PKTINFO:
+			case linux.IP_PKTINFO:
 				controlMessages.IP.HasIPPacketInfo = true
 				var packetInfo linux.ControlMessageIPPacketInfo
 				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageIPPacketInfo], usermem.ByteOrder, &packetInfo)
 				controlMessages.IP.PacketInfo = packetInfo
+
+			case linux.IP_RECVORIGDSTADDR:
+				var addr linux.SockAddrInet
+				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], usermem.ByteOrder, &addr)
+				controlMessages.IP.OriginalDstAddress = &addr
 			}
 
-		case syscall.SOL_IPV6:
+		case linux.SOL_IPV6:
 			switch unixCmsg.Header.Type {
-			case syscall.IPV6_TCLASS:
+			case linux.IPV6_TCLASS:
 				controlMessages.IP.HasTClass = true
 				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageTClass], usermem.ByteOrder, &controlMessages.IP.TClass)
+
+			case linux.IPV6_RECVORIGDSTADDR:
+				var addr linux.SockAddrInet6
+				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], usermem.ByteOrder, &addr)
+				controlMessages.IP.OriginalDstAddress = &addr
+			}
+
+		case linux.SOL_TCP:
+			switch unixCmsg.Header.Type {
+			case linux.TCP_INQ:
+				controlMessages.IP.HasInq = true
+				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageInq], usermem.ByteOrder, &controlMessages.IP.Inq)
 			}
 		}
 	}
