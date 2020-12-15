@@ -229,3 +229,46 @@ func TestIOAfterMProtect(t *testing.T) {
 		t.Errorf("CopyOut got %d want 1", n)
 	}
 }
+
+// TestAIOPrepareAfterDestroy tests that AIOContext should not be able to be
+// prepared after destruction.
+func TestAIOPrepareAfterDestroy(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx)
+	defer mm.DecUsers(ctx)
+
+	id, err := mm.NewAIOContext(ctx, 1)
+	if err != nil {
+		t.Fatalf("mm.NewAIOContext got err %v want nil", err)
+	}
+	aioCtx, ok := mm.LookupAIOContext(ctx, id)
+	if !ok {
+		t.Fatalf("AIOContext not found")
+	}
+	mm.DestroyAIOContext(ctx, id)
+
+	// Prepare should fail because aioCtx should be destroyed.
+	if err := aioCtx.Prepare(); err != syserror.EINVAL {
+		t.Errorf("aioCtx.Prepare got err %v want nil", err)
+	} else if err == nil {
+		aioCtx.CancelPendingRequest()
+	}
+}
+
+// TestAIOLookupAfterDestroy tests that AIOContext should not be able to be
+// looked up after memory manager is destroyed.
+func TestAIOLookupAfterDestroy(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx)
+
+	id, err := mm.NewAIOContext(ctx, 1)
+	if err != nil {
+		mm.DecUsers(ctx)
+		t.Fatalf("mm.NewAIOContext got err %v want nil", err)
+	}
+	mm.DecUsers(ctx) // This destroys the AIOContext manager.
+
+	if _, ok := mm.LookupAIOContext(ctx, id); ok {
+		t.Errorf("AIOContext found even after AIOContext manager is destroyed")
+	}
+}
