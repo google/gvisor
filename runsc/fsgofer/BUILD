@@ -29,9 +29,12 @@ go_test(
     srcs = ["fsgofer_test.go"],
     library = ":fsgofer",
     deps = [
+        "//pkg/fd",
         "//pkg/log",
         "//pkg/p9",
         "//pkg/test/testutil",
+        "//runsc/specutils",
+        "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
