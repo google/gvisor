@@ -25,6 +25,183 @@ var _ marshal.Marshallable = (*Uint8)(nil)
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 //go:nosplit
+func (i *Int16) SizeBytes() int {
+    return 2
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (i *Int16) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint16(dst[:2], uint16(*i))
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (i *Int16) UnmarshalBytes(src []byte) {
+    *i = Int16(int16(usermem.ByteOrder.Uint16(src[:2])))
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (i *Int16) Packed() bool {
+    // Scalar newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (i *Int16) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(i))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (i *Int16) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(i), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (i *Int16) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (i *Int16) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (i *Int16) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (i *Int16) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// CopyInt16SliceIn copies in a slice of int16 objects from the task's memory.
+//go:nosplit
+func CopyInt16SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int16) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Int16)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyInt16SliceOut copies a slice of int16 objects to the task's memory.
+//go:nosplit
+func CopyInt16SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []int16) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Int16)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := cc.CopyOutBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// MarshalUnsafeInt16Slice is like Int16.MarshalUnsafe, but for a []Int16.
+func MarshalUnsafeInt16Slice(src []Int16, dst []byte) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Int16)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyIn(dst[:(size*count)], val)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// UnmarshalUnsafeInt16Slice is like Int16.UnmarshalUnsafe, but for a []Int16.
+func UnmarshalUnsafeInt16Slice(dst []Int16, src []byte) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Int16)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyOut(val, src[:(size*count)])
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+//go:nosplit
 func (u *Uint16) SizeBytes() int {
     return 2
 }
@@ -1251,183 +1428,6 @@ func UnmarshalUnsafeUint8Slice(dst []Uint8, src []byte) (int, error) {
         return 0, nil
     }
     size := (*Uint8)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-//go:nosplit
-func (i *Int16) SizeBytes() int {
-    return 2
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *Int16) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(*i))
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *Int16) UnmarshalBytes(src []byte) {
-    *i = Int16(int16(usermem.ByteOrder.Uint16(src[:2])))
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (i *Int16) Packed() bool {
-    // Scalar newtypes are always packed.
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *Int16) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *Int16) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (i *Int16) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (i *Int16) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return i.CopyOutN(cc, addr, i.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (i *Int16) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (i *Int16) WriteTo(w io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
-
-    length, err := w.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that i
-    // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// CopyInt16SliceIn copies in a slice of int16 objects from the task's memory.
-//go:nosplit
-func CopyInt16SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int16) (int, error) {
-    count := len(dst)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Int16)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(val)
-    hdr.Len = size * count
-    hdr.Cap = size * count
-
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyInt16SliceOut copies a slice of int16 objects to the task's memory.
-//go:nosplit
-func CopyInt16SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []int16) (int, error) {
-    count := len(src)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Int16)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(val)
-    hdr.Len = size * count
-    hdr.Cap = size * count
-
-    length, err := cc.CopyOutBytes(addr, buf) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// MarshalUnsafeInt16Slice is like Int16.MarshalUnsafe, but for a []Int16.
-func MarshalUnsafeInt16Slice(src []Int16, dst []byte) (int, error) {
-    count := len(src)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Int16)(nil).SizeBytes()
-
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// UnmarshalUnsafeInt16Slice is like Int16.UnmarshalUnsafe, but for a []Int16.
-func UnmarshalUnsafeInt16Slice(dst []Int16, src []byte) (int, error) {
-    count := len(dst)
-    if count == 0 {
-        return 0, nil
-    }
-    size := (*Int16)(nil).SizeBytes()
 
     ptr := unsafe.Pointer(&dst)
     val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))

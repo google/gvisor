@@ -28,6 +28,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/containerd/cgroups"
+	cgroupsstats "github.com/containerd/cgroups/stats/v1"
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -735,48 +736,48 @@ func (s *service) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.
 	// as runc.
 	//
 	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
-	metrics := &cgroups.Metrics{
-		CPU: &cgroups.CPUStat{
-			Usage: &cgroups.CPUUsage{
+	metrics := &cgroupsstats.Metrics{
+		CPU: &cgroupsstats.CPUStat{
+			Usage: &cgroupsstats.CPUUsage{
 				Total:  stats.Cpu.Usage.Total,
 				Kernel: stats.Cpu.Usage.Kernel,
 				User:   stats.Cpu.Usage.User,
 				PerCPU: stats.Cpu.Usage.Percpu,
 			},
-			Throttling: &cgroups.Throttle{
+			Throttling: &cgroupsstats.Throttle{
 				Periods:          stats.Cpu.Throttling.Periods,
 				ThrottledPeriods: stats.Cpu.Throttling.ThrottledPeriods,
 				ThrottledTime:    stats.Cpu.Throttling.ThrottledTime,
 			},
 		},
-		Memory: &cgroups.MemoryStat{
+		Memory: &cgroupsstats.MemoryStat{
 			Cache: stats.Memory.Cache,
-			Usage: &cgroups.MemoryEntry{
+			Usage: &cgroupsstats.MemoryEntry{
 				Limit:   stats.Memory.Usage.Limit,
 				Usage:   stats.Memory.Usage.Usage,
 				Max:     stats.Memory.Usage.Max,
 				Failcnt: stats.Memory.Usage.Failcnt,
 			},
-			Swap: &cgroups.MemoryEntry{
+			Swap: &cgroupsstats.MemoryEntry{
 				Limit:   stats.Memory.Swap.Limit,
 				Usage:   stats.Memory.Swap.Usage,
 				Max:     stats.Memory.Swap.Max,
 				Failcnt: stats.Memory.Swap.Failcnt,
 			},
-			Kernel: &cgroups.MemoryEntry{
+			Kernel: &cgroupsstats.MemoryEntry{
 				Limit:   stats.Memory.Kernel.Limit,
 				Usage:   stats.Memory.Kernel.Usage,
 				Max:     stats.Memory.Kernel.Max,
 				Failcnt: stats.Memory.Kernel.Failcnt,
 			},
-			KernelTCP: &cgroups.MemoryEntry{
+			KernelTCP: &cgroupsstats.MemoryEntry{
 				Limit:   stats.Memory.KernelTCP.Limit,
 				Usage:   stats.Memory.KernelTCP.Usage,
 				Max:     stats.Memory.KernelTCP.Max,
 				Failcnt: stats.Memory.KernelTCP.Failcnt,
 			},
 		},
-		Pids: &cgroups.PidsStat{
+		Pids: &cgroupsstats.PidsStat{
 			Current: stats.Pids.Current,
 			Limit:   stats.Pids.Limit,
 		},
