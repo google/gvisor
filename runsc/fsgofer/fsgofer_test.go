@@ -23,10 +23,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 var allOpenFlags = []p9.OpenFlags{p9.ReadOnly, p9.WriteOnly, p9.ReadWrite}
@@ -197,9 +200,12 @@ func setup(fileType uint32) (string, string, error) {
 	switch fileType {
 	case unix.S_IFREG:
 		name = "file"
-		_, f, _, _, err := root.Create(name, p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
+		fd, f, _, _, err := root.Create(name, p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
 		if err != nil {
 			return "", "", fmt.Errorf("createFile(root, %q) failed, err: %v", "test", err)
+		}
+		if fd != nil {
+			fd.Close()
 		}
 		defer f.Close()
 	case unix.S_IFDIR:
@@ -556,7 +562,28 @@ func TestROMountChecks(t *testing.T) {
 func TestWalkNotFound(t *testing.T) {
 	runCustom(t, []uint32{unix.S_IFDIR}, allConfs, func(t *testing.T, s state) {
 		if _, _, err := s.file.Walk([]string{"nobody-here"}); err != unix.ENOENT {
-			t.Errorf("%v: Walk(%q) should have failed, got: %v, expected: unix.ENOENT", s, "nobody-here", err)
+			t.Errorf("Walk(%q) should have failed, got: %v, expected: unix.ENOENT", "nobody-here", err)
+		}
+		if _, _, err := s.file.Walk([]string{"nobody", "here"}); err != unix.ENOENT {
+			t.Errorf("Walk(%q) should have failed, got: %v, expected: unix.ENOENT", "nobody/here", err)
+		}
+		if !s.conf.ROMount {
+			if _, err := s.file.Mkdir("dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
+				t.Fatalf("MkDir(dir) failed, err: %v", err)
+			}
+			if _, _, err := s.file.Walk([]string{"dir", "nobody-here"}); err != unix.ENOENT {
+				t.Errorf("Walk(%q) should have failed, got: %v, expected: unix.ENOENT", "dir/nobody-here", err)
+			}
+		}
+	})
+}
+
+func TestWalkPanic(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFDIR}, allConfs, func(t *testing.T, s state) {
+		for _, name := range []string{".", ".."} {
+			assertPanic(t, func() {
+				s.file.Walk([]string{name})
+			})
 		}
 	})
 }
@@ -570,6 +597,27 @@ func TestWalkDup(t *testing.T) {
 		// Check that 'dup' is usable.
 		if _, _, _, err := dup.GetAttr(p9.AttrMask{}); err != nil {
 			t.Errorf("%v: GetAttr() failed, err: %v", s, err)
+		}
+	})
+}
+
+func TestWalkMultiple(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+		var names []string
+		var parent p9.File = s.file
+		for i := 0; i < 5; i++ {
+			name := fmt.Sprintf("dir%d", i)
+			names = append(names, name)
+
+			if _, err := parent.Mkdir(name, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
+				t.Fatalf("MkDir(%q) failed, err: %v", name, err)
+			}
+
+			var err error
+			_, parent, err = s.file.Walk(names)
+			if err != nil {
+				t.Errorf("Walk(%q): %v", name, err)
+			}
 		}
 	})
 }
@@ -818,4 +866,169 @@ func TestMknod(t *testing.T) {
 			t.Fatalf("testReadWrite() failed: %v", err)
 		}
 	})
+}
+
+func BenchmarkWalkOne(b *testing.B) {
+	path, name, err := setup(unix.S_IFDIR)
+	if err != nil {
+		b.Fatalf("%v", err)
+	}
+	defer os.RemoveAll(path)
+
+	a, err := NewAttachPoint(path, Config{})
+	if err != nil {
+		b.Fatalf("NewAttachPoint failed: %v", err)
+	}
+	root, err := a.Attach()
+	if err != nil {
+		b.Fatalf("Attach failed, err: %v", err)
+	}
+	defer root.Close()
+
+	names := []string{name}
+	files := make([]p9.File, 0, 1000)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, file, err := root.Walk(names)
+		if err != nil {
+			b.Fatalf("Walk(%q): %v", name, err)
+		}
+		files = append(files, file)
+
+		// Avoid running out of FDs.
+		if len(files) == cap(files) {
+			b.StopTimer()
+			for _, file := range files {
+				file.Close()
+			}
+			files = files[:0]
+			b.StartTimer()
+		}
+	}
+
+	b.StopTimer()
+	for _, file := range files {
+		file.Close()
+	}
+}
+
+func BenchmarkCreate(b *testing.B) {
+	path, _, err := setup(unix.S_IFDIR)
+	if err != nil {
+		b.Fatalf("%v", err)
+	}
+	defer os.RemoveAll(path)
+
+	a, err := NewAttachPoint(path, Config{})
+	if err != nil {
+		b.Fatalf("NewAttachPoint failed: %v", err)
+	}
+	root, err := a.Attach()
+	if err != nil {
+		b.Fatalf("Attach failed, err: %v", err)
+	}
+	defer root.Close()
+
+	files := make([]p9.File, 0, 500)
+	fds := make([]*fd.FD, 0, 500)
+	uid := p9.UID(os.Getuid())
+	gid := p9.GID(os.Getgid())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		name := fmt.Sprintf("same-%d", i)
+		fd, file, _, _, err := root.Create(name, p9.ReadOnly, 0777, uid, gid)
+		if err != nil {
+			b.Fatalf("Create(%q): %v", name, err)
+		}
+		files = append(files, file)
+		if fd != nil {
+			fds = append(fds, fd)
+		}
+
+		// Avoid running out of FDs.
+		if len(files) == cap(files) {
+			b.StopTimer()
+			for _, file := range files {
+				file.Close()
+			}
+			files = files[:0]
+			for _, fd := range fds {
+				fd.Close()
+			}
+			fds = fds[:0]
+			b.StartTimer()
+		}
+	}
+
+	b.StopTimer()
+	for _, file := range files {
+		file.Close()
+	}
+	for _, fd := range fds {
+		fd.Close()
+	}
+}
+
+func BenchmarkCreateDiffOwner(b *testing.B) {
+	if !specutils.HasCapabilities(capability.CAP_CHOWN) {
+		b.Skipf("Test requires CAP_CHOWN")
+	}
+
+	path, _, err := setup(unix.S_IFDIR)
+	if err != nil {
+		b.Fatalf("%v", err)
+	}
+	defer os.RemoveAll(path)
+
+	a, err := NewAttachPoint(path, Config{})
+	if err != nil {
+		b.Fatalf("NewAttachPoint failed: %v", err)
+	}
+	root, err := a.Attach()
+	if err != nil {
+		b.Fatalf("Attach failed, err: %v", err)
+	}
+	defer root.Close()
+
+	files := make([]p9.File, 0, 500)
+	fds := make([]*fd.FD, 0, 500)
+	gid := p9.GID(os.Getgid())
+	const nobody = 65534
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		name := fmt.Sprintf("diff-%d", i)
+		fd, file, _, _, err := root.Create(name, p9.ReadOnly, 0777, nobody, gid)
+		if err != nil {
+			b.Fatalf("Create(%q): %v", name, err)
+		}
+		files = append(files, file)
+		if fd != nil {
+			fds = append(fds, fd)
+		}
+
+		// Avoid running out of FDs.
+		if len(files) == cap(files) {
+			b.StopTimer()
+			for _, file := range files {
+				file.Close()
+			}
+			files = files[:0]
+			for _, fd := range fds {
+				fd.Close()
+			}
+			fds = fds[:0]
+			b.StartTimer()
+		}
+	}
+
+	b.StopTimer()
+	for _, file := range files {
+		file.Close()
+	}
+	for _, fd := range fds {
+		fd.Close()
+	}
 }
