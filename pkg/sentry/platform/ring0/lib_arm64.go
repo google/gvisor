@@ -28,13 +28,13 @@ func FlushTlbAll()
 // CPACREL1 returns the value of the CPACR_EL1 register.
 func CPACREL1() (value uintptr)
 
-// FPCR returns the value of FPCR register.
+// GetFPCR returns the value of FPCR register.
 func GetFPCR() (value uintptr)
 
 // SetFPCR writes the FPCR value.
 func SetFPCR(value uintptr)
 
-// FPSR returns the value of FPSR register.
+// GetFPSR returns the value of FPSR register.
 func GetFPSR() (value uintptr)
 
 // SetFPSR writes the FPSR value.
