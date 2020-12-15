@@ -748,7 +748,7 @@ func (fd *fileDescription) Seek(ctx context.Context, offset int64, whence int32)
 // file /foo/bar, a Merkle tree file /foo/.merkle.verity.bar is generated. The
 // hash of the generated Merkle tree and the data size is returned.  If fd
 // points to a regular file, the data is the content of the file. If fd points
-// to a directory, the data is all hahes of its children, written to the Merkle
+// to a directory, the data is all hashes of its children, written to the Merkle
 // tree file.
 //
 // Preconditions: fd.d.fs.verityMu must be locked.
