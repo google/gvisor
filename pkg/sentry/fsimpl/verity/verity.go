@@ -92,10 +92,8 @@ const (
 )
 
 var (
-	// noCrashOnVerificationFailure indicates whether the sandbox should panic
-	// whenever verification fails. If true, an error is returned instead of
-	// panicking. This should only be set for tests.
-	noCrashOnVerificationFailure bool
+	// action specifies the action towards detected violation.
+	action ViolationAction
 
 	// verityMu synchronizes concurrent operations that enable verity and perform
 	// verification checks.
@@ -105,6 +103,18 @@ var (
 // HashAlgorithm is a type specifying the algorithm used to hash the file
 // content.
 type HashAlgorithm int
+
+// ViolationAction is a type specifying the action when an integrity violation
+// is detected.
+type ViolationAction int
+
+const (
+	// PanicOnViolation terminates the sentry on detected violation.
+	PanicOnViolation ViolationAction = 0
+	// ErrorOnViolation returns an error from the violating system call on
+	// detected violation.
+	ErrorOnViolation = 1
+)
 
 // Currently supported hashing algorithms include SHA256 and SHA512.
 const (
@@ -200,10 +210,8 @@ type InternalFilesystemOptions struct {
 	// system wrapped by verity file system.
 	LowerGetFSOptions vfs.GetFilesystemOptions
 
-	// NoCrashOnVerificationFailure indicates whether the sandbox should
-	// panic whenever verification fails. If true, an error is returned
-	// instead of panicking. This should only be set for tests.
-	NoCrashOnVerificationFailure bool
+	// Action specifies the action on an integrity violation.
+	Action ViolationAction
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -215,10 +223,10 @@ func (FilesystemType) Name() string {
 func (FilesystemType) Release(ctx context.Context) {}
 
 // alertIntegrityViolation alerts a violation of integrity, which usually means
-// unexpected modification to the file system is detected. In
-// noCrashOnVerificationFailure mode, it returns EIO, otherwise it panic.
+// unexpected modification to the file system is detected. In ErrorOnViolation
+// mode, it returns EIO, otherwise it panic.
 func alertIntegrityViolation(msg string) error {
-	if noCrashOnVerificationFailure {
+	if action == ErrorOnViolation {
 		return syserror.EIO
 	}
 	panic(msg)
@@ -231,7 +239,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		ctx.Warningf("verity.FilesystemType.GetFilesystem: missing verity configs")
 		return nil, nil, syserror.EINVAL
 	}
-	noCrashOnVerificationFailure = iopts.NoCrashOnVerificationFailure
+	action = iopts.Action
 
 	// Mount the lower file system. The lower file system is wrapped inside
 	// verity, and should not be exposed or connected.

@@ -92,11 +92,11 @@ func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem,
 	mntns, err := vfsObj.NewMountNamespace(ctx, auth.CredentialsFromContext(ctx), "", "verity", &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
 			InternalData: InternalFilesystemOptions{
-				RootMerkleFileName:           rootMerkleFilename,
-				LowerName:                    "tmpfs",
-				Alg:                          hashAlg,
-				AllowRuntimeEnable:           true,
-				NoCrashOnVerificationFailure: true,
+				RootMerkleFileName: rootMerkleFilename,
+				LowerName:          "tmpfs",
+				Alg:                hashAlg,
+				AllowRuntimeEnable: true,
+				Action:             ErrorOnViolation,
 			},
 		},
 	})
