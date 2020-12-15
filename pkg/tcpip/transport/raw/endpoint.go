@@ -404,7 +404,7 @@ func (*endpoint) Disconnect() *tcpip.Error {
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	// Raw sockets do not support connecting to a IPv4 address on a IPv6 endpoint.
 	if e.TransportEndpointInfo.NetProto == header.IPv6ProtocolNumber && len(addr.Addr) != header.IPv6AddressSize {
-		return tcpip.ErrInvalidOptionValue
+		return tcpip.ErrAddressFamilyNotSupported
 	}
 
 	e.mu.Lock()
