@@ -8,6 +8,7 @@ require (
 	cloud.google.com/go v0.52.1-0.20200122224058-0482b626c726 // indirect
 	github.com/Microsoft/go-winio v0.4.15-0.20200908182639-5b44b70ab3ab // indirect
 	github.com/Microsoft/hcsshim v0.8.6 // indirect
+	github.com/bazelbuild/rules_go v0.25.0
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422 // indirect
 	github.com/cilium/ebpf v0.0.0-20200110133405-4032b1d8aae3 // indirect
 	github.com/containerd/cgroups v0.0.0-20181219155423-39b18af02c41 // indirect
@@ -34,7 +35,7 @@ require (
 	github.com/google/subcommands v1.0.2-0.20190508160503-636abe8753b8 // indirect
 	github.com/hashicorp/go-multierror v1.0.0 // indirect
 	github.com/kr/pty v1.1.4-0.20190131011033-7dc38fb350b1 // indirect
-	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a
+	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a // indirect
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v0.1.1 // indirect
@@ -48,9 +49,9 @@ require (
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/tools v0.0.0-20201021000207-d49c4edd7d96 // indirect
 	google.golang.org/grpc v1.29.0 // indirect
-	google.golang.org/protobuf v1.25.1-0.20201020201750-d3470999428b // indirect
+	google.golang.org/protobuf v1.25.1-0.20201020201750-d3470999428b
 	gotest.tools v2.2.0+incompatible // indirect
-	k8s.io/api v0.16.13
-	k8s.io/apimachinery v0.16.14-rc.0
-	k8s.io/client-go v0.16.13
+	k8s.io/api v0.16.13 // indirect
+	k8s.io/apimachinery v0.16.14-rc.0 // indirect
+	k8s.io/client-go v0.16.13 // indirect
 )

@@ -22,6 +22,7 @@ go_library(
         "//runsc/specutils",
         "@com_github_burntsushi_toml//:go_default_library",
         "@com_github_containerd_cgroups//:go_default_library",
+        "@com_github_containerd_cgroups_stats_v1//:go_default_library",
         "@com_github_containerd_console//:go_default_library",
         "@com_github_containerd_containerd//api/events:go_default_library",
         "@com_github_containerd_containerd//api/types/task:go_default_library",
