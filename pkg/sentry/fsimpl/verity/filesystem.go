@@ -163,7 +163,7 @@ afterSymlink:
 // verifyChildLocked verifies the hash of child against the already verified
 // hash of the parent to ensure the child is expected.  verifyChild triggers a
 // sentry panic if unexpected modifications to the file system are detected. In
-// noCrashOnVerificationFailure mode it returns a syserror instead.
+// ErrorOnViolation mode it returns a syserror instead.
 //
 // Preconditions:
 // * fs.renameMu must be locked.
