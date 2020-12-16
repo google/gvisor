@@ -15,7 +15,6 @@
 package tcp_zero_receive_window_test
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"testing"
@@ -49,11 +48,23 @@ func TestZeroReceiveWindow(t *testing.T) {
 			samplePayload := &testbench.Payload{Bytes: testbench.GenerateRandomPayload(t, payloadLen)}
 			// Expect the DUT to eventually advertise zero receive window.
 			// The test would timeout otherwise.
-			for {
+			for readOnce := false; ; {
 				conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
 				gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
 				if err != nil {
 					t.Fatalf("expected packet was not received: %s", err)
+				}
+				// Read once to trigger the subsequent window update from the
+				// DUT to grow the right edge of the receive window from what
+				// was advertised in the SYN-ACK. This ensures that we test
+				// for the full default buffer size (1MB on gVisor at the time
+				// of writing this comment), thus testing for cases when the
+				// scaled receive window size ends up > 65535 (0xffff).
+				if !readOnce {
+					if got := dut.Recv(t, acceptFd, int32(payloadLen), 0); len(got) != payloadLen {
+						t.Fatalf("got dut.Recv(t, %d, %d, 0) = %d, want %d", acceptFd, payloadLen, len(got), payloadLen)
+					}
+					readOnce = true
 				}
 				windowSize := *gotTCP.WindowSize
 				t.Logf("got window size = %d", windowSize)
@@ -94,10 +105,9 @@ func TestNonZeroReceiveWindow(t *testing.T) {
 				if err != nil {
 					t.Fatalf("expected packet was not received: %s", err)
 				}
-				if ret, _, err := dut.RecvWithErrno(context.Background(), t, acceptFd, int32(payloadLen), 0); ret == -1 {
-					t.Fatalf("dut.RecvWithErrno(ctx, t, %d, %d, 0) = %d,_, %s", acceptFd, payloadLen, ret, err)
+				if got := dut.Recv(t, acceptFd, int32(payloadLen), 0); len(got) != payloadLen {
+					t.Fatalf("got dut.Recv(t, %d, %d, 0) = %d, want %d", acceptFd, payloadLen, len(got), payloadLen)
 				}
-
 				if *gotTCP.WindowSize == 0 {
 					t.Fatalf("expected non-zero receive window.")
 				}
