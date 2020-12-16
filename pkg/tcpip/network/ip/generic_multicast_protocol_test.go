@@ -50,6 +50,9 @@ type mockMulticastGroupProtocol struct {
 
 	// Must only be accessed with mu held.
 	makeQueuePackets bool
+
+	// Must only be accessed with mu held.
+	disabled bool
 }
 
 func (m *mockMulticastGroupProtocol) init() {
@@ -63,6 +66,22 @@ func (m *mockMulticastGroupProtocol) initLocked() {
 	m.sendLeaveGroupAddrCount = make(map[tcpip.Address]int)
 }
 
+func (m *mockMulticastGroupProtocol) setEnabled(v bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.disabled = !v
+}
+
+// Enabled implements ip.MulticastGroupProtocol.
+//
+// Precondition: m.mu must be read locked.
+func (m *mockMulticastGroupProtocol) Enabled() bool {
+	return !m.disabled
+}
+
+// SendReport implements ip.MulticastGroupProtocol.
+//
+// Precondition: m.mu must be locked.
 func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) (bool, *tcpip.Error) {
 	if m.mu.TryLock() {
 		m.mu.Unlock()
@@ -77,6 +96,9 @@ func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) (boo
 	return !m.makeQueuePackets, nil
 }
 
+// SendLeave implements ip.MulticastGroupProtocol.
+//
+// Precondition: m.mu must be locked.
 func (m *mockMulticastGroupProtocol) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 	if m.mu.TryLock() {
 		m.mu.Unlock()
@@ -115,7 +137,11 @@ func (m *mockMulticastGroupProtocol) check(sendReportGroupAddresses []tcpip.Addr
 		// ignore mockMulticastGroupProtocol.mu and mockMulticastGroupProtocol.t
 		cmp.FilterPath(
 			func(p cmp.Path) bool {
-				return p.Last().String() == ".mu" || p.Last().String() == ".t" || p.Last().String() == ".makeQueuePackets"
+				switch p.Last().String() {
+				case ".mu", ".t", ".makeQueuePackets", ".disabled":
+					return true
+				}
+				return false
 			},
 			cmp.Ignore(),
 		),
@@ -150,7 +176,6 @@ func TestJoinGroup(t *testing.T) {
 
 			mgp.init()
 			g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-				Enabled:                   true,
 				Rand:                      rand.New(rand.NewSource(0)),
 				Clock:                     clock,
 				Protocol:                  &mgp,
@@ -161,7 +186,7 @@ func TestJoinGroup(t *testing.T) {
 			// Joining a group should send a report immediately and another after
 			// a random interval between 0 and the maximum unsolicited report delay.
 			mgp.mu.Lock()
-			g.JoinGroupLocked(test.addr, false /* dontInitialize */)
+			g.JoinGroupLocked(test.addr)
 			mgp.mu.Unlock()
 			if test.shouldSendReports {
 				if diff := mgp.check([]tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
@@ -210,7 +235,6 @@ func TestLeaveGroup(t *testing.T) {
 
 			mgp.init()
 			g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-				Enabled:                   true,
 				Rand:                      rand.New(rand.NewSource(1)),
 				Clock:                     clock,
 				Protocol:                  &mgp,
@@ -219,7 +243,7 @@ func TestLeaveGroup(t *testing.T) {
 			})
 
 			mgp.mu.Lock()
-			g.JoinGroupLocked(test.addr, false /* dontInitialize */)
+			g.JoinGroupLocked(test.addr)
 			mgp.mu.Unlock()
 			if test.shouldSendMessages {
 				if diff := mgp.check([]tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
@@ -295,7 +319,6 @@ func TestHandleReport(t *testing.T) {
 
 			mgp.init()
 			g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-				Enabled:                   true,
 				Rand:                      rand.New(rand.NewSource(2)),
 				Clock:                     clock,
 				Protocol:                  &mgp,
@@ -304,19 +327,19 @@ func TestHandleReport(t *testing.T) {
 			})
 
 			mgp.mu.Lock()
-			g.JoinGroupLocked(addr1, false /* dontInitialize */)
+			g.JoinGroupLocked(addr1)
 			mgp.mu.Unlock()
 			if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.mu.Lock()
-			g.JoinGroupLocked(addr2, false /* dontInitialize */)
+			g.JoinGroupLocked(addr2)
 			mgp.mu.Unlock()
 			if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.mu.Lock()
-			g.JoinGroupLocked(addr3, false /* dontInitialize */)
+			g.JoinGroupLocked(addr3)
 			mgp.mu.Unlock()
 			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
@@ -391,7 +414,6 @@ func TestHandleQuery(t *testing.T) {
 
 			mgp.init()
 			g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-				Enabled:                   true,
 				Rand:                      rand.New(rand.NewSource(3)),
 				Clock:                     clock,
 				Protocol:                  &mgp,
@@ -400,19 +422,19 @@ func TestHandleQuery(t *testing.T) {
 			})
 
 			mgp.mu.Lock()
-			g.JoinGroupLocked(addr1, false /* dontInitialize */)
+			g.JoinGroupLocked(addr1)
 			mgp.mu.Unlock()
 			if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.mu.Lock()
-			g.JoinGroupLocked(addr2, false /* dontInitialize */)
+			g.JoinGroupLocked(addr2)
 			mgp.mu.Unlock()
 			if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.mu.Lock()
-			g.JoinGroupLocked(addr3, false /* dontInitialize */)
+			g.JoinGroupLocked(addr3)
 			mgp.mu.Unlock()
 			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
@@ -451,7 +473,6 @@ func TestJoinCount(t *testing.T) {
 
 	mgp.init()
 	g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-		Enabled:                   true,
 		Rand:                      rand.New(rand.NewSource(4)),
 		Clock:                     clock,
 		Protocol:                  &mgp,
@@ -461,7 +482,7 @@ func TestJoinCount(t *testing.T) {
 	// Set the join count to 2 for a group.
 	{
 		mgp.mu.Lock()
-		g.JoinGroupLocked(addr1, false /* dontInitialize */)
+		g.JoinGroupLocked(addr1)
 		res := g.IsLocallyJoinedRLocked(addr1)
 		mgp.mu.Unlock()
 		if !res {
@@ -474,7 +495,7 @@ func TestJoinCount(t *testing.T) {
 	}
 	{
 		mgp.mu.Lock()
-		g.JoinGroupLocked(addr1, false /* dontInitialize */)
+		g.JoinGroupLocked(addr1)
 		res := g.IsLocallyJoinedRLocked(addr1)
 		mgp.mu.Unlock()
 		if !res {
@@ -563,7 +584,6 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 
 	mgp.init()
 	g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-		Enabled:                   true,
 		Rand:                      rand.New(rand.NewSource(3)),
 		Clock:                     clock,
 		Protocol:                  &mgp,
@@ -572,19 +592,19 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 	})
 
 	mgp.mu.Lock()
-	g.JoinGroupLocked(addr1, false /* dontInitialize */)
+	g.JoinGroupLocked(addr1)
 	mgp.mu.Unlock()
 	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	mgp.mu.Lock()
-	g.JoinGroupLocked(addr2, false /* dontInitialize */)
+	g.JoinGroupLocked(addr2)
 	mgp.mu.Unlock()
 	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	mgp.mu.Lock()
-	g.JoinGroupLocked(addr3, false /* dontInitialize */)
+	g.JoinGroupLocked(addr3)
 	mgp.mu.Unlock()
 	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
@@ -634,105 +654,79 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 // TestGroupStateNonMember tests that groups do not send packets when in the
 // non-member state, but are still considered locally joined.
 func TestGroupStateNonMember(t *testing.T) {
-	tests := []struct {
-		name           string
-		enabled        bool
-		dontInitialize bool
-	}{
-		{
-			name:           "Disabled",
-			enabled:        false,
-			dontInitialize: false,
-		},
-		{
-			name:           "Keep non-member",
-			enabled:        true,
-			dontInitialize: true,
-		},
-		{
-			name:           "disabled and Keep non-member",
-			enabled:        false,
-			dontInitialize: true,
-		},
+	var g ip.GenericMulticastProtocolState
+	mgp := mockMulticastGroupProtocol{t: t}
+	clock := faketime.NewManualClock()
+
+	mgp.init()
+	mgp.setEnabled(false)
+	g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
+		Rand:                      rand.New(rand.NewSource(3)),
+		Clock:                     clock,
+		Protocol:                  &mgp,
+		MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+	})
+
+	// Joining groups should not send any reports.
+	{
+		mgp.mu.Lock()
+		g.JoinGroupLocked(addr1)
+		res := g.IsLocallyJoinedRLocked(addr1)
+		mgp.mu.Unlock()
+		if !res {
+			t.Fatalf("got g.IsLocallyJoinedRLocked(%s) = false, want = true", addr1)
+		}
+	}
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+	{
+		mgp.mu.Lock()
+		g.JoinGroupLocked(addr2)
+		res := g.IsLocallyJoinedRLocked(addr2)
+		mgp.mu.Unlock()
+		if !res {
+			t.Fatalf("got g.IsLocallyJoinedRLocked(%s) = false, want = true", addr2)
+		}
+	}
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var g ip.GenericMulticastProtocolState
-			mgp := mockMulticastGroupProtocol{t: t}
-			clock := faketime.NewManualClock()
+	// Receiving a query should not send any reports.
+	mgp.mu.Lock()
+	g.HandleQueryLocked(addr1, time.Nanosecond)
+	mgp.mu.Unlock()
+	// Generic multicast protocol timers are expected to take the job mutex.
+	clock.Advance(time.Nanosecond)
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
 
-			mgp.init()
-			g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-				Enabled:                   test.enabled,
-				Rand:                      rand.New(rand.NewSource(3)),
-				Clock:                     clock,
-				Protocol:                  &mgp,
-				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-			})
+	// Leaving groups should not send any leave messages.
+	{
+		mgp.mu.Lock()
+		addr2LeaveRes := g.LeaveGroupLocked(addr2)
+		addr1IsJoined := g.IsLocallyJoinedRLocked(addr1)
+		addr2IsJoined := g.IsLocallyJoinedRLocked(addr2)
+		mgp.mu.Unlock()
+		if !addr2LeaveRes {
+			t.Errorf("got g.LeaveGroupLocked(%s) = false, want = true", addr2)
+		}
+		if !addr1IsJoined {
+			t.Errorf("got g.IsLocallyJoinedRLocked(%s) = false, want = true", addr1)
+		}
+		if addr2IsJoined {
+			t.Errorf("got g.IsLocallyJoinedRLocked(%s) = true, want = false", addr2)
+		}
+	}
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
 
-			// Joining groups should not send any reports.
-			{
-				mgp.mu.Lock()
-				g.JoinGroupLocked(addr1, test.dontInitialize)
-				res := g.IsLocallyJoinedRLocked(addr1)
-				mgp.mu.Unlock()
-				if !res {
-					t.Fatalf("got g.IsLocallyJoinedRLocked(%s) = false, want = true", addr1)
-				}
-			}
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-			}
-			{
-				mgp.mu.Lock()
-				g.JoinGroupLocked(addr2, test.dontInitialize)
-				res := g.IsLocallyJoinedRLocked(addr2)
-				mgp.mu.Unlock()
-				if !res {
-					t.Fatalf("got g.IsLocallyJoinedRLocked(%s) = false, want = true", addr2)
-				}
-			}
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-			}
-
-			// Receiving a query should not send any reports.
-			mgp.mu.Lock()
-			g.HandleQueryLocked(addr1, time.Nanosecond)
-			mgp.mu.Unlock()
-			// Generic multicast protocol timers are expected to take the job mutex.
-			clock.Advance(time.Nanosecond)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-			}
-
-			// Leaving groups should not send any leave messages.
-			{
-				mgp.mu.Lock()
-				addr2LeaveRes := g.LeaveGroupLocked(addr2)
-				addr1IsJoined := g.IsLocallyJoinedRLocked(addr1)
-				addr2IsJoined := g.IsLocallyJoinedRLocked(addr2)
-				mgp.mu.Unlock()
-				if !addr2LeaveRes {
-					t.Errorf("got g.LeaveGroupLocked(%s) = false, want = true", addr2)
-				}
-				if !addr1IsJoined {
-					t.Errorf("got g.IsLocallyJoinedRLocked(%s) = false, want = true", addr1)
-				}
-				if addr2IsJoined {
-					t.Errorf("got g.IsLocallyJoinedRLocked(%s) = true, want = false", addr2)
-				}
-			}
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-			}
-
-			clock.Advance(time.Hour)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-			}
-		})
+	clock.Advance(time.Hour)
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -742,7 +736,6 @@ func TestQueuedPackets(t *testing.T) {
 	mgp.init()
 	clock := faketime.NewManualClock()
 	g.Init(&mgp.mu, ip.GenericMulticastProtocolOptions{
-		Enabled:                   true,
 		Rand:                      rand.New(rand.NewSource(4)),
 		Clock:                     clock,
 		Protocol:                  &mgp,
@@ -753,7 +746,7 @@ func TestQueuedPackets(t *testing.T) {
 	// send the packet.
 	mgp.mu.Lock()
 	mgp.makeQueuePackets = true
-	g.JoinGroupLocked(addr1, false /* dontInitialize */)
+	g.JoinGroupLocked(addr1)
 	mgp.mu.Unlock()
 	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
@@ -845,7 +838,7 @@ func TestQueuedPackets(t *testing.T) {
 	// not affect a newly joined group's reports from being sent.
 	mgp.mu.Lock()
 	mgp.makeQueuePackets = true
-	g.JoinGroupLocked(addr2, false /* dontInitialize */)
+	g.JoinGroupLocked(addr2)
 	mgp.mu.Unlock()
 	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
