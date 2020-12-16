@@ -13,6 +13,12 @@ steps:
   - <<: *common
     label: ":fire: Smoke tests"
     command: make smoke-tests
+  - <<: *common
+    label: ":fire: Smoke tests (ARM64)"
+    command: make smoke-tests
+    agents:
+      queue: arm64
+    soft_fail: true
   - wait
 
   # Check that the Go branch builds.
