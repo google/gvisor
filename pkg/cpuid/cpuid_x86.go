@@ -681,17 +681,6 @@ func (fs *FeatureSet) Intel() bool {
 	return fs.VendorID == intelVendorID
 }
 
-// ErrIncompatible is returned by FeatureSet.HostCompatible if fs is not a
-// subset of the host feature set.
-type ErrIncompatible struct {
-	message string
-}
-
-// Error implements error.
-func (e ErrIncompatible) Error() string {
-	return e.message
-}
-
 // CheckHostCompatible returns nil if fs is a subset of the host feature set.
 func (fs *FeatureSet) CheckHostCompatible() error {
 	hfs := HostFeatureSet()
