@@ -132,6 +132,9 @@ configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker)
 install_runtime = $(call configure,$(RUNTIME),$(1) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
 test_runtime = $(call test,--test_arg=--runtime=$(RUNTIME) $(PARTITIONS) $(1))
 
+refresh: $(RUNTIME_BIN) ## Updates the runtime binary.
+.PHONY: refresh
+
 dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME),--net-raw)
 	@$(call configure_noreload,$(RUNTIME)-d,--net-raw --debug --strace --log-packets)
