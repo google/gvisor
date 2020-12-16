@@ -1932,6 +1932,84 @@ func TestFullWindowReceive(t *testing.T) {
 	)
 }
 
+// Test the stack receive window advertisement on receiving segments smaller than
+// segment overhead. It tests for the right edge of the window to not grow when
+// the endpoint is not being read from.
+func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	opt := tcpip.TCPReceiveBufferSizeRangeOption{
+		Min:     1,
+		Default: tcp.DefaultReceiveBufferSize,
+		Max:     tcp.DefaultReceiveBufferSize << tcp.FindWndScale(seqnum.Size(tcp.DefaultReceiveBufferSize)),
+	}
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+	}
+
+	c.AcceptWithOptions(tcp.FindWndScale(seqnum.Size(opt.Default)), header.TCPSynOptions{MSS: defaultIPv4MSS})
+
+	// Bump up the receive buffer size such that, when the receive window grows,
+	// the scaled window exceeds maxUint16.
+	if err := c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, opt.Max); err != nil {
+		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption, %d) failed: %s", opt.Max, err)
+	}
+
+	// Keep the payload size < segment overhead and such that it is a multiple
+	// of the window scaled value. This enables the test to perform equality
+	// checks on the incoming receive window.
+	payload := generateRandomPayload(t, (tcp.SegSize-1)&(1<<c.RcvdWindowScale))
+	payloadLen := seqnum.Size(len(payload))
+	iss := seqnum.Value(789)
+	seqNum := iss.Add(1)
+
+	// Send payload to the endpoint and return the advertised receive window
+	// from the endpoint.
+	getIncomingRcvWnd := func() uint32 {
+		c.SendPacket(payload, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			SeqNum:  seqNum,
+			AckNum:  c.IRS.Add(1),
+			Flags:   header.TCPFlagAck,
+			RcvWnd:  30000,
+		})
+		seqNum = seqNum.Add(payloadLen)
+
+		pkt := c.GetPacket()
+		return uint32(header.TCP(header.IPv4(pkt).Payload()).WindowSize()) << c.RcvdWindowScale
+	}
+
+	// Read the advertised receive window with the ACK for payload.
+	rcvWnd := getIncomingRcvWnd()
+
+	// Check if the subsequent ACK to our send has not grown the right edge of
+	// the window.
+	if got, want := getIncomingRcvWnd(), rcvWnd-uint32(len(payload)); got != want {
+		t.Fatalf("got incomingRcvwnd %d want %d", got, want)
+	}
+
+	// Read the data so that the subsequent ACK from the endpoint
+	// grows the right edge of the window.
+	if _, _, err := c.EP.Read(nil); err != nil {
+		t.Fatalf("got Read(nil) = %s", err)
+	}
+
+	// Check if we have received max uint16 as our advertised
+	// scaled window now after a read above.
+	maxRcv := uint32(math.MaxUint16 << c.RcvdWindowScale)
+	if got, want := getIncomingRcvWnd(), maxRcv; got != want {
+		t.Fatalf("got incomingRcvwnd %d want %d", got, want)
+	}
+
+	// Check if the subsequent ACK to our send has not grown the right edge of
+	// the window.
+	if got, want := getIncomingRcvWnd(), maxRcv-uint32(len(payload)); got != want {
+		t.Fatalf("got incomingRcvwnd %d want %d", got, want)
+	}
+}
+
 func TestNoWindowShrinking(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
