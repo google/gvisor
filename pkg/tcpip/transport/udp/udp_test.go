@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -1915,31 +1914,27 @@ func TestV4UnknownDestination(t *testing.T) {
 			icmpPkt := header.ICMPv4(hdr.Payload())
 			payloadIPHeader := header.IPv4(icmpPkt.Payload())
 			incomingHeaderLength := header.IPv4MinimumSize + header.UDPMinimumSize
-			wantPayloadLen := len(payload)
+			wantLen := len(payload)
 			if tc.largePayload {
 				// To work out the data size we need to simulate what the sender would
 				// have done. The wanted size is the total available minus the sum of
 				// the headers in the UDP AND ICMP packets, given that we know the test
 				// had only a minimal IP header but the ICMP sender will have allowed
 				// for a maximally sized packet header.
-				wantPayloadLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MaximumHeaderSize - header.ICMPv4MinimumSize - incomingHeaderLength
+				wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MaximumHeaderSize - header.ICMPv4MinimumSize - incomingHeaderLength
 			}
 
 			// In the case of large payloads the IP packet may be truncated. Update
 			// the length field before retrieving the udp datagram payload.
 			// Add back the two headers within the payload.
-			payloadIPHeader.SetTotalLength(uint16(wantPayloadLen + incomingHeaderLength))
+			payloadIPHeader.SetTotalLength(uint16(wantLen + incomingHeaderLength))
+
 			origDgram := header.UDP(payloadIPHeader.Payload())
-			wantDgramLen := wantPayloadLen + header.UDPMinimumSize
-
-			if got, want := len(origDgram), wantDgramLen; got != want {
-				t.Fatalf("got len(origDgram) = %d, want = %d", got, want)
+			if got, want := len(origDgram.Payload()), wantLen; got != want {
+				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
 			}
-			// Correct UDP length to access payload.
-			origDgram.SetLength(uint16(wantDgramLen))
-
-			if got, want := origDgram.Payload(), payload[:wantPayloadLen]; !bytes.Equal(got, want) {
-				t.Fatalf("got origDgram.Payload() = %x, want = %x", got, want)
+			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+				t.Fatalf("unexpected payload got: %d, want: %d", got, want)
 			}
 		})
 	}
@@ -2014,23 +2009,20 @@ func TestV6UnknownDestination(t *testing.T) {
 
 			icmpPkt := header.ICMPv6(hdr.Payload())
 			payloadIPHeader := header.IPv6(icmpPkt.Payload())
-			wantPayloadLen := len(payload)
+			wantLen := len(payload)
 			if tc.largePayload {
-				wantPayloadLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
+				wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
 			}
-			wantDgramLen := wantPayloadLen + header.UDPMinimumSize
 			// In case of large payloads the IP packet may be truncated. Update
 			// the length field before retrieving the udp datagram payload.
-			payloadIPHeader.SetPayloadLength(uint16(wantDgramLen))
+			payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
 
 			origDgram := header.UDP(payloadIPHeader.Payload())
-			if got, want := len(origDgram), wantPayloadLen+header.UDPMinimumSize; got != want {
-				t.Fatalf("got len(origDgram) = %d, want = %d", got, want)
+			if got, want := len(origDgram.Payload()), wantLen; got != want {
+				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
 			}
-			// Correct UDP length to access payload.
-			origDgram.SetLength(uint16(wantPayloadLen + header.UDPMinimumSize))
-			if diff := cmp.Diff(payload[:wantPayloadLen], origDgram.Payload()); diff != "" {
-				t.Fatalf("origDgram.Payload() mismatch (-want +got):\n%s", diff)
+			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+				t.Fatalf("unexpected payload got: %v, want: %v", got, want)
 			}
 		})
 	}
@@ -2539,70 +2531,6 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 
 			if n, _, err := ep.Write(data, opts); err != expectedErrWithoutBcastOpt {
 				t.Fatalf("got ep.Write(_, _) = (%d, _, %v), want = (_, _, %v)", n, err, expectedErrWithoutBcastOpt)
-			}
-		})
-	}
-}
-
-func TestReceiveShortLength(t *testing.T) {
-	flows := []testFlow{unicastV4, unicastV6}
-	for _, flow := range flows {
-		t.Run(flow.String(), func(t *testing.T) {
-			c := newDualTestContext(t, defaultMTU)
-			defer c.cleanup()
-
-			c.createEndpointForFlow(flow)
-
-			// Bind to wildcard.
-			bindAddr := tcpip.FullAddress{Port: stackPort}
-			if err := c.ep.Bind(bindAddr); err != nil {
-				c.t.Fatalf("c.ep.Bind(%#v): %s", bindAddr, err)
-			}
-
-			payload := newPayload()
-			extraBytes := []byte{1, 2, 3, 4}
-			h := flow.header4Tuple(incoming)
-			var buf buffer.View
-			var proto tcpip.NetworkProtocolNumber
-
-			// Build packets with extra bytes not accounted for in the UDP length
-			// field.
-			var udp header.UDP
-			if flow.isV4() {
-				buf = c.buildV4Packet(payload, &h)
-				buf = append(buf, extraBytes...)
-				ip := header.IPv4(buf)
-				ip.SetTotalLength(ip.TotalLength() + uint16(len(extraBytes)))
-				ip.SetChecksum(0)
-				ip.SetChecksum(^ip.CalculateChecksum())
-				proto = ipv4.ProtocolNumber
-				udp = ip.Payload()
-			} else {
-				buf = c.buildV6Packet(payload, &h)
-				buf = append(buf, extraBytes...)
-				ip := header.IPv6(buf)
-				ip.SetPayloadLength(ip.PayloadLength() + uint16(len(extraBytes)))
-				proto = ipv6.ProtocolNumber
-				udp = ip.Payload()
-			}
-
-			if diff := cmp.Diff(payload, udp.Payload()); diff != "" {
-				t.Errorf("udp.Payload() mismatch (-want +got):\n%s", diff)
-			}
-
-			c.linkEP.InjectInbound(proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: buf.ToVectorisedView(),
-			}))
-
-			// Try to receive the data.
-			v, _, err := c.ep.Read(nil)
-			if err != nil {
-				t.Fatalf("c.ep.Read(nil): %s", err)
-			}
-
-			// Check the payload is read back without extra bytes.
-			if diff := cmp.Diff(buffer.View(payload), v); diff != "" {
-				t.Errorf("c.ep.Read(nil) mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
