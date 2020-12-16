@@ -17,26 +17,9 @@
 package arch
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
-
-// ErrFloatingPoint indicates a failed restore due to unusable floating point
-// state.
-type ErrFloatingPoint struct {
-	// supported is the supported floating point state.
-	supported uint64
-
-	// saved is the saved floating point state.
-	saved uint64
-}
-
-// Error returns a sensible description of the restore error.
-func (e ErrFloatingPoint) Error() string {
-	return fmt.Sprintf("floating point state contains unsupported features; supported: %#x saved: %#x", e.supported, e.saved)
-}
 
 // XSTATE_BV does not exist if FXSAVE is used, but FXSAVE implicitly saves x87
 // and SSE state, so this is the equivalent XSTATE_BV value.
