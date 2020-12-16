@@ -63,7 +63,7 @@ func IsCanonical(addr uint64) bool {
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	storeAppASID(uintptr(switchOpts.UserASID))
 	if switchOpts.Flush {
-		FlushTlbAll()
+		FlushTlbByASID(uintptr(switchOpts.UserASID))
 	}
 
 	regs := switchOpts.Registers
