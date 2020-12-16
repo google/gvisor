@@ -193,10 +193,24 @@ func (r *Registry) IPCInfo() *linux.SemInfo {
 		SemMsl: linux.SEMMSL,
 		SemOpm: linux.SEMOPM,
 		SemUme: linux.SEMUME,
-		SemUsz: 0, // SemUsz not supported.
+		SemUsz: linux.SEMUSZ,
 		SemVmx: linux.SEMVMX,
 		SemAem: linux.SEMAEM,
 	}
+}
+
+// SemInfo returns a seminfo structure containing the same information as
+// for IPC_INFO, except that SemUsz field returns the number of existing
+// semaphore sets, and SemAem field returns the number of existing semaphores.
+func (r *Registry) SemInfo() *linux.SemInfo {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	info := r.IPCInfo()
+	info.SemUsz = uint32(len(r.semaphores))
+	info.SemAem = uint32(r.totalSems())
+
+	return info
 }
 
 // HighestIndex returns the index of the highest used entry in
@@ -286,6 +300,18 @@ func (r *Registry) newSet(ctx context.Context, key int32, owner, creator fs.File
 func (r *Registry) FindByID(id int32) *Set {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.semaphores[id]
+}
+
+// FindByIndex looks up a set given an index.
+func (r *Registry) FindByIndex(index int32) *Set {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	id, present := r.indexes[index]
+	if !present {
+		return nil
+	}
 	return r.semaphores[id]
 }
 
