@@ -137,6 +137,9 @@ type sender struct {
 	// that have been sent but not yet acknowledged.
 	outstanding int
 
+	// sackedOut is the number of packets which are selectively acked.
+	sackedOut int
+
 	// sndWnd is the send window size.
 	sndWnd seqnum.Size
 
@@ -372,6 +375,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 		m = 1
 	}
 
+	oldMSS := s.maxPayloadSize
 	s.maxPayloadSize = m
 	if s.gso {
 		s.ep.gso.MSS = uint16(m)
@@ -394,6 +398,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 
 	// Rewind writeNext to the first segment exceeding the MTU. Do nothing
 	// if it is already before such a packet.
+	nextSeg := s.writeNext
 	for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
 		if seg == s.writeNext {
 			// We got to writeNext before we could find a segment
@@ -401,16 +406,22 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 			break
 		}
 
-		if seg.data.Size() > m {
+		if nextSeg == s.writeNext && seg.data.Size() > m {
 			// We found a segment exceeding the MTU. Rewind
 			// writeNext and try to retransmit it.
-			s.writeNext = seg
-			break
+			nextSeg = seg
+		}
+
+		if s.ep.sackPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+			// Update sackedOut for new maximum payload size.
+			s.sackedOut -= s.pCount(seg, oldMSS)
+			s.sackedOut += s.pCount(seg, s.maxPayloadSize)
 		}
 	}
 
 	// Since we likely reduced the number of outstanding packets, we may be
 	// ready to send some more.
+	s.writeNext = nextSeg
 	s.sendData()
 }
 
@@ -629,13 +640,13 @@ func (s *sender) retransmitTimerExpired() bool {
 
 // pCount returns the number of packets in the segment. Due to GSO, a segment
 // can be composed of multiple packets.
-func (s *sender) pCount(seg *segment) int {
+func (s *sender) pCount(seg *segment, maxPayloadSize int) int {
 	size := seg.data.Size()
 	if size == 0 {
 		return 1
 	}
 
-	return (size-1)/s.maxPayloadSize + 1
+	return (size-1)/maxPayloadSize + 1
 }
 
 // splitSeg splits a given segment at the size specified and inserts the
@@ -1023,7 +1034,7 @@ func (s *sender) sendData() {
 			break
 		}
 		dataSent = true
-		s.outstanding += s.pCount(seg)
+		s.outstanding += s.pCount(seg, s.maxPayloadSize)
 		s.writeNext = seg.Next()
 	}
 
@@ -1038,6 +1049,7 @@ func (s *sender) enterRecovery() {
 	// We inflate the cwnd by 3 to account for the 3 packets which triggered
 	// the 3 duplicate ACKs and are now not in flight.
 	s.sndCwnd = s.sndSsthresh + 3
+	s.sackedOut = 0
 	s.fr.first = s.sndUna
 	s.fr.last = s.sndNxt - 1
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
@@ -1207,6 +1219,7 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 				s.rc.update(seg, rcvdSeg, s.ep.tsOffset)
 				s.rc.detectReorder(seg)
 				seg.acked = true
+				s.sackedOut += s.pCount(seg, s.maxPayloadSize)
 			}
 			seg = seg.Next()
 		}
@@ -1380,10 +1393,10 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			datalen := seg.logicalLen()
 
 			if datalen > ackLeft {
-				prevCount := s.pCount(seg)
+				prevCount := s.pCount(seg, s.maxPayloadSize)
 				seg.data.TrimFront(int(ackLeft))
 				seg.sequenceNumber.UpdateForward(ackLeft)
-				s.outstanding -= prevCount - s.pCount(seg)
+				s.outstanding -= prevCount - s.pCount(seg, s.maxPayloadSize)
 				break
 			}
 
@@ -1399,11 +1412,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			s.writeList.Remove(seg)
 
-			// If SACK is enabled then Only reduce outstanding if
+			// If SACK is enabled then only reduce outstanding if
 			// the segment was not previously SACKED as these have
 			// already been accounted for in SetPipe().
 			if !s.ep.sackPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
-				s.outstanding -= s.pCount(seg)
+				s.outstanding -= s.pCount(seg, s.maxPayloadSize)
+			} else {
+				s.sackedOut -= s.pCount(seg, s.maxPayloadSize)
 			}
 			seg.decRef()
 			ackLeft -= datalen

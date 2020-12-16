@@ -2989,6 +2989,7 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 		Ssthresh:         e.snd.sndSsthresh,
 		SndCAAckCount:    e.snd.sndCAAckCount,
 		Outstanding:      e.snd.outstanding,
+		SackedOut:        e.snd.sackedOut,
 		SndWnd:           e.snd.sndWnd,
 		SndUna:           e.snd.sndUna,
 		SndNxt:           e.snd.sndNxt,

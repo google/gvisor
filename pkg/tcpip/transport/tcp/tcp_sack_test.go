@@ -590,3 +590,45 @@ func TestSACKRecovery(t *testing.T) {
 		expected++
 	}
 }
+
+// TestSACKUpdateSackedOut tests the sacked out field is updated when a SACK
+// is received.
+func TestSACKUpdateSackedOut(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	probeDone := make(chan struct{})
+	ackNum := 0
+	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+		// Validate that the endpoint Sender.SackedOut is what we expect.
+		if state.Sender.SackedOut != 2 && ackNum == 0 {
+			t.Fatalf("SackedOut got updated to wrong value got: %v want: 2", state.Sender.SackedOut)
+		}
+
+		if state.Sender.SackedOut != 0 && ackNum == 1 {
+			t.Fatalf("SackedOut got updated to wrong value got: %v want: 0", state.Sender.SackedOut)
+		}
+		if ackNum > 0 {
+			close(probeDone)
+		}
+		ackNum++
+	})
+	setStackSACKPermitted(t, c, true)
+	createConnectedWithSACKAndTS(c)
+
+	sendAndReceive(t, c, 8)
+
+	// ACK for [3-5] packets.
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	start := c.IRS.Add(seqnum.Size(1 + 3*maxPayload))
+	bytesRead := 2 * maxPayload
+	end := start.Add(seqnum.Size(bytesRead))
+	c.SendAckWithSACK(seq, bytesRead, []header.SACKBlock{{start, end}})
+
+	bytesRead += 3 * maxPayload
+	c.SendAck(seq, bytesRead)
+
+	// Wait for the probe function to finish processing the ACK before the
+	// test completes.
+	<-probeDone
+}

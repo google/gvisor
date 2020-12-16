@@ -171,6 +171,9 @@ type TCPSenderState struct {
 	// Outstanding is the number of packets in flight.
 	Outstanding int
 
+	// SackedOut is the number of packets which have been selectively acked.
+	SackedOut int
+
 	// SndWnd is the send window size in bytes.
 	SndWnd seqnum.Size
 
