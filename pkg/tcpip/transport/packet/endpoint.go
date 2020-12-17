@@ -366,6 +366,13 @@ func (ep *endpoint) LastError() *tcpip.Error {
 	return err
 }
 
+// UpdateLastError implements tcpip.SocketOptionsHandler.UpdateLastError.
+func (ep *endpoint) UpdateLastError(err *tcpip.Error) {
+	ep.lastErrorMu.Lock()
+	ep.lastError = err
+	ep.lastErrorMu.Unlock()
+}
+
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 	return tcpip.ErrNotSupported

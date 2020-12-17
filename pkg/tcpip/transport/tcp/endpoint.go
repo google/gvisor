@@ -1303,6 +1303,15 @@ func (e *endpoint) LastError() *tcpip.Error {
 	return e.lastErrorLocked()
 }
 
+// UpdateLastError implements tcpip.SocketOptionsHandler.UpdateLastError.
+func (e *endpoint) UpdateLastError(err *tcpip.Error) {
+	e.LockUser()
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
+	e.UnlockUser()
+}
+
 // Read reads data from the endpoint.
 func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	e.LockUser()
@@ -2708,6 +2717,41 @@ func (e *endpoint) enqueueSegment(s *segment) bool {
 	return true
 }
 
+func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+	// Update last error first.
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
+
+	// Update the error queue if IP_RECVERR is enabled.
+	if e.SocketOptions().GetRecvError() {
+		e.SocketOptions().QueueErr(&tcpip.SockError{
+			Err:       err,
+			ErrOrigin: header.ICMPOriginFromNetProto(pkt.NetworkProtocolNumber),
+			ErrType:   errType,
+			ErrCode:   errCode,
+			ErrInfo:   extra,
+			// Linux passes the payload with the TCP header. We don't know if the TCP
+			// header even exists, it may not for fragmented packets.
+			Payload: pkt.Data.ToView(),
+			Dst: tcpip.FullAddress{
+				NIC:  pkt.NICID,
+				Addr: id.RemoteAddress,
+				Port: id.RemotePort,
+			},
+			Offender: tcpip.FullAddress{
+				NIC:  pkt.NICID,
+				Addr: id.LocalAddress,
+				Port: id.LocalPort,
+			},
+			NetProto: pkt.NetworkProtocolNumber,
+		})
+	}
+
+	// Notify of the error.
+	e.notifyProtocolGoroutine(notifyError)
+}
+
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	switch typ {
@@ -2722,16 +2766,10 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 		e.notifyProtocolGoroutine(notifyMTUChanged)
 
 	case stack.ControlNoRoute:
-		e.lastErrorMu.Lock()
-		e.lastError = tcpip.ErrNoRoute
-		e.lastErrorMu.Unlock()
-		e.notifyProtocolGoroutine(notifyError)
+		e.onICMPError(tcpip.ErrNoRoute, id, byte(header.ICMPv4DstUnreachable), byte(header.ICMPv4HostUnreachable), extra, pkt)
 
 	case stack.ControlNetworkUnreachable:
-		e.lastErrorMu.Lock()
-		e.lastError = tcpip.ErrNetworkUnreachable
-		e.lastErrorMu.Unlock()
-		e.notifyProtocolGoroutine(notifyError)
+		e.onICMPError(tcpip.ErrNetworkUnreachable, id, byte(header.ICMPv6DstUnreachable), byte(header.ICMPv6NetworkUnreachable), extra, pkt)
 	}
 }
 

@@ -14,6 +14,8 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <netinet/icmp6.h>
+#include <netinet/ip_icmp.h>
 
 #include <ctime>
 
@@ -778,6 +780,94 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
   ASSERT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
               SyscallFailsWithErrno(ECONNREFUSED));
 }
+
+#ifdef __linux__
+TEST_P(UdpSocketTest, RecvErrorConnRefused) {
+  // We will simulate an ICMP error and verify that we do receive that error via
+  // recvmsg(MSG_ERRQUEUE).
+  ASSERT_NO_ERRNO(BindLoopback());
+  // Close the socket to release the port so that we get an ICMP error.
+  ASSERT_THAT(close(bind_.release()), SyscallSucceeds());
+
+  // Set IP_RECVERR socket option to enable error queueing.
+  int v = kSockOptOn;
+  socklen_t optlen = sizeof(v);
+  int opt_level = SOL_IP;
+  int opt_type = IP_RECVERR;
+  if (GetParam() != AddressFamily::kIpv4) {
+    opt_level = SOL_IPV6;
+    opt_type = IPV6_RECVERR;
+  }
+  ASSERT_THAT(setsockopt(sock_.get(), opt_level, opt_type, &v, optlen),
+              SyscallSucceeds());
+
+  // Connect to loopback:bind_addr_ which should *hopefully* not be bound by an
+  // UDP socket. There is no easy way to ensure that the UDP port is not bound
+  // by another conncurrently running test. *This is potentially flaky*.
+  const int kBufLen = 300;
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  char buf[kBufLen];
+  RandomizeBuffer(buf, sizeof(buf));
+  // Send from sock_ to an unbound port. This should cause ECONNREFUSED.
+  EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Dequeue error using recvmsg(MSG_ERRQUEUE).
+  char got[kBufLen];
+  struct iovec iov;
+  iov.iov_base = reinterpret_cast<void*>(got);
+  iov.iov_len = kBufLen;
+
+  size_t control_buf_len = CMSG_SPACE(sizeof(sock_extended_err) + addrlen_);
+  char* control_buf = static_cast<char*>(calloc(1, control_buf_len));
+  struct sockaddr_storage remote;
+  memset(&remote, 0, sizeof(remote));
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_flags = 0;
+  msg.msg_control = control_buf;
+  msg.msg_controllen = control_buf_len;
+  msg.msg_name = reinterpret_cast<void*>(&remote);
+  msg.msg_namelen = addrlen_;
+  ASSERT_THAT(recvmsg(sock_.get(), &msg, MSG_ERRQUEUE),
+              SyscallSucceedsWithValue(kBufLen));
+
+  // Check the contents of msg.
+  EXPECT_EQ(memcmp(got, buf, sizeof(buf)), 0);  // iovec check
+  EXPECT_NE(msg.msg_flags & MSG_ERRQUEUE, 0);
+  EXPECT_EQ(memcmp(&remote, bind_addr_, addrlen_), 0);
+
+  // Check the contents of the control message.
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(CMSG_NXTHDR(&msg, cmsg), nullptr);
+  EXPECT_EQ(cmsg->cmsg_level, opt_level);
+  EXPECT_EQ(cmsg->cmsg_type, opt_type);
+
+  // Check the contents of socket error.
+  struct sock_extended_err* sock_err =
+      (struct sock_extended_err*)CMSG_DATA(cmsg);
+  EXPECT_EQ(sock_err->ee_errno, ECONNREFUSED);
+  if (GetParam() == AddressFamily::kIpv4) {
+    EXPECT_EQ(sock_err->ee_origin, SO_EE_ORIGIN_ICMP);
+    EXPECT_EQ(sock_err->ee_type, ICMP_DEST_UNREACH);
+    EXPECT_EQ(sock_err->ee_code, ICMP_PORT_UNREACH);
+  } else {
+    EXPECT_EQ(sock_err->ee_origin, SO_EE_ORIGIN_ICMP6);
+    EXPECT_EQ(sock_err->ee_type, ICMP6_DST_UNREACH);
+    EXPECT_EQ(sock_err->ee_code, ICMP6_DST_UNREACH_NOPORT);
+  }
+
+  // Now verify that the socket error was cleared by recvmsg(MSG_ERRQUEUE).
+  int err;
+  optlen = sizeof(err);
+  ASSERT_THAT(getsockopt(sock_.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
+              SyscallSucceeds());
+  ASSERT_EQ(err, 0);
+  ASSERT_EQ(optlen, sizeof(err));
+}
+#endif  // __linux__
 
 TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
   // TODO(gvisor.dev/issue/1202): Hostinet does not support zero length writes.

@@ -42,6 +42,9 @@ type SocketOptionsHandler interface {
 
 	// LastError is invoked when SO_ERROR is read for an endpoint.
 	LastError() *Error
+
+	// UpdateLastError updates the endpoint specific last error field.
+	UpdateLastError(err *Error)
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -69,6 +72,9 @@ func (*DefaultSocketOptionsHandler) OnCorkOptionSet(bool) {}
 func (*DefaultSocketOptionsHandler) LastError() *Error {
 	return nil
 }
+
+// UpdateLastError implements SocketOptionsHandler.UpdateLastError.
+func (*DefaultSocketOptionsHandler) UpdateLastError(*Error) {}
 
 // SocketOptions contains all the variables which store values for SOL_SOCKET,
 // SOL_IP, SOL_IPV6 and SOL_TCP level options.
@@ -145,6 +151,10 @@ type SocketOptions struct {
 	// the incoming packet should be returned as an ancillary message.
 	receiveOriginalDstAddress uint32
 
+	// recvErrEnabled determines whether extended reliable error message passing
+	// is enabled.
+	recvErrEnabled uint32
+
 	// errQueue is the per-socket error queue. It is protected by errQueueMu.
 	errQueueMu sync.Mutex `state:"nosave"`
 	errQueue   sockErrorList
@@ -169,6 +179,11 @@ func storeAtomicBool(addr *uint32, v bool) {
 		val = 1
 	}
 	atomic.StoreUint32(addr, val)
+}
+
+// SetLastError sets the last error for a socket.
+func (so *SocketOptions) SetLastError(err *Error) {
+	so.handler.UpdateLastError(err)
 }
 
 // GetBroadcast gets value for SO_BROADCAST option.
@@ -338,6 +353,19 @@ func (so *SocketOptions) SetReceiveOriginalDstAddress(v bool) {
 	storeAtomicBool(&so.receiveOriginalDstAddress, v)
 }
 
+// GetRecvError gets value for IP*_RECVERR option.
+func (so *SocketOptions) GetRecvError() bool {
+	return atomic.LoadUint32(&so.recvErrEnabled) != 0
+}
+
+// SetRecvError sets value for IP*_RECVERR option.
+func (so *SocketOptions) SetRecvError(v bool) {
+	storeAtomicBool(&so.recvErrEnabled, v)
+	if !v {
+		so.pruneErrQueue()
+	}
+}
+
 // GetLastError gets value for SO_ERROR option.
 func (so *SocketOptions) GetLastError() *Error {
 	return so.handler.LastError()
@@ -384,6 +412,11 @@ const (
 	SockExtErrorOriginICMP6
 )
 
+// IsICMPErr indicates if the error originated from an ICMP error.
+func (origin SockErrOrigin) IsICMPErr() bool {
+	return origin == SockExtErrorOriginICMP || origin == SockExtErrorOriginICMP6
+}
+
 // SockError represents a queue entry in the per-socket error queue.
 //
 // +stateify savable
@@ -411,6 +444,13 @@ type SockError struct {
 	NetProto NetworkProtocolNumber
 }
 
+// pruneErrQueue resets the queue.
+func (so *SocketOptions) pruneErrQueue() {
+	so.errQueueMu.Lock()
+	so.errQueue.Reset()
+	so.errQueueMu.Unlock()
+}
+
 // DequeueErr dequeues a socket extended error from the error queue and returns
 // it. Returns nil if queue is empty.
 func (so *SocketOptions) DequeueErr() *SockError {
@@ -422,4 +462,33 @@ func (so *SocketOptions) DequeueErr() *SockError {
 		so.errQueue.Remove(err)
 	}
 	return err
+}
+
+// PeekErr returns the error in the front of the error queue. Returns nil if
+// the error queue is empty.
+func (so *SocketOptions) PeekErr() *SockError {
+	so.errQueueMu.Lock()
+	defer so.errQueueMu.Unlock()
+	return so.errQueue.Front()
+}
+
+// QueueErr inserts the error at the back of the error queue.
+//
+// Preconditions: so.GetRecvError() == true.
+func (so *SocketOptions) QueueErr(err *SockError) {
+	so.errQueueMu.Lock()
+	defer so.errQueueMu.Unlock()
+	so.errQueue.PushBack(err)
+}
+
+// QueueLocalErr queues a local error onto the local queue.
+func (so *SocketOptions) QueueLocalErr(err *Error, net NetworkProtocolNumber, info uint32, dst FullAddress, payload []byte) {
+	so.QueueErr(&SockError{
+		Err:       err,
+		ErrOrigin: SockExtErrorOriginLocal,
+		ErrInfo:   info,
+		Payload:   payload,
+		Dst:       dst,
+		NetProto:  net,
+	})
 }
