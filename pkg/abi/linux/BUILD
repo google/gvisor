@@ -21,6 +21,7 @@ go_library(
         "epoll_amd64.go",
         "epoll_arm64.go",
         "errors.go",
+        "errqueue.go",
         "eventfd.go",
         "exec.go",
         "fadvise.go",

@@ -104,7 +104,7 @@ type SocketOptions struct {
 	keepAliveEnabled uint32
 
 	// multicastLoopEnabled determines whether multicast packets sent over a
-	// non-loopback interface will be looped back. Analogous to inet->mc_loop.
+	// non-loopback interface will be looped back.
 	multicastLoopEnabled uint32
 
 	// receiveTOSEnabled is used to specify if the TOS ancillary message is
@@ -144,6 +144,10 @@ type SocketOptions struct {
 	// receiveOriginalDstAddress is used to specify if the original destination of
 	// the incoming packet should be returned as an ancillary message.
 	receiveOriginalDstAddress uint32
+
+	// errQueue is the per-socket error queue. It is protected by errQueueMu.
+	errQueueMu sync.Mutex `state:"nosave"`
+	errQueue   sockErrorList
 
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
@@ -361,4 +365,61 @@ func (so *SocketOptions) SetLinger(linger LingerOption) {
 	so.mu.Lock()
 	so.linger = linger
 	so.mu.Unlock()
+}
+
+// SockErrOrigin represents the constants for error origin.
+type SockErrOrigin uint8
+
+const (
+	// SockExtErrorOriginNone represents an unknown error origin.
+	SockExtErrorOriginNone SockErrOrigin = iota
+
+	// SockExtErrorOriginLocal indicates a local error.
+	SockExtErrorOriginLocal
+
+	// SockExtErrorOriginICMP indicates an IPv4 ICMP error.
+	SockExtErrorOriginICMP
+
+	// SockExtErrorOriginICMP6 indicates an IPv6 ICMP error.
+	SockExtErrorOriginICMP6
+)
+
+// SockError represents a queue entry in the per-socket error queue.
+//
+// +stateify savable
+type SockError struct {
+	sockErrorEntry
+
+	// Err is the error caused by the errant packet.
+	Err *Error
+	// ErrOrigin indicates the error origin.
+	ErrOrigin SockErrOrigin
+	// ErrType is the type in the ICMP header.
+	ErrType uint8
+	// ErrCode is the code in the ICMP header.
+	ErrCode uint8
+	// ErrInfo is additional info about the error.
+	ErrInfo uint32
+
+	// Payload is the errant packet's payload.
+	Payload []byte
+	// Dst is the original destination address of the errant packet.
+	Dst FullAddress
+	// Offender is the original sender address of the errant packet.
+	Offender FullAddress
+	// NetProto is the network protocol being used to transmit the packet.
+	NetProto NetworkProtocolNumber
+}
+
+// DequeueErr dequeues a socket extended error from the error queue and returns
+// it. Returns nil if queue is empty.
+func (so *SocketOptions) DequeueErr() *SockError {
+	so.errQueueMu.Lock()
+	defer so.errQueueMu.Unlock()
+
+	err := so.errQueue.Front()
+	if err != nil {
+		so.errQueue.Remove(err)
+	}
+	return err
 }
