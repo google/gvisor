@@ -500,6 +500,9 @@ type ControlMessages struct {
 	// OriginalDestinationAddress holds the original destination address
 	// and port of the incoming packet.
 	OriginalDstAddress FullAddress
+
+	// SockErr is the dequeued socket error on recvmsg(MSG_ERRQUEUE).
+	SockErr *SockError
 }
 
 // PacketOwner is used to get UID and GID of the packet.

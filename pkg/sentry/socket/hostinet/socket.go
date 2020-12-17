@@ -450,11 +450,7 @@ func (s *socketOpsCommon) recvMsgFromHost(iovs []syscall.Iovec, flags int, sende
 // RecvMsg implements socket.Socket.RecvMsg.
 func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	// Only allow known and safe flags.
-	//
-	// FIXME(jamieliu): We can't support MSG_ERRQUEUE because it uses ancillary
-	// messages that gvisor/pkg/tcpip/transport/unix doesn't understand. Kill the
-	// Socket interface's dependence on netstack.
-	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_PEEK|syscall.MSG_TRUNC) != 0 {
+	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_PEEK|syscall.MSG_TRUNC|syscall.MSG_ERRQUEUE) != 0 {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
 	}
 
@@ -488,7 +484,8 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 
 	var ch chan struct{}
 	n, err := copyToDst()
-	if flags&syscall.MSG_DONTWAIT == 0 {
+	// recv*(MSG_ERRQUEUE) never blocks, even without MSG_DONTWAIT.
+	if flags&(syscall.MSG_DONTWAIT|syscall.MSG_ERRQUEUE) == 0 {
 		for err == syserror.ErrWouldBlock {
 			// We only expect blocking to come from the actual syscall, in which
 			// case it can't have returned any data.
@@ -551,6 +548,11 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 				var addr linux.SockAddrInet
 				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], usermem.ByteOrder, &addr)
 				controlMessages.IP.OriginalDstAddress = &addr
+
+			case syscall.IP_RECVERR:
+				var errCmsg linux.SockErrCMsgIPv4
+				errCmsg.UnmarshalBytes(unixCmsg.Data)
+				controlMessages.IP.SockErr = &errCmsg
 			}
 
 		case linux.SOL_IPV6:
@@ -563,6 +565,11 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 				var addr linux.SockAddrInet6
 				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], usermem.ByteOrder, &addr)
 				controlMessages.IP.OriginalDstAddress = &addr
+
+			case syscall.IPV6_RECVERR:
+				var errCmsg linux.SockErrCMsgIPv6
+				errCmsg.UnmarshalBytes(unixCmsg.Data)
+				controlMessages.IP.SockErr = &errCmsg
 			}
 
 		case linux.SOL_TCP:

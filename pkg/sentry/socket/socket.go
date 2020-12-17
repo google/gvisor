@@ -56,6 +56,57 @@ func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPack
 	return p
 }
 
+// errOriginToLinux maps tcpip socket origin to Linux socket origin constants.
+func errOriginToLinux(origin tcpip.SockErrOrigin) uint8 {
+	switch origin {
+	case tcpip.SockExtErrorOriginNone:
+		return linux.SO_EE_ORIGIN_NONE
+	case tcpip.SockExtErrorOriginLocal:
+		return linux.SO_EE_ORIGIN_LOCAL
+	case tcpip.SockExtErrorOriginICMP:
+		return linux.SO_EE_ORIGIN_ICMP
+	case tcpip.SockExtErrorOriginICMP6:
+		return linux.SO_EE_ORIGIN_ICMP6
+	default:
+		panic(fmt.Sprintf("unknown socket origin: %d", origin))
+	}
+}
+
+// sockErrCmsgToLinux converts SockError control message from tcpip format to
+// Linux format.
+func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
+	if sockErr == nil {
+		return nil
+	}
+
+	ee := linux.SockExtendedErr{
+		Errno:  uint32(syserr.TranslateNetstackError(sockErr.Err).ToLinux().Number()),
+		Origin: errOriginToLinux(sockErr.ErrOrigin),
+		Type:   sockErr.ErrType,
+		Code:   sockErr.ErrCode,
+		Info:   sockErr.ErrInfo,
+	}
+
+	switch sockErr.NetProto {
+	case header.IPv4ProtocolNumber:
+		errMsg := &linux.SockErrCMsgIPv4{SockExtendedErr: ee}
+		if len(sockErr.Offender.Addr) > 0 {
+			addr, _ := ConvertAddress(linux.AF_INET, sockErr.Offender)
+			errMsg.Offender = *addr.(*linux.SockAddrInet)
+		}
+		return errMsg
+	case header.IPv6ProtocolNumber:
+		errMsg := &linux.SockErrCMsgIPv6{SockExtendedErr: ee}
+		if len(sockErr.Offender.Addr) > 0 {
+			addr, _ := ConvertAddress(linux.AF_INET6, sockErr.Offender)
+			errMsg.Offender = *addr.(*linux.SockAddrInet6)
+		}
+		return errMsg
+	default:
+		panic(fmt.Sprintf("invalid net proto for creating SockErrCMsg: %d", sockErr.NetProto))
+	}
+}
+
 // NewIPControlMessages converts the tcpip ControlMessgaes (which does not
 // have Linux specific format) to Linux format.
 func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessages {
@@ -75,6 +126,7 @@ func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessa
 		HasIPPacketInfo:    cmgs.HasIPPacketInfo,
 		PacketInfo:         packetInfoToLinux(cmgs.PacketInfo),
 		OriginalDstAddress: orgDstAddr,
+		SockErr:            sockErrCmsgToLinux(cmgs.SockErr),
 	}
 }
 
@@ -117,6 +169,9 @@ type IPControlMessages struct {
 	// OriginalDestinationAddress holds the original destination address
 	// and port of the incoming packet.
 	OriginalDstAddress linux.SockAddr
+
+	// SockErr is the dequeued socket error on recvmsg(MSG_ERRQUEUE).
+	SockErr linux.SockErrCMsg
 }
 
 // Release releases Unix domain socket credentials and rights.
