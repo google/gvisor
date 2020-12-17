@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -71,7 +72,7 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	if l.quiet {
 		for _, id := range ids {
-			fmt.Println(id)
+			fmt.Println(id.ContainerID)
 		}
 		return subcommands.ExitSuccess
 	}
@@ -79,9 +80,10 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Collect the containers.
 	var containers []*container.Container
 	for _, id := range ids {
-		c, err := container.LoadAndCheck(conf.RootDir, id)
+		c, err := container.Load(conf.RootDir, id, container.LoadOpts{Exact: true})
 		if err != nil {
-			Fatalf("loading container %q: %v", id, err)
+			log.Warningf("Skipping container %q: %v", id, err)
+			continue
 		}
 		containers = append(containers, c)
 	}

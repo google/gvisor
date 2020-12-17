@@ -128,125 +128,6 @@ type Container struct {
 	goferIsChild bool
 }
 
-// loadSandbox loads all containers that belong to the sandbox with the given
-// ID.
-func loadSandbox(rootDir, id string) ([]*Container, error) {
-	cids, err := List(rootDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load the container metadata.
-	var containers []*Container
-	for _, cid := range cids {
-		container, err := Load(rootDir, cid)
-		if err != nil {
-			// Container file may not exist if it raced with creation/deletion or
-			// directory was left behind. Load provides a snapshot in time, so it's
-			// fine to skip it.
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("loading container %q: %v", id, err)
-		}
-		if container.Sandbox.ID == id {
-			containers = append(containers, container)
-		}
-	}
-	return containers, nil
-}
-
-// Load loads a container with the given id from a metadata file. partialID may
-// be an abbreviation of the full container id, in which case Load loads the
-// container to which id unambiguously refers to. Returns ErrNotExist if
-// container doesn't exist.
-func Load(rootDir, partialID string) (*Container, error) {
-	log.Debugf("Load container, rootDir: %q, partial cid: %s", rootDir, partialID)
-	if err := validateID(partialID); err != nil {
-		return nil, fmt.Errorf("invalid container id: %v", err)
-	}
-
-	id, err := findContainerID(rootDir, partialID)
-	if err != nil {
-		// Preserve error so that callers can distinguish 'not found' errors.
-		return nil, err
-	}
-
-	state := StateFile{
-		RootDir: rootDir,
-		ID:      id,
-	}
-	defer state.close()
-
-	c := &Container{}
-	if err := state.load(c); err != nil {
-		if os.IsNotExist(err) {
-			// Preserve error so that callers can distinguish 'not found' errors.
-			return nil, err
-		}
-		return nil, fmt.Errorf("reading container metadata file %q: %v", state.statePath(), err)
-	}
-	return c, nil
-}
-
-// LoadAndCheck is similar to Load(), but also checks if the container is still
-// running to get an error earlier to the caller.
-func LoadAndCheck(rootDir, partialID string) (*Container, error) {
-	c, err := Load(rootDir, partialID)
-	if err != nil {
-		// Preserve error so that callers can distinguish 'not found' errors.
-		return nil, err
-	}
-
-	// If the status is "Running" or "Created", check that the sandbox/container
-	// is still running, setting it to Stopped if not.
-	//
-	// This is inherently racy.
-	switch c.Status {
-	case Created:
-		if !c.isSandboxRunning() {
-			// Sandbox no longer exists, so this container definitely does not exist.
-			c.changeStatus(Stopped)
-		}
-	case Running:
-		if err := c.SignalContainer(syscall.Signal(0), false); err != nil {
-			c.changeStatus(Stopped)
-		}
-	}
-
-	return c, nil
-}
-
-func findContainerID(rootDir, partialID string) (string, error) {
-	// Check whether the id fully specifies an existing container.
-	stateFile := buildStatePath(rootDir, partialID)
-	if _, err := os.Stat(stateFile); err == nil {
-		return partialID, nil
-	}
-
-	// Now see whether id could be an abbreviation of exactly 1 of the
-	// container ids. If id is ambiguous (it could match more than 1
-	// container), it is an error.
-	ids, err := List(rootDir)
-	if err != nil {
-		return "", err
-	}
-	rv := ""
-	for _, id := range ids {
-		if strings.HasPrefix(id, partialID) {
-			if rv != "" {
-				return "", fmt.Errorf("id %q is ambiguous and could refer to multiple containers: %q, %q", partialID, rv, id)
-			}
-			rv = id
-		}
-	}
-	if rv == "" {
-		return "", os.ErrNotExist
-	}
-	log.Debugf("abbreviated id %q resolves to full id %q", partialID, rv)
-	return rv, nil
-}
-
 // Args is used to configure a new container.
 type Args struct {
 	// ID is the container unique identifier.
@@ -291,6 +172,15 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		return nil, fmt.Errorf("creating container root directory %q: %v", conf.RootDir, err)
 	}
 
+	sandboxID := args.ID
+	if !isRoot(args.Spec) {
+		var ok bool
+		sandboxID, ok = specutils.SandboxID(args.Spec)
+		if !ok {
+			return nil, fmt.Errorf("no sandbox ID found when creating container")
+		}
+	}
+
 	c := &Container{
 		ID:            args.ID,
 		Spec:          args.Spec,
@@ -301,7 +191,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		Owner:         os.Getenv("USER"),
 		Saver: StateFile{
 			RootDir: conf.RootDir,
-			ID:      args.ID,
+			ID: FullID{
+				SandboxID:   sandboxID,
+				ContainerID: args.ID,
+			},
 		},
 	}
 	// The Cleanup object cleans up partially created containers when an error
@@ -316,10 +209,17 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	}
 	defer c.Saver.unlock()
 
-	// If the metadata annotations indicate that this container should be
-	// started in an existing sandbox, we must do so. The metadata will
-	// indicate the ID of the sandbox, which is the same as the ID of the
-	// init container in the sandbox.
+	// If the metadata annotations indicate that this container should be started
+	// in an existing sandbox, we must do so. These are the possible metadata
+	// annotation states:
+	//   1. No annotations: it means that there is a single container and this
+	//      container is obviously the root. Both container and sandbox share the
+	//      ID.
+	//   2. Container type == sandbox: it means this is the root container
+	//  		starting the sandbox. Both container and sandbox share the same ID.
+	//   3. Container type == container: it means this is a subcontainer of an
+	//      already started sandbox. In this case, container ID is different than
+	//      the sandbox ID.
 	if isRoot(args.Spec) {
 		log.Debugf("Creating new sandbox for container, cid: %s", args.ID)
 
@@ -358,7 +258,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			// Start a new sandbox for this container. Any errors after this point
 			// must destroy the container.
 			sandArgs := &sandbox.Args{
-				ID:            args.ID,
+				ID:            sandboxID,
 				Spec:          args.Spec,
 				BundleDir:     args.BundleDir,
 				ConsoleSocket: args.ConsoleSocket,
@@ -379,22 +279,14 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			return nil, err
 		}
 	} else {
-		// This is sort of confusing. For a sandbox with a root
-		// container and a child container in it, runsc sees:
-		// * A container struct whose sandbox ID is equal to the
-		//   container ID. This is the root container that is tied to
-		//   the creation of the sandbox.
-		// * A container struct whose sandbox ID is equal to the above
-		//   container/sandbox ID, but that has a different container
-		//   ID. This is the child container.
-		sbid, ok := specutils.SandboxID(args.Spec)
-		if !ok {
-			return nil, fmt.Errorf("no sandbox ID found when creating container")
-		}
-		log.Debugf("Creating new container, cid: %s, sandbox: %s", c.ID, sbid)
+		log.Debugf("Creating new container, cid: %s, sandbox: %s", c.ID, sandboxID)
 
 		// Find the sandbox associated with this ID.
-		sb, err := LoadAndCheck(conf.RootDir, sbid)
+		fullID := FullID{
+			SandboxID:   sandboxID,
+			ContainerID: sandboxID,
+		}
+		sb, err := Load(conf.RootDir, fullID, LoadOpts{Exact: true})
 		if err != nil {
 			return nil, err
 		}
@@ -628,7 +520,7 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on process %d in sandbox, cid: %s", pid, c.Sandbox.ID)
-	if !c.isSandboxRunning() {
+	if !c.IsSandboxRunning() {
 		return 0, fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.WaitPID(c.Sandbox.ID, pid)
@@ -638,7 +530,7 @@ func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on process %d in container, cid: %s", pid, c.ID)
-	if !c.isSandboxRunning() {
+	if !c.IsSandboxRunning() {
 		return 0, fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.WaitPID(c.ID, pid)
@@ -658,7 +550,7 @@ func (c *Container) SignalContainer(sig syscall.Signal, all bool) error {
 	if err := c.requireStatus("signal", Running, Stopped); err != nil {
 		return err
 	}
-	if !c.isSandboxRunning() {
+	if !c.IsSandboxRunning() {
 		return fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.SignalContainer(c.ID, sig, all)
@@ -670,7 +562,7 @@ func (c *Container) SignalProcess(sig syscall.Signal, pid int32) error {
 	if err := c.requireStatus("signal a process inside", Running); err != nil {
 		return err
 	}
-	if !c.isSandboxRunning() {
+	if !c.IsSandboxRunning() {
 		return fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.SignalProcess(c.ID, int32(pid), sig, false)
@@ -889,7 +781,7 @@ func (c *Container) waitForStopped() error {
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if c.isSandboxRunning() {
+		if c.IsSandboxRunning() {
 			if err := c.SignalContainer(syscall.Signal(0), false); err == nil {
 				return fmt.Errorf("container is still running")
 			}
@@ -1091,7 +983,7 @@ func (c *Container) changeStatus(s Status) {
 	c.Status = s
 }
 
-func (c *Container) isSandboxRunning() bool {
+func (c *Container) IsSandboxRunning() bool {
 	return c.Sandbox != nil && c.Sandbox.IsRunning()
 }
 
