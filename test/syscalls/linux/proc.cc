@@ -1802,6 +1802,33 @@ TEST(ProcPidCmdline, SubprocessForkSameCmdline) {
   }
 }
 
+TEST(ProcPidCmdline, SubprocessSeekCmdline) {
+  FileDescriptor fd;
+  ASSERT_NO_ERRNO(WithSubprocess(
+      [&](int pid) -> PosixError {
+        // Running. Open /proc/pid/cmdline.
+        ASSIGN_OR_RETURN_ERRNO(
+            fd, Open(absl::StrCat("/proc/", pid, "/cmdline"), O_RDONLY));
+        return NoError();
+      },
+      [&](int pid) -> PosixError {
+        // Zombie, but seek should still succeed.
+        int ret = lseek(fd.get(), 0x801, 0);
+        if (ret < 0) {
+          return PosixError(errno);
+        }
+        return NoError();
+      },
+      [&](int pid) -> PosixError {
+        // Exited.
+        int ret = lseek(fd.get(), 0x801, 0);
+        if (ret < 0) {
+          return PosixError(errno);
+        }
+        return NoError();
+      }));
+}
+
 // Test whether /proc/PID/ symlinks can be read for a running process.
 TEST(ProcPidSymlink, SubprocessRunning) {
   char buf[1];
