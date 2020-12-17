@@ -68,7 +68,7 @@ func (d *Delete) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 
 func (d *Delete) execute(ids []string, conf *config.Config) error {
 	for _, id := range ids {
-		c, err := container.LoadAndCheck(conf.RootDir, id)
+		c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 		if err != nil {
 			if os.IsNotExist(err) && d.force {
 				log.Warningf("couldn't find container %q: %v", id, err)

@@ -364,7 +364,7 @@ func TestLifecycle(t *testing.T) {
 			defer c.Destroy()
 
 			// Load the container from disk and check the status.
-			c, err = LoadAndCheck(rootDir, args.ID)
+			c, err = Load(rootDir, FullID{ContainerID: args.ID}, LoadOpts{})
 			if err != nil {
 				t.Fatalf("error loading container: %v", err)
 			}
@@ -377,7 +377,11 @@ func TestLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error listing containers: %v", err)
 			}
-			if got, want := ids, []string{args.ID}; !reflect.DeepEqual(got, want) {
+			fullID := FullID{
+				SandboxID:   args.ID,
+				ContainerID: args.ID,
+			}
+			if got, want := ids, []FullID{fullID}; !reflect.DeepEqual(got, want) {
 				t.Errorf("container list got %v, want %v", got, want)
 			}
 
@@ -387,7 +391,7 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Load the container from disk and check the status.
-			c, err = LoadAndCheck(rootDir, args.ID)
+			c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
 			if err != nil {
 				t.Fatalf("error loading container: %v", err)
 			}
@@ -428,7 +432,7 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Load the container from disk and check the status.
-			c, err = LoadAndCheck(rootDir, args.ID)
+			c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
 			if err != nil {
 				t.Fatalf("error loading container: %v", err)
 			}
@@ -451,7 +455,7 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Loading the container by id should fail.
-			if _, err = LoadAndCheck(rootDir, args.ID); err == nil {
+			if _, err = Load(rootDir, fullID, LoadOpts{Exact: true}); err == nil {
 				t.Errorf("expected loading destroyed container to fail, but it did not")
 			}
 		})
@@ -1738,7 +1742,7 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 		cids[2]: cids[2],
 	}
 	for shortid, longid := range unambiguous {
-		if _, err := LoadAndCheck(rootDir, shortid); err != nil {
+		if _, err := Load(rootDir, FullID{ContainerID: shortid}, LoadOpts{}); err != nil {
 			t.Errorf("%q should resolve to %q: %v", shortid, longid, err)
 		}
 	}
@@ -1749,7 +1753,7 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 		"ba",
 	}
 	for _, shortid := range ambiguous {
-		if s, err := LoadAndCheck(rootDir, shortid); err == nil {
+		if s, err := Load(rootDir, FullID{ContainerID: shortid}, LoadOpts{}); err == nil {
 			t.Errorf("%q should be ambiguous, but resolved to %q", shortid, s.ID)
 		}
 	}
@@ -2007,7 +2011,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 
 		// Container is not thread safe, so load another instance to run in
 		// concurrently.
-		startCont, err := LoadAndCheck(rootDir, args.ID)
+		startCont, err := Load(rootDir, FullID{ContainerID: args.ID}, LoadOpts{})
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
@@ -2329,6 +2333,42 @@ func TestTTYField(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Test that container can run even when there are corrupt state files in the
+// root directiry.
+func TestCreateWithCorruptedStateFile(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	spec := testutil.NewSpecWithArgs("/bin/true")
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create corrupted state file.
+	corruptID := testutil.RandomContainerID()
+	corruptState := buildPath(conf.RootDir, FullID{SandboxID: corruptID, ContainerID: corruptID}, stateFileExtension)
+	if err := ioutil.WriteFile(corruptState, []byte("this{file(is;not[valid.json"), 0777); err != nil {
+		t.Fatalf("createCorruptStateFile(): %v", err)
+	}
+	defer os.Remove(corruptState)
+
+	if _, err := Load(conf.RootDir, FullID{ContainerID: corruptID}, LoadOpts{SkipCheck: true}); err == nil {
+		t.Fatalf("loading corrupted state file should have failed")
+	}
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		Attached:  true,
+	}
+	if ws, err := Run(conf, args); err != nil {
+		t.Errorf("running container: %v", err)
+	} else if !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Errorf("container failed, waitStatus: %v", ws)
 	}
 }
 

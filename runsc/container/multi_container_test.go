@@ -730,7 +730,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 			// processes still running inside.
 			containers[1].SignalContainer(syscall.SIGKILL, false)
 			op := func() error {
-				c, err := LoadAndCheck(conf.RootDir, ids[1])
+				c, err := Load(conf.RootDir, FullID{ContainerID: ids[1]}, LoadOpts{})
 				if err != nil {
 					return err
 				}
@@ -744,7 +744,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 			}
 		}
 
-		c, err := LoadAndCheck(conf.RootDir, ids[1])
+		c, err := Load(conf.RootDir, FullID{ContainerID: ids[1]}, LoadOpts{})
 		if err != nil {
 			t.Fatalf("failed to load child container %q: %v", c.ID, err)
 		}
@@ -867,7 +867,7 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 
 		// Container is not thread safe, so load another instance to run in
 		// concurrently.
-		startCont, err := LoadAndCheck(rootDir, ids[i])
+		startCont, err := Load(rootDir, FullID{ContainerID: ids[i]}, LoadOpts{})
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}

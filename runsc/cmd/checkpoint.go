@@ -75,7 +75,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 	conf := args[0].(*config.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
-	cont, err := container.LoadAndCheck(conf.RootDir, id)
+	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
 		Fatalf("loading container: %v", err)
 	}

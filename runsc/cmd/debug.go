@@ -90,8 +90,10 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			f.Usage()
 			return subcommands.ExitUsageError
 		}
+		id := f.Arg(0)
+
 		var err error
-		c, err = container.LoadAndCheck(conf.RootDir, f.Arg(0))
+		c, err = container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 		if err != nil {
 			return Errorf("loading container %q: %v", f.Arg(0), err)
 		}
@@ -106,9 +108,10 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			return Errorf("listing containers: %v", err)
 		}
 		for _, id := range ids {
-			candidate, err := container.LoadAndCheck(conf.RootDir, id)
+			candidate, err := container.Load(conf.RootDir, id, container.LoadOpts{Exact: true, SkipCheck: true})
 			if err != nil {
-				return Errorf("loading container %q: %v", id, err)
+				log.Warningf("Skipping container %q: %v", id, err)
+				continue
 			}
 			if candidate.SandboxPid() == d.pid {
 				c = candidate
@@ -120,7 +123,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 	}
 
-	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
+	if c.IsSandboxRunning() {
 		return Errorf("container sandbox is not running")
 	}
 	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Pid)
