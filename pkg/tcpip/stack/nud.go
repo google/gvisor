@@ -416,7 +416,7 @@ func (s *NUDState) ReachableTime() time.Duration {
 		s.config.BaseReachableTime != s.prevBaseReachableTime ||
 		s.config.MinRandomFactor != s.prevMinRandomFactor ||
 		s.config.MaxRandomFactor != s.prevMaxRandomFactor {
-		return s.recomputeReachableTimeLocked()
+		s.recomputeReachableTimeLocked()
 	}
 	return s.reachableTime
 }
@@ -442,7 +442,7 @@ func (s *NUDState) ReachableTime() time.Duration {
 //    random value gets re-computed at least once every few hours.
 //
 // s.mu MUST be locked for writing.
-func (s *NUDState) recomputeReachableTimeLocked() time.Duration {
+func (s *NUDState) recomputeReachableTimeLocked() {
 	s.prevBaseReachableTime = s.config.BaseReachableTime
 	s.prevMinRandomFactor = s.config.MinRandomFactor
 	s.prevMaxRandomFactor = s.config.MaxRandomFactor
@@ -462,5 +462,4 @@ func (s *NUDState) recomputeReachableTimeLocked() time.Duration {
 	}
 
 	s.expiration = time.Now().Add(2 * time.Hour)
-	return s.reachableTime
 }
