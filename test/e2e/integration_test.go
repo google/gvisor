@@ -260,12 +260,10 @@ func TestMemLimit(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	// N.B. Because the size of the memory file may grow in large chunks,
-	// there is a minimum threshold of 1GB for the MemTotal figure.
-	allocMemory := 1024 * 1024 // In kb.
+	allocMemoryKb := 50 * 1024
 	out, err := d.Run(ctx, dockerutil.RunOpts{
 		Image:  "basic/alpine",
-		Memory: allocMemory * 1024, // In bytes.
+		Memory: allocMemoryKb * 1024, // In bytes.
 	}, "sh", "-c", "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
@@ -285,7 +283,7 @@ func TestMemLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse %q: %v", out, err)
 	}
-	if want := uint64(allocMemory); got != want {
+	if want := uint64(allocMemoryKb); got != want {
 		t.Errorf("MemTotal got: %d, want: %d", got, want)
 	}
 }
