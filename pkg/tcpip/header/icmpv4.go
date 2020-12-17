@@ -16,6 +16,7 @@ package header
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -212,4 +213,17 @@ func ICMPv4Checksum(h ICMPv4, vv buffer.VectorisedView) uint16 {
 	h[2], h[3] = h2, h3
 
 	return xsum
+}
+
+// ICMPOriginFromNetProto returns the appropriate SockErrOrigin to use when
+// a packet having a `net` header causing an ICMP error.
+func ICMPOriginFromNetProto(net tcpip.NetworkProtocolNumber) tcpip.SockErrOrigin {
+	switch net {
+	case IPv4ProtocolNumber:
+		return tcpip.SockExtErrorOriginICMP
+	case IPv6ProtocolNumber:
+		return tcpip.SockExtErrorOriginICMP6
+	default:
+		panic(fmt.Sprintf("unsupported net proto to extract ICMP error origin: %d", net))
+	}
 }

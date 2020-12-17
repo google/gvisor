@@ -1405,6 +1405,13 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReceiveTClass()))
 		return &v, nil
+	case linux.IPV6_RECVERR:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetRecvError()))
+		return &v, nil
 
 	case linux.IPV6_RECVORIGDSTADDR:
 		if outLen < sizeOfInt32 {
@@ -1577,6 +1584,14 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		}
 
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReceiveTOS()))
+		return &v, nil
+
+	case linux.IP_RECVERR:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetRecvError()))
 		return &v, nil
 
 	case linux.IP_PKTINFO:
@@ -2129,6 +2144,16 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 
 		ep.SocketOptions().SetReceiveTClass(v != 0)
 		return nil
+	case linux.IPV6_RECVERR:
+		if len(optVal) == 0 {
+			return nil
+		}
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		ep.SocketOptions().SetRecvError(v != 0)
+		return nil
 
 	case linux.IP6T_SO_SET_REPLACE:
 		if len(optVal) < linux.SizeOfIP6TReplace {
@@ -2317,6 +2342,17 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		ep.SocketOptions().SetReceiveTOS(v != 0)
 		return nil
 
+	case linux.IP_RECVERR:
+		if len(optVal) == 0 {
+			return nil
+		}
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		ep.SocketOptions().SetRecvError(v != 0)
+		return nil
+
 	case linux.IP_PKTINFO:
 		if len(optVal) == 0 {
 			return nil
@@ -2386,7 +2422,6 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		linux.IP_NODEFRAG,
 		linux.IP_OPTIONS,
 		linux.IP_PASSSEC,
-		linux.IP_RECVERR,
 		linux.IP_RECVFRAGSIZE,
 		linux.IP_RECVOPTS,
 		linux.IP_RECVTTL,
@@ -2462,7 +2497,6 @@ func emitUnimplementedEventIPv6(t *kernel.Task, name int) {
 		linux.IPV6_MULTICAST_IF,
 		linux.IPV6_MULTICAST_LOOP,
 		linux.IPV6_RECVDSTOPTS,
-		linux.IPV6_RECVERR,
 		linux.IPV6_RECVFRAGSIZE,
 		linux.IPV6_RECVHOPLIMIT,
 		linux.IPV6_RECVHOPOPTS,
@@ -2496,7 +2530,6 @@ func emitUnimplementedEventIP(t *kernel.Task, name int) {
 		linux.IP_PKTINFO,
 		linux.IP_PKTOPTIONS,
 		linux.IP_MTU_DISCOVER,
-		linux.IP_RECVERR,
 		linux.IP_RECVTTL,
 		linux.IP_RECVTOS,
 		linux.IP_MTU,
@@ -2798,6 +2831,23 @@ func (s *socketOpsCommon) updateTimestamp() {
 	}
 }
 
+// dequeueErr is analogous to net/core/skbuff.c:sock_dequeue_err_skb().
+func (s *socketOpsCommon) dequeueErr() *tcpip.SockError {
+	so := s.Endpoint.SocketOptions()
+	err := so.DequeueErr()
+	if err == nil {
+		return nil
+	}
+
+	// Update socket error to reflect ICMP errors in queue.
+	if nextErr := so.PeekErr(); nextErr != nil && nextErr.ErrOrigin.IsICMPErr() {
+		so.SetLastError(nextErr.Err)
+	} else if err.ErrOrigin.IsICMPErr() {
+		so.SetLastError(nil)
+	}
+	return err
+}
+
 // addrFamilyFromNetProto returns the address family identifier for the given
 // network protocol.
 func addrFamilyFromNetProto(net tcpip.NetworkProtocolNumber) int {
@@ -2814,7 +2864,7 @@ func addrFamilyFromNetProto(net tcpip.NetworkProtocolNumber) int {
 // recvErr handles MSG_ERRQUEUE for recvmsg(2).
 // This is analogous to net/ipv4/ip_sockglue.c:ip_recv_error().
 func (s *socketOpsCommon) recvErr(t *kernel.Task, dst usermem.IOSequence) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
-	sockErr := s.Endpoint.SocketOptions().DequeueErr()
+	sockErr := s.dequeueErr()
 	if sockErr == nil {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 	}

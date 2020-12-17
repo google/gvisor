@@ -226,6 +226,13 @@ func (e *endpoint) LastError() *tcpip.Error {
 	return err
 }
 
+// UpdateLastError implements tcpip.SocketOptionsHandler.UpdateLastError.
+func (e *endpoint) UpdateLastError(err *tcpip.Error) {
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
+}
+
 // Abort implements stack.TransportEndpoint.Abort.
 func (e *endpoint) Abort() {
 	e.Close()
@@ -511,6 +518,20 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
+		so := e.SocketOptions()
+		if so.GetRecvError() {
+			so.QueueLocalErr(
+				tcpip.ErrMessageTooLong,
+				route.NetProto,
+				header.UDPMaximumPacketSize,
+				tcpip.FullAddress{
+					NIC:  route.NICID(),
+					Addr: route.RemoteAddress,
+					Port: dstPort,
+				},
+				v,
+			)
+		}
 		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
@@ -1338,15 +1359,63 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 }
 
+func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+	// Update last error first.
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
+
+	// Update the error queue if IP_RECVERR is enabled.
+	if e.SocketOptions().GetRecvError() {
+		// Linux passes the payload without the UDP header.
+		var payload []byte
+		udp := header.UDP(pkt.Data.ToView())
+		if len(udp) >= header.UDPMinimumSize {
+			payload = udp.Payload()
+		}
+
+		e.SocketOptions().QueueErr(&tcpip.SockError{
+			Err:       err,
+			ErrOrigin: header.ICMPOriginFromNetProto(pkt.NetworkProtocolNumber),
+			ErrType:   errType,
+			ErrCode:   errCode,
+			ErrInfo:   extra,
+			Payload:   payload,
+			Dst: tcpip.FullAddress{
+				NIC:  pkt.NICID,
+				Addr: id.RemoteAddress,
+				Port: id.RemotePort,
+			},
+			Offender: tcpip.FullAddress{
+				NIC:  pkt.NICID,
+				Addr: id.LocalAddress,
+				Port: id.LocalPort,
+			},
+			NetProto: pkt.NetworkProtocolNumber,
+		})
+	}
+
+	// Notify of the error.
+	e.waiterQueue.Notify(waiter.EventErr)
+}
+
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	if typ == stack.ControlPortUnreachable {
 		if e.EndpointState() == StateConnected {
-			e.lastErrorMu.Lock()
-			e.lastError = tcpip.ErrConnectionRefused
-			e.lastErrorMu.Unlock()
-
-			e.waiterQueue.Notify(waiter.EventErr)
+			var errType byte
+			var errCode byte
+			switch pkt.NetworkProtocolNumber {
+			case header.IPv4ProtocolNumber:
+				errType = byte(header.ICMPv4DstUnreachable)
+				errCode = byte(header.ICMPv4PortUnreachable)
+			case header.IPv6ProtocolNumber:
+				errType = byte(header.ICMPv6DstUnreachable)
+				errCode = byte(header.ICMPv6PortUnreachable)
+			default:
+				panic(fmt.Sprintf("unsupported net proto for infering ICMP type and code: %d", pkt.NetworkProtocolNumber))
+			}
+			e.onICMPError(tcpip.ErrConnectionRefused, id, errType, errCode, extra, pkt)
 			return
 		}
 	}
