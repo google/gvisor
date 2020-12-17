@@ -196,3 +196,4 @@ func (f testDeps) WriteProfileTo(string, io.Writer, int) error { return nil }
 func (f testDeps) ImportPath() string                          { return "" }
 func (f testDeps) StartTestLog(io.Writer)                      {}
 func (f testDeps) StopTestLog() error                          { return nil }
+func (f testDeps) SetPanicOnExit0(bool)                        {}
