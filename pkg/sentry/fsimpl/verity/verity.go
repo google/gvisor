@@ -180,7 +180,7 @@ type filesystem struct {
 	// its children. So they shouldn't be enabled the same time. This lock
 	// is for the whole file system to ensure that no more than one file is
 	// enabled the same time.
-	verityMu sync.RWMutex
+	verityMu sync.RWMutex `state:"nosave"`
 }
 
 // InternalFilesystemOptions may be passed as
