@@ -1024,7 +1024,7 @@ func testWriteNoVerify(c *testContext, flow testFlow, setDest bool) buffer.View 
 
 func testWriteAndVerifyInternal(c *testContext, flow testFlow, setDest bool, checkers ...checker.NetworkChecker) uint16 {
 	c.t.Helper()
-	payload := testWriteNoVerify(c, flow, setDest)
+	wantPayload := testWriteNoVerify(c, flow, setDest)
 	// Received the packet and check the payload.
 	b := c.getPacketAndVerify(flow, checkers...)
 	var udp header.UDP
@@ -1033,8 +1033,12 @@ func testWriteAndVerifyInternal(c *testContext, flow testFlow, setDest bool, che
 	} else {
 		udp = header.UDP(header.IPv6(b).Payload())
 	}
-	if !bytes.Equal(payload, udp.Payload()) {
-		c.t.Fatalf("Bad payload: got %x, want %x", udp.Payload(), payload)
+	rcvPayload, complete := udp.Payload()
+	if !complete {
+		c.t.Fatalf("got udp.Payload() = (%x, %t), want = (_, true)", rcvPayload, complete)
+	}
+	if !bytes.Equal(wantPayload, rcvPayload) {
+		c.t.Fatalf("Bad payload: got %x, want %x", rcvPayload, wantPayload)
 	}
 
 	return udp.SourcePort()
@@ -1910,29 +1914,38 @@ func TestV4UnknownDestination(t *testing.T) {
 			// We need to compare the included data part of the UDP packet that is in
 			// the ICMP packet with the matching original data.
 			icmpPkt := header.ICMPv4(hdr.Payload())
-			payloadIPHeader := header.IPv4(icmpPkt.Payload())
+			icmpPayload, icmpComplete := icmpPkt.Payload()
+			if !icmpComplete {
+				t.Fatalf("got icmpPkt.Payload() = (%x, %t), want = (_, true)", icmpPayload, icmpComplete)
+			}
+			payloadIPHeader := header.IPv4(icmpPayload)
 			incomingHeaderLength := header.IPv4MinimumSize + header.UDPMinimumSize
-			wantLen := len(payload)
+			wantPayloadLen := len(payload)
 			if tc.largePayload {
 				// To work out the data size we need to simulate what the sender would
 				// have done. The wanted size is the total available minus the sum of
 				// the headers in the UDP AND ICMP packets, given that we know the test
 				// had only a minimal IP header but the ICMP sender will have allowed
 				// for a maximally sized packet header.
-				wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MaximumHeaderSize - header.ICMPv4MinimumSize - incomingHeaderLength
+				wantPayloadLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MaximumHeaderSize - header.ICMPv4MinimumSize - incomingHeaderLength
 			}
 
 			// In the case of large payloads the IP packet may be truncated. Update
 			// the length field before retrieving the udp datagram payload.
 			// Add back the two headers within the payload.
-			payloadIPHeader.SetTotalLength(uint16(wantLen + incomingHeaderLength))
-
+			payloadIPHeader.SetTotalLength(uint16(wantPayloadLen + incomingHeaderLength))
 			origDgram := header.UDP(payloadIPHeader.Payload())
-			if got, want := len(origDgram.Payload()), wantLen; got != want {
-				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+			wantDgramLen := wantPayloadLen + header.UDPMinimumSize
+
+			if got, want := len(origDgram), wantDgramLen; got != want {
+				t.Fatalf("got len(origDgram) = %d, want = %d", got, want)
 			}
-			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
-				t.Fatalf("unexpected payload got: %d, want: %d", got, want)
+			origPayload, complete := origDgram.Payload()
+			if want := wantPayloadLen == len(payload); want != complete {
+				t.Fatalf("got origDgram.Payload() = (%x, %t), want = (_, %t)", origPayload, complete, want)
+			}
+			if diff := cmp.Diff(payload[:wantPayloadLen], origPayload); diff != "" {
+				t.Fatalf("origDgram.Payload() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -2006,21 +2019,31 @@ func TestV6UnknownDestination(t *testing.T) {
 				checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
 
 			icmpPkt := header.ICMPv6(hdr.Payload())
-			payloadIPHeader := header.IPv6(icmpPkt.Payload())
-			wantLen := len(payload)
-			if tc.largePayload {
-				wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
+			icmpPayload, icmpComplete := icmpPkt.Payload()
+			if !icmpComplete {
+				t.Fatalf("got icmpPkt.Payload() = (%x, %t), want = (_, true)", icmpPayload, icmpComplete)
 			}
+			payloadIPHeader := header.IPv6(icmpPayload)
+			wantPayloadLen := len(payload)
+			if tc.largePayload {
+				wantPayloadLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
+			}
+			wantDgramLen := wantPayloadLen + header.UDPMinimumSize
 			// In case of large payloads the IP packet may be truncated. Update
 			// the length field before retrieving the udp datagram payload.
-			payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
+			payloadIPHeader.SetPayloadLength(uint16(wantDgramLen))
 
 			origDgram := header.UDP(payloadIPHeader.Payload())
-			if got, want := len(origDgram.Payload()), wantLen; got != want {
-				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+			if got, want := len(origDgram), wantPayloadLen+header.UDPMinimumSize; got != want {
+				t.Fatalf("got len(origDgram) = %d, want = %d", got, want)
 			}
-			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
-				t.Fatalf("unexpected payload got: %v, want: %v", got, want)
+
+			origPayload, complete := origDgram.Payload()
+			if want := len(payload) == wantPayloadLen; want != complete {
+				t.Fatalf("got origDrgam.Payload() = (%x, %t), want = (_, %t)", origPayload, complete, want)
+			}
+			if diff := cmp.Diff(payload[:wantPayloadLen], origPayload); diff != "" {
+				t.Fatalf("origDgram.Payload() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -2531,6 +2554,77 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 			r.Reset(data)
 			if n, err := ep.Write(&r, opts); err != expectedErrWithoutBcastOpt {
 				t.Fatalf("got ep.Write(_, %#v) = (%d, %s), want = (_, %s)", opts, n, err, expectedErrWithoutBcastOpt)
+			}
+		})
+	}
+}
+
+func TestReceiveShortLength(t *testing.T) {
+	flows := []testFlow{unicastV4, unicastV6}
+	for _, flow := range flows {
+		t.Run(flow.String(), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			// Bind to wildcard.
+			bindAddr := tcpip.FullAddress{Port: stackPort}
+			if err := c.ep.Bind(bindAddr); err != nil {
+				c.t.Fatalf("c.ep.Bind(%#v): %s", bindAddr, err)
+			}
+
+			payload := newPayload()
+			extraBytes := []byte{1, 2, 3, 4}
+			h := flow.header4Tuple(incoming)
+
+			var (
+				buf   buffer.View
+				proto tcpip.NetworkProtocolNumber
+				udp   header.UDP
+			)
+			// Build packets with extra bytes not accounted for in the UDP length
+			// field.
+			if flow.isV4() {
+				buf = c.buildV4Packet(payload, &h)
+				buf = append(buf, extraBytes...)
+				ip := header.IPv4(buf)
+				ip.SetTotalLength(ip.TotalLength() + uint16(len(extraBytes)))
+				ip.SetChecksum(0)
+				ip.SetChecksum(^ip.CalculateChecksum())
+				proto = ipv4.ProtocolNumber
+				udp = ip.Payload()
+			} else {
+				buf = c.buildV6Packet(payload, &h)
+				buf = append(buf, extraBytes...)
+				ip := header.IPv6(buf)
+				ip.SetPayloadLength(ip.PayloadLength() + uint16(len(extraBytes)))
+				proto = ipv6.ProtocolNumber
+				udp = ip.Payload()
+			}
+
+			p, complete := udp.Payload()
+			if !complete {
+				t.Errorf("got udp.Payload() = (%x, %t), want = (_, true)", p, complete)
+			}
+			if diff := cmp.Diff(payload, p); diff != "" {
+				t.Errorf("udp.Payload() mismatch (-want +got):\n%s", diff)
+			}
+
+			c.linkEP.InjectInbound(proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: buf.ToVectorisedView(),
+			}))
+
+			// Try to receive the data.
+			var readBuffer bytes.Buffer
+			_, err := c.ep.Read(&readBuffer, tcpip.ReadOptions{})
+			if err != nil {
+				t.Fatalf("c.ep.Read(_, _): %s", err)
+			}
+
+			// Check the payload is read back without extra bytes.
+			if diff := cmp.Diff(payload, readBuffer.Bytes()); diff != "" {
+				t.Errorf("c.ep.Read(_, _) mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

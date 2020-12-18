@@ -49,8 +49,23 @@ type Transport interface {
 	// SetChecksum sets the value of the "checksum" field.
 	SetChecksum(uint16)
 
-	// Payload returns the data carried in the transport buffer.
-	Payload() []byte
+	// Payload returns the payload portion of the transport buffer and a boolean
+	// indicating if the payload is complete.
+	//
+	// Payload completeness is evaluated based on the underlying buffer size and
+	// available expected length information from the header data. Protocols that
+	// do not encode payload length expectations on their header always report
+	// complete payloads.
+	//
+	// The payload may be a trimmed slice of the underlying buffer if more bytes
+	// are present than the what's encoded in available header information.
+	Payload() ([]byte, bool)
+
+	// UncheckedPayload returns the payload portion of the transport buffer.
+	//
+	// In contrast to Payload, UncheckedPayload does not trim the transport
+	// payload based on header information nor does it check that it is complete.
+	UncheckedPayload() []byte
 }
 
 // Network offers generic methods to query and/or update the fields of the

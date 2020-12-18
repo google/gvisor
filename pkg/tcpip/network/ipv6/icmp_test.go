@@ -1035,7 +1035,11 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 				hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
 				icmpHdr := header.ICMPv6(hdr.Prepend(icmpSize))
 				icmpHdr.SetType(typ)
-				payloadFn(icmpHdr.Payload())
+				payload, complete := icmpHdr.Payload()
+				if !complete {
+					t.Fatalf("got icmpHdr.Payload() = (%x, %t), want = (_, true)", payload, complete)
+				}
+				payloadFn(payload)
 
 				if checksum {
 					icmpHdr.SetChecksum(header.ICMPv6Checksum(icmpHdr, lladdr1, lladdr0, buffer.VectorisedView{}))

@@ -163,7 +163,12 @@ func (ICMPv4) SetDestinationPort(uint16) {
 }
 
 // Payload implements Transport.Payload.
-func (b ICMPv4) Payload() []byte {
+func (b ICMPv4) Payload() ([]byte, bool) {
+	return b.UncheckedPayload(), true
+}
+
+// UncheckedPayload implements Transport.UncheckedPayload.
+func (b ICMPv4) UncheckedPayload() []byte {
 	return b[ICMPv4PayloadOffset:]
 }
 

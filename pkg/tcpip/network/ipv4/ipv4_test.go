@@ -2035,7 +2035,7 @@ func TestReceiveFragments(t *testing.T) {
 			DstPort: 80,
 			Length:  uint16(udpLength),
 		})
-		copy(u.Payload(), payload)
+		copy(u.UncheckedPayload(), payload)
 		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(udpLength))
 		sum = header.Checksum(payload, sum)
 		u.SetChecksum(^u.CalculateChecksum(sum))

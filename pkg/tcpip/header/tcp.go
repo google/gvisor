@@ -229,7 +229,12 @@ func (b TCP) DataOffset() uint8 {
 }
 
 // Payload returns the data in the tcp packet.
-func (b TCP) Payload() []byte {
+func (b TCP) Payload() ([]byte, bool) {
+	return b.UncheckedPayload(), true
+}
+
+// UncheckedPayload implements Transport.UncheckedPayload.
+func (b TCP) UncheckedPayload() []byte {
 	return b[b.DataOffset():]
 }
 

@@ -942,8 +942,8 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 	if l.Code != nil {
 		h.SetCode(*l.Code)
 	}
-	if copied := copy(h.Payload(), l.Payload); copied != len(l.Payload) {
-		panic(fmt.Sprintf("wrong number of bytes copied into h.Payload(): got = %d, want = %d", len(h.Payload()), len(l.Payload)))
+	if copied := copy(h.UncheckedPayload(), l.Payload); copied != len(l.Payload) {
+		panic(fmt.Sprintf("wrong number of bytes copied into h.Payload(): got = %d, want = %d", len(h.UncheckedPayload()), len(l.Payload)))
 	}
 	typ := h.Type()
 	switch typ {
@@ -990,7 +990,7 @@ func parseICMPv4(b []byte) (Layer, layerParser) {
 		Type:     ICMPv4Type(msgType),
 		Code:     ICMPv4Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
-		Payload:  h.Payload(),
+		Payload:  h.UncheckedPayload(),
 	}
 	switch msgType {
 	case header.ICMPv4EchoReply, header.ICMPv4Echo:

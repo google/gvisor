@@ -258,7 +258,12 @@ func (b ICMPv6) MessageBody() []byte {
 }
 
 // Payload implements Transport.Payload.
-func (b ICMPv6) Payload() []byte {
+func (b ICMPv6) Payload() ([]byte, bool) {
+	return b.UncheckedPayload(), true
+}
+
+// UncheckedPayload implements Transport.UncheckedPayload.
+func (b ICMPv6) UncheckedPayload() []byte {
 	return b[ICMPv6PayloadOffset:]
 }
 

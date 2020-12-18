@@ -824,9 +824,12 @@ func TCPSACKBlockChecker(sackBlocks []header.SACKBlock) TransportChecker {
 func Payload(want []byte) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
-
-		if got := h.Payload(); !reflect.DeepEqual(got, want) {
-			t.Errorf("Wrong payload, got %v, want %v", got, want)
+		payload, complete := h.Payload()
+		if !complete {
+			t.Errorf("Incomplete payload")
+		}
+		if !reflect.DeepEqual(payload, want) {
+			t.Errorf("Wrong payload, got %v, want %v", payload, want)
 		}
 	}
 }
@@ -957,7 +960,10 @@ func ICMPv4Payload(want []byte) TransportChecker {
 		if !ok {
 			t.Fatalf("unexpected transport header passed to checker, got = %T, want = header.ICMPv4", h)
 		}
-		payload := icmpv4.Payload()
+		payload, complete := icmpv4.Payload()
+		if !complete {
+			t.Errorf("Incomplete payload")
+		}
 
 		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
 		if len(want) == 0 && len(payload) == 0 {
@@ -1053,7 +1059,10 @@ func ICMPv6Payload(want []byte) TransportChecker {
 		if !ok {
 			t.Fatalf("unexpected transport header passed to checker, got = %T, want = header.ICMPv6", h)
 		}
-		payload := icmpv6.Payload()
+		payload, complete := icmpv6.Payload()
+		if !complete {
+			t.Errorf("Incomplete payload")
+		}
 
 		// cmp.Diff does not consider nil slices equal to empty slices, but we do.
 		if len(want) == 0 && len(payload) == 0 {

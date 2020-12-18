@@ -158,7 +158,12 @@ func (IGMP) SetDestinationPort(uint16) {
 }
 
 // Payload implements Transport.Payload.
-func (IGMP) Payload() []byte {
+func (IGMP) Payload() ([]byte, bool) {
+	return nil, true
+}
+
+// UncheckedPayload implements Transport.UncheckedPayload.
+func (IGMP) UncheckedPayload() []byte {
 	return nil
 }
 

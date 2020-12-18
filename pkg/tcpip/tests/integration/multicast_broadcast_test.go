@@ -230,7 +230,7 @@ func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 		DstPort: localPort,
 		Length:  uint16(payloadLen),
 	})
-	copy(u.Payload(), data)
+	copy(u.UncheckedPayload(), data)
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
 	sum = header.Checksum(data, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))
@@ -259,7 +259,7 @@ func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 		DstPort: localPort,
 		Length:  uint16(payloadLen),
 	})
-	copy(u.Payload(), data)
+	copy(u.UncheckedPayload(), data)
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
 	sum = header.Checksum(data, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))

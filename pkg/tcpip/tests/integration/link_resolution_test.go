@@ -167,7 +167,7 @@ func TestPing(t *testing.T) {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv4(make([]byte, header.ICMPv4MinimumSize+len(data)))
 				hdr.SetType(header.ICMPv4Echo)
-				if n := copy(hdr.Payload(), data[:]); n != len(data) {
+				if n := copy(hdr.UncheckedPayload(), data[:]); n != len(data) {
 					t.Fatalf("copied %d bytes but expected to copy %d bytes", n, len(data))
 				}
 				return hdr
@@ -182,7 +182,7 @@ func TestPing(t *testing.T) {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv6(make([]byte, header.ICMPv6MinimumSize+len(data)))
 				hdr.SetType(header.ICMPv6EchoRequest)
-				if n := copy(hdr.Payload(), data[:]); n != len(data) {
+				if n := copy(hdr.UncheckedPayload(), data[:]); n != len(data) {
 					t.Fatalf("copied %d bytes but expected to copy %d bytes", n, len(data))
 				}
 				return hdr

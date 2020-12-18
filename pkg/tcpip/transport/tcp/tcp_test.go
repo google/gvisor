@@ -2903,7 +2903,6 @@ func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
 		b := c.GetPacket()
 		numPackets++
 		tcpHdr := header.TCP(header.IPv4(b).Payload())
-		payloadLen := len(tcpHdr.Payload())
 		checker.IPv4(t, b,
 			checker.TCP(
 				checker.DstPort(context.TestPort),
@@ -2912,10 +2911,15 @@ func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
 				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
 			),
 		)
+		tcpPayload, complete := tcpHdr.Payload()
+		if !complete {
+			t.Fatalf("got tcpHdr.Payload() = (%x, %t), want = (_, true)", tcpPayload, complete)
+		}
+		payloadLen := len(tcpPayload)
 
 		pdata := data[bytesReceived : bytesReceived+payloadLen]
-		if p := tcpHdr.Payload(); !bytes.Equal(pdata, p) {
-			t.Fatalf("got data = %v, want = %v", p, pdata)
+		if !bytes.Equal(pdata, tcpPayload) {
+			t.Fatalf("got data = %v, want = %v", tcpPayload, pdata)
 		}
 		bytesReceived += payloadLen
 		var options []byte
@@ -5380,8 +5384,12 @@ func TestListenBacklogFull(t *testing.T) {
 	newEP.Write(&r, tcpip.WriteOptions{})
 	b := c.GetPacket()
 	tcp := header.TCP(header.IPv4(b).Payload())
-	if string(tcp.Payload()) != data {
-		t.Fatalf("unexpected data: got %s, want %s", string(tcp.Payload()), data)
+	payload, complete := tcp.Payload()
+	if !complete {
+		t.Fatalf("got tcp.Payload() = (%x, %t), want = (_, true)", payload, complete)
+	}
+	if string(payload) != data {
+		t.Fatalf("unexpected data: got %s, want %s", string(payload), data)
 	}
 }
 
@@ -5698,8 +5706,12 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	newEP.Write(&r, tcpip.WriteOptions{})
 	pkt := c.GetPacket()
 	tcp = header.TCP(header.IPv4(pkt).Payload())
-	if string(tcp.Payload()) != data {
-		t.Fatalf("unexpected data: got %s, want %s", string(tcp.Payload()), data)
+	payload, complete := tcp.Payload()
+	if !complete {
+		t.Fatalf("got tcp.Payload() = (%x, %t), want = (_, true)", payload, complete)
+	}
+	if string(payload) != data {
+		t.Fatalf("unexpected data: got %s, want %s", string(payload), data)
 	}
 }
 
@@ -5937,8 +5949,12 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 
 	pkt := c.GetPacket()
 	tcpHdr = header.TCP(header.IPv4(pkt).Payload())
-	if string(tcpHdr.Payload()) != data {
-		t.Fatalf("unexpected data: got %s, want %s", string(tcpHdr.Payload()), data)
+	payload, complete := tcpHdr.Payload()
+	if !complete {
+		t.Fatalf("got tcpHdr.Payload() = (%x, %t), want = (_, true)", payload, complete)
+	}
+	if string(payload) != data {
+		t.Fatalf("unexpected data: got %s, want %s", string(payload), data)
 	}
 }
 
