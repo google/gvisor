@@ -446,6 +446,7 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 	}
 
 	dataVV := data.ToVectorisedView()
+	icmpv6.SetChecksum(0)
 	icmpv6.SetChecksum(header.ICMPv6Checksum(icmpv6, r.LocalAddress, r.RemoteAddress, dataVV))
 	pkt.Data = dataVV
 

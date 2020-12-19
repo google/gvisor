@@ -264,23 +264,13 @@ func (b ICMPv6) Payload() []byte {
 
 // ICMPv6Checksum calculates the ICMP checksum over the provided ICMPv6 header,
 // IPv6 src/dst addresses and the payload.
+//
+// ICMPv6Checksum doesn't exclude the header checksum field, so it returns a
+// packet checksum if the checksum field is 0 and it returns 0 is the checksum
+// field is set to the right value.
 func ICMPv6Checksum(h ICMPv6, src, dst tcpip.Address, vv buffer.VectorisedView) uint16 {
-	// Calculate the IPv6 pseudo-header upper-layer checksum.
-	xsum := Checksum([]byte(src), 0)
-	xsum = Checksum([]byte(dst), xsum)
-	var upperLayerLength [4]byte
-	binary.BigEndian.PutUint32(upperLayerLength[:], uint32(len(h)+vv.Size()))
-	xsum = Checksum(upperLayerLength[:], xsum)
-	xsum = Checksum([]byte{0, 0, 0, uint8(ICMPv6ProtocolNumber)}, xsum)
-	for _, v := range vv.Views() {
-		xsum = Checksum(v, xsum)
-	}
-
-	// h[2:4] is the checksum itself, set it aside to avoid checksumming the checksum.
-	h2, h3 := h[2], h[3]
-	h[2], h[3] = 0, 0
-	xsum = ^Checksum(h, xsum)
-	h[2], h[3] = h2, h3
-
-	return xsum
+	xsum := PseudoHeaderChecksum(ICMPv6ProtocolNumber, src, dst, uint16(len(h)+vv.Size()))
+	xsum = ChecksumVV(vv, xsum)
+	xsum = Checksum(h, xsum)
+	return ^xsum
 }

@@ -146,7 +146,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 	// This copy is used as extra payload during the checksum calculation.
 	payload := pkt.Data.Clone(nil)
 	payload.TrimFront(len(h))
-	if got, want := h.Checksum(), header.ICMPv6Checksum(h, srcAddr, dstAddr, payload); got != want {
+	if header.ICMPv6Checksum(h, srcAddr, dstAddr, payload) != 0 {
 		received.Invalid.Increment()
 		return
 	}
@@ -487,6 +487,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		copy(packet, icmpHdr)
 		packet.SetType(header.ICMPv6EchoReply)
+		packet.SetChecksum(0)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, pkt.Data))
 		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,

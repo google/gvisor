@@ -938,12 +938,8 @@ func ICMPv4Checksum() TransportChecker {
 		if !ok {
 			t.Fatalf("unexpected transport header passed to checker, got = %T, want = header.ICMPv4", h)
 		}
-		heldChecksum := icmpv4.Checksum()
-		icmpv4.SetChecksum(0)
-		newChecksum := ^header.Checksum(icmpv4, 0)
-		icmpv4.SetChecksum(heldChecksum)
-		if heldChecksum != newChecksum {
-			t.Errorf("unexpected ICMP checksum, got = %d, want = %d", heldChecksum, newChecksum)
+		if got := header.ICMPv4Checksum(icmpv4, buffer.VectorisedView{}); got != 0 {
+			t.Errorf("unexpected ICMP checksum, got = %d, want = 0", got)
 		}
 	}
 }
@@ -985,8 +981,8 @@ func ICMPv6(checkers ...TransportChecker) NetworkChecker {
 		}
 
 		icmp := header.ICMPv6(last.Payload())
-		if got, want := icmp.Checksum(), header.ICMPv6Checksum(icmp, last.SourceAddress(), last.DestinationAddress(), buffer.VectorisedView{}); got != want {
-			t.Fatalf("Bad ICMPv6 checksum; got %d, want %d", got, want)
+		if got := header.ICMPv6Checksum(icmp, last.SourceAddress(), last.DestinationAddress(), buffer.VectorisedView{}); got != 0 {
+			t.Fatalf("Bad ICMPv6 checksum; got %d", got)
 		}
 
 		for _, f := range checkers {
