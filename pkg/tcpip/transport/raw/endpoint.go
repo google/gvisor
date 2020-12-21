@@ -620,6 +620,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
 func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
+	e.mu.RLock()
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full or if this is an unassociated
@@ -632,6 +633,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	//    sockets.
 	if e.rcvClosed || !e.associated {
 		e.rcvMu.Unlock()
+		e.mu.RUnlock()
 		e.stack.Stats().DroppedPackets.Increment()
 		e.stats.ReceiveErrors.ClosedReceiver.Increment()
 		return
@@ -639,6 +641,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 	if e.rcvBufSize >= e.rcvBufSizeMax {
 		e.rcvMu.Unlock()
+		e.mu.RUnlock()
 		e.stack.Stats().DroppedPackets.Increment()
 		e.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
 		return
@@ -650,11 +653,13 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		// If bound to a NIC, only accept data for that NIC.
 		if e.BindNICID != 0 && e.BindNICID != pkt.NICID {
 			e.rcvMu.Unlock()
+			e.mu.RUnlock()
 			return
 		}
 		// If bound to an address, only accept data for that address.
 		if e.BindAddr != "" && e.BindAddr != remoteAddr {
 			e.rcvMu.Unlock()
+			e.mu.RUnlock()
 			return
 		}
 	}
@@ -663,6 +668,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	// connected to.
 	if e.connected && e.route.RemoteAddress != remoteAddr {
 		e.rcvMu.Unlock()
+		e.mu.RUnlock()
 		return
 	}
 
@@ -697,6 +703,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += packet.data.Size()
 	e.rcvMu.Unlock()
+	e.mu.RUnlock()
 	e.stats.PacketsReceived.Increment()
 	// Notify waiters that there's data to be read.
 	if wasEmpty {
