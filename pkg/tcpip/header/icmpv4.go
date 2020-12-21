@@ -200,19 +200,13 @@ func (b ICMPv4) SetSequence(sequence uint16) {
 // ICMPv4Checksum calculates the ICMP checksum over the provided ICMP header,
 // and payload.
 func ICMPv4Checksum(h ICMPv4, vv buffer.VectorisedView) uint16 {
-	// Calculate the IPv6 pseudo-header upper-layer checksum.
-	xsum := uint16(0)
-	for _, v := range vv.Views() {
-		xsum = Checksum(v, xsum)
-	}
+	xsum := ChecksumVV(vv, 0)
 
-	// h[2:4] is the checksum itself, set it aside to avoid checksumming the checksum.
-	h2, h3 := h[2], h[3]
-	h[2], h[3] = 0, 0
-	xsum = ^Checksum(h, xsum)
-	h[2], h[3] = h2, h3
+	// h[2:4] is the checksum itself, skip it to avoid checksumming the checksum.
+	xsum = Checksum(h[:2], xsum)
+	xsum = Checksum(h[4:], xsum)
 
-	return xsum
+	return ^xsum
 }
 
 // ICMPOriginFromNetProto returns the appropriate SockErrOrigin to use when
