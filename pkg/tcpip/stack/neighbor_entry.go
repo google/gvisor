@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -67,8 +66,7 @@ const (
 	// Static describes entries that have been explicitly added by the user. They
 	// do not expire and are not deleted until explicitly removed.
 	Static
-	// Failed means traffic should not be sent to this neighbor since attempts of
-	// reachability have returned inconclusive.
+	// Failed means recent attempts of reachability have returned inconclusive.
 	Failed
 )
 
@@ -93,15 +91,12 @@ type neighborEntry struct {
 
 	neigh NeighborEntry
 
-	// wakers is a set of waiters for address resolution result. Anytime state
-	// transitions out of incomplete these waiters are notified. It is nil iff
-	// address resolution is ongoing and no clients are waiting for the result.
-	wakers map[*sleep.Waker]struct{}
-
-	// done is used to allow callers to wait on address resolution. It is nil
-	// iff nudState is not Reachable and address resolution is not yet in
-	// progress.
+	// done is closed when address resolution is complete. It is nil iff s is
+	// incomplete and resolution is not yet in progress.
 	done chan struct{}
+
+	// onResolve is called with the result of address resolution.
+	onResolve []func(tcpip.LinkAddress, bool)
 
 	isRouter bool
 	job      *tcpip.Job
@@ -143,25 +138,15 @@ func newStaticNeighborEntry(nic *NIC, addr tcpip.Address, linkAddr tcpip.LinkAdd
 	}
 }
 
-// addWaker adds w to the list of wakers waiting for address resolution.
-// Assumes the entry has already been appropriately locked.
-func (e *neighborEntry) addWakerLocked(w *sleep.Waker) {
-	if w == nil {
-		return
+// notifyCompletionLocked notifies those waiting for address resolution, with
+// the link address if resolution completed successfully.
+//
+// Precondition: e.mu MUST be locked.
+func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
+	for _, callback := range e.onResolve {
+		callback(e.neigh.LinkAddr, succeeded)
 	}
-	if e.wakers == nil {
-		e.wakers = make(map[*sleep.Waker]struct{})
-	}
-	e.wakers[w] = struct{}{}
-}
-
-// notifyWakersLocked notifies those waiting for address resolution, whether it
-// succeeded or failed. Assumes the entry has already been appropriately locked.
-func (e *neighborEntry) notifyWakersLocked() {
-	for w := range e.wakers {
-		w.Assert()
-	}
-	e.wakers = nil
+	e.onResolve = nil
 	if ch := e.done; ch != nil {
 		close(ch)
 		e.done = nil
@@ -170,6 +155,8 @@ func (e *neighborEntry) notifyWakersLocked() {
 
 // dispatchAddEventLocked signals to stack's NUD Dispatcher that the entry has
 // been added.
+//
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) dispatchAddEventLocked() {
 	if nudDisp := e.nic.stack.nudDisp; nudDisp != nil {
 		nudDisp.OnNeighborAdded(e.nic.id, e.neigh)
@@ -178,6 +165,8 @@ func (e *neighborEntry) dispatchAddEventLocked() {
 
 // dispatchChangeEventLocked signals to stack's NUD Dispatcher that the entry
 // has changed state or link-layer address.
+//
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) dispatchChangeEventLocked() {
 	if nudDisp := e.nic.stack.nudDisp; nudDisp != nil {
 		nudDisp.OnNeighborChanged(e.nic.id, e.neigh)
@@ -186,23 +175,41 @@ func (e *neighborEntry) dispatchChangeEventLocked() {
 
 // dispatchRemoveEventLocked signals to stack's NUD Dispatcher that the entry
 // has been removed.
+//
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) dispatchRemoveEventLocked() {
 	if nudDisp := e.nic.stack.nudDisp; nudDisp != nil {
 		nudDisp.OnNeighborRemoved(e.nic.id, e.neigh)
 	}
 }
 
+// cancelJobLocked cancels the currently scheduled action, if there is one.
+// Entries in Unknown, Stale, or Static state do not have a scheduled action.
+//
+// Precondition: e.mu MUST be locked.
+func (e *neighborEntry) cancelJobLocked() {
+	if job := e.job; job != nil {
+		job.Cancel()
+	}
+}
+
+// removeLocked prepares the entry for removal.
+//
+// Precondition: e.mu MUST be locked.
+func (e *neighborEntry) removeLocked() {
+	e.neigh.UpdatedAtNanos = e.nic.stack.clock.NowNanoseconds()
+	e.dispatchRemoveEventLocked()
+	e.cancelJobLocked()
+	e.notifyCompletionLocked(false /* succeeded */)
+}
+
 // setStateLocked transitions the entry to the specified state immediately.
 //
 // Follows the logic defined in RFC 4861 section 7.3.3.
 //
-// e.mu MUST be locked.
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) setStateLocked(next NeighborState) {
-	// Cancel the previously scheduled action, if there is one. Entries in
-	// Unknown, Stale, or Static state do not have scheduled actions.
-	if timer := e.job; timer != nil {
-		timer.Cancel()
-	}
+	e.cancelJobLocked()
 
 	prev := e.neigh.State
 	e.neigh.State = next
@@ -257,11 +264,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		e.job.Schedule(immediateDuration)
 
 	case Failed:
-		e.notifyWakersLocked()
-		e.job = e.nic.stack.newJob(&doubleLock{first: &e.nic.neigh.mu, second: &e.mu}, func() {
-			e.nic.neigh.removeEntryLocked(e)
-		})
-		e.job.Schedule(config.UnreachableTime)
+		e.notifyCompletionLocked(false /* succeeded */)
 
 	case Unknown, Stale, Static:
 		// Do nothing
@@ -275,8 +278,14 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 // being queued for outgoing transmission.
 //
 // Follows the logic defined in RFC 4861 section 7.3.3.
+//
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	switch e.neigh.State {
+	case Failed:
+		e.nic.stats.Neighbor.FailedEntryLookups.Increment()
+
+		fallthrough
 	case Unknown:
 		e.neigh.State = Incomplete
 		e.neigh.UpdatedAtNanos = e.nic.stack.clock.NowNanoseconds()
@@ -309,7 +318,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 				// implementation may find it convenient in some cases to return errors
 				// to the sender by taking the offending packet, generating an ICMP
 				// error message, and then delivering it (locally) through the generic
-				// error-handling routines.' - RFC 4861 section 2.1
+				// error-handling routines." - RFC 4861 section 2.1
 				e.dispatchRemoveEventLocked()
 				e.setStateLocked(Failed)
 				return
@@ -349,8 +358,6 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 
 	case Incomplete, Reachable, Delay, Probe, Static:
 		// Do nothing
-	case Failed:
-		e.nic.stats.Neighbor.FailedEntryLookups.Increment()
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", e.neigh.State))
 	}
@@ -360,17 +367,29 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 // Neighbor Solicitation for ARP or NDP, respectively).
 //
 // Follows the logic defined in RFC 4861 section 7.2.3.
+//
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 	// Probes MUST be silently discarded if the target address is tentative, does
 	// not exist, or not bound to the NIC as per RFC 4861 section 7.2.3. These
 	// checks MUST be done by the NetworkEndpoint.
 
 	switch e.neigh.State {
-	case Unknown, Incomplete, Failed:
+	case Unknown, Failed:
 		e.neigh.LinkAddr = remoteLinkAddr
 		e.setStateLocked(Stale)
-		e.notifyWakersLocked()
 		e.dispatchAddEventLocked()
+
+	case Incomplete:
+		// "If an entry already exists, and the cached link-layer address
+		// differs from the one in the received Source Link-Layer option, the
+		// cached address should be replaced by the received address, and the
+		// entry's reachability state MUST be set to STALE."
+		//  - RFC 4861 section 7.2.3
+		e.neigh.LinkAddr = remoteLinkAddr
+		e.setStateLocked(Stale)
+		e.notifyCompletionLocked(true /* succeeded */)
+		e.dispatchChangeEventLocked()
 
 	case Reachable, Delay, Probe:
 		if e.neigh.LinkAddr != remoteLinkAddr {
@@ -404,6 +423,8 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 // not be possible. SEND uses RSA key pairs to produce Cryptographically
 // Generated Addresses (CGA), as defined in RFC 3972. This ensures that the
 // claimed source of an NDP message is the owner of the claimed address.
+//
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
 	switch e.neigh.State {
 	case Incomplete:
@@ -422,7 +443,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		}
 		e.dispatchChangeEventLocked()
 		e.isRouter = flags.IsRouter
-		e.notifyWakersLocked()
+		e.notifyCompletionLocked(true /* succeeded */)
 
 		// "Note that the Override flag is ignored if the entry is in the
 		// INCOMPLETE state." - RFC 4861 section 7.2.5
@@ -457,7 +478,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			wasReachable := e.neigh.State == Reachable
 			// Set state to Reachable again to refresh timers.
 			e.setStateLocked(Reachable)
-			e.notifyWakersLocked()
+			e.notifyCompletionLocked(true /* succeeded */)
 			if !wasReachable {
 				e.dispatchChangeEventLocked()
 			}
@@ -495,6 +516,8 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 
 // handleUpperLevelConfirmationLocked processes an incoming upper-level protocol
 // (e.g. TCP acknowledgements) reachability confirmation.
+//
+// Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
 	switch e.neigh.State {
 	case Reachable, Stale, Delay, Probe:
@@ -511,24 +534,4 @@ func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", e.neigh.State))
 	}
-}
-
-// doubleLock combines two locks into one while maintaining lock ordering.
-//
-// TODO(gvisor.dev/issue/4796): Remove this once subsequent traffic to a Failed
-// neighbor is allowed.
-type doubleLock struct {
-	first, second sync.Locker
-}
-
-// Lock locks both locks in order: first then second.
-func (l *doubleLock) Lock() {
-	l.first.Lock()
-	l.second.Lock()
-}
-
-// Unlock unlocks both locks in reverse order: second then first.
-func (l *doubleLock) Unlock() {
-	l.second.Unlock()
-	l.first.Unlock()
 }

@@ -1017,7 +1017,6 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	if err != nil {
 		return err
 	}
-	defer r.Release()
 
 	id := stack.TransportEndpointID{
 		LocalAddress:  e.ID.LocalAddress,
@@ -1045,6 +1044,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	id, btd, err := e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
+		r.Release()
 		return err
 	}
 
@@ -1055,7 +1055,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	e.ID = id
 	e.boundBindToDevice = btd
-	e.route = r.Clone()
+	e.route = r
 	e.dstPort = addr.Port
 	e.RegisterNICID = nicID
 	e.effectiveNetProtos = netProtos

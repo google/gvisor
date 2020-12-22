@@ -37,7 +37,6 @@ const (
 	defaultMaxUnicastProbes            = 3
 	defaultMaxAnycastDelayTime         = time.Second
 	defaultMaxReachbilityConfirmations = 3
-	defaultUnreachableTime             = 5 * time.Second
 
 	defaultFakeRandomNum = 0.5
 )
@@ -560,58 +559,6 @@ func TestNUDConfigurationsMaxUnicastProbes(t *testing.T) {
 			}
 			if got := sc.MaxUnicastProbes; got != test.want {
 				t.Errorf("got MaxUnicastProbes = %q, want = %q", got, test.want)
-			}
-		})
-	}
-}
-
-func TestNUDConfigurationsUnreachableTime(t *testing.T) {
-	tests := []struct {
-		name            string
-		unreachableTime time.Duration
-		want            time.Duration
-	}{
-		// Invalid cases
-		{
-			name:            "EqualToZero",
-			unreachableTime: 0,
-			want:            defaultUnreachableTime,
-		},
-		// Valid cases
-		{
-			name:            "MoreThanZero",
-			unreachableTime: time.Millisecond,
-			want:            time.Millisecond,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			const nicID = 1
-
-			c := stack.DefaultNUDConfigurations()
-			c.UnreachableTime = test.unreachableTime
-
-			e := channel.New(0, 1280, linkAddr1)
-			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-
-			s := stack.New(stack.Options{
-				// A neighbor cache is required to store NUDConfigurations. The
-				// networking stack will only allocate neighbor caches if a protocol
-				// providing link address resolution is specified (e.g. ARP or IPv6).
-				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-				NUDConfigs:       c,
-				UseNeighborCache: true,
-			})
-			if err := s.CreateNIC(nicID, e); err != nil {
-				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
-			}
-			sc, err := s.NUDConfigurations(nicID)
-			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
-			}
-			if got := sc.UnreachableTime; got != test.want {
-				t.Errorf("got UnreachableTime = %q, want = %q", got, test.want)
 			}
 		})
 	}

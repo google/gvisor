@@ -25,7 +25,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -73,36 +72,36 @@ func eventDiffOptsWithSort() []cmp.Option {
 // The following unit tests exercise every state transition and verify its
 // behavior with RFC 4681.
 //
-// | From       | To         | Cause                                      | Action          | Event   |
-// | ========== | ========== | ========================================== | =============== | ======= |
-// | Unknown    | Unknown    | Confirmation w/ unknown address            |                 | Added   |
-// | Unknown    | Incomplete | Packet queued to unknown address           | Send probe      | Added   |
-// | Unknown    | Stale      | Probe w/ unknown address                   |                 | Added   |
-// | Incomplete | Incomplete | Retransmit timer expired                   | Send probe      | Changed |
-// | Incomplete | Reachable  | Solicited confirmation                     | Notify wakers   | Changed |
-// | Incomplete | Stale      | Unsolicited confirmation                   | Notify wakers   | Changed |
-// | Incomplete | Failed     | Max probes sent without reply              | Notify wakers   | Removed |
-// | Reachable  | Reachable  | Confirmation w/ different isRouter flag    | Update IsRouter |         |
-// | Reachable  | Stale      | Reachable timer expired                    |                 | Changed |
-// | Reachable  | Stale      | Probe or confirmation w/ different address |                 | Changed |
-// | Stale      | Reachable  | Solicited override confirmation            | Update LinkAddr | Changed |
-// | Stale      | Reachable  | Solicited confirmation w/o address         | Notify wakers   | Changed |
-// | Stale      | Stale      | Override confirmation                      | Update LinkAddr | Changed |
-// | Stale      | Stale      | Probe w/ different address                 | Update LinkAddr | Changed |
-// | Stale      | Delay      | Packet queued                              |                 | Changed |
-// | Delay      | Reachable  | Upper-layer confirmation                   |                 | Changed |
-// | Delay      | Reachable  | Solicited override confirmation            | Update LinkAddr | Changed |
-// | Delay      | Reachable  | Solicited confirmation w/o address         | Notify wakers   | Changed |
-// | Delay      | Stale      | Probe or confirmation w/ different address |                 | Changed |
-// | Delay      | Probe      | Delay timer expired                        | Send probe      | Changed |
-// | Probe      | Reachable  | Solicited override confirmation            | Update LinkAddr | Changed |
-// | Probe      | Reachable  | Solicited confirmation w/ same address     | Notify wakers   | Changed |
-// | Probe      | Reachable  | Solicited confirmation w/o address         | Notify wakers   | Changed |
-// | Probe      | Stale      | Probe or confirmation w/ different address |                 | Changed |
-// | Probe      | Probe      | Retransmit timer expired                   | Send probe      | Changed |
-// | Probe      | Failed     | Max probes sent without reply              | Notify wakers   | Removed |
-// | Failed     | Failed     | Packet queued                              |                 |         |
-// | Failed     |            | Unreachability timer expired               | Delete entry    |         |
+// | From       | To         | Cause                                      | Update   | Action     | Event   |
+// | ========== | ========== | ========================================== | ======== | ===========| ======= |
+// | Unknown    | Unknown    | Confirmation w/ unknown address            |          |            | Added   |
+// | Unknown    | Incomplete | Packet queued to unknown address           |          | Send probe | Added   |
+// | Unknown    | Stale      | Probe                                      |          |            | Added   |
+// | Incomplete | Incomplete | Retransmit timer expired                   |          | Send probe | Changed |
+// | Incomplete | Reachable  | Solicited confirmation                     | LinkAddr | Notify     | Changed |
+// | Incomplete | Stale      | Unsolicited confirmation                   | LinkAddr | Notify     | Changed |
+// | Incomplete | Stale      | Probe                                      | LinkAddr | Notify     | Changed |
+// | Incomplete | Failed     | Max probes sent without reply              |          | Notify     | Removed |
+// | Reachable  | Reachable  | Confirmation w/ different isRouter flag    | IsRouter |            |         |
+// | Reachable  | Stale      | Reachable timer expired                    |          |            | Changed |
+// | Reachable  | Stale      | Probe or confirmation w/ different address |          |            | Changed |
+// | Stale      | Reachable  | Solicited override confirmation            | LinkAddr |            | Changed |
+// | Stale      | Reachable  | Solicited confirmation w/o address         |          | Notify     | Changed |
+// | Stale      | Stale      | Override confirmation                      | LinkAddr |            | Changed |
+// | Stale      | Stale      | Probe w/ different address                 | LinkAddr |            | Changed |
+// | Stale      | Delay      | Packet sent                                |          |            | Changed |
+// | Delay      | Reachable  | Upper-layer confirmation                   |          |            | Changed |
+// | Delay      | Reachable  | Solicited override confirmation            | LinkAddr |            | Changed |
+// | Delay      | Reachable  | Solicited confirmation w/o address         |          | Notify     | Changed |
+// | Delay      | Stale      | Probe or confirmation w/ different address |          |            | Changed |
+// | Delay      | Probe      | Delay timer expired                        |          | Send probe | Changed |
+// | Probe      | Reachable  | Solicited override confirmation            | LinkAddr |            | Changed |
+// | Probe      | Reachable  | Solicited confirmation w/ same address     |          | Notify     | Changed |
+// | Probe      | Reachable  | Solicited confirmation w/o address         |          | Notify     | Changed |
+// | Probe      | Stale      | Probe or confirmation w/ different address |          |            | Changed |
+// | Probe      | Probe      | Retransmit timer expired                   |          |            | Changed |
+// | Probe      | Failed     | Max probes sent without reply              |          | Notify     | Removed |
+// | Failed     | Incomplete | Packet queued                              |          | Send probe | Added   |
 
 type testEntryEventType uint8
 
@@ -258,8 +257,8 @@ func TestEntryInitiallyUnknown(t *testing.T) {
 	e, nudDisp, linkRes, clock := entryTestSetup(c)
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Unknown; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Unknown {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Unknown)
 	}
 	e.mu.Unlock()
 
@@ -291,8 +290,8 @@ func TestEntryUnknownToUnknownWhenConfirmationWithUnknownAddress(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if got, want := e.neigh.State, Unknown; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Unknown {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Unknown)
 	}
 	e.mu.Unlock()
 
@@ -320,8 +319,8 @@ func TestEntryUnknownToIncomplete(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if got, want := e.neigh.State, Incomplete; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Incomplete {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -367,8 +366,8 @@ func TestEntryUnknownToStale(t *testing.T) {
 
 	e.mu.Lock()
 	e.handleProbeLocked(entryTestLinkAddr1)
-	if got, want := e.neigh.State, Stale; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Stale {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -406,8 +405,8 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if got, want := e.neigh.State, Incomplete; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Incomplete {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
 	}
 	updatedAtNanos := e.neigh.UpdatedAtNanos
 	e.mu.Unlock()
@@ -560,89 +559,6 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 	nudDisp.mu.Unlock()
 }
 
-// TestEntryAddsAndClearsWakers verifies that wakers are added when
-// addWakerLocked is called and cleared when address resolution finishes. In
-// this case, address resolution will finish when transitioning from Incomplete
-// to Reachable.
-func TestEntryAddsAndClearsWakers(t *testing.T) {
-	c := DefaultNUDConfigurations()
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
-
-	w := sleep.Waker{}
-	s := sleep.Sleeper{}
-	s.AddWaker(&w, 123)
-	defer s.Done()
-
-	e.mu.Lock()
-	e.handlePacketQueuedLocked(entryTestAddr2)
-	e.mu.Unlock()
-
-	runImmediatelyScheduledJobs(clock)
-	wantProbes := []entryTestProbeInfo{
-		{
-			RemoteAddress:     entryTestAddr1,
-			RemoteLinkAddress: tcpip.LinkAddress(""),
-			LocalAddress:      entryTestAddr2,
-		},
-	}
-	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
-	linkRes.mu.Unlock()
-	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
-	}
-
-	e.mu.Lock()
-	if got := e.wakers; got != nil {
-		t.Errorf("got e.wakers = %v, want = nil", got)
-	}
-	e.addWakerLocked(&w)
-	if got, want := w.IsAsserted(), false; got != want {
-		t.Errorf("waker.IsAsserted() = %t, want = %t", got, want)
-	}
-	if e.wakers == nil {
-		t.Error("expected e.wakers to be non-nil")
-	}
-	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
-		Solicited: true,
-		Override:  false,
-		IsRouter:  false,
-	})
-	if e.wakers != nil {
-		t.Errorf("got e.wakers = %v, want = nil", e.wakers)
-	}
-	if got, want := w.IsAsserted(), true; got != want {
-		t.Errorf("waker.IsAsserted() = %t, want = %t", got, want)
-	}
-	e.mu.Unlock()
-
-	wantEvents := []testEntryEventInfo{
-		{
-			EventType: entryTestAdded,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: tcpip.LinkAddress(""),
-				State:    Incomplete,
-			},
-		},
-		{
-			EventType: entryTestChanged,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Reachable,
-			},
-		},
-	}
-	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
-	}
-	nudDisp.mu.Unlock()
-}
-
 func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	e, nudDisp, linkRes, clock := entryTestSetup(c)
@@ -663,10 +579,11 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	if diff := cmp.Diff(linkRes.probes, wantProbes); diff != "" {
+	diff := cmp.Diff(linkRes.probes, wantProbes)
+	linkRes.mu.Unlock()
+	if diff != "" {
 		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
 	}
-	linkRes.mu.Unlock()
 
 	e.mu.Lock()
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
@@ -709,7 +626,7 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 	nudDisp.mu.Unlock()
 }
 
-func TestEntryIncompleteToStale(t *testing.T) {
+func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	e, nudDisp, linkRes, clock := entryTestSetup(c)
 
@@ -773,6 +690,66 @@ func TestEntryIncompleteToStale(t *testing.T) {
 	nudDisp.mu.Unlock()
 }
 
+func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
+	c := DefaultNUDConfigurations()
+	e, nudDisp, linkRes, clock := entryTestSetup(c)
+
+	e.mu.Lock()
+	e.handlePacketQueuedLocked(entryTestAddr2)
+	if e.neigh.State != Incomplete {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	}
+	e.mu.Unlock()
+
+	runImmediatelyScheduledJobs(clock)
+	wantProbes := []entryTestProbeInfo{
+		{
+			RemoteAddress:     entryTestAddr1,
+			RemoteLinkAddress: tcpip.LinkAddress(""),
+			LocalAddress:      entryTestAddr2,
+		},
+	}
+	linkRes.mu.Lock()
+	diff := cmp.Diff(linkRes.probes, wantProbes)
+	linkRes.mu.Unlock()
+	if diff != "" {
+		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+	}
+
+	e.mu.Lock()
+	e.handleProbeLocked(entryTestLinkAddr1)
+	if e.neigh.State != Stale {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	}
+	e.mu.Unlock()
+
+	wantEvents := []testEntryEventInfo{
+		{
+			EventType: entryTestAdded,
+			NICID:     entryTestNICID,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
+			},
+		},
+		{
+			EventType: entryTestChanged,
+			NICID:     entryTestNICID,
+			Entry: NeighborEntry{
+				Addr:     entryTestAddr1,
+				LinkAddr: entryTestLinkAddr1,
+				State:    Stale,
+			},
+		},
+	}
+	nudDisp.mu.Lock()
+	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	}
+	nudDisp.mu.Unlock()
+}
+
 func TestEntryIncompleteToFailed(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	c.MaxMulticastProbes = 3
@@ -780,8 +757,8 @@ func TestEntryIncompleteToFailed(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if got, want := e.neigh.State, Incomplete; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Incomplete {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -841,8 +818,8 @@ func TestEntryIncompleteToFailed(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Failed; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Failed {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Failed)
 	}
 	e.mu.Unlock()
 }
@@ -885,8 +862,8 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 		Override:  false,
 		IsRouter:  true,
 	})
-	if got, want := e.neigh.State, Reachable; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Reachable {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
 	}
 	if got, want := e.isRouter, true; got != want {
 		t.Errorf("got e.isRouter = %t, want = %t", got, want)
@@ -932,8 +909,8 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Reachable; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Reachable {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 }
@@ -1083,8 +1060,8 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Stale; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Stale {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 }
@@ -2381,8 +2358,8 @@ func TestEntryDelayToProbe(t *testing.T) {
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if got, want := e.neigh.State, Delay; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Delay {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
 	}
 	e.mu.Unlock()
 
@@ -2447,8 +2424,8 @@ func TestEntryDelayToProbe(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	e.mu.Unlock()
 }
@@ -2505,12 +2482,12 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	e.handleProbeLocked(entryTestLinkAddr2)
-	if got, want := e.neigh.State, Stale; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Stale {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -2620,16 +2597,16 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if got, want := e.neigh.State, Stale; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Stale {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -2740,16 +2717,16 @@ func TestEntryStaysProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	if got, want := e.neigh.LinkAddr, entryTestLinkAddr1; got != want {
 		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", got, want)
@@ -2836,16 +2813,16 @@ func TestEntryUnknownToStaleToProbeToReachable(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if got, want := e.neigh.State, Reachable; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Reachable {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
 	}
 	if got, want := e.neigh.LinkAddr, entryTestLinkAddr2; got != want {
 		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", got, want)
@@ -2964,16 +2941,16 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if got, want := e.neigh.State, Reachable; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Reachable {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
 	}
 	if got, want := e.neigh.LinkAddr, entryTestLinkAddr2; got != want {
 		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", got, want)
@@ -3101,16 +3078,16 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithSameAddress(t *testin
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.State, Probe; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Probe {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  false,
 		IsRouter:  false,
 	})
-	if got, want := e.neigh.State, Reachable; got != want {
-		t.Errorf("got e.neigh.State = %q, want = %q", got, want)
+	if e.neigh.State != Reachable {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 
@@ -3435,73 +3412,61 @@ func TestEntryProbeToFailed(t *testing.T) {
 	nudDisp.mu.Unlock()
 }
 
-func TestEntryFailedToFailed(t *testing.T) {
+func TestEntryFailedToIncomplete(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	c.MaxMulticastProbes = 3
-	c.MaxUnicastProbes = 3
 	e, nudDisp, linkRes, clock := entryTestSetup(c)
-
-	// Verify the cache contains the entry.
-	if _, ok := e.nic.neigh.cache[entryTestAddr1]; !ok {
-		t.Errorf("expected entry %q to exist in the neighbor cache", entryTestAddr1)
-	}
 
 	// TODO(gvisor.dev/issue/4872): Use helper functions to start entry tests in
 	// their expected state.
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
+	if e.neigh.State != Incomplete {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	}
 	e.mu.Unlock()
 
-	runImmediatelyScheduledJobs(clock)
-	{
-		wantProbes := []entryTestProbeInfo{
-			{
-				RemoteAddress: entryTestAddr1,
-				LocalAddress:  entryTestAddr2,
-			},
-		}
-		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
-		linkRes.probes = nil
-		linkRes.mu.Unlock()
-		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
-		}
+	waitFor := c.RetransmitTimer * time.Duration(c.MaxMulticastProbes)
+	clock.Advance(waitFor)
+
+	wantProbes := []entryTestProbeInfo{
+		// The Incomplete-to-Incomplete state transition is tested here by
+		// verifying that 3 reachability probes were sent.
+		{
+			RemoteAddress:     entryTestAddr1,
+			RemoteLinkAddress: tcpip.LinkAddress(""),
+			LocalAddress:      entryTestAddr2,
+		},
+		{
+			RemoteAddress:     entryTestAddr1,
+			RemoteLinkAddress: tcpip.LinkAddress(""),
+			LocalAddress:      entryTestAddr2,
+		},
+		{
+			RemoteAddress:     entryTestAddr1,
+			RemoteLinkAddress: tcpip.LinkAddress(""),
+			LocalAddress:      entryTestAddr2,
+		},
+	}
+	linkRes.mu.Lock()
+	diff := cmp.Diff(linkRes.probes, wantProbes)
+	linkRes.mu.Unlock()
+	if diff != "" {
+		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
 	}
 
 	e.mu.Lock()
-	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
-		Solicited: false,
-		Override:  false,
-		IsRouter:  false,
-	})
-	e.handlePacketQueuedLocked(entryTestAddr2)
+	if e.neigh.State != Failed {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Failed)
+	}
 	e.mu.Unlock()
 
-	waitFor := c.DelayFirstProbeTime + c.RetransmitTimer*time.Duration(c.MaxUnicastProbes)
-	clock.Advance(waitFor)
-	{
-		wantProbes := []entryTestProbeInfo{
-			{
-				RemoteAddress:     entryTestAddr1,
-				RemoteLinkAddress: entryTestLinkAddr1,
-			},
-			{
-				RemoteAddress:     entryTestAddr1,
-				RemoteLinkAddress: entryTestLinkAddr1,
-			},
-			{
-				RemoteAddress:     entryTestAddr1,
-				RemoteLinkAddress: entryTestLinkAddr1,
-			},
-		}
-		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
-		linkRes.mu.Unlock()
-		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
-		}
+	e.mu.Lock()
+	e.handlePacketQueuedLocked(entryTestAddr2)
+	if e.neigh.State != Incomplete {
+		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
 	}
+	e.mu.Unlock()
 
 	wantEvents := []testEntryEventInfo{
 		{
@@ -3514,135 +3479,14 @@ func TestEntryFailedToFailed(t *testing.T) {
 			},
 		},
 		{
-			EventType: entryTestChanged,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Stale,
-			},
-		},
-		{
-			EventType: entryTestChanged,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Delay,
-			},
-		},
-		{
-			EventType: entryTestChanged,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Probe,
-			},
-		},
-		{
 			EventType: entryTestRemoved,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
 				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Probe,
+				LinkAddr: tcpip.LinkAddress(""),
+				State:    Incomplete,
 			},
 		},
-	}
-	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
-	}
-	nudDisp.mu.Unlock()
-
-	failedLookups := e.nic.stats.Neighbor.FailedEntryLookups
-	if got := failedLookups.Value(); got != 0 {
-		t.Errorf("got Neighbor.FailedEntryLookups = %d, want = 0", got)
-	}
-
-	e.mu.Lock()
-	// Verify queuing a packet to the entry immediately fails.
-	e.handlePacketQueuedLocked(entryTestAddr2)
-	state := e.neigh.State
-	e.mu.Unlock()
-	if state != Failed {
-		t.Errorf("got e.neigh.State = %q, want = %q", state, Failed)
-	}
-
-	if got := failedLookups.Value(); got != 1 {
-		t.Errorf("got Neighbor.FailedEntryLookups = %d, want = 1", got)
-	}
-}
-
-func TestEntryFailedGetsDeleted(t *testing.T) {
-	c := DefaultNUDConfigurations()
-	c.MaxMulticastProbes = 3
-	c.MaxUnicastProbes = 3
-	e, nudDisp, linkRes, clock := entryTestSetup(c)
-
-	// Verify the cache contains the entry.
-	if _, ok := e.nic.neigh.cache[entryTestAddr1]; !ok {
-		t.Errorf("expected entry %q to exist in the neighbor cache", entryTestAddr1)
-	}
-
-	e.mu.Lock()
-	e.handlePacketQueuedLocked(entryTestAddr2)
-	e.mu.Unlock()
-
-	runImmediatelyScheduledJobs(clock)
-	{
-		wantProbes := []entryTestProbeInfo{
-			{
-				RemoteAddress: entryTestAddr1,
-				LocalAddress:  entryTestAddr2,
-			},
-		}
-		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
-		linkRes.probes = nil
-		linkRes.mu.Unlock()
-		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
-		}
-	}
-
-	e.mu.Lock()
-	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
-		Solicited: false,
-		Override:  false,
-		IsRouter:  false,
-	})
-	e.handlePacketQueuedLocked(entryTestAddr2)
-	e.mu.Unlock()
-
-	waitFor := c.DelayFirstProbeTime + c.RetransmitTimer*time.Duration(c.MaxUnicastProbes) + c.UnreachableTime
-	clock.Advance(waitFor)
-	{
-		wantProbes := []entryTestProbeInfo{
-			// The next three probe are sent in Probe.
-			{
-				RemoteAddress:     entryTestAddr1,
-				RemoteLinkAddress: entryTestLinkAddr1,
-			},
-			{
-				RemoteAddress:     entryTestAddr1,
-				RemoteLinkAddress: entryTestLinkAddr1,
-			},
-			{
-				RemoteAddress:     entryTestAddr1,
-				RemoteLinkAddress: entryTestLinkAddr1,
-			},
-		}
-		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
-		linkRes.mu.Unlock()
-		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
-		}
-	}
-
-	wantEvents := []testEntryEventInfo{
 		{
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
@@ -3652,51 +3496,10 @@ func TestEntryFailedGetsDeleted(t *testing.T) {
 				State:    Incomplete,
 			},
 		},
-		{
-			EventType: entryTestChanged,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Stale,
-			},
-		},
-		{
-			EventType: entryTestChanged,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Delay,
-			},
-		},
-		{
-			EventType: entryTestChanged,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Probe,
-			},
-		},
-		{
-			EventType: entryTestRemoved,
-			NICID:     entryTestNICID,
-			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Probe,
-			},
-		},
 	}
 	nudDisp.mu.Lock()
 	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
-
-	// Verify the cache no longer contains the entry.
-	if _, ok := e.nic.neigh.cache[entryTestAddr1]; ok {
-		t.Errorf("entry %q should have been deleted from the neighbor cache", entryTestAddr1)
-	}
 }

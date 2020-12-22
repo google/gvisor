@@ -148,7 +148,6 @@ go_test(
     ],
     library = ":stack",
     deps = [
-        "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -58,9 +57,6 @@ const (
 	incomplete entryState = iota
 	// ready means that the address has been resolved and can be used.
 	ready
-	// failed means that address resolution timed out and the address
-	// could not be resolved.
-	failed
 )
 
 // String implements Stringer.
@@ -70,8 +66,6 @@ func (s entryState) String() string {
 		return "incomplete"
 	case ready:
 		return "ready"
-	case failed:
-		return "failed"
 	default:
 		return fmt.Sprintf("unknown(%d)", s)
 	}
@@ -80,50 +74,54 @@ func (s entryState) String() string {
 // A linkAddrEntry is an entry in the linkAddrCache.
 // This struct is thread-compatible.
 type linkAddrEntry struct {
+	// linkAddrEntryEntry access is synchronized by the linkAddrCache lock.
 	linkAddrEntryEntry
+
+	// TODO(gvisor.dev/issue/5150): move these fields under mu.
+	// mu protects the fields below.
+	mu sync.RWMutex
 
 	addr       tcpip.FullAddress
 	linkAddr   tcpip.LinkAddress
 	expiration time.Time
 	s          entryState
 
-	// wakers is a set of waiters for address resolution result. Anytime
-	// state transitions out of incomplete these waiters are notified.
-	wakers map[*sleep.Waker]struct{}
-
-	// done is used to allow callers to wait on address resolution. It is nil iff
-	// s is incomplete and resolution is not yet in progress.
+	// done is closed when address resolution is complete. It is nil iff s is
+	// incomplete and resolution is not yet in progress.
 	done chan struct{}
+
+	// onResolve is called with the result of address resolution.
+	onResolve []func(tcpip.LinkAddress, bool)
 }
 
-// changeState sets the entry's state to ns, notifying any waiters.
+func (e *linkAddrEntry) notifyCompletionLocked(linkAddr tcpip.LinkAddress) {
+	for _, callback := range e.onResolve {
+		callback(linkAddr, len(linkAddr) != 0)
+	}
+	e.onResolve = nil
+	if ch := e.done; ch != nil {
+		close(ch)
+		e.done = nil
+	}
+}
+
+// changeStateLocked sets the entry's state to ns.
 //
 // The entry's expiration is bumped up to the greater of itself and the passed
 // expiration; the zero value indicates immediate expiration, and is set
 // unconditionally - this is an implementation detail that allows for entries
 // to be reused.
-func (e *linkAddrEntry) changeState(ns entryState, expiration time.Time) {
-	// Notify whoever is waiting on address resolution when transitioning
-	// out of incomplete.
-	if e.s == incomplete && ns != incomplete {
-		for w := range e.wakers {
-			w.Assert()
-		}
-		e.wakers = nil
-		if ch := e.done; ch != nil {
-			close(ch)
-		}
-		e.done = nil
+//
+// Precondition: e.mu must be locked
+func (e *linkAddrEntry) changeStateLocked(ns entryState, expiration time.Time) {
+	if e.s == incomplete && ns == ready {
+		e.notifyCompletionLocked(e.linkAddr)
 	}
 
 	if expiration.IsZero() || expiration.After(e.expiration) {
 		e.expiration = expiration
 	}
 	e.s = ns
-}
-
-func (e *linkAddrEntry) removeWaker(w *sleep.Waker) {
-	delete(e.wakers, w)
 }
 
 // add adds a k -> v mapping to the cache.
@@ -135,10 +133,12 @@ func (c *linkAddrCache) add(k tcpip.FullAddress, v tcpip.LinkAddress) {
 
 	c.cache.Lock()
 	entry := c.getOrCreateEntryLocked(k)
-	entry.linkAddr = v
-
-	entry.changeState(ready, expiration)
 	c.cache.Unlock()
+
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	entry.linkAddr = v
+	entry.changeStateLocked(ready, expiration)
 }
 
 // getOrCreateEntryLocked retrieves a cache entry associated with k. The
@@ -159,13 +159,14 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEnt
 	var entry *linkAddrEntry
 	if len(c.cache.table) == linkAddrCacheSize {
 		entry = c.cache.lru.Back()
+		entry.mu.Lock()
 
 		delete(c.cache.table, entry.addr)
 		c.cache.lru.Remove(entry)
 
-		// Wake waiters and mark the soon-to-be-reused entry as expired. Note
-		// that the state passed doesn't matter when the zero time is passed.
-		entry.changeState(failed, time.Time{})
+		// Wake waiters and mark the soon-to-be-reused entry as expired.
+		entry.notifyCompletionLocked("" /* linkAddr */)
+		entry.mu.Unlock()
 	} else {
 		entry = new(linkAddrEntry)
 	}
@@ -180,9 +181,12 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEnt
 }
 
 // get reports any known link address for k.
-func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	if linkRes != nil {
 		if addr, ok := linkRes.ResolveStaticAddress(k.Addr); ok {
+			if onResolve != nil {
+				onResolve(addr, true)
+			}
 			return addr, nil, nil
 		}
 	}
@@ -190,53 +194,32 @@ func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, lo
 	c.cache.Lock()
 	defer c.cache.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+
 	switch s := entry.s; s {
-	case ready, failed:
+	case ready:
 		if !time.Now().After(entry.expiration) {
 			// Not expired.
-			switch s {
-			case ready:
-				return entry.linkAddr, nil, nil
-			case failed:
-				return entry.linkAddr, nil, tcpip.ErrNoLinkAddress
-			default:
-				panic(fmt.Sprintf("invalid cache entry state: %s", s))
+			if onResolve != nil {
+				onResolve(entry.linkAddr, true)
 			}
+			return entry.linkAddr, nil, nil
 		}
 
-		entry.changeState(incomplete, time.Time{})
+		entry.changeStateLocked(incomplete, time.Time{})
 		fallthrough
 	case incomplete:
-		if waker != nil {
-			if entry.wakers == nil {
-				entry.wakers = make(map[*sleep.Waker]struct{})
-			}
-			entry.wakers[waker] = struct{}{}
+		if onResolve != nil {
+			entry.onResolve = append(entry.onResolve, onResolve)
 		}
-
 		if entry.done == nil {
-			// Address resolution needs to be initiated.
-			if linkRes == nil {
-				return entry.linkAddr, nil, tcpip.ErrNoLinkAddress
-			}
-
 			entry.done = make(chan struct{})
 			go c.startAddressResolution(k, linkRes, localAddr, nic, entry.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
 		}
-
 		return entry.linkAddr, entry.done, tcpip.ErrWouldBlock
 	default:
 		panic(fmt.Sprintf("invalid cache entry state: %s", s))
-	}
-}
-
-// removeWaker removes a waker previously added through get().
-func (c *linkAddrCache) removeWaker(k tcpip.FullAddress, waker *sleep.Waker) {
-	c.cache.Lock()
-	defer c.cache.Unlock()
-
-	if entry, ok := c.cache.table[k]; ok {
-		entry.removeWaker(waker)
 	}
 }
 
@@ -257,9 +240,9 @@ func (c *linkAddrCache) startAddressResolution(k tcpip.FullAddress, linkRes Link
 	}
 }
 
-// checkLinkRequest checks whether previous attempt to resolve address has succeeded
-// and mark the entry accordingly, e.g. ready, failed, etc. Return true if request
-// can stop, false if another request should be sent.
+// checkLinkRequest checks whether previous attempt to resolve address has
+// succeeded and mark the entry accordingly. Returns true if request can stop,
+// false if another request should be sent.
 func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.FullAddress, attempt int) bool {
 	c.cache.Lock()
 	defer c.cache.Unlock()
@@ -268,16 +251,20 @@ func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.FullAddress, att
 		// Entry was evicted from the cache.
 		return true
 	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+
 	switch s := entry.s; s {
-	case ready, failed:
-		// Entry was made ready by resolver or failed. Either way we're done.
+	case ready:
+		// Entry was made ready by resolver.
 	case incomplete:
 		if attempt+1 < c.resolutionAttempts {
 			// No response yet, need to send another ARP request.
 			return false
 		}
-		// Max number of retries reached, mark entry as failed.
-		entry.changeState(failed, now.Add(c.ageLimit))
+		// Max number of retries reached, delete entry.
+		entry.notifyCompletionLocked("" /* linkAddr */)
+		delete(c.cache.table, k)
 	default:
 		panic(fmt.Sprintf("invalid cache entry state: %s", s))
 	}

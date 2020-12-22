@@ -2292,7 +2292,8 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 
 	e.isRegistered = true
 	e.setEndpointState(StateConnecting)
-	e.route = r.Clone()
+	r.Acquire()
+	e.route = r
 	e.boundNICID = nicID
 	e.effectiveNetProtos = netProtos
 	e.connectingAddress = connectingAddr
