@@ -778,7 +778,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut | waiter.EventHUp | waiter.EventErr)
 	}()
 
-	s := sleep.Sleeper{}
+	var s sleep.Sleeper
 	s.AddWaker(&e.notificationWaker, wakerForNotification)
 	s.AddWaker(&e.newSegmentWaker, wakerForNewSegment)
 	for {

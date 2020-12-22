@@ -650,8 +650,8 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 						if p.Route.RemoteAddress != respNSDst {
 							t.Errorf("got p.Route.RemoteAddress = %s, want = %s", p.Route.RemoteAddress, respNSDst)
 						}
-						if got, want := p.Route.RemoteLinkAddress(), header.EthernetAddressFromMulticastIPv6Address(respNSDst); got != want {
-							t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, want)
+						if want := header.EthernetAddressFromMulticastIPv6Address(respNSDst); p.Route.RemoteLinkAddress != want {
+							t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, want)
 						}
 
 						checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
@@ -706,8 +706,8 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 					if p.Route.RemoteAddress != test.naDst {
 						t.Errorf("got p.Route.RemoteAddress = %s, want = %s", p.Route.RemoteAddress, test.naDst)
 					}
-					if got := p.Route.RemoteLinkAddress(); got != test.naDstLinkAddr {
-						t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, test.naDstLinkAddr)
+					if p.Route.RemoteLinkAddress != test.naDstLinkAddr {
+						t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, test.naDstLinkAddr)
 					}
 
 					checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),

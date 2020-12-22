@@ -2669,8 +2669,8 @@ func TestPacketQueing(t *testing.T) {
 				if p.Proto != header.IPv4ProtocolNumber {
 					t.Errorf("got p.Proto = %d, want = %d", p.Proto, header.IPv4ProtocolNumber)
 				}
-				if got := p.Route.RemoteLinkAddress(); got != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, host2NICLinkAddr)
+				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
 				}
 				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
@@ -2712,8 +2712,8 @@ func TestPacketQueing(t *testing.T) {
 				if p.Proto != header.IPv4ProtocolNumber {
 					t.Errorf("got p.Proto = %d, want = %d", p.Proto, header.IPv4ProtocolNumber)
 				}
-				if got := p.Route.RemoteLinkAddress(); got != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, host2NICLinkAddr)
+				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
 				}
 				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
@@ -2761,8 +2761,8 @@ func TestPacketQueing(t *testing.T) {
 				if p.Proto != arp.ProtocolNumber {
 					t.Errorf("got p.Proto = %d, want = %d", p.Proto, arp.ProtocolNumber)
 				}
-				if got := p.Route.RemoteLinkAddress(); got != header.EthernetBroadcastAddress {
-					t.Errorf("got p.Route.RemoteLinkAddress() = %s, want = %s", got, header.EthernetBroadcastAddress)
+				if p.Route.RemoteLinkAddress != header.EthernetBroadcastAddress {
+					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, header.EthernetBroadcastAddress)
 				}
 				rep := header.ARP(p.Pkt.NetworkHeader().View())
 				if got := rep.Op(); got != header.ARPRequest {

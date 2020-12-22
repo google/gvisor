@@ -340,9 +340,8 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 
 	newLocalLinkAddress := tcpip.LinkAddress(strings.Repeat("0xFE", 6))
 	// Set both remote and local link address in route.
-	r := stack.Route{
-		LocalLinkAddress: newLocalLinkAddress,
-	}
+	var r stack.Route
+	r.LocalLinkAddress = newLocalLinkAddress
 	r.ResolveWith(remoteLinkAddr)
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{

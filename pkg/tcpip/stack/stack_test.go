@@ -1602,7 +1602,10 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, &stack.Route{LocalAddress: header.IPv4Any, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	var wantRoute stack.Route
+	wantRoute.LocalAddress = header.IPv4Any
+	wantRoute.RemoteAddress = header.IPv4Broadcast
+	if err := verifyRoute(r, &wantRoute); err != nil {
 		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
@@ -1656,7 +1659,10 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, &stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	var wantRoute stack.Route
+	wantRoute.LocalAddress = nic1Addr.Address
+	wantRoute.RemoteAddress = header.IPv4Broadcast
+	if err := verifyRoute(r, &wantRoute); err != nil {
 		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
@@ -1666,7 +1672,10 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, &stack.Route{LocalAddress: nic2Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	wantRoute = stack.Route{}
+	wantRoute.LocalAddress = nic2Addr.Address
+	wantRoute.RemoteAddress = header.IPv4Broadcast
+	if err := verifyRoute(r, &wantRoute); err != nil {
 		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
@@ -1682,7 +1691,10 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	if err := verifyRoute(r, &stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+	wantRoute = stack.Route{}
+	wantRoute.LocalAddress = nic1Addr.Address
+	wantRoute.RemoteAddress = header.IPv4Broadcast
+	if err := verifyRoute(r, &wantRoute); err != nil {
 		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
 	}
 }
@@ -4274,8 +4286,8 @@ func TestWritePacketToRemote(t *testing.T) {
 			if got, want := pkt.Proto, test.protocol; got != want {
 				t.Fatalf("pkt.Proto = %d, want %d", got, want)
 			}
-			if got, want := pkt.Route.RemoteLinkAddress(), linkAddr2; got != want {
-				t.Fatalf("pkt.Route.RemoteAddress = %s, want %s", got, want)
+			if pkt.Route.RemoteLinkAddress != linkAddr2 {
+				t.Fatalf("pkt.Route.RemoteAddress = %s, want %s", pkt.Route.RemoteLinkAddress, linkAddr2)
 			}
 			if diff := cmp.Diff(pkt.Pkt.Data.ToView(), buffer.View(test.payload)); diff != "" {
 				t.Errorf("pkt.Pkt.Data mismatch (-want +got):\n%s", diff)

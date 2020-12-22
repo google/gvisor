@@ -109,14 +109,6 @@ const (
 	//
 	// Default taken from MAX_NEIGHBOR_ADVERTISEMENT of RFC 4861 section 10.
 	defaultMaxReachbilityConfirmations = 3
-
-	// defaultUnreachableTime is the default duration for how long an entry will
-	// remain in the FAILED state before being removed from the neighbor cache.
-	//
-	// Note, there is no equivalent protocol constant defined in RFC 4861. It
-	// leaves the specifics of any garbage collection mechanism up to the
-	// implementation.
-	defaultUnreachableTime = 5 * time.Second
 )
 
 // NUDDispatcher is the interface integrators of netstack must implement to
@@ -278,10 +270,6 @@ type NUDConfigurations struct {
 	// TODO(gvisor.dev/issue/2246): Discuss if implementation of this NUD
 	// configuration option is necessary.
 	MaxReachabilityConfirmations uint32
-
-	// UnreachableTime describes how long an entry will remain in the FAILED
-	// state before being removed from the neighbor cache.
-	UnreachableTime time.Duration
 }
 
 // DefaultNUDConfigurations returns a NUDConfigurations populated with default
@@ -299,7 +287,6 @@ func DefaultNUDConfigurations() NUDConfigurations {
 		MaxUnicastProbes:             defaultMaxUnicastProbes,
 		MaxAnycastDelayTime:          defaultMaxAnycastDelayTime,
 		MaxReachabilityConfirmations: defaultMaxReachbilityConfirmations,
-		UnreachableTime:              defaultUnreachableTime,
 	}
 }
 
@@ -328,9 +315,6 @@ func (c *NUDConfigurations) resetInvalidFields() {
 	}
 	if c.MaxUnicastProbes == 0 {
 		c.MaxUnicastProbes = defaultMaxUnicastProbes
-	}
-	if c.UnreachableTime == 0 {
-		c.UnreachableTime = defaultUnreachableTime
 	}
 }
 

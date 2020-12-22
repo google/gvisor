@@ -462,7 +462,7 @@ func (h *handshake) processSegments() *tcpip.Error {
 
 func (h *handshake) resolveRoute() *tcpip.Error {
 	// Set up the wakers.
-	s := sleep.Sleeper{}
+	var s sleep.Sleeper
 	resolutionWaker := &sleep.Waker{}
 	s.AddWaker(resolutionWaker, wakerForResolution)
 	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
@@ -470,24 +470,27 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 
 	// Initial action is to resolve route.
 	index := wakerForResolution
+	attemptedResolution := false
 	for {
 		switch index {
 		case wakerForResolution:
-			if _, err := h.ep.route.Resolve(resolutionWaker); err != tcpip.ErrWouldBlock {
-				if err == tcpip.ErrNoLinkAddress {
-					h.ep.stats.SendErrors.NoLinkAddr.Increment()
-				} else if err != nil {
+			if _, err := h.ep.route.Resolve(resolutionWaker.Assert); err != tcpip.ErrWouldBlock {
+				if err != nil {
 					h.ep.stats.SendErrors.NoRoute.Increment()
 				}
 				// Either success (err == nil) or failure.
 				return err
 			}
+			if attemptedResolution {
+				h.ep.stats.SendErrors.NoLinkAddr.Increment()
+				return tcpip.ErrNoLinkAddress
+			}
+			attemptedResolution = true
 			// Resolution not completed. Keep trying...
 
 		case wakerForNotification:
 			n := h.ep.fetchNotifications()
 			if n&notifyClose != 0 {
-				h.ep.route.RemoveWaker(resolutionWaker)
 				return tcpip.ErrAborted
 			}
 			if n&notifyDrain != 0 {
@@ -563,7 +566,7 @@ func (h *handshake) start() *tcpip.Error {
 // complete completes the TCP 3-way handshake initiated by h.start().
 func (h *handshake) complete() *tcpip.Error {
 	// Set up the wakers.
-	s := sleep.Sleeper{}
+	var s sleep.Sleeper
 	resendWaker := sleep.Waker{}
 	s.AddWaker(&resendWaker, wakerForResend)
 	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
@@ -1512,7 +1515,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	}
 
 	// Initialize the sleeper based on the wakers in funcs.
-	s := sleep.Sleeper{}
+	var s sleep.Sleeper
 	for i := range funcs {
 		s.AddWaker(funcs[i].w, i)
 	}
@@ -1699,7 +1702,7 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 	const notification = 2
 	const timeWaitDone = 3
 
-	s := sleep.Sleeper{}
+	var s sleep.Sleeper
 	defer s.Done()
 	s.AddWaker(&e.newSegmentWaker, newSegment)
 	s.AddWaker(&e.notificationWaker, notification)

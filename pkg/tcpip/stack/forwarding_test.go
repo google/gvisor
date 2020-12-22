@@ -560,6 +560,38 @@ func TestForwardingWithNoResolver(t *testing.T) {
 	}
 }
 
+func TestForwardingResolutionFailsForQueuedPackets(t *testing.T) {
+	proto := &fwdTestNetworkProtocol{
+		addrResolveDelay: 50 * time.Millisecond,
+		onLinkAddressResolved: func(*linkAddrCache, *neighborCache, tcpip.Address, tcpip.LinkAddress) {
+			// Don't resolve the link address.
+		},
+	}
+
+	ep1, ep2 := fwdTestNetFactory(t, proto, true /* useNeighborCache */)
+
+	const numPackets int = 5
+	// These packets will all be enqueued in the packet queue to wait for link
+	// address resolution.
+	for i := 0; i < numPackets; i++ {
+		buf := buffer.NewView(30)
+		buf[dstAddrOffset] = 3
+		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+			Data: buf.ToVectorisedView(),
+		}))
+	}
+
+	// All packets should fail resolution.
+	// TODO(gvisor.dev/issue/5141): Use a fake clock.
+	for i := 0; i < numPackets; i++ {
+		select {
+		case got := <-ep2.C:
+			t.Fatalf("got %#v; packets should have failed resolution and not been forwarded", got)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
 func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 	tests := []struct {
 		name             string

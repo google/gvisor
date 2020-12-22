@@ -323,9 +323,8 @@ func TestPreserveSrcAddress(t *testing.T) {
 	defer c.cleanup()
 
 	// Set LocalLinkAddress in route to the value of the bridged address.
-	r := &stack.Route{
-		LocalLinkAddress: baddr,
-	}
+	var r stack.Route
+	r.LocalLinkAddress = baddr
 	r.ResolveWith(raddr)
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -335,7 +334,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 		Data:               buffer.VectorisedView{},
 	})
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
+	if err := c.ep.WritePacket(&r, nil /* gso */, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 

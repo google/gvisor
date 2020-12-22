@@ -261,15 +261,14 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	e.mu.RLock()
+	defer e.mu.RUnlock()
 
 	if e.closed {
-		e.mu.RUnlock()
 		return 0, nil, tcpip.ErrInvalidEndpointState
 	}
 
 	payloadBytes, err := p.FullPayload()
 	if err != nil {
-		e.mu.RUnlock()
 		return 0, nil, err
 	}
 
@@ -278,7 +277,6 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	if e.ops.GetHeaderIncluded() {
 		ip := header.IPv4(payloadBytes)
 		if !ip.IsValid(len(payloadBytes)) {
-			e.mu.RUnlock()
 			return 0, nil, tcpip.ErrInvalidOptionValue
 		}
 		dstAddr := ip.DestinationAddress()
@@ -300,39 +298,16 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// If the user doesn't specify a destination, they should have
 		// connected to another address.
 		if !e.connected {
-			e.mu.RUnlock()
 			return 0, nil, tcpip.ErrDestinationRequired
 		}
 
-		if e.route.IsResolutionRequired() {
-			savedRoute := e.route
-			// Promote lock to exclusive if using a shared route,
-			// given that it may need to change in finishWrite.
-			e.mu.RUnlock()
-			e.mu.Lock()
-
-			// Make sure that the route didn't change during the
-			// time we didn't hold the lock.
-			if !e.connected || savedRoute != e.route {
-				e.mu.Unlock()
-				return 0, nil, tcpip.ErrInvalidEndpointState
-			}
-
-			n, ch, err := e.finishWrite(payloadBytes, savedRoute)
-			e.mu.Unlock()
-			return n, ch, err
-		}
-
-		n, ch, err := e.finishWrite(payloadBytes, e.route)
-		e.mu.RUnlock()
-		return n, ch, err
+		return e.finishWrite(payloadBytes, e.route)
 	}
 
 	// The caller provided a destination. Reject destination address if it
 	// goes through a different NIC than the endpoint was bound to.
 	nic := opts.To.NIC
 	if e.bound && nic != 0 && nic != e.BindNICID {
-		e.mu.RUnlock()
 		return 0, nil, tcpip.ErrNoRoute
 	}
 
@@ -340,13 +315,11 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	// FindRoute will choose an appropriate source address.
 	route, err := e.stack.FindRoute(nic, e.BindAddr, opts.To.Addr, e.NetProto, false)
 	if err != nil {
-		e.mu.RUnlock()
 		return 0, nil, err
 	}
 
 	n, ch, err := e.finishWrite(payloadBytes, route)
 	route.Release()
-	e.mu.RUnlock()
 	return n, ch, err
 }
 
@@ -435,11 +408,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	if err != nil {
 		return err
 	}
-	defer route.Release()
 
 	if e.associated {
 		// Re-register the endpoint with the appropriate NIC.
 		if err := e.stack.RegisterRawTransportEndpoint(addr.NIC, e.NetProto, e.TransProto, e); err != nil {
+			route.Release()
 			return err
 		}
 		e.stack.UnregisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e)
@@ -447,7 +420,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	// Save the route we've connected via.
-	e.route = route.Clone()
+	e.route = route
 	e.connected = true
 
 	return nil

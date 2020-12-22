@@ -264,7 +264,7 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	// If the packet does not already have link layer header, and the route
 	// does not exist, we can't compute it. This is possibly a raw packet, tun
 	// device doesn't support this at the moment.
-	if info.Pkt.LinkHeader().View().IsEmpty() && info.Route.RemoteLinkAddress() == "" {
+	if info.Pkt.LinkHeader().View().IsEmpty() && len(info.Route.RemoteLinkAddress) == 0 {
 		return nil, false
 	}
 
@@ -272,7 +272,7 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	if d.hasFlags(linux.IFF_TAP) {
 		// Add ethernet header if not provided.
 		if info.Pkt.LinkHeader().View().IsEmpty() {
-			d.endpoint.AddHeader(info.Route.LocalLinkAddress, info.Route.RemoteLinkAddress(), info.Proto, info.Pkt)
+			d.endpoint.AddHeader(info.Route.LocalLinkAddress, info.Route.RemoteLinkAddress, info.Proto, info.Pkt)
 		}
 		vv.AppendView(info.Pkt.LinkHeader().View())
 	}

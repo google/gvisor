@@ -77,6 +77,7 @@ func (f *fakeTransportEndpoint) Abort() {
 }
 
 func (f *fakeTransportEndpoint) Close() {
+	// TODO(gvisor.dev/issue/5153): Consider retaining the route.
 	f.route.Release()
 }
 
@@ -146,16 +147,16 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	if err != nil {
 		return tcpip.ErrNoRoute
 	}
-	defer r.Release()
 
 	// Try to register so that we can start receiving packets.
 	f.ID.RemoteAddress = addr.Addr
 	err = f.proto.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, ports.Flags{}, 0 /* bindToDevice */)
 	if err != nil {
+		r.Release()
 		return err
 	}
 
-	f.route = r.Clone()
+	f.route = r
 
 	return nil
 }

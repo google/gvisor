@@ -103,7 +103,7 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 		for _, p := range packets {
 			if cancelled {
 				p.route.Stats().IP.OutgoingPacketErrors.Increment()
-			} else if _, err := p.route.Resolve(nil); err != nil {
+			} else if p.route.IsResolutionRequired() {
 				p.route.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {
 				p.route.outgoingNIC.writePacket(p.route, nil /* gso */, p.proto, p.pkt)

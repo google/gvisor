@@ -504,7 +504,6 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	if err != nil {
 		return err
 	}
-	defer r.Release()
 
 	id := stack.TransportEndpointID{
 		LocalAddress:  r.LocalAddress,
@@ -519,11 +518,12 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
+		r.Release()
 		return err
 	}
 
 	e.ID = id
-	e.route = r.Clone()
+	e.route = r
 	e.RegisterNICID = nicID
 
 	e.state = stateConnected

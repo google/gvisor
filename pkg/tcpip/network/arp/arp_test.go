@@ -441,9 +441,8 @@ func (*testInterface) Promiscuous() bool {
 }
 
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	r := stack.Route{
-		NetProto: protocol,
-	}
+	var r stack.Route
+	r.NetProto = protocol
 	r.ResolveWith(remoteLinkAddr)
 	return t.LinkEndpoint.WritePacket(&r, gso, protocol, pkt)
 }
@@ -557,8 +556,8 @@ func TestLinkAddressRequest(t *testing.T) {
 				t.Fatal("expected to send a link address request")
 			}
 
-			if got := pkt.Route.RemoteLinkAddress(); got != test.expectedRemoteLinkAddr {
-				t.Errorf("got pkt.Route.RemoteLinkAddress() = %s, want = %s", got, test.expectedRemoteLinkAddr)
+			if pkt.Route.RemoteLinkAddress != test.expectedRemoteLinkAddr {
+				t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedRemoteLinkAddr)
 			}
 
 			rep := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
