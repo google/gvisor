@@ -955,14 +955,6 @@ type SettableSocketOption interface {
 	isSettableSocketOption()
 }
 
-// BindToDeviceOption is used by SetSockOpt/GetSockOpt to specify that sockets
-// should bind only on a specific NIC.
-type BindToDeviceOption NICID
-
-func (*BindToDeviceOption) isGettableSocketOption() {}
-
-func (*BindToDeviceOption) isSettableSocketOption() {}
-
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
 //
 // TODO(b/64800844): Add and populate stat fields.
