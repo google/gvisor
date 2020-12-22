@@ -61,6 +61,108 @@ const (
 	buckets = 2048
 )
 
+// policyTable is the default policy table defined in RFC 6724 section 2.1.
+//
+// A more human-readable version:
+//
+//  Prefix        Precedence Label
+//  ::1/128               50     0
+//  ::/0                  40     1
+//  ::ffff:0:0/96         35     4
+//  2002::/16             30     2
+//  2001::/32              5     5
+//  fc00::/7               3    13
+//  ::/96                  1     3
+//  fec0::/10              1    11
+//  3ffe::/16              1    12
+//
+// The table is sorted by prefix length so longest-prefix match can be easily
+// achieved.
+//
+// We willingly left out ::/96, fec0::/10 and 3ffe::/16 since those prefix
+// assignments are deprecated.
+//
+// As per RFC 4291 section 2.5.5.1 (for ::/96),
+//
+//   The "IPv4-Compatible IPv6 address" is now deprecated because the
+//   current IPv6 transition mechanisms no longer use these addresses.
+//   New or updated implementations are not required to support this
+//   address type.
+//
+// As per RFC 3879 section 4 (for fec0::/10),
+//
+//    This document formally deprecates the IPv6 site-local unicast prefix
+//    defined in [RFC3513], i.e., 1111111011 binary or FEC0::/10.
+//
+// As per RFC 3701 section 1 (for 3ffe::/16),
+//
+//   As clearly stated in [TEST-NEW], the addresses for the 6bone are
+//   temporary and will be reclaimed in the future. It further states
+//   that all users of these addresses (within the 3FFE::/16 prefix) will
+//   be required to renumber at some time in the future.
+//
+// and section 2,
+//
+//   Thus after the pTLA allocation cutoff date January 1, 2004, it is
+//   REQUIRED that no new 6bone 3FFE pTLAs be allocated.
+//
+// MUST NOT BE MODIFIED.
+var policyTable = [...]struct {
+	subnet tcpip.Subnet
+
+	label uint8
+}{
+	// ::1/128
+	{
+		subnet: header.IPv6Loopback.WithPrefix().Subnet(),
+		label:  0,
+	},
+	// ::ffff:0:0/96
+	{
+		subnet: header.IPv4MappedIPv6Subnet,
+		label:  4,
+	},
+	// 2001::/32 (Teredo prefix as per RFC 4380 section 2.6).
+	{
+		subnet: tcpip.AddressWithPrefix{
+			Address:   "\x20\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			PrefixLen: 32,
+		}.Subnet(),
+		label: 5,
+	},
+	// 2002::/16 (6to4 prefix as per RFC 3056 section 2).
+	{
+		subnet: tcpip.AddressWithPrefix{
+			Address:   "\x20\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			PrefixLen: 16,
+		}.Subnet(),
+		label: 2,
+	},
+	// fc00::/7 (Unique local addresses as per RFC 4193 section 3.1).
+	{
+		subnet: tcpip.AddressWithPrefix{
+			Address:   "\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			PrefixLen: 7,
+		}.Subnet(),
+		label: 13,
+	},
+	// ::/0
+	{
+		subnet: header.IPv6EmptySubnet,
+		label:  1,
+	},
+}
+
+func getLabel(addr tcpip.Address) uint8 {
+	for _, p := range policyTable {
+		if p.subnet.Contains(addr) {
+			return p.label
+		}
+	}
+
+	panic(fmt.Sprintf("should have a label for address = %s", addr))
+}
+
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
@@ -1373,7 +1475,11 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 	// RFC 6724 section 5.
 	type addrCandidate struct {
 		addressEndpoint stack.AddressEndpoint
+		addr            tcpip.Address
 		scope           header.IPv6AddressScope
+
+		label          uint8
+		matchingPrefix uint8
 	}
 
 	if len(remoteAddr) == 0 {
@@ -1400,7 +1506,10 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 
 		cs = append(cs, addrCandidate{
 			addressEndpoint: addressEndpoint,
+			addr:            addr,
 			scope:           scope,
+			label:           getLabel(addr),
+			matchingPrefix:  remoteAddr.MatchingPrefix(addr),
 		})
 
 		return true
@@ -1412,18 +1521,20 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 		panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", remoteAddr, err))
 	}
 
+	remoteLabel := getLabel(remoteAddr)
+
 	// Sort the addresses as per RFC 6724 section 5 rules 1-3.
 	//
-	// TODO(b/146021396): Implement rules 4-8 of RFC 6724 section 5.
+	// TODO(b/146021396): Implement rules 4, 5 of RFC 6724 section 5.
 	sort.Slice(cs, func(i, j int) bool {
 		sa := cs[i]
 		sb := cs[j]
 
 		// Prefer same address as per RFC 6724 section 5 rule 1.
-		if sa.addressEndpoint.AddressWithPrefix().Address == remoteAddr {
+		if sa.addr == remoteAddr {
 			return true
 		}
-		if sb.addressEndpoint.AddressWithPrefix().Address == remoteAddr {
+		if sb.addr == remoteAddr {
 			return false
 		}
 
@@ -1440,9 +1551,27 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 			return sbDep
 		}
 
+		// Prefer matching label as per RFC 6724 section 5 rule 6.
+		if sa, sb := sa.label == remoteLabel, sb.label == remoteLabel; sa != sb {
+			if sa {
+				return true
+			}
+			if sb {
+				return false
+			}
+		}
+
 		// Prefer temporary addresses as per RFC 6724 section 5 rule 7.
 		if saTemp, sbTemp := sa.addressEndpoint.ConfigType() == stack.AddressConfigSlaacTemp, sb.addressEndpoint.ConfigType() == stack.AddressConfigSlaacTemp; saTemp != sbTemp {
 			return saTemp
+		}
+
+		// Use longest matching prefix as per RFC 6724 section 5 rule 8.
+		if sa.matchingPrefix > sb.matchingPrefix {
+			return true
+		}
+		if sb.matchingPrefix > sa.matchingPrefix {
+			return false
 		}
 
 		// sa and sb are equal, return the endpoint that is closest to the front of
