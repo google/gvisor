@@ -263,7 +263,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 		fragmentOffset = fragOffset
 
 	case header.ARPProtocolNumber:
-		if parse.ARP(pkt) {
+		if !parse.ARP(pkt) {
 			return
 		}
 
