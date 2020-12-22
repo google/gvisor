@@ -45,6 +45,9 @@ type SocketOptionsHandler interface {
 
 	// UpdateLastError updates the endpoint specific last error field.
 	UpdateLastError(err *Error)
+
+	// HasNIC is invoked to check if the NIC is valid for SO_BINDTODEVICE.
+	HasNIC(v int32) bool
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -75,6 +78,11 @@ func (*DefaultSocketOptionsHandler) LastError() *Error {
 
 // UpdateLastError implements SocketOptionsHandler.UpdateLastError.
 func (*DefaultSocketOptionsHandler) UpdateLastError(*Error) {}
+
+// HasNIC implements SocketOptionsHandler.HasNIC.
+func (*DefaultSocketOptionsHandler) HasNIC(int32) bool {
+	return false
+}
 
 // SocketOptions contains all the variables which store values for SOL_SOCKET,
 // SOL_IP, SOL_IPV6 and SOL_TCP level options.
@@ -158,6 +166,9 @@ type SocketOptions struct {
 	// errQueue is the per-socket error queue. It is protected by errQueueMu.
 	errQueueMu sync.Mutex `state:"nosave"`
 	errQueue   sockErrorList
+
+	// bindToDevice determines the device to which the socket is bound.
+	bindToDevice int32
 
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
@@ -491,4 +502,19 @@ func (so *SocketOptions) QueueLocalErr(err *Error, net NetworkProtocolNumber, in
 		Dst:       dst,
 		NetProto:  net,
 	})
+}
+
+// GetBindToDevice gets value for SO_BINDTODEVICE option.
+func (so *SocketOptions) GetBindToDevice() int32 {
+	return atomic.LoadInt32(&so.bindToDevice)
+}
+
+// SetBindToDevice sets value for SO_BINDTODEVICE option.
+func (so *SocketOptions) SetBindToDevice(bindToDevice int32) *Error {
+	if !so.handler.HasNIC(bindToDevice) {
+		return ErrUnknownDevice
+	}
+
+	atomic.StoreInt32(&so.bindToDevice, bindToDevice)
+	return nil
 }

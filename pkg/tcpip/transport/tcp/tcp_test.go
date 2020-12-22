@@ -1380,9 +1380,8 @@ func TestConnectBindToDevice(t *testing.T) {
 			defer c.Cleanup()
 
 			c.Create(-1)
-			bindToDevice := tcpip.BindToDeviceOption(test.device)
-			if err := c.EP.SetSockOpt(&bindToDevice); err != nil {
-				t.Fatalf("c.EP.SetSockOpt(&%T(%d)): %s", bindToDevice, bindToDevice, err)
+			if err := c.EP.SocketOptions().SetBindToDevice(int32(test.device)); err != nil {
+				t.Fatalf("c.EP.SetSockOpt(&%T(%d)): %s", test.device, test.device, err)
 			}
 			// Start connection attempt.
 			waitEntry, _ := waiter.NewChannelEntry(nil)
@@ -4507,7 +4506,7 @@ func TestBindToDeviceOption(t *testing.T) {
 		name                 string
 		setBindToDevice      *tcpip.NICID
 		setBindToDeviceError *tcpip.Error
-		getBindToDevice      tcpip.BindToDeviceOption
+		getBindToDevice      int32
 	}{
 		{"GetDefaultValue", nil, nil, 0},
 		{"BindToNonExistent", nicIDPtr(999), tcpip.ErrUnknownDevice, 0},
@@ -4517,15 +4516,13 @@ func TestBindToDeviceOption(t *testing.T) {
 	for _, testAction := range testActions {
 		t.Run(testAction.name, func(t *testing.T) {
 			if testAction.setBindToDevice != nil {
-				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
-				if gotErr, wantErr := ep.SetSockOpt(&bindToDevice), testAction.setBindToDeviceError; gotErr != wantErr {
+				bindToDevice := int32(*testAction.setBindToDevice)
+				if gotErr, wantErr := ep.SocketOptions().SetBindToDevice(bindToDevice), testAction.setBindToDeviceError; gotErr != wantErr {
 					t.Errorf("got SetSockOpt(&%T(%d)) = %s, want = %s", bindToDevice, bindToDevice, gotErr, wantErr)
 				}
 			}
-			bindToDevice := tcpip.BindToDeviceOption(88888)
-			if err := ep.GetSockOpt(&bindToDevice); err != nil {
-				t.Errorf("GetSockOpt(&%T): %s", bindToDevice, err)
-			} else if bindToDevice != testAction.getBindToDevice {
+			bindToDevice := ep.SocketOptions().GetBindToDevice()
+			if bindToDevice != testAction.getBindToDevice {
 				t.Errorf("got bindToDevice = %d, want %d", bindToDevice, testAction.getBindToDevice)
 			}
 		})

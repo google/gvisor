@@ -308,9 +308,8 @@ func TestBindToDeviceDistribution(t *testing.T) {
 
 						defer ep.Close()
 						ep.SocketOptions().SetReusePort(endpoint.reuse)
-						bindToDeviceOption := tcpip.BindToDeviceOption(endpoint.bindToDevice)
-						if err := ep.SetSockOpt(&bindToDeviceOption); err != nil {
-							t.Fatalf("SetSockOpt(&%T(%d)) on endpoint %d failed: %s", bindToDeviceOption, bindToDeviceOption, i, err)
+						if err := ep.SocketOptions().SetBindToDevice(int32(endpoint.bindToDevice)); err != nil {
+							t.Fatalf("SetSockOpt(&%T(%d)) on endpoint %d failed: %s", endpoint.bindToDevice, endpoint.bindToDevice, i, err)
 						}
 
 						var dstAddr tcpip.Address
