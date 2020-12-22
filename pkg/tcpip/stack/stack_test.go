@@ -2726,8 +2726,16 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 		uniqueLocalAddr2       = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
 		globalAddr1            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
 		globalAddr2            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		nicID                  = 1
-		lifetimeSeconds        = 9999
+		globalAddr3            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
+		ipv4MappedIPv6Addr1    = tcpip.Address("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x01")
+		ipv4MappedIPv6Addr2    = tcpip.Address("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x02")
+		toredoAddr1            = tcpip.Address("\x20\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		toredoAddr2            = tcpip.Address("\x20\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		ipv6ToIPv4Addr1        = tcpip.Address("\x20\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		ipv6ToIPv4Addr2        = tcpip.Address("\x20\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+
+		nicID           = 1
+		lifetimeSeconds = 9999
 	)
 
 	prefix1, _, stableGlobalAddr1 := prefixSubnetAddr(0, linkAddr1)
@@ -2744,111 +2752,163 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 		slaacPrefixForTempAddrBeforeNICAddrAdd tcpip.AddressWithPrefix
 		nicAddrs                               []tcpip.Address
 		slaacPrefixForTempAddrAfterNICAddrAdd  tcpip.AddressWithPrefix
-		connectAddr                            tcpip.Address
+		remoteAddr                             tcpip.Address
 		expectedLocalAddr                      tcpip.Address
 	}{
-		// Test Rule 1 of RFC 6724 section 5.
+		// Test Rule 1 of RFC 6724 section 5 (prefer same address).
 		{
 			name:              "Same Global most preferred (last address)",
-			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
-			connectAddr:       globalAddr1,
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, globalAddr1},
+			remoteAddr:        globalAddr1,
 			expectedLocalAddr: globalAddr1,
 		},
 		{
 			name:              "Same Global most preferred (first address)",
-			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
-			connectAddr:       globalAddr1,
+			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1},
+			remoteAddr:        globalAddr1,
 			expectedLocalAddr: globalAddr1,
 		},
 		{
 			name:              "Same Link Local most preferred (last address)",
-			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1, linkLocalAddr1},
-			connectAddr:       linkLocalAddr1,
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1},
+			remoteAddr:        linkLocalAddr1,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
 			name:              "Same Link Local most preferred (first address)",
-			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
-			connectAddr:       linkLocalAddr1,
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, globalAddr1},
+			remoteAddr:        linkLocalAddr1,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
 			name:              "Same Unique Local most preferred (last address)",
-			nicAddrs:          []tcpip.Address{uniqueLocalAddr1, globalAddr1, linkLocalAddr1},
-			connectAddr:       uniqueLocalAddr1,
+			nicAddrs:          []tcpip.Address{uniqueLocalAddr1, globalAddr1},
+			remoteAddr:        uniqueLocalAddr1,
 			expectedLocalAddr: uniqueLocalAddr1,
 		},
 		{
 			name:              "Same Unique Local most preferred (first address)",
-			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
-			connectAddr:       uniqueLocalAddr1,
+			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1},
+			remoteAddr:        uniqueLocalAddr1,
 			expectedLocalAddr: uniqueLocalAddr1,
 		},
 
-		// Test Rule 2 of RFC 6724 section 5.
+		// Test Rule 2 of RFC 6724 section 5 (prefer appropriate scope).
 		{
 			name:              "Global most preferred (last address)",
-			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
-			connectAddr:       globalAddr2,
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, globalAddr1},
+			remoteAddr:        globalAddr2,
 			expectedLocalAddr: globalAddr1,
 		},
 		{
 			name:              "Global most preferred (first address)",
-			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
-			connectAddr:       globalAddr2,
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1},
+			remoteAddr:        globalAddr2,
 			expectedLocalAddr: globalAddr1,
 		},
 		{
 			name:              "Link Local most preferred (last address)",
-			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1, linkLocalAddr1},
-			connectAddr:       linkLocalAddr2,
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1},
+			remoteAddr:        linkLocalAddr2,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
 			name:              "Link Local most preferred (first address)",
-			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
-			connectAddr:       linkLocalAddr2,
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, globalAddr1},
+			remoteAddr:        linkLocalAddr2,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
 			name:              "Link Local most preferred for link local multicast (last address)",
-			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1, linkLocalAddr1},
-			connectAddr:       linkLocalMulticastAddr,
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1},
+			remoteAddr:        linkLocalMulticastAddr,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
 			name:              "Link Local most preferred for link local multicast (first address)",
-			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
-			connectAddr:       linkLocalMulticastAddr,
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, globalAddr1},
+			remoteAddr:        linkLocalMulticastAddr,
 			expectedLocalAddr: linkLocalAddr1,
 		},
+
+		// Test Rule 6 of 6724 section 5 (prefer matching label).
 		{
 			name:              "Unique Local most preferred (last address)",
-			nicAddrs:          []tcpip.Address{uniqueLocalAddr1, globalAddr1, linkLocalAddr1},
-			connectAddr:       uniqueLocalAddr2,
+			nicAddrs:          []tcpip.Address{uniqueLocalAddr1, globalAddr1, ipv4MappedIPv6Addr1, toredoAddr1, ipv6ToIPv4Addr1},
+			remoteAddr:        uniqueLocalAddr2,
 			expectedLocalAddr: uniqueLocalAddr1,
 		},
 		{
 			name:              "Unique Local most preferred (first address)",
-			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
-			connectAddr:       uniqueLocalAddr2,
+			nicAddrs:          []tcpip.Address{globalAddr1, ipv4MappedIPv6Addr1, toredoAddr1, ipv6ToIPv4Addr1, uniqueLocalAddr1},
+			remoteAddr:        uniqueLocalAddr2,
 			expectedLocalAddr: uniqueLocalAddr1,
 		},
+		{
+			name:              "Toredo most preferred (first address)",
+			nicAddrs:          []tcpip.Address{toredoAddr1, uniqueLocalAddr1, globalAddr1, ipv4MappedIPv6Addr1, ipv6ToIPv4Addr1},
+			remoteAddr:        toredoAddr2,
+			expectedLocalAddr: toredoAddr1,
+		},
+		{
+			name:              "Toredo most preferred (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, ipv4MappedIPv6Addr1, ipv6ToIPv4Addr1, uniqueLocalAddr1, toredoAddr1},
+			remoteAddr:        toredoAddr2,
+			expectedLocalAddr: toredoAddr1,
+		},
+		{
+			name:              "6To4 most preferred (first address)",
+			nicAddrs:          []tcpip.Address{ipv6ToIPv4Addr1, toredoAddr1, uniqueLocalAddr1, globalAddr1, ipv4MappedIPv6Addr1},
+			remoteAddr:        ipv6ToIPv4Addr2,
+			expectedLocalAddr: ipv6ToIPv4Addr1,
+		},
+		{
+			name:              "6To4 most preferred (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, ipv4MappedIPv6Addr1, uniqueLocalAddr1, toredoAddr1, ipv6ToIPv4Addr1},
+			remoteAddr:        ipv6ToIPv4Addr2,
+			expectedLocalAddr: ipv6ToIPv4Addr1,
+		},
+		{
+			name:              "IPv4 mapped IPv6 most preferred (first address)",
+			nicAddrs:          []tcpip.Address{ipv4MappedIPv6Addr1, ipv6ToIPv4Addr1, toredoAddr1, uniqueLocalAddr1, globalAddr1},
+			remoteAddr:        ipv4MappedIPv6Addr2,
+			expectedLocalAddr: ipv4MappedIPv6Addr1,
+		},
+		{
+			name:              "IPv4 mapped IPv6 most preferred (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, ipv6ToIPv4Addr1, uniqueLocalAddr1, toredoAddr1, ipv4MappedIPv6Addr1},
+			remoteAddr:        ipv4MappedIPv6Addr2,
+			expectedLocalAddr: ipv4MappedIPv6Addr1,
+		},
 
-		// Test Rule 7 of RFC 6724 section 5.
+		// Test Rule 7 of RFC 6724 section 5 (prefer temporary addresses).
 		{
 			name:                                   "Temp Global most preferred (last address)",
 			slaacPrefixForTempAddrBeforeNICAddrAdd: prefix1,
 			nicAddrs:                               []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
-			connectAddr:                            globalAddr2,
+			remoteAddr:                             globalAddr2,
 			expectedLocalAddr:                      tempGlobalAddr1,
 		},
 		{
 			name:                                  "Temp Global most preferred (first address)",
 			nicAddrs:                              []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
 			slaacPrefixForTempAddrAfterNICAddrAdd: prefix1,
-			connectAddr:                           globalAddr2,
+			remoteAddr:                            globalAddr2,
 			expectedLocalAddr:                     tempGlobalAddr1,
+		},
+
+		// Test Rule 8 of RFC 6724 section 5 (use longest matching prefix).
+		{
+			name:              "Longest prefix matched most preferred (first address)",
+			nicAddrs:          []tcpip.Address{globalAddr2, globalAddr1},
+			remoteAddr:        globalAddr3,
+			expectedLocalAddr: globalAddr2,
+		},
+		{
+			name:              "Longest prefix matched most preferred (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, globalAddr2},
+			remoteAddr:        globalAddr3,
+			expectedLocalAddr: globalAddr2,
 		},
 
 		// Test returning the endpoint that is closest to the front when
@@ -2857,26 +2917,26 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 		{
 			name:              "Unique Local for Global",
 			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, uniqueLocalAddr2},
-			connectAddr:       globalAddr2,
+			remoteAddr:        globalAddr2,
 			expectedLocalAddr: uniqueLocalAddr1,
 		},
 		{
 			name:              "Link Local for Global",
 			nicAddrs:          []tcpip.Address{linkLocalAddr1, linkLocalAddr2},
-			connectAddr:       globalAddr2,
+			remoteAddr:        globalAddr2,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
 			name:              "Link Local for Unique Local",
 			nicAddrs:          []tcpip.Address{linkLocalAddr1, linkLocalAddr2},
-			connectAddr:       uniqueLocalAddr2,
+			remoteAddr:        uniqueLocalAddr2,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
 			name:                                   "Temp Global for Global",
 			slaacPrefixForTempAddrBeforeNICAddrAdd: prefix1,
 			slaacPrefixForTempAddrAfterNICAddrAdd:  prefix2,
-			connectAddr:                            globalAddr1,
+			remoteAddr:                             globalAddr1,
 			expectedLocalAddr:                      tempGlobalAddr2,
 		},
 	}
@@ -2898,12 +2958,6 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			s.SetRouteTable([]tcpip.Route{{
-				Destination: header.IPv6EmptySubnet,
-				Gateway:     llAddr3,
-				NIC:         nicID,
-			}})
-			s.AddLinkAddress(nicID, llAddr3, linkAddr3)
 
 			if test.slaacPrefixForTempAddrBeforeNICAddrAdd != (tcpip.AddressWithPrefix{}) {
 				e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, test.slaacPrefixForTempAddrBeforeNICAddrAdd, true, true, lifetimeSeconds, lifetimeSeconds))
@@ -2923,7 +2977,23 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 				t.FailNow()
 			}
 
-			if got := addrForNewConnectionTo(t, s, tcpip.FullAddress{Addr: test.connectAddr, NIC: nicID, Port: 1234}); got != test.expectedLocalAddr {
+			netEP, err := s.GetNetworkEndpoint(nicID, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+			}
+
+			addressableEndpoint, ok := netEP.(stack.AddressableEndpoint)
+			if !ok {
+				t.Fatal("network endpoint is not addressable")
+			}
+
+			addressEP := addressableEndpoint.AcquireOutgoingPrimaryAddress(test.remoteAddr, false /* allowExpired */)
+			if addressEP == nil {
+				t.Fatal("expected a non-nil address endpoint")
+			}
+			defer addressEP.DecRef()
+
+			if got := addressEP.AddressWithPrefix().Address; got != test.expectedLocalAddr {
 				t.Errorf("got local address = %s, want = %s", got, test.expectedLocalAddr)
 			}
 		})

@@ -270,3 +270,43 @@ func TestAddressUnspecified(t *testing.T) {
 		})
 	}
 }
+
+func TestAddressMatchingPrefix(t *testing.T) {
+	tests := []struct {
+		addrA  Address
+		addrB  Address
+		prefix uint8
+	}{
+		{
+			addrA:  "\x01\x01",
+			addrB:  "\x01\x01",
+			prefix: 16,
+		},
+		{
+			addrA:  "\x01\x01",
+			addrB:  "\x01\x00",
+			prefix: 15,
+		},
+		{
+			addrA:  "\x01\x01",
+			addrB:  "\x81\x00",
+			prefix: 0,
+		},
+		{
+			addrA:  "\x01\x01",
+			addrB:  "\x01\x80",
+			prefix: 8,
+		},
+		{
+			addrA:  "\x01\x01",
+			addrB:  "\x02\x80",
+			prefix: 6,
+		},
+	}
+
+	for _, test := range tests {
+		if got := test.addrA.MatchingPrefix(test.addrB); got != test.prefix {
+			t.Errorf("got (%s).MatchingPrefix(%s) = %d, want = %d", test.addrA, test.addrB, got, test.prefix)
+		}
+	}
+}

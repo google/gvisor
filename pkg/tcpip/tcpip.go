@@ -258,6 +258,44 @@ func (a Address) Unspecified() bool {
 	return true
 }
 
+// MatchingPrefix returns the matching prefix length in bits.
+//
+// Panics if b and a have different lengths.
+func (a Address) MatchingPrefix(b Address) uint8 {
+	const bitsInAByte = 8
+
+	if len(a) != len(b) {
+		panic(fmt.Sprintf("addresses %s and %s do not have the same length", a, b))
+	}
+
+	var prefix uint8
+	for i := range a {
+		aByte := a[i]
+		bByte := b[i]
+
+		if aByte == bByte {
+			prefix += bitsInAByte
+			continue
+		}
+
+		// Count the remaining matching bits in the byte from MSbit to LSBbit.
+		mask := uint8(1) << (bitsInAByte - 1)
+		for {
+			if aByte&mask == bByte&mask {
+				prefix++
+				mask >>= 1
+				continue
+			}
+
+			break
+		}
+
+		break
+	}
+
+	return prefix
+}
+
 // AddressMask is a bitmask for an address.
 type AddressMask string
 

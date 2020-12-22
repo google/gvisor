@@ -215,48 +215,6 @@ func TestLinkLocalAddrWithOpaqueIID(t *testing.T) {
 	}
 }
 
-func TestIsV6UniqueLocalAddress(t *testing.T) {
-	tests := []struct {
-		name     string
-		addr     tcpip.Address
-		expected bool
-	}{
-		{
-			name:     "Valid Unique 1",
-			addr:     uniqueLocalAddr1,
-			expected: true,
-		},
-		{
-			name:     "Valid Unique 2",
-			addr:     uniqueLocalAddr1,
-			expected: true,
-		},
-		{
-			name:     "Link Local",
-			addr:     linkLocalAddr,
-			expected: false,
-		},
-		{
-			name:     "Global",
-			addr:     globalAddr,
-			expected: false,
-		},
-		{
-			name:     "IPv4",
-			addr:     "\x01\x02\x03\x04",
-			expected: false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := header.IsV6UniqueLocalAddress(test.addr); got != test.expected {
-				t.Errorf("got header.IsV6UniqueLocalAddress(%s) = %t, want = %t", test.addr, got, test.expected)
-			}
-		})
-	}
-}
-
 func TestIsV6LinkLocalMulticastAddress(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -346,7 +304,7 @@ func TestScopeForIPv6Address(t *testing.T) {
 		{
 			name:  "Unique Local",
 			addr:  uniqueLocalAddr1,
-			scope: header.UniqueLocalScope,
+			scope: header.GlobalScope,
 			err:   nil,
 		},
 		{
