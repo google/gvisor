@@ -46,7 +46,7 @@ TEST(SocketTest, ProtocolUnix) {
       {AF_UNIX, SOCK_SEQPACKET, PF_UNIX},
       {AF_UNIX, SOCK_DGRAM, PF_UNIX},
   };
-  for (int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (long unsigned int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
@@ -59,7 +59,7 @@ TEST(SocketTest, ProtocolInet) {
       {AF_INET, SOCK_DGRAM, IPPROTO_UDP},
       {AF_INET, SOCK_STREAM, IPPROTO_TCP},
   };
-  for (int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (long unsigned int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
@@ -87,7 +87,7 @@ TEST(SocketTest, UnixSocketStat) {
   ASSERT_THAT(stat(addr.sun_path, &statbuf), SyscallSucceeds());
 
   // Mode should be S_IFSOCK.
-  EXPECT_EQ(statbuf.st_mode, S_IFSOCK | sock_perm & ~mask);
+  EXPECT_EQ(statbuf.st_mode, S_IFSOCK | (sock_perm & ~mask));
 
   // Timestamps should be equal and non-zero.
   // TODO(b/158882152): Sockets currently don't implement timestamps.
