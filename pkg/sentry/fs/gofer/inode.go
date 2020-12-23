@@ -475,6 +475,9 @@ func (i *inodeOperations) Check(ctx context.Context, inode *fs.Inode, p fs.PermM
 func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	switch d.Inode.StableAttr.Type {
 	case fs.Socket:
+		if i.session().overrides != nil {
+			return nil, syserror.ENXIO
+		}
 		return i.getFileSocket(ctx, d, flags)
 	case fs.Pipe:
 		return i.getFilePipe(ctx, d, flags)

@@ -3324,6 +3324,7 @@ cc_binary(
         ":socket_test_util",
         ":unix_domain_socket_test_util",
         gtest,
+        "//test/util:file_descriptor",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
