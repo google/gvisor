@@ -181,7 +181,7 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
 // Returns true on match, and sets 'match' to point to the matching entry.
 bool FindBy(std::vector<UnixEntry> entries, UnixEntry* match,
             std::function<bool(const UnixEntry&)> predicate) {
-  for (int i = 0; i < entries.size(); ++i) {
+  for (long unsigned int i = 0; i < entries.size(); ++i) {
     if (predicate(entries[i])) {
       *match = entries[i];
       return true;
