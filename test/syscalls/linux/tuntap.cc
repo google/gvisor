@@ -327,14 +327,14 @@ TEST_F(TuntapTest, PingKernel) {
     int n = read(fd.get(), &r, sizeof(r));
     EXPECT_THAT(n, SyscallSucceeds());
 
-    if (n < sizeof(pihdr)) {
+    if (n < int(sizeof(pihdr))) {
       std::cerr << "Ignored packet, protocol: " << r.pi.pi_protocol
                 << " len: " << n << std::endl;
       continue;
     }
 
     // Process ARP packet.
-    if (n >= sizeof(arp_pkt) && r.pi.pi_protocol == htons(ETH_P_ARP)) {
+    if (n >= int(sizeof(arp_pkt)) && r.pi.pi_protocol == htons(ETH_P_ARP)) {
       // Respond with canned ARP reply.
       EXPECT_THAT(write(fd.get(), arp_rep.data(), arp_rep.size()),
                   SyscallSucceedsWithValue(arp_rep.size()));
@@ -345,7 +345,7 @@ TEST_F(TuntapTest, PingKernel) {
     }
 
     // Process ping response packet.
-    if (n >= sizeof(ping_pkt) && r.pi.pi_protocol == ping_req.pi.pi_protocol &&
+    if (n >= int(sizeof(ping_pkt)) && r.pi.pi_protocol == ping_req.pi.pi_protocol &&
         r.ping.ip.protocol == ping_req.ip.protocol &&
         !memcmp(&r.ping.ip.saddr, &ping_req.ip.daddr, kIPLen) &&
         !memcmp(&r.ping.ip.daddr, &ping_req.ip.saddr, kIPLen) &&
@@ -386,13 +386,13 @@ TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
     int n = read(fd.get(), &r, sizeof(r));
     EXPECT_THAT(n, SyscallSucceeds());
 
-    if (n < sizeof(pihdr)) {
+    if (n < int(sizeof(pihdr))) {
       std::cerr << "Ignored packet, protocol: " << r.pi.pi_protocol
                 << " len: " << n << std::endl;
       continue;
     }
 
-    if (n >= sizeof(arp_pkt) && r.pi.pi_protocol == htons(ETH_P_ARP)) {
+    if (n >= int(sizeof(arp_pkt)) && r.pi.pi_protocol == htons(ETH_P_ARP)) {
       break;
     }
   }
