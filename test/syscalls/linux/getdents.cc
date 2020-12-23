@@ -32,6 +32,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
@@ -381,7 +382,7 @@ TYPED_TEST(GetdentsTest, PartialBuffer) {
 // getdents iterates correctly despite mutation of /proc/self/fd.
 TYPED_TEST(GetdentsTest, ProcSelfFd) {
   constexpr size_t kNfds = 10;
-  std::unordered_map<int, FileDescriptor> fds;
+  absl::node_hash_map<int, FileDescriptor> fds;
   fds.reserve(kNfds);
   for (size_t i = 0; i < kNfds; i++) {
     FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
