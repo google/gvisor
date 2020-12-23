@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -68,6 +70,20 @@ TEST_P(UnboundFilesystemUnixSocketPairTest, GetSockNameLength) {
 
   EXPECT_EQ(got_addr_len,
             strlen(want_addr.sun_path) + 1 + sizeof(want_addr.sun_family));
+}
+
+TEST_P(UnboundFilesystemUnixSocketPairTest, OpenSocketWithTruncate) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  const struct sockaddr_un *addr =
+      reinterpret_cast<const struct sockaddr_un *>(sockets->first_addr());
+  EXPECT_THAT(chmod(addr->sun_path, 0777), SyscallSucceeds());
+  EXPECT_THAT(open(addr->sun_path, O_RDONLY | O_TRUNC),
+              SyscallFailsWithErrno(ENXIO));
 }
 
 INSTANTIATE_TEST_SUITE_P(
