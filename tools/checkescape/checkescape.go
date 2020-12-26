@@ -27,7 +27,7 @@
 // 	heap:      A direct allocation is made on the heap (hard).
 // 	builtin:   A call is made to a built-in allocation function (hard).
 // 	stack:     A stack split as part of a function preamble (soft).
-// 	interface: A call is made via an interface whicy *may* escape (soft).
+// 	interface: A call is made via an interface which *may* escape (soft).
 // 	dynamic:   A dynamic function is dispatched which *may* escape (soft).
 //
 // To the use the package, annotate a function-level comment with either the
