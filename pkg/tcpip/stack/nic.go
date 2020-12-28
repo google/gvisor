@@ -20,7 +20,6 @@ import (
 	"reflect"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -295,15 +294,17 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 	//   the same unresolved IP address, and transmit the saved
 	//   packet when the address has been resolved.
 	//
-	// RFC 4861 section 5.2 (for IPv6):
-	//   Once the IP address of the next-hop node is known, the sender
-	//   examines the Neighbor Cache for link-layer information about that
-	//   neighbor.  If no entry exists, the sender creates one, sets its state
-	//   to INCOMPLETE, initiates Address Resolution, and then queues the data
-	//   packet pending completion of address resolution.
+	// RFC 4861 section 7.2.2 (for IPv6):
+	//   While waiting for address resolution to complete, the sender MUST, for
+	//   each neighbor, retain a small queue of packets waiting for address
+	//   resolution to complete. The queue MUST hold at least one packet, and MAY
+	//   contain more. However, the number of queued packets per neighbor SHOULD
+	//   be limited to some small value. When a queue overflows, the new arrival
+	//   SHOULD replace the oldest entry. Once address resolution completes, the
+	//   node transmits any queued packets.
 	if ch, err := r.Resolve(nil); err != nil {
 		if err == tcpip.ErrWouldBlock {
-			r := r.Clone()
+			r.Acquire()
 			n.stack.linkResQueue.enqueue(ch, r, protocol, pkt)
 			return nil
 		}
@@ -316,7 +317,9 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 // WritePacketToRemote implements NetworkInterface.
 func (n *NIC) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
 	r := Route{
-		NetProto: protocol,
+		routeInfo: routeInfo{
+			NetProto: protocol,
+		},
 	}
 	r.ResolveWith(remoteLinkAddr)
 	return n.writePacket(&r, gso, protocol, pkt)
@@ -543,14 +546,6 @@ func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {
 	}
 
 	return n.neigh.entries(), nil
-}
-
-func (n *NIC) removeWaker(addr tcpip.Address, w *sleep.Waker) {
-	if n.neigh == nil {
-		return
-	}
-
-	n.neigh.removeWaker(addr, w)
 }
 
 func (n *NIC) addStaticNeighbor(addr tcpip.Address, linkAddress tcpip.LinkAddress) *tcpip.Error {

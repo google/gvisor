@@ -172,14 +172,12 @@ func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 
 	// If we started off with a window larger than what can he held in
 	// the 16bit window field, we ceil the value to the max value.
-	// While ceiling, we still do not want to grow the right edge when
-	// not applicable.
 	if scaledWnd > math.MaxUint16 {
-		if toGrow {
-			scaledWnd = seqnum.Size(math.MaxUint16)
-		} else {
-			scaledWnd = seqnum.Size(uint16(scaledWnd))
-		}
+		scaledWnd = seqnum.Size(math.MaxUint16)
+
+		// Ensure that the stashed receive window always reflects what
+		// is being advertised.
+		r.rcvWnd = scaledWnd << r.rcvWndScale
 	}
 	return r.rcvNxt, scaledWnd
 }

@@ -331,12 +331,12 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 	switch level {
 	case linux.SOL_IP:
 		switch name {
-		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_PKTINFO, linux.IP_RECVORIGDSTADDR:
+		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_PKTINFO, linux.IP_RECVORIGDSTADDR, linux.IP_RECVERR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_IPV6:
 		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
+		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_SOCKET:
@@ -377,14 +377,14 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 	switch level {
 	case linux.SOL_IP:
 		switch name {
-		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_RECVORIGDSTADDR:
+		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_RECVORIGDSTADDR, linux.IP_RECVERR:
 			optlen = sizeofInt32
 		case linux.IP_PKTINFO:
 			optlen = linux.SizeOfControlMessageIPPacketInfo
 		}
 	case linux.SOL_IPV6:
 		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
+		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_SOCKET:
@@ -416,68 +416,76 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 	return nil
 }
 
-// RecvMsg implements socket.Socket.RecvMsg.
-func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
-	// Only allow known and safe flags.
-	//
-	// FIXME(jamieliu): We can't support MSG_ERRQUEUE because it uses ancillary
-	// messages that gvisor/pkg/tcpip/transport/unix doesn't understand. Kill the
-	// Socket interface's dependence on netstack.
-	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_PEEK|syscall.MSG_TRUNC) != 0 {
-		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
-	}
+func (s *socketOpsCommon) recvMsgFromHost(iovs []syscall.Iovec, flags int, senderRequested bool, controlLen uint64) (uint64, int, []byte, []byte, error) {
+	// We always do a non-blocking recv*().
+	sysflags := flags | syscall.MSG_DONTWAIT
 
-	var senderAddr linux.SockAddr
+	msg := syscall.Msghdr{}
+	if len(iovs) > 0 {
+		msg.Iov = &iovs[0]
+		msg.Iovlen = uint64(len(iovs))
+	}
 	var senderAddrBuf []byte
 	if senderRequested {
 		senderAddrBuf = make([]byte, sizeofSockaddr)
+		msg.Name = &senderAddrBuf[0]
+		msg.Namelen = uint32(sizeofSockaddr)
+	}
+	var controlBuf []byte
+	if controlLen > 0 {
+		if controlLen > maxControlLen {
+			controlLen = maxControlLen
+		}
+		controlBuf = make([]byte, controlLen)
+		msg.Control = &controlBuf[0]
+		msg.Controllen = controlLen
+	}
+	n, err := recvmsg(s.fd, &msg, sysflags)
+	if err != nil {
+		return 0 /* n */, 0 /* mFlags */, nil /* senderAddrBuf */, nil /* controlBuf */, err
+	}
+	return n, int(msg.Flags), senderAddrBuf[:msg.Namelen], controlBuf[:msg.Controllen], err
+}
+
+// RecvMsg implements socket.Socket.RecvMsg.
+func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
+	// Only allow known and safe flags.
+	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_PEEK|syscall.MSG_TRUNC|syscall.MSG_ERRQUEUE) != 0 {
+		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
 	}
 
+	var senderAddrBuf []byte
 	var controlBuf []byte
 	var msgFlags int
+	copyToDst := func() (int64, error) {
+		var n uint64
+		var err error
+		if dst.NumBytes() == 0 {
+			// We want to make the recvmsg(2) call to the host even if dst is empty
+			// to fetch control messages, sender address or errors if any occur.
+			n, msgFlags, senderAddrBuf, controlBuf, err = s.recvMsgFromHost(nil, flags, senderRequested, controlLen)
+			return int64(n), err
+		}
 
-	recvmsgToBlocks := safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
-		// Refuse to do anything if any part of dst.Addrs was unusable.
-		if uint64(dst.NumBytes()) != dsts.NumBytes() {
-			return 0, nil
-		}
-		if dsts.IsEmpty() {
-			return 0, nil
-		}
-
-		// We always do a non-blocking recv*().
-		sysflags := flags | syscall.MSG_DONTWAIT
-
-		iovs := safemem.IovecsFromBlockSeq(dsts)
-		msg := syscall.Msghdr{
-			Iov:    &iovs[0],
-			Iovlen: uint64(len(iovs)),
-		}
-		if len(senderAddrBuf) != 0 {
-			msg.Name = &senderAddrBuf[0]
-			msg.Namelen = uint32(len(senderAddrBuf))
-		}
-		if controlLen > 0 {
-			if controlLen > maxControlLen {
-				controlLen = maxControlLen
+		recvmsgToBlocks := safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+			// Refuse to do anything if any part of dst.Addrs was unusable.
+			if uint64(dst.NumBytes()) != dsts.NumBytes() {
+				return 0, nil
 			}
-			controlBuf = make([]byte, controlLen)
-			msg.Control = &controlBuf[0]
-			msg.Controllen = controlLen
-		}
-		n, err := recvmsg(s.fd, &msg, sysflags)
-		if err != nil {
-			return 0, err
-		}
-		senderAddrBuf = senderAddrBuf[:msg.Namelen]
-		msgFlags = int(msg.Flags)
-		controlLen = uint64(msg.Controllen)
-		return n, nil
-	})
+			if dsts.IsEmpty() {
+				return 0, nil
+			}
+
+			n, msgFlags, senderAddrBuf, controlBuf, err = s.recvMsgFromHost(safemem.IovecsFromBlockSeq(dsts), flags, senderRequested, controlLen)
+			return n, err
+		})
+		return dst.CopyOutFrom(t, recvmsgToBlocks)
+	}
 
 	var ch chan struct{}
-	n, err := dst.CopyOutFrom(t, recvmsgToBlocks)
-	if flags&syscall.MSG_DONTWAIT == 0 {
+	n, err := copyToDst()
+	// recv*(MSG_ERRQUEUE) never blocks, even without MSG_DONTWAIT.
+	if flags&(syscall.MSG_DONTWAIT|syscall.MSG_ERRQUEUE) == 0 {
 		for err == syserror.ErrWouldBlock {
 			// We only expect blocking to come from the actual syscall, in which
 			// case it can't have returned any data.
@@ -494,22 +502,26 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 				s.EventRegister(&e, waiter.EventIn)
 				defer s.EventUnregister(&e)
 			}
-			n, err = dst.CopyOutFrom(t, recvmsgToBlocks)
+			n, err = copyToDst()
 		}
 	}
 	if err != nil {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 	}
 
+	var senderAddr linux.SockAddr
 	if senderRequested {
 		senderAddr = socket.UnmarshalSockAddr(s.family, senderAddrBuf)
 	}
 
-	unixControlMessages, err := unix.ParseSocketControlMessage(controlBuf[:controlLen])
+	unixControlMessages, err := unix.ParseSocketControlMessage(controlBuf)
 	if err != nil {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 	}
+	return int(n), msgFlags, senderAddr, uint32(len(senderAddrBuf)), parseUnixControlMessages(unixControlMessages), nil
+}
 
+func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) socket.ControlMessages {
 	controlMessages := socket.ControlMessages{}
 	for _, unixCmsg := range unixControlMessages {
 		switch unixCmsg.Header.Level {
@@ -536,6 +548,11 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 				var addr linux.SockAddrInet
 				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], usermem.ByteOrder, &addr)
 				controlMessages.IP.OriginalDstAddress = &addr
+
+			case syscall.IP_RECVERR:
+				var errCmsg linux.SockErrCMsgIPv4
+				errCmsg.UnmarshalBytes(unixCmsg.Data)
+				controlMessages.IP.SockErr = &errCmsg
 			}
 
 		case linux.SOL_IPV6:
@@ -548,6 +565,11 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 				var addr linux.SockAddrInet6
 				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], usermem.ByteOrder, &addr)
 				controlMessages.IP.OriginalDstAddress = &addr
+
+			case syscall.IPV6_RECVERR:
+				var errCmsg linux.SockErrCMsgIPv6
+				errCmsg.UnmarshalBytes(unixCmsg.Data)
+				controlMessages.IP.SockErr = &errCmsg
 			}
 
 		case linux.SOL_TCP:
@@ -558,8 +580,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 			}
 		}
 	}
-
-	return int(n), msgFlags, senderAddr, uint32(len(senderAddrBuf)), controlMessages, nil
+	return controlMessages
 }
 
 // SendMsg implements socket.Socket.SendMsg.

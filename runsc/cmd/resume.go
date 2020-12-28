@@ -56,7 +56,7 @@ func (r *Resume) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	cont, err := container.LoadAndCheck(conf.RootDir, id)
+	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
 		Fatalf("loading container: %v", err)
 	}

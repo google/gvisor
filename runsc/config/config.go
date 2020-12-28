@@ -131,7 +131,7 @@ type Config struct {
 	NumNetworkChannels int `flag:"num-network-channels"`
 
 	// Rootless allows the sandbox to be started with a user that is not root.
-	// Defense is depth measures are weaker with rootless. Specifically, the
+	// Defense in depth measures are weaker in rootless mode. Specifically, the
 	// sandbox and Gofer process run as root inside a user namespace with root
 	// mapped to the caller's user.
 	Rootless bool `flag:"rootless"`

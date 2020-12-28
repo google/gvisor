@@ -29,7 +29,6 @@ import (
 
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/rand"
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -170,6 +169,9 @@ type TCPSenderState struct {
 
 	// Outstanding is the number of packets in flight.
 	Outstanding int
+
+	// SackedOut is the number of packets which have been selectively acked.
+	SackedOut int
 
 	// SndWnd is the send window size in bytes.
 	SndWnd seqnum.Size
@@ -1517,7 +1519,7 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr t
 }
 
 // GetLinkAddress implements LinkAddressCache.GetLinkAddress.
-func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	s.mu.RLock()
 	nic := s.nics[nicID]
 	if nic == nil {
@@ -1528,7 +1530,7 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 
 	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 	linkRes := s.linkAddrResolvers[protocol]
-	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic, waker)
+	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic, onResolve)
 }
 
 // Neighbors returns all IP to MAC address associations.
@@ -1542,29 +1544,6 @@ func (s *Stack) Neighbors(nicID tcpip.NICID) ([]NeighborEntry, *tcpip.Error) {
 	}
 
 	return nic.neighbors()
-}
-
-// RemoveWaker removes a waker that has been added when link resolution for
-// addr was requested.
-func (s *Stack) RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker) {
-	if s.useNeighborCache {
-		s.mu.RLock()
-		nic, ok := s.nics[nicID]
-		s.mu.RUnlock()
-
-		if ok {
-			nic.removeWaker(addr, waker)
-		}
-		return
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if nic := s.nics[nicID]; nic == nil {
-		fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
-		s.linkAddrCache.removeWaker(fullAddr, waker)
-	}
 }
 
 // AddStaticNeighbor statically associates an IP address to a MAC address.

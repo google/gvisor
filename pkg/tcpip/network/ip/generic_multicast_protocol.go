@@ -131,17 +131,6 @@ type multicastGroupState struct {
 // GenericMulticastProtocolOptions holds options for the generic multicast
 // protocol.
 type GenericMulticastProtocolOptions struct {
-	// Enabled indicates whether the generic multicast protocol will be
-	// performed.
-	//
-	// When enabled, the protocol may transmit report and leave messages when
-	// joining and leaving multicast groups respectively, and handle incoming
-	// packets.
-	//
-	// When disabled, the protocol will still keep track of locally joined groups,
-	// it just won't transmit and handle packets, or update groups' state.
-	Enabled bool
-
 	// Rand is the source of random numbers.
 	Rand *rand.Rand
 
@@ -170,6 +159,17 @@ type GenericMulticastProtocolOptions struct {
 // MulticastGroupProtocol is a multicast group protocol whose core state machine
 // can be represented by GenericMulticastProtocolState.
 type MulticastGroupProtocol interface {
+	// Enabled indicates whether the generic multicast protocol will be
+	// performed.
+	//
+	// When enabled, the protocol may transmit report and leave messages when
+	// joining and leaving multicast groups respectively, and handle incoming
+	// packets.
+	//
+	// When disabled, the protocol will still keep track of locally joined groups,
+	// it just won't transmit and handle packets, or update groups' state.
+	Enabled() bool
+
 	// SendReport sends a multicast report for the specified group address.
 	//
 	// Returns false if the caller should queue the report to be sent later. Note,
@@ -196,6 +196,9 @@ type MulticastGroupProtocol interface {
 //
 // GenericMulticastProtocolState.Init MUST be called before calling any of
 // the methods on GenericMulticastProtocolState.
+//
+// GenericMulticastProtocolState.MakeAllNonMemberLocked MUST be called when the
+// multicast group protocol is disabled so that leave messages may be sent.
 type GenericMulticastProtocolState struct {
 	// Do not allow overwriting this state.
 	_ sync.NoCopy
@@ -235,9 +238,11 @@ func (g *GenericMulticastProtocolState) Init(protocolMU *sync.RWMutex, opts Gene
 //
 // The groups will still be considered joined locally.
 //
+// MUST be called when the multicast group protocol is disabled.
+//
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
-	if !g.opts.Enabled {
+	if !g.opts.Protocol.Enabled() {
 		return
 	}
 
@@ -255,7 +260,7 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) InitializeGroupsLocked() {
-	if !g.opts.Enabled {
+	if !g.opts.Protocol.Enabled() {
 		return
 	}
 
@@ -290,12 +295,8 @@ func (g *GenericMulticastProtocolState) SendQueuedReportsLocked() {
 
 // JoinGroupLocked handles joining a new group.
 //
-// If dontInitialize is true, the group will be not be initialized and will be
-// left in the non-member state - no packets will be sent for it until it is
-// initialized via InitializeGroups.
-//
 // Precondition: g.protocolMU must be locked.
-func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Address, dontInitialize bool) {
+func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Address) {
 	if info, ok := g.memberships[groupAddress]; ok {
 		// The group has already been joined.
 		info.joins++
@@ -310,6 +311,10 @@ func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Addre
 		state:            nonMember,
 		lastToSendReport: false,
 		delayedReportJob: tcpip.NewJob(g.opts.Clock, g.protocolMU, func() {
+			if !g.opts.Protocol.Enabled() {
+				panic(fmt.Sprintf("delayed report job fired for group %s while the multicast group protocol is disabled", groupAddress))
+			}
+
 			info, ok := g.memberships[groupAddress]
 			if !ok {
 				panic(fmt.Sprintf("expected to find group state for group = %s", groupAddress))
@@ -320,7 +325,7 @@ func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Addre
 		}),
 	}
 
-	if !dontInitialize && g.opts.Enabled {
+	if g.opts.Protocol.Enabled() {
 		g.initializeNewMemberLocked(groupAddress, &info)
 	}
 
@@ -372,7 +377,7 @@ func (g *GenericMulticastProtocolState) LeaveGroupLocked(groupAddress tcpip.Addr
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) HandleQueryLocked(groupAddress tcpip.Address, maxResponseTime time.Duration) {
-	if !g.opts.Enabled {
+	if !g.opts.Protocol.Enabled() {
 		return
 	}
 
@@ -406,7 +411,7 @@ func (g *GenericMulticastProtocolState) HandleQueryLocked(groupAddress tcpip.Add
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) HandleReportLocked(groupAddress tcpip.Address) {
-	if !g.opts.Enabled {
+	if !g.opts.Protocol.Enabled() {
 		return
 	}
 
@@ -518,7 +523,7 @@ func (g *GenericMulticastProtocolState) maybeSendDelayedReportLocked(groupAddres
 
 // maybeSendLeave attempts to send a leave message.
 func (g *GenericMulticastProtocolState) maybeSendLeave(groupAddress tcpip.Address, lastToSendReport bool) {
-	if !g.opts.Enabled || !lastToSendReport {
+	if !g.opts.Protocol.Enabled() || !lastToSendReport {
 		return
 	}
 

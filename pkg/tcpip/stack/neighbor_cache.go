@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -99,9 +98,7 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address, linkRes LinkA
 		n.dynamic.lru.Remove(e)
 		n.dynamic.count--
 
-		e.dispatchRemoveEventLocked()
-		e.setStateLocked(Unknown)
-		e.notifyWakersLocked()
+		e.removeLocked()
 		e.mu.Unlock()
 	}
 	n.cache[remoteAddr] = entry
@@ -110,27 +107,36 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address, linkRes LinkA
 	return entry
 }
 
-// entry looks up the neighbor cache for translating address to link address
-// (e.g. IP -> MAC). If the LinkEndpoint requests address resolution and there
-// is a LinkAddressResolver registered with the network protocol, the cache
-// attempts to resolve the address and returns ErrWouldBlock. If a Waker is
-// provided, it will be notified when address resolution is complete (success
-// or not).
+// entry looks up neighbor information matching the remote address, and returns
+// it if readily available.
+//
+// Returns ErrWouldBlock if the link address is not readily available, along
+// with a notification channel for the caller to block on. Triggers address
+// resolution asynchronously.
+//
+// If onResolve is provided, it will be called either immediately, if resolution
+// is not required, or when address resolution is complete, with the resolved
+// link address and whether resolution succeeded. After any callbacks have been
+// called, the returned notification channel is closed.
+//
+// NB: if a callback is provided, it should not call into the neighbor cache.
 //
 // If specified, the local address must be an address local to the interface the
 // neighbor cache belongs to. The local address is the source address of a
 // packet prompting NUD/link address resolution.
 //
-// If address resolution is required, ErrNoLinkAddress and a notification
-// channel is returned for the top level caller to block. Channel is closed
-// once address resolution is complete (success or not).
-func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver, w *sleep.Waker) (NeighborEntry, <-chan struct{}, *tcpip.Error) {
+// TODO(gvisor.dev/issue/5151): Don't return the neighbor entry.
+func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(tcpip.LinkAddress, bool)) (NeighborEntry, <-chan struct{}, *tcpip.Error) {
+	// TODO(gvisor.dev/issue/5149): Handle static resolution in route.Resolve.
 	if linkAddr, ok := linkRes.ResolveStaticAddress(remoteAddr); ok {
 		e := NeighborEntry{
 			Addr:           remoteAddr,
 			LinkAddr:       linkAddr,
 			State:          Static,
 			UpdatedAtNanos: 0,
+		}
+		if onResolve != nil {
+			onResolve(linkAddr, true)
 		}
 		return e, nil, nil
 	}
@@ -149,35 +155,23 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 		//   of packets to a neighbor. While reasserting a neighbor's reachability,
 		//   a node continues sending packets to that neighbor using the cached
 		//   link-layer address."
+		if onResolve != nil {
+			onResolve(entry.neigh.LinkAddr, true)
+		}
 		return entry.neigh, nil, nil
-	case Unknown, Incomplete:
-		entry.addWakerLocked(w)
-
+	case Unknown, Incomplete, Failed:
+		if onResolve != nil {
+			entry.onResolve = append(entry.onResolve, onResolve)
+		}
 		if entry.done == nil {
 			// Address resolution needs to be initiated.
-			if linkRes == nil {
-				return entry.neigh, nil, tcpip.ErrNoLinkAddress
-			}
 			entry.done = make(chan struct{})
 		}
-
 		entry.handlePacketQueuedLocked(localAddr)
 		return entry.neigh, entry.done, tcpip.ErrWouldBlock
-	case Failed:
-		return entry.neigh, nil, tcpip.ErrNoLinkAddress
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", s))
 	}
-}
-
-// removeWaker removes a waker that has been added when link resolution for
-// addr was requested.
-func (n *neighborCache) removeWaker(addr tcpip.Address, waker *sleep.Waker) {
-	n.mu.Lock()
-	if entry, ok := n.cache[addr]; ok {
-		delete(entry.wakers, waker)
-	}
-	n.mu.Unlock()
 }
 
 // entries returns all entries in the neighbor cache.
@@ -222,32 +216,11 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 			return
 		}
 
-		// Notify that resolution has been interrupted, just in case the entry was
-		// in the Incomplete or Probe state.
-		entry.dispatchRemoveEventLocked()
-		entry.setStateLocked(Unknown)
-		entry.notifyWakersLocked()
+		entry.removeLocked()
 		entry.mu.Unlock()
 	}
 
 	n.cache[addr] = newStaticNeighborEntry(n.nic, addr, linkAddr, n.state)
-}
-
-// removeEntryLocked removes the specified entry from the neighbor cache.
-//
-// Prerequisite: n.mu and entry.mu MUST be locked.
-func (n *neighborCache) removeEntryLocked(entry *neighborEntry) {
-	if entry.neigh.State != Static {
-		n.dynamic.lru.Remove(entry)
-		n.dynamic.count--
-	}
-	if entry.neigh.State != Failed {
-		entry.dispatchRemoveEventLocked()
-	}
-	entry.setStateLocked(Unknown)
-	entry.notifyWakersLocked()
-
-	delete(n.cache, entry.neigh.Addr)
 }
 
 // removeEntry removes a dynamic or static entry by address from the neighbor
@@ -264,7 +237,13 @@ func (n *neighborCache) removeEntry(addr tcpip.Address) bool {
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
-	n.removeEntryLocked(entry)
+	if entry.neigh.State != Static {
+		n.dynamic.lru.Remove(entry)
+		n.dynamic.count--
+	}
+
+	entry.removeLocked()
+	delete(n.cache, entry.neigh.Addr)
 	return true
 }
 
@@ -275,9 +254,7 @@ func (n *neighborCache) clear() {
 
 	for _, entry := range n.cache {
 		entry.mu.Lock()
-		entry.dispatchRemoveEventLocked()
-		entry.setStateLocked(Unknown)
-		entry.notifyWakersLocked()
+		entry.removeLocked()
 		entry.mu.Unlock()
 	}
 

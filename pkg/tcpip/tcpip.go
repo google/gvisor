@@ -258,6 +258,44 @@ func (a Address) Unspecified() bool {
 	return true
 }
 
+// MatchingPrefix returns the matching prefix length in bits.
+//
+// Panics if b and a have different lengths.
+func (a Address) MatchingPrefix(b Address) uint8 {
+	const bitsInAByte = 8
+
+	if len(a) != len(b) {
+		panic(fmt.Sprintf("addresses %s and %s do not have the same length", a, b))
+	}
+
+	var prefix uint8
+	for i := range a {
+		aByte := a[i]
+		bByte := b[i]
+
+		if aByte == bByte {
+			prefix += bitsInAByte
+			continue
+		}
+
+		// Count the remaining matching bits in the byte from MSbit to LSBbit.
+		mask := uint8(1) << (bitsInAByte - 1)
+		for {
+			if aByte&mask == bByte&mask {
+				prefix++
+				mask >>= 1
+				continue
+			}
+
+			break
+		}
+
+		break
+	}
+
+	return prefix
+}
+
 // AddressMask is a bitmask for an address.
 type AddressMask string
 
@@ -500,6 +538,9 @@ type ControlMessages struct {
 	// OriginalDestinationAddress holds the original destination address
 	// and port of the incoming packet.
 	OriginalDstAddress FullAddress
+
+	// SockErr is the dequeued socket error on recvmsg(MSG_ERRQUEUE).
+	SockErr *SockError
 }
 
 // PacketOwner is used to get UID and GID of the packet.
@@ -913,14 +954,6 @@ type GettableSocketOption interface {
 type SettableSocketOption interface {
 	isSettableSocketOption()
 }
-
-// BindToDeviceOption is used by SetSockOpt/GetSockOpt to specify that sockets
-// should bind only on a specific NIC.
-type BindToDeviceOption NICID
-
-func (*BindToDeviceOption) isGettableSocketOption() {}
-
-func (*BindToDeviceOption) isSettableSocketOption() {}
 
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
 //

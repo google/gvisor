@@ -49,6 +49,21 @@ const (
 	allowedOpenFlags = unix.O_TRUNC
 )
 
+var (
+	// Remember the process uid/gid to skip chown calls when file owner/group
+	// doesn't need to be changed.
+	processUID = p9.UID(os.Getuid())
+	processGID = p9.GID(os.Getgid())
+)
+
+// join is equivalent to path.Join() but skips path.Clean() which is expensive.
+func join(parent, child string) string {
+	if child == "." || child == ".." {
+		panic(fmt.Sprintf("invalid child path %q", child))
+	}
+	return parent + "/" + child
+}
+
 // Config sets configuration options for each attach point.
 type Config struct {
 	// ROMount is set to true if this is a readonly mount.
@@ -115,7 +130,7 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return nil, fmt.Errorf("unable to stat %q: %v", a.prefix, err)
 	}
 
-	lf, err := newLocalFile(a, f, a.prefix, readable, stat)
+	lf, err := newLocalFile(a, f, a.prefix, readable, &stat)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create localFile %q: %v", a.prefix, err)
 	}
@@ -124,7 +139,7 @@ func (a *attachPoint) Attach() (p9.File, error) {
 }
 
 // makeQID returns a unique QID for the given stat buffer.
-func (a *attachPoint) makeQID(stat unix.Stat_t) p9.QID {
+func (a *attachPoint) makeQID(stat *unix.Stat_t) p9.QID {
 	a.deviceMu.Lock()
 	defer a.deviceMu.Unlock()
 
@@ -245,7 +260,7 @@ func reopenProcFd(f *fd.FD, mode int) (*fd.FD, error) {
 }
 
 func openAnyFileFromParent(parent *localFile, name string) (*fd.FD, string, bool, error) {
-	pathDebug := path.Join(parent.hostPath, name)
+	pathDebug := join(parent.hostPath, name)
 	f, readable, err := openAnyFile(pathDebug, func(mode int) (*fd.FD, error) {
 		return fd.OpenAt(parent.file, name, openFlags|mode, 0)
 	})
@@ -297,8 +312,8 @@ func openAnyFile(pathDebug string, fn func(mode int) (*fd.FD, error)) (*fd.FD, b
 	return nil, false, extractErrno(err)
 }
 
-func checkSupportedFileType(stat unix.Stat_t, permitSocket bool) error {
-	switch stat.Mode & unix.S_IFMT {
+func checkSupportedFileType(mode uint32, permitSocket bool) error {
+	switch mode & unix.S_IFMT {
 	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK:
 		return nil
 
@@ -313,8 +328,8 @@ func checkSupportedFileType(stat unix.Stat_t, permitSocket bool) error {
 	}
 }
 
-func newLocalFile(a *attachPoint, file *fd.FD, path string, readable bool, stat unix.Stat_t) (*localFile, error) {
-	if err := checkSupportedFileType(stat, a.conf.HostUDS); err != nil {
+func newLocalFile(a *attachPoint, file *fd.FD, path string, readable bool, stat *unix.Stat_t) (*localFile, error) {
+	if err := checkSupportedFileType(stat.Mode, a.conf.HostUDS); err != nil {
 		return nil, err
 	}
 
@@ -442,8 +457,10 @@ func (l *localFile) Create(name string, p9Flags p9.OpenFlags, perm p9.FileMode, 
 	})
 	defer cu.Clean()
 
-	if err := fchown(child.FD(), uid, gid); err != nil {
-		return nil, nil, p9.QID{}, 0, extractErrno(err)
+	if uid != processUID || gid != processGID {
+		if err := fchown(child.FD(), uid, gid); err != nil {
+			return nil, nil, p9.QID{}, 0, extractErrno(err)
+		}
 	}
 	stat, err := fstat(child.FD())
 	if err != nil {
@@ -452,11 +469,11 @@ func (l *localFile) Create(name string, p9Flags p9.OpenFlags, perm p9.FileMode, 
 
 	c := &localFile{
 		attachPoint: l.attachPoint,
-		hostPath:    path.Join(l.hostPath, name),
+		hostPath:    join(l.hostPath, name),
 		file:        child,
 		mode:        mode,
 		fileType:    unix.S_IFREG,
-		qid:         l.attachPoint.makeQID(stat),
+		qid:         l.attachPoint.makeQID(&stat),
 	}
 
 	cu.Release()
@@ -488,8 +505,10 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 	}
 	defer f.Close()
 
-	if err := fchown(f.FD(), uid, gid); err != nil {
-		return p9.QID{}, extractErrno(err)
+	if uid != processUID || gid != processGID {
+		if err := fchown(f.FD(), uid, gid); err != nil {
+			return p9.QID{}, extractErrno(err)
+		}
 	}
 	stat, err := fstat(f.FD())
 	if err != nil {
@@ -497,7 +516,7 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 	}
 
 	cu.Release()
-	return l.attachPoint.makeQID(stat), nil
+	return l.attachPoint.makeQID(&stat), nil
 }
 
 // Walk implements p9.File.
@@ -512,7 +531,7 @@ func (l *localFile) WalkGetAttr(names []string) ([]p9.QID, p9.File, p9.AttrMask,
 	if err != nil {
 		return nil, nil, p9.AttrMask{}, p9.Attr{}, err
 	}
-	mask, attr := l.fillAttr(stat)
+	mask, attr := l.fillAttr(&stat)
 	return qids, file, mask, attr, nil
 }
 
@@ -538,13 +557,13 @@ func (l *localFile) walk(names []string) ([]p9.QID, p9.File, unix.Stat_t, error)
 			file:            newFile,
 			mode:            invalidMode,
 			fileType:        l.fileType,
-			qid:             l.attachPoint.makeQID(stat),
+			qid:             l.attachPoint.makeQID(&stat),
 			controlReadable: readable,
 		}
 		return []p9.QID{c.qid}, c, stat, nil
 	}
 
-	var qids []p9.QID
+	qids := make([]p9.QID, 0, len(names))
 	var lastStat unix.Stat_t
 	last := l
 	for _, name := range names {
@@ -560,7 +579,7 @@ func (l *localFile) walk(names []string) ([]p9.QID, p9.File, unix.Stat_t, error)
 			_ = f.Close()
 			return nil, nil, unix.Stat_t{}, extractErrno(err)
 		}
-		c, err := newLocalFile(last.attachPoint, f, path, readable, lastStat)
+		c, err := newLocalFile(last.attachPoint, f, path, readable, &lastStat)
 		if err != nil {
 			_ = f.Close()
 			return nil, nil, unix.Stat_t{}, extractErrno(err)
@@ -609,11 +628,11 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 	if err != nil {
 		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
 	}
-	mask, attr := l.fillAttr(stat)
+	mask, attr := l.fillAttr(&stat)
 	return l.qid, mask, attr, nil
 }
 
-func (l *localFile) fillAttr(stat unix.Stat_t) (p9.AttrMask, p9.Attr) {
+func (l *localFile) fillAttr(stat *unix.Stat_t) (p9.AttrMask, p9.Attr) {
 	attr := p9.Attr{
 		Mode:             p9.FileMode(stat.Mode),
 		UID:              p9.UID(stat.Uid),
@@ -881,8 +900,10 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 	}
 	defer f.Close()
 
-	if err := fchown(f.FD(), uid, gid); err != nil {
-		return p9.QID{}, extractErrno(err)
+	if uid != processUID || gid != processGID {
+		if err := fchown(f.FD(), uid, gid); err != nil {
+			return p9.QID{}, extractErrno(err)
+		}
 	}
 	stat, err := fstat(f.FD())
 	if err != nil {
@@ -890,7 +911,7 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 	}
 
 	cu.Release()
-	return l.attachPoint.makeQID(stat), nil
+	return l.attachPoint.makeQID(&stat), nil
 }
 
 // Link implements p9.File.
@@ -938,8 +959,10 @@ func (l *localFile) Mknod(name string, mode p9.FileMode, _ uint32, _ uint32, uid
 	}
 	defer child.Close()
 
-	if err := fchown(child.FD(), uid, gid); err != nil {
-		return p9.QID{}, extractErrno(err)
+	if uid != processUID || gid != processGID {
+		if err := fchown(child.FD(), uid, gid); err != nil {
+			return p9.QID{}, extractErrno(err)
+		}
 	}
 	stat, err := fstat(child.FD())
 	if err != nil {
@@ -947,7 +970,7 @@ func (l *localFile) Mknod(name string, mode p9.FileMode, _ uint32, _ uint32, uid
 	}
 
 	cu.Release()
-	return l.attachPoint.makeQID(stat), nil
+	return l.attachPoint.makeQID(&stat), nil
 }
 
 // UnlinkAt implements p9.File.
@@ -1045,7 +1068,7 @@ func (l *localFile) readDirent(f int, offset uint64, count uint32, skip uint64) 
 				log.Warningf("Readdir is skipping file with failed stat %q, err: %v", l.hostPath, err)
 				continue
 			}
-			qid := l.attachPoint.makeQID(stat)
+			qid := l.attachPoint.makeQID(&stat)
 			offset++
 			dirents = append(dirents, p9.Dirent{
 				QID:    qid,
@@ -1139,7 +1162,7 @@ func (l *localFile) isOpen() bool {
 
 // Renamed implements p9.Renamed.
 func (l *localFile) Renamed(newDir p9.File, newName string) {
-	l.hostPath = path.Join(newDir.(*localFile).hostPath, newName)
+	l.hostPath = join(newDir.(*localFile).hostPath, newName)
 }
 
 // extractErrno tries to determine the errno.

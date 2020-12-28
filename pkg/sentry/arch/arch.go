@@ -365,3 +365,18 @@ func (a SyscallArgument) SizeT() uint {
 func (a SyscallArgument) ModeT() uint {
 	return uint(uint16(a.Value))
 }
+
+// ErrFloatingPoint indicates a failed restore due to unusable floating point
+// state.
+type ErrFloatingPoint struct {
+	// supported is the supported floating point state.
+	supported uint64
+
+	// saved is the saved floating point state.
+	saved uint64
+}
+
+// Error returns a sensible description of the restore error.
+func (e ErrFloatingPoint) Error() string {
+	return fmt.Sprintf("floating point state contains unsupported features; supported: %#x saved: %#x", e.supported, e.saved)
+}

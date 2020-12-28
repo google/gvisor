@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -31,24 +30,7 @@ import (
 //
 // TODO(gvisor.dev/issue/4902): Unexpose immutable fields.
 type Route struct {
-	// RemoteAddress is the final destination of the route.
-	RemoteAddress tcpip.Address
-
-	// LocalAddress is the local address where the route starts.
-	LocalAddress tcpip.Address
-
-	// LocalLinkAddress is the link-layer (MAC) address of the
-	// where the route starts.
-	LocalLinkAddress tcpip.LinkAddress
-
-	// NextHop is the next node in the path to the destination.
-	NextHop tcpip.Address
-
-	// NetProto is the network-layer protocol.
-	NetProto tcpip.NetworkProtocolNumber
-
-	// Loop controls where WritePacket should send packets.
-	Loop PacketLooping
+	routeInfo
 
 	// localAddressNIC is the interface the address is associated with.
 	// TODO(gvisor.dev/issue/4548): Remove this field once we can query the
@@ -76,6 +58,45 @@ type Route struct {
 	// linkRes is set if link address resolution is enabled for this protocol on
 	// the route's NIC.
 	linkRes LinkAddressResolver
+}
+
+type routeInfo struct {
+	// RemoteAddress is the final destination of the route.
+	RemoteAddress tcpip.Address
+
+	// LocalAddress is the local address where the route starts.
+	LocalAddress tcpip.Address
+
+	// LocalLinkAddress is the link-layer (MAC) address of the
+	// where the route starts.
+	LocalLinkAddress tcpip.LinkAddress
+
+	// NextHop is the next node in the path to the destination.
+	NextHop tcpip.Address
+
+	// NetProto is the network-layer protocol.
+	NetProto tcpip.NetworkProtocolNumber
+
+	// Loop controls where WritePacket should send packets.
+	Loop PacketLooping
+}
+
+// RouteInfo contains all of Route's exported fields.
+type RouteInfo struct {
+	routeInfo
+
+	// RemoteLinkAddress is the link-layer (MAC) address of the next hop in the
+	// route.
+	RemoteLinkAddress tcpip.LinkAddress
+}
+
+// GetFields returns a RouteInfo with all of r's exported fields. This allows
+// callers to store the route's fields without retaining a reference to it.
+func (r *Route) GetFields() RouteInfo {
+	return RouteInfo{
+		routeInfo:         r.routeInfo,
+		RemoteLinkAddress: r.RemoteLinkAddress(),
+	}
 }
 
 // constructAndValidateRoute validates and initializes a route. It takes
@@ -152,13 +173,15 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 
 func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping) *Route {
 	r := &Route{
-		NetProto:         netProto,
-		LocalAddress:     localAddr,
-		LocalLinkAddress: outgoingNIC.LinkEndpoint.LinkAddress(),
-		RemoteAddress:    remoteAddr,
-		localAddressNIC:  localAddressNIC,
-		outgoingNIC:      outgoingNIC,
-		Loop:             loop,
+		routeInfo: routeInfo{
+			NetProto:         netProto,
+			LocalAddress:     localAddr,
+			LocalLinkAddress: outgoingNIC.LinkEndpoint.LinkAddress(),
+			RemoteAddress:    remoteAddr,
+			Loop:             loop,
+		},
+		localAddressNIC: localAddressNIC,
+		outgoingNIC:     outgoingNIC,
 	}
 
 	r.mu.Lock()
@@ -264,22 +287,21 @@ func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
 	r.mu.remoteLinkAddress = addr
 }
 
-// Resolve attempts to resolve the link address if necessary. Returns ErrWouldBlock in
-// case address resolution requires blocking, e.g. wait for ARP reply. Waker is
-// notified when address resolution is complete (success or not).
+// Resolve attempts to resolve the link address if necessary.
 //
-// If address resolution is required, ErrNoLinkAddress and a notification channel is
-// returned for the top level caller to block. Channel is closed once address resolution
-// is complete (success or not).
-//
-// The NIC r uses must not be locked.
-func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
+// Returns tcpip.ErrWouldBlock if address resolution requires blocking (e.g.
+// waiting for ARP reply). If address resolution is required, a notification
+// channel is also returned for the caller to block on. The channel is closed
+// once address resolution is complete (successful or not). If a callback is
+// provided, it will be called when address resolution is complete, regardless
+// of success or failure.
+func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if !r.isResolutionRequiredRLocked() {
 		// Nothing to do if there is no cache (which does the resolution on cache miss) or
 		// link address is already known.
+		r.mu.Unlock()
 		return nil, nil
 	}
 
@@ -288,6 +310,7 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		// Local link address is already known.
 		if r.RemoteAddress == r.LocalAddress {
 			r.mu.remoteLinkAddress = r.LocalLinkAddress
+			r.mu.Unlock()
 			return nil, nil
 		}
 		nextAddr = r.RemoteAddress
@@ -300,36 +323,34 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress
 	}
 
+	// Increment the route's reference count because finishResolution retains a
+	// reference to the route and releases it when called.
+	r.acquireLocked()
+	r.mu.Unlock()
+
+	finishResolution := func(linkAddress tcpip.LinkAddress, ok bool) {
+		if ok {
+			r.ResolveWith(linkAddress)
+		}
+		if afterResolve != nil {
+			afterResolve()
+		}
+		r.Release()
+	}
+
 	if neigh := r.outgoingNIC.neigh; neigh != nil {
-		entry, ch, err := neigh.entry(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, waker)
+		_, ch, err := neigh.entry(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, finishResolution)
 		if err != nil {
 			return ch, err
 		}
-		r.mu.remoteLinkAddress = entry.LinkAddr
 		return nil, nil
 	}
 
-	linkAddr, ch, err := r.linkCache.GetLinkAddress(r.outgoingNIC.ID(), nextAddr, linkAddressResolutionRequestLocalAddr, r.NetProto, waker)
+	_, ch, err := r.linkCache.GetLinkAddress(r.outgoingNIC.ID(), nextAddr, linkAddressResolutionRequestLocalAddr, r.NetProto, finishResolution)
 	if err != nil {
 		return ch, err
 	}
-	r.mu.remoteLinkAddress = linkAddr
 	return nil, nil
-}
-
-// RemoveWaker removes a waker that has been added in Resolve().
-func (r *Route) RemoveWaker(waker *sleep.Waker) {
-	nextAddr := r.NextHop
-	if nextAddr == "" {
-		nextAddr = r.RemoteAddress
-	}
-
-	if neigh := r.outgoingNIC.neigh; neigh != nil {
-		neigh.removeWaker(nextAddr, waker)
-		return
-	}
-
-	r.linkCache.RemoveWaker(r.outgoingNIC.ID(), nextAddr, waker)
 }
 
 // local returns true if the route is a local route.
@@ -419,46 +440,31 @@ func (r *Route) MTU() uint32 {
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto).MTU()
 }
 
-// Release frees all resources associated with the route.
+// Release decrements the reference counter of the resources associated with the
+// route.
 func (r *Route) Release() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.mu.localAddressEndpoint != nil {
-		r.mu.localAddressEndpoint.DecRef()
-		r.mu.localAddressEndpoint = nil
+	if ep := r.mu.localAddressEndpoint; ep != nil {
+		ep.DecRef()
 	}
 }
 
-// Clone clones the route.
-func (r *Route) Clone() *Route {
+// Acquire increments the reference counter of the resources associated with the
+// route.
+func (r *Route) Acquire() {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	r.acquireLocked()
+}
 
-	newRoute := &Route{
-		RemoteAddress:    r.RemoteAddress,
-		LocalAddress:     r.LocalAddress,
-		LocalLinkAddress: r.LocalLinkAddress,
-		NextHop:          r.NextHop,
-		NetProto:         r.NetProto,
-		Loop:             r.Loop,
-		localAddressNIC:  r.localAddressNIC,
-		outgoingNIC:      r.outgoingNIC,
-		linkCache:        r.linkCache,
-		linkRes:          r.linkRes,
-	}
-
-	newRoute.mu.Lock()
-	defer newRoute.mu.Unlock()
-	newRoute.mu.localAddressEndpoint = r.mu.localAddressEndpoint
-	if newRoute.mu.localAddressEndpoint != nil {
-		if !newRoute.mu.localAddressEndpoint.IncRef() {
-			panic(fmt.Sprintf("failed to increment reference count for local address endpoint = %s", newRoute.LocalAddress))
+func (r *Route) acquireLocked() {
+	if ep := r.mu.localAddressEndpoint; ep != nil {
+		if !ep.IncRef() {
+			panic(fmt.Sprintf("failed to increment reference count for local address endpoint = %s", r.LocalAddress))
 		}
 	}
-	newRoute.mu.remoteLinkAddress = r.mu.remoteLinkAddress
-
-	return newRoute
 }
 
 // Stack returns the instance of the Stack that owns this route.

@@ -31,6 +31,7 @@ import (
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -498,6 +499,10 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flag
 			fd := &TTYFileDescription{
 				fileDescription: fileDescription{inode: i},
 				termios:         linux.DefaultReplicaTermios,
+			}
+			if task := kernel.TaskFromContext(ctx); task != nil {
+				fd.fgProcessGroup = task.ThreadGroup().ProcessGroup()
+				fd.session = fd.fgProcessGroup.Session()
 			}
 			fd.LockFD.Init(&i.locks)
 			vfsfd := &fd.vfsfd

@@ -253,7 +253,7 @@ func (mm *MemoryManager) DecUsers(ctx context.Context) {
 		panic(fmt.Sprintf("Invalid MemoryManager.users: %d", users))
 	}
 
-	mm.aioManager.destroy()
+	mm.destroyAIOManager(ctx)
 
 	mm.metadataMu.Lock()
 	exe := mm.executable

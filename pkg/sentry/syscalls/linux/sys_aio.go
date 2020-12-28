@@ -307,9 +307,8 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr user
 	if !ok {
 		return syserror.EINVAL
 	}
-	if ready := ctx.Prepare(); !ready {
-		// Context is busy.
-		return syserror.EAGAIN
+	if err := ctx.Prepare(); err != nil {
+		return err
 	}
 
 	if eventFile != nil {

@@ -18,7 +18,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -153,13 +152,17 @@ const (
 // IPv6EmptySubnet is the empty IPv6 subnet. It may also be known as the
 // catch-all or wildcard subnet. That is, all IPv6 addresses are considered to
 // be contained within this subnet.
-var IPv6EmptySubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet(IPv6Any, tcpip.AddressMask(IPv6Any))
-	if err != nil {
-		panic(err)
-	}
-	return subnet
-}()
+var IPv6EmptySubnet = tcpip.AddressWithPrefix{
+	Address:   IPv6Any,
+	PrefixLen: 0,
+}.Subnet()
+
+// IPv4MappedIPv6Subnet is the prefix for an IPv4 mapped IPv6 address as defined
+// by RFC 4291 section 2.5.5.
+var IPv4MappedIPv6Subnet = tcpip.AddressWithPrefix{
+	Address:   "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00",
+	PrefixLen: 96,
+}.Subnet()
 
 // IPv6LinkLocalPrefix is the prefix for IPv6 link-local addresses, as defined
 // by RFC 4291 section 2.5.6.
@@ -293,7 +296,7 @@ func IsV4MappedAddress(addr tcpip.Address) bool {
 		return false
 	}
 
-	return strings.HasPrefix(string(addr), "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff")
+	return IPv4MappedIPv6Subnet.Contains(addr)
 }
 
 // IsV6MulticastAddress determines if the provided address is an IPv6
@@ -399,17 +402,6 @@ func IsV6LinkLocalMulticastAddress(addr tcpip.Address) bool {
 	return IsV6MulticastAddress(addr) && addr[ipv6MulticastAddressScopeByteIdx]&ipv6MulticastAddressScopeMask == ipv6LinkLocalMulticastScope
 }
 
-// IsV6UniqueLocalAddress determines if the provided address is an IPv6
-// unique-local address (within the prefix FC00::/7).
-func IsV6UniqueLocalAddress(addr tcpip.Address) bool {
-	if len(addr) != IPv6AddressSize {
-		return false
-	}
-	// According to RFC 4193 section 3.1, a unique local address has the prefix
-	// FC00::/7.
-	return (addr[0] & 0xfe) == 0xfc
-}
-
 // AppendOpaqueInterfaceIdentifier appends a 64 bit opaque interface identifier
 // (IID) to buf as outlined by RFC 7217 and returns the extended buffer.
 //
@@ -456,9 +448,6 @@ const (
 	// LinkLocalScope indicates a link-local address.
 	LinkLocalScope IPv6AddressScope = iota
 
-	// UniqueLocalScope indicates a unique-local address.
-	UniqueLocalScope
-
 	// GlobalScope indicates a global address.
 	GlobalScope
 )
@@ -475,9 +464,6 @@ func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, *tcpip.Error) {
 
 	case IsV6LinkLocalAddress(addr):
 		return LinkLocalScope, nil
-
-	case IsV6UniqueLocalAddress(addr):
-		return UniqueLocalScope, nil
 
 	default:
 		return GlobalScope, nil

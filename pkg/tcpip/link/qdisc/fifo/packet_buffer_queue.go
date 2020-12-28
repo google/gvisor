@@ -61,6 +61,7 @@ func (q *packetBufferQueue) enqueue(s *stack.PacketBuffer) bool {
 	q.mu.Lock()
 	r := q.used < q.limit
 	if r {
+		s.EgressRoute.Acquire()
 		q.list.PushBack(s)
 		q.used++
 	}
