@@ -177,7 +177,7 @@ TEST_P(IPv4UDPUnboundSocketNetlinkTest, ReuseAddrSubnetDirectedBroadcast) {
 
   // Broadcasts from each socket should be received by every socket (including
   // the sending socket).
-  for (int w = 0; w < socks.size(); w++) {
+  for (long unsigned int w = 0; w < socks.size(); w++) {
     auto& w_sock = socks[w];
     ASSERT_THAT(
         RetryEINTR(sendto)(w_sock->get(), send_buf, kSendBufSize, 0,
@@ -187,7 +187,7 @@ TEST_P(IPv4UDPUnboundSocketNetlinkTest, ReuseAddrSubnetDirectedBroadcast) {
         << "write socks[" << w << "]";
 
     // Check that we received the packet on all sockets.
-    for (int r = 0; r < socks.size(); r++) {
+    for (long unsigned int r = 0; r < socks.size(); r++) {
       auto& r_sock = socks[r];
 
       struct pollfd poll_fd = {r_sock->get(), POLLIN, 0};

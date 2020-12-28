@@ -71,13 +71,13 @@ class PipeTest : public ::testing::TestWithParam<PipeCreator> {
   // Returns true iff the pipe represents a named pipe.
   bool IsNamedPipe() const { return named_pipe_; }
 
-  int Size() const {
+  size_t Size() const {
     int s1 = fcntl(rfd_.get(), F_GETPIPE_SZ);
     int s2 = fcntl(wfd_.get(), F_GETPIPE_SZ);
     EXPECT_GT(s1, 0);
     EXPECT_GT(s2, 0);
     EXPECT_EQ(s1, s2);
-    return s1;
+    return static_cast<size_t>(s1);
   }
 
   static void TearDownTestSuite() {
@@ -568,7 +568,7 @@ TEST_P(PipeTest, Streaming) {
   DisableSave ds;
 
   // Size() requires 2 syscalls, call it once and remember the value.
-  const int pipe_size = Size();
+  const size_t pipe_size = Size();
   const size_t streamed_bytes = 4 * pipe_size;
 
   absl::Notification notify;
@@ -576,7 +576,7 @@ TEST_P(PipeTest, Streaming) {
     std::vector<char> buf(1024);
     // Don't start until it's full.
     notify.WaitForNotification();
-    ssize_t total = 0;
+    size_t total = 0;
     while (total < streamed_bytes) {
       ASSERT_THAT(read(rfd_.get(), buf.data(), buf.size()),
                   SyscallSucceedsWithValue(buf.size()));
@@ -593,7 +593,7 @@ TEST_P(PipeTest, Streaming) {
   // page) for the check for notify.Notify() below to be correct.
   std::vector<char> buf(1024);
   RandomizeBuffer(buf.data(), buf.size());
-  ssize_t total = 0;
+  size_t total = 0;
   while (total < streamed_bytes) {
     ASSERT_THAT(write(wfd_.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(buf.size()));
